@@ -95,7 +95,7 @@
   1. Prisma schema created with models for users, services, configurations
   2. Database migration run successfully
   3. SQLite database file created with tables
-**Plans**: TBD
+**Plans**: 01.3-PLAN.md
 **UI hint**: no
 
 ### Phase 1.4: Basic Project Structure
