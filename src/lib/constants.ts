@@ -14,7 +14,12 @@ export const DEFAULT_SPEED_LIMIT_KBPS = 0;
 export const ALERT_SEVERITY_ORDER = ['CRITICAL', 'WARNING', 'INFO'] as const;
 
 /** Traffic stat periods available for queries */
-export const TRAFFIC_PERIODS = ['hourly', 'daily', 'weekly', 'monthly'] as const;
+export const TRAFFIC_PERIODS = [
+  'hourly',
+  'daily',
+  'weekly',
+  'monthly',
+] as const;
 
 export type VpnService = (typeof VPN_SERVICES)[keyof typeof VPN_SERVICES];
 export type TrafficPeriod = (typeof TRAFFIC_PERIODS)[number];

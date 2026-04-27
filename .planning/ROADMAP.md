@@ -717,7 +717,7 @@
 | 1.1 - Project Initialization | 0/1 | Complete    | 2026-04-27 |
 | 1.2 - Core Dependencies | 0/1 | Complete    | 2026-04-27 |
 | 1.3 - Database Schema Setup | 0/1 | Complete    | 2026-04-27 |
-| 1.4 - Basic Project Structure | 1/1 | Complete    | 2026-04-28 |
+| 1.4 - Basic Project Structure | 1/1 | Complete    | 2026-04-27 |
 | 1.5 - Dev Environment Setup | 0/1 | Not started | - |
 | 1.6 - Layout & Navigation | 0/1 | Not started | - |
 | 1.7 - Login Page UI | 0/1 | Not started | - |
