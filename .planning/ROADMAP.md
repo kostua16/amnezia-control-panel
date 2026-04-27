@@ -106,8 +106,11 @@
   1. Project structure organized with appropriate directories
   2. Base layout, page templates, and API route structure created
   3. TypeScript types defined
-**Plans**: TBD
+**Plans**: 01.4-PLAN.md
 **UI hint**: yes
+
+**Wave 1** *(no dependencies)*
+- 01.4-PLAN.md — Directory structure, types, route groups, API skeleton
 
 ### Phase 1.5: Dev Environment Setup
 **Goal**: Configure Tailwind CSS, ESLint, and start development server
@@ -714,7 +717,7 @@
 | 1.1 - Project Initialization | 0/1 | Complete    | 2026-04-27 |
 | 1.2 - Core Dependencies | 0/1 | Complete    | 2026-04-27 |
 | 1.3 - Database Schema Setup | 0/1 | Complete    | 2026-04-27 |
-| 1.4 - Basic Project Structure | 0/1 | Not started | - |
+| 1.4 - Basic Project Structure | 0/1 | Ready to execute | - |
 | 1.5 - Dev Environment Setup | 0/1 | Not started | - |
 | 1.6 - Layout & Navigation | 0/1 | Not started | - |
 | 1.7 - Login Page UI | 0/1 | Not started | - |
