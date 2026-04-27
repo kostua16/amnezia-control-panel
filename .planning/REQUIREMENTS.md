@@ -102,54 +102,55 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| USER-01 | — | Pending |
-| USER-02 | — | Pending |
-| USER-03 | — | Pending |
-| USER-04 | — | Pending |
-| USER-05 | — | Pending |
-| USER-06 | — | Pending |
-| SERV-01 | — | Pending |
-| SERV-02 | — | Pending |
-| SERV-03 | — | Pending |
-| SERV-04 | — | Pending |
-| SERV-05 | — | Pending |
-| SERV-06 | — | Pending |
-| SERV-07 | — | Pending |
-| SERV-08 | — | Pending |
-| CONF-01 | — | Pending |
-| CONF-02 | — | Pending |
-| CONF-03 | — | Pending |
-| CONF-04 | — | Pending |
-| CONF-05 | — | Pending |
-| CONF-06 | — | Pending |
-| CONF-07 | — | Pending |
-| ROUTE-01 | — | Pending |
-| ROUTE-02 | — | Pending |
-| ROUTE-03 | — | Pending |
-| ROUTE-04 | — | Pending |
-| CHAIN-01 | — | Pending |
-| CHAIN-02 | — | Pending |
-| CHAIN-03 | — | Pending |
-| CHAIN-04 | — | Pending |
-| CHAIN-05 | — | Pending |
-| CHAIN-06 | — | Pending |
-| CHAIN-07 | — | Pending |
-| MON-01 | — | Pending |
-| MON-02 | — | Pending |
-| MON-03 | — | Pending |
-| MON-04 | — | Pending |
-| ALERT-01 | — | Pending |
-| ALERT-02 | — | Pending |
-| ALERT-03 | — | Pending |
+| AUTH-01 | Phase 2.2 - Login API Endpoint | Pending |
+| AUTH-02 | Phase 2.3 - Session Management | Pending |
+| AUTH-03 | Phase 2.5 - Logout Functionality | Pending |
+| USER-01 | Phase 4.3 - User Creation Form, Phase 4.4 - User Creation API | Pending |
+| USER-02 | Phase 4.5 - User Edit Form, Phase 4.6 - User Edit API | Pending |
+| USER-03 | Phase 4.7 - User Delete API | Pending |
+| USER-04 | Phase 4.8 - Block/Unblock APIs | Pending |
+| USER-05 | Phase 4.9 - User Sync System | Pending |
+| USER-06 | Phase 4.2 - User List Component | Pending |
+| SERV-01 | Phase 3.1 - Service Status API | Pending |
+| SERV-02 | Phase 3.1 - Service Status API | Pending |
+| SERV-03 | Phase 3.3 - Service Install API - AWG | Pending |
+| SERV-04 | Phase 3.4 - Service Install API - 3x-ui | Pending |
+| SERV-05 | Phase 3.5 - Service Uninstall APIs | Pending |
+| SERV-06 | Phase 3.5 - Service Uninstall APIs | Pending |
+| SERV-07 | Phase 3.6 - Auto-restart Logic | Pending |
+| SERV-08 | Phase 3.7 - Configuration Display | Pending |
+| CONF-01 | Phase 5.1 - Configuration Templates, Phase 5.3 - Auto-gen Configuration API | Pending |
+| CONF-02 | Phase 5.1 - Configuration Templates, Phase 5.3 - Auto-gen Configuration API | Pending |
+| CONF-03 | Phase 5.2 - Protocol Templates | Pending |
+| CONF-04 | Phase 5.2 - Protocol Templates | Pending |
+| CONF-05 | Phase 5.4 - Export Configurations | Pending |
+| CONF-06 | Phase 5.5 - Import Configurations | Pending |
+| CONF-07 | Phase 5.6 - Configuration Presets | Pending |
+| ROUTE-01 | Phase 6.1 - Traffic Quotas System | Pending |
+| ROUTE-02 | Phase 6.2 - Speed Limits System | Pending |
+| ROUTE-03 | Phase 6.3 - Routing Rules API | Pending |
+| ROUTE-04 | Phase 6.4 - Routing Rules UI, Phase 6.5 - Rule Enforcement | Pending |
+| MON-01 | Phase 7.1 - Dashboard Metrics | Pending |
+| MON-02 | Phase 7.2 - Traffic Statistics API, Phase 7.3 - Stats Display UI | Pending |
+| MON-03 | Phase 7.4 - Resource Monitoring API, Phase 7.5 - Resource Display UI | Pending |
+| MON-04 | Phase 7.6 - Real-time Updates | Pending |
+| CHAIN-01 | Phase 8.1 - Multi-server Management | Pending |
+| CHAIN-03 | Phase 8.4 - Auto-configure Routing | Pending |
+| CHAIN-06 | Phase 8.3 - Chain Templates System | Pending |
+| CHAIN-02 | Phase 9.1 - Visual Chain Builder | Pending |
+| CHAIN-04 | Phase 9.2 - Geo-Routing Rules | Pending |
+| CHAIN-05 | Phase 9.3 - Whitelist Management | Pending |
+| CHAIN-07 | Phase 9.4 - Live Chain Visualization | Pending |
+| ALERT-01 | Phase 10.1 - Service Alert System | Pending |
+| ALERT-02 | Phase 10.2 - Quota Alert System | Pending |
+| ALERT-03 | Phase 10.3 - Resource Alert System | Pending |
 
 **Coverage:**
 - v1 requirements: 42 total
-- Mapped to phases: 0
-- Unmapped: 42 ⚠️
+- Mapped to phases: 42
+- Unmapped: 0 ✓
 
 ---
+
 *Requirements defined: 2026-04-27*
-*Last updated: 2026-04-27 after initial definition*
+*Last updated: 2026-04-27 - Updated traceability for refined phase structure*
