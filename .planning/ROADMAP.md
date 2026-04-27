@@ -84,7 +84,7 @@
 **Success Criteria** (what must be TRUE):
   1. All dependencies installed and available in node_modules
   2. Dependencies properly configured in TypeScript config
-**Plans**: TBD
+**Plans**: 01.2-PLAN.md
 **UI hint**: no
 
 ### Phase 1.3: Database Schema Setup

@@ -18,17 +18,17 @@ progress:
 
 **Project**: Amnezia Control Panel  
 **Core Value**: One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui, no context switching  
-**Current Focus**: Phase 1.1 - Project Initialization  
-**Current Position**: Roadmap revised with small phases, ready to begin implementation
+**Current Focus**: Phase 1.2 - Core Dependencies
+**Current Position**: Phase 1.2 planned, ready to execute
 
 ## Current Position
 
-**Phase**: 1.1 - Project Initialization
-**Plan**: 1 plan in 1 wave (01.1-PLAN.md)
+**Phase**: 1.2 - Core Dependencies
+**Plan**: 1 plan in 1 wave (01.2-PLAN.md)
 **Status**: Ready to execute
 **Progress**: 0/47 phases complete (0%)
 **Progress Bar**: [                                        ] 0%
-**Resume file**: `.planning/phases/01.1-project-initialization/01.1-PLAN.md`
+**Resume file**: `.planning/phases/01.2-core-dependencies/01.2-PLAN.md`
 
 ## Performance Metrics
 
