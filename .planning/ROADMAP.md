@@ -74,7 +74,7 @@
 **Success Criteria** (what must be TRUE):
   1. Next.js 15 project created with TypeScript configuration
   2. Package.json includes all required dependencies
-**Plans**: TBD
+**Plans**: 01.1-PLAN.md
 **UI hint**: yes
 
 ### Phase 1.2: Core Dependencies
