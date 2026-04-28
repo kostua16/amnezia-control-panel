@@ -35,10 +35,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error(data.error || 'Login failed');
       }
 
-      const { token, user } = await response.json();
+      const { user } = await response.json();
       set({
         user,
-        token,
+        token: 'cookie',
         isAuthenticated: true,
         isLoading: false,
       });
@@ -59,7 +59,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   checkAuth: async () => {
-    // TODO: Phase 2.3 — real token validation
-    // No-op placeholder
+    set({ isLoading: true });
+    try {
+      const response = await fetch('/api/auth/me');
+      if (response.ok) {
+        const { user } = await response.json();
+        set({ user, token: 'cookie', isAuthenticated: true, isLoading: false });
+      } else {
+        set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+      }
+    } catch {
+      set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+    }
   },
 }));

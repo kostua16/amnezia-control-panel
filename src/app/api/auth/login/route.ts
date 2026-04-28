@@ -66,13 +66,22 @@ export async function POST(request: NextRequest) {
       .setExpirationTime('24h')
       .sign(secret);
 
-    return NextResponse.json({
-      token,
+    const response = NextResponse.json({
       user: {
         id: admin.id,
         username: admin.username,
       },
     });
+
+    response.cookies.set('auth-token', token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 86400,
+      secure: process.env.NODE_ENV === 'production',
+    });
+
+    return response;
   } catch (error) {
     console.error('[auth/login] Error:', error);
     return NextResponse.json(

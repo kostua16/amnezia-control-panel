@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import {
   Card,
@@ -11,12 +12,15 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { useAuthStore } from '@/lib/auth-store';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const login = useAuthStore((s) => s.login);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const router = useRouter();
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -27,13 +31,12 @@ export default function LoginPage() {
       return;
     }
 
-    setLoading(true);
-
-    // UI-only: simulate a delay, then reset (real auth in Phase 2.2)
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    setLoading(false);
-    setError('Invalid credentials. (UI demo only)');
+    try {
+      await login(username, password);
+      router.push('/dashboard');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    }
   }
 
   return (
@@ -62,7 +65,7 @@ export default function LoginPage() {
                 placeholder="admin"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                disabled={loading}
+                disabled={isLoading}
                 autoComplete="username"
                 required
               />
@@ -81,7 +84,7 @@ export default function LoginPage() {
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
+                disabled={isLoading}
                 autoComplete="current-password"
                 required
               />
@@ -90,9 +93,9 @@ export default function LoginPage() {
             <Button
               type="submit"
               className="w-full"
-              disabled={loading}
+              disabled={isLoading}
             >
-              {loading ? (
+              {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Signing in...
