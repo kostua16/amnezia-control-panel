@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { clsx } from 'clsx';
 import { NAV_ITEMS } from '@/lib/navigation';
 
 interface SidebarProps {
@@ -36,7 +37,7 @@ export function Sidebar({ open, onClose, activeHref }: SidebarProps) {
           </span>
         </div>
 
-        <nav className="flex flex-col gap-1 p-2">
+        <nav className="flex flex-col gap-1 p-2 overflow-y-auto" role="navigation">
           {NAV_ITEMS.map((item) => {
             const isActive = activeHref === item.href;
             const Icon = item.icon;
@@ -46,15 +47,15 @@ export function Sidebar({ open, onClose, activeHref }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
-                className={`
-                  flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium
-                  transition-colors
-                  ${
-                    isActive
-                      ? 'border-l-2 border-accent bg-accent/10 text-accent'
-                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-                  }
-                `}
+                className={clsx(
+                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium',
+                  'transition-colors duration-150',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  isActive
+                    ? 'border-l-2 border-accent bg-accent/10 text-accent'
+                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                )}
+                aria-current={isActive ? 'page' : undefined}
               >
                 <Icon className="h-4 w-4 shrink-0" />
                 <span>{item.label}</span>

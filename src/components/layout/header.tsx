@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { LogOut, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/lib/auth-store';
+import { AlertBanner } from '@/components/dashboard/alert-banner';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -35,6 +36,8 @@ export function Header({ onMenuClick }: HeaderProps) {
       </span>
 
       <div className="ml-auto flex items-center gap-2">
+        <AlertBanner />
+
         <Button
           variant="ghost"
           size="sm"

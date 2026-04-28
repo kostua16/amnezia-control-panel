@@ -106,6 +106,22 @@ model Service {
   @@map("services")
 }
 
+// ─── ConfigTemplate ──────────────────────────────────
+
+model ConfigTemplate {
+  id          Int      @id @default(autoincrement())
+  name        String
+  serviceType ServiceType?
+  protocol    String
+  content     Json
+  description String   @default("")
+  isBuiltIn   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("config_templates")
+}
+
 // ─── Configuration ───────────────────────────────────
 
 model Configuration {

@@ -1,6 +1,14 @@
 @import 'tailwindcss';
 
 :root {
+  /* Brand colors */
+  --brand-primary: #3b82f6;
+  --brand-primary-hover: #2563eb;
+  --brand-success: #22c55e;
+  --brand-warning: #eab308;
+  --brand-danger: #ef4444;
+
+  /* Semantic colors */
   --background: #0f172a;
   --foreground: #f8fafc;
   --card: #1e293b;
@@ -12,6 +20,15 @@
   --accent-foreground: #ffffff;
   --ring: #3b82f6;
   --destructive: #ef4444;
+
+  /* Severity colors */
+  --severity-info: #3b82f6;
+  --severity-warning: #eab308;
+  --severity-critical: #ef4444;
+
+  /* Transition defaults */
+  --transition-fast: 150ms ease;
+  --transition-normal: 200ms ease;
 }
 
 @theme inline {
@@ -34,4 +51,54 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Smooth transitions for interactive elements */
+a,
+button,
+input,
+select,
+textarea {
+  transition: color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+/* Focus-visible styles for accessibility */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) var(--background);
+}
+
+/* Selection color */
+::selection {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
 }

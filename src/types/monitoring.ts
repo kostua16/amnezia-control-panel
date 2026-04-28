@@ -1,3 +1,68 @@
+// ─── Dashboard Stats ──────────────────────────────────
+
+export interface DashboardStats {
+  totalUsers: number;
+  activeUsers: number;
+  blockedUsers: number;
+  totalTrafficBytesIn: number;
+  totalTrafficBytesOut: number;
+  servicesOnline: number;
+  servicesTotal: number;
+}
+
+// ─── Traffic Buckets ──────────────────────────────────
+
+export interface TrafficBucket {
+  timestamp: string;
+  bytesIn: number;
+  bytesOut: number;
+  userCount: number;
+}
+
+export interface TrafficStatsResponse {
+  buckets: TrafficBucket[];
+  totalIn: number;
+  totalOut: number;
+}
+
+export interface TopUserTraffic {
+  userId: number;
+  username: string;
+  totalBytesIn: number;
+  totalBytesOut: number;
+  totalBytes: number;
+}
+
+// ─── System Resources ─────────────────────────────────
+
+export interface CpuInfo {
+  usage: number;
+  cores: number;
+}
+
+export interface MemoryInfo {
+  total: number;
+  used: number;
+  free: number;
+  percent: number;
+}
+
+export interface DiskInfo {
+  total: number;
+  used: number;
+  free: number;
+  percent: number;
+}
+
+export interface SystemResources {
+  cpu: CpuInfo;
+  memory: MemoryInfo;
+  disk: DiskInfo;
+  timestamp: string;
+}
+
+// ─── Legacy types (kept for backward compat) ──────────
+
 export interface TrafficLog {
   id: number;
   userId: number;

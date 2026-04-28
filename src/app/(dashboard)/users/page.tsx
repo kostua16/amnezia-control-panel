@@ -1,8 +1,15 @@
+import { UserList } from '@/components/users/user-list';
+
 export default function UsersPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold">Users</h1>
-      <p className="text-muted-foreground mt-2">User management — Phase 4.x</p>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Users</h1>
+        <p className="text-muted-foreground mt-1">
+          VPN user management and monitoring
+        </p>
+      </div>
+      <UserList />
     </div>
   );
 }

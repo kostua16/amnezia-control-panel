@@ -12,6 +12,7 @@ const PROTECTED_PATHS = [
   '/api/auth/me',
   '/api/auth/check',
   '/api/services',
+  '/api/alerts',
 ];
 
 function isProtectedPath(pathname: string): boolean {
@@ -63,5 +64,6 @@ export const config = {
     '/settings/:path*',
     '/api/auth/:path*',
     '/api/services/:path*',
+    '/api/alerts/:path*',
   ],
 };

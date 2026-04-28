@@ -16,6 +16,19 @@ export interface UserWithServices extends User {
   assignedServices: ServiceType[];
 }
 
+export interface UserListItem {
+  id: number;
+  username: string;
+  displayName: string | null;
+  isActive: boolean;
+  isBlocked: boolean;
+  trafficQuotaBytes: number;
+  speedLimitKbps: number;
+  assignedServices: ServiceType[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CreateUserPayload {
   username: string;
   password: string;
