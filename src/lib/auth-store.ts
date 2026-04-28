@@ -9,6 +9,7 @@ export interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  token: string | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -18,19 +19,32 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
   isLoading: false,
+  token: null,
 
-  login: async (username: string, _password: string) => {
-    // TODO: Phase 2.2 — real API call with credential validation
+  login: async (username: string, password: string) => {
     set({ isLoading: true });
     try {
-      // Placeholder: simulate successful login
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Login failed');
+      }
+
+      const { token, user } = await response.json();
       set({
-        user: { id: '1', username },
+        user,
+        token,
         isAuthenticated: true,
         isLoading: false,
       });
-    } catch {
+    } catch (error) {
       set({ isLoading: false });
+      throw error;
     }
   },
 
@@ -40,6 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       user: null,
       isAuthenticated: false,
       isLoading: false,
+      token: null,
     });
   },
 

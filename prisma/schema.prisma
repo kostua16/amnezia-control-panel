@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ─── Enums ───────────────────────────────────────────
+
+enum ServiceType {
+  AWG
+  THREE_XUI
+}
+
+enum ServiceStatus {
+  RUNNING
+  STOPPED
+  ERROR
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum QuotaPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum RoutingAction {
+  ALLOW
+  BLOCK
+  ROUTE
+}
+
+// ─── Admin ────────────────────────────────────────────
+
+model Admin {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  createdAt DateTime @default(now())
+
+  @@map("admins")
+}
+
+// ─── User ────────────────────────────────────────────
+
+model User {
+  id              Int       @id @default(autoincrement())
+  username        String    @unique
+  passwordHash    String
+  displayName     String?
+  isActive        Boolean   @default(true)
+  isBlocked       Boolean   @default(false)
+  trafficQuotaBytes Int     @default(0)
+  speedLimitKbps  Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  trafficLogs     TrafficLog[]
+  quotas          UserQuota[]
+  protocols       UserProtocol[]
+  routingRules    RoutingRule[]
+
+  @@map("users")
+}
+
+// ─── Server ──────────────────────────────────────────
+
+model Server {
+  id          Int      @id @default(autoincrement())
+  name        String
+  hostname    String
+  port        Int      @default(22)
+  apiKeyHash  String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  services     Service[]
+  trafficLogs  TrafficLog[]
+
+  @@map("servers")
+}
+
+// ─── Service ─────────────────────────────────────────
+
+model Service {
+  id            Int           @id @default(autoincrement())
+  type          ServiceType
+  status        ServiceStatus @default(STOPPED)
+  config        Json
+  port          Int?
+  lastCheckedAt DateTime?
+  createdAt     DateTime      @default(now())
+
+  server        Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  serverId      Int
+  configurations Configuration[]
+
+  @@map("services")
+}
+
+// ─── Configuration ───────────────────────────────────
+
+model Configuration {
+  id        Int      @id @default(autoincrement())
+  type      String
+  name      String
+  content   Json
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  service   Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  serviceId Int?
+
+  @@map("configurations")
+}
+
+// ─── TrafficLog ──────────────────────────────────────
+
+model TrafficLog {
+  id         Int      @id @default(autoincrement())
+  bytesIn    Int      @default(0)
+  bytesOut   Int      @default(0)
+  timestamp  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     Int
+  server     Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  serverId   Int
+
+  @@index([userId])
+  @@index([serverId])
+  @@index([timestamp])
+  @@map("traffic_logs")
+}
+
+// ─── RoutingRule ─────────────────────────────────────
+
+model RoutingRule {
+  id          Int           @id @default(autoincrement())
+  protocol    String
+  destination String
+  action      RoutingAction @default(ALLOW)
+  priority    Int           @default(0)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+
+  user        User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int?
+
+  @@index([userId])
+  @@index([priority])
+  @@map("routing_rules")
+}
+
+// ─── Alert ───────────────────────────────────────────
+
+model Alert {
+  id        Int           @id @default(autoincrement())
+  type      String
+  severity  AlertSeverity @default(INFO)
+  message   String
+  isRead    Boolean       @default(false)
+  createdAt DateTime      @default(now())
+
+  @@index([isRead])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("alerts")
+}
+
+// ─── UserQuota ───────────────────────────────────────
+
+model UserQuota {
+  id         Int          @id @default(autoincrement())
+  quotaBytes Int          @default(0)
+  period     QuotaPeriod  @default(MONTHLY)
+  resetAt    DateTime?
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     Int          @unique
+
+  @@map("user_quotas")
+}
+
+// ─── UserProtocol ────────────────────────────────────
+
+model UserProtocol {
+  id          Int         @id @default(autoincrement())
+  serviceType ServiceType
+  protocol    String
+  config      Json
+  isActive    Boolean     @default(true)
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int
+
+  @@unique([userId, serviceType])
+  @@index([userId])
+  @@map("user_protocols")
+}
