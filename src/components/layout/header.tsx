@@ -1,13 +1,23 @@
 'use client';
 
-import { Menu } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { LogOut, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuthStore } from '@/lib/auth-store';
 
 interface HeaderProps {
   onMenuClick: () => void;
 }
 
 export function Header({ onMenuClick }: HeaderProps) {
+  const router = useRouter();
+  const logout = useAuthStore((s) => s.logout);
+
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
+  };
+
   return (
     <header className="flex h-14 items-center border-b border-border bg-background px-4 lg:px-6">
       <Button
@@ -24,8 +34,16 @@ export function Header({ onMenuClick }: HeaderProps) {
         Amnezia Control Panel
       </span>
 
-      <div className="ml-auto">
-        {/* Placeholder for future status indicators / user avatar */}
+      <div className="ml-auto flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLogout}
+          aria-label="Log out"
+        >
+          <LogOut className="h-4 w-4" />
+          <span className="ml-2 hidden sm:inline">Log out</span>
+        </Button>
       </div>
     </header>
   );

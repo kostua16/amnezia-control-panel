@@ -49,7 +49,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    // TODO: Phase 2.5 — real API call to invalidate session/token
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Proceed with local state cleanup even if API call fails
+    }
     set({
       user: null,
       isAuthenticated: false,
