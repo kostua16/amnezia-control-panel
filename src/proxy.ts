@@ -27,10 +27,10 @@ function getJwtSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip middleware for non-protected paths
+  // Skip proxy for non-protected paths
   if (!isProtectedPath(pathname)) {
     return NextResponse.next();
   }
