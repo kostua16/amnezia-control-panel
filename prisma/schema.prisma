@@ -227,3 +227,35 @@ model UserProtocol {
   @@index([userId])
   @@map("user_protocols")
 }
+
+// ─── RemotePanel ─────────────────────────────────────
+
+model RemotePanel {
+  id          Int      @id @default(autoincrement())
+  name        String
+  panelUrl    String   @unique
+  apiKeyHash  String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  connectionHistory PanelConnectionHistory[]
+
+  @@map("remote_panels")
+}
+
+model PanelConnectionHistory {
+  id        Int      @id @default(autoincrement())
+  success   Boolean
+  latencyMs Int?
+  message   String
+  version   String?
+  checkedAt DateTime @default(now())
+
+  panel     RemotePanel @relation(fields: [panelId], references: [id], onDelete: Cascade)
+  panelId   Int
+
+  @@index([panelId])
+  @@index([checkedAt])
+  @@map("panel_connection_history")
+}
