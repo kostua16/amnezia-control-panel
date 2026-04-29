@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Multi-Panel Chain Routing
-status: planning
-stopped_at: context exhaustion at 75% (2026-04-29)
-last_updated: "2026-04-29T17:49:50.762Z"
-last_activity: 2026-04-29 -- Phase 11.1 complete (types, schema, TailscaleManager, setup/nodes/status APIs)
+status: in-progress
+stopped_at: Completed 11.3-03 (2026-04-30)
+last_updated: "2026-04-30T20:36:41Z"
+last_activity: 2026-04-30 -- 11.3-03 complete (Hybrid autonomy: fallback detection, auto-resync, push/status endpoints)
 progress:
   total_phases: 8
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 3
+  total_plans: 9
+  completed_plans: 9
   percent: 100
 ---
 
@@ -25,32 +25,34 @@ progress:
 
 ## Current Position
 
-Phase: 11.2 of 11.8 (Remote Panel Registration)
-Plan: 1 of 3 in current phase
-Status: Plan 11.2-01 complete
-Last activity: 2026-04-29 -- 11.2-01 complete (RemotePanel model, types, CRUD API routes)
+Phase: 11.3 of 11.8 (Panel Sync Protocol)
+Plan: 3 of 3 in current phase
+Status: Plan 11.3-03 complete
+Last activity: 2026-04-30 -- 11.3-03 complete (Hybrid autonomy: fallback detection, auto-resync, push/status endpoints)
 
-Progress: [██░░░░░░░░] 15%
+Progress: [█████░░░░] 38%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 1 (v1.1)
-- Average duration: 7min
-- Total execution time: 7min
+- Total plans completed: 9 (v1.1)
+- Average duration: 5min
+- Total execution time: 44min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 11.1 | 1 | 7min | 7min |
-| 11.2-11.8 | -- | -- | -- |
+| 11.2 | 3 | 25min | 8min |
+| 11.3 | 3 | 12min | 4min |
+| 11.4-11.8 | -- | -- | -- |
 
 **Recent Trend:**
 
-- Last 5 plans: 11.1-01 (7min)
-- Trend: --
+- Last 5 plans: 11.3-01 (3min), 11.3-02 (8min), 11.3-03 (1min)
+- Trend: improving
 
 *Updated after each plan completion*
 
@@ -67,6 +69,7 @@ Recent decisions affecting current work:
 - v1.1: MaxMind GeoIP2 Lite for geo-routing (decision needed during Phase 11.5 planning)
 - 11.1-01: advertisedSubnets stored as JSON-encoded String (SQLite Prisma connector does not support String[])
 - 11.1-01: toNodeInfo strips PublicKey per T-11.1-02 information disclosure mitigation
+- 11.3-03: API keys cached in volatile memory only (Map) for auto-resync, never persisted to DB
 
 ### Pending Todos
 
@@ -87,7 +90,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-29T17:49:50.757Z
+Last session: 2026-04-29T19:05:36.390Z
 Stopped at: context exhaustion at 75% (2026-04-29)
 Resume file: None
 
