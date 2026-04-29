@@ -7,6 +7,10 @@ export interface Server {
   port: number;
   isActive: boolean;
   connectionStatus?: ServerConnectionStatus;
+  tailnetIP?: string;
+  tailnetHostname?: string;
+  dnsName?: string;
+  advertisedSubnets?: string[];
   createdAt: Date;
 }
 
@@ -24,6 +28,10 @@ export interface ServerCreate {
   hostname: string;
   port?: number;
   apiKey: string;
+  tailnetIP?: string;
+  tailnetHostname?: string;
+  dnsName?: string;
+  advertisedSubnets?: string[];
 }
 
 export interface ServerUpdate {
@@ -32,6 +40,10 @@ export interface ServerUpdate {
   port?: number;
   apiKey?: string;
   isActive?: boolean;
+  tailnetIP?: string;
+  tailnetHostname?: string;
+  dnsName?: string;
+  advertisedSubnets?: string[];
 }
 
 export interface ServerTestResult {
