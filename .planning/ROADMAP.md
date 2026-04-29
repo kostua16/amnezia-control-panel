@@ -121,7 +121,7 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 11.2-01-PLAN.md -- RemotePanel Prisma model, TypeScript types, and CRUD API routes (Wave 1)
+- [x] 11.2-01-PLAN.md -- RemotePanel Prisma model, TypeScript types, and CRUD API routes (Wave 1)
 - [ ] 11.2-02-PLAN.md -- Connectivity test endpoint and real-time status monitoring (Wave 2)
 - [ ] 11.2-03-PLAN.md -- Remote panel management UI: register, edit, remove, status display, details drawer (Wave 2)
 
@@ -293,7 +293,7 @@ Phases execute in numeric order: 11.1 → 11.2 → 11.3 → 11.4 → 11.5 → 11
 | 10.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
 | 10.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
 | 11.1 | v1.1 | 3/3 | Complete | 2026-04-29 |
-| 11.2 | v1.1 | 0/3 | Not started | - |
+| 11.2 | v1.1 | 1/3 | In progress | 2026-04-29 |
 | 11.3 | v1.1 | 0/3 | Not started | - |
 | 11.4 | v1.1 | 0/4 | Not started | - |
 | 11.5 | v1.1 | 0/5 | Not started | - |
