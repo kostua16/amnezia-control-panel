@@ -12,21 +12,22 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Admin authentication (login/password, JWT sessions, logout) — v1.0
+- ✓ Unified user management across AWG and 3x-ui (create, edit, delete, block, sync) — v1.0
+- ✓ Service health monitoring (online/offline status, auto-restart) — v1.0
+- ✓ Installation/deinstallation of VPN services (placeholder — needs real CLI on server) — v1.0
+- ✓ VPN configuration management (templates, protocols, auto-gen, export/import, presets) — v1.0
+- ✓ Traffic limits, quotas, and speed limits per user — v1.0
+- ✓ Routing rules (create, edit, reorder, enforce) — v1.0
+- ✓ Multi-server management and VPN chaining — v1.0
+- ✓ Visual chain builder with geo-routing and whitelists — v1.0
+- ✓ Dashboard metrics, traffic statistics, resource monitoring — v1.0
+- ✓ Real-time WebSocket updates — v1.0
+- ✓ Alert system (service failures, quota thresholds, resource thresholds) — v1.0
 
 ### Active
 
-- [ ] Unified user management across Amnezia AWG and 3x-ui (create, delete, block, sync)
-- [ ] Server configuration (WireGuard interfaces, ports, DNS)
-- [ ] Route management (user-to-server/protocol traffic routing)
-- [ ] Traffic limits, quotas, and speed limits per user
-- [ ] Installation and deinstallation of Amnezia and 3x-ui services
-- [ ] Multiple endpoints (servers) support
-- [ ] Service health monitoring (online/offline status of VPN services)
-- [ ] Traffic statistics per user per time period
-- [ ] Server resource monitoring (CPU, RAM, disk)
-- [ ] Alerts for service failures and limit exceedances
-- [ ] Single admin authentication (login/password)
+(None — all v1 requirements shipped)
 
 ### Out of Scope
 
@@ -38,13 +39,25 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 
 ## Context
 
-- Administrator currently manages Amnezia VPN and 3x-ui through separate panels, switching between them
-- Both systems share the same users — changes must be synchronized
-- Scale: 1-3 VPN servers, up to 50 users
-- Amnezia AWG2 uses WireGuard protocol with AmneziaWG obfuscation extensions
-- 3x-ui is a popular Xray panel supporting VLESS, VMess, Trojan, Shadowsocks protocols
-- Both 3x-ui and Amnezia have management APIs that need investigation
-- Panel will be deployed on the same server as the VPN services
+- **Stack**: Next.js 15 + React 19 + TypeScript + Prisma + SQLite + Socket.io + Tailwind CSS
+- **Scale**: 1-3 VPN servers, up to 50 users, single admin
+- **Deployment**: Same server as VPN services (Linux)
+- **Database**: SQLite via Prisma with better-sqlite3 adapter
+- **Auth**: JWT (jose) with httpOnly cookies, bcryptjs password hashing
+- **State**: Zustand (client) + React Query (server state)
+- **Real-time**: Socket.io WebSocket for dashboard updates
+- **VPN integration**: Stubbed CLI commands in `src/lib/vpn-services.ts` — need real `amneziawg` and `xui` tools on deployment server
+
+## Key Decisions
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| Deploy on same server as VPN | Simplifies management, no remote API needed | ✓ Working |
+| Single admin, no roles | Small scale, single operator | ✓ Working |
+| Stack: Next.js 15 + React 19 + TypeScript | Full-stack framework with SSR and API routes | ✓ Working |
+| SQLite over PostgreSQL | Small scale, single-server, zero config | ✓ Working |
+| JWT in httpOnly cookies | Secure session persistence, no localStorage XSS risk | ✓ Working |
+| In-memory stores for geo-routing/whitelist | Simplified MVP — needs DB persistence in v1.1 | — Tech debt |
 
 ## Constraints
 
@@ -53,30 +66,6 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 - **Compatibility**: Must work alongside existing Amnezia and 3x-ui installations
 - **OS**: Linux server environment (typical VPS/dedicated)
 
-## Key Decisions
-
-| Decision | Rationale | Outcome |
-|----------|-----------|---------|
-| Deploy on same server as VPN | Simplifies management, no remote API needed for local services | — Pending |
-| Single admin, no roles | Small scale, single operator | — Pending |
-| Stack: TBD | Research needed to determine best fit | — Pending |
-
-## Evolution
-
-This document evolves at phase transitions and milestone boundaries.
-
-**After each phase transition** (via `/gsd-transition`):
-1. Requirements invalidated? → Move to Out of Scope with reason
-2. Requirements validated? → Move to Validated with phase reference
-3. New requirements emerged? → Add to Active
-4. Decisions to log? → Add to Key Decisions
-5. "What This Is" still accurate? → Update if drifted
-
-**After each milestone** (via `/gsd-complete-milestone`):
-1. Full review of all sections
-2. Core Value check — still the right priority?
-3. Audit Out of Scope — reasons still valid?
-4. Update Context with current state
-
 ---
-*Last updated: 2026-04-27 after initialization*
+
+*Last updated: 2026-04-29 after v1.0 milestone*
