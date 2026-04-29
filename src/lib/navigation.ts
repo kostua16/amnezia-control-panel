@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Users,
   Server,
+  Monitor,
   Settings,
   Activity,
   Shield,
@@ -22,5 +23,6 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Config', href: '/config', icon: SlidersHorizontal },
   { label: 'Monitoring', href: '/monitoring', icon: Activity },
   { label: 'Servers', href: '/servers', icon: Server },
+  { label: 'Panels', href: '/panels', icon: Monitor },
   { label: 'Settings', href: '/settings', icon: Settings },
 ];
