@@ -96,7 +96,7 @@ async function triggerAutoResync(panelId: number, panelName: string): Promise<vo
     const panel = await prisma.remotePanel.findUnique({ where: { id: panelId } });
     if (!panel) return;
 
-    const payload = cachedConfig.config as PanelSyncPayload;
+    const payload = cachedConfig.config as unknown as PanelSyncPayload;
     const result = await pushConfigToPanel(
       { id: panel.id, name: panel.name, panelUrl: panel.panelUrl, apiKey: cachedApiKey },
       payload,

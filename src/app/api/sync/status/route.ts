@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch cached config from DB
     const cachedConfig = await prisma.cachedPanelConfig.findUnique({
-      where: { panelId },
+      where: { panelId: panelId ?? 0 },
     });
 
     if (!cachedConfig) {
