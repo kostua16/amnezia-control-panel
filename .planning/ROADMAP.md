@@ -138,9 +138,9 @@ Plans:
 **Plans**: 3 plans (2 waves)
 
 Plans:
-- [ ] 11.3-01: PanelSyncClient (HTTP push with retry, HMAC signatures, per-panel status)
-- [ ] 11.3-02: PanelSyncReceiver API routes (receive, validate, and acknowledge pushed configs)
-- [ ] 11.3-03: Hybrid autonomy — local config caching, fallback mode, and automatic resync
+- [ ] 11.3-01-PLAN.md -- PanelSyncClient types, HMAC utility, and config push with retry (Wave 1)
+- [ ] 11.3-02-PLAN.md -- CachedPanelConfig model and sync receive API route (Wave 1)
+- [ ] 11.3-03-PLAN.md -- Hybrid autonomy: fallback detection, auto-resync, push/status endpoints (Wave 2)
 
 ### Phase 11.4: Chain Config Application & Push UX
 **Goal**: Pushed chain configurations are actually applied to AWG and 3x-ui services on remote servers, with diff preview, rollback, and actionable error reporting.
@@ -308,4 +308,4 @@ v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-04-29 - Phase 11.2 plans created*
+*Last updated: 2026-04-30 - Phase 11.3 plans created*
