@@ -114,12 +114,47 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| TSCL-01 | Phase 11.1 | Pending |
+| TSCL-02 | Phase 11.1 | Pending |
+| TSCL-03 | Phase 11.1 | Pending |
+| TSCL-04 | Phase 11.1 | Pending |
+| MPAN-01 | Phase 11.2 | Pending |
+| MPAN-02 | Phase 11.2 | Pending |
+| MPAN-03 | Phase 11.2 | Pending |
+| MPAN-04 | Phase 11.2 | Pending |
+| CPUSH-01 | Phase 11.3 | Pending |
+| CPUSH-02 | Phase 11.3 | Pending |
+| CPUSH-03 | Phase 11.3 | Pending |
+| HAUT-01 | Phase 11.3 | Pending |
+| HAUT-02 | Phase 11.3 | Pending |
+| HAUT-03 | Phase 11.3 | Pending |
+| CPUSH-04 | Phase 11.4 | Pending |
+| CPUSH-05 | Phase 11.4 | Pending |
+| CPUSH-06 | Phase 11.4 | Pending |
+| CHAIN-01 | Phase 11.4 | Pending |
+| CHAIN-02 | Phase 11.4 | Pending |
+| CHAIN-03 | Phase 11.4 | Pending |
+| GEO-01 | Phase 11.5 | Pending |
+| GEO-02 | Phase 11.5 | Pending |
+| GEO-03 | Phase 11.5 | Pending |
+| GEO-04 | Phase 11.5 | Pending |
+| RULE-01 | Phase 11.5 | Pending |
+| RULE-02 | Phase 11.5 | Pending |
+| RULE-03 | Phase 11.5 | Pending |
+| VISED-01 | Phase 11.6 | Pending |
+| VISED-02 | Phase 11.6 | Pending |
+| VISED-03 | Phase 11.6 | Pending |
+| TMPL-01 | Phase 11.7 | Pending |
+| TMPL-02 | Phase 11.7 | Pending |
+| TMPL-03 | Phase 11.7 | Pending |
+| TMPL-04 | Phase 11.7 | Pending |
+| DASH-01 | Phase 11.8 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27 ⚠️
+- v1.1 requirements: 35 total
+- Mapped to phases: 35
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-29*
-*Last updated: 2026-04-29 after initial definition*
+*Last updated: 2026-04-29 after v1.1 roadmap creation*

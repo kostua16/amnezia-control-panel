@@ -3,8 +3,15 @@
 ## Milestones
 
 - ✅ **v1.0** — Phases 1.1-10.4 (shipped 2026-04-29)
+- 🚧 **v1.1 Multi-Panel Chain Routing** — Phases 11.1-11.8 (in progress)
 
 ## Phases
+
+**Phase Numbering:**
+- Integer phases (1, 2, 3): Planned milestone work
+- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+
+Decimal phases appear between their surrounding integers in numeric order.
 
 <details>
 <summary>✅ v1.0 (Phases 1.1-10.4) — SHIPPED 2026-04-29</summary>
@@ -70,11 +77,236 @@
 
 </details>
 
+### 🚧 v1.1 Multi-Panel Chain Routing (In Progress)
+
+**Milestone Goal:** Support multi-panel server chains with geo-routing, Tailscale transport, and pre-configuration templates — central push model with hybrid autonomy.
+
+- [ ] **Phase 11.1: Tailscale Foundation** - Subnet router setup, Tailscale node discovery, transport layer for inter-panel communication
+- [ ] **Phase 11.2: Remote Panel Registration** - Register, test, monitor, and manage remote panels from central panel
+- [ ] **Phase 11.3: Panel Sync Protocol & Hybrid Autonomy** - Config push transport, local config caching, and autonomous fallback
+- [ ] **Phase 11.4: Chain Config Application & Push UX** - Real config push to AWG/3x-ui services, diff preview, rollback, error reporting
+- [ ] **Phase 11.5: Geo-Routing & Routing Rules** - Persisted geo-routing rules, GeoIP lookups, routing rule CRUD with templates
+- [ ] **Phase 11.6: Visual Chain Editor** - Drag-and-drop chain topology with panel boundaries and inline rule editing
+- [ ] **Phase 11.7: Pre-Configuration Templates** - VPN protocol, server, routing, and chain presets
+- [ ] **Phase 11.8: Multi-Panel Dashboard** - Central health dashboard aggregating status from all remote panels
+
+## Phase Details
+
+### Phase 11.1: Tailscale Foundation
+**Goal**: Each server runs Tailscale as a subnet router, enabling encrypted mesh connectivity between all panels as the transport layer for all inter-panel communication.
+**Depends on**: v1.0 (Phase 10.4)
+**Requirements**: TSCL-01, TSCL-02, TSCL-03, TSCL-04
+**Success Criteria** (what must be TRUE):
+  1. Admin can configure Tailscale subnet router on any server following step-by-step documentation
+  2. Central panel lists all Tailscale nodes in the tailnet with their IPs, hostnames, and online status
+  3. Panel uses Tailscale IPs (not public IPs) as transport addresses for all inter-panel API calls
+  4. Each server's VPN subnet is properly advertised and reachable from other nodes in the tailnet
+**Plans**: TBD
+
+Plans:
+- [ ] 11.1-01: Tailscale subnet router documentation and setup verification
+- [ ] 11.1-02: TailscaleManager utility (node listing, status checks, reachability)
+- [ ] 11.1-03: Tailscale IP-based transport address resolution for inter-panel communication
+
+### Phase 11.2: Remote Panel Registration
+**Goal**: Admin can register, test connectivity to, monitor, and manage remote panels from the central panel, forming the multi-panel topology.
+**Depends on**: Phase 11.1
+**Requirements**: MPAN-01, MPAN-02, MPAN-03, MPAN-04
+**Success Criteria** (what must be TRUE):
+  1. Admin can add a remote panel by providing Tailscale IP, panel URL, and auth credentials
+  2. Admin can run a connectivity test that confirms the remote panel is reachable and authenticated
+  3. Central panel displays real-time connection status (connected/offline/error) for each registered remote panel
+  4. Admin can edit panel details and remove panels that are no longer in use
+**Plans**: TBD
+**UI hint**: yes
+
+Plans:
+- [ ] 11.2-01: RemotePanel Prisma model and CRUD API routes
+- [ ] 11.2-02: Connectivity test endpoint and real-time status monitoring
+- [ ] 11.2-03: Remote panel management UI (register, edit, remove, status display)
+
+### Phase 11.3: Panel Sync Protocol & Hybrid Autonomy
+**Goal**: Central panel can push configurations to remote panels over the Tailscale mesh, and remote panels cache their last-known-good config to operate autonomously when central is unreachable.
+**Depends on**: Phase 11.2
+**Requirements**: CPUSH-01, CPUSH-02, CPUSH-03, HAUT-01, HAUT-02, HAUT-03
+**Success Criteria** (what must be TRUE):
+  1. Central panel can push chain configuration to all registered remote panels and receive per-panel success/failed status
+  2. Central panel generates per-panel chain config based on each panel's role in the chain topology
+  3. Remote panels cache their last-known-good configuration locally in SQLite
+  4. When central panel becomes unreachable, remote panels continue operating on their cached configuration
+  5. Config sync resumes automatically when central connection is restored
+**Plans**: TBD
+
+Plans:
+- [ ] 11.3-01: PanelSyncClient (HTTP push with retry, HMAC signatures, per-panel status)
+- [ ] 11.3-02: PanelSyncReceiver API routes (receive, validate, and acknowledge pushed configs)
+- [ ] 11.3-03: Hybrid autonomy — local config caching, fallback mode, and automatic resync
+
+### Phase 11.4: Chain Config Application & Push UX
+**Goal**: Pushed chain configurations are actually applied to AWG and 3x-ui services on remote servers, with diff preview, rollback, and actionable error reporting.
+**Depends on**: Phase 11.3
+**Requirements**: CPUSH-04, CPUSH-05, CPUSH-06, CHAIN-01, CHAIN-02, CHAIN-03
+**Success Criteria** (what must be TRUE):
+  1. Pushed chain config is applied to AWG services via CLI commands over Tailscale and to 3x-ui via its REST API
+  2. Admin can preview a config diff before pushing to see exactly what will change on each remote panel
+  3. Admin can roll back a pushed configuration on any remote panel to its previous known-good state with one click
+  4. Push errors display actionable recommendations and known fixes for common failure modes
+**Plans**: TBD
+**UI hint**: yes
+
+Plans:
+- [ ] 11.4-01: Real applyChainConfig — AWG via CLI over Tailscale, 3x-ui via REST API
+- [ ] 11.4-02: Config diff preview generation and display
+- [ ] 11.4-03: Rollback mechanism (previous config storage and one-click restore)
+- [ ] 11.4-04: Push error reporting with recommendations, known fixes, and best practices
+
+### Phase 11.5: Geo-Routing & Routing Rules
+**Goal**: Geo-routing rules are persisted to SQLite, traffic is routed based on destination geo via GeoIP lookup, and routing rules support full CRUD with template presets.
+**Depends on**: Phase 11.4
+**Requirements**: GEO-01, GEO-02, GEO-03, GEO-04, RULE-01, RULE-02, RULE-03
+**Success Criteria** (what must be TRUE):
+  1. Geo-routing rules are persisted to SQLite and survive panel restarts (replacing v1.0 in-memory stores)
+  2. Admin can create, edit, delete, and reorder routing rules with priority, match conditions (IP/host/geo), and actions (direct/chain/block)
+  3. Traffic is routed to specific chain hops based on destination country via GeoIP lookup
+  4. Admin can load routing rule files from v2fly/geoip and sendmiche/rulite repositories for auto-population
+  5. Routing rule templates with best-practice defaults are available for quick configuration
+**Plans**: TBD
+
+Plans:
+- [ ] 11.5-01: Geo-routing SQLite persistence (Prisma model, migration from v1.0 in-memory stores)
+- [ ] 11.5-02: GeoIP integration and geo-aware chain selection
+- [ ] 11.5-03: Routing rules CRUD with priority, match conditions, and actions
+- [ ] 11.5-04: External geo rule file loading (v2fly/geoip, sendmiche/rulite)
+- [ ] 11.5-05: Routing rule templates with best-practice defaults
+
+### Phase 11.6: Visual Chain Editor
+**Goal**: Admin can visually build and edit chain topology with drag-and-drop, see panel boundaries, and edit routing rules inline within the editor.
+**Depends on**: Phase 11.2 (panel registration), Phase 11.5 (routing rules)
+**Requirements**: VISED-01, VISED-02, VISED-03
+**Success Criteria** (what must be TRUE):
+  1. Admin can build chain topology by placing and connecting nodes with drag-and-drop
+  2. Chain editor displays clear panel boundaries showing which panel owns which nodes
+  3. Admin can edit routing rules inline within the chain editor without navigating to a separate page
+**Plans**: TBD
+**UI hint**: yes
+
+Plans:
+- [ ] 11.6-01: Drag-and-drop chain topology builder with node placement
+- [ ] 11.6-02: Panel boundary visualization (which panel owns which nodes)
+- [ ] 11.6-03: Inline routing rule editing within the chain editor
+
+### Phase 11.7: Pre-Configuration Templates
+**Goal**: Admin can use pre-built templates for VPN protocols, server configurations, routing rule bundles, and complete chain presets to speed up multi-panel setup.
+**Depends on**: Phase 11.4 (chain push), Phase 11.5 (geo-routing)
+**Requirements**: TMPL-01, TMPL-02, TMPL-03, TMPL-04
+**Success Criteria** (what must be TRUE):
+  1. Admin can select from VPN protocol templates (VLESS-REALITY, Hysteria2, TUIC, and existing protocols) when configuring a node
+  2. Admin can apply server presets for common VPS providers and OS configurations to new panels
+  3. Admin can use routing presets (geo rule bundles like Russia Direct, EU Privacy, Full Tunnel) to populate routing rules
+  4. Admin can use chain presets that combine chain topology, protocols, and routing rules into a single apply operation
+**Plans**: TBD
+
+Plans:
+- [ ] 11.7-01: VPN protocol templates (VLESS-REALITY, Hysteria2, TUIC, existing protocols)
+- [ ] 11.7-02: Server presets (VPS provider defaults, OS configurations)
+- [ ] 11.7-03: Routing presets (geo rule bundles: Russia Direct, EU Privacy, Full Tunnel)
+- [ ] 11.7-04: Chain presets (topology + protocols + routing rules combined)
+
+### Phase 11.8: Multi-Panel Dashboard
+**Goal**: Central health dashboard aggregates service status, traffic metrics, and alerts from all remote panels into a single overview.
+**Depends on**: Phase 11.3 (sync protocol), Phase 11.2 (panel registration)
+**Requirements**: DASH-01
+**Success Criteria** (what must be TRUE):
+  1. Dashboard displays aggregated service status (online/offline/error) for every registered remote panel
+  2. Dashboard shows traffic metrics and resource usage pulled from all remote panels in real time
+  3. Dashboard surfaces alerts (service failures, quota thresholds, resource thresholds) from all panels in a unified view
+**Plans**: TBD
+**UI hint**: yes
+
+Plans:
+- [ ] 11.8-01: Multi-panel status aggregation API (collect metrics from all remote panels)
+- [ ] 11.8-02: Central dashboard UI with per-panel status, traffic, and alert aggregation
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 11.1 → 11.2 → 11.3 → 11.4 → 11.5 → 11.6 → 11.7 → 11.8
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 1.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 1.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 1.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 1.5 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 1.6 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 1.7 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 2.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 2.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 2.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 2.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 2.5 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 3.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 3.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 3.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 3.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 3.5 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 3.6 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 3.7 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 4.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 4.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 4.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 4.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 4.5 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 4.6 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 4.7 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 4.8 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 4.9 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 5.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 5.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 5.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 5.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 5.5 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 5.6 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 5.7 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 6.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 6.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 6.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 6.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 6.5 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 7.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 7.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 7.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 7.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 7.5 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 7.6 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 8.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 8.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 8.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 8.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 9.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 9.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 9.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 9.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 10.1 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 10.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 10.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 10.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
+| 11.1 | v1.1 | 0/3 | Not started | - |
+| 11.2 | v1.1 | 0/3 | Not started | - |
+| 11.3 | v1.1 | 0/3 | Not started | - |
+| 11.4 | v1.1 | 0/4 | Not started | - |
+| 11.5 | v1.1 | 0/5 | Not started | - |
+| 11.6 | v1.1 | 0/3 | Not started | - |
+| 11.7 | v1.1 | 0/4 | Not started | - |
+| 11.8 | v1.1 | 0/2 | Not started | - |
+
 ## Coverage
 
-✓ All 42 v1 requirements mapped and shipped
+v1.0: All 42 requirements mapped and shipped
+v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 
 ---
 
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-04-29 - v1.0 milestone complete*
+*Last updated: 2026-04-29 - v1.1 roadmap created*
