@@ -79,6 +79,10 @@ model Server {
   hostname    String
   port        Int      @default(22)
   apiKeyHash  String
+  tailnetIP        String?
+  tailnetHostname  String?
+  dnsName          String?
+  advertisedSubnets String   @default("[]")
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
