@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: v1.0
-status: Shipped
+milestone: v1.1
+milestone_name: v1.1 Multi-Panel Chain Routing
+status: planning
 last_updated: "2026-04-29T12:00:00.000Z"
 progress:
-  total_phases: 47
-  completed_phases: 47
-  total_plans: 47
-  completed_plans: 47
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Amnezia Control Panel - Project State
@@ -18,14 +18,15 @@ progress:
 
 **Project**: Amnezia Control Panel
 **Core Value**: One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui, no context switching
-**Current Focus**: v1.0 shipped — planning next milestone
-**Current Position**: v1.0 complete, ready for v1.1
+**Current Focus**: v1.1 Multi-Panel Chain Routing
+**Current Position**: Defining requirements
 
 ## Current Position
 
-**Status**: v1.0 SHIPPED 2026-04-29
-**Phases**: 47/47 complete
-**Requirements**: 42/42 verified complete
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-29 — Milestone v1.1 started
 
 ## Quick Tasks Completed
 
@@ -42,5 +43,4 @@ None.
 ---
 
 *State initialized: 2026-04-27*
-*Last updated: 2026-04-29 - v1.0 milestone complete*
-*Next action: /gsd-new-milestone for v1.1*
+*Last updated: 2026-04-29 - v1.1 milestone started*

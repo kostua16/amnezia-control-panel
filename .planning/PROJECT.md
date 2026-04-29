@@ -8,6 +8,16 @@ Unified admin control panel for managing Amnezia AWG2 (AmneziaVPN WireGuard) and
 
 One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui, no context switching between separate management interfaces.
 
+## Current Milestone: v1.1 Multi-Panel Chain Routing
+
+**Goal:** Поддержка цепочек серверов через несколько admin-панелей с geo-routing по IP/host/geo, Tailscale как transport, и шаблоны предконфигурации.
+
+**Target features:**
+- Multi-panel chain routing с central push конфигурации на промежуточные панели
+- Hybrid model — центральная панель координирует, локальные панели автономны
+- Tailscale subnet router интеграция как transport между панелями
+- Templates — VPN-протоколы, серверные пресеты, routing presets
+
 ## Requirements
 
 ### Validated
@@ -27,7 +37,11 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 
 ### Active
 
-(None — all v1 requirements shipped)
+- [ ] Multi-panel chain registration and management
+- [ ] Central push of chain configuration to remote panels
+- [ ] Geo-routing across chained servers (IP/host/geo based)
+- [ ] Tailscale subnet router integration
+- [ ] Pre-configuration templates (VPN, server, routing)
 
 ### Out of Scope
 
@@ -47,6 +61,7 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 - **State**: Zustand (client) + React Query (server state)
 - **Real-time**: Socket.io WebSocket for dashboard updates
 - **VPN integration**: Stubbed CLI commands in `src/lib/vpn-services.ts` — need real `amneziawg` and `xui` tools on deployment server
+- **v1.1 focus**: Multi-panel chain routing, Tailscale subnet router, pre-configuration templates
 
 ## Key Decisions
 
@@ -57,7 +72,10 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 | Stack: Next.js 15 + React 19 + TypeScript | Full-stack framework with SSR and API routes | ✓ Working |
 | SQLite over PostgreSQL | Small scale, single-server, zero config | ✓ Working |
 | JWT in httpOnly cookies | Secure session persistence, no localStorage XSS risk | ✓ Working |
-| In-memory stores for geo-routing/whitelist | Simplified MVP — needs DB persistence in v1.1 | — Tech debt |
+| In-memory stores for geo-routing/whitelist | Simplified MVP — needs DB persistence in v1.2 | — Tech debt |
+| Tailscale as chain transport | Private mesh between panels, zero-config networking, built-in auth | ✓ Chosen for v1.1 |
+| Central push model | Central panel pushes chain config to remote panels via API | ✓ Chosen for v1.1 |
+| Hybrid multi-panel model | Central coordination + local autonomy | ✓ Chosen for v1.1 |
 
 ## Constraints
 
@@ -66,6 +84,23 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 - **Compatibility**: Must work alongside existing Amnezia and 3x-ui installations
 - **OS**: Linux server environment (typical VPS/dedicated)
 
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
 ---
 
-*Last updated: 2026-04-29 after v1.0 milestone*
+*Last updated: 2026-04-29 after v1.1 milestone start*
