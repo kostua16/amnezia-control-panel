@@ -259,3 +259,20 @@ model PanelConnectionHistory {
   @@index([checkedAt])
   @@map("panel_connection_history")
 }
+
+// --- CachedPanelConfig ---
+
+model CachedPanelConfig {
+  id            Int      @id @default(autoincrement())
+  /** Remote panel ID this config belongs to (null = this panel's own cached config) */
+  panelId       Int?
+  /** Monotonically increasing config version from central */
+  configVersion Int
+  /** The full config JSON payload */
+  config        Json
+  /** ISO timestamp when this config was received */
+  receivedAt    DateTime @default(now())
+
+  @@unique([panelId])
+  @@map("cached_panel_configs")
+}
