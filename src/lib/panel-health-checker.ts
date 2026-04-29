@@ -1,13 +1,116 @@
 import { prisma } from '@/lib/prisma';
+import { broadcastEvent } from '@/lib/websocket';
 import type { PanelTestResult, PanelConnectionRecord } from '@/types/remote-panel';
+import type { PanelSyncPayload } from '@/types/panel-sync';
 
 // ─── Types ──────────────────────────────────────────────
 
 export type PanelConnectionStatus = 'connected' | 'degraded' | 'offline' | 'unknown';
 
+// ─── Fallback Detection State ───────────────────────────
+
+/** Track consecutive health check failures per panel for fallback detection */
+const consecutiveFailures = new Map<number, number>();
+/** Track which panels are currently in fallback mode */
+const fallbackPanels = new Set<number>();
+/** In-memory cache of plaintext API keys for auto-resync. Populated on manual push. */
+const panelApiKeyCache = new Map<number, string>();
+
 // ─── Health Check Interval ──────────────────────────────
 
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+
+// ─── Fallback Status Queries ────────────────────────────
+
+/**
+ * Check if a panel is currently in fallback mode.
+ */
+export function isPanelInFallback(panelId: number): boolean {
+  return fallbackPanels.has(panelId);
+}
+
+/**
+ * Get all panels currently in fallback mode.
+ */
+export function getFallbackPanels(): number[] {
+  return Array.from(fallbackPanels);
+}
+
+/**
+ * Cache a panel's API key for auto-resync use.
+ * Called when admin triggers a manual push (which provides the plaintext key).
+ */
+export function cachePanelApiKey(panelId: number, apiKey: string): void {
+  panelApiKeyCache.set(panelId, apiKey);
+}
+
+/**
+ * Remove a panel's cached API key (e.g., when panel is deleted).
+ */
+export function removePanelApiKey(panelId: number): void {
+  panelApiKeyCache.delete(panelId);
+}
+
+// ─── WebSocket Fallback Broadcast ───────────────────────
+
+function broadcastFallbackStatusChange(panelId: number, panelName: string, isFallback: boolean): void {
+  broadcastEvent('panel:fallback-change', {
+    panelId,
+    panelName,
+    isFallback,
+    message: isFallback
+      ? `Panel "${panelName}" is running on cached config (central unreachable)`
+      : `Panel "${panelName}" reconnected -- sync resumed`,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+// ─── Auto-Resync ────────────────────────────────────────
+
+/**
+ * Trigger auto-resync to a remote panel that just came back online.
+ * Fetches the latest cached config, generates per-panel config, and pushes.
+ * Runs asynchronously, errors are logged but do not propagate.
+ */
+async function triggerAutoResync(panelId: number, panelName: string): Promise<void> {
+  try {
+    // Import dynamically to avoid circular dependency at module load
+    const { pushConfigToPanel } = await import('@/lib/panel-sync-client');
+
+    const cachedApiKey = panelApiKeyCache.get(panelId);
+    if (!cachedApiKey) {
+      console.warn(`[panel-health] Auto-resync skipped for panel ${panelId}: no cached API key. Admin must trigger manual push first.`);
+      return;
+    }
+
+    // Fetch latest cached config for this panel
+    const cachedConfig = await prisma.cachedPanelConfig.findUnique({
+      where: { panelId },
+    });
+
+    if (!cachedConfig) {
+      console.warn(`[panel-health] Auto-resync skipped for panel ${panelId}: no cached config found`);
+      return;
+    }
+
+    const panel = await prisma.remotePanel.findUnique({ where: { id: panelId } });
+    if (!panel) return;
+
+    const payload = cachedConfig.config as PanelSyncPayload;
+    const result = await pushConfigToPanel(
+      { id: panel.id, name: panel.name, panelUrl: panel.panelUrl, apiKey: cachedApiKey },
+      payload,
+    );
+
+    if (result.success) {
+      console.log(`[panel-health] Auto-resync succeeded for panel ${panelId}: configVersion=${result.configVersion}`);
+    } else {
+      console.error(`[panel-health] Auto-resync failed for panel ${panelId}: ${result.error}`);
+    }
+  } catch (err) {
+    console.error(`[panel-health] Auto-resync error for panel ${panelId}:`, err);
+  }
+}
 
 // ─── Test Panel ─────────────────────────────────────────
 
@@ -135,6 +238,7 @@ export async function getPanelStatus(panelId: number): Promise<{
 /**
  * Start periodic health checks for all active remote panels.
  * Runs every 30 seconds. Safe to call multiple times (guard prevents double-start).
+ * Includes fallback detection (3 consecutive failures) and auto-resync on recovery.
  */
 export function startPanelHealthChecks(): void {
   if (healthCheckInterval) return;
@@ -147,7 +251,31 @@ export function startPanelHealthChecks(): void {
 
       for (const panel of panels) {
         try {
-          await testPanel(panel.id);
+          const result = await testPanel(panel.id);
+
+          // Fallback detection and auto-resync logic
+          if (result.success) {
+            const prevFailures = consecutiveFailures.get(panel.id) ?? 0;
+            consecutiveFailures.set(panel.id, 0);
+
+            // Auto-resync: if panel was in fallback and is now reachable
+            if (fallbackPanels.has(panel.id)) {
+              console.log(`[panel-health] Panel ${panel.id} (${panel.name}) reconnected -- triggering auto-resync`);
+              fallbackPanels.delete(panel.id);
+              broadcastFallbackStatusChange(panel.id, panel.name, false);
+              triggerAutoResync(panel.id, panel.name);
+            }
+          } else {
+            const failures = (consecutiveFailures.get(panel.id) ?? 0) + 1;
+            consecutiveFailures.set(panel.id, failures);
+
+            // Fallback detection: 3 consecutive failures per CONTEXT.md decision
+            if (failures >= 3 && !fallbackPanels.has(panel.id)) {
+              console.warn(`[panel-health] Panel ${panel.id} (${panel.name}) unreachable x${failures} -- entering fallback mode`);
+              fallbackPanels.add(panel.id);
+              broadcastFallbackStatusChange(panel.id, panel.name, true);
+            }
+          }
         } catch (err) {
           console.error('[panel-health] Check failed for panel', panel.id, err);
         }

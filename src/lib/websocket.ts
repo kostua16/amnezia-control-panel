@@ -7,7 +7,8 @@ export type WsEventType =
   | 'stats:update'
   | 'resource:update'
   | 'alert:new'
-  | 'user:status-change';
+  | 'user:status-change'
+  | 'panel:fallback-change';
 
 /**
  * Initialize the Socket.io server. Safe to call multiple times.
