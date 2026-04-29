@@ -16,14 +16,14 @@ export async function seedAdmin(): Promise<void> {
     });
 
     if (!existing) {
-      const passwordHash = await hash('admin', 10);
+      const passwordHash = await hash(process.env.ADMIN_PASSWORD || 'admin', 10);
       await prisma.admin.create({
         data: {
           username: 'admin',
           password: passwordHash,
         },
       });
-      console.log('[seed] Default admin user created (admin/admin)');
+      console.log('[seed] Default admin user created');
     }
 
     seeded = true;
