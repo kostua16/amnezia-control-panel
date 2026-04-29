@@ -105,8 +105,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 11.1-01-PLAN.md -- Types, Prisma schema extension, and TailscaleManager utility (Wave 1)
-- [ ] 11.1-02-PLAN.md -- Setup wizard API routes: step verification and subnet advertisement (Wave 2)
-- [ ] 11.1-03-PLAN.md -- Node listing API and per-server Tailscale transport address resolution (Wave 2)
+- [x] 11.1-02-PLAN.md -- Setup wizard API routes: step verification and subnet advertisement (Wave 2)
+- [x] 11.1-03-PLAN.md -- Node listing API and per-server Tailscale transport address resolution (Wave 2)
 
 ### Phase 11.2: Remote Panel Registration
 **Goal**: Admin can register, test connectivity to, monitor, and manage remote panels from the central panel, forming the multi-panel topology.
@@ -121,9 +121,9 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 11.2-01: RemotePanel Prisma model and CRUD API routes
-- [ ] 11.2-02: Connectivity test endpoint and real-time status monitoring
-- [ ] 11.2-03: Remote panel management UI (register, edit, remove, status display)
+- [ ] 11.2-01-PLAN.md -- RemotePanel Prisma model, TypeScript types, and CRUD API routes (Wave 1)
+- [ ] 11.2-02-PLAN.md -- Connectivity test endpoint and real-time status monitoring (Wave 2)
+- [ ] 11.2-03-PLAN.md -- Remote panel management UI: register, edit, remove, status display, details drawer (Wave 2)
 
 ### Phase 11.3: Panel Sync Protocol & Hybrid Autonomy
 **Goal**: Central panel can push configurations to remote panels over the Tailscale mesh, and remote panels cache their last-known-good config to operate autonomously when central is unreachable.
@@ -307,6 +307,5 @@ v1.0: All 42 requirements mapped and shipped
 v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 
 ---
-
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-04-29 - v1.1 roadmap created*
+*Last updated: 2026-04-29 - Phase 11.2 plans created*
