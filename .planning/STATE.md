@@ -119,6 +119,12 @@ amnezia-control-panel/
 
 None at project initialization.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260429-a5w | change dev server port from 3000 to 3333 | 2026-04-29 | HEAD | [260429-a5w-dev-server-port](./quick/260429-a5w-dev-server-port/) |
+
 ## Session Continuity
 
 This state document will be updated:
