@@ -1,9 +1,9 @@
 import { describe, it, mock, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { signPayload, verifySignature } from '../hmac.ts';
-import { generatePerPanelConfig, pushConfigToPanel } from '../panel-sync-client.ts';
-import type { ChainConfig } from '@/types/chain.ts';
-import type { PanelSyncPayload } from '@/types/panel-sync.ts';
+import { signPayload, verifySignature } from '../hmac';
+import { generatePerPanelConfig, pushConfigToPanel } from '../panel-sync-client';
+import type { ChainConfig } from '@/types/chain';
+import type { PanelSyncPayload } from '@/types/panel-sync';
 
 // ─── Test Fixtures ──────────────────────────────────────
 
@@ -149,7 +149,7 @@ describe('pushConfigToPanel', () => {
 
   it('calls fetch with X-API-Key header and X-Signature header', async () => {
     let capturedRequest: RequestInit | undefined;
-    globalThis.fetch = mock.fn(async (url: string, init?: RequestInit) => {
+    globalThis.fetch = mock.fn(async (url: string | URL | Request, init?: RequestInit) => {
       capturedRequest = init;
       return new Response(JSON.stringify({ applied: true, configVersion: 1 }), { status: 200 });
     });

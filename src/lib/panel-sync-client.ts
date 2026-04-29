@@ -1,5 +1,5 @@
-import { signPayload } from './hmac.ts';
-import type { ChainConfig } from '@/types/chain.ts';
+import { signPayload } from './hmac';
+import type { ChainConfig } from '@/types/chain';
 import type { PanelSyncPayload, PanelChainNode, PanelRoutingRule, PushResult, PushAllResult } from '@/types/panel-sync.ts';
 
 // ─── Constants ──────────────────────────────────────────
@@ -147,7 +147,7 @@ export async function pushConfigToAllPanels(
   chainConfig: ChainConfig,
   panelApiKeys: Map<number, string>,
 ): Promise<PushAllResult> {
-  const { prisma } = await import('./prisma.ts');
+  const { prisma } = await import('./prisma');
 
   const panels = await prisma.remotePanel.findMany({
     where: { isActive: true },

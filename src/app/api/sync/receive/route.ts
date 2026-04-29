@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         where: { id: existingConfig.id },
         data: {
           configVersion: configData.configVersion,
-          config: configData as unknown as Record<string, unknown>,
+          config: configData,
           receivedAt: new Date(),
         },
       });
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
         data: {
           panelId: matchedPanel.id,
           configVersion: configData.configVersion,
-          config: configData as unknown as Record<string, unknown>,
+          config: configData,
           receivedAt: new Date(),
         },
       });
