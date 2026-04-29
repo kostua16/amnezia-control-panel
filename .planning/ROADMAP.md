@@ -101,12 +101,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Central panel lists all Tailscale nodes in the tailnet with their IPs, hostnames, and online status
   3. Panel uses Tailscale IPs (not public IPs) as transport addresses for all inter-panel API calls
   4. Each server's VPN subnet is properly advertised and reachable from other nodes in the tailnet
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
 
 Plans:
-- [ ] 11.1-01: Tailscale subnet router documentation and setup verification
-- [ ] 11.1-02: TailscaleManager utility (node listing, status checks, reachability)
-- [ ] 11.1-03: Tailscale IP-based transport address resolution for inter-panel communication
+- [x] 11.1-01-PLAN.md -- Types, Prisma schema extension, and TailscaleManager utility (Wave 1)
+- [ ] 11.1-02-PLAN.md -- Setup wizard API routes: step verification and subnet advertisement (Wave 2)
+- [ ] 11.1-03-PLAN.md -- Node listing API and per-server Tailscale transport address resolution (Wave 2)
 
 ### Phase 11.2: Remote Panel Registration
 **Goal**: Admin can register, test connectivity to, monitor, and manage remote panels from the central panel, forming the multi-panel topology.
@@ -117,7 +117,7 @@ Plans:
   2. Admin can run a connectivity test that confirms the remote panel is reachable and authenticated
   3. Central panel displays real-time connection status (connected/offline/error) for each registered remote panel
   4. Admin can edit panel details and remove panels that are no longer in use
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
 **UI hint**: yes
 
 Plans:
@@ -135,7 +135,7 @@ Plans:
   3. Remote panels cache their last-known-good configuration locally in SQLite
   4. When central panel becomes unreachable, remote panels continue operating on their cached configuration
   5. Config sync resumes automatically when central connection is restored
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
 
 Plans:
 - [ ] 11.3-01: PanelSyncClient (HTTP push with retry, HMAC signatures, per-panel status)
@@ -151,7 +151,7 @@ Plans:
   2. Admin can preview a config diff before pushing to see exactly what will change on each remote panel
   3. Admin can roll back a pushed configuration on any remote panel to its previous known-good state with one click
   4. Push errors display actionable recommendations and known fixes for common failure modes
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
 **UI hint**: yes
 
 Plans:
@@ -170,7 +170,7 @@ Plans:
   3. Traffic is routed to specific chain hops based on destination country via GeoIP lookup
   4. Admin can load routing rule files from v2fly/geoip and sendmiche/rulite repositories for auto-population
   5. Routing rule templates with best-practice defaults are available for quick configuration
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
 
 Plans:
 - [ ] 11.5-01: Geo-routing SQLite persistence (Prisma model, migration from v1.0 in-memory stores)
@@ -187,7 +187,7 @@ Plans:
   1. Admin can build chain topology by placing and connecting nodes with drag-and-drop
   2. Chain editor displays clear panel boundaries showing which panel owns which nodes
   3. Admin can edit routing rules inline within the chain editor without navigating to a separate page
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
 **UI hint**: yes
 
 Plans:
@@ -204,7 +204,7 @@ Plans:
   2. Admin can apply server presets for common VPS providers and OS configurations to new panels
   3. Admin can use routing presets (geo rule bundles like Russia Direct, EU Privacy, Full Tunnel) to populate routing rules
   4. Admin can use chain presets that combine chain topology, protocols, and routing rules into a single apply operation
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
 
 Plans:
 - [ ] 11.7-01: VPN protocol templates (VLESS-REALITY, Hysteria2, TUIC, existing protocols)
@@ -220,7 +220,7 @@ Plans:
   1. Dashboard displays aggregated service status (online/offline/error) for every registered remote panel
   2. Dashboard shows traffic metrics and resource usage pulled from all remote panels in real time
   3. Dashboard surfaces alerts (service failures, quota thresholds, resource thresholds) from all panels in a unified view
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
 **UI hint**: yes
 
 Plans:
@@ -292,7 +292,7 @@ Phases execute in numeric order: 11.1 → 11.2 → 11.3 → 11.4 → 11.5 → 11
 | 10.2 | v1.0 | 1/1 | Complete | 2026-04-29 |
 | 10.3 | v1.0 | 1/1 | Complete | 2026-04-29 |
 | 10.4 | v1.0 | 1/1 | Complete | 2026-04-29 |
-| 11.1 | v1.1 | 0/3 | Not started | - |
+| 11.1 | v1.1 | 1/3 | In progress | 2026-04-29 |
 | 11.2 | v1.1 | 0/3 | Not started | - |
 | 11.3 | v1.1 | 0/3 | Not started | - |
 | 11.4 | v1.1 | 0/4 | Not started | - |

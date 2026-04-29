@@ -51,7 +51,7 @@ Requirements for multi-panel chain routing milestone. Each maps to roadmap phase
 ### Tailscale Integration
 
 - [ ] **TSCL-01**: Each server runs Tailscale as a subnet router advertising its VPN subnet
-- [ ] **TSCL-02**: Central panel can list all Tailscale nodes in the tailnet
+- [x] **TSCL-02**: Central panel can list all Tailscale nodes in the tailnet
 - [ ] **TSCL-03**: Tailscale subnet router setup is documented as step-by-step guide
 - [ ] **TSCL-04**: Panel uses Tailscale IPs as transport addresses for inter-panel communication
 
@@ -115,7 +115,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | TSCL-01 | Phase 11.1 | Pending |
-| TSCL-02 | Phase 11.1 | Pending |
+| TSCL-02 | Phase 11.1 | Complete (11.1-01) |
 | TSCL-03 | Phase 11.1 | Pending |
 | TSCL-04 | Phase 11.1 | Pending |
 | MPAN-01 | Phase 11.2 | Pending |

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: v1.1 Multi-Panel Chain Routing
-status: planning
-last_updated: "2026-04-29T14:00:00.000Z"
+status: executing
+last_updated: "2026-04-29T15:36:46.000Z"
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 27
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 4
 ---
 
 # Amnezia Control Panel - Project State
@@ -19,32 +19,33 @@ progress:
 **Project**: Amnezia Control Panel
 **Core Value**: One panel, both VPN systems -- users synchronized between Amnezia AWG and 3x-ui, no context switching
 **Current Focus**: v1.1 Multi-Panel Chain Routing
-**Current Position**: Phase 11.1 (Tailscale Foundation) ready to plan
+**Current Position**: Phase 11.1 (Tailscale Foundation) -- Plan 01 complete
 
 ## Current Position
 
 Phase: 11.1 of 11.8 (Tailscale Foundation)
-Plan: -- of 3 in current phase
-Status: Ready to plan
-Last activity: 2026-04-29 -- v1.1 roadmap created, 8 phases defined
+Plan: 1 of 3 in current phase
+Status: Executing -- Plan 01 complete, Plans 02-03 remaining
+Last activity: 2026-04-29 -- 11.1-01 Tailscale Foundation types/utilities complete
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 4%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0 (v1.1)
-- Average duration: --
-- Total execution time: --
+- Total plans completed: 1 (v1.1)
+- Average duration: 7min
+- Total execution time: 7min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 11.1-11.8 | -- | -- | -- |
+| 11.1 | 1 | 7min | 7min |
+| 11.2-11.8 | -- | -- | -- |
 
 **Recent Trend:**
-- Last 5 plans: --
+- Last 5 plans: 11.1-01 (7min)
 - Trend: --
 
 *Updated after each plan completion*
@@ -60,6 +61,8 @@ Recent decisions affecting current work:
 - v1.1: Central-push-only sync model (no bidirectional sync)
 - v1.1: Hybrid autonomy -- remote panels cache config, operate independently when central is down
 - v1.1: MaxMind GeoIP2 Lite for geo-routing (decision needed during Phase 11.5 planning)
+- 11.1-01: advertisedSubnets stored as JSON-encoded String (SQLite Prisma connector does not support String[])
+- 11.1-01: toNodeInfo strips PublicKey per T-11.1-02 information disclosure mitigation
 
 ### Pending Todos
 
@@ -81,10 +84,10 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-29
-Stopped at: v1.1 roadmap creation complete, all files written
+Stopped at: Completed 11.1-01-PLAN.md (Tailscale Foundation types/utilities)
 Resume file: None
 
 ---
 
 *State initialized: 2026-04-27*
-*Last updated: 2026-04-29 - v1.1 roadmap created*
+*Last updated: 2026-04-29 - 11.1-01 complete*
