@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { ErrorBoundary } from '@/components/layout/error-boundary';
+import { startPanelHealthChecks, stopPanelHealthChecks } from '@/lib/panel-health-checker';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -13,6 +14,11 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+
+  useEffect(() => {
+    startPanelHealthChecks();
+    return () => { stopPanelHealthChecks(); };
+  }, []);
 
   // Derive active href: e.g. /dashboard/users -> /users
   const segments = pathname.split('/');
