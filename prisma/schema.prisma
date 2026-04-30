@@ -272,6 +272,12 @@ model CachedPanelConfig {
   config        Json
   /** ISO timestamp when this config was received */
   receivedAt    DateTime @default(now())
+  /** Previous config version (for rollback support) */
+  previousConfigVersion Int?
+  /** Previous config JSON (for rollback support) */
+  previousConfig Json?
+  /** When the previous config was received */
+  previousConfigReceivedAt DateTime?
 
   @@unique([panelId])
   @@map("cached_panel_configs")
