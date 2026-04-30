@@ -2,8 +2,8 @@
 
 ## Milestones
 
-- ✅ **v1.0** — Phases 1.1-10.4 (shipped 2026-04-29)
-- 🚧 **v1.1 Multi-Panel Chain Routing** — Phases 11.1-11.8 (in progress)
+- **v1.0** -- Phases 1.1-10.4 (shipped 2026-04-29)
+- **v1.1 Multi-Panel Chain Routing** -- Phases 11.1-11.8 (in progress)
 
 ## Phases
 
@@ -14,7 +14,7 @@
 Decimal phases appear between their surrounding integers in numeric order.
 
 <details>
-<summary>✅ v1.0 (Phases 1.1-10.4) — SHIPPED 2026-04-29</summary>
+<summary>v1.0 (Phases 1.1-10.4) -- SHIPPED 2026-04-29</summary>
 
 - [x] Phase 1.1: Project Initialization
 - [x] Phase 1.2: Core Dependencies
@@ -77,9 +77,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 </details>
 
-### 🚧 v1.1 Multi-Panel Chain Routing (In Progress)
+### v1.1 Multi-Panel Chain Routing (In Progress)
 
-**Milestone Goal:** Support multi-panel server chains with geo-routing, Tailscale transport, and pre-configuration templates — central push model with hybrid autonomy.
+**Milestone Goal:** Support multi-panel server chains with geo-routing, Tailscale transport, and pre-configuration templates -- central push model with hybrid autonomy.
 
 - [x] **Phase 11.1: Tailscale Foundation** - Subnet router setup, Tailscale node discovery, transport layer for inter-panel communication
 - [x] **Phase 11.2: Remote Panel Registration** - Register, test, monitor, and manage remote panels from central panel
@@ -138,9 +138,9 @@ Plans:
 **Plans**: 3 plans (2 waves)
 
 Plans:
-- [ ] 11.3-01-PLAN.md -- PanelSyncClient types, HMAC utility, and config push with retry (Wave 1)
-- [ ] 11.3-02-PLAN.md -- CachedPanelConfig model and sync receive API route (Wave 1)
-- [ ] 11.3-03-PLAN.md -- Hybrid autonomy: fallback detection, auto-resync, push/status endpoints (Wave 2)
+- [x] 11.3-01-PLAN.md -- PanelSyncClient types, HMAC utility, and config push with retry (Wave 1)
+- [x] 11.3-02-PLAN.md -- CachedPanelConfig model and sync receive API route (Wave 1)
+- [x] 11.3-03-PLAN.md -- Hybrid autonomy: fallback detection, auto-resync, push/status endpoints (Wave 2)
 
 ### Phase 11.4: Chain Config Application & Push UX
 **Goal**: Pushed chain configurations are actually applied to AWG and 3x-ui services on remote servers, with diff preview, rollback, and actionable error reporting.
@@ -151,14 +151,14 @@ Plans:
   2. Admin can preview a config diff before pushing to see exactly what will change on each remote panel
   3. Admin can roll back a pushed configuration on any remote panel to its previous known-good state with one click
   4. Push errors display actionable recommendations and known fixes for common failure modes
-**Plans**: 3 plans (2 waves)
+**Plans**: 4 plans (3 waves)
 **UI hint**: yes
 
 Plans:
-- [ ] 11.4-01: Real applyChainConfig — AWG via CLI over Tailscale, 3x-ui via REST API
-- [ ] 11.4-02: Config diff preview generation and display
-- [ ] 11.4-03: Rollback mechanism (previous config storage and one-click restore)
-- [ ] 11.4-04: Push error reporting with recommendations, known fixes, and best practices
+- [ ] 11.4-01-PLAN.md -- Real config applier (AWG CLI + 3x-ui REST) and structured error reporter (Wave 1)
+- [ ] 11.4-02-PLAN.md -- Rollback mechanism: schema extension, previous config storage, one-click restore (Wave 2)
+- [ ] 11.4-03-PLAN.md -- Config diff preview: computation utility and API endpoint (Wave 2)
+- [ ] 11.4-04-PLAN.md -- Push UX page: 4-step wizard with diff, progress, rollback, and error display (Wave 3)
 
 ### Phase 11.5: Geo-Routing & Routing Rules
 **Goal**: Geo-routing rules are persisted to SQLite, traffic is routed based on destination geo via GeoIP lookup, and routing rules support full CRUD with template presets.
@@ -230,7 +230,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 11.1 → 11.2 → 11.3 → 11.4 → 11.5 → 11.6 → 11.7 → 11.8
+Phases execute in numeric order: 11.1 -> 11.2 -> 11.3 -> 11.4 -> 11.5 -> 11.6 -> 11.7 -> 11.8
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -308,4 +308,4 @@ v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-04-30 - Phase 11.3 plans created*
+*Last updated: 2026-04-30 - Phase 11.4 plans created*
