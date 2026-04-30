@@ -84,7 +84,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11.1: Tailscale Foundation** - Subnet router setup, Tailscale node discovery, transport layer for inter-panel communication
 - [x] **Phase 11.2: Remote Panel Registration** - Register, test, monitor, and manage remote panels from central panel
 - [x] **Phase 11.3: Panel Sync Protocol & Hybrid Autonomy** - Config push transport, local config caching, and autonomous fallback
-- [ ] **Phase 11.4: Chain Config Application & Push UX** - Real config push to AWG/3x-ui services, diff preview, rollback, error reporting
+- [x] **Phase 11.4: Chain Config Application & Push UX** - Real config push to AWG/3x-ui services, diff preview, rollback, error reporting
 - [ ] **Phase 11.5: Geo-Routing & Routing Rules** - Persisted geo-routing rules, GeoIP lookups, routing rule CRUD with templates
 - [ ] **Phase 11.6: Visual Chain Editor** - Drag-and-drop chain topology with panel boundaries and inline rule editing
 - [ ] **Phase 11.7: Pre-Configuration Templates** - VPN protocol, server, routing, and chain presets
@@ -151,14 +151,15 @@ Plans:
   2. Admin can preview a config diff before pushing to see exactly what will change on each remote panel
   3. Admin can roll back a pushed configuration on any remote panel to its previous known-good state with one click
   4. Push errors display actionable recommendations and known fixes for common failure modes
-**Plans**: 4 plans (3 waves)
+**Plans**: 5 plans (4 waves)
 **UI hint**: yes
 
 Plans:
-- [ ] 11.4-01-PLAN.md -- Real config applier (AWG CLI + 3x-ui REST) and structured error reporter (Wave 1)
-- [ ] 11.4-02-PLAN.md -- Rollback mechanism: schema extension, previous config storage, one-click restore (Wave 2)
-- [ ] 11.4-03-PLAN.md -- Config diff preview: computation utility and API endpoint (Wave 2)
-- [ ] 11.4-04-PLAN.md -- Push UX page: 4-step wizard with diff, progress, rollback, and error display (Wave 3)
+- [x] 11.4-01-PLAN.md -- Real config applier (AWG CLI + 3x-ui REST) and structured error reporter (Wave 1)
+- [x] 11.4-02-PLAN.md -- Rollback mechanism: schema extension, previous config storage, one-click restore (Wave 2)
+- [x] 11.4-03-PLAN.md -- Config diff preview: computation utility and API endpoint (Wave 2)
+- [x] 11.4-04-PLAN.md -- Push UX page: 4-step wizard with diff, progress, rollback, and error display (Wave 3)
+- [ ] 11.4-05-PLAN.md -- Gap closure: chain template selector, chainConfigRef fix, push status endpoint (Wave 4)
 
 ### Phase 11.5: Geo-Routing & Routing Rules
 **Goal**: Geo-routing rules are persisted to SQLite, traffic is routed based on destination geo via GeoIP lookup, and routing rules support full CRUD with template presets.
