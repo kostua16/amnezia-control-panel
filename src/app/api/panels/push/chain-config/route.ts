@@ -244,7 +244,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Validate all panels exist
-    const foundPanelIds = new Set(panels.map((p) => p.id));
+    const foundPanelIds = new Set(panels.map((p: { id: number }) => p.id));
     for (const panelId of panelIds) {
       if (!foundPanelIds.has(panelId)) {
         return NextResponse.json(
