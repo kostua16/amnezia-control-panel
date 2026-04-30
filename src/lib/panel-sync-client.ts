@@ -1,6 +1,8 @@
 import { signPayload } from './hmac';
 import type { ChainConfig } from '@/types/chain';
 import type { PanelSyncPayload, PanelChainNode, PanelRoutingRule, PushResult, PushAllResult } from '@/types/panel-sync.ts';
+import { broadcastEvent } from './websocket';
+import { enrichError } from './error-reporter';
 
 // ─── Constants ──────────────────────────────────────────
 
@@ -90,6 +92,13 @@ export async function pushConfigToPanel(
   const startTime = Date.now();
 
   // Initial attempt + up to 2 retries = 3 total attempts
+  broadcastEvent('panel:push-progress', {
+    panelId: panel.id,
+    panelName: panel.name,
+    status: 'pushing',
+    timestamp: new Date().toISOString(),
+  });
+
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
     try {
       const response = await fetch(url, {
@@ -102,12 +111,20 @@ export async function pushConfigToPanel(
       if (response.ok) {
         const data = await response.json();
         if (data.applied && typeof data.configVersion === 'number') {
+          const latencyMs = Date.now() - startTime;
+          broadcastEvent('panel:push-progress', {
+            panelId: panel.id,
+            panelName: panel.name,
+            status: 'success',
+            latencyMs,
+            timestamp: new Date().toISOString(),
+          });
           return {
             panelId: panel.id,
             panelName: panel.name,
             success: true,
             configVersion: data.configVersion,
-            latencyMs: Date.now() - startTime,
+            latencyMs,
             error: null,
             retries,
           };
@@ -125,6 +142,14 @@ export async function pushConfigToPanel(
       await sleep(RETRY_DELAYS[attempt]);
     }
   }
+
+  broadcastEvent('panel:push-progress', {
+    panelId: panel.id,
+    panelName: panel.name,
+    status: 'failed',
+    error: enrichError(lastError || 'Unknown error', panel.name),
+    timestamp: new Date().toISOString(),
+  });
 
   return {
     panelId: panel.id,

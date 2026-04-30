@@ -7,6 +7,8 @@ import type {
 } from '@/types/chain';
 import type { Server } from '@/types/server';
 import { getTemplateById } from './chain-templates';
+import { generatePerPanelConfig } from './panel-sync-client';
+import { applyPanelConfig } from './config-applier';
 
 /**
  * Generate a full chain configuration from a template and server selection.
@@ -83,11 +85,9 @@ export function generateChainConfig(
 /**
  * Apply a chain configuration to all servers in the chain.
  *
- * NOTE: Currently a stub. In production, this would:
- * 1. SSH into each server
- * 2. Add WireGuard peer configs
- * 3. Update Xray routing rules
- * 4. Restart affected services
+ * For each node in the chain, generates a per-panel config payload and
+ * calls the real config applier to apply WireGuard peers and/or Xray
+ * routing rules to the remote panel's services.
  */
 export async function applyChainConfig(
   chainConfig: ChainConfig,
@@ -97,32 +97,23 @@ export async function applyChainConfig(
 
   for (const node of chainConfig.nodes) {
     try {
-      // STUB: In production, use executeOnServer to apply configs
-      console.log(
-        `[chain-router] Would apply config to ${node.label} (${node.hostname}:${node.port})`,
-      );
-
-      // Collect WireGuard peer configs for this node
-      const peers = chainConfig.wireguardPeers.filter(
-        (p) => p.nodeId === node.label,
-      );
-      if (peers.length > 0) {
-        console.log(
-          `[chain-router] Would add ${peers.length} WireGuard peers to ${node.label}`,
-        );
+      const panelConfig = generatePerPanelConfig(chainConfig, node.serverId);
+      if (!panelConfig) {
+        continue;
       }
 
-      // Collect Xray rules for this node
-      const rules = chainConfig.xrayRoutingRules.filter(
-        (r) => r.nodeId === node.label,
-      );
-      if (rules.length > 0) {
-        console.log(
-          `[chain-router] Would add ${rules.length} Xray routing rules to ${node.label}`,
-        );
-      }
+      const panelUrl = `http://${node.hostname}:${node.port}`;
+      const panelLabel = `${node.label} (${node.hostname})`;
 
-      appliedTo.push(`${node.label} (${node.hostname})`);
+      const results = await applyPanelConfig(panelUrl, node.label, panelConfig);
+
+      for (const result of results) {
+        if (result.success) {
+          appliedTo.push(panelLabel);
+        } else if (result.error) {
+          errors.push(`${panelLabel}: ${result.error.message}`);
+        }
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : String(err);
