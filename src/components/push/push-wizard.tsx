@@ -6,10 +6,12 @@ import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { PanelSelector } from './panel-selector';
+import { ChainTemplateSelector } from './chain-template-selector';
 import { ConfigDiffView } from './config-diff-view';
 import { PushProgressTracker } from './push-progress-tracker';
 import { PushResultSummary } from './push-result-summary';
 import { useWebSocket } from '@/hooks/use-websocket';
+import type { ChainConfig, ChainTemplate } from '@/types/chain';
 import type { ConfigDiffResult, PushProgressEvent } from '@/types/config-push';
 import type { PushResult, PushAllResult } from '@/types/panel-sync';
 
@@ -44,9 +46,21 @@ export function PushWizard({ panels }: PushWizardProps) {
   const [isPushing, setIsPushing] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
+  const [templates, setTemplates] = useState<ChainTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<ChainTemplate | null>(null);
+  const [panelMapping, setPanelMapping] = useState<Record<number, number>>({});
+  const [chainConfigLoading, setChainConfigLoading] = useState(false);
 
   // Track which chain config we're pushing (fetched from apply response or pre-built)
-  const chainConfigRef = useRef<unknown>(null);
+  const chainConfigRef = useRef<ChainConfig | null>(null);
+
+  // Fetch chain templates on mount
+  useEffect(() => {
+    fetch('/api/chains/templates')
+      .then(res => res.json())
+      .then(json => { if (json.success) setTemplates(json.data); })
+      .catch(() => {});
+  }, []);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { isConnected, lastEvent } = useWebSocket({
@@ -149,12 +163,28 @@ export function PushWizard({ panels }: PushWizardProps) {
   }, []);
 
   const handleNextToDiff = useCallback(async () => {
-    if (selectedPanelIds.size === 0 || !chainConfigRef.current) return;
+    if (selectedPanelIds.size === 0) return;
 
     setDiffLoading(true);
+    setChainConfigLoading(true);
     setPushError(null);
 
     try {
+      // Generate ChainConfig from template + panel mapping
+      const configRes = await fetch('/api/panels/push/chain-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templateId: selectedTemplate!.id, panelMapping }),
+      });
+      const configJson = await configRes.json();
+      if (!configJson.success) {
+        setPushError(configJson.error ?? 'Failed to generate chain config');
+        setDiffLoading(false);
+        setChainConfigLoading(false);
+        return;
+      }
+      chainConfigRef.current = configJson.data;
+
       const res = await fetch('/api/panels/diff', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -172,8 +202,9 @@ export function PushWizard({ panels }: PushWizardProps) {
       setPushError(err instanceof Error ? err.message : 'Failed to compute diff');
     } finally {
       setDiffLoading(false);
+      setChainConfigLoading(false);
     }
-  }, [selectedPanelIds]);
+  }, [selectedPanelIds, selectedTemplate, panelMapping]);
 
   const handlePush = useCallback(async () => {
     if (!chainConfigRef.current) return;
@@ -254,8 +285,11 @@ export function PushWizard({ panels }: PushWizardProps) {
     setPushProgress(new Map());
     setDiffResults([]);
     setSelectedPanelIds(new Set());
+    setSelectedTemplate(null);
+    setPanelMapping({});
     setCurrentStep(1);
     setPushError(null);
+    chainConfigRef.current = null;
   }, []);
 
   // Render step indicator bar
@@ -301,11 +335,21 @@ export function PushWizard({ panels }: PushWizardProps) {
 
         {/* Step 1: Select Panels */}
         {currentStep === 1 && (
-          <PanelSelector
-            panels={panels}
-            selectedPanelIds={selectedPanelIds}
-            onSelectionChange={setSelectedPanelIds}
-          />
+          <div className="space-y-6">
+            <ChainTemplateSelector
+              templates={templates}
+              selectedTemplate={selectedTemplate}
+              panels={panels}
+              panelMapping={panelMapping}
+              onTemplateSelect={setSelectedTemplate}
+              onPanelMappingChange={setPanelMapping}
+            />
+            <PanelSelector
+              panels={panels}
+              selectedPanelIds={selectedPanelIds}
+              onSelectionChange={setSelectedPanelIds}
+            />
+          </div>
         )}
 
         {/* Step 2: Preview Changes */}
@@ -347,7 +391,13 @@ export function PushWizard({ panels }: PushWizardProps) {
             {currentStep === 1 && (
               <Button
                 variant="outline"
-                disabled={selectedPanelIds.size === 0 || diffLoading}
+                disabled={
+                  selectedPanelIds.size === 0 ||
+                  !selectedTemplate ||
+                  Object.keys(panelMapping).length < selectedTemplate.nodes.length ||
+                  diffLoading ||
+                  chainConfigLoading
+                }
                 onClick={handleNextToDiff}
               >
                 {diffLoading ? (
