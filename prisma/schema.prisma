@@ -181,6 +181,62 @@ model RoutingRule {
   @@map("routing_rules")
 }
 
+// ─── GeoRoutingRule ──────────────────────────────────────
+
+model GeoRoutingRule {
+  id          Int           @id @default(autoincrement())
+  /** Human-readable rule name, e.g. "Block RU traffic" */
+  name        String
+  /** Match type: country, region, or special (domestic/foreign) per D-06, D-07 */
+  matchType   String        // "country" | "region" | "special"
+  /** ISO 3166-1 alpha-2 country code, e.g. "US", "DE" (null if matchType != "country") */
+  countryCode String?
+  /** Region name, e.g. "Europe", "Asia-Pacific" (null if matchType != "region") */
+  region      String?
+  /** Special target: "domestic" or "foreign" (null if matchType != "special") */
+  special     String?
+  /** What to do with matching traffic */
+  action      RoutingAction @default(ALLOW)
+  /** Chain ID to route through (only if action = ROUTE) */
+  chainId     Int?
+  /** Rule priority (lower = higher precedence per D-07) */
+  priority    Int           @default(0)
+  /** Whether this rule is active */
+  isActive    Boolean       @default(true)
+  /** Source: "custom" for admin-created, "imported" for v2fly/rulite imports, "template" for template-applied (per D-09) */
+  source      String        @default("custom")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([priority])
+  @@index([matchType])
+  @@index([isActive])
+  @@index([source])
+  @@map("geo_routing_rules")
+}
+
+// ─── RoutingRuleTemplate ─────────────────────────────────
+
+model RoutingRuleTemplate {
+  id          Int      @id @default(autoincrement())
+  /** Template display name */
+  name        String
+  /** Template description */
+  description String   @default("")
+  /** Category: "geo", "ip", "domain", "bundle" */
+  category    String   @default("geo")
+  /** Number of rules in this template */
+  ruleCount   Int      @default(0)
+  /** Whether this is a built-in template (not user-editable) */
+  isBuiltIn   Boolean  @default(false)
+  /** The rule definitions as JSON array */
+  rules       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("routing_rule_templates")
+}
+
 // ─── Alert ───────────────────────────────────────────
 
 model Alert {
