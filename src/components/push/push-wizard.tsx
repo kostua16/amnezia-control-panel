@@ -276,7 +276,8 @@ export function PushWizard({ panels }: PushWizardProps) {
         });
       }
     } catch (err) {
-      console.error('Rollback failed:', err);
+      const message = err instanceof Error ? err.message : 'Rollback failed';
+      setPushError(`Rollback failed: ${message}`);
     }
   }, []);
 
