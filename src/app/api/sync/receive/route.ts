@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
+import { storePreviousConfig } from '@/lib/rollback-manager';
 
 const panelSyncPayloadSchema = z.object({
   configVersion: z.number().int().positive(),
@@ -104,7 +105,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 7. Store config via upsert
+    // 7. Preserve current config as previous before overwrite (rollback support)
+    if (existingConfig) {
+      await storePreviousConfig(matchedPanel.id);
+    }
+
+    // 8. Store config via upsert
     if (existingConfig) {
       await prisma.cachedPanelConfig.update({
         where: { id: existingConfig.id },
