@@ -221,6 +221,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate node count to prevent IP octet overflow (10.0.0.X maxes at 254)
+    const MAX_NODES = 10;
+    if (template.nodes.length > MAX_NODES) {
+      return NextResponse.json(
+        { success: false, error: `Template requires ${template.nodes.length} nodes, maximum is ${MAX_NODES}` },
+        { status: 422 },
+      );
+    }
+
     // Validate all required node indices have a panel mapping
     for (let i = 0; i < template.nodes.length; i++) {
       if (panelMapping[i] === undefined) {
