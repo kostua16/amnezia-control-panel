@@ -53,12 +53,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     socket.on('connect', () => {
       setIsConnected(true);
       reconnectCountRef.current = 0;
-      console.log('[ws] Connected');
     });
 
     socket.on('disconnect', (reason) => {
       setIsConnected(false);
-      console.log(`[ws] Disconnected: ${reason}`);
     });
 
     socket.on('connect_error', () => {
@@ -73,9 +71,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         reconnectCountRef.current += 1;
 
         reconnectTimerRef.current = setTimeout(() => {
-          console.log(
-            `[ws] Reconnect attempt ${reconnectCountRef.current} in ${delay}ms`,
-          );
           socket.connect();
         }, delay);
       }
