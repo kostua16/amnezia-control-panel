@@ -159,7 +159,7 @@ Plans:
 - [x] 11.4-02-PLAN.md -- Rollback mechanism: schema extension, previous config storage, one-click restore (Wave 2)
 - [x] 11.4-03-PLAN.md -- Config diff preview: computation utility and API endpoint (Wave 2)
 - [x] 11.4-04-PLAN.md -- Push UX page: 4-step wizard with diff, progress, rollback, and error display (Wave 3)
-- [ ] 11.4-05-PLAN.md -- Gap closure: chain template selector, chainConfigRef fix, push status endpoint (Wave 4)
+- [x] 11.4-05-PLAN.md -- Gap closure: chain template selector, chainConfigRef fix, push status endpoint (Wave 4)
 
 ### Phase 11.5: Geo-Routing & Routing Rules
 **Goal**: Geo-routing rules are persisted to SQLite, traffic is routed based on destination geo via GeoIP lookup, and routing rules support full CRUD with template presets.
@@ -296,7 +296,7 @@ Phases execute in numeric order: 11.1 -> 11.2 -> 11.3 -> 11.4 -> 11.5 -> 11.6 ->
 | 11.1 | v1.1 | 3/3 | Complete | 2026-04-29 |
 | 11.2 | v1.1 | 3/3 | Complete | 2026-04-29 |
 | 11.3 | v1.1 | 3/3 | Complete | 2026-04-30 |
-| 11.4 | v1.1 | 0/4 | Not started | - |
+| 11.4 | v1.1 | 5/5 | Complete | 2026-04-30 |
 | 11.5 | v1.1 | 0/5 | Not started | - |
 | 11.6 | v1.1 | 0/3 | Not started | - |
 | 11.7 | v1.1 | 0/4 | Not started | - |
@@ -309,4 +309,4 @@ v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-04-30 - Phase 11.4 plans created*
+*Last updated: 2026-04-30 - Phase 11.4 complete (all 5 plans including gap closure)*
