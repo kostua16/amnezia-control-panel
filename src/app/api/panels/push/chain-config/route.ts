@@ -288,10 +288,15 @@ export async function POST(request: NextRequest) {
       const panelId = panelMapping[index];
       const panel = panelLookup.get(panelId)!;
 
-      // Extract hostname from panelUrl (strip protocol and path)
-      const hostname = panel.panelUrl.replace(/^https?:\/\//, '').split('/')[0];
-      // Default port 3000 (panel API port)
-      const port = 3000;
+      // Extract hostname and port from panelUrl (strip protocol and path)
+      let hostPart = panel.panelUrl.replace(/^https?:\/\//, '').split('/')[0];
+      let port = 3000; // default panel API port
+      if (hostPart.includes(':')) {
+        const [host, portStr] = hostPart.split(':');
+        hostPart = host;
+        port = parseInt(portStr, 10) || 3000;
+      }
+      const hostname = hostPart;
 
       return {
         ...node,
