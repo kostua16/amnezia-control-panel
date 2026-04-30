@@ -395,6 +395,7 @@ export function PushWizard({ panels }: PushWizardProps) {
                   selectedPanelIds.size === 0 ||
                   !selectedTemplate ||
                   Object.keys(panelMapping).length < selectedTemplate.nodes.length ||
+                  !Object.values(panelMapping).every(id => selectedPanelIds.has(id)) ||
                   diffLoading ||
                   chainConfigLoading
                 }
