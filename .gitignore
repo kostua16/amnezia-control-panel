@@ -63,3 +63,6 @@ _cacache/
 */logs/*
 *.log
 **/*.log
+
+# cursor
+.cursor/hooks/state/continual-learning.json
