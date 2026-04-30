@@ -1,4 +1,5 @@
 import type { GeoRoutingRule, GeoTarget } from '@/types/geo-routing';
+import { lookupGeoIP as geoIPLookup } from '@/lib/geoip-manager';
 
 export interface GeoRoutingResult {
   matched: boolean;
@@ -64,25 +65,14 @@ function matchesTarget(
 }
 
 /**
- * GeoIP lookup stub.
- *
- * In production, integrate with MaxMind GeoIP2 database or a web API
- * (e.g., ip-api.com, ipinfo.io) to resolve IP addresses to country codes.
+ * GeoIP lookup -- delegates to GeoIPManager (v2fly geoip.dat).
+ * Per D-04: fail open -- returns null on any error.
+ * Per D-06: IPv4 only -- returns null for IPv6.
  */
 export async function lookupGeoIP(
-  _ip: string,
+  ip: string,
 ): Promise<{ countryCode: string | null; region: string | null }> {
-  // STUB: Returns null for all lookups.
-  // Replace with actual GeoIP integration:
-  //
-  // const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,countryCode,regionName`);
-  // const data = await response.json();
-  // if (data.status === 'success') {
-  //   return { countryCode: data.countryCode, region: data.regionName };
-  // }
-
-  console.log(`[geo-routing] GeoIP lookup stub called for IP: ${_ip}`);
-  return { countryCode: null, region: null };
+  return geoIPLookup(ip);
 }
 
 /**
