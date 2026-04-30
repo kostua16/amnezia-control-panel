@@ -33,7 +33,7 @@ const pushRequestSchema = z.object({
     generatedAt: z.string().min(1),
   }),
   /** Plaintext API keys for each panel: { panelId: apiKey } */
-  panelApiKeys: z.record(z.coerce.number().int(), z.string().min(1)),
+  panelApiKeys: z.record(z.coerce.number().int(), z.string()),
 });
 
 // ─── POST /api/panels/push ─────────────────────────────
