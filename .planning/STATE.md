@@ -99,6 +99,7 @@ Resume file: None
 | Date       | Slug / ID        | Summary                                      |
 | ---------- | ---------------- | -------------------------------------------- |
 | 2026-04-30 | 260430-q7v       | Dev default port 3333; override via CLI/PORT |
+| 2026-04-30 | 260430-r2n       | npm `--port` shorthand support + Next lock behavior |
 
 ---
 
