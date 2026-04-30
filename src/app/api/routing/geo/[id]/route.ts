@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { prisma } from '@/lib/prisma';
 
 const geoTargetSchema = z
   .object({
@@ -21,24 +22,50 @@ const updateGeoRuleSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-// Shared in-memory store reference (same module as parent route)
-// In production, use Prisma with a proper GeoRoutingRule model
-const geoRules: Array<{
+/** Derive matchType from which target field is set */
+function deriveMatchType(
+  target: z.infer<typeof geoTargetSchema>,
+): 'country' | 'region' | 'special' {
+  if (target.countryCode) return 'country';
+  if (target.region) return 'region';
+  if (target.special) return 'special';
+  return 'country';
+}
+
+/** Map a Prisma GeoRoutingRule row to the GeoRoutingRule API shape */
+function mapToGeoRoutingRule(row: {
   id: number;
   name: string;
-  target: z.infer<typeof geoTargetSchema>;
-  action: 'ALLOW' | 'BLOCK' | 'ROUTE';
-  chainId?: number;
+  matchType: string;
+  countryCode: string | null;
+  region: string | null;
+  special: string | null;
+  action: string;
+  chainId: number | null;
   priority: number;
   isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}> = [];
-
-// NOTE: This is a separate route handler module. In production,
-// geo rules would be stored in the database and accessed via Prisma.
-// For now, import from the parent is not possible, so we export
-// a helper that the parent route would use.
+  source: string;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: row.id,
+    name: row.name,
+    matchType: row.matchType as 'country' | 'region' | 'special',
+    target: {
+      countryCode: row.countryCode ?? undefined,
+      region: row.region ?? undefined,
+      special: (row.special as 'domestic' | 'foreign') ?? undefined,
+    },
+    action: row.action as 'ALLOW' | 'BLOCK' | 'ROUTE',
+    chainId: row.chainId ?? undefined,
+    priority: row.priority,
+    isActive: row.isActive,
+    source: row.source as 'custom' | 'imported' | 'template',
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
 
 export async function GET(
   _request: NextRequest,
@@ -54,12 +81,16 @@ export async function GET(
       );
     }
 
-    // In production: await prisma.geoRoutingRule.findUnique({ where: { id: ruleId } })
-    // For in-memory demo, return 404
-    return NextResponse.json(
-      { success: false, error: 'Rule not found (in-memory store, access via GET /api/routing/geo)' },
-      { status: 404 },
-    );
+    const rule = await prisma.geoRoutingRule.findUnique({ where: { id: ruleId } });
+
+    if (!rule) {
+      return NextResponse.json(
+        { success: false, error: 'Rule not found' },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({ success: true, data: mapToGeoRoutingRule(rule) });
   } catch (err) {
     console.error('[api/routing/geo/[id]] Error:', err);
     return NextResponse.json(
@@ -83,6 +114,14 @@ export async function PUT(
       );
     }
 
+    const existing = await prisma.geoRoutingRule.findUnique({ where: { id: ruleId } });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: 'Rule not found' },
+        { status: 404 },
+      );
+    }
+
     const body = await request.json();
     const parsed = updateGeoRuleSchema.safeParse(body);
 
@@ -94,11 +133,30 @@ export async function PUT(
       );
     }
 
-    // In production: await prisma.geoRoutingRule.update({ where: { id: ruleId }, data: parsed.data })
-    return NextResponse.json(
-      { success: false, error: 'In-memory store does not support PUT. Use database model.' },
-      { status: 501 },
-    );
+    const { name, target, action, chainId, priority, isActive } = parsed.data;
+
+    const updateData: Record<string, unknown> = {};
+    if (name !== undefined) updateData.name = name;
+    if (action !== undefined) updateData.action = action;
+    if (chainId !== undefined) updateData.chainId = chainId;
+    if (priority !== undefined) updateData.priority = priority;
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    // If target is provided, re-derive matchType and target fields
+    if (target) {
+      const matchType = deriveMatchType(target);
+      updateData.matchType = matchType;
+      updateData.countryCode = target.countryCode ?? null;
+      updateData.region = target.region ?? null;
+      updateData.special = target.special ?? null;
+    }
+
+    const rule = await prisma.geoRoutingRule.update({
+      where: { id: ruleId },
+      data: updateData,
+    });
+
+    return NextResponse.json({ success: true, data: mapToGeoRoutingRule(rule) });
   } catch (err) {
     console.error('[api/routing/geo/[id]] Error:', err);
     return NextResponse.json(
@@ -122,11 +180,17 @@ export async function DELETE(
       );
     }
 
-    // In production: await prisma.geoRoutingRule.delete({ where: { id: ruleId } })
-    return NextResponse.json(
-      { success: false, error: 'In-memory store does not support DELETE. Use database model.' },
-      { status: 501 },
-    );
+    const existing = await prisma.geoRoutingRule.findUnique({ where: { id: ruleId } });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: 'Rule not found' },
+        { status: 404 },
+      );
+    }
+
+    await prisma.geoRoutingRule.delete({ where: { id: ruleId } });
+
+    return NextResponse.json({ success: true, data: { id: ruleId } });
   } catch (err) {
     console.error('[api/routing/geo/[id]] Error:', err);
     return NextResponse.json(

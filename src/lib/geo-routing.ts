@@ -27,7 +27,7 @@ export function evaluateGeoRules(
         matched: true,
         rule,
         action: rule.action,
-        chainId: rule.chainId,
+        chainId: rule.chainId ?? undefined,
       };
     }
   }
