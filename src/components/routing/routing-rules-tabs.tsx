@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { clsx } from 'clsx';
 import { GeoRulesList } from '@/components/routing/geo-rules-list';
 import { RoutingRulesList } from '@/components/routing/routing-rules-list';
+import { TemplateGallery } from '@/components/routing/template-gallery';
 
 const TABS = [
   { id: 'geo', label: 'Geo' },
@@ -15,6 +16,10 @@ type TabId = typeof TABS[number]['id'];
 
 export function RoutingRulesTabs() {
   const [activeTab, setActiveTab] = useState<TabId>('geo');
+
+  const handleTemplateApplied = useCallback(() => {
+    setActiveTab('geo');
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -54,11 +59,7 @@ export function RoutingRulesTabs() {
       )}
       {activeTab === 'templates' && (
         <div role="tabpanel" aria-label="Routing rule templates">
-          <div className="rounded-lg border border-border p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              Templates will be available in the Templates tab after setup.
-            </p>
-          </div>
+          <TemplateGallery onApplied={handleTemplateApplied} />
         </div>
       )}
     </div>
