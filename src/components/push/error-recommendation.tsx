@@ -7,6 +7,7 @@ import type { StructuredPushError } from '@/types/config-push';
 
 interface ErrorRecommendationProps {
   error: StructuredPushError;
+  panelName?: string;
   defaultExpanded?: boolean;
 }
 
@@ -21,6 +22,7 @@ const ERROR_TYPE_COLORS: Record<StructuredPushError['type'], string> = {
 
 export function ErrorRecommendation({
   error,
+  panelName,
   defaultExpanded = false,
 }: ErrorRecommendationProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);

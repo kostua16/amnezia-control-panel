@@ -325,6 +325,7 @@ export function PushWizard({ panels }: PushWizardProps) {
         {currentStep === 4 && (
           <PushResultSummary
             results={pushResults}
+            progressMap={pushProgress}
             onRollback={handleRollback}
             onRetry={handleRetry}
           />
