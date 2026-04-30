@@ -77,6 +77,8 @@ function generateWireGuardPeers(
       }
       break;
     }
+    default:
+      throw new Error(`Unsupported topology: ${template.topology}`);
   }
 
   return peers;
@@ -182,6 +184,8 @@ function generateXrayRoutingRules(
       }
       break;
     }
+    default:
+      throw new Error(`Unsupported topology: ${template.topology}`);
   }
 
   return rules;
