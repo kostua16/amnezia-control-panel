@@ -171,14 +171,14 @@ Plans:
   3. Traffic is routed to specific chain hops based on destination country via GeoIP lookup
   4. Admin can load routing rule files from v2fly/geoip and sendmiche/rulite repositories for auto-population
   5. Routing rule templates with best-practice defaults are available for quick configuration
-**Plans**: 3 plans (2 waves)
+**Plans**: 5 plans (3 waves)
 
 Plans:
-- [ ] 11.5-01: Geo-routing SQLite persistence (Prisma model, migration from v1.0 in-memory stores)
-- [ ] 11.5-02: GeoIP integration and geo-aware chain selection
-- [ ] 11.5-03: Routing rules CRUD with priority, match conditions, and actions
-- [ ] 11.5-04: External geo rule file loading (v2fly/geoip, sendmiche/rulite)
-- [ ] 11.5-05: Routing rule templates with best-practice defaults
+- [x] 11.5-01-PLAN.md -- Prisma schema, types, migration from in-memory stores, schema push (Wave 1)
+- [x] 11.5-02-PLAN.md -- GeoIP database manager, v2fly geoip.dat download, lookup service, status/refresh API (Wave 2)
+- [x] 11.5-03-PLAN.md -- Geo rule reorder, IP/domain individual CRUD, batch operations, Prisma-backed rule evaluation (Wave 2)
+- [ ] 11.5-04-PLAN.md -- Routing rules UI: tabs, geo rules list, geo rule drawer, GeoIP status badge (Wave 3)
+- [ ] 11.5-05-PLAN.md -- Templates library, geoip.dat import, template gallery, starter rules (Wave 3)
 
 ### Phase 11.6: Visual Chain Editor
 **Goal**: Admin can visually build and edit chain topology with drag-and-drop, see panel boundaries, and edit routing rules inline within the editor.
@@ -309,4 +309,4 @@ v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-04-30 - Phase 11.4 complete (all 5 plans including gap closure)*
+*Last updated: 2026-05-01 - Phase 11.5 planned (5 plans, 3 waves)*

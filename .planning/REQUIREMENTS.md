@@ -138,9 +138,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GEO-02 | Phase 11.5 | Pending |
 | GEO-03 | Phase 11.5 | Pending |
 | GEO-04 | Phase 11.5 | Pending |
-| RULE-01 | Phase 11.5 | Pending |
+| RULE-01 | Phase 11.5 | Done (11.5-01, 11.5-03) |
 | RULE-02 | Phase 11.5 | Pending |
-| RULE-03 | Phase 11.5 | Pending |
+| RULE-03 | Phase 11.5 | Done (11.5-03) |
 | VISED-01 | Phase 11.6 | Pending |
 | VISED-02 | Phase 11.6 | Pending |
 | VISED-03 | Phase 11.6 | Pending |
