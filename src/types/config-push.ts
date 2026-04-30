@@ -1,3 +1,29 @@
+/** A single line in a config diff */
+export interface ConfigDiffLine {
+  type: 'added' | 'removed' | 'unchanged';
+  content: string;
+}
+
+/** A section of the diff (e.g., "WireGuard Peers", "Routing Rules") */
+export interface ConfigDiffSection {
+  label: string;
+  lines: ConfigDiffLine[];
+  /** Summary of changes in this section */
+  summary: { added: number; removed: number; unchanged: number };
+}
+
+/** Diff result for a single panel */
+export interface ConfigDiffResult {
+  panelId: number;
+  panelName: string;
+  hasChanges: boolean;
+  sections: ConfigDiffSection[];
+  /** The full current config as formatted JSON string (for display) */
+  currentConfigFormatted: string | null;
+  /** The full new config as formatted JSON string (for display) */
+  newConfigFormatted: string;
+}
+
 /** Result of applying config to a single service on a panel */
 export interface ConfigApplierResult {
   success: boolean;
