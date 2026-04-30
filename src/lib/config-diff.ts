@@ -19,7 +19,7 @@ export async function computeConfigDiff(
   });
 
   const currentConfig: PanelSyncPayload | null = cachedConfig
-    ? (cachedConfig.config as PanelSyncPayload)
+    ? (cachedConfig.config as unknown as PanelSyncPayload)
     : null;
 
   const sections: ConfigDiffSection[] = [];
