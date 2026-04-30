@@ -1,16 +1,16 @@
-import { RoutingRulesList } from '@/components/routing/routing-rules-list';
+import { RoutingRulesTabs } from '@/components/routing/routing-rules-tabs';
 
 export default function MonitoringPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Monitoring</h1>
+        <h1 className="text-2xl font-bold text-foreground">Routing Rules</h1>
         <p className="text-muted-foreground mt-1">
-          Traffic monitoring and routing rules management
+          Manage geo-routing, IP/domain rules, and templates
         </p>
       </div>
 
-      <RoutingRulesList />
+      <RoutingRulesTabs />
     </div>
   );
 }
