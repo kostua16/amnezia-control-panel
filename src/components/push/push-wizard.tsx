@@ -61,7 +61,6 @@ export function PushWizard({ panels }: PushWizardProps) {
       .then(json => { if (json.success) setTemplates(json.data); })
       .catch(() => {});
   }, []);
-  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { isConnected, lastEvent } = useWebSocket({
     events: ['panel:push-progress'],
@@ -93,7 +92,6 @@ export function PushWizard({ panels }: PushWizardProps) {
 
     if (allDone) {
       setIsPushing(false);
-      stopPolling();
 
       // Build PushAllResult from progress events
       const results: PushResult[] = selectedIds.map((id) => {
@@ -124,43 +122,6 @@ export function PushWizard({ panels }: PushWizardProps) {
       setCurrentStep(4);
     }
   }, [currentStep, isPushing, pushProgress, selectedPanelIds, panels]);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-    };
-  }, []);
-
-  const startPolling = useCallback(() => {
-    if (pollingIntervalRef.current) return;
-    pollingIntervalRef.current = setInterval(async () => {
-      try {
-        const res = await fetch('/api/panels/push/status');
-        const json = await res.json();
-        if (json.success && json.data?.events) {
-          for (const event of json.data.events as PushProgressEvent[]) {
-            setPushProgress((prev) => {
-              const next = new Map(prev);
-              next.set(event.panelId, event);
-              return next;
-            });
-          }
-        }
-      } catch {
-        // Polling error is non-critical
-      }
-    }, 30_000);
-  }, []);
-
-  const stopPolling = useCallback(() => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-  }, []);
 
   const handleNextToDiff = useCallback(async () => {
     if (selectedPanelIds.size === 0) return;
@@ -213,11 +174,6 @@ export function PushWizard({ panels }: PushWizardProps) {
     setPushError(null);
     setPushProgress(new Map());
 
-    // Start polling fallback if WebSocket not connected
-    if (!isConnected) {
-      startPolling();
-    }
-
     try {
       const panelIds = Array.from(selectedPanelIds);
       const panelApiKeys: Record<number, string> = {};
@@ -243,15 +199,13 @@ export function PushWizard({ panels }: PushWizardProps) {
         setCurrentStep(3);
       } else {
         setIsPushing(false);
-        stopPolling();
         setPushError(json.error ?? 'Push failed');
       }
     } catch (err) {
       setIsPushing(false);
-      stopPolling();
       setPushError(err instanceof Error ? err.message : 'Push failed');
     }
-  }, [selectedPanelIds, isConnected, startPolling, stopPolling]);
+  }, [selectedPanelIds]);
 
   const handleRollback = useCallback(async (panelId: number) => {
     try {
@@ -355,7 +309,15 @@ export function PushWizard({ panels }: PushWizardProps) {
 
         {/* Step 2: Preview Changes */}
         {currentStep === 2 && (
-          <ConfigDiffView diffResults={diffResults} />
+          <>
+            {!isConnected && (
+              <div className="mb-4 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-400">
+                Real-time push progress requires WebSocket connection. Push is disabled until
+                the connection is restored.
+              </div>
+            )}
+            <ConfigDiffView diffResults={diffResults} />
+          </>
         )}
 
         {/* Step 3: Push */}
@@ -409,7 +371,11 @@ export function PushWizard({ panels }: PushWizardProps) {
               </Button>
             )}
             {currentStep === 2 && (
-              <Button onClick={handlePush} disabled={isPushing}>
+              <Button
+                onClick={handlePush}
+                disabled={isPushing || !isConnected}
+                title={!isConnected ? 'Real-time progress requires WebSocket connection' : undefined}
+              >
                 Push Configuration
               </Button>
             )}
