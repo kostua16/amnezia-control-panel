@@ -1,41 +1,53 @@
+/** Match type for geo-routing rules */
+export type GeoMatchType = 'country' | 'region' | 'special';
+
+/** Source of a geo-routing rule */
+export type GeoRuleSource = 'custom' | 'imported' | 'template';
+
 export interface GeoTarget {
-  /** ISO 3166-1 alpha-2 country code, e.g. 'US', 'DE', 'RU' */
   countryCode?: string;
-  /** Region name (e.g. 'Europe', 'Asia-Pacific') */
   region?: string;
-  /** Special target: 'domestic' or 'foreign' */
   special?: 'domestic' | 'foreign';
 }
 
 export interface GeoRoutingRule {
   id: number;
   name: string;
+  matchType: GeoMatchType;
   target: GeoTarget;
-  /** What to do with matching traffic */
   action: 'ALLOW' | 'BLOCK' | 'ROUTE';
-  /** Chain ID to route through (only if action === 'ROUTE') */
-  chainId?: number;
-  /** Rule priority (lower = higher priority) */
+  chainId?: number | null;
   priority: number;
   isActive: boolean;
+  source: GeoRuleSource;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface GeoRuleCreate {
   name: string;
+  matchType: GeoMatchType;
   target: GeoTarget;
   action: 'ALLOW' | 'BLOCK' | 'ROUTE';
-  chainId?: number;
+  chainId?: number | null;
   priority?: number;
   isActive?: boolean;
+  source?: GeoRuleSource;
 }
 
 export interface GeoRuleUpdate {
   name?: string;
+  matchType?: GeoMatchType;
   target?: GeoTarget;
   action?: 'ALLOW' | 'BLOCK' | 'ROUTE';
   chainId?: number | null;
   priority?: number;
   isActive?: boolean;
+}
+
+export interface GeoRoutingResult {
+  matched: boolean;
+  rule?: GeoRoutingRule;
+  action: 'ALLOW' | 'BLOCK' | 'ROUTE';
+  chainId?: number;
 }
