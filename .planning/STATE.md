@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Multi-Panel Chain Routing
 status: in-progress
-stopped_at: Executing 11.4-04 (context exhaustion at ~76%, 2026-04-30)
-last_updated: "2026-04-30T21:00:00Z"
-last_activity: 2026-04-30 -- 11.4-01, 11.4-02, 11.4-03 complete (config applier, rollback, diff preview)
+stopped_at: Phase 11.5 context gathered (discuss-phase, 2026-05-01)
+last_updated: "2026-05-01T12:00:00Z"
+last_activity: 2026-05-01 -- Phase 11.5 discuss-phase complete; CONTEXT + DISCUSSION-LOG in 11.5-geo-routing-routing-rules
 progress:
   total_phases: 8
   completed_phases: 3
@@ -66,7 +66,7 @@ Recent decisions affecting current work:
 - v1.1: Tailscale as exclusive transport layer (zero new dependencies)
 - v1.1: Central-push-only sync model (no bidirectional sync)
 - v1.1: Hybrid autonomy -- remote panels cache config, operate independently when central is down
-- v1.1: MaxMind GeoIP2 Lite for geo-routing (decision needed during Phase 11.5 planning)
+- v1.1 geo Phase 11.5: v2fly/geoip-style on-disk DB + periodic refresh (see `11.5-CONTEXT.md`)
 - 11.1-01: advertisedSubnets stored as JSON-encoded String (SQLite Prisma connector does not support String[])
 - 11.1-01: toNodeInfo strips PublicKey per T-11.1-02 information disclosure mitigation
 - 11.3-03: API keys cached in volatile memory only (Map) for auto-resync, never persisted to DB
@@ -77,7 +77,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- GeoIP provider selection needed before Phase 11.5 (MaxMind GeoIP2 Lite MMDB vs ip-api.com free API)
+- GeoIP: on-disk v2fly-style artifacts + built-in refresh (see 11.5-CONTEXT.md); planner implements file pipeline
 - WireGuard/Xray config format specifics for applyChainConfig need real-service validation during Phase 11.4
 - 3x-ui REST API is community-maintained -- pin supported version range in documentation
 
@@ -90,9 +90,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-30T06:11:31.204Z
-Stopped at: context exhaustion at 75% (2026-04-30)
-Resume file: None
+Last session: 2026-05-01 (discuss-phase 11.5)
+Stopped at: Phase 11.5 context gathered
+Resume file: `.planning/phases/11.5-geo-routing-routing-rules/11.5-CONTEXT.md`
 
 ## Quick Tasks Completed
 
