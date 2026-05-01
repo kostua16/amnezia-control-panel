@@ -85,8 +85,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11.2: Remote Panel Registration** - Register, test, monitor, and manage remote panels from central panel
 - [x] **Phase 11.3: Panel Sync Protocol & Hybrid Autonomy** - Config push transport, local config caching, and autonomous fallback
 - [x] **Phase 11.4: Chain Config Application & Push UX** - Real config push to AWG/3x-ui services, diff preview, rollback, error reporting
-- [ ] **Phase 11.5: Geo-Routing & Routing Rules** - Persisted geo-routing rules, GeoIP lookups, routing rule CRUD with templates
-- [ ] **Phase 11.6: Visual Chain Editor** - Drag-and-drop chain topology with panel boundaries and inline rule editing
+- [x] **Phase 11.5: Geo-Routing & Routing Rules**- Persisted geo-routing rules, GeoIP lookups, routing rule CRUD with templates
+- [x] **Phase 11.6: Visual Chain Editor** - Drag-and-drop chain topology with panel boundaries and inline rule editing ✅ 2026-05-01
 - [ ] **Phase 11.7: Pre-Configuration Templates** - VPN protocol, server, routing, and chain presets
 - [ ] **Phase 11.8: Multi-Panel Dashboard** - Central health dashboard aggregating status from all remote panels
 
@@ -192,9 +192,9 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 11.6-01: Drag-and-drop chain topology builder with node placement
-- [ ] 11.6-02: Panel boundary visualization (which panel owns which nodes)
-- [ ] 11.6-03: Inline routing rule editing within the chain editor
+- [x] 11.6-01-PLAN.md -- React Flow canvas, custom node with 4 handles, toolbar, minimap, zoom controls (Wave 1) ✅ 2026-05-01
+- [x] 11.6-02-PLAN.md -- Panel boundary group nodes, server-to-panel mapping, cross-panel edge styling (Wave 2) ✅ 2026-05-01
+- [x] 11.6-03-PLAN.md -- Inline routing rules drawer with tabbed CRUD, auto-save debounce, Apply to Panels (Wave 2) ✅ 2026-05-01
 
 ### Phase 11.7: Pre-Configuration Templates
 **Goal**: Admin can use pre-built templates for VPN protocols, server configurations, routing rule bundles, and complete chain presets to speed up multi-panel setup.
@@ -309,4 +309,4 @@ v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phase 11.5 planned (5 plans, 3 waves)*
+*Last updated: 2026-05-01 - Phase 11.6 planned (3 plans, 2 waves)*
