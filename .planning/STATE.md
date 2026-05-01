@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Multi-Panel Chain Routing
 status: in-progress
-stopped_at: context exhaustion at 76% (2026-05-01)
-last_updated: "2026-05-01T16:56:11Z"
-last_activity: 2026-05-01 -- 12.7-01 complete (11.1-VERIFICATION.md created, TSCL-01-04 verified, audit score 26/35)
+stopped_at: Completed 12.9-01 (2026-05-02)
+last_updated: "2026-05-02T20:49:12Z"
+last_activity: 2026-05-02 -- 12.9-01 complete (WS_TO_QUERY_KEYS aligned with hook queryKeys)
 progress:
   total_phases: 8
   completed_phases: 8
-  total_plans: 32
-  completed_plans: 32
+  total_plans: 34
+  completed_plans: 34
   percent: 100
 ---
 
@@ -26,10 +26,10 @@ progress:
 
 ## Current Position
 
-Phase: 12.7 of 12.7 (Audit Remediation) -- COMPLETE
+Phase: 12.9 of 12.9 (Audit Remediation) -- COMPLETE
 Plan: 1 of 1 in current phase (complete)
-Status: 12.7-01 complete
-Last activity: 2026-05-01 -- 12.7-01 complete (11.1-VERIFICATION.md created, TSCL-01-04 verified, audit score 26/35)
+Status: 12.9-01 complete
+Last activity: 2026-05-02 -- 12.9-01 complete (WS_TO_QUERY_KEYS aligned with hook queryKeys)
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -37,9 +37,9 @@ Progress: [█████████] 100% (v1.1 complete; audit remediation i
 
 **Velocity:**
 
-- Total plans completed: 25 (v1.1 + audit)
+- Total plans completed: 26 (v1.1 + audit)
 - Average duration: 4min
-- Total execution time: 99min
+- Total execution time: 102min
 
 **By Phase:**
 
@@ -56,8 +56,10 @@ Progress: [█████████] 100% (v1.1 complete; audit remediation i
 | 12.5 | 1 | 4min | 4min |
 | 12.6 | 1 | 5min | 5min |
 | 12.7 | 1 | 4min | 4min |
+| 12.8 | 2 | -- | -- |  (planned, not yet executed)
+| 12.9 | 1 | 3min | 3min |
 
-- Last 5 plans: 12.7-01 (4min), 12.6-01 (5min), 12.5-01 (4min), 12.4-01 (5min), 12.3-01 (7min)
+- Last 5 plans: 12.9-01 (3min), 12.7-01 (4min), 12.6-01 (5min), 12.5-01 (4min), 12.4-01 (5min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -84,6 +86,8 @@ Recent decisions affecting current work:
 - 12.2-01: instrumentation.ts starts broadcaster -- Next.js compiles .ts imports in register(), broadcaster needs DB access
 - 12.5-01: Tab toggle over Tabs component -- no shadcn/ui Tabs available, custom button-based segment control
 - 12.5-01: buildServerPanelMap uses Tailscale address matching -- no FK between Server and RemotePanel in schema
+- 12.9-01: alert:new removed from WS_TO_QUERY_KEYS -- use-alerts.ts self-invalidates (single source of truth)
+- 12.9-01: panel:push-progress and chain:status-update removed from bridge -- no RQ consumers, consumed via lastEvent/direct socket
 
 ### Pending Todos
 
@@ -105,8 +109,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-01T16:52:00Z
-Stopped at: Completed 12.7-01 (all audit remediation phases complete)
+Last session: 2026-05-02T20:46:12Z
+Stopped at: Completed 12.9-01 (WS_TO_QUERY_KEYS aligned with hook queryKeys)
 Resume file: None
 
 ## Quick Tasks Completed
@@ -118,4 +122,4 @@ Resume file: None
 
 ---
 *State initialized: 2026-04-27*
-*Last updated: 2026-05-01 - 12.7-01 complete (TSCL-01-04 verified, audit score 26/35)*
+*Last updated: 2026-05-02 - 12.9-01 complete (WS_TO_QUERY_KEYS aligned with hook queryKeys)*

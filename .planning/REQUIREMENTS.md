@@ -264,10 +264,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TMPL-04 | Phase 11.7 | Pending |
 | DASH-01 | Phase 11.8 | Pending |
 | PROJ-AUTH-01 | Phase 12.12 | Pending |
-| PROJ-RT-01 | Phase 12.9 | Pending |
+| PROJ-RT-01 | Phase 12.9 | Done |
 | PROJ-TRACE-01 | Phase 12.3 | Done |
 | GAPL-01 | Phase 12.8 | Pending |
-| GAPL-02 | Phase 12.9 | Pending |
+| GAPL-02 | Phase 12.9 | Done |
 | V1-INIT-01 | Phase 1.1 | Done |
 | V1-INIT-02 | Phase 1.2 | Done |
 | V1-INIT-03 | Phase 1.3 | Done |
