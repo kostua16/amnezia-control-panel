@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Package, Shield, Globe } from 'lucide-react';
+import { Loader2, Package, Shield, Globe, GitBranch } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import type { ChainPreset } from '@/types/chain-preset';
 
 interface ChainPresetsGridProps {
   onPreview: (type: string, data: unknown) => void;
+  onFork?: (name: string, description: string) => void;
 }
 
 const topologyBadgeClasses: Record<string, string> = {
@@ -22,7 +23,7 @@ const topologyLabels: Record<string, string> = {
   mesh: 'Mesh',
 };
 
-export function ChainPresetsGrid({ onPreview }: ChainPresetsGridProps) {
+export function ChainPresetsGrid({ onPreview, onFork }: ChainPresetsGridProps) {
   const [presets, setPresets] = useState<ChainPreset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +134,20 @@ export function ChainPresetsGrid({ onPreview }: ChainPresetsGridProps) {
                     <span className="text-xs text-muted-foreground">{preset.nodeCount} nodes</span>
                   </div>
                   <div className="flex gap-2">
+                    {preset.isBuiltIn && onFork && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFork(preset.name, preset.description);
+                        }}
+                      >
+                        <GitBranch className="h-3 w-3 mr-1" />
+                        Fork
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"

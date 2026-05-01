@@ -6,6 +6,8 @@ import { ProtocolTemplatesGrid } from '@/components/templates/protocol-templates
 import { ServerPresetsGrid } from '@/components/templates/server-presets-grid';
 import { RoutingPresetsGrid } from '@/components/templates/routing-presets-grid';
 import { ChainPresetsGrid } from '@/components/templates/chain-presets-grid';
+import { TemplatePreviewModal } from '@/components/templates/template-preview-modal';
+import { SaveTemplateDialog } from '@/components/templates/save-template-dialog';
 import type { ConfigTemplate, ConfigPreset } from '@/types/config';
 import type { RoutingRuleTemplate } from '@/types/routing-rule-template';
 import type { ChainPreset } from '@/types/chain-preset';
@@ -34,9 +36,21 @@ type PreviewItem = {
 export function TemplateGalleryPage() {
   const [activeTab, setActiveTab] = useState<string>('protocols');
   const [previewItem, setPreviewItem] = useState<PreviewItem | null>(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [forkValues, setForkValues] = useState<{ name: string; description: string } | undefined>(undefined);
 
   const handlePreview = useCallback((type: string, data: unknown) => {
     setPreviewItem({ type: type as PreviewItem['type'], data } as PreviewItem);
+  }, []);
+
+  const handleFork = useCallback((name: string, description: string) => {
+    setForkValues({ name: `${name} (Copy)`, description });
+    setSaveDialogOpen(true);
+  }, []);
+
+  const handleSaveDialogClosed = useCallback(() => {
+    setSaveDialogOpen(false);
+    setForkValues(undefined);
   }, []);
 
   return (
@@ -58,13 +72,29 @@ export function TemplateGalleryPage() {
 
       {/* Content area */}
       <div>
-        {activeTab === 'protocols' && <ProtocolTemplatesGrid onPreview={handlePreview} />}
+        {activeTab === 'protocols' && (
+          <ProtocolTemplatesGrid onPreview={handlePreview} onFork={handleFork} />
+        )}
         {activeTab === 'server' && <ServerPresetsGrid onPreview={handlePreview} />}
         {activeTab === 'routing' && <RoutingPresetsGrid onPreview={handlePreview} />}
-        {activeTab === 'chain' && <ChainPresetsGrid onPreview={handlePreview} />}
+        {activeTab === 'chain' && (
+          <ChainPresetsGrid onPreview={handlePreview} onFork={handleFork} />
+        )}
       </div>
 
-      {/* Preview modal -- wired in Plan 04 */}
+      {/* Preview modal */}
+      <TemplatePreviewModal
+        open={previewItem !== null}
+        onClose={() => setPreviewItem(null)}
+        item={previewItem}
+      />
+
+      {/* Fork / Save dialog */}
+      <SaveTemplateDialog
+        open={saveDialogOpen}
+        onClose={handleSaveDialogClosed}
+        initialValues={forkValues}
+      />
     </div>
   );
 }

@@ -1,16 +1,17 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Package, Shield, Zap } from 'lucide-react';
+import { Loader2, Package, Shield, Zap, GitBranch } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import type { ConfigTemplate } from '@/types/config';
 
 interface ProtocolTemplatesGridProps {
   onPreview: (type: string, data: unknown) => void;
+  onFork?: (name: string, description: string) => void;
 }
 
-export function ProtocolTemplatesGrid({ onPreview }: ProtocolTemplatesGridProps) {
+export function ProtocolTemplatesGrid({ onPreview, onFork }: ProtocolTemplatesGridProps) {
   const [templates, setTemplates] = useState<ConfigTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +101,20 @@ export function ProtocolTemplatesGrid({ onPreview }: ProtocolTemplatesGridProps)
                     {template.serviceType === 'AWG' ? 'AWG' : '3x-ui'}
                   </span>
                   <div className="flex gap-2">
+                    {template.isBuiltIn && onFork && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFork(template.name, template.description);
+                        }}
+                      >
+                        <GitBranch className="h-3 w-3 mr-1" />
+                        Fork
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
