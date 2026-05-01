@@ -1,12 +1,12 @@
-import Link from 'next/link';
 import { Users, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface UserEmptyStateProps {
   hasSearch: boolean;
+  onCreateClick?: () => void;
 }
 
-export function UserEmptyState({ hasSearch }: UserEmptyStateProps) {
+export function UserEmptyState({ hasSearch, onCreateClick }: UserEmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
@@ -26,12 +26,10 @@ export function UserEmptyState({ hasSearch }: UserEmptyStateProps) {
           <p className="mt-1 text-sm text-muted-foreground">
             Create your first VPN user to get started.
           </p>
-          <Link href="/users/create" className="mt-6">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Create User
-            </Button>
-          </Link>
+          <Button className="mt-6" onClick={onCreateClick}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create User
+          </Button>
         </>
       )}
     </div>

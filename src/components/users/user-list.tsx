@@ -196,14 +196,21 @@ export function UserList() {
   // Empty state
   if (pagination && pagination.total === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Users</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <UserEmptyState hasSearch={!!debouncedSearch} />
-        </CardContent>
-      </Card>
+      <>
+        <Card>
+          <CardHeader>
+            <CardTitle>Users</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <UserEmptyState hasSearch={!!debouncedSearch} onCreateClick={() => setCreateModalOpen(true)} />
+          </CardContent>
+        </Card>
+        <CreateUserModal
+          open={createModalOpen}
+          onClose={() => setCreateModalOpen(false)}
+          onSuccess={() => refetch()}
+        />
+      </>
     );
   }
 
