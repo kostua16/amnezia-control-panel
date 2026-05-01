@@ -225,8 +225,8 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 11.8-01-PLAN.md -- Shared utilities, Collapsible primitive, types, and aggregation API endpoint (Wave 1)
-- [ ] 11.8-02-PLAN.md -- useMultiPanelStatus hook, FleetHealthStrip, EmptyPanelCTA, PanelCard, PanelCardExpanded (Wave 2)
+- [x] 11.8-01-PLAN.md -- Shared utilities, Collapsible primitive, types, and aggregation API endpoint (Wave 1)
+- [x] 11.8-02-PLAN.md -- useMultiPanelStatus hook, FleetHealthStrip, EmptyPanelCTA, PanelCard, PanelCardExpanded (Wave 2)
 - [ ] 11.8-03-PLAN.md -- MultiPanelSection orchestrator, dashboard page integration, WebSocket events, panel alerts (Wave 3)
 
 ## Progress
@@ -301,7 +301,7 @@ Phases execute in numeric order: 11.1 -> 11.2 -> 11.3 -> 11.4 -> 11.5 -> 11.6 ->
 | 11.5 | v1.1 | 0/5 | Not started | - |
 | 11.6 | v1.1 | 0/3 | Not started | - |
 | 11.7 | v1.1 | 4/4 | Complete | 2026-05-01 |
-| 11.8 | v1.1 | 0/3 | Not started | - |
+| 11.8 | v1.1 | 2/3 | In Progress | 2026-05-01 |
 
 ## Coverage
 
