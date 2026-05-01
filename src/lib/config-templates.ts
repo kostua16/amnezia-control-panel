@@ -10,8 +10,11 @@ import type {
 
 export async function getTemplates(
   serviceType?: ServiceType,
+  category?: string,
 ): Promise<ConfigTemplate[]> {
-  const where = serviceType ? { serviceType } : {};
+  const where: Record<string, unknown> = {};
+  if (serviceType) where.serviceType = serviceType;
+  if (category) where.category = category;
   const templates = await prisma.configTemplate.findMany({
     where,
     orderBy: [{ isBuiltIn: 'desc' }, { name: 'asc' }],
@@ -87,6 +90,7 @@ function mapTemplate(
     protocol: t.protocol,
     content: t.content as Record<string, unknown>,
     description: t.description,
+    category: t.category,
     isBuiltIn: t.isBuiltIn,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
