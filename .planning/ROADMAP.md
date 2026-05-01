@@ -88,7 +88,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11.5: Geo-Routing & Routing Rules**- Persisted geo-routing rules, GeoIP lookups, routing rule CRUD with templates
 - [x] **Phase 11.6: Visual Chain Editor** - Drag-and-drop chain topology with panel boundaries and inline rule editing
 - [x] **Phase 11.7: Pre-Configuration Templates** - VPN protocol, server, routing, and chain presets ✅ 2026-05-01
-- [ ] **Phase 11.8: Multi-Panel Dashboard** - Central health dashboard aggregating status from all remote panels
+- [x] **Phase 11.8: Multi-Panel Dashboard** - Central health dashboard aggregating status from all remote panels ✅ 2026-05-01
 
 ## Phase Details
 
@@ -227,7 +227,7 @@ Plans:
 Plans:
 - [x] 11.8-01-PLAN.md -- Shared utilities, Collapsible primitive, types, and aggregation API endpoint (Wave 1)
 - [x] 11.8-02-PLAN.md -- useMultiPanelStatus hook, FleetHealthStrip, EmptyPanelCTA, PanelCard, PanelCardExpanded (Wave 2)
-- [ ] 11.8-03-PLAN.md -- MultiPanelSection orchestrator, dashboard page integration, WebSocket events, panel alerts (Wave 3)
+- [x] 11.8-03-PLAN.md -- MultiPanelSection orchestrator, dashboard page integration, WebSocket events, panel alerts (Wave 3)
 
 ## Progress
 
@@ -301,7 +301,7 @@ Phases execute in numeric order: 11.1 -> 11.2 -> 11.3 -> 11.4 -> 11.5 -> 11.6 ->
 | 11.5 | v1.1 | 0/5 | Not started | - |
 | 11.6 | v1.1 | 0/3 | Not started | - |
 | 11.7 | v1.1 | 4/4 | Complete | 2026-05-01 |
-| 11.8 | v1.1 | 2/3 | In Progress | 2026-05-01 |
+| 11.8 | v1.1 | 3/3 | Complete | 2026-05-01 |
 
 ## Coverage
 
@@ -310,4 +310,4 @@ v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phase 11.8 planned (3 plans, 3 waves)*
+*Last updated: 2026-05-01 - Phase 11.8 complete (3 plans, 3 waves)*
