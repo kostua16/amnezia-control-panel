@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: Multi-Panel Chain Routing
 status: completed
 stopped_at: context exhaustion at 76% (2026-05-01)
-last_updated: "2026-05-01T15:55:18Z"
-last_activity: 2026-05-01 -- 12.2-01 complete (Socket.IO server/custom server/protocol fix)
+last_updated: "2026-05-01T16:26:00Z"
+last_activity: 2026-05-01 -- 12.4-01 complete (sync apply endpoint + WS invalidation bridge)
 progress:
   total_phases: 8
   completed_phases: 8
@@ -22,14 +22,14 @@ progress:
 **Core Value**: One panel, both VPN systems -- users synchronized between Amnezia AWG and 3x-ui, no context switching
 **Current Focus**: v1.1 Multi-Panel Chain Routing
 **Current Position**: Phase 11.8 of 11.8 (Multi-Panel Dashboard) -- v1.1 complete
-**Audit Remediation**: Phase 12.1-12.3 complete, 12.4-12.7 remaining
+**Audit Remediation**: Phase 12.1-12.4 complete, 12.5-12.7 remaining
 
 ## Current Position
 
-Phase: 12.3 of 12.7 (Audit Remediation)
+Phase: 12.4 of 12.7 (Audit Remediation)
 Plan: 1 of 1 in current phase
-Status: 12.3-01 complete
-Last activity: 2026-05-01 -- 12.3-01 complete (v1.0 REQ-ID traceability + 45 VERIFICATION.md backfill)
+Status: 12.4-01 complete
+Last activity: 2026-05-01 -- 12.4-01 complete (sync apply endpoint + WS cache invalidation bridge)
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -37,9 +37,9 @@ Progress: [█████████] 100% (v1.1 complete; audit remediation i
 
 **Velocity:**
 
-- Total plans completed: 21 (v1.1 + audit)
+- Total plans completed: 22 (v1.1 + audit)
 - Average duration: 4min
-- Total execution time: 81min
+- Total execution time: 86min
 
 **By Phase:**
 
@@ -52,8 +52,9 @@ Progress: [█████████] 100% (v1.1 complete; audit remediation i
 | 12.1 | 1 | 3min | 3min |
 | 12.2 | 1 | 4min | 4min |
 | 12.3 | 1 | 7min | 7min |
+| 12.4 | 1 | 5min | 5min |
 
-- Last 5 plans: 12.3-01 (7min), 12.2-01 (4min), 12.1-01 (3min), 11.8-01 (5min), 11.7-04 (5min)
+- Last 5 plans: 12.4-01 (5min), 12.3-01 (7min), 12.2-01 (4min), 12.1-01 (3min), 11.8-01 (5min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -95,11 +96,12 @@ None yet.
 |----------|------|--------|-------------|
 | Tech debt | In-memory geo-routing state lost on restart | Being addressed in Phase 11.5 | v1.0 close |
 | Integration | applyChainConfig stub needs real CLI commands | Being addressed in Phase 11.4 | v1.0 close |
+| TS errors | Pre-existing TS errors in chain-flow-editor.tsx, chain-presets/route.ts | Out of scope for 12.4 | 12.4 |
 
 ## Session Continuity
 
-Last session: 2026-05-01T16:17:00Z
-Stopped at: Completed 12.3-01
+Last session: 2026-05-01T16:26:00Z
+Stopped at: Completed 12.4-01
 Resume file: None
 
 ## Quick Tasks Completed
@@ -111,4 +113,4 @@ Resume file: None
 
 ---
 *State initialized: 2026-04-27*
-*Last updated: 2026-05-01 - 12.2-01 complete (Socket.IO alignment)*
+*Last updated: 2026-05-01 - 12.4-01 complete (sync apply endpoint + WS invalidation bridge)*
