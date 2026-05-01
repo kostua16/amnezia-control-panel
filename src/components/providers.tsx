@@ -1,7 +1,7 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useWebSocket } from '@/hooks/use-websocket';
 import type { WsEventType } from '@/lib/websocket';
 
@@ -29,6 +29,21 @@ const WS_EVENTS: WsEventType[] = [
   'chain:status-update',
 ];
 
+/**
+ * Mapping from WebSocket event types to React Query key prefixes.
+ * When a WS event arrives, all queries whose key starts with the
+ * mapped prefix are invalidated, triggering a fresh fetch.
+ */
+const WS_TO_QUERY_KEYS: Partial<Record<WsEventType, string[][]>> = {
+  'stats:update': [['dashboard', 'stats']],
+  'resource:update': [['monitoring', 'resources']],
+  'alert:new': [['alerts']],
+  'user:status-change': [['users']],
+  'panel:push-progress': [['panels']],
+  'panel:fallback-change': [['panels']],
+  'chain:status-update': [['chains']],
+};
+
 interface ProvidersProps {
   children: ReactNode;
 }
@@ -50,6 +65,17 @@ export function Providers({ children }: ProvidersProps) {
     autoConnect: true,
     events: WS_EVENTS,
   });
+
+  // Bridge: invalidate React Query caches when WebSocket events arrive
+  useEffect(() => {
+    for (const [eventType, queryKeys] of Object.entries(WS_TO_QUERY_KEYS)) {
+      if (lastEvent[eventType]) {
+        for (const queryKey of queryKeys) {
+          queryClient.invalidateQueries({ queryKey });
+        }
+      }
+    }
+  }, [lastEvent, queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>
