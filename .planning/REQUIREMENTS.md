@@ -3,6 +3,98 @@
 **Defined:** 2026-04-29
 **Core Value:** One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui, no context switching
 
+## v1.0 Requirements
+
+Requirements for the initial single-panel release. All shipped 2026-04-29. Each maps to roadmap phases.
+
+### Project Setup
+
+- [x] **V1-INIT-01**: Project initialized with Next.js 15 + React 19 + TypeScript + Prisma + SQLite (Phase 1.1)
+- [x] **V1-INIT-02**: Core dependencies installed (Socket.IO, Tailwind CSS, Zustand, React Query, bcryptjs, jose) (Phase 1.2)
+- [x] **V1-INIT-03**: Database schema with User, Server, and 7 additional models defined via Prisma (Phase 1.3)
+- [x] **V1-INIT-04**: Project structure with feature-based component dirs, types, API routes, and lib utilities (Phase 1.4)
+- [x] **V1-INIT-05**: Dev environment configured with ESLint, environment variables, seed script (Phase 1.5)
+- [x] **V1-INIT-06**: Dashboard layout with sidebar navigation, header, and responsive shell (Phase 1.6)
+- [x] **V1-INIT-07**: Login page UI with email/password form (Phase 1.7)
+
+### Authentication
+
+- [x] **V1-AUTH-01**: Authentication context (Zustand store) manages user state, login, logout, and auth check (Phase 2.1)
+- [x] **V1-AUTH-02**: Login API endpoint validates credentials via bcryptjs and returns JWT in httpOnly cookie (Phase 2.2)
+- [x] **V1-AUTH-03**: Session management with JWT verification middleware on protected routes (Phase 2.3)
+- [x] **V1-AUTH-04**: Protected routes redirect unauthenticated users to login (Phase 2.4)
+- [x] **V1-AUTH-05**: Logout clears session cookie and resets auth state (Phase 2.5)
+
+### Service Management
+
+- [x] **V1-SVC-01**: Service status API reports online/offline/error for AWG and 3x-ui services (Phase 3.1)
+- [x] **V1-SVC-02**: Status display component shows service health in the UI with visual indicators (Phase 3.2)
+- [x] **V1-SVC-03**: Service install API for AWG (stub — placeholder for real CLI on deployment server) (Phase 3.3)
+- [x] **V1-SVC-04**: Service install API for 3x-ui (stub — placeholder for real CLI on deployment server) (Phase 3.4)
+- [x] **V1-SVC-05**: Service uninstall APIs for AWG and 3x-ui (stubs) (Phase 3.5)
+- [x] **V1-SVC-06**: Auto-restart logic monitors service health and restarts failed services (Phase 3.6)
+- [x] **V1-SVC-07**: Configuration display shows current AWG and 3x-ui settings (Phase 3.7)
+
+### User Management
+
+- [x] **V1-USR-01**: User database models (User, UserProtocol) with traffic quota and speed limit fields (Phase 4.1)
+- [x] **V1-USR-02**: User list component displays all users with status, protocol, and actions (Phase 4.2)
+- [x] **V1-USR-03**: User creation form for adding new users with name, email, and protocol settings (Phase 4.3)
+- [x] **V1-USR-04**: User creation API persists user to database (Phase 4.4)
+- [x] **V1-USR-05**: User edit form for modifying existing user settings (Phase 4.5)
+- [x] **V1-USR-06**: User edit API updates user in database (Phase 4.6)
+- [x] **V1-USR-07**: User delete API removes user from database (Phase 4.7)
+- [x] **V1-USR-08**: Block/unblock APIs suspend or restore user access (Phase 4.8)
+- [x] **V1-USR-09**: User sync system synchronizes users between AWG and 3x-ui (Phase 4.9)
+
+### Configuration
+
+- [x] **V1-CFG-01**: Configuration templates define common VPN parameter sets (Phase 5.1)
+- [x] **V1-CFG-02**: Protocol templates for WireGuard, VLESS, Trojan, Shadowsocks (Phase 5.2)
+- [x] **V1-CFG-03**: Auto-gen configuration API generates VPN configs from templates (Phase 5.3)
+- [x] **V1-CFG-04**: Export configurations endpoint produces downloadable config files (Phase 5.4)
+- [x] **V1-CFG-05**: Import configurations endpoint parses uploaded config files (Phase 5.5)
+- [x] **V1-CFG-06**: Configuration presets provide one-click setup for common scenarios (Phase 5.6)
+- [x] **V1-CFG-07**: Configuration manager UI for browsing, editing, and applying configs (Phase 5.7)
+
+### Traffic & Routing Limits
+
+- [x] **V1-LIM-01**: Traffic quotas system enforces per-user data limits (Phase 6.1)
+- [x] **V1-LIM-02**: Speed limits system controls per-user bandwidth (Phase 6.2)
+- [x] **V1-LIM-03**: Routing rules API provides CRUD for routing rules (Phase 6.3)
+- [x] **V1-LIM-04**: Routing rules UI displays and manages rules visually (Phase 6.4)
+- [x] **V1-LIM-05**: Rule enforcement applies routing decisions to traffic (Phase 6.5)
+
+### Dashboard & Monitoring
+
+- [x] **V1-DSH-01**: Dashboard metrics aggregate key system and VPN statistics (Phase 7.1)
+- [x] **V1-DSH-02**: Traffic statistics API provides per-user and aggregate traffic data (Phase 7.2)
+- [x] **V1-DSH-03**: Stats display UI renders charts and tables for traffic data (Phase 7.3)
+- [x] **V1-DSH-04**: Resource monitoring API reports CPU, memory, and disk usage (Phase 7.4)
+- [x] **V1-DSH-05**: Resource display UI shows system resource gauges (Phase 7.5)
+- [x] **V1-DSH-06**: Real-time updates via WebSocket for dashboard data (Phase 7.6)
+
+### Multi-Server
+
+- [x] **V1-SRV-01**: Multi-server management registers and lists VPN servers (Phase 8.1)
+- [x] **V1-SRV-02**: Server configuration for each registered server (Phase 8.2)
+- [x] **V1-SRV-03**: Chain templates define common multi-hop topologies (Phase 8.3)
+- [x] **V1-SRV-04**: Auto-configure routing applies chain templates to servers (Phase 8.4)
+
+### Chain & Geo
+
+- [x] **V1-CHN-01**: Visual chain builder with node placement and connection (Phase 9.1)
+- [x] **V1-CHN-02**: Geo-routing rules route traffic by destination geography (Phase 9.2)
+- [x] **V1-CHN-03**: Whitelist management for bypass and exception lists (Phase 9.3)
+- [x] **V1-CHN-04**: Live chain visualization shows real-time chain status (Phase 9.4)
+
+### Alerts & Polish
+
+- [x] **V1-ALT-01**: Service alert system detects and records service failures (Phase 10.1)
+- [x] **V1-ALT-02**: Quota alert system triggers when users approach traffic limits (Phase 10.2)
+- [x] **V1-ALT-03**: Resource alert system warns on high CPU/memory/disk usage (Phase 10.3)
+- [x] **V1-ALT-04**: UI polish and responsive design across all pages (Phase 10.4)
+
 ## v1.1 Requirements
 
 Requirements for multi-panel chain routing milestone. Each maps to roadmap phases.
@@ -83,7 +175,7 @@ Closes structured gaps from `.planning/v1.0-MILESTONE-AUDIT.md`. Not part of ori
 
 ### Planning & evidence
 
-- [ ] **PROJ-TRACE-01**: Phases 1.1–10.4 have REQ-ID (or equivalent) mapping in `REQUIREMENTS.md`; audit-critical phases gain `VERIFICATION.md` / validation pilot per Phase 12.3 scope
+- [x] **PROJ-TRACE-01**: Phases 1.1–10.4 have REQ-ID (or equivalent) mapping in `REQUIREMENTS.md`; audit-critical phases gain `VERIFICATION.md` / validation pilot per Phase 12.3 scope
 
 ### Integration follow-ups (audit warnings)
 
@@ -173,17 +265,76 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DASH-01 | Phase 11.8 | Pending |
 | PROJ-AUTH-01 | Phase 12.1 | Done |
 | PROJ-RT-01 | Phase 12.2 | Pending |
-| PROJ-TRACE-01 | Phase 12.3 | Pending |
+| PROJ-TRACE-01 | Phase 12.3 | Done |
 | GAPL-01 | Phase 12.4 | Pending |
 | GAPL-02 | Phase 12.4 | Pending |
+| V1-INIT-01 | Phase 1.1 | Done |
+| V1-INIT-02 | Phase 1.2 | Done |
+| V1-INIT-03 | Phase 1.3 | Done |
+| V1-INIT-04 | Phase 1.4 | Done |
+| V1-INIT-05 | Phase 1.5 | Done |
+| V1-INIT-06 | Phase 1.6 | Done |
+| V1-INIT-07 | Phase 1.7 | Done |
+| V1-AUTH-01 | Phase 2.1 | Done |
+| V1-AUTH-02 | Phase 2.2 | Done |
+| V1-AUTH-03 | Phase 2.3 | Done |
+| V1-AUTH-04 | Phase 2.4 | Done |
+| V1-AUTH-05 | Phase 2.5 | Done |
+| V1-SVC-01 | Phase 3.1 | Done |
+| V1-SVC-02 | Phase 3.2 | Done |
+| V1-SVC-03 | Phase 3.3 | Done |
+| V1-SVC-04 | Phase 3.4 | Done |
+| V1-SVC-05 | Phase 3.5 | Done |
+| V1-SVC-06 | Phase 3.6 | Done |
+| V1-SVC-07 | Phase 3.7 | Done |
+| V1-USR-01 | Phase 4.1 | Done |
+| V1-USR-02 | Phase 4.2 | Done |
+| V1-USR-03 | Phase 4.3 | Done |
+| V1-USR-04 | Phase 4.4 | Done |
+| V1-USR-05 | Phase 4.5 | Done |
+| V1-USR-06 | Phase 4.6 | Done |
+| V1-USR-07 | Phase 4.7 | Done |
+| V1-USR-08 | Phase 4.8 | Done |
+| V1-USR-09 | Phase 4.9 | Done |
+| V1-CFG-01 | Phase 5.1 | Done |
+| V1-CFG-02 | Phase 5.2 | Done |
+| V1-CFG-03 | Phase 5.3 | Done |
+| V1-CFG-04 | Phase 5.4 | Done |
+| V1-CFG-05 | Phase 5.5 | Done |
+| V1-CFG-06 | Phase 5.6 | Done |
+| V1-CFG-07 | Phase 5.7 | Done |
+| V1-LIM-01 | Phase 6.1 | Done |
+| V1-LIM-02 | Phase 6.2 | Done |
+| V1-LIM-03 | Phase 6.3 | Done |
+| V1-LIM-04 | Phase 6.4 | Done |
+| V1-LIM-05 | Phase 6.5 | Done |
+| V1-DSH-01 | Phase 7.1 | Done |
+| V1-DSH-02 | Phase 7.2 | Done |
+| V1-DSH-03 | Phase 7.3 | Done |
+| V1-DSH-04 | Phase 7.4 | Done |
+| V1-DSH-05 | Phase 7.5 | Done |
+| V1-DSH-06 | Phase 7.6 | Done |
+| V1-SRV-01 | Phase 8.1 | Done |
+| V1-SRV-02 | Phase 8.2 | Done |
+| V1-SRV-03 | Phase 8.3 | Done |
+| V1-SRV-04 | Phase 8.4 | Done |
+| V1-CHN-01 | Phase 9.1 | Done |
+| V1-CHN-02 | Phase 9.2 | Done |
+| V1-CHN-03 | Phase 9.3 | Done |
+| V1-CHN-04 | Phase 9.4 | Done |
+| V1-ALT-01 | Phase 10.1 | Done |
+| V1-ALT-02 | Phase 10.2 | Done |
+| V1-ALT-03 | Phase 10.3 | Done |
+| V1-ALT-04 | Phase 10.4 | Done |
 
 **Coverage:**
+- v1.0 requirements: 54 total (7 INIT + 5 AUTH + 7 SVC + 9 USR + 7 CFG + 5 LIM + 6 DSH + 4 SRV + 4 CHN + 4 ALT)
 - v1.1 requirements: 35 total
-- Mapped to phases: 35
+- Mapped to phases: 89 total (54 v1.0 + 35 v1.1)
 - Unmapped: 0
 - v1.0 audit remediation: 5 requirements (PROJ-*, GAPL-*) mapped to Phases 12.1–12.4
 - v1.1 audit gap closure: 15 requirements (CPUSH-01–06, CHAIN-01, VISED-03, GEO-03, GEO-04, TSCL-01–04) mapped to Phases 12.5–12.7
 
 ---
 *Requirements defined: 2026-04-29*
-*Last updated: 2026-05-01 — Phases 12.5–12.7 traceability (v1.1 milestone audit gap closure)*
+*Last updated: 2026-05-01 — v1.0 REQ-ID traceability added (Phase 12.3)*
