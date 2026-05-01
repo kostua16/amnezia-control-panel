@@ -26,6 +26,7 @@ import type {
 } from '@/types/geo-routing';
 import type {
   RoutingRule,
+  RoutingRuleCreate,
   RuleProtocol,
   RuleAction,
   ReorderPair,

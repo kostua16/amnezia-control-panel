@@ -155,6 +155,11 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
     return [...groupNodes, ...chainNodes];
   }, [localNodes, topology, customPositions, serverPanelMap, panels]);
 
+  // Track connections locally (React Flow edges are the source of truth for display)
+  const [localConnections, setLocalConnections] = useState<
+    Array<{ source: string; target: string }>
+  >([]);
+
   const flowEdges = useMemo(() => {
     const isCrossPanel = (sourceId: string, targetId: string) => {
       if (!serverPanelMap) return false;
@@ -176,11 +181,6 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
   // Use React Flow state hooks
   const [reactFlowNodes, setReactFlowNodes, onNodesChange] = useNodesState(flowNodes);
   const [reactFlowEdges, setReactFlowEdges, onEdgesChange] = useEdgesState(flowEdges);
-
-  // Track connections locally (React Flow edges are the source of truth for display)
-  const [localConnections, setLocalConnections] = useState<
-    Array<{ source: string; target: string }>
-  >([]);
 
   // Sync React Flow nodes to local nodes when positions change
   const prevNodesRef = useRef(reactFlowNodes);
