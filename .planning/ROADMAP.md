@@ -90,7 +90,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12.6: Geo-routing runtime E2E** — GEO-03, GEO-04; resolveGeoRoute wired into rule-enforcement and chain-router; GEO-04 narrowed to v2fly scope
 - [x] **Phase 12.7: Tailscale milestone verification** — TSCL-01–04; 11.1-VERIFICATION.md created; 11.2 corrected; audit score raised to 26/35
 - [ ] **Phase 12.8: Sync apply & receive contracts** — GAPL-01, CHAIN-01 (applier path); HMAC + body/response alignment for `config-applier` → `/api/sync/apply` and `panel-sync-client` → `/api/sync/receive`
-- [ ] **Phase 12.9: WebSocket → React Query key alignment** — GAPL-02, PROJ-RT-01; `providers.tsx` invalidation keys match `use-dashboard-stats`, `use-system-resources`, `use-multi-panel-status`
+- [x] **Phase 12.9: WebSocket → React Query key alignment** — GAPL-02, PROJ-RT-01; `providers.tsx` invalidation keys match `use-dashboard-stats`, `use-system-resources`, `use-multi-panel-status` (shipped 2026-05-02)
 - [ ] **Phase 12.10: Push wizard & per-panel sync fixes** — CPUSH-01–06, VISED-03 (closure); real panel API keys in PushWizard/rollback; `generatePerPanelConfig` / Xray rule panel scoping; reliable per-panel status/errors
 - [ ] **Phase 12.11: Tailscale transport in chain apply** — TSCL-04, CHAIN-01 (transport); `chain-router` / `chains/apply` use panel URL / tailnet resolution (not raw `hostname:22`)
 - [ ] **Phase 12.12: 12.x verification artifacts** — PROJ-AUTH-01 evidence; `12.1-`, `12.4-`, `12.6-`, `12.7-VERIFICATION.md`; reconcile `REQUIREMENTS.md` checkboxes with integration truth
