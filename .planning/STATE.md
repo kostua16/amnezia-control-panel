@@ -5,12 +5,12 @@ milestone_name: Multi-Panel Chain Routing
 status: completed
 stopped_at: context exhaustion at 76% (2026-05-01)
 last_updated: "2026-05-01T15:55:18Z"
-last_activity: 2026-05-01 -- 12.1-01 complete (JWT middleware enforcement on all API routes)
+last_activity: 2026-05-01 -- 12.2-01 complete (Socket.IO server/custom server/protocol fix)
 progress:
   total_phases: 8
   completed_phases: 8
-  total_plans: 29
-  completed_plans: 29
+  total_plans: 30
+  completed_plans: 30
   percent: 100
 ---
 
@@ -22,14 +22,14 @@ progress:
 **Core Value**: One panel, both VPN systems -- users synchronized between Amnezia AWG and 3x-ui, no context switching
 **Current Focus**: v1.1 Multi-Panel Chain Routing
 **Current Position**: Phase 11.8 of 11.8 (Multi-Panel Dashboard) -- v1.1 complete
-**Audit Remediation**: Phase 12.1 complete, 12.2-12.7 remaining
+**Audit Remediation**: Phase 12.1-12.2 complete, 12.3-12.7 remaining
 
 ## Current Position
 
-Phase: 12.1 of 12.7 (Audit Remediation)
+Phase: 12.2 of 12.7 (Audit Remediation)
 Plan: 1 of 1 in current phase
-Status: 12.1-01 complete
-Last activity: 2026-05-01 -- 12.1-01 complete (JWT middleware enforcement on all API routes)
+Status: 12.2-01 complete
+Last activity: 2026-05-01 -- 12.2-01 complete (Socket.IO server/custom server/protocol fix)
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -37,9 +37,9 @@ Progress: [█████████] 100% (v1.1 complete; audit remediation i
 
 **Velocity:**
 
-- Total plans completed: 19 (v1.1 + audit)
+- Total plans completed: 20 (v1.1 + audit)
 - Average duration: 4min
-- Total execution time: 77min
+- Total execution time: 81min
 
 **By Phase:**
 
@@ -50,11 +50,12 @@ Progress: [█████████] 100% (v1.1 complete; audit remediation i
 | 11.3 | 3 | 12min | 4min |
 | 11.4-11.8 | -- | -- | -- |
 | 12.1 | 1 | 3min | 3min |
+| 12.2 | 1 | 4min | 4min |
 
 **Recent Trend:**
 
-- Last 5 plans: 12.1-01 (3min), 11.8-01 (5min), 11.7-04 (5min), 11.7-03 (2min)
-- Trend: improving
+- Last 5 plans: 12.2-01 (4min), 12.1-01 (3min), 11.8-01 (5min), 11.7-04 (5min), 11.7-03 (2min)
+- Trend: stable
 
 *Updated after each plan completion*
 
@@ -75,6 +76,9 @@ Recent decisions affecting current work:
 - 12.1-01: Middleware returns JSON 401 for API routes (not redirect); page routes redirect to /login
 - 12.1-01: Public API routes excluded from JWT: auth/login, health, ws, sync/receive
 - 12.1-01: auth/me uses decodeJwt (no verify) since middleware already validated token
+- 12.2-01: Custom server (server.mjs) over instrumentation-only for Socket.IO -- register() provides no HTTP server access
+- 12.2-01: globalThis.__socketIO bridge -- server.mjs (plain JS) cannot import .ts, io instance shared via global
+- 12.2-01: instrumentation.ts starts broadcaster -- Next.js compiles .ts imports in register(), broadcaster needs DB access
 
 ### Pending Todos
 
@@ -95,8 +99,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-01T15:55:18Z
-Stopped at: Completed 12.1-01
+Last session: 2026-05-01T16:04:16Z
+Stopped at: Completed 12.2-01
 Resume file: None
 
 ## Quick Tasks Completed
@@ -108,4 +112,4 @@ Resume file: None
 
 ---
 *State initialized: 2026-04-27*
-*Last updated: 2026-05-01 - 12.1-01 complete (JWT middleware enforcement)*
+*Last updated: 2026-05-01 - 12.2-01 complete (Socket.IO alignment)*

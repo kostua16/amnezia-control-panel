@@ -244,7 +244,10 @@ Plans:
 **Depends on:** Phase 12.1 (recommended: secure APIs before widening real-time surface)
 **Requirements:** PROJ-RT-01
 **Gap closure:** Closes audit gaps on instrumentation, protocol mismatch, and broken live-update flows
-**Plans:** TBD (`/gsd-plan-phase 12.2`)
+**Plans:** 1 plan
+
+Plans:
+- [x] 12.2-01 -- Custom server with Socket.IO, protocol fix for use-chain-status, broadcaster start
 
 ### Phase 12.3: v1.0 traceability and verification debt
 **Goal:** `REQUIREMENTS.md` (or companion doc) maps Phases 1.1–10.4 to checkable outcomes; backfill `VERIFICATION.md` for audit-critical areas; optional Nyquist `*-VALIDATION.md` pilot.
@@ -355,7 +358,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.7 (12.
 | 11.7 | v1.1 | 4/4 | Complete | 2026-05-01 |
 | 11.8 | v1.1 | 3/3 | Complete | 2026-05-01 |
 | 12.1 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
-| 12.2 | v1.0 audit | 0/? | Not started | - |
+| 12.2 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
 | 12.3 | v1.0 audit | 0/? | Not started | - |
 | 12.4 | v1.0 audit | 0/? | Not started | - |
 | 12.5 | v1.1 audit | 0/? | Not started | - |
@@ -371,4 +374,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phase 12.1 complete (JWT middleware enforcement)*
+*Last updated: 2026-05-01 - Phase 12.2 complete (Socket.IO alignment)*
