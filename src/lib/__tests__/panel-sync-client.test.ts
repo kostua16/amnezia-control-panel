@@ -151,7 +151,7 @@ describe('pushConfigToPanel', () => {
     let capturedRequest: RequestInit | undefined;
     globalThis.fetch = mock.fn(async (url: string | URL | Request, init?: RequestInit) => {
       capturedRequest = init;
-      return new Response(JSON.stringify({ applied: true, configVersion: 1 }), { status: 200 });
+      return new Response(JSON.stringify({ success: true, data: { applied: true, configVersion: 1 } }), { status: 200 });
     });
 
     await pushConfigToPanel(mockPanel, mockPayload);
@@ -166,7 +166,7 @@ describe('pushConfigToPanel', () => {
 
   it('returns { success: true, configVersion } on 200 response', async () => {
     globalThis.fetch = mock.fn(async () => {
-      return new Response(JSON.stringify({ applied: true, configVersion: 5 }), { status: 200 });
+      return new Response(JSON.stringify({ success: true, data: { applied: true, configVersion: 5 } }), { status: 200 });
     });
 
     const result = await pushConfigToPanel(mockPanel, mockPayload);
@@ -218,7 +218,7 @@ describe('pushConfigToPanel', () => {
       if (callCount === 1) {
         throw new Error('Temporary error');
       }
-      return new Response(JSON.stringify({ applied: true, configVersion: 2 }), { status: 200 });
+      return new Response(JSON.stringify({ success: true, data: { applied: true, configVersion: 2 } }), { status: 200 });
     });
 
     const result = await pushConfigToPanel(mockPanel, mockPayload);

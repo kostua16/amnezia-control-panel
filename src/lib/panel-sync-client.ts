@@ -109,8 +109,9 @@ export async function pushConfigToPanel(
       });
 
       if (response.ok) {
-        const data = await response.json();
-        if (data.applied && typeof data.configVersion === 'number') {
+        const resp = await response.json();
+        const data = resp.data;
+        if (data?.applied && typeof data.configVersion === 'number') {
           const latencyMs = Date.now() - startTime;
           broadcastEvent('panel:push-progress', {
             panelId: panel.id,

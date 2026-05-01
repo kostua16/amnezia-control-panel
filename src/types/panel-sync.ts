@@ -40,11 +40,32 @@ export interface PanelSyncPayload {
   generatedAt: string;
 }
 
-/** Response from the sync receive endpoint */
-export interface SyncReceiveResponse {
+/** Data payload inside a sync apply response */
+export interface SyncApplyResponseData {
+  applied: boolean;
+  configVersion: number;
+  service: string;
+  message?: string;
+  error?: string;
+}
+
+/** Response from POST /api/sync/apply */
+export interface SyncApplyResponse {
+  success: boolean;
+  data: SyncApplyResponseData;
+}
+
+/** Data payload inside a sync receive response */
+export interface SyncReceiveResponseData {
   applied: boolean;
   configVersion: number;
   message?: string;
+}
+
+/** Response from POST /api/sync/receive */
+export interface SyncReceiveResponse {
+  success: boolean;
+  data: SyncReceiveResponseData;
 }
 
 /** Result of pushing config to a single panel */

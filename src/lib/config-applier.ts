@@ -1,5 +1,6 @@
 import type { PanelSyncPayload } from '@/types/panel-sync';
 import type { ConfigApplierResult } from '@/types/config-push';
+import { signPayload } from './hmac';
 import { enrichError } from './error-reporter';
 
 // ─── Shell Metacharacter Guard (T-11.4-01) ────────────────
@@ -24,6 +25,7 @@ function validateNoInjection(value: string): void {
 export async function applyAwgConfig(
   panelUrl: string,
   panelName: string,
+  apiKey: string,
   wireguardPeers: PanelSyncPayload['wireguardPeers'],
 ): Promise<ConfigApplierResult> {
   const startTime = Date.now();
@@ -53,19 +55,25 @@ export async function applyAwgConfig(
     .join('\n\n');
 
   try {
+    const bodyPayload = { service: 'awg' as const, config: wgConfig };
+    const body = JSON.stringify(bodyPayload);
+    const signature = signPayload(bodyPayload, apiKey);
+
     const response = await fetch(`${panelUrl}/api/sync/apply`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service: 'awg',
-        config: wgConfig,
-      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+        'X-Signature': signature,
+      },
+      body,
       signal: AbortSignal.timeout(15000),
     });
 
     if (response.ok) {
-      const data = await response.json();
-      if (data.applied) {
+      const resp = await response.json();
+      const data = resp.data;
+      if (data?.applied) {
         return {
           success: true,
           service: 'awg',
@@ -75,7 +83,7 @@ export async function applyAwgConfig(
         };
       }
       // Remote returned applied=false
-      const msg = data.message || 'Remote panel did not apply the config';
+      const msg = data?.message || 'Remote panel did not apply the config';
       return {
         success: false,
         service: 'awg',
@@ -137,6 +145,7 @@ export async function applyAwgConfig(
 export async function applyThreeXuiConfig(
   panelUrl: string,
   panelName: string,
+  apiKey: string,
   xrayRules: PanelSyncPayload['routingRules'],
 ): Promise<ConfigApplierResult> {
   const startTime = Date.now();
@@ -144,19 +153,25 @@ export async function applyThreeXuiConfig(
   // Rules are JSON-serialized (not string-interpolated) per T-11.4-02
 
   try {
+    const bodyPayload = { service: 'three_xui' as const, routingRules: xrayRules };
+    const body = JSON.stringify(bodyPayload);
+    const signature = signPayload(bodyPayload, apiKey);
+
     const response = await fetch(`${panelUrl}/api/sync/apply`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service: 'three_xui',
-        routingRules: xrayRules,
-      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+        'X-Signature': signature,
+      },
+      body,
       signal: AbortSignal.timeout(15000),
     });
 
     if (response.ok) {
-      const data = await response.json();
-      if (data.applied) {
+      const resp = await response.json();
+      const data = resp.data;
+      if (data?.applied) {
         return {
           success: true,
           service: 'three_xui',
@@ -165,7 +180,7 @@ export async function applyThreeXuiConfig(
           error: null,
         };
       }
-      const msg = data.message || 'Remote panel did not apply the config';
+      const msg = data?.message || 'Remote panel did not apply the config';
       return {
         success: false,
         service: 'three_xui',
@@ -226,6 +241,7 @@ export async function applyThreeXuiConfig(
 export async function applyPanelConfig(
   panelUrl: string,
   panelName: string,
+  apiKey: string,
   payload: PanelSyncPayload,
 ): Promise<ConfigApplierResult[]> {
   const results: ConfigApplierResult[] = [];
@@ -235,12 +251,12 @@ export async function applyPanelConfig(
   const hasXray = payload.chainNodes.some((node) => node.protocol === 'xray');
 
   if (hasWireguard && payload.wireguardPeers.length > 0) {
-    const result = await applyAwgConfig(panelUrl, panelName, payload.wireguardPeers);
+    const result = await applyAwgConfig(panelUrl, panelName, apiKey, payload.wireguardPeers);
     results.push(result);
   }
 
   if (hasXray && payload.routingRules.length > 0) {
-    const result = await applyThreeXuiConfig(panelUrl, panelName, payload.routingRules);
+    const result = await applyThreeXuiConfig(panelUrl, panelName, apiKey, payload.routingRules);
     results.push(result);
   }
 
