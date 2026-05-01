@@ -4,7 +4,7 @@
 
 - **v1.0** -- Phases 1.1-10.4 (shipped 2026-04-29)
 - **v1.1 Multi-Panel Chain Routing** -- Phases 11.1-11.8 (shipped 2026-05-01) [archive](.planning/milestones/v1.1-ROADMAP.md)
-- **Post–v1.1 audit remediation** -- Phases 12.1–12.7 (in progress; `v1.0-MILESTONE-AUDIT.md` + `v1.1-MILESTONE-AUDIT.md`)
+- **Post–v1.1 audit remediation** -- Phases 12.1–12.12 (in progress; closure audit: `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md`)
 
 ## Phases
 
@@ -78,9 +78,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 </details>
 
-### Current Milestone: Audit gap closure (Phases 12.1–12.7)
+### Current Milestone: Audit gap closure (Phases 12.1–12.12)
 
-**v1.0 audit** (`.planning/v1.0-MILESTONE-AUDIT.md`). **v1.1 audit** (`.planning/v1.1-MILESTONE-AUDIT.md`). **Gap closure:** yes.
+**Closure audit:** `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md` (supersedes “all 12.x complete” until 12.8–12.12 ship). **Nyquist `*-VALIDATION.md` for 12.x:** backlog — run `/gsd-validate-phase` when required.
 
 - [x] **Phase 12.1: Admin API JWT enforcement** -- PROJ-AUTH-01; JWT unused on most `/api` routes
 - [x] **Phase 12.2: Real-time stack (Socket.IO)** — PROJ-RT-01; server not attached; chain client protocol mismatch
@@ -89,6 +89,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12.5: Multi-panel push UX integration** — CPUSH-01–06, CHAIN-01, VISED-03; PushWizard mounted on `/panels/push`; panels/serverPanelMap passed to ChainFlowEditor
 - [x] **Phase 12.6: Geo-routing runtime E2E** — GEO-03, GEO-04; resolveGeoRoute wired into rule-enforcement and chain-router; GEO-04 narrowed to v2fly scope
 - [x] **Phase 12.7: Tailscale milestone verification** — TSCL-01–04; 11.1-VERIFICATION.md created; 11.2 corrected; audit score raised to 26/35
+- [ ] **Phase 12.8: Sync apply & receive contracts** — GAPL-01, CHAIN-01 (applier path); HMAC + body/response alignment for `config-applier` → `/api/sync/apply` and `panel-sync-client` → `/api/sync/receive`
+- [ ] **Phase 12.9: WebSocket → React Query key alignment** — GAPL-02, PROJ-RT-01; `providers.tsx` invalidation keys match `use-dashboard-stats`, `use-system-resources`, `use-multi-panel-status`
+- [ ] **Phase 12.10: Push wizard & per-panel sync fixes** — CPUSH-01–06, VISED-03 (closure); real panel API keys in PushWizard/rollback; `generatePerPanelConfig` / Xray rule panel scoping; reliable per-panel status/errors
+- [ ] **Phase 12.11: Tailscale transport in chain apply** — TSCL-04, CHAIN-01 (transport); `chain-router` / `chains/apply` use panel URL / tailnet resolution (not raw `hostname:22`)
+- [ ] **Phase 12.12: 12.x verification artifacts** — PROJ-AUTH-01 evidence; `12.1-`, `12.4-`, `12.6-`, `12.7-VERIFICATION.md`; reconcile `REQUIREMENTS.md` checkboxes with integration truth
 
 ## Phase Details
 
@@ -287,10 +292,45 @@ Plans:
 **Gap closure:** Closes v1.1 audit evidence/Nyquist gaps for Tailscale
 **Plans:** TBD (`/gsd-plan-phase 12.7`)
 
+### Phase 12.8: Sync apply and receive contracts
+**Goal:** Remote apply and receive calls use the same auth headers, payloads, and response shapes the routes implement—no unsigned `/api/sync/apply` from the config applier and no stale assumptions in `panel-sync-client` for `/api/sync/receive`.
+**Depends on:** Phase 12.4 (baseline routes); coordinate with 12.10 for end-to-end push
+**Requirements:** GAPL-01, CHAIN-01 (applier ↔ `/api/sync/apply` slice)
+**Gap closure:** Closes `v12.x-audit-closure-MILESTONE-AUDIT.md` integration gaps (config-applier ↔ apply; panel-sync-client ↔ receive)
+**Plans:** TBD (`/gsd-plan-phase 12.8`)
+
+### Phase 12.9: WebSocket → React Query key alignment
+**Goal:** WebSocket `broadcastEvent` invalidates the same React Query keys the dashboard, resources, and fleet hooks use so real-time refresh actually refetches UI data.
+**Depends on:** Phase 12.2
+**Requirements:** GAPL-02, PROJ-RT-01
+**Gap closure:** Closes audit gap on `WS_TO_QUERY_KEYS` vs hook key namespaces
+**Plans:** TBD (`/gsd-plan-phase 12.9`)
+
+### Phase 12.10: Push wizard and per-panel sync fixes
+**Goal:** Push and rollback send non-empty per-panel API keys; per-panel configs and Xray rules are panel-scoped as designed; push results and errors are trustworthy end-to-end.
+**Depends on:** Phase 12.5; **12.8** recommended first (receive/apply contracts)
+**Requirements:** CPUSH-01, CPUSH-02, CPUSH-03, CPUSH-04, CPUSH-05, CPUSH-06, VISED-03 (residual)
+**Gap closure:** Closes PushWizard / `panel-sync-client` / per-panel scoping gaps from closure audit
+**Plans:** TBD (`/gsd-plan-phase 12.10`)
+
+### Phase 12.11: Tailscale transport in chain apply
+**Goal:** Chain apply and routing paths that target remote panels use Tailscale/panel URL transport resolution (`resolveTransportAddress` / tailnet APIs), not ad hoc `hostname` with SSH default port.
+**Depends on:** Phase 11.1, Phase 12.8 (apply path)
+**Requirements:** TSCL-04, CHAIN-01 (transport slice)
+**Gap closure:** Closes closure audit gap “transport primitives not wired into active sync/apply paths”
+**Plans:** TBD (`/gsd-plan-phase 12.11`)
+
+### Phase 12.12: 12.x verification artifacts
+**Goal:** Missing `*-VERIFICATION.md` for phases 12.1, 12.4, 12.6, 12.7; PROJ-AUTH-01 strict evidence; `REQUIREMENTS.md` body/traceability reconciled with live integration behavior.
+**Depends on:** None for documentation-only tasks; run after relevant code phases for evidence
+**Requirements:** PROJ-AUTH-01 (verification), GEO-03, GEO-04, TSCL-01–TSCL-04 (artifact refresh as scoped in checklists)
+**Gap closure:** Closes `v12.x-audit-closure-MILESTONE-AUDIT.md` process gate (verification inventory)
+**Plans:** TBD (`/gsd-plan-phase 12.12`)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.7 (12.3 may run in parallel with 12.1/12.2; 12.5–12.7 may parallelize with earlier 12.x if resourced)
+Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.12 (12.3 may run in parallel with 12.1/12.2; **12.8** before **12.10**–**12.11** recommended; **12.9** can parallelize with **12.8**)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -367,14 +407,20 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.7 (12.
 | 12.5 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.6 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.7 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
+| 12.8 | v12.x closure | 0/0 | Planned | — |
+| 12.9 | v12.x closure | 0/0 | Planned | — |
+| 12.10 | v12.x closure | 0/0 | Planned | — |
+| 12.11 | v12.x closure | 0/0 | Planned | — |
+| 12.12 | v12.x closure | 0/0 | Planned | — |
 
 ## Coverage
 
 v1.0: All 42 requirements mapped and shipped
 v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
-v1.0 audit remediation: 5 requirements (PROJ-*, GAPL-*) mapped to Phases 12.1–12.4
-v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GEO-04, TSCL-*) remapped to Phases 12.5–12.7 for end-to-end closure
+v1.0 audit remediation: 5 requirements (PROJ-*, GAPL-*) mapped to Phases 12.1–12.4, with **12.8–12.9** closing residual GAPL-* / PROJ-RT-01 integration per `v12.x-audit-closure-MILESTONE-AUDIT.md`
+v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GEO-04, TSCL-*) — **12.5–12.7** initial delivery; **12.8–12.12** close closure-audit gaps (contracts, push UX, transport, verification)
+**Nyquist:** No `*-VALIDATION.md` under `12.*` yet — optional `/gsd-validate-phase` backlog
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phase 12.5 complete (PushWizard mounted, panel boundaries wired)*
+*Last updated: 2026-05-02 - Phases 12.8–12.12 added from v12.x-audit-closure-MILESTONE-AUDIT.md*

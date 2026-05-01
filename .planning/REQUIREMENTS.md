@@ -145,7 +145,7 @@ Requirements for multi-panel chain routing milestone. Each maps to roadmap phase
 - [x] **TSCL-01**: Each server runs Tailscale as a subnet router advertising its VPN subnet
 - [x] **TSCL-02**: Central panel can list all Tailscale nodes in the tailnet
 - [x] **TSCL-03**: Tailscale subnet router setup is documented as step-by-step guide
-- [x] **TSCL-04**: Panel uses Tailscale IPs as transport addresses for inter-panel communication
+- [ ] **TSCL-04**: Panel uses Tailscale IPs as transport addresses for inter-panel communication (Phase **12.11** wires transport into push/apply per closure audit)
 
 ### Hybrid Autonomy
 
@@ -170,7 +170,7 @@ Closes structured gaps from `.planning/v1.0-MILESTONE-AUDIT.md`. Not part of ori
 
 ### Security & real-time
 
-- [x] **PROJ-AUTH-01**: Admin-affecting `/api` routes enforce session/JWT; implementation matches documented session layer (see audit: `src/proxy.ts` vs middleware)
+- [ ] **PROJ-AUTH-01**: Admin-affecting `/api` routes enforce session/JWT; implementation matches documented session layer; Phase **12.12** adds strict `12.1-VERIFICATION.md` / evidence (see `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md`)
 - [ ] **PROJ-RT-01**: Socket.IO server attaches to HTTP; clients use compatible protocol for chain status and dashboard real-time paths; `broadcastEvent` is effective
 
 ### Planning & evidence
@@ -182,9 +182,9 @@ Closes structured gaps from `.planning/v1.0-MILESTONE-AUDIT.md`. Not part of ori
 - [ ] **GAPL-01**: Remote config apply path aligns with central push (no reliance on missing `/api/sync/apply` or documented equivalent)
 - [ ] **GAPL-02**: WebSocket events invalidate React Query (or equivalent) for dashboard/resource stats where polling is currently the only refresh path
 
-## v1.1 milestone audit gap closure (Phases 12.5–12.7)
+## v1.1 milestone audit gap closure (Phases 12.5–12.12)
 
-Closes structured integration gaps from `.planning/v1.1-MILESTONE-AUDIT.md`. Reuses existing v1.1 REQ-IDs; traceability rows below point gap-closure work at Phases 12.5–12.7 (after v1.0 audit Phases 12.1–12.4).
+Closes structured integration gaps from `.planning/v1.1-MILESTONE-AUDIT.md` and **residual closure** from `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md`. Reuses existing v1.1 REQ-IDs; Phases **12.5–12.7** were first pass; **12.8–12.12** close contracts, push UX, transport, and verification artifacts.
 
 ## v2 Requirements
 
@@ -228,46 +228,46 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TSCL-01 | Phase 11.1 / 12.7 | Verified |
-| TSCL-02 | Phase 11.1 / 12.7 | Verified |
-| TSCL-03 | Phase 11.1 / 12.7 | Verified |
-| TSCL-04 | Phase 11.1 / 12.7 | Verified |
+| TSCL-01 | Phase 11.1 / 12.7 / 12.12 | Pending |
+| TSCL-02 | Phase 11.1 / 12.7 / 12.12 | Pending |
+| TSCL-03 | Phase 11.1 / 12.7 / 12.12 | Pending |
+| TSCL-04 | Phase 12.11 | Pending |
 | MPAN-01 | Phase 11.2 | Pending |
 | MPAN-02 | Phase 11.2 | Pending |
 | MPAN-03 | Phase 11.2 | Pending |
 | MPAN-04 | Phase 11.2 | Pending |
-| CPUSH-01 | Phase 12.5 | Done (12.5-01) |
-| CPUSH-02 | Phase 12.5 | Done (12.5-01) |
-| CPUSH-03 | Phase 12.5 | Done (12.5-01) |
+| CPUSH-01 | Phase 12.10 | Pending |
+| CPUSH-02 | Phase 12.10 | Pending |
+| CPUSH-03 | Phase 12.10 | Pending |
 | HAUT-01 | Phase 11.3 | Pending |
 | HAUT-02 | Phase 11.3 | Pending |
 | HAUT-03 | Phase 11.3 | Pending |
-| CPUSH-04 | Phase 12.5 | Done (12.5-01) |
-| CPUSH-05 | Phase 12.5 | Done (12.5-01) |
-| CPUSH-06 | Phase 12.5 | Done (12.5-01) |
-| CHAIN-01 | Phase 12.5 | Done (12.5-01) |
+| CPUSH-04 | Phase 12.10 | Pending |
+| CPUSH-05 | Phase 12.10 | Pending |
+| CPUSH-06 | Phase 12.10 | Pending |
+| CHAIN-01 | Phases 12.8, 12.11 | Pending |
 | CHAIN-02 | Phase 11.4 | Pending |
 | CHAIN-03 | Phase 11.4 | Pending |
 | GEO-01 | Phase 11.5 | Pending |
 | GEO-02 | Phase 11.5 | Pending |
-| GEO-03 | Phase 12.6 | Done (12.6-01) |
-| GEO-04 | Phase 12.6 | Done (12.6-01) |
+| GEO-03 | Phases 12.6 / 12.12 | Pending |
+| GEO-04 | Phases 12.6 / 12.12 | Pending |
 | RULE-01 | Phase 11.5 | Done (11.5-01, 11.5-03) |
 | RULE-02 | Phase 11.5 | Pending |
 | RULE-03 | Phase 11.5 | Done (11.5-03) |
 | VISED-01 | Phase 11.6 | Pending |
 | VISED-02 | Phase 11.6 | Pending |
-| VISED-03 | Phase 12.5 | Done (12.5-01) |
+| VISED-03 | Phase 12.10 | Pending |
 | TMPL-01 | Phase 11.7 | Pending |
 | TMPL-02 | Phase 11.7 | Pending |
 | TMPL-03 | Phase 11.7 | Pending |
 | TMPL-04 | Phase 11.7 | Pending |
 | DASH-01 | Phase 11.8 | Pending |
-| PROJ-AUTH-01 | Phase 12.1 | Done |
-| PROJ-RT-01 | Phase 12.2 | Pending |
+| PROJ-AUTH-01 | Phase 12.12 | Pending |
+| PROJ-RT-01 | Phase 12.9 | Pending |
 | PROJ-TRACE-01 | Phase 12.3 | Done |
-| GAPL-01 | Phase 12.4 | Pending |
-| GAPL-02 | Phase 12.4 | Pending |
+| GAPL-01 | Phase 12.8 | Pending |
+| GAPL-02 | Phase 12.9 | Pending |
 | V1-INIT-01 | Phase 1.1 | Done |
 | V1-INIT-02 | Phase 1.2 | Done |
 | V1-INIT-03 | Phase 1.3 | Done |
@@ -332,9 +332,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 - v1.1 requirements: 35 total
 - Mapped to phases: 89 total (54 v1.0 + 35 v1.1)
 - Unmapped: 0
-- v1.0 audit remediation: 5 requirements (PROJ-*, GAPL-*) mapped to Phases 12.1–12.4
-- v1.1 audit gap closure: 15 requirements (CPUSH-01–06, CHAIN-01, VISED-03, GEO-03, GEO-04, TSCL-01–04) mapped to Phases 12.5–12.7
+- v1.0 audit remediation: 5 requirements (PROJ-*, GAPL-*) — Phases 12.1–12.4 initial; **12.8–12.9** close residual integration (see `v12.x-audit-closure-MILESTONE-AUDIT.md`)
+- v1.1 audit gap closure: 15 requirements (CPUSH-01–06, CHAIN-01, VISED-03, GEO-03, GEO-04, TSCL-01–04) — Phases 12.5–12.7 initial; **12.8–12.12** second pass
 
 ---
 *Requirements defined: 2026-04-29*
-*Last updated: 2026-05-01 — Phase 12.5: CPUSH-01-06, CHAIN-01, VISED-03 marked done*
+*Last updated: 2026-05-02 — `/gsd-plan-milestone-gaps`: traceability repointed to Phases 12.8–12.12 from v12.x closure audit*
