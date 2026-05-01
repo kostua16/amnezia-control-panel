@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Layers } from 'lucide-react';
-import { PushWizard } from '@/components/push/push-wizard';
+import { ChainFlowEditor } from '@/components/chains/chain-flow-editor';
+import type { Server } from '@/types/server';
 
 interface PanelItem {
   id: number;
@@ -15,32 +16,36 @@ interface PanelItem {
 
 export default function PushConfigurationPage() {
   const [panels, setPanels] = useState<PanelItem[]>([]);
+  const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchPanels = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const res = await fetch('/api/panels');
-      const json = await res.json();
-      if (json.success) {
-        setPanels(json.data);
-      }
+      const [panelsRes, serversRes] = await Promise.all([
+        fetch('/api/panels'),
+        fetch('/api/servers'),
+      ]);
+      const panelsJson = await panelsRes.json();
+      const serversJson = await serversRes.json();
+      if (panelsJson.success) setPanels(panelsJson.data);
+      if (serversJson.success) setServers(serversJson.data);
     } catch (err) {
-      console.error('Failed to fetch panels:', err);
+      console.error('Failed to fetch data:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchPanels();
-  }, [fetchPanels]);
+    fetchData();
+  }, [fetchData]);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Push Configuration</h1>
         <p className="text-muted-foreground mt-1">
-          Preview and push chain configuration to panels
+          Build chain topology and push configuration to panels
         </p>
       </div>
 
@@ -52,13 +57,13 @@ export default function PushConfigurationPage() {
       ) : panels.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-border bg-card py-12">
           <Layers className="h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground mb-1">No configuration changes to push</p>
+          <p className="text-muted-foreground mb-1">No panels configured</p>
           <p className="text-sm text-muted-foreground">
-            Select a chain and panels to preview and push configuration changes.
+            Register remote panels to push chain configurations.
           </p>
         </div>
       ) : (
-        <PushWizard panels={panels} />
+        <ChainFlowEditor servers={servers} />
       )}
     </div>
   );
