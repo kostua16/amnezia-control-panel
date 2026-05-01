@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { GeoRuleDrawer } from '@/components/routing/geo-rule-drawer';
 import { GeoIPStatusBadge } from '@/components/routing/geoip-status-badge';
 import { EmptyStateStarter } from '@/components/routing/empty-state-starter';
+import { GEO_STARTER_RULES } from '@/lib/geo-starter-rules';
 import type { GeoRoutingRule, GeoRuleCreate, GeoMatchType } from '@/types/geo-routing';
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -67,6 +68,7 @@ export function GeoRulesList() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [starterLoading, setStarterLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
   // ─── Data fetching ──────────────────────────────────
@@ -209,6 +211,37 @@ export function GeoRulesList() {
     }
   }, [rules, fetchRules]);
 
+  const handleLoadStarterRules = useCallback(async () => {
+    setStarterLoading(true);
+    setApiError(null);
+
+    try {
+      for (const rule of GEO_STARTER_RULES) {
+        const { matchType: _m, ...payload } = rule;
+        const response = await fetch('/api/routing/geo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setApiError(result.error || 'Failed to add starter rules');
+          setLoading(true);
+          await fetchRules();
+          return;
+        }
+      }
+      setLoading(true);
+      await fetchRules();
+    } catch {
+      setApiError('Network error. Please check your connection.');
+      setLoading(true);
+      await fetchRules();
+    } finally {
+      setStarterLoading(false);
+    }
+  }, [fetchRules]);
+
   const openCreateDrawer = useCallback(() => {
     setEditingRule(null);
     setDrawerOpen(true);
@@ -265,10 +298,11 @@ export function GeoRulesList() {
         )}
 
         {/* Empty state */}
-        {rules.length === 0 && !apiError && (
+        {rules.length === 0 && (
           <EmptyStateStarter
-            onLoadStarter={() => { /* no-op placeholder for now */ }}
+            onLoadStarter={handleLoadStarterRules}
             onCreateCustom={openCreateDrawer}
+            loading={starterLoading}
           />
         )}
 
