@@ -250,8 +250,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CHAIN-03 | Phase 11.4 | Pending |
 | GEO-01 | Phase 11.5 | Pending |
 | GEO-02 | Phase 11.5 | Pending |
-| GEO-03 | Phase 12.6 | Pending |
-| GEO-04 | Phase 12.6 | Pending |
+| GEO-03 | Phase 12.6 | Done (12.6-01) |
+| GEO-04 | Phase 12.6 | Done (12.6-01) |
 | RULE-01 | Phase 11.5 | Done (11.5-01, 11.5-03) |
 | RULE-02 | Phase 11.5 | Pending |
 | RULE-03 | Phase 11.5 | Done (11.5-03) |
