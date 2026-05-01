@@ -10,7 +10,7 @@ progress:
   total_phases: 8
   completed_phases: 8
   total_plans: 34
-  completed_plans: 34
+  completed_plans: 36
   percent: 100
 ---
 
@@ -26,10 +26,10 @@ progress:
 
 ## Current Position
 
-Phase: 12.9 of 12.9 (Audit Remediation) -- COMPLETE
-Plan: 1 of 1 in current phase (complete)
-Status: 12.9-01 complete
-Last activity: 2026-05-02 -- 12.9-01 complete (WS_TO_QUERY_KEYS aligned with hook queryKeys)
+Phase: 12.8 of 12.8 (Sync Apply & Receive Contracts) -- COMPLETE
+Plan: 2 of 2 in current phase (complete)
+Status: 12.8-02 complete
+Last activity: 2026-05-02 -- 12.8 complete (HMAC auth + response unwrap + panelCredentials)
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 

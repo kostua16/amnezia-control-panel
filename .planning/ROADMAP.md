@@ -300,8 +300,8 @@ Plans:
 **Plans:** 2 plans (2 waves)
 
 Plans:
-- [ ] 12.8-01-PLAN.md -- Fix config-applier auth/response parsing, panel-sync-client response parsing, types, and tests (Wave 1)
-- [ ] 12.8-02-PLAN.md -- Add panelCredentials to chain-router, update chains/apply route, and tests (Wave 2)
+- [x] 12.8-01-PLAN.md -- Fix config-applier auth/response parsing, panel-sync-client response parsing, types, and tests (Wave 1)
+- [x] 12.8-02-PLAN.md -- Add panelCredentials to chain-router, update chains/apply route, and tests (Wave 2)
 
 ### Phase 12.9: WebSocket → React Query key alignment
 **Goal:** WebSocket `broadcastEvent` invalidates the same React Query keys the dashboard, resources, and fleet hooks use so real-time refresh actually refetches UI data.
@@ -414,7 +414,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.12 (12
 | 12.5 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.6 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.7 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
-| 12.8 | v12.x closure | 0/2 | Planned | — |
+| 12.8 | v12.x closure | 2/2 | Complete | 2026-05-02 |
 | 12.9 | v12.x closure | 1/1 | Complete | 2026-05-02 |
 | 12.10 | v12.x closure | 0/0 | Planned | — |
 | 12.11 | v12.x closure | 0/0 | Planned | — |
