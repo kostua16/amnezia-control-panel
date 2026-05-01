@@ -66,3 +66,5 @@ _cacache/
 
 # cursor
 .cursor/hooks/state/continual-learning.json
+.cursor/hooks/state/continual-learning-index.json
+
