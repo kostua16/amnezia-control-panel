@@ -1,29 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { jwtVerify } from 'jose';
 import { rollbackPanelConfigWithPush } from '@/lib/rollback-manager';
-
-// ─── JWT Auth Helper ─────────────────────────────────────
-
-function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET environment variable is not set');
-  }
-  return new TextEncoder().encode(secret);
-}
-
-async function authenticateAdmin(request: NextRequest): Promise<{ authenticated: boolean; username?: string }> {
-  const token = request.cookies.get('auth-token')?.value;
-  if (!token) return { authenticated: false };
-
-  try {
-    const { payload } = await jwtVerify(token, getJwtSecret());
-    return { authenticated: true, username: payload.username as string };
-  } catch {
-    return { authenticated: false };
-  }
-}
 
 // ─── Request Validation ──────────────────────────────────
 
@@ -41,14 +18,7 @@ const rollbackRequestSchema = z.object({
  */
 export async function POST(request: NextRequest) {
   try {
-    // Auth check
-    const auth = await authenticateAdmin(request);
-    if (!auth.authenticated) {
-      return NextResponse.json(
-        { success: false, error: 'Not authenticated' },
-        { status: 401 },
-      );
-    }
+    // Auth handled by middleware; proceed directly to request handling
 
     // Parse and validate request body
     const body = await request.json();

@@ -1,13 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jwtVerify } from 'jose';
-
-function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET environment variable is not set');
-  }
-  return new TextEncoder().encode(secret);
-}
+import { decodeJwt } from 'jose';
 
 export async function GET(request: NextRequest) {
   const token = request.cookies.get('auth-token')?.value;
@@ -17,8 +9,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const secret = getJwtSecret();
-    const { payload } = await jwtVerify(token, secret);
+    // Middleware already verified the JWT; decode to extract user info
+    const payload = decodeJwt(token);
     return NextResponse.json({
       user: {
         id: payload.userId as string,
@@ -26,6 +18,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch {
-    return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
+    return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
 }
