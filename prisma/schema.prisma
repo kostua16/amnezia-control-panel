@@ -119,6 +119,7 @@ model ConfigTemplate {
   protocol    String
   content     Json
   description String   @default("")
+  category    String   @default("protocol")
   isBuiltIn   Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -235,6 +236,32 @@ model RoutingRuleTemplate {
   updatedAt   DateTime @updatedAt
 
   @@map("routing_rule_templates")
+}
+
+// ─── ChainPreset ─────────────────────────────────────
+
+model ChainPreset {
+  id          Int      @id @default(autoincrement())
+  /** Preset display name */
+  name        String
+  /** Preset description */
+  description String   @default("")
+  /** Topology type: linear, split, mesh */
+  topology    String   @default("linear")
+  /** Number of nodes in the chain */
+  nodeCount   Int      @default(2)
+  /** Chain template ID reference (from BUILTIN_CHAIN_TEMPLATES) */
+  chainTemplateId String
+  /** Routing bundle ID reference (from BUILTIN_GEO_TEMPLATES or DB) */
+  routingBundleId String?
+  /** Protocol-specific overrides per node as JSON */
+  protocolOverrides Json?
+  /** Whether this is a built-in preset (not user-editable) */
+  isBuiltIn   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("chain_presets")
 }
 
 // ─── Alert ───────────────────────────────────────────

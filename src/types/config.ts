@@ -9,6 +9,7 @@ export interface ConfigTemplate {
   protocol: string;
   content: Record<string, unknown>;
   description: string;
+  category: string;
   isBuiltIn: boolean;
   createdAt: string;
   updatedAt: string;
@@ -20,6 +21,7 @@ export interface ConfigTemplateCreate {
   protocol: string;
   content: Record<string, unknown>;
   description?: string;
+  category?: string;
 }
 
 export interface ConfigTemplateUpdate {
@@ -28,6 +30,7 @@ export interface ConfigTemplateUpdate {
   protocol?: string;
   content?: Record<string, unknown>;
   description?: string;
+  category?: string;
 }
 
 // ─── Protocol Template ──────────────────────────────────
