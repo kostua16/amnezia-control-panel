@@ -1,17 +1,93 @@
 import fs from 'fs';
 import path from 'path';
 import { isIPv4 } from 'net';
+import { once } from 'node:events';
 
 // --- Constants ---
 
 const GEOIP_DIR = path.join(process.cwd(), 'data', 'geoip');
 const GEOIP_FILE = path.join(GEOIP_DIR, 'geoip.dat');
 
-/** v2fly/geoip release URLs (per D-02) */
+/** Max bytes buffered by the file writer before backpressure (8 MiB). */
+const GEOIP_DOWNLOAD_WRITE_HIGH_WATER_MARK = 8 * 1024 * 1024;
+
+/** v2fly/geoip release URLs (per D-02). Fast CDN first — GitHub `latest` often hits the fetch timeout on slow links. */
 const GEOIP_DOWNLOAD_URLS = [
-  'https://github.com/v2fly/geoip/releases/latest/download/geoip.dat',
   'https://cdn.jsdelivr.net/gh/v2fly/geoip@release/geoip.dat',
+  'https://github.com/v2fly/geoip/releases/latest/download/geoip.dat',
 ];
+
+function formatMiB(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`;
+}
+
+/**
+ * Pipe a Web `ReadableStream` to disk with a small writable highWaterMark and drain backpressure.
+ * Avoids `pipeline`/`fromWeb` internal buffering spikes on large bodies.
+ *
+ * @param totalBytes — from `Content-Length` when known; enables 10% milestone logs.
+ */
+async function streamWebResponseBodyToFile(
+  body: ReadableStream<Uint8Array>,
+  filePath: string,
+  totalBytes: number | null = null,
+): Promise<void> {
+  const reader = body.getReader();
+  const out = fs.createWriteStream(filePath, {
+    highWaterMark: GEOIP_DOWNLOAD_WRITE_HIGH_WATER_MARK,
+  });
+
+  let endedCleanly = false;
+  let downloaded = 0;
+  /** Next 10% milestone to log (10 … 100) when totalBytes is set. */
+  let nextPctMilestone = 10;
+  /** Bytes threshold for MiB-only logs when size is unknown. */
+  let nextUnknownLogAt = 5 * 1024 * 1024;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value.byteLength) continue;
+
+      downloaded += value.byteLength;
+
+      if (totalBytes != null && totalBytes > 0) {
+        const pct = Math.min(100, Math.floor((downloaded / totalBytes) * 100));
+        while (nextPctMilestone <= 100 && pct >= nextPctMilestone) {
+          console.info(
+            `[geoip] Download ${nextPctMilestone}% (${formatMiB(downloaded)} / ${formatMiB(totalBytes)})`,
+          );
+          nextPctMilestone += 10;
+        }
+      } else if (downloaded >= nextUnknownLogAt) {
+        console.info(`[geoip] Downloaded ${formatMiB(downloaded)}…`);
+        nextUnknownLogAt += 5 * 1024 * 1024;
+      }
+
+      const ok = out.write(value);
+      if (!ok) {
+        await once(out, 'drain');
+      }
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      out.end((err?: Error | null) => (err ? reject(err) : resolve()));
+    });
+    endedCleanly = true;
+  } catch (err) {
+    if (!endedCleanly) {
+      out.destroy(err instanceof Error ? err : undefined);
+    }
+    throw err;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // already released
+    }
+  }
+}
 
 /** Default refresh interval: 24 hours (per D-03) */
 const DEFAULT_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -138,14 +214,7 @@ class GeoIPManager {
     this.countries.clear();
 
     try {
-      const countryEntries = this.decodeGeoIPProtobuf(buffer);
-
-      for (const entry of countryEntries) {
-        this.countries.set(entry.countryCode.toUpperCase(), {
-          countryCode: entry.countryCode.toUpperCase(),
-          cidrs: entry.cidrs,
-        });
-      }
+      this.decodeGeoIPProtobufIntoCountries(buffer);
 
       console.log(`[geoip] Loaded ${this.countries.size} countries from geoip.dat`);
     } catch (err) {
@@ -155,8 +224,8 @@ class GeoIPManager {
     }
   }
 
-  private decodeGeoIPProtobuf(buffer: Buffer): Array<{ countryCode: string; cidrs: string[] }> {
-    const results: Array<{ countryCode: string; cidrs: string[] }> = [];
+  /** Decode into `this.countries` to avoid a large intermediate array (heap pressure on big DBs). */
+  private decodeGeoIPProtobufIntoCountries(buffer: Buffer): void {
     let offset = 0;
 
     while (offset < buffer.length) {
@@ -173,7 +242,8 @@ class GeoIPManager {
 
         const country = this.decodeCountryMessage(countryData);
         if (country && country.countryCode.length === 2) {
-          results.push(country);
+          const code = country.countryCode.toUpperCase();
+          this.countries.set(code, { countryCode: code, cidrs: country.cidrs });
         }
       } else if (wireType === 2) {
         const length = readVarint(buffer, offset);
@@ -184,8 +254,6 @@ class GeoIPManager {
         break;
       }
     }
-
-    return results;
   }
 
   private decodeCountryMessage(buffer: Buffer): { countryCode: string; cidrs: string[] } | null {
@@ -308,30 +376,45 @@ class GeoIPManager {
     try {
       let downloaded = false;
       for (const url of GEOIP_DOWNLOAD_URLS) {
+        const tempPath = GEOIP_FILE + '.tmp';
         try {
           const response = await fetch(url, {
             signal: AbortSignal.timeout(120_000),
           });
 
           if (!response.ok) continue;
+          if (!response.body) continue;
 
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
+          const contentLength = response.headers.get('content-length');
+          const parsedLen = contentLength != null ? parseInt(contentLength, 10) : NaN;
+          const totalBytes =
+            Number.isFinite(parsedLen) && parsedLen > 0 ? parsedLen : null;
 
-          if (buffer.length < 1000) {
-            console.warn(`[geoip] Downloaded file from ${url} is too small (${buffer.length} bytes), skipping`);
+          console.info(
+            `[geoip] Saving to disk${totalBytes != null ? ` (${formatMiB(totalBytes)} expected)` : ''}…`,
+          );
+
+          try {
+            await streamWebResponseBodyToFile(response.body, tempPath, totalBytes);
+          } catch (streamErr) {
+            await fs.promises.rm(tempPath, { force: true }).catch(() => {});
+            throw streamErr;
+          }
+
+          const stat = await fs.promises.stat(tempPath);
+          if (stat.size < 1000) {
+            console.warn(`[geoip] Downloaded file from ${url} is too small (${stat.size} bytes), skipping`);
+            await fs.promises.rm(tempPath, { force: true }).catch(() => {});
             continue;
           }
 
-          // Atomic write via temp file
-          const tempPath = GEOIP_FILE + '.tmp';
-          await fs.promises.writeFile(tempPath, buffer);
           await fs.promises.rename(tempPath, GEOIP_FILE);
 
           downloaded = true;
-          console.log(`[geoip] Downloaded geoip.dat from ${url} (${buffer.length} bytes)`);
+          console.log(`[geoip] Downloaded geoip.dat from ${url} (${stat.size} bytes)`);
           break;
         } catch (err) {
+          await fs.promises.rm(tempPath, { force: true }).catch(() => {});
           console.warn(`[geoip] Failed to download from ${url}:`, err);
           continue;
         }

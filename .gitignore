@@ -68,3 +68,6 @@ _cacache/
 .cursor/hooks/state/continual-learning.json
 .cursor/hooks/state/continual-learning-index.json
 
+# app data
+data/geoip/geoip.dat
+data/geoip/geoip.dat.tmp
