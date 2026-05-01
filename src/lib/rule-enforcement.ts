@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import type { RoutingAction } from '@/generated/prisma/enums';
+import { resolveGeoRoute } from '@/lib/geo-routing';
+import type { GeoRoutingResult } from '@/types/geo-routing';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -12,6 +14,11 @@ export interface AppliedRule {
   userId: number | null;
 }
 
+export interface GeoRoutingEvaluation {
+  destination: string;
+  result: GeoRoutingResult;
+}
+
 export interface RuleEnforcementResult {
   success: boolean;
   appliedCount: number;
@@ -19,6 +26,7 @@ export interface RuleEnforcementResult {
   rules: AppliedRule[];
   awgConfig: AwgRuleConfig[];
   threeXuiConfig: ThreeXuiRuleConfig[];
+  geoRouting: GeoRoutingEvaluation[];
 }
 
 export interface AwgRuleConfig {
@@ -137,11 +145,52 @@ function generateThreeXuiConfig(rules: AppliedRule[]): ThreeXuiRuleConfig[] {
   return xuiRules;
 }
 
+// ─── Geo-Routing Helpers ────────────────────────────────
+
+/** Simple IPv4 pattern for geo-routing eligibility check */
+const IPV4_PATTERN = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+
+/**
+ * Resolve geo-routing for a destination IP address.
+ * Wraps `resolveGeoRoute` from geo-routing module for use in rule enforcement.
+ */
+export async function resolveGeoRoutingForDestination(
+  ip: string,
+): Promise<GeoRoutingResult> {
+  return resolveGeoRoute(ip);
+}
+
+/**
+ * Evaluate geo-routing for all IP-like destinations in a set of rules.
+ * Returns evaluations for each destination that looks like an IP/CIDR.
+ */
+async function evaluateGeoRoutingForRules(
+  rules: AppliedRule[],
+): Promise<GeoRoutingEvaluation[]> {
+  const evaluations: GeoRoutingEvaluation[] = [];
+  const seenDestinations = new Set<string>();
+
+  for (const rule of rules) {
+    // Extract IP from destination (strip CIDR notation for GeoIP lookup)
+    const ipMatch = rule.destination.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+    const ip = ipMatch ? ipMatch[1] : null;
+
+    if (!ip || seenDestinations.has(ip)) continue;
+    seenDestinations.add(ip);
+
+    const result = await resolveGeoRoute(ip);
+    evaluations.push({ destination: rule.destination, result });
+  }
+
+  return evaluations;
+}
+
 // ─── Public API ──────────────────────────────────────────
 
 /**
  * Apply all routing rules for a specific user.
  * Evaluates global + user-specific rules, generates configs for both VPN systems.
+ * Also evaluates geo-routing rules for IP destinations.
  */
 export async function applyRoutingRules(
   userId: number,
@@ -163,6 +212,7 @@ export async function applyRoutingRules(
         rules: [],
         awgConfig: [],
         threeXuiConfig: [],
+        geoRouting: [],
       };
     }
 
@@ -172,6 +222,9 @@ export async function applyRoutingRules(
     // Generate configs
     const awgConfig = generateAwgConfig(rules);
     const threeXuiConfig = generateThreeXuiConfig(rules);
+
+    // Evaluate geo-routing for IP destinations
+    const geoRouting = await evaluateGeoRoutingForRules(rules);
 
     // Determine which services this user uses
     const serviceTypes = user.protocols.map((p) => p.serviceType);
@@ -199,6 +252,7 @@ export async function applyRoutingRules(
       rules,
       awgConfig,
       threeXuiConfig,
+      geoRouting,
     };
   } catch (err) {
     const message =
@@ -210,6 +264,7 @@ export async function applyRoutingRules(
       rules: [],
       awgConfig: [],
       threeXuiConfig: [],
+      geoRouting: [],
     };
   }
 }
@@ -217,6 +272,7 @@ export async function applyRoutingRules(
 /**
  * Apply all routing rules for all users.
  * Evaluates all active rules and generates configs for both VPN systems.
+ * Also evaluates geo-routing rules for IP destinations.
  */
 export async function applyAllRules(): Promise<RuleEnforcementResult> {
   const errors: string[] = [];
@@ -229,6 +285,9 @@ export async function applyAllRules(): Promise<RuleEnforcementResult> {
     // Generate global configs
     const awgConfig = generateAwgConfig(allRules);
     const threeXuiConfig = generateThreeXuiConfig(allRules);
+
+    // Evaluate geo-routing for IP destinations
+    const geoRouting = await evaluateGeoRoutingForRules(allRules);
 
     // Get all active users
     const users = await prisma.user.findMany({
@@ -270,6 +329,7 @@ export async function applyAllRules(): Promise<RuleEnforcementResult> {
       rules: allRules,
       awgConfig,
       threeXuiConfig,
+      geoRouting,
     };
   } catch (err) {
     const message =
@@ -283,6 +343,7 @@ export async function applyAllRules(): Promise<RuleEnforcementResult> {
       rules: [],
       awgConfig: [],
       threeXuiConfig: [],
+      geoRouting: [],
     };
   }
 }
