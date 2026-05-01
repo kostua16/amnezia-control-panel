@@ -4,7 +4,7 @@
 
 - **v1.0** -- Phases 1.1-10.4 (shipped 2026-04-29)
 - **v1.1 Multi-Panel Chain Routing** -- Phases 11.1-11.8 (shipped 2026-05-01) [archive](.planning/milestones/v1.1-ROADMAP.md)
-- **v1.0 milestone audit remediation** -- Phases 12.1-12.4 (in progress; closes `v1.0-MILESTONE-AUDIT.md` gaps)
+- **Post–v1.1 audit remediation** -- Phases 12.1–12.7 (in progress; `v1.0-MILESTONE-AUDIT.md` + `v1.1-MILESTONE-AUDIT.md`)
 
 ## Phases
 
@@ -78,14 +78,17 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 </details>
 
-### Current Milestone: v1.0 audit gap closure (Phases 12.1–12.4)
+### Current Milestone: Audit gap closure (Phases 12.1–12.7)
 
-Remediation from `.planning/v1.0-MILESTONE-AUDIT.md` (`status: gaps_found`). **Gap closure:** yes.
+**v1.0 audit** (`.planning/v1.0-MILESTONE-AUDIT.md`). **v1.1 audit** (`.planning/v1.1-MILESTONE-AUDIT.md`). **Gap closure:** yes.
 
 - [ ] **Phase 12.1: Admin API JWT enforcement** — PROJ-AUTH-01; JWT unused on most `/api` routes
 - [ ] **Phase 12.2: Real-time stack (Socket.IO)** — PROJ-RT-01; server not attached; chain client protocol mismatch
 - [ ] **Phase 12.3: v1.0 traceability & verification debt** — PROJ-TRACE-01; REQ mapping + targeted `VERIFICATION.md` / Nyquist pilot
 - [ ] **Phase 12.4: Sync apply & WS cache invalidation** — GAPL-01, GAPL-02; `/api/sync/apply` alignment; React Query + broadcasts
+- [ ] **Phase 12.5: Multi-panel push UX integration** — CPUSH-01–06, CHAIN-01, VISED-03; mount/reconcile PushWizard on `/panels/push`, remote signed push, `panels` / `serverPanelMap` for ChainFlowEditor
+- [ ] **Phase 12.6: Geo-routing runtime E2E** — GEO-03, GEO-04; wire geo evaluation into chain/traffic path; rulite/sendmiche import or scoped requirement
+- [ ] **Phase 12.7: Tailscale milestone verification** — TSCL-01–04; `11.1-VERIFICATION.md` and operator-flow evidence; optional 11.2 verification prose / Nyquist alignment from audit
 
 ## Phase Details
 
@@ -254,10 +257,31 @@ Plans:
 **Gap closure:** Closes audit integration warnings (config-applier/sync 404 path; polling-only UI)
 **Plans:** TBD (`/gsd-plan-phase 12.4`)
 
+### Phase 12.5: Multi-panel push UX integration
+**Goal:** Default admin push flow uses signed remote panel push (diff, progress, rollback, actionable errors) and the visual editor shows panel boundaries on the push screen—closing the split between PushWizard and `ChainFlowEditor` + local `chains/apply` only.
+**Depends on:** Phase 11.3–11.6 (sync, push UX implementation, editor); coordinate with Phase 12.4 if remote apply path changes
+**Requirements:** CPUSH-01, CPUSH-02, CPUSH-03, CPUSH-04, CPUSH-05, CPUSH-06, CHAIN-01, VISED-03
+**Gap closure:** Closes gaps from `.planning/v1.1-MILESTONE-AUDIT.md` (CPUSH/CHAIN/VISED, PushWizard unwired, panel map props)
+**Plans:** TBD (`/gsd-plan-phase 12.5`)
+
+### Phase 12.6: Geo-routing runtime E2E
+**Goal:** GeoIP-based routing evaluation is invoked from the real chain/traffic application path; GEO-04 import path includes sendmiche/rulite (or requirement text is narrowed to match shipped scope).
+**Depends on:** Phase 11.5
+**Requirements:** GEO-03, GEO-04
+**Gap closure:** Closes v1.1 audit gaps (unused `resolveGeoRoute` consumers; missing rulite)
+**Plans:** TBD (`/gsd-plan-phase 12.6`)
+
+### Phase 12.7: Tailscale milestone verification
+**Goal:** Phase 11.1 meets the same verification standard as later v1.1 phases—`11.1-VERIFICATION.md` (or equivalent), operator flows for TSCL-01–04; refresh stale verification prose where the audit flagged it (e.g. 11.2).
+**Depends on:** Phase 11.1
+**Requirements:** TSCL-01, TSCL-02, TSCL-03, TSCL-04
+**Gap closure:** Closes v1.1 audit evidence/Nyquist gaps for Tailscale
+**Plans:** TBD (`/gsd-plan-phase 12.7`)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> 12.2 -> 12.3 -> 12.4 (12.3 may run in parallel with 12.1/12.2)
+Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.7 (12.3 may run in parallel with 12.1/12.2; 12.5–12.7 may parallelize with earlier 12.x if resourced)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -331,13 +355,17 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> 12.2 -> 12.3 -> 
 | 12.2 | v1.0 audit | 0/? | Not started | - |
 | 12.3 | v1.0 audit | 0/? | Not started | - |
 | 12.4 | v1.0 audit | 0/? | Not started | - |
+| 12.5 | v1.1 audit | 0/? | Not started | - |
+| 12.6 | v1.1 audit | 0/? | Not started | - |
+| 12.7 | v1.1 audit | 0/? | Not started | - |
 
 ## Coverage
 
 v1.0: All 42 requirements mapped and shipped
 v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 v1.0 audit remediation: 5 requirements (PROJ-*, GAPL-*) mapped to Phases 12.1–12.4
+v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GEO-04, TSCL-*) remapped to Phases 12.5–12.7 for end-to-end closure
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phases 12.1–12.4 added (v1.0 milestone audit gap closure)*
+*Last updated: 2026-05-01 - Phases 12.5–12.7 added (v1.1 milestone audit gap closure after 12.4)*
