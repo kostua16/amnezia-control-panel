@@ -24,6 +24,8 @@ const WS_EVENTS: WsEventType[] = [
   'resource:update',
   'alert:new',
   'user:status-change',
+  'panel:fallback-change',
+  'panel:push-progress',
 ];
 
 interface ProvidersProps {

@@ -1,6 +1,7 @@
 'use client';
 
 import { MetricsCards } from '@/components/dashboard/metrics-cards';
+import { MultiPanelSection } from '@/components/dashboard/multi-panel-section';
 import { ResourceMonitor } from '@/components/dashboard/resource-monitor';
 import { TrafficStats } from '@/components/dashboard/traffic-stats';
 
@@ -26,6 +27,9 @@ export default function DashboardPage() {
           <TrafficStats />
         </div>
       </div>
+
+      {/* Multi-panel fleet overview */}
+      <MultiPanelSection />
     </div>
   );
 }

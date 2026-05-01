@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { broadcastEvent } from '@/lib/websocket';
+import { createAlert } from '@/lib/alert-service';
+import type { AlertSeverity } from '@/generated/prisma/enums';
 import type { PanelTestResult, PanelConnectionRecord } from '@/types/remote-panel';
 import type { PanelSyncPayload } from '@/types/panel-sync';
 
@@ -53,14 +55,24 @@ export function removePanelApiKey(panelId: number): void {
 
 // ─── WebSocket Fallback Broadcast ───────────────────────
 
-function broadcastFallbackStatusChange(panelId: number, panelName: string, isFallback: boolean): void {
+async function broadcastFallbackStatusChange(panelId: number, panelName: string, isFallback: boolean): Promise<void> {
+  const severity: AlertSeverity = isFallback ? 'WARNING' : 'INFO';
+  const message = isFallback
+    ? `Panel "${panelName}" is running on cached config (central unreachable)`
+    : `Panel "${panelName}" reconnected -- sync resumed`;
+
+  // Create persisted Alert record for unified view
+  try {
+    await createAlert(`panel:${panelName}`, severity, message);
+  } catch (err) {
+    console.error('[panel-health] Failed to create alert for fallback change:', err);
+  }
+
   broadcastEvent('panel:fallback-change', {
     panelId,
     panelName,
     isFallback,
-    message: isFallback
-      ? `Panel "${panelName}" is running on cached config (central unreachable)`
-      : `Panel "${panelName}" reconnected -- sync resumed`,
+    message,
     timestamp: new Date().toISOString(),
   });
 }
