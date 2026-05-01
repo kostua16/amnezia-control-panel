@@ -87,7 +87,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11.4: Chain Config Application & Push UX** - Real config push to AWG/3x-ui services, diff preview, rollback, error reporting
 - [x] **Phase 11.5: Geo-Routing & Routing Rules**- Persisted geo-routing rules, GeoIP lookups, routing rule CRUD with templates
 - [x] **Phase 11.6: Visual Chain Editor** - Drag-and-drop chain topology with panel boundaries and inline rule editing
-- [ ] **Phase 11.7: Pre-Configuration Templates** - VPN protocol, server, routing, and chain presets
+- [x] **Phase 11.7: Pre-Configuration Templates** - VPN protocol, server, routing, and chain presets ✅ 2026-05-01
 - [ ] **Phase 11.8: Multi-Panel Dashboard** - Central health dashboard aggregating status from all remote panels
 
 ## Phase Details
@@ -299,7 +299,7 @@ Phases execute in numeric order: 11.1 -> 11.2 -> 11.3 -> 11.4 -> 11.5 -> 11.6 ->
 | 11.4 | v1.1 | 5/5 | Complete | 2026-04-30 |
 | 11.5 | v1.1 | 0/5 | Not started | - |
 | 11.6 | v1.1 | 0/3 | Not started | - |
-| 11.7 | v1.1 | 0/4 | Not started | - |
+| 11.7 | v1.1 | 4/4 | Complete | 2026-05-01 |
 | 11.8 | v1.1 | 0/2 | Not started | - |
 
 ## Coverage
