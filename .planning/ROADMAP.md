@@ -304,7 +304,10 @@ Plans:
 **Depends on:** Phase 12.2
 **Requirements:** GAPL-02, PROJ-RT-01
 **Gap closure:** Closes audit gap on `WS_TO_QUERY_KEYS` vs hook key namespaces
-**Plans:** TBD (`/gsd-plan-phase 12.9`)
+**Plans:** 1 plan
+
+Plans:
+- [ ] 12.9-01-PLAN.md -- Fix WS_TO_QUERY_KEYS mappings and remove dead/duplicate entries (Wave 1)
 
 ### Phase 12.10: Push wizard and per-panel sync fixes
 **Goal:** Push and rollback send non-empty per-panel API keys; per-panel configs and Xray rules are panel-scoped as designed; push results and errors are trustworthy end-to-end.
@@ -408,7 +411,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.12 (12
 | 12.6 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.7 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.8 | v12.x closure | 0/0 | Planned | — |
-| 12.9 | v12.x closure | 0/0 | Planned | — |
+| 12.9 | v12.x closure | 0/1 | Planned | — |
 | 12.10 | v12.x closure | 0/0 | Planned | — |
 | 12.11 | v12.x closure | 0/0 | Planned | — |
 | 12.12 | v12.x closure | 0/0 | Planned | — |
@@ -423,4 +426,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-02 - Phases 12.8–12.12 added from v12.x-audit-closure-MILESTONE-AUDIT.md*
+*Last updated: 2026-05-02 - Phase 12.9 planned (WS-to-React-Query key alignment)
