@@ -7,12 +7,14 @@ import { jwtVerify } from 'jose';
  * - /api/health — health check must work without auth
  * - /api/ws — Socket.io upgrade handled separately, not via middleware
  * - /api/sync/receive — uses HMAC + API key auth, not JWT
+ * - /api/sync/apply — uses HMAC + API key auth, not JWT
  */
 const PUBLIC_API_ROUTES = [
   '/api/auth/login',
   '/api/health',
   '/api/ws',
   '/api/sync/receive',
+  '/api/sync/apply',
 ];
 
 function isPublicApiRoute(pathname: string): boolean {
