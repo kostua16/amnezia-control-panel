@@ -17,9 +17,9 @@ export function EmptyPanelCTA() {
           Add a remote panel to see its status, traffic, and alerts alongside
           your central panel&apos;s metrics.
         </p>
-        <Button className="mt-6" asChild>
-          <Link href="/panels">Add Your First Panel</Link>
-        </Button>
+        <Link href="/panels">
+          <Button className="mt-6">Add Your First Panel</Button>
+        </Link>
       </CardContent>
     </Card>
   );
