@@ -82,7 +82,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **v1.0 audit** (`.planning/v1.0-MILESTONE-AUDIT.md`). **v1.1 audit** (`.planning/v1.1-MILESTONE-AUDIT.md`). **Gap closure:** yes.
 
-- [ ] **Phase 12.1: Admin API JWT enforcement** — PROJ-AUTH-01; JWT unused on most `/api` routes
+- [x] **Phase 12.1: Admin API JWT enforcement** -- PROJ-AUTH-01; JWT unused on most `/api` routes
 - [ ] **Phase 12.2: Real-time stack (Socket.IO)** — PROJ-RT-01; server not attached; chain client protocol mismatch
 - [ ] **Phase 12.3: v1.0 traceability & verification debt** — PROJ-TRACE-01; REQ mapping + targeted `VERIFICATION.md` / Nyquist pilot
 - [ ] **Phase 12.4: Sync apply & WS cache invalidation** — GAPL-01, GAPL-02; `/api/sync/apply` alignment; React Query + broadcasts
@@ -234,7 +234,10 @@ Plans:
 **Depends on:** v1.0 (Phase 2.3), v1.1 complete
 **Requirements:** PROJ-AUTH-01
 **Gap closure:** Closes gaps from v1.0 milestone audit (requirement + integration: unauthenticated admin APIs)
-**Plans:** TBD (`/gsd-plan-phase 12.1`)
+**Plans:** 1 plan
+
+Plans:
+- [x] 12.1-01-PLAN.md -- JWT middleware for all API routes, cleanup inline auth, remove proxy.ts
 
 ### Phase 12.2: Real-time stack (Socket.IO server and clients)
 **Goal:** Socket.IO attaches to the HTTP server; `broadcastEvent` delivers; chain status and dashboard hooks use the same protocol as `/api/ws`.
@@ -351,7 +354,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.7 (12.
 | 11.6 | v1.1 | 3/3 | Complete | 2026-05-01 |
 | 11.7 | v1.1 | 4/4 | Complete | 2026-05-01 |
 | 11.8 | v1.1 | 3/3 | Complete | 2026-05-01 |
-| 12.1 | v1.0 audit | 0/? | Not started | - |
+| 12.1 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
 | 12.2 | v1.0 audit | 0/? | Not started | - |
 | 12.3 | v1.0 audit | 0/? | Not started | - |
 | 12.4 | v1.0 audit | 0/? | Not started | - |
@@ -368,4 +371,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phases 12.5–12.7 added (v1.1 milestone audit gap closure after 12.4)*
+*Last updated: 2026-05-01 - Phase 12.1 complete (JWT middleware enforcement)*

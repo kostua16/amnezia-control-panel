@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: Multi-Panel Chain Routing
 status: completed
 stopped_at: context exhaustion at 76% (2026-05-01)
-last_updated: "2026-05-01T12:38:12.412Z"
-last_activity: 2026-05-01 -- 11.8-03 complete (MultiPanelSection, dashboard integration, WebSocket events, panel alerts)
+last_updated: "2026-05-01T15:55:18Z"
+last_activity: 2026-05-01 -- 12.1-01 complete (JWT middleware enforcement on all API routes)
 progress:
   total_phases: 8
   completed_phases: 8
@@ -21,24 +21,25 @@ progress:
 **Project**: Amnezia Control Panel
 **Core Value**: One panel, both VPN systems -- users synchronized between Amnezia AWG and 3x-ui, no context switching
 **Current Focus**: v1.1 Multi-Panel Chain Routing
-**Current Position**: Phase 11.2 (Remote Panel Registration) -- ready to plan
+**Current Position**: Phase 11.8 of 11.8 (Multi-Panel Dashboard) -- v1.1 complete
+**Audit Remediation**: Phase 12.1 complete, 12.2-12.7 remaining
 
 ## Current Position
 
-Phase: 11.8 of 11.8 (Multi-Panel Dashboard)
-Plan: 3 of 4 in current phase
-Status: 11.8-03 complete
-Last activity: 2026-05-01 -- 11.8-03 complete (MultiPanelSection, dashboard integration, WebSocket events, panel alerts)
+Phase: 12.1 of 12.7 (Audit Remediation)
+Plan: 1 of 1 in current phase
+Status: 12.1-01 complete
+Last activity: 2026-05-01 -- 12.1-01 complete (JWT middleware enforcement on all API routes)
 
-Progress: [█████████] 100%
+Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 18 (v1.1)
+- Total plans completed: 19 (v1.1 + audit)
 - Average duration: 4min
-- Total execution time: 73min
+- Total execution time: 77min
 
 **By Phase:**
 
@@ -48,10 +49,11 @@ Progress: [█████████] 100%
 | 11.2 | 3 | 25min | 8min |
 | 11.3 | 3 | 12min | 4min |
 | 11.4-11.8 | -- | -- | -- |
+| 12.1 | 1 | 3min | 3min |
 
 **Recent Trend:**
 
-- Last 5 plans: 11.8-01 (5min), 11.7-04 (5min), 11.7-03 (2min)
+- Last 5 plans: 12.1-01 (3min), 11.8-01 (5min), 11.7-04 (5min), 11.7-03 (2min)
 - Trend: improving
 
 *Updated after each plan completion*
@@ -70,6 +72,9 @@ Recent decisions affecting current work:
 - 11.1-01: advertisedSubnets stored as JSON-encoded String (SQLite Prisma connector does not support String[])
 - 11.1-01: toNodeInfo strips PublicKey per T-11.1-02 information disclosure mitigation
 - 11.3-03: API keys cached in volatile memory only (Map) for auto-resync, never persisted to DB
+- 12.1-01: Middleware returns JSON 401 for API routes (not redirect); page routes redirect to /login
+- 12.1-01: Public API routes excluded from JWT: auth/login, health, ws, sync/receive
+- 12.1-01: auth/me uses decodeJwt (no verify) since middleware already validated token
 
 ### Pending Todos
 
@@ -90,8 +95,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-01T12:38:12.407Z
-Stopped at: context exhaustion at 76% (2026-05-01)
+Last session: 2026-05-01T15:55:18Z
+Stopped at: Completed 12.1-01
 Resume file: None
 
 ## Quick Tasks Completed
@@ -102,6 +107,5 @@ Resume file: None
 | 2026-04-30 | 260430-r2n       | npm `--port` shorthand support + Next lock behavior |
 
 ---
-
 *State initialized: 2026-04-27*
-*Last updated: 2026-05-01 - 11.5-03 complete*
+*Last updated: 2026-05-01 - 12.1-01 complete (JWT middleware enforcement)*

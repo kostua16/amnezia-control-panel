@@ -78,7 +78,7 @@ Closes structured gaps from `.planning/v1.0-MILESTONE-AUDIT.md`. Not part of ori
 
 ### Security & real-time
 
-- [ ] **PROJ-AUTH-01**: Admin-affecting `/api` routes enforce session/JWT; implementation matches documented session layer (see audit: `src/proxy.ts` vs middleware)
+- [x] **PROJ-AUTH-01**: Admin-affecting `/api` routes enforce session/JWT; implementation matches documented session layer (see audit: `src/proxy.ts` vs middleware)
 - [ ] **PROJ-RT-01**: Socket.IO server attaches to HTTP; clients use compatible protocol for chain status and dashboard real-time paths; `broadcastEvent` is effective
 
 ### Planning & evidence
@@ -171,7 +171,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TMPL-03 | Phase 11.7 | Pending |
 | TMPL-04 | Phase 11.7 | Pending |
 | DASH-01 | Phase 11.8 | Pending |
-| PROJ-AUTH-01 | Phase 12.1 | Pending |
+| PROJ-AUTH-01 | Phase 12.1 | Done |
 | PROJ-RT-01 | Phase 12.2 | Pending |
 | PROJ-TRACE-01 | Phase 12.3 | Pending |
 | GAPL-01 | Phase 12.4 | Pending |
