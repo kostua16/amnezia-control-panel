@@ -6,9 +6,23 @@ import type {
   XrayRoutingRule,
 } from '@/types/chain';
 import type { Server } from '@/types/server';
+import type { GeoRoutingResult } from '@/types/geo-routing';
 import { getTemplateById } from './chain-templates';
 import { generatePerPanelConfig } from './panel-sync-client';
 import { applyPanelConfig } from './config-applier';
+import { resolveGeoRoute } from './geo-routing';
+
+// ─── Types ───────────────────────────────────────────────
+
+export interface ChainApplyResult {
+  success: boolean;
+  appliedTo: string[];
+  errors: string[];
+  geoRouting?: {
+    sourceIp: string;
+    result: GeoRoutingResult;
+  };
+}
 
 /**
  * Generate a full chain configuration from a template and server selection.
@@ -88,12 +102,44 @@ export function generateChainConfig(
  * For each node in the chain, generates a per-panel config payload and
  * calls the real config applier to apply WireGuard peers and/or Xray
  * routing rules to the remote panel's services.
+ *
+ * If `sourceIp` is provided, evaluates geo-routing rules before applying.
+ * - BLOCK: skips chain application and reports the block decision.
+ * - ROUTE (with chainId): skips application and reports the geo-redirect.
+ * - ALLOW or no match: proceeds with normal chain application.
  */
 export async function applyChainConfig(
   chainConfig: ChainConfig,
-): Promise<{ success: boolean; appliedTo: string[]; errors: string[] }> {
+  sourceIp?: string,
+): Promise<ChainApplyResult> {
   const appliedTo: string[] = [];
   const errors: string[] = [];
+
+  // Geo-routing pre-check when source IP is provided
+  if (sourceIp) {
+    const geoResult = await resolveGeoRoute(sourceIp);
+
+    if (geoResult.action === 'BLOCK') {
+      return {
+        success: false,
+        appliedTo: [],
+        errors: [`Geo-routing BLOCK for ${sourceIp}: matched rule "${geoResult.rule?.name ?? 'unknown'}"`],
+        geoRouting: { sourceIp, result: geoResult },
+      };
+    }
+
+    if (geoResult.action === 'ROUTE' && geoResult.chainId) {
+      return {
+        success: false,
+        appliedTo: [],
+        errors: [
+          `Geo-routing redirect for ${sourceIp}: matched rule "${geoResult.rule?.name ?? 'unknown'}", ` +
+          `routing to chain ${geoResult.chainId} instead`,
+        ],
+        geoRouting: { sourceIp, result: geoResult },
+      };
+    }
+  }
 
   for (const node of chainConfig.nodes) {
     try {
