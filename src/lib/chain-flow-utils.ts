@@ -1,5 +1,7 @@
 import type { Node, Edge } from '@xyflow/react';
 import type { ChainNode, ChainTopology } from '@/types/chain';
+import type { RemotePanel } from '@/types/remote-panel';
+import type { CrossPanelEdgeData } from '@/types/chain-flow';
 import { calculateNodePositions, CANVAS_PADDING } from '@/lib/chain-layout';
 
 export interface ChainBuilderNode {
@@ -27,13 +29,54 @@ export function toFlowNodes(
 
 /**
  * Convert connection pairs to React Flow Edge[].
+ * When isCrossPanel returns true and panels data is available,
+ * populates data with CrossPanelEdgeData for tooltip display.
  */
 export function toFlowEdges(
   connections: Array<{ fromId: string; toId: string }>,
   isCrossPanel?: (sourceId: string, targetId: string) => boolean,
+  options?: {
+    panels?: RemotePanel[];
+    serverPanelMap?: Record<number, number>;
+    builderNodes?: ChainBuilderNode[];
+  },
 ): Edge[] {
+  const { panels, serverPanelMap, builderNodes } = options ?? {};
+
+  // Build lookup: nodeId -> serverId
+  const nodeServerMap = new Map<string, number | null>();
+  if (builderNodes) {
+    for (const n of builderNodes) {
+      nodeServerMap.set(n.id, n.serverId);
+    }
+  }
+
+  // Build lookup: panelId -> panelName
+  const panelNameMap = new Map<number, string>();
+  if (panels) {
+    for (const p of panels) {
+      panelNameMap.set(p.id, p.name);
+    }
+  }
+
   return connections.map(({ fromId, toId }) => {
     const cross = isCrossPanel?.(fromId, toId) ?? false;
+
+    let edgeData: CrossPanelEdgeData | undefined;
+    if (cross && serverPanelMap && panels) {
+      const sourceServerId = nodeServerMap.get(fromId);
+      const targetServerId = nodeServerMap.get(toId);
+      const sourcePanelId = sourceServerId !== undefined ? serverPanelMap[sourceServerId] : undefined;
+      const targetPanelId = targetServerId !== undefined ? serverPanelMap[targetServerId] : undefined;
+
+      if (sourcePanelId !== undefined && targetPanelId !== undefined) {
+        edgeData = {
+          crossPanel: true,
+          sourcePanelName: panelNameMap.get(sourcePanelId) ?? `Panel ${sourcePanelId}`,
+          targetPanelName: panelNameMap.get(targetPanelId) ?? `Panel ${targetPanelId}`,
+        };
+      }
+    }
 
     return {
       id: `edge-${fromId}-${toId}`,
@@ -44,7 +87,7 @@ export function toFlowEdges(
       style: cross
         ? { stroke: '#94a3b8', strokeWidth: 2.5, strokeDasharray: '8 4' }
         : { stroke: '#94a3b8', strokeWidth: 1.5 },
-      ...(cross ? { data: { crossPanel: true } } : {}),
+      ...(edgeData ? { data: edgeData } : {}),
     };
   });
 }
