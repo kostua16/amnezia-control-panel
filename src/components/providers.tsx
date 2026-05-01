@@ -25,8 +25,6 @@ const WS_EVENTS: WsEventType[] = [
   'alert:new',
   'user:status-change',
   'panel:fallback-change',
-  'panel:push-progress',
-  'chain:status-update',
 ];
 
 /**
@@ -35,13 +33,13 @@ const WS_EVENTS: WsEventType[] = [
  * mapped prefix are invalidated, triggering a fresh fetch.
  */
 const WS_TO_QUERY_KEYS: Partial<Record<WsEventType, string[][]>> = {
-  'stats:update': [['dashboard', 'stats']],
-  'resource:update': [['monitoring', 'resources']],
-  'alert:new': [['alerts']],
+  'stats:update': [['dashboard-stats']],
+  'resource:update': [['system-resources']],
   'user:status-change': [['users']],
-  'panel:push-progress': [['panels']],
-  'panel:fallback-change': [['panels']],
-  'chain:status-update': [['chains']],
+  'panel:fallback-change': [['fleet-status']],
+  // alert:new handled by use-alerts.ts directly (single source of truth)
+  // panel:push-progress consumed by push-wizard.tsx via lastEvent (no RQ)
+  // chain:status-update consumed by use-chain-status.ts via direct socket (no RQ)
 };
 
 interface ProvidersProps {
