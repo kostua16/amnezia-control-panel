@@ -72,6 +72,24 @@ Requirements for multi-panel chain routing milestone. Each maps to roadmap phase
 
 - [ ] **DASH-01**: Central health dashboard aggregates service status, traffic, and alerts from all remote panels
 
+## v1.0 milestone audit remediation (Phase 12.x)
+
+Closes structured gaps from `.planning/v1.0-MILESTONE-AUDIT.md`. Not part of original v1.0/v1.1 requirement sets; added for traceability.
+
+### Security & real-time
+
+- [ ] **PROJ-AUTH-01**: Admin-affecting `/api` routes enforce session/JWT; implementation matches documented session layer (see audit: `src/proxy.ts` vs middleware)
+- [ ] **PROJ-RT-01**: Socket.IO server attaches to HTTP; clients use compatible protocol for chain status and dashboard real-time paths; `broadcastEvent` is effective
+
+### Planning & evidence
+
+- [ ] **PROJ-TRACE-01**: Phases 1.1–10.4 have REQ-ID (or equivalent) mapping in `REQUIREMENTS.md`; audit-critical phases gain `VERIFICATION.md` / validation pilot per Phase 12.3 scope
+
+### Integration follow-ups (audit warnings)
+
+- [ ] **GAPL-01**: Remote config apply path aligns with central push (no reliance on missing `/api/sync/apply` or documented equivalent)
+- [ ] **GAPL-02**: WebSocket events invalidate React Query (or equivalent) for dashboard/resource stats where polling is currently the only refresh path
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -149,12 +167,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TMPL-03 | Phase 11.7 | Pending |
 | TMPL-04 | Phase 11.7 | Pending |
 | DASH-01 | Phase 11.8 | Pending |
+| PROJ-AUTH-01 | Phase 12.1 | Pending |
+| PROJ-RT-01 | Phase 12.2 | Pending |
+| PROJ-TRACE-01 | Phase 12.3 | Pending |
+| GAPL-01 | Phase 12.4 | Pending |
+| GAPL-02 | Phase 12.4 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 35 total
 - Mapped to phases: 35
 - Unmapped: 0
+- v1.0 audit remediation: 5 requirements (PROJ-*, GAPL-*) mapped to Phases 12.1–12.4
 
 ---
 *Requirements defined: 2026-04-29*
-*Last updated: 2026-04-29 after v1.1 roadmap creation*
+*Last updated: 2026-05-01 — Phase 12.x gap closure requirements and traceability*

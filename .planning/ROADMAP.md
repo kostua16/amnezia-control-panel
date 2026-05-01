@@ -3,7 +3,8 @@
 ## Milestones
 
 - **v1.0** -- Phases 1.1-10.4 (shipped 2026-04-29)
-- **v1.1 Multi-Panel Chain Routing** -- Phases 11.1-11.8 (in progress)
+- **v1.1 Multi-Panel Chain Routing** -- Phases 11.1-11.8 (shipped 2026-05-01) [archive](.planning/milestones/v1.1-ROADMAP.md)
+- **v1.0 milestone audit remediation** -- Phases 12.1-12.4 (in progress; closes `v1.0-MILESTONE-AUDIT.md` gaps)
 
 ## Phases
 
@@ -77,11 +78,14 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 </details>
 
-- **v1.1 Multi-Panel Chain Routing** -- Phases 11.1-11.8 (shipped 2026-05-01) [archive](.planning/milestones/v1.1-ROADMAP.md)
+### Current Milestone: v1.0 audit gap closure (Phases 12.1–12.4)
 
-### Current Milestone
+Remediation from `.planning/v1.0-MILESTONE-AUDIT.md` (`status: gaps_found`). **Gap closure:** yes.
 
-_awaiting /gsd-new-milestone_
+- [ ] **Phase 12.1: Admin API JWT enforcement** — PROJ-AUTH-01; JWT unused on most `/api` routes
+- [ ] **Phase 12.2: Real-time stack (Socket.IO)** — PROJ-RT-01; server not attached; chain client protocol mismatch
+- [ ] **Phase 12.3: v1.0 traceability & verification debt** — PROJ-TRACE-01; REQ mapping + targeted `VERIFICATION.md` / Nyquist pilot
+- [ ] **Phase 12.4: Sync apply & WS cache invalidation** — GAPL-01, GAPL-02; `/api/sync/apply` alignment; React Query + broadcasts
 
 ## Phase Details
 
@@ -222,10 +226,38 @@ Plans:
 - [x] 11.8-02-PLAN.md -- useMultiPanelStatus hook, FleetHealthStrip, EmptyPanelCTA, PanelCard, PanelCardExpanded (Wave 2)
 - [x] 11.8-03-PLAN.md -- MultiPanelSection orchestrator, dashboard page integration, WebSocket events, panel alerts (Wave 3)
 
+### Phase 12.1: Admin API JWT enforcement
+**Goal:** All admin-affecting `/api` routes require a valid session/JWT; documented session layer matches implementation (replaces unused `proxy.ts` or wires it).
+**Depends on:** v1.0 (Phase 2.3), v1.1 complete
+**Requirements:** PROJ-AUTH-01
+**Gap closure:** Closes gaps from v1.0 milestone audit (requirement + integration: unauthenticated admin APIs)
+**Plans:** TBD (`/gsd-plan-phase 12.1`)
+
+### Phase 12.2: Real-time stack (Socket.IO server and clients)
+**Goal:** Socket.IO attaches to the HTTP server; `broadcastEvent` delivers; chain status and dashboard hooks use the same protocol as `/api/ws`.
+**Depends on:** Phase 12.1 (recommended: secure APIs before widening real-time surface)
+**Requirements:** PROJ-RT-01
+**Gap closure:** Closes audit gaps on instrumentation, protocol mismatch, and broken live-update flows
+**Plans:** TBD (`/gsd-plan-phase 12.2`)
+
+### Phase 12.3: v1.0 traceability and verification debt
+**Goal:** `REQUIREMENTS.md` (or companion doc) maps Phases 1.1–10.4 to checkable outcomes; backfill `VERIFICATION.md` for audit-critical areas; optional Nyquist `*-VALIDATION.md` pilot.
+**Depends on:** None (documentation); can parallelize with 12.1/12.2 if resourced
+**Requirements:** PROJ-TRACE-01
+**Gap closure:** Closes audit gap on missing v1.0 REQ traceability and mass unverified phases (scoped, not all 58 in one pass)
+**Plans:** TBD (`/gsd-plan-phase 12.3`)
+
+### Phase 12.4: Remote sync apply path and WS-driven invalidation
+**Goal:** Central push/apply path does not rely on missing remote endpoints; dashboard/resource queries invalidate on relevant WebSocket events.
+**Depends on:** Phase 11.3–11.4 (sync protocol); Phase 12.2 (for event-driven invalidation)
+**Requirements:** GAPL-01, GAPL-02
+**Gap closure:** Closes audit integration warnings (config-applier/sync 404 path; polling-only UI)
+**Plans:** TBD (`/gsd-plan-phase 12.4`)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 11.1 -> 11.2 -> 11.3 -> 11.4 -> 11.5 -> 11.6 -> 11.7 -> 11.8
+Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> 12.2 -> 12.3 -> 12.4 (12.3 may run in parallel with 12.1/12.2)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -295,12 +327,17 @@ Phases execute in numeric order: 11.1 -> 11.2 -> 11.3 -> 11.4 -> 11.5 -> 11.6 ->
 | 11.6 | v1.1 | 3/3 | Complete | 2026-05-01 |
 | 11.7 | v1.1 | 4/4 | Complete | 2026-05-01 |
 | 11.8 | v1.1 | 3/3 | Complete | 2026-05-01 |
+| 12.1 | v1.0 audit | 0/? | Not started | - |
+| 12.2 | v1.0 audit | 0/? | Not started | - |
+| 12.3 | v1.0 audit | 0/? | Not started | - |
+| 12.4 | v1.0 audit | 0/? | Not started | - |
 
 ## Coverage
 
 v1.0: All 42 requirements mapped and shipped
 v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
+v1.0 audit remediation: 5 requirements (PROJ-*, GAPL-*) mapped to Phases 12.1–12.4
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phase 11.8 complete (3 plans, 3 waves)*
+*Last updated: 2026-05-01 - Phases 12.1–12.4 added (v1.0 milestone audit gap closure)*
