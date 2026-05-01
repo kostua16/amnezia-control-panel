@@ -111,6 +111,7 @@ export function generateChainConfig(
 export async function applyChainConfig(
   chainConfig: ChainConfig,
   sourceIp?: string,
+  panelCredentials?: Map<number, { panelUrl: string; apiKey: string }>,
 ): Promise<ChainApplyResult> {
   const appliedTo: string[] = [];
   const errors: string[] = [];
@@ -148,10 +149,16 @@ export async function applyChainConfig(
         continue;
       }
 
-      const panelUrl = `http://${node.hostname}:${node.port}`;
+      // Look up panel credentials by serverId
+      const creds = panelCredentials?.get(node.serverId);
+      if (!creds) {
+        errors.push(`No panel credentials registered for server ${node.serverId} (node: ${node.label})`);
+        continue;
+      }
+
       const panelLabel = `${node.label} (${node.hostname})`;
 
-      const results = await applyPanelConfig(panelUrl, node.label, panelConfig);
+      const results = await applyPanelConfig(creds.panelUrl, node.label, creds.apiKey, panelConfig);
 
       for (const result of results) {
         if (result.success) {

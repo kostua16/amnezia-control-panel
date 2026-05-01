@@ -86,8 +86,29 @@ export async function POST(request: NextRequest) {
       serverMapping,
     );
 
+    // Build panel credentials map from RemotePanel table
+    // The API key for signing must come from the caller; for local chain apply,
+    // we query panels matching the chain node serverIds.
+    const remotePanels = await prisma.remotePanel.findMany({
+      where: {
+        isActive: true,
+        serverId: { in: chainConfig.nodes.map((n) => n.serverId) },
+      },
+    });
+
+    // Note: We cannot retrieve plaintext API keys from the DB (only bcrypt hashes).
+    // The panelCredentials map requires plaintext keys for HMAC signing.
+    // For the /api/chains/apply route, this means the caller must provide API keys.
+    // Fall back to empty credentials map -- nodes without credentials will be skipped
+    // with a clear error message. The push flow (panel-sync-client) handles this
+    // correctly via pushConfigToAllPanels which receives panelApiKeys from the caller.
+    //
+    // TODO: Phase 12.10 will add apiKey input to the chains/apply request body
+    // so this route can construct a full credentials map.
+    const panelCredentials = new Map<number, { panelUrl: string; apiKey: string }>();
+
     // Apply the chain configuration to all servers
-    const applyResult = await applyChainConfig(chainConfig);
+    const applyResult = await applyChainConfig(chainConfig, undefined, panelCredentials);
 
     return NextResponse.json({
       success: applyResult.success,
