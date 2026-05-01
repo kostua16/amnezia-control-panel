@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { io, Socket } from 'socket.io-client';
 import type { ChainTopology } from '@/types/chain';
 
 export interface ChainStatusNode {
@@ -31,7 +32,7 @@ interface UseChainStatusOptions {
   chainId: string;
   /** Poll interval in milliseconds. Default: 5000 */
   pollInterval?: number;
-  /** Enable WebSocket live updates. Default: true */
+  /** Enable Socket.IO live updates. Default: true */
   enableWebSocket?: boolean;
 }
 
@@ -64,7 +65,7 @@ export function useChainStatus({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
 
@@ -96,66 +97,61 @@ export function useChainStatus({
     return () => clearInterval(interval);
   }, [fetchStatus, pollInterval]);
 
-  // WebSocket for live updates
+  // Socket.IO for live updates
   useEffect(() => {
     if (!enableWebSocket) return;
 
-    const connectWs = () => {
-      try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(
-          `${protocol}//${window.location.host}/api/ws?chain=${chainId}`,
-        );
+    const connectSocket = () => {
+      const socket = io(window.location.origin, {
+        path: '/api/ws',
+        transports: ['websocket', 'polling'],
+        reconnection: false,
+      });
 
-        ws.onopen = () => {
-          setIsConnected(true);
-          reconnectAttempts.current = 0;
-        };
+      socket.on('connect', () => {
+        setIsConnected(true);
+        reconnectAttempts.current = 0;
+      });
 
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'chain:status-update' && data.chainId === chainId) {
-              setStatus(data.payload);
-            }
-          } catch {
-            // Ignore non-JSON messages
-          }
-        };
+      socket.on('chain:status-update', (data: unknown) => {
+        const payload = data as { chainId: string } & ChainStatus;
+        if (payload.chainId === chainId) {
+          setStatus(payload);
+          setError(null);
+        }
+      });
 
-        ws.onclose = () => {
-          setIsConnected(false);
-          wsRef.current = null;
+      socket.on('disconnect', () => {
+        setIsConnected(false);
+        socketRef.current = null;
 
-          // Reconnect with exponential backoff
-          if (reconnectAttempts.current < 10) {
-            const delay = Math.min(
-              1000 * Math.pow(2, reconnectAttempts.current),
-              30_000,
-            );
-            reconnectAttempts.current += 1;
-            reconnectTimer.current = setTimeout(connectWs, delay);
-          }
-        };
+        // Reconnect with exponential backoff
+        if (reconnectAttempts.current < 10) {
+          const delay = Math.min(
+            1000 * Math.pow(2, reconnectAttempts.current),
+            30_000,
+          );
+          reconnectAttempts.current += 1;
+          reconnectTimer.current = setTimeout(connectSocket, delay);
+        }
+      });
 
-        ws.onerror = () => {
-          // Error is followed by onclose
-        };
+      socket.on('connect_error', () => {
+        // Error is followed by disconnect handler's reconnect logic
+      });
 
-        wsRef.current = ws;
-      } catch {
-        // WebSocket not available
-      }
+      socketRef.current = socket;
     };
 
-    connectWs();
+    connectSocket();
 
     return () => {
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
       }
-      wsRef.current?.close();
-      wsRef.current = null;
+      reconnectAttempts.current = 10; // prevent auto-reconnect after unmount
+      socketRef.current?.disconnect();
+      socketRef.current = null;
     };
   }, [chainId, enableWebSocket]);
 

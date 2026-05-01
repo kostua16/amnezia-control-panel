@@ -1,7 +1,7 @@
 const { spawn } = require("child_process");
 const path = require("path");
 
-const nextBin = path.join(__dirname, "..", "node_modules", "next", "dist", "bin", "next");
+const serverScript = path.join(__dirname, "..", "server.mjs");
 const userArgs = process.argv.slice(2);
 const npmPort = process.env.npm_config_port;
 
@@ -39,15 +39,22 @@ const resolvedNpm = resolvePortFromNpmShorthand(userArgs);
 const argsWithoutNpmPortValue = resolvedNpm.remainingArgs;
 const hasNpmPort = resolvedNpm.port !== undefined;
 
-const args = [nextBin, "dev"];
-if (!hasPortInArgs(argsWithoutNpmPortValue) && !hasPortEnv && hasNpmPort) {
-  args.push("-p", resolvedNpm.port);
-} else if (!hasPortInArgs(argsWithoutNpmPortValue) && !hasPortEnv) {
-  args.push("-p", "3333");
-}
-args.push(...argsWithoutNpmPortValue);
+// Set NODE_ENV=development and resolve port
+process.env.NODE_ENV = 'development';
 
-const child = spawn(process.execPath, args, {
+let port;
+if (!hasPortInArgs(argsWithoutNpmPortValue) && !hasPortEnv && hasNpmPort) {
+  port = resolvedNpm.port;
+} else if (!hasPortInArgs(argsWithoutNpmPortValue) && !hasPortEnv) {
+  port = '3333';
+}
+
+if (port) {
+  process.env.PORT = port;
+}
+
+// Pass remaining args as environment or ignore (custom server doesn't support all next CLI flags)
+const child = spawn(process.execPath, [serverScript, ...argsWithoutNpmPortValue], {
   stdio: "inherit",
   windowsHide: true,
 });

@@ -26,6 +26,7 @@ const WS_EVENTS: WsEventType[] = [
   'user:status-change',
   'panel:fallback-change',
   'panel:push-progress',
+  'chain:status-update',
 ];
 
 interface ProvidersProps {

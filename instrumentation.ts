@@ -2,5 +2,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { startPanelHealthChecks } = await import('@/lib/panel-health-checker');
     startPanelHealthChecks();
+
+    const { startBroadcaster } = await import('@/lib/real-time-broadcaster');
+    startBroadcaster();
   }
 }
