@@ -21,6 +21,7 @@ import '@xyflow/react/dist/style.css';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ChainFlowNode } from './chain-flow-node';
+import { PanelGroupNode } from './panel-group-node';
 import { ChainTemplatesList } from './chain-templates-list';
 import {
   toFlowNodes,
@@ -30,11 +31,15 @@ import {
   generateNodeId,
   type ChainBuilderNode,
 } from '@/lib/chain-flow-utils';
+import { CANVAS_PADDING } from '@/lib/chain-layout';
 import type { ChainTopology, ChainTemplate } from '@/types/chain';
 import type { Server } from '@/types/server';
+import type { RemotePanel } from '@/types/remote-panel';
 
 interface ChainFlowEditorProps {
   servers: Server[];
+  panels?: RemotePanel[];
+  serverPanelMap?: Record<number, number>;
   onApply?: (templateId: string, serverMapping: Record<number, number>) => void;
 }
 
@@ -54,7 +59,7 @@ const defaultEdgeOptions: Partial<Edge> = {
   style: { stroke: '#94a3b8', strokeWidth: 1.5 },
 };
 
-export function ChainFlowEditor({ servers, onApply }: ChainFlowEditorProps) {
+export function ChainFlowEditor({ servers, panels, serverPanelMap, onApply }: ChainFlowEditorProps) {
   const [topology, setTopology] = useState<ChainTopology>('linear');
   const [localNodes, setLocalNodes] = useState<ChainBuilderNode[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<ChainTemplate | null>(null);
@@ -67,20 +72,96 @@ export function ChainFlowEditor({ servers, onApply }: ChainFlowEditorProps) {
   const addMenuRef = useRef<HTMLDivElement>(null);
 
   // Register custom node types (memoized)
-  const nodeTypes = useMemo(() => ({ chainNode: ChainFlowNode }), []);
+  const nodeTypes = useMemo(() => ({ chainNode: ChainFlowNode, panelGroup: PanelGroupNode }), []);
 
   // Convert local nodes to React Flow nodes/edges
+  // Build panel groups when serverPanelMap is provided
   const flowNodes = useMemo(() => {
     const positions = getDefaultPositions(localNodes.length, topology);
     const mergedPositions = { ...positions, ...customPositions };
-    return toFlowNodes(localNodes, mergedPositions);
-  }, [localNodes, topology, customPositions]);
+
+    if (!serverPanelMap) {
+      // No panel mapping -- return plain chain nodes (backward compatible)
+      return toFlowNodes(localNodes, mergedPositions);
+    }
+
+    // Group nodes by panelId
+    const panelGroups = new Map<number, { panelId: number; panelName: string; isActive: boolean; nodeIds: string[] }>();
+    const unassignedNodeIds: string[] = [];
+
+    for (const node of localNodes) {
+      if (node.serverId === null) {
+        unassignedNodeIds.push(node.id);
+        continue;
+      }
+      const panelId = serverPanelMap[node.serverId];
+      if (panelId === undefined) {
+        unassignedNodeIds.push(node.id);
+        continue;
+      }
+      if (!panelGroups.has(panelId)) {
+        const panel = panels?.find((p) => p.id === panelId);
+        panelGroups.set(panelId, {
+          panelId,
+          panelName: panel?.name ?? `Panel ${panelId}`,
+          isActive: panel?.isActive ?? false,
+          nodeIds: [],
+        });
+      }
+      panelGroups.get(panelId)!.nodeIds.push(node.id);
+    }
+
+    // Generate chain nodes with parentId assignments
+    const chainNodes = localNodes.map((builderNode) => {
+      let panelId: number | undefined;
+      if (builderNode.serverId !== null) {
+        panelId = serverPanelMap[builderNode.serverId];
+      }
+
+      return {
+        id: builderNode.id,
+        type: 'chainNode' as const,
+        position: mergedPositions[builderNode.id] ?? { x: CANVAS_PADDING, y: CANVAS_PADDING },
+        data: { ...builderNode },
+        parentId: panelId !== undefined ? `panel-group-${panelId}` : undefined,
+        className: panelId === undefined ? 'ring-1 ring-dashed ring-yellow-500/30' : undefined,
+      };
+    });
+
+    // Generate group nodes
+    const groupNodes = Array.from(panelGroups.values()).map((group) => ({
+      id: `panel-group-${group.panelId}`,
+      type: 'group' as const,
+      position: { x: 0, y: 0 },
+      data: {
+        panelId: group.panelId,
+        panelName: group.panelName,
+        isActive: group.isActive,
+      },
+      style: { padding: 16 },
+      className: 'bg-card/20 border-2 border-dashed border-muted-foreground/40 rounded-lg',
+    }));
+
+    return [...groupNodes, ...chainNodes];
+  }, [localNodes, topology, customPositions, serverPanelMap, panels]);
 
   const flowEdges = useMemo(() => {
+    const isCrossPanel = (sourceId: string, targetId: string) => {
+      if (!serverPanelMap) return false;
+      const sourceNode = localNodes.find((n) => n.id === sourceId);
+      const targetNode = localNodes.find((n) => n.id === targetId);
+      if (!sourceNode?.serverId || !targetNode?.serverId) return false;
+      const sourcePanel = serverPanelMap[sourceNode.serverId];
+      const targetPanel = serverPanelMap[targetNode.serverId];
+      return sourcePanel !== undefined && targetPanel !== undefined && sourcePanel !== targetPanel;
+    };
+
     return toFlowEdges(
       localConnections.map((c) => ({ fromId: c.source, toId: c.target })),
+      isCrossPanel,
+      { panels, serverPanelMap, builderNodes: localNodes },
     );
-  }, [localConnections]);
+  }, [localConnections, localNodes, serverPanelMap, panels]);
 
   // Use React Flow state hooks
   const [reactFlowNodes, setReactFlowNodes, onNodesChange] = useNodesState(flowNodes);
