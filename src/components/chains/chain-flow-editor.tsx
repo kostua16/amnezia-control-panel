@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Plus, Save, GitBranch, Globe, Network, Loader2 } from 'lucide-react';
+import { Plus, Save, GitBranch, Globe, Network, Loader2, Trash2 } from 'lucide-react';
 import {
   ReactFlow,
   Controls,
@@ -23,6 +23,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ChainFlowNode } from './chain-flow-node';
 import { PanelGroupNode } from './panel-group-node';
 import { ChainTemplatesList } from './chain-templates-list';
+import { ChainNodeRoutingDrawer } from './chain-node-routing-drawer';
+import { Dialog } from '@/components/ui/dialog';
 import {
   toFlowNodes,
   toFlowEdges,
@@ -40,6 +42,7 @@ interface ChainFlowEditorProps {
   servers: Server[];
   panels?: RemotePanel[];
   serverPanelMap?: Record<number, number>;
+  chainId?: number | null;
   onApply?: (templateId: string, serverMapping: Record<number, number>) => void;
 }
 
@@ -59,7 +62,7 @@ const defaultEdgeOptions: Partial<Edge> = {
   style: { stroke: '#94a3b8', strokeWidth: 1.5 },
 };
 
-export function ChainFlowEditor({ servers, panels, serverPanelMap, onApply }: ChainFlowEditorProps) {
+export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onApply }: ChainFlowEditorProps) {
   const [topology, setTopology] = useState<ChainTopology>('linear');
   const [localNodes, setLocalNodes] = useState<ChainBuilderNode[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<ChainTemplate | null>(null);
@@ -70,6 +73,13 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, onApply }: Ch
     Record<string, { x: number; y: number }>
   >({});
   const addMenuRef = useRef<HTMLDivElement>(null);
+
+  // Routing drawer state
+  const [routingDrawerOpen, setRoutingDrawerOpen] = useState(false);
+  const [selectedDrawerNode, setSelectedDrawerNode] = useState<ChainBuilderNode | null>(null);
+
+  // Delete confirmation state (replaces window.confirm)
+  const [deleteConfirmNodeId, setDeleteConfirmNodeId] = useState<string | null>(null);
 
   // Register custom node types (memoized)
   const nodeTypes = useMemo(() => ({ chainNode: ChainFlowNode, panelGroup: PanelGroupNode }), []);
@@ -341,12 +351,61 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, onApply }: Ch
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
           return;
         }
-        // React Flow handles deletion internally via onNodesDelete/onEdgesDelete
+        // Find the selected node and show Dialog confirmation
+        const selectedNode = reactFlowNodes.find((n) => n.selected);
+        if (selectedNode && selectedNode.type === 'chainNode') {
+          e.preventDefault();
+          setDeleteConfirmNodeId(selectedNode.id);
+        }
+        // Edge deletion handled by React Flow's internal onEdgesDelete
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [reactFlowNodes]);
+
+  // Node click handler -- opens routing rules drawer
+  const onNodeClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      if (node.type === 'chainNode') {
+        const builderNode = localNodes.find((n) => n.id === node.id);
+        if (builderNode) {
+          setSelectedDrawerNode(builderNode);
+          setRoutingDrawerOpen(true);
+        }
+      }
+    },
+    [localNodes],
+  );
+
+  // Pane click handler -- closes routing rules drawer
+  const onPaneClick = useCallback(() => {
+    setRoutingDrawerOpen(false);
+    setSelectedDrawerNode(null);
   }, []);
+
+  // Delete node with confirmation dialog (replaces window.confirm)
+  const handleConfirmDeleteNode = useCallback(() => {
+    if (deleteConfirmNodeId === null) return;
+    const deletedIds = new Set([deleteConfirmNodeId]);
+    setLocalNodes((prev) => {
+      const remaining = prev.filter((n) => !deletedIds.has(n.id));
+      return reassignRoles(remaining);
+    });
+    setLocalConnections((prev) =>
+      prev.filter((c) => !deletedIds.has(c.source) && !deletedIds.has(c.target)),
+    );
+    setCustomPositions((prev) => {
+      const next = { ...prev };
+      for (const id of deletedIds) {
+        delete next[id];
+      }
+      return next;
+    });
+    setDeleteConfirmNodeId(null);
+    setRoutingDrawerOpen(false);
+    setSelectedDrawerNode(null);
+  }, [deleteConfirmNodeId]);
 
   return (
     <div className="space-y-4">
@@ -472,11 +531,12 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, onApply }: Ch
           onConnect={onConnect}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
           nodeTypes={nodeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
           minZoom={0.3}
           maxZoom={2}
-          deleteKeyCode={['Delete', 'Backspace']}
           fitView
           fitViewOptions={{ padding: 0.2 }}
         >
@@ -515,6 +575,45 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, onApply }: Ch
           </div>
         )}
       </div>
+
+      {/* Routing rules drawer */}
+      <ChainNodeRoutingDrawer
+        open={routingDrawerOpen}
+        onClose={() => {
+          setRoutingDrawerOpen(false);
+          setSelectedDrawerNode(null);
+        }}
+        node={selectedDrawerNode}
+        chainId={chainId}
+      />
+
+      {/* Delete node confirmation dialog */}
+      <Dialog
+        open={deleteConfirmNodeId !== null}
+        onClose={() => setDeleteConfirmNodeId(null)}
+        title="Remove Node"
+      >
+        <p className="text-sm text-foreground">
+          Remove this node and all its connections?
+        </p>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDeleteConfirmNodeId(null)}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleConfirmDeleteNode}
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            Remove
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }
