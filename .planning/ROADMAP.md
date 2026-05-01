@@ -85,10 +85,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12.1: Admin API JWT enforcement** -- PROJ-AUTH-01; JWT unused on most `/api` routes
 - [x] **Phase 12.2: Real-time stack (Socket.IO)** — PROJ-RT-01; server not attached; chain client protocol mismatch
 - [x] **Phase 12.3: v1.0 traceability & verification debt** — PROJ-TRACE-01; REQ mapping + targeted `VERIFICATION.md` / Nyquist pilot
-- [ ] **Phase 12.4: Sync apply & WS cache invalidation** — GAPL-01, GAPL-02; `/api/sync/apply` alignment; React Query + broadcasts
-- [ ] **Phase 12.5: Multi-panel push UX integration** — CPUSH-01–06, CHAIN-01, VISED-03; mount/reconcile PushWizard on `/panels/push`, remote signed push, `panels` / `serverPanelMap` for ChainFlowEditor
-- [ ] **Phase 12.6: Geo-routing runtime E2E** — GEO-03, GEO-04; wire geo evaluation into chain/traffic path; rulite/sendmiche import or scoped requirement
-- [ ] **Phase 12.7: Tailscale milestone verification** — TSCL-01–04; `11.1-VERIFICATION.md` and operator-flow evidence; optional 11.2 verification prose / Nyquist alignment from audit
+- [x] **Phase 12.4: Sync apply & WS cache invalidation** — GAPL-01, GAPL-02; `/api/sync/apply` endpoint created; React Query + WS invalidation wired
+- [x] **Phase 12.5: Multi-panel push UX integration** — CPUSH-01–06, CHAIN-01, VISED-03; PushWizard mounted on `/panels/push`; panels/serverPanelMap passed to ChainFlowEditor
+- [x] **Phase 12.6: Geo-routing runtime E2E** — GEO-03, GEO-04; resolveGeoRoute wired into rule-enforcement and chain-router; GEO-04 narrowed to v2fly scope
+- [x] **Phase 12.7: Tailscale milestone verification** — TSCL-01–04; 11.1-VERIFICATION.md created; 11.2 corrected; audit score raised to 26/35
 
 ## Phase Details
 
