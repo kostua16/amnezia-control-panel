@@ -86,20 +86,20 @@ export async function applyAwgConfig(
     }
 
     if (response.status === 404) {
-      // Remote panel doesn't have the apply endpoint yet
-      console.warn(
-        `[config-applier] Remote panel ${panelName} does not support /api/sync/apply. Config logged but not applied.`,
+      // Remote panel does not have the apply endpoint -- this is a real failure
+      console.error(
+        `[config-applier] Remote panel ${panelName} returned 404 for /api/sync/apply. Config was NOT applied.`,
       );
       return {
-        success: true,
+        success: false,
         service: 'awg',
         panelName,
         latencyMs: Date.now() - startTime,
         error: {
-          type: 'unknown',
-          message: `Config sent to ${panelName} but remote apply endpoint not available (404). Config stored locally on remote.`,
-          recommendation: 'Update the remote panel to support the apply endpoint',
-          knownFix: null,
+          type: 'service_error',
+          message: `Remote panel ${panelName} does not have /api/sync/apply. Config was NOT applied to AWG services.`,
+          recommendation: 'Update the remote panel to the latest version that supports the apply endpoint',
+          knownFix: 'Run git pull and restart the remote panel service',
           rawError: 'HTTP 404: /api/sync/apply not found',
         },
       };
@@ -176,19 +176,20 @@ export async function applyThreeXuiConfig(
     }
 
     if (response.status === 404) {
-      console.warn(
-        `[config-applier] Remote panel ${panelName} does not support /api/sync/apply. Config logged but not applied.`,
+      // Remote panel does not have the apply endpoint -- this is a real failure
+      console.error(
+        `[config-applier] Remote panel ${panelName} returned 404 for /api/sync/apply. Config was NOT applied.`,
       );
       return {
-        success: true,
+        success: false,
         service: 'three_xui',
         panelName,
         latencyMs: Date.now() - startTime,
         error: {
-          type: 'unknown',
-          message: `Config sent to ${panelName} but remote apply endpoint not available (404). Config stored locally on remote.`,
-          recommendation: 'Update the remote panel to support the apply endpoint',
-          knownFix: null,
+          type: 'service_error',
+          message: `Remote panel ${panelName} does not have /api/sync/apply. Config was NOT applied to 3x-ui services.`,
+          recommendation: 'Update the remote panel to the latest version that supports the apply endpoint',
+          knownFix: 'Run git pull and restart the remote panel service',
           rawError: 'HTTP 404: /api/sync/apply not found',
         },
       };
