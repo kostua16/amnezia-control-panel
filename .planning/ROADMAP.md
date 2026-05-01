@@ -268,7 +268,10 @@ Plans:
 **Depends on:** Phase 11.3–11.6 (sync, push UX implementation, editor); coordinate with Phase 12.4 if remote apply path changes
 **Requirements:** CPUSH-01, CPUSH-02, CPUSH-03, CPUSH-04, CPUSH-05, CPUSH-06, CHAIN-01, VISED-03
 **Gap closure:** Closes gaps from `.planning/v1.1-MILESTONE-AUDIT.md` (CPUSH/CHAIN/VISED, PushWizard unwired, panel map props)
-**Plans:** TBD (`/gsd-plan-phase 12.5`)
+**Plans:** 1 plan
+
+Plans:
+- [x] 12.5-01-PLAN.md -- Mount PushWizard on push page, buildServerPanelMap utility, ChainFlowEditor with panel boundaries (Wave 1)
 
 ### Phase 12.6: Geo-routing runtime E2E
 **Goal:** GeoIP-based routing evaluation is invoked from the real chain/traffic application path; GEO-04 import path includes sendmiche/rulite (or requirement text is narrowed to match shipped scope).
@@ -361,7 +364,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.7 (12.
 | 12.2 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
 | 12.3 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
 | 12.4 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
-| 12.5 | v1.1 audit | 0/? | Not started | - |
+| 12.5 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.6 | v1.1 audit | 0/? | Not started | - |
 | 12.7 | v1.1 audit | 0/? | Not started | - |
 
@@ -374,4 +377,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phase 12.3 complete (v1.0 traceability + verification backfill)*
+*Last updated: 2026-05-01 - Phase 12.5 complete (PushWizard mounted, panel boundaries wired)*

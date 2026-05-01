@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Multi-Panel Chain Routing
-status: completed
+status: in-progress
 stopped_at: context exhaustion at 76% (2026-05-01)
-last_updated: "2026-05-01T16:26:00Z"
-last_activity: 2026-05-01 -- 12.4-01 complete (sync apply endpoint + WS invalidation bridge)
+last_updated: "2026-05-01T16:36:00Z"
+last_activity: 2026-05-01 -- 12.5-01 complete (PushWizard mounted on push page, panel boundaries wired)
 progress:
   total_phases: 8
   completed_phases: 8
-  total_plans: 30
-  completed_plans: 30
+  total_plans: 31
+  completed_plans: 31
   percent: 100
 ---
 
@@ -21,15 +21,15 @@ progress:
 **Project**: Amnezia Control Panel
 **Core Value**: One panel, both VPN systems -- users synchronized between Amnezia AWG and 3x-ui, no context switching
 **Current Focus**: v1.1 Multi-Panel Chain Routing
-**Current Position**: Phase 11.8 of 11.8 (Multi-Panel Dashboard) -- v1.1 complete
-**Audit Remediation**: Phase 12.1-12.4 complete, 12.5-12.7 remaining
+**Current Position**: Phase 12.5 of 12.7 (Audit Remediation)
+**Audit Remediation**: Phase 12.1-12.5 complete, 12.6-12.7 remaining
 
 ## Current Position
 
-Phase: 12.4 of 12.7 (Audit Remediation)
+Phase: 12.5 of 12.7 (Audit Remediation)
 Plan: 1 of 1 in current phase
-Status: 12.4-01 complete
-Last activity: 2026-05-01 -- 12.4-01 complete (sync apply endpoint + WS cache invalidation bridge)
+Status: 12.5-01 complete
+Last activity: 2026-05-01 -- 12.5-01 complete (PushWizard mounted on push page, panel boundaries wired)
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -37,9 +37,9 @@ Progress: [█████████] 100% (v1.1 complete; audit remediation i
 
 **Velocity:**
 
-- Total plans completed: 22 (v1.1 + audit)
+- Total plans completed: 23 (v1.1 + audit)
 - Average duration: 4min
-- Total execution time: 86min
+- Total execution time: 90min
 
 **By Phase:**
 
@@ -53,8 +53,9 @@ Progress: [█████████] 100% (v1.1 complete; audit remediation i
 | 12.2 | 1 | 4min | 4min |
 | 12.3 | 1 | 7min | 7min |
 | 12.4 | 1 | 5min | 5min |
+| 12.5 | 1 | 4min | 4min |
 
-- Last 5 plans: 12.4-01 (5min), 12.3-01 (7min), 12.2-01 (4min), 12.1-01 (3min), 11.8-01 (5min)
+- Last 5 plans: 12.5-01 (4min), 12.4-01 (5min), 12.3-01 (7min), 12.2-01 (4min), 12.1-01 (3min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -74,11 +75,13 @@ Recent decisions affecting current work:
 - 11.1-01: toNodeInfo strips PublicKey per T-11.1-02 information disclosure mitigation
 - 11.3-03: API keys cached in volatile memory only (Map) for auto-resync, never persisted to DB
 - 12.1-01: Middleware returns JSON 401 for API routes (not redirect); page routes redirect to /login
-- 12.1-01: Public API routes excluded from JWT: auth/login, health, ws, sync/receive
+- 12.1-01: Public API routes excluded from JWT: auth/login, health, ws, sync/receive, sync/apply
 - 12.1-01: auth/me uses decodeJwt (no verify) since middleware already validated token
 - 12.2-01: Custom server (server.mjs) over instrumentation-only for Socket.IO -- register() provides no HTTP server access
 - 12.2-01: globalThis.__socketIO bridge -- server.mjs (plain JS) cannot import .ts, io instance shared via global
 - 12.2-01: instrumentation.ts starts broadcaster -- Next.js compiles .ts imports in register(), broadcaster needs DB access
+- 12.5-01: Tab toggle over Tabs component -- no shadcn/ui Tabs available, custom button-based segment control
+- 12.5-01: buildServerPanelMap uses Tailscale address matching -- no FK between Server and RemotePanel in schema
 
 ### Pending Todos
 
@@ -100,8 +103,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-01T16:26:00Z
-Stopped at: Completed 12.4-01
+Last session: 2026-05-01T16:36:00Z
+Stopped at: Completed 12.5-01
 Resume file: None
 
 ## Quick Tasks Completed
@@ -113,4 +116,4 @@ Resume file: None
 
 ---
 *State initialized: 2026-04-27*
-*Last updated: 2026-05-01 - 12.4-01 complete (sync apply endpoint + WS invalidation bridge)*
+*Last updated: 2026-05-01 - 12.5-01 complete (PushWizard mounted on push page, panel boundaries wired)*

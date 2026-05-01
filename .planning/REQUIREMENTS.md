@@ -236,16 +236,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MPAN-02 | Phase 11.2 | Pending |
 | MPAN-03 | Phase 11.2 | Pending |
 | MPAN-04 | Phase 11.2 | Pending |
-| CPUSH-01 | Phase 12.5 | Pending |
-| CPUSH-02 | Phase 12.5 | Pending |
-| CPUSH-03 | Phase 12.5 | Pending |
+| CPUSH-01 | Phase 12.5 | Done (12.5-01) |
+| CPUSH-02 | Phase 12.5 | Done (12.5-01) |
+| CPUSH-03 | Phase 12.5 | Done (12.5-01) |
 | HAUT-01 | Phase 11.3 | Pending |
 | HAUT-02 | Phase 11.3 | Pending |
 | HAUT-03 | Phase 11.3 | Pending |
-| CPUSH-04 | Phase 12.5 | Pending |
-| CPUSH-05 | Phase 12.5 | Pending |
-| CPUSH-06 | Phase 12.5 | Pending |
-| CHAIN-01 | Phase 12.5 | Pending |
+| CPUSH-04 | Phase 12.5 | Done (12.5-01) |
+| CPUSH-05 | Phase 12.5 | Done (12.5-01) |
+| CPUSH-06 | Phase 12.5 | Done (12.5-01) |
+| CHAIN-01 | Phase 12.5 | Done (12.5-01) |
 | CHAIN-02 | Phase 11.4 | Pending |
 | CHAIN-03 | Phase 11.4 | Pending |
 | GEO-01 | Phase 11.5 | Pending |
@@ -257,7 +257,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RULE-03 | Phase 11.5 | Done (11.5-03) |
 | VISED-01 | Phase 11.6 | Pending |
 | VISED-02 | Phase 11.6 | Pending |
-| VISED-03 | Phase 12.5 | Pending |
+| VISED-03 | Phase 12.5 | Done (12.5-01) |
 | TMPL-01 | Phase 11.7 | Pending |
 | TMPL-02 | Phase 11.7 | Pending |
 | TMPL-03 | Phase 11.7 | Pending |
@@ -337,4 +337,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-29*
-*Last updated: 2026-05-01 — v1.0 REQ-ID traceability added (Phase 12.3)*
+*Last updated: 2026-05-01 — Phase 12.5: CPUSH-01-06, CHAIN-01, VISED-03 marked done*
