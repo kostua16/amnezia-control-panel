@@ -83,8 +83,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **v1.0 audit** (`.planning/v1.0-MILESTONE-AUDIT.md`). **v1.1 audit** (`.planning/v1.1-MILESTONE-AUDIT.md`). **Gap closure:** yes.
 
 - [x] **Phase 12.1: Admin API JWT enforcement** -- PROJ-AUTH-01; JWT unused on most `/api` routes
-- [ ] **Phase 12.2: Real-time stack (Socket.IO)** — PROJ-RT-01; server not attached; chain client protocol mismatch
-- [ ] **Phase 12.3: v1.0 traceability & verification debt** — PROJ-TRACE-01; REQ mapping + targeted `VERIFICATION.md` / Nyquist pilot
+- [x] **Phase 12.2: Real-time stack (Socket.IO)** — PROJ-RT-01; server not attached; chain client protocol mismatch
+- [x] **Phase 12.3: v1.0 traceability & verification debt** — PROJ-TRACE-01; REQ mapping + targeted `VERIFICATION.md` / Nyquist pilot
 - [ ] **Phase 12.4: Sync apply & WS cache invalidation** — GAPL-01, GAPL-02; `/api/sync/apply` alignment; React Query + broadcasts
 - [ ] **Phase 12.5: Multi-panel push UX integration** — CPUSH-01–06, CHAIN-01, VISED-03; mount/reconcile PushWizard on `/panels/push`, remote signed push, `panels` / `serverPanelMap` for ChainFlowEditor
 - [ ] **Phase 12.6: Geo-routing runtime E2E** — GEO-03, GEO-04; wire geo evaluation into chain/traffic path; rulite/sendmiche import or scoped requirement
@@ -359,7 +359,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.7 (12.
 | 11.8 | v1.1 | 3/3 | Complete | 2026-05-01 |
 | 12.1 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
 | 12.2 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
-| 12.3 | v1.0 audit | 0/? | Not started | - |
+| 12.3 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
 | 12.4 | v1.0 audit | 0/? | Not started | - |
 | 12.5 | v1.1 audit | 0/? | Not started | - |
 | 12.6 | v1.1 audit | 0/? | Not started | - |
@@ -374,4 +374,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phase 12.2 complete (Socket.IO alignment)*
+*Last updated: 2026-05-01 - Phase 12.3 complete (v1.0 traceability + verification backfill)*
