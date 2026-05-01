@@ -102,6 +102,84 @@ const PRESETS: ConfigPreset[] = [
     },
     tags: ['cdn', 'cloudflare', 'relay'],
   },
+
+  // --- Server presets (VPS provider defaults) ---
+  {
+    name: 'hetzner-ubuntu',
+    label: 'Hetzner Ubuntu 24.04',
+    description:
+      'Optimized for Hetzner cloud servers running Ubuntu 24.04 LTS. Includes MTU tuning for Hetzner network and recommended kernel parameters.',
+    serviceType: 'AWG',
+    protocol: 'wireguard',
+    settings: {
+      mtu: 1400,
+      persistentKeepalive: 25,
+      recommendedMtu: 1400,
+      dns: '1.1.1.1, 1.0.0.1',
+      sysctl: {
+        'net.ipv4.ip_forward': 1,
+        'net.ipv6.conf.all.forwarding': 1,
+      },
+    },
+    tags: ['hetzner', 'ubuntu', 'server'],
+  },
+  {
+    name: 'digitalocean-ubuntu',
+    label: 'DigitalOcean Ubuntu 24.04',
+    description:
+      'Optimized for DigitalOcean droplets running Ubuntu 24.04 LTS. Standard MTU and cloud-optimized settings.',
+    serviceType: 'AWG',
+    protocol: 'wireguard',
+    settings: {
+      mtu: 1380,
+      persistentKeepalive: 25,
+      recommendedMtu: 1380,
+      dns: '1.1.1.1, 1.0.0.1',
+      sysctl: {
+        'net.ipv4.ip_forward': 1,
+        'net.ipv6.conf.all.forwarding': 1,
+      },
+    },
+    tags: ['digitalocean', 'ubuntu', 'server'],
+  },
+  {
+    name: 'vultr-ubuntu',
+    label: 'Vultr Ubuntu 24.04',
+    description:
+      'Optimized for Vultr cloud instances running Ubuntu 24.04 LTS. Balanced MTU for Vultr network infrastructure.',
+    serviceType: 'AWG',
+    protocol: 'wireguard',
+    settings: {
+      mtu: 1380,
+      persistentKeepalive: 20,
+      recommendedMtu: 1380,
+      dns: '1.1.1.1, 8.8.8.8',
+      sysctl: {
+        'net.ipv4.ip_forward': 1,
+        'net.ipv6.conf.all.forwarding': 1,
+      },
+    },
+    tags: ['vultr', 'ubuntu', 'server'],
+  },
+  {
+    name: 'contabo-ubuntu',
+    label: 'Contabo Ubuntu 24.04',
+    description:
+      'Optimized for Contabo VPS running Ubuntu 24.04 LTS. Lower MTU for Contabo network and conservative keepalive.',
+    serviceType: 'AWG',
+    protocol: 'wireguard',
+    settings: {
+      mtu: 1350,
+      persistentKeepalive: 30,
+      recommendedMtu: 1350,
+      dns: '1.1.1.1, 8.8.8.8',
+      sysctl: {
+        'net.ipv4.ip_forward': 1,
+        'net.ipv6.conf.all.forwarding': 1,
+      },
+    },
+    tags: ['contabo', 'ubuntu', 'server'],
+  },
 ];
 
 // ─── Preset Operations ──────────────────────────────────
