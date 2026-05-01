@@ -365,8 +365,8 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.7 (12.
 | 12.3 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
 | 12.4 | v1.0 audit | 1/1 | Complete | 2026-05-01 |
 | 12.5 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
-| 12.6 | v1.1 audit | 0/? | Not started | - |
-| 12.7 | v1.1 audit | 0/? | Not started | - |
+| 12.6 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
+| 12.7 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 
 ## Coverage
 
