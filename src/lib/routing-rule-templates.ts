@@ -186,6 +186,10 @@ export interface ImportResult {
  * Per D-10: if an imported rule collides with an existing imported rule on the same
  * countryCode, overwrite it (with confirmation from the UI).
  * Per D-12: best-effort parse -- skip unsupported entries, surface errors.
+ *
+ * TODO: Add sendmiche/rulite import support as a future enhancement.
+ * Rulite provides community-maintained geo-routing rule lists in a different format.
+ * Implementation would go here as a companion function (e.g., importFromRulite).
  */
 export async function importFromGeoIPDat(
   overwriteCollisions: boolean = false,

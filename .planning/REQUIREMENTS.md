@@ -132,7 +132,7 @@ Requirements for multi-panel chain routing milestone. Each maps to roadmap phase
 - [ ] **GEO-01**: Geo-routing rules are persisted to SQLite (replacing v1.0 in-memory stores)
 - [ ] **GEO-02**: Admin can define geo-routing rules by country code, region, or custom criteria
 - [ ] **GEO-03**: Traffic is routed to specific chain hops based on destination geo (via GeoIP lookup)
-- [ ] **GEO-04**: System can auto-load routing rule files from v2fly/geoip and sendmiche/rulite repositories
+- [ ] **GEO-04**: System can auto-load routing rule files from v2fly/geoip repository (sendmiche/rulite support is a future enhancement)
 
 ### Routing Rules
 
