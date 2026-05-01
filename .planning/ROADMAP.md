@@ -86,7 +86,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11.3: Panel Sync Protocol & Hybrid Autonomy** - Config push transport, local config caching, and autonomous fallback
 - [x] **Phase 11.4: Chain Config Application & Push UX** - Real config push to AWG/3x-ui services, diff preview, rollback, error reporting
 - [x] **Phase 11.5: Geo-Routing & Routing Rules**- Persisted geo-routing rules, GeoIP lookups, routing rule CRUD with templates
-- [x] **Phase 11.6: Visual Chain Editor** - Drag-and-drop chain topology with panel boundaries and inline rule editing ✅ 2026-05-01
+- [x] **Phase 11.6: Visual Chain Editor** - Drag-and-drop chain topology with panel boundaries and inline rule editing
 - [ ] **Phase 11.7: Pre-Configuration Templates** - VPN protocol, server, routing, and chain presets
 - [ ] **Phase 11.8: Multi-Panel Dashboard** - Central health dashboard aggregating status from all remote panels
 
@@ -192,9 +192,9 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [x] 11.6-01-PLAN.md -- React Flow canvas, custom node with 4 handles, toolbar, minimap, zoom controls (Wave 1) ✅ 2026-05-01
-- [x] 11.6-02-PLAN.md -- Panel boundary group nodes, server-to-panel mapping, cross-panel edge styling (Wave 2) ✅ 2026-05-01
-- [x] 11.6-03-PLAN.md -- Inline routing rules drawer with tabbed CRUD, auto-save debounce, Apply to Panels (Wave 2) ✅ 2026-05-01
+- [x] 11.6-01-PLAN.md -- React Flow canvas, custom node with 4 handles, toolbar, minimap, zoom controls (Wave 1)
+- [x] 11.6-02-PLAN.md -- Panel boundary group nodes, server-to-panel mapping, cross-panel edge styling (Wave 2)
+- [x] 11.6-03-PLAN.md -- Inline routing rules drawer with tabbed CRUD, auto-save debounce, Apply to Panels (Wave 2)
 
 ### Phase 11.7: Pre-Configuration Templates
 **Goal**: Admin can use pre-built templates for VPN protocols, server configurations, routing rule bundles, and complete chain presets to speed up multi-panel setup.
@@ -205,13 +205,13 @@ Plans:
   2. Admin can apply server presets for common VPS providers and OS configurations to new panels
   3. Admin can use routing presets (geo rule bundles like Russia Direct, EU Privacy, Full Tunnel) to populate routing rules
   4. Admin can use chain presets that combine chain topology, protocols, and routing rules into a single apply operation
-**Plans**: 3 plans (2 waves)
+**Plans**: 4 plans (4 waves)
 
 Plans:
-- [ ] 11.7-01: VPN protocol templates (VLESS-REALITY, Hysteria2, TUIC, existing protocols)
-- [ ] 11.7-02: Server presets (VPS provider defaults, OS configurations)
-- [ ] 11.7-03: Routing presets (geo rule bundles: Russia Direct, EU Privacy, Full Tunnel)
-- [ ] 11.7-04: Chain presets (topology + protocols + routing rules combined)
+- [ ] 11.7-01-PLAN.md -- ChainPreset schema, types, service layer with 3 built-in presets, schema push (Wave 1)
+- [ ] 11.7-02-PLAN.md -- Chain preset API routes (CRUD, seed, apply) and server presets (Wave 2)
+- [ ] 11.7-03-PLAN.md -- Template gallery page with 4 tabbed grids (Wave 3)
+- [ ] 11.7-04-PLAN.md -- Preview modal, save/fork dialogs, navigation entry (Wave 4)
 
 ### Phase 11.8: Multi-Panel Dashboard
 **Goal**: Central health dashboard aggregates service status, traffic metrics, and alerts from all remote panels into a single overview.
@@ -309,4 +309,4 @@ v1.1: All 35 requirements mapped (see traceability in REQUIREMENTS.md)
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-01 - Phase 11.6 planned (3 plans, 2 waves)*
+*Last updated: 2026-05-01 - Phase 11.7 planned (4 plans, 4 waves)*
