@@ -80,7 +80,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Current Milestone: Audit gap closure (Phases 12.1–12.12)
 
-**Closure audit:** `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md` (supersedes “all 12.x complete” until 12.8–12.12 ship). **Nyquist `*-VALIDATION.md` for 12.x:** backlog — run `/gsd-validate-phase` when required.
+**Closure audit:** `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md` (supersedes "all 12.x complete" until 12.8–12.12 ship). **Nyquist `*-VALIDATION.md` for 12.x:** backlog — run `/gsd-validate-phase` when required.
 
 - [x] **Phase 12.1: Admin API JWT enforcement** -- PROJ-AUTH-01; JWT unused on most `/api` routes
 - [x] **Phase 12.2: Real-time stack (Socket.IO)** — PROJ-RT-01; server not attached; chain client protocol mismatch
@@ -297,7 +297,11 @@ Plans:
 **Depends on:** Phase 12.4 (baseline routes); coordinate with 12.10 for end-to-end push
 **Requirements:** GAPL-01, CHAIN-01 (applier ↔ `/api/sync/apply` slice)
 **Gap closure:** Closes `v12.x-audit-closure-MILESTONE-AUDIT.md` integration gaps (config-applier ↔ apply; panel-sync-client ↔ receive)
-**Plans:** TBD (`/gsd-plan-phase 12.8`)
+**Plans:** 2 plans (2 waves)
+
+Plans:
+- [ ] 12.8-01-PLAN.md -- Fix config-applier auth/response parsing, panel-sync-client response parsing, types, and tests (Wave 1)
+- [ ] 12.8-02-PLAN.md -- Add panelCredentials to chain-router, update chains/apply route, and tests (Wave 2)
 
 ### Phase 12.9: WebSocket → React Query key alignment
 **Goal:** WebSocket `broadcastEvent` invalidates the same React Query keys the dashboard, resources, and fleet hooks use so real-time refresh actually refetches UI data.
@@ -320,7 +324,7 @@ Plans:
 **Goal:** Chain apply and routing paths that target remote panels use Tailscale/panel URL transport resolution (`resolveTransportAddress` / tailnet APIs), not ad hoc `hostname` with SSH default port.
 **Depends on:** Phase 11.1, Phase 12.8 (apply path)
 **Requirements:** TSCL-04, CHAIN-01 (transport slice)
-**Gap closure:** Closes closure audit gap “transport primitives not wired into active sync/apply paths”
+**Gap closure:** Closes closure audit gap "transport primitives not wired into active sync/apply paths"
 **Plans:** TBD (`/gsd-plan-phase 12.11`)
 
 ### Phase 12.12: 12.x verification artifacts
@@ -410,7 +414,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.12 (12
 | 12.5 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.6 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.7 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
-| 12.8 | v12.x closure | 0/0 | Planned | — |
+| 12.8 | v12.x closure | 0/2 | Planned | — |
 | 12.9 | v12.x closure | 0/1 | Planned | — |
 | 12.10 | v12.x closure | 0/0 | Planned | — |
 | 12.11 | v12.x closure | 0/0 | Planned | — |
@@ -426,4 +430,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-02 - Phase 12.9 planned (WS-to-React-Query key alignment)
+*Last updated: 2026-05-02 - Phase 12.8 planned (sync apply & receive contracts)*
