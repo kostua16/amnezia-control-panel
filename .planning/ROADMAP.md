@@ -297,11 +297,12 @@ Plans:
 **Depends on:** Phase 12.4 (baseline routes); coordinate with 12.10 for end-to-end push
 **Requirements:** GAPL-01, CHAIN-01 (applier ↔ `/api/sync/apply` slice)
 **Gap closure:** Closes `v12.x-audit-closure-MILESTONE-AUDIT.md` integration gaps (config-applier ↔ apply; panel-sync-client ↔ receive)
-**Plans:** 2 plans (2 waves)
+**Plans:** 3 plans (3 waves)
 
 Plans:
 - [x] 12.8-01-PLAN.md -- Fix config-applier auth/response parsing, panel-sync-client response parsing, types, and tests (Wave 1)
 - [x] 12.8-02-PLAN.md -- Add panelCredentials to chain-router, update chains/apply route, and tests (Wave 2)
+- [ ] 12.8-03-PLAN.md -- Mock geo-routing in chain-router.test.ts to fix transitive @/lib/prisma import (Wave 3)
 
 ### Phase 12.9: WebSocket → React Query key alignment
 **Goal:** WebSocket `broadcastEvent` invalidates the same React Query keys the dashboard, resources, and fleet hooks use so real-time refresh actually refetches UI data.
@@ -414,7 +415,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.12 (12
 | 12.5 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.6 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.7 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
-| 12.8 | v12.x closure | 2/2 | Complete | 2026-05-02 |
+| 12.8 | v12.x closure | 2/3 | In progress | — |
 | 12.9 | v12.x closure | 1/1 | Complete | 2026-05-02 |
 | 12.10 | v12.x closure | 0/0 | Planned | — |
 | 12.11 | v12.x closure | 0/0 | Planned | — |
@@ -430,4 +431,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-02 - Phase 12.9 complete (WS-to-RQ key alignment)*
+*Last updated: 2026-05-02 - Phase 12.8 gap closure plan (12.8-03: mock geo-routing in chain-router.test.ts)*
