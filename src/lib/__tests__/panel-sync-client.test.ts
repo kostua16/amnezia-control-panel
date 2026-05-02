@@ -96,11 +96,13 @@ describe('generatePerPanelConfig', () => {
     assert.equal(result!.chainNodes.length, 3);
   });
 
-  it('includes only routingRules whose nodeId matches a chainNode label', () => {
+  it('includes only routingRules whose nodeId matches the matched node label', () => {
     const result = generatePerPanelConfig(chainConfig, 1);
     assert.ok(result);
-    // All 3 rules have nodeId matching chain node labels
-    assert.equal(result!.routingRules.length, 3);
+    // Only rules matching "Entry Server" (panel 1's matched node label)
+    assert.equal(result!.routingRules.length, 1);
+    assert.equal(result!.routingRules[0].type, 'geoip');
+    assert.equal(result!.routingRules[0].value, 'RU');
   });
 
   it('includes only wireguardPeers whose nodeId matches the matched node', () => {
