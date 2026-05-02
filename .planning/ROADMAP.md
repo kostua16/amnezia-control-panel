@@ -302,7 +302,7 @@ Plans:
 Plans:
 - [x] 12.8-01-PLAN.md -- Fix config-applier auth/response parsing, panel-sync-client response parsing, types, and tests (Wave 1)
 - [x] 12.8-02-PLAN.md -- Add panelCredentials to chain-router, update chains/apply route, and tests (Wave 2)
-- [ ] 12.8-03-PLAN.md -- Mock geo-routing in chain-router.test.ts to fix transitive @/lib/prisma import (Wave 3)
+- [x] 12.8-03-PLAN.md -- Mock geo-routing in chain-router.test.ts to fix transitive @/lib/prisma import (Wave 3)
 
 ### Phase 12.9: WebSocket → React Query key alignment
 **Goal:** WebSocket `broadcastEvent` invalidates the same React Query keys the dashboard, resources, and fleet hooks use so real-time refresh actually refetches UI data.
