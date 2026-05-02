@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Multi-Panel Chain Routing
 status: in-progress
-stopped_at: Completed 12.9-01 (2026-05-02)
-last_updated: "2026-05-02T20:49:12Z"
-last_activity: 2026-05-02 -- 12.9-01 complete (WS_TO_QUERY_KEYS aligned with hook queryKeys)
+stopped_at: Completed 12.8-03 gap closure (2026-05-02)
+last_updated: "2026-05-02T21:00:00Z"
+last_activity: 2026-05-02 -- 12.8 gap closure complete (geo-routing mock for chain-router tests)
 progress:
   total_phases: 8
   completed_phases: 8
