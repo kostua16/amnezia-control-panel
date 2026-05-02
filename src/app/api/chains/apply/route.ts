@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate chain configuration
-    const chainConfig = generateChainConfig(
+    const chainConfig = await generateChainConfig(
       templateId,
       servers.map((s) => ({
         id: s.id,

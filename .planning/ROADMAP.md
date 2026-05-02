@@ -92,7 +92,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12.8: Sync apply & receive contracts** — GAPL-01, CHAIN-01 (applier path); HMAC + body/response alignment for `config-applier` → `/api/sync/apply` and `panel-sync-client` → `/api/sync/receive` (shipped 2026-05-02)
 - [x] **Phase 12.9: WebSocket → React Query key alignment** — GAPL-02, PROJ-RT-01; `providers.tsx` invalidation keys match `use-dashboard-stats`, `use-system-resources`, `use-multi-panel-status` (shipped 2026-05-02)
 - [x] **Phase 12.10: Push wizard & per-panel sync fixes** — CPUSH-01–06, VISED-03 (closure); real panel API keys in PushWizard/rollback; `generatePerPanelConfig` / Xray rule panel scoping; reliable per-panel status/errors
-- [ ] **Phase 12.11: Tailscale transport in chain apply** — TSCL-04, CHAIN-01 (transport); `chain-router` / `chains/apply` use panel URL / tailnet resolution (not raw `hostname:22`)
+- [x] **Phase 12.11: Tailscale transport in chain apply** — TSCL-04, CHAIN-01 (transport); `chain-router` / `chains/apply` use panel URL / tailnet resolution (not raw `hostname:22`)
 - [ ] **Phase 12.12: 12.x verification artifacts** — PROJ-AUTH-01 evidence; `12.1-`, `12.4-`, `12.6-`, `12.7-VERIFICATION.md`; reconcile `REQUIREMENTS.md` checkboxes with integration truth
 
 ## Phase Details
@@ -334,16 +334,21 @@ Plans:
 **Plans:** 3 plans (2 waves)
 
 Plans:
-- [ ] 12.11-01-PLAN.md -- resolvePanelTransport utility with 3-tier fallback and tests (Wave 1)
-- [ ] 12.11-02-PLAN.md -- Wire transport into chain-router WireGuard endpoints and chain-config route (Wave 2)
-- [ ] 12.11-03-PLAN.md -- Wire transport into chains/apply route and panel-sync-client push (Wave 2)
+- [x] 12.11-01-PLAN.md -- resolvePanelTransport utility with 3-tier fallback and tests (Wave 1)
+- [x] 12.11-02-PLAN.md -- Wire transport into chain-router WireGuard endpoints and chain-config route (Wave 2)
+- [x] 12.11-03-PLAN.md -- Wire transport into chains/apply route and panel-sync-client push (Wave 2)
 
 ### Phase 12.12: 12.x verification artifacts
 **Goal:** Missing `*-VERIFICATION.md` for phases 12.1, 12.4, 12.6, 12.7; PROJ-AUTH-01 strict evidence; `REQUIREMENTS.md` body/traceability reconciled with live integration behavior.
 **Depends on:** None for documentation-only tasks; run after relevant code phases for evidence
 **Requirements:** PROJ-AUTH-01 (verification), GEO-03, GEO-04, TSCL-01–TSCL-04 (artifact refresh as scoped in checklists)
 **Gap closure:** Closes `v12.x-audit-closure-MILESTONE-AUDIT.md` process gate (verification inventory)
-**Plans:** TBD (`/gsd-plan-phase 12.12`)
+**Plans:** 3 plans (2 waves) — Planned 2026-05-02
+
+Plans:
+- [ ] 12.12-01-PLAN.md -- VERIFICATION.md for phases 12.1 (PROJ-AUTH-01) and 12.4 (GAPL-01, GAPL-02) (Wave 1)
+- [ ] 12.12-02-PLAN.md -- VERIFICATION.md for phases 12.6 (GEO-03, GEO-04) and 12.7 (TSCL-01-03) (Wave 1)
+- [ ] 12.12-03-PLAN.md -- VERIFICATION.md for phase 12.11 (TSCL-04) and REQUIREMENTS.md checkbox reconciliation (Wave 2)
 
 ## Progress
 
@@ -428,8 +433,8 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.12 (12
 | 12.8 | v12.x closure | 3/3 | Complete | 2026-05-02 |
 | 12.9 | v12.x closure | 1/1 | Complete | 2026-05-02 |
 | 12.10 | v12.x closure | 3/3 | Complete | 2026-05-02 |
-| 12.11 | v12.x closure | 0/3 | Planned | — |
-| 12.12 | v12.x closure | 0/0 | Planned | — |
+| 12.11 | v12.x closure | 3/3 | Complete | 2026-05-02 |
+| 12.12 | v12.x closure | 3/3 | Planned | — |
 
 ## Coverage
 
@@ -441,4 +446,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-02 - Phase 12.11 planned: 3 plans (2 waves) for Tailscale transport in chain apply*
+*Last updated: 2026-05-02 - Phase 12.12 planned: 3 plans (2 waves) for 12.x verification artifacts*

@@ -4,12 +4,12 @@ milestone: v1.1
 milestone_name: milestone
 status: completed
 stopped_at: context exhaustion at 75% (2026-05-02)
-last_updated: "2026-05-02T09:47:02.751Z"
-last_activity: 2026-05-02 -- 12.8 complete (HMAC auth + response unwrap + panelCredentials)
+last_updated: "2026-05-02T12:00:00.000Z"
+last_activity: 2026-05-02 -- 12.11 verified (Tailscale transport resolution wired into chain apply paths)
 progress:
   total_phases: 20
   completed_phases: 18
-  total_plans: 45
+  total_plans: 48
   completed_plans: 46
   percent: 100
 ---
@@ -26,10 +26,10 @@ progress:
 
 ## Current Position
 
-Phase: 12.8 of 12.8 (Sync Apply & Receive Contracts) -- COMPLETE
-Plan: 2 of 2 in current phase (complete)
-Status: 12.8-02 complete
-Last activity: 2026-05-02 -- 12.8 complete (HMAC auth + response unwrap + panelCredentials)
+Phase: 12.11 of 12.12 (Tailscale Transport in Chain Apply) -- COMPLETE
+Plan: 3 of 3 in current phase (verified)
+Status: 12.11 verified (15/15 must-haves, TSCL-04 + CHAIN-01)
+Last activity: 2026-05-02 -- 12.11 verified (Tailscale transport resolution wired into chain apply paths)
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
