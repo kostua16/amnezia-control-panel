@@ -53,10 +53,25 @@ if (port) {
   process.env.PORT = port;
 }
 
+/**
+ * Next.js dev (especially Turbopack) can grow past the default V8 heap (~4 GiB on many setups).
+ * Allow a larger ceiling unless the operator already set --max-old-space-size in NODE_OPTIONS.
+ */
+function envForDevChild() {
+  const env = { ...process.env };
+  const opts = env.NODE_OPTIONS ?? "";
+  if (!/--max-old-space-size=\d+/.test(opts)) {
+    const extra = "--max-old-space-size=8192";
+    env.NODE_OPTIONS = opts.trim() ? `${opts.trim()} ${extra}` : extra;
+  }
+  return env;
+}
+
 // Pass remaining args as environment or ignore (custom server doesn't support all next CLI flags)
 const child = spawn(process.execPath, [serverScript, ...argsWithoutNpmPortValue], {
   stdio: "inherit",
   windowsHide: true,
+  env: envForDevChild(),
 });
 
 child.on("exit", (code, signal) => {
