@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateChainConfig, applyChainConfig } from '@/lib/chain-router';
 import { getTemplateById } from '@/lib/chain-templates';
+import { cachePanelApiKey } from '@/lib/panel-health-checker';
 
 const applyChainSchema = z.object({
   templateId: z.string().min(1, 'Template ID is required'),
@@ -12,6 +13,8 @@ const applyChainSchema = z.object({
       (mapping) => Object.keys(mapping).length > 0,
       'At least one server mapping is required',
     ),
+  /** Plaintext API keys for each panel: { panelId: apiKey } */
+  panelApiKeys: z.record(z.coerce.number().int(), z.string()).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -27,7 +30,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { templateId, serverMapping } = parsed.data;
+    const { templateId, serverMapping, panelApiKeys } = parsed.data;
 
     // Validate template exists
     const template = getTemplateById(templateId);
@@ -96,16 +99,28 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Note: We cannot retrieve plaintext API keys from the DB (only bcrypt hashes).
-    // The panelCredentials map requires plaintext keys for HMAC signing.
-    // For the /api/chains/apply route, this means the caller must provide API keys.
-    // Fall back to empty credentials map -- nodes without credentials will be skipped
-    // with a clear error message. The push flow (panel-sync-client) handles this
-    // correctly via pushConfigToAllPanels which receives panelApiKeys from the caller.
-    //
-    // TODO: Phase 12.10 will add apiKey input to the chains/apply request body
-    // so this route can construct a full credentials map.
+    // Build panel credentials from caller-provided API keys.
+    // The caller (ChainFlowEditor / ChainBuilder) collects keys from the admin at save time.
+    // Plaintext keys are cached in memory for auto-resync (never persisted to DB).
     const panelCredentials = new Map<number, { panelUrl: string; apiKey: string }>();
+
+    if (panelApiKeys && Object.keys(panelApiKeys).length > 0) {
+      // Cache API keys for future auto-resync
+      for (const [panelId, apiKey] of Object.entries(panelApiKeys)) {
+        cachePanelApiKey(Number(panelId), apiKey);
+      }
+
+      // Build panelCredentials by matching node serverId to RemotePanel
+      for (const panel of remotePanels) {
+        const apiKey = panelApiKeys[panel.serverId] ?? panelApiKeys[panel.id];
+        if (apiKey) {
+          panelCredentials.set(panel.serverId, {
+            panelUrl: panel.panelUrl,
+            apiKey,
+          });
+        }
+      }
+    }
 
     // Apply the chain configuration to all servers
     const applyResult = await applyChainConfig(chainConfig, undefined, panelCredentials);
