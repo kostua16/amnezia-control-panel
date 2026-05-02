@@ -37,10 +37,9 @@ export function generatePerPanelConfig(chainConfig: ChainConfig, panelId: number
     port: node.port,
   }));
 
-  // Filter routing rules: only those whose nodeId matches a chain node label
-  const nodeLabels = new Set(chainConfig.nodes.map((n) => n.label));
+  // Filter routing rules: only those whose nodeId matches the matched node's label
   const routingRules: PanelRoutingRule[] = chainConfig.xrayRoutingRules
-    .filter((rule) => nodeLabels.has(rule.nodeId))
+    .filter((rule) => rule.nodeId === matchedNode.label)
     .map((rule) => ({
       type: rule.type,
       value: rule.value,
