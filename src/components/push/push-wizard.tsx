@@ -50,9 +50,14 @@ export function PushWizard({ panels }: PushWizardProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<ChainTemplate | null>(null);
   const [panelMapping, setPanelMapping] = useState<Record<number, number>>({});
   const [chainConfigLoading, setChainConfigLoading] = useState(false);
+  const [panelApiKeys, setPanelApiKeys] = useState<Record<number, string>>({});
 
   // Track which chain config we're pushing (fetched from apply response or pre-built)
   const chainConfigRef = useRef<ChainConfig | null>(null);
+
+  const handleApiKeyChange = useCallback((panelId: number, apiKey: string) => {
+    setPanelApiKeys(prev => ({ ...prev, [panelId]: apiKey }));
+  }, []);
 
   // Fetch chain templates on mount
   useEffect(() => {
@@ -176,13 +181,6 @@ export function PushWizard({ panels }: PushWizardProps) {
 
     try {
       const panelIds = Array.from(selectedPanelIds);
-      const panelApiKeys: Record<number, string> = {};
-      // For each selected panel, we need the API key.
-      // The push API requires plaintext API keys.
-      // We send an empty map -- the server will use cached keys from previous connections.
-      for (const id of panelIds) {
-        panelApiKeys[id] = '';
-      }
 
       const res = await fetch('/api/panels/push', {
         method: 'POST',
@@ -205,14 +203,14 @@ export function PushWizard({ panels }: PushWizardProps) {
       setIsPushing(false);
       setPushError(err instanceof Error ? err.message : 'Push failed');
     }
-  }, [selectedPanelIds]);
+  }, [selectedPanelIds, panelApiKeys]);
 
   const handleRollback = useCallback(async (panelId: number) => {
     try {
       const res = await fetch('/api/panels/rollback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ panelId, apiKey: '' }),
+        body: JSON.stringify({ panelId, apiKey: panelApiKeys[panelId] ?? '' }),
       });
       const json = await res.json();
 
@@ -233,7 +231,7 @@ export function PushWizard({ panels }: PushWizardProps) {
       const message = err instanceof Error ? err.message : 'Rollback failed';
       setPushError(`Rollback failed: ${message}`);
     }
-  }, []);
+  }, [panelApiKeys]);
 
   const handleRetry = useCallback(() => {
     setPushResults(null);
@@ -242,6 +240,7 @@ export function PushWizard({ panels }: PushWizardProps) {
     setSelectedPanelIds(new Set());
     setSelectedTemplate(null);
     setPanelMapping({});
+    setPanelApiKeys({});
     setCurrentStep(1);
     setPushError(null);
     chainConfigRef.current = null;
@@ -303,6 +302,8 @@ export function PushWizard({ panels }: PushWizardProps) {
               panels={panels}
               selectedPanelIds={selectedPanelIds}
               onSelectionChange={setSelectedPanelIds}
+              panelApiKeys={panelApiKeys}
+              onApiKeyChange={handleApiKeyChange}
             />
           </div>
         )}
@@ -359,6 +360,7 @@ export function PushWizard({ panels }: PushWizardProps) {
                   !selectedTemplate ||
                   Object.keys(panelMapping).length < selectedTemplate.nodes.length ||
                   !Object.values(panelMapping).every(id => selectedPanelIds.has(id)) ||
+                  !Array.from(selectedPanelIds).every(id => (panelApiKeys[id] ?? '').trim().length > 0) ||
                   diffLoading ||
                   chainConfigLoading
                 }
