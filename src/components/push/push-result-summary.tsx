@@ -104,6 +104,8 @@ export function PushResultSummary({
                       <p className="text-xs text-muted-foreground">
                         Configuration applied to {result.panelName}
                         {result.latencyMs != null ? ` (${result.latencyMs}ms)` : ''}
+                        {result.configVersion != null ? ` · v${result.configVersion}` : ''}
+                        {result.retries > 0 ? ` · ${result.retries} ${result.retries === 1 ? 'retry' : 'retries'}` : ''}
                       </p>
                     ) : structuredError ? (
                       <p className="text-xs text-destructive">

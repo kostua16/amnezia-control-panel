@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Monitor, CheckSquare, Search } from 'lucide-react';
+import { Monitor, CheckSquare, Search, Eye, EyeOff } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,14 +25,19 @@ interface PanelSelectorProps {
   panels: PanelSelectorPanel[];
   selectedPanelIds: Set<number>;
   onSelectionChange: (ids: Set<number>) => void;
+  panelApiKeys?: Record<number, string>;
+  onApiKeyChange?: (panelId: number, apiKey: string) => void;
 }
 
 export function PanelSelector({
   panels,
   selectedPanelIds,
   onSelectionChange,
+  panelApiKeys = {},
+  onApiKeyChange,
 }: PanelSelectorProps) {
   const [search, setSearch] = useState('');
+  const [visibleKeys, setVisibleKeys] = useState<Record<number, boolean>>({});
   const [panelStatuses, setPanelStatuses] = useState<Record<number, PanelConnectionStatus>>({});
 
   // Fetch panel statuses
@@ -180,6 +185,27 @@ export function PanelSelector({
                   </p>
                 </div>
               </label>
+              {isSelected && onApiKeyChange && (
+                <div className="mt-2 ml-8 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      type={visibleKeys[panel.id] ? 'text' : 'password'}
+                      placeholder={`Enter shared secret for ${panel.name}`}
+                      value={panelApiKeys[panel.id] ?? ''}
+                      onChange={(e) => onApiKeyChange(panel.id, e.target.value)}
+                      className="pr-9 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setVisibleKeys(prev => ({ ...prev, [panel.id]: !prev[panel.id] }))}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      aria-label={visibleKeys[panel.id] ? 'Hide API key' : 'Show API key'}
+                    >
+                      {visibleKeys[panel.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
             );
           })}
         </div>
