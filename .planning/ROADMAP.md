@@ -62,7 +62,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] Phase 7.3: Stats Display UI
 - [x] Phase 7.4: Resource Monitoring API
 - [x] Phase 7.5: Resource Display UI
-- [x] Phase 7.6: Real-time Updates
+- [x] Phase 7.6: Real-Time Updates
 - [x] Phase 8.1: Multi-server Management
 - [x] Phase 8.2: Server Configuration
 - [x] Phase 8.3: Chain Templates System
@@ -331,7 +331,12 @@ Plans:
 **Depends on:** Phase 11.1, Phase 12.8 (apply path)
 **Requirements:** TSCL-04, CHAIN-01 (transport slice)
 **Gap closure:** Closes closure audit gap "transport primitives not wired into active sync/apply paths"
-**Plans:** TBD (`/gsd-plan-phase 12.11`)
+**Plans:** 3 plans (2 waves)
+
+Plans:
+- [ ] 12.11-01-PLAN.md -- resolvePanelTransport utility with 3-tier fallback and tests (Wave 1)
+- [ ] 12.11-02-PLAN.md -- Wire transport into chain-router WireGuard endpoints and chain-config route (Wave 2)
+- [ ] 12.11-03-PLAN.md -- Wire transport into chains/apply route and panel-sync-client push (Wave 2)
 
 ### Phase 12.12: 12.x verification artifacts
 **Goal:** Missing `*-VERIFICATION.md` for phases 12.1, 12.4, 12.6, 12.7; PROJ-AUTH-01 strict evidence; `REQUIREMENTS.md` body/traceability reconciled with live integration behavior.
@@ -423,7 +428,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.12 (12
 | 12.8 | v12.x closure | 3/3 | Complete | 2026-05-02 |
 | 12.9 | v12.x closure | 1/1 | Complete | 2026-05-02 |
 | 12.10 | v12.x closure | 0/3 | Planned | — |
-| 12.11 | v12.x closure | 0/0 | Planned | — |
+| 12.11 | v12.x closure | 0/3 | Planned | — |
 | 12.12 | v12.x closure | 0/0 | Planned | — |
 
 ## Coverage
@@ -436,4 +441,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-02 - Phase 12.10 planned: 3 plans (1 wave) for push wizard API keys and per-panel sync fixes*
+*Last updated: 2026-05-02 - Phase 12.11 planned: 3 plans (2 waves) for Tailscale transport in chain apply*
