@@ -11,6 +11,7 @@ import { getTemplateById } from './chain-templates';
 import { generatePerPanelConfig } from './panel-sync-client';
 import { applyPanelConfig } from './config-applier';
 import { resolveGeoRoute } from './geo-routing';
+import { resolvePanelTransport } from './transport-resolver';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -31,11 +32,11 @@ export interface ChainApplyResult {
  * generates WireGuard peer configs for chain links, and creates
  * Xray routing rules for chain direction.
  */
-export function generateChainConfig(
+export async function generateChainConfig(
   templateId: string,
   servers: Server[],
   serverMapping: Record<number, number>,
-): ChainConfig {
+): Promise<ChainConfig> {
   const template = getTemplateById(templateId);
   if (!template) {
     throw new Error(`Template not found: ${templateId}`);
@@ -62,24 +63,72 @@ export function generateChainConfig(
     serverLookup.set(s.id, s);
   }
 
-  // Resolve nodes with actual server info
+  // Resolve transport for each server in the chain
+  let prisma: { service: { findFirst: (args: unknown) => Promise<{ port: number } | null> } } | null = null;
+  try {
+    const mod = await import('./prisma');
+    prisma = mod.prisma;
+  } catch {
+    // Prisma not available (e.g. test environment) -- default WireGuard port will be used
+  }
+
   const resolvedNodes: Array<ChainNode & { hostname: string; port: number }> =
-    template.nodes.map((node, index) => {
-      const serverId = serverMapping[index];
-      if (serverId === undefined) {
-        throw new Error(`No server mapping for node index ${index}`);
-      }
-      const server = serverLookup.get(serverId);
-      if (!server) {
-        throw new Error(`Server ${serverId} not found for node "${node.label}"`);
-      }
-      return {
-        ...node,
-        serverId: server.id,
-        hostname: server.hostname,
-        port: server.port,
-      };
-    });
+    await Promise.all(
+      template.nodes.map(async (node, index) => {
+        const serverId = serverMapping[index];
+        if (serverId === undefined) {
+          throw new Error(`No server mapping for node index ${index}`);
+        }
+        const server = serverLookup.get(serverId);
+        if (!server) {
+          throw new Error(`Server ${serverId} not found for node "${node.label}"`);
+        }
+
+        // Resolve WireGuard service port from Service model
+        // WireGuard typically uses port 51820; look up actual service port if available
+        let wireguardPort = 51820;
+        if (prisma) {
+          try {
+            const wireguardService = await prisma.service.findFirst({
+              where: { serverId: server.id, type: 'AWG' },
+              select: { port: true },
+            });
+            if (wireguardService?.port) {
+              wireguardPort = wireguardService.port;
+            }
+          } catch {
+            // Service lookup failed -- use default port
+          }
+        }
+
+        // Resolve Tailscale transport address
+        const transport = await resolvePanelTransport(
+          server,
+          { panelUrl: `https://${server.tailnetIP ?? server.hostname}:${wireguardPort}` },
+          wireguardPort,
+        );
+
+        if (transport) {
+          return {
+            ...node,
+            serverId: server.id,
+            hostname: transport.tailscaleIP,
+            port: wireguardPort,
+          };
+        }
+
+        // Fallback: use raw server data (with warning)
+        console.warn(
+          `[chain-router] Transport resolution failed for server ${server.id} (${server.hostname}), falling back to raw hostname:port`,
+        );
+        return {
+          ...node,
+          serverId: server.id,
+          hostname: server.hostname,
+          port: wireguardPort,
+        };
+      }),
+    );
 
   // Generate WireGuard peer configurations based on topology
   const wireguardPeers = generateWireGuardPeers(template, resolvedNodes);
