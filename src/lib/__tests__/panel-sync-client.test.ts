@@ -2,8 +2,21 @@ import { describe, it, mock, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { signPayload, verifySignature } from '../hmac';
 import { generatePerPanelConfig, pushConfigToPanel } from '../panel-sync-client';
+import { __setDeps, __resetDeps } from '../transport-resolver';
 import type { ChainConfig } from '@/types/chain';
 import type { PanelSyncPayload } from '@/types/panel-sync';
+
+// ─── Global setup: mock tailscale deps so resolvePanelTransport never hits real CLI ───
+
+const mockGetNodeIP = mock.fn(async () => null);
+const mockIsReachable = mock.fn(async () => true);
+
+beforeEach(() => {
+  __setDeps({ getNodeIP: mockGetNodeIP, isReachable: mockIsReachable });
+});
+afterEach(() => {
+  __resetDeps();
+});
 
 // ─── Test Fixtures ──────────────────────────────────────
 
@@ -227,5 +240,37 @@ describe('pushConfigToPanel', () => {
     assert.equal(result.success, true);
     assert.equal(result.configVersion, 2);
     assert.equal(result.retries, 1);
+  });
+});
+
+// ─── Transport Resolution Tests ───────────────────────────
+
+describe('transport resolution integration', () => {
+  it('returns null from resolvePanelTransport when all tiers fail (mock getNodeIP returns null)', async () => {
+    const { resolvePanelTransport } = await import('../transport-resolver');
+    const result = await resolvePanelTransport(
+      { id: 1, hostname: 'nonexistent.ts.net' },
+      { panelUrl: 'https://panel.example.com' },
+    );
+    assert.equal(result, null);
+  });
+
+  it('uses Tailscale IP when resolvePanelTransport succeeds', async () => {
+    // Override the global mock for this test to return a Tailscale IP
+    const mockResolve = mock.fn(async () => '100.64.0.1');
+    __setDeps({ getNodeIP: mockResolve, isReachable: mock.fn(async () => true) });
+
+    try {
+      const { resolvePanelTransport } = await import('../transport-resolver');
+      const result = await resolvePanelTransport(
+        { id: 1, hostname: 'server1.ts.net' },
+        { panelUrl: 'https://panel.example.com:443' },
+      );
+      assert.ok(result, 'Expected transport resolution to succeed');
+      assert.equal(result!.tailscaleIP, '100.64.0.1');
+      assert.ok(result!.panelUrl.includes('100.64.0.1'), `Expected Tailscale IP in panelUrl, got: ${result!.panelUrl}`);
+    } finally {
+      __resetDeps();
+    }
   });
 });

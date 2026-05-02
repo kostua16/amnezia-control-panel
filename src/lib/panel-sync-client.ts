@@ -3,6 +3,7 @@ import type { ChainConfig } from '@/types/chain';
 import type { PanelSyncPayload, PanelChainNode, PanelRoutingRule, PushResult, PushAllResult } from '@/types/panel-sync.ts';
 import { broadcastEvent } from './websocket';
 import { enrichError } from './error-reporter';
+import { resolvePanelTransport } from './transport-resolver';
 
 // ─── Constants ──────────────────────────────────────────
 
@@ -206,8 +207,31 @@ export async function pushConfigToAllPanels(
     configVersion++;
     panelConfig.configVersion = configVersion;
 
+    // Resolve Tailscale transport address for this panel
+    let panelUrl = panel.panelUrl;
+    try {
+      const server = await prisma.server.findFirst({
+        where: {
+          OR: [
+            { hostname: { contains: new URL(panel.panelUrl).hostname } },
+            { tailnetIP: { equals: new URL(panel.panelUrl).hostname } },
+          ],
+        },
+        select: { id: true, tailnetIP: true, tailnetHostname: true, hostname: true },
+      });
+
+      if (server) {
+        const transport = await resolvePanelTransport(server, { panelUrl: panel.panelUrl });
+        if (transport) {
+          panelUrl = transport.panelUrl;
+        }
+      }
+    } catch (err) {
+      console.warn(`[panel-sync] Transport resolution failed for panel ${panel.name}, using panelUrl directly:`, err);
+    }
+
     const result = await pushConfigToPanel(
-      { id: panel.id, name: panel.name, panelUrl: panel.panelUrl, apiKey },
+      { id: panel.id, name: panel.name, panelUrl, apiKey },
       panelConfig,
     );
 
