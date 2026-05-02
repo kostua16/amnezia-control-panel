@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { generateChainConfig, applyChainConfig } from '@/lib/chain-router';
 import { getTemplateById } from '@/lib/chain-templates';
 import { cachePanelApiKey } from '@/lib/panel-health-checker';
+import { resolvePanelTransport } from '@/lib/transport-resolver';
 
 const applyChainSchema = z.object({
   templateId: z.string().min(1, 'Template ID is required'),
@@ -89,19 +90,9 @@ export async function POST(request: NextRequest) {
       serverMapping,
     );
 
-    // Build panel credentials map from RemotePanel table
-    // The API key for signing must come from the caller; for local chain apply,
-    // we query panels matching the chain node serverIds.
-    const remotePanels = await prisma.remotePanel.findMany({
-      where: {
-        isActive: true,
-        serverId: { in: chainConfig.nodes.map((n) => n.serverId) },
-      },
-    });
-
-    // Build panel credentials from caller-provided API keys.
-    // The caller (ChainFlowEditor / ChainBuilder) collects keys from the admin at save time.
-    // Plaintext keys are cached in memory for auto-resync (never persisted to DB).
+    // Build panel credentials map using Tailscale transport resolution.
+    // RemotePanel has no serverId FK, so we match panels to chain nodes by
+    // hostname correlation and panelId lookup in the caller-provided panelApiKeys.
     const panelCredentials = new Map<number, { panelUrl: string; apiKey: string }>();
 
     if (panelApiKeys && Object.keys(panelApiKeys).length > 0) {
@@ -110,15 +101,52 @@ export async function POST(request: NextRequest) {
         cachePanelApiKey(Number(panelId), apiKey);
       }
 
-      // Build panelCredentials by matching node serverId to RemotePanel
-      for (const panel of remotePanels) {
-        const apiKey = panelApiKeys[panel.serverId] ?? panelApiKeys[panel.id];
-        if (apiKey) {
-          panelCredentials.set(panel.serverId, {
-            panelUrl: panel.panelUrl,
-            apiKey,
-          });
+      // Fetch all active remote panels (no serverId filter -- field does not exist)
+      const remotePanels = await prisma.remotePanel.findMany({
+        where: { isActive: true },
+      });
+
+      for (const node of chainConfig.nodes) {
+        // Match RemotePanel to chain node by hostname correlation
+        let matchedPanel = remotePanels.find((p) => {
+          try {
+            return p.panelUrl.includes(node.hostname) || node.hostname.includes(new URL(p.panelUrl).hostname);
+          } catch {
+            return false;
+          }
+        });
+
+        // Fallback: match by panelId via serverMapping (node.serverId === panel.id)
+        if (!matchedPanel) {
+          matchedPanel = remotePanels.find((p) => p.id === node.serverId);
         }
+
+        if (!matchedPanel) {
+          continue;
+        }
+
+        // Get API key from caller-provided panelApiKeys, keyed by panelId or serverId
+        const apiKey = panelApiKeys?.[matchedPanel.id] ?? panelApiKeys?.[node.serverId];
+        if (!apiKey) {
+          continue;
+        }
+
+        // Resolve Tailscale transport address for the server behind this panel
+        const server = await prisma.server.findFirst({
+          where: { id: node.serverId },
+          select: { id: true, tailnetIP: true, tailnetHostname: true, hostname: true },
+        });
+
+        let panelUrl = matchedPanel.panelUrl; // Default to registered panelUrl
+
+        if (server) {
+          const transport = await resolvePanelTransport(server, { panelUrl: matchedPanel.panelUrl });
+          if (transport) {
+            panelUrl = transport.panelUrl;
+          }
+        }
+
+        panelCredentials.set(node.serverId, { panelUrl, apiKey });
       }
     }
 
