@@ -1,4 +1,17 @@
-import { getNodeIP, isReachable } from './tailscale';
+// ─── Test support: injectable deps override ────────────
+type TailscaleDeps = {
+  getNodeIP: (hostname?: string) => Promise<string | null>;
+  isReachable: (hostname: string) => Promise<boolean>;
+};
+let _deps: TailscaleDeps | null = null;
+
+/** @internal — inject mock tailscale functions for testing */
+export function __setDeps(deps: TailscaleDeps): void {
+  _deps = deps;
+}
+export function __resetDeps(): void {
+  _deps = null;
+}
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -47,6 +60,8 @@ export async function resolvePanelTransport(
   defaultPort = 443,
 ): Promise<ResolvedTransport | null> {
   try {
+    const { getNodeIP, isReachable } = _deps ?? (await import('./tailscale'));
+
     let resolvedIP: string | null = null;
     let hostnameUsed = '';
     let source: ResolvedTransport['source'] = 'db';
