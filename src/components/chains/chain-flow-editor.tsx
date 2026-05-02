@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Plus, Save, GitBranch, Globe, Network, Loader2, Trash2 } from 'lucide-react';
+import { Plus, Save, GitBranch, Globe, Network, Loader2, Trash2, Eye, EyeOff } from 'lucide-react';
 import {
   ReactFlow,
   Controls,
@@ -25,6 +25,7 @@ import { PanelGroupNode } from './panel-group-node';
 import { ChainTemplatesList } from './chain-templates-list';
 import { ChainNodeRoutingDrawer } from './chain-node-routing-drawer';
 import { Dialog } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import {
   toFlowNodes,
   toFlowEdges,
@@ -81,8 +82,33 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
   // Delete confirmation state (replaces window.confirm)
   const [deleteConfirmNodeId, setDeleteConfirmNodeId] = useState<string | null>(null);
 
+  // API key collection dialog state
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [panelApiKeys, setPanelApiKeys] = useState<Record<number, string>>({});
+  const [visibleKeys, setVisibleKeys] = useState<Record<number, boolean>>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   // Register custom node types (memoized)
   const nodeTypes = useMemo(() => ({ chainNode: ChainFlowNode, panelGroup: PanelGroupNode }), []);
+
+  // Derive unique panels referenced by chain nodes for the save dialog
+  const saveDialogPanels = useMemo(() => {
+    if (!serverPanelMap) return [];
+    const seen = new Set<number>();
+    return localNodes
+      .filter(n => n.serverId !== null && serverPanelMap[n.serverId] !== undefined)
+      .filter(n => {
+        const panelId = serverPanelMap[n.serverId!];
+        if (seen.has(panelId)) return false;
+        seen.add(panelId);
+        return true;
+      })
+      .map(n => {
+        const panelId = serverPanelMap[n.serverId!];
+        const panel = panels?.find(p => p.id === panelId);
+        return { panelId, panelName: panel?.name ?? `Panel ${panelId}` };
+      });
+  }, [localNodes, serverPanelMap, panels]);
 
   // Convert local nodes to React Flow nodes/edges
   // Build panel groups when serverPanelMap is provided
@@ -314,10 +340,22 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
     [servers, localNodes.length],
   );
 
-  // Save chain
-  const handleSave = useCallback(async () => {
+  // Save chain -- opens the API key dialog
+  const handleSaveClick = useCallback(() => {
     if (localNodes.length === 0) return;
+    if (saveDialogPanels.length === 0) {
+      // No panels to provide keys for -- save directly
+      handleSaveDirect();
+    } else {
+      setSaveError(null);
+      setSaveDialogOpen(true);
+    }
+  }, [localNodes.length, saveDialogPanels.length]);
+
+  // Performs the actual save with collected keys
+  const handleSaveDirect = useCallback(async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       const assignedNodes = localNodes.filter(
         (n): n is ChainBuilderNode & { serverId: number } => n.serverId !== null,
@@ -332,16 +370,24 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
         body: JSON.stringify({
           templateId: selectedTemplate?.id ?? 'custom',
           serverMapping,
+          panelApiKeys,
         }),
       });
       const result = await response.json();
-      if (result.success && onApply) {
-        onApply(selectedTemplate?.id ?? 'custom', serverMapping);
+      if (result.success) {
+        setSaveDialogOpen(false);
+        if (onApply) {
+          onApply(selectedTemplate?.id ?? 'custom', serverMapping);
+        }
+      } else {
+        setSaveError(result.error ?? 'Failed to apply chain configuration');
       }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to apply chain configuration');
     } finally {
       setSaving(false);
     }
-  }, [localNodes, selectedTemplate, onApply]);
+  }, [localNodes, selectedTemplate, onApply, panelApiKeys]);
 
   // Keyboard: Delete for selected nodes/edges
   useEffect(() => {
@@ -488,15 +534,11 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
         {/* Save Chain */}
         <Button
           size="sm"
-          onClick={handleSave}
-          disabled={localNodes.length === 0 || saving}
+          onClick={handleSaveClick}
+          disabled={localNodes.length === 0}
         >
-          {saving ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Save className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          {saving ? 'Saving...' : 'Save Chain'}
+          <Save className="mr-1.5 h-3.5 w-3.5" />
+          Save Chain
         </Button>
 
         {/* Node count */}
@@ -611,6 +653,66 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
           >
             <Trash2 className="mr-1.5 h-3.5 w-3.5" />
             Remove
+          </Button>
+        </div>
+      </Dialog>
+
+      {/* API Key collection dialog for Save Chain */}
+      <Dialog
+        open={saveDialogOpen}
+        onClose={() => setSaveDialogOpen(false)}
+        title="Provide API Keys"
+      >
+        <p className="text-sm text-muted-foreground mb-4">
+          Enter the shared secret for each panel to apply the chain configuration.
+        </p>
+        <div className="space-y-3">
+          {saveDialogPanels.map(({ panelId, panelName }) => (
+            <div key={panelId}>
+              <label className="text-xs font-medium text-foreground mb-1 block">
+                API Key for {panelName}
+              </label>
+              <div className="relative">
+                <Input
+                  type={visibleKeys[panelId] ? 'text' : 'password'}
+                  placeholder={`Enter shared secret for ${panelName}`}
+                  value={panelApiKeys[panelId] ?? ''}
+                  onChange={(e) => setPanelApiKeys(prev => ({ ...prev, [panelId]: e.target.value }))}
+                  className="pr-9 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setVisibleKeys(prev => ({ ...prev, [panelId]: !prev[panelId] }))}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label={visibleKeys[panelId] ? 'Hide API key' : 'Show API key'}
+                >
+                  {visibleKeys[panelId] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {saveError && (
+          <p className="mt-3 text-sm text-destructive">{saveError}</p>
+        )}
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSaveDialogOpen(false)}
+            disabled={saving}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSaveDirect}
+            disabled={saving || saveDialogPanels.some(p => !(panelApiKeys[p.panelId] ?? '').trim())}
+          >
+            {saving ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            Apply to Panels
           </Button>
         </div>
       </Dialog>
