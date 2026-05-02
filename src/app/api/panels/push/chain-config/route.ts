@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getTemplateById } from '@/lib/chain-templates';
 import { prisma } from '@/lib/prisma';
+import { resolvePanelTransport } from '@/lib/transport-resolver';
 import type { ChainConfig, WireGuardPeerConfig, XrayRoutingRule, ChainTemplate } from '@/types/chain';
 
 // ─── Request Validation ─────────────────────────────────
@@ -283,28 +284,66 @@ export async function POST(request: NextRequest) {
       panelLookup.set(p.id, p);
     }
 
-    // Resolve template nodes with panel data
-    const resolvedNodes = template.nodes.map((node, index) => {
-      const panelId = panelMapping[index];
-      const panel = panelLookup.get(panelId)!;
+    // Resolve template nodes with panel data and Tailscale transport
+    const resolvedNodes = await Promise.all(
+      template.nodes.map(async (node, index) => {
+        const panelId = panelMapping[index];
+        const panel = panelLookup.get(panelId)!;
 
-      // Extract hostname and port from panelUrl (strip protocol and path)
-      let hostPart = panel.panelUrl.replace(/^https?:\/\//, '').split('/')[0];
-      let port = 3000; // default panel API port
-      if (hostPart.includes(':')) {
-        const [host, portStr] = hostPart.split(':');
-        hostPart = host;
-        port = parseInt(portStr, 10) || 3000;
-      }
-      const hostname = hostPart;
+        // Resolve WireGuard service port from Service model
+        let wireguardPort = 51820;
+        try {
+          const wireguardService = await prisma.service.findFirst({
+            where: { serverId: panel.id, type: 'AWG' },
+            select: { port: true },
+          });
+          if (wireguardService?.port) {
+            wireguardPort = wireguardService.port;
+          }
+        } catch {
+          // Service lookup failed -- use default port
+        }
 
-      return {
-        ...node,
-        serverId: panel.id,
-        hostname,
-        port,
-      };
-    });
+        // Try Tailscale transport resolution via server record matching this panel
+        const server = await prisma.server.findFirst({
+          where: {
+            hostname: { contains: new URL(panel.panelUrl).hostname },
+          },
+          select: { id: true, tailnetIP: true, tailnetHostname: true, hostname: true },
+        });
+
+        const transport = server
+          ? await resolvePanelTransport(server, { panelUrl: panel.panelUrl }, wireguardPort)
+          : null;
+
+        if (transport) {
+          return {
+            ...node,
+            serverId: panel.id,
+            hostname: transport.tailscaleIP,
+            port: wireguardPort,
+          };
+        }
+
+        // Fallback: parse from panelUrl (legacy behavior)
+        console.warn(
+          `[chain-config] Transport resolution failed for panel ${panel.name}, falling back to panelUrl parsing`,
+        );
+        let hostPart = panel.panelUrl.replace(/^https?:\/\//, '').split('/')[0];
+        let port = wireguardPort;
+        if (hostPart.includes(':')) {
+          const [host, portStr] = hostPart.split(':');
+          hostPart = host;
+          port = parseInt(portStr, 10) || wireguardPort;
+        }
+        return {
+          ...node,
+          serverId: panel.id,
+          hostname: hostPart,
+          port,
+        };
+      }),
+    );
 
     // Generate WireGuard peers and Xray routing rules
     const wireguardPeers = generateWireGuardPeers(template, resolvedNodes);
