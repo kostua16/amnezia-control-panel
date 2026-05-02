@@ -98,35 +98,38 @@ export function PushWizard({ panels }: PushWizardProps) {
     if (allDone) {
       setIsPushing(false);
 
-      // Build PushAllResult from progress events
-      const results: PushResult[] = selectedIds.map((id) => {
-        const event = pushProgress.get(id);
-        const panel = panels.find((p) => p.id === id);
-        return {
-          panelId: id,
-          panelName: panel?.name ?? `Panel ${id}`,
-          success: event?.status === 'success',
-          configVersion: null,
-          latencyMs: event?.latencyMs ?? null,
-          error: event?.error?.message ?? null,
-          retries: 0,
-        };
-      });
+      // Only build from WS events if no API result was stored
+      if (!pushResults) {
+        const results: PushResult[] = selectedIds.map((id) => {
+          const event = pushProgress.get(id);
+          const panel = panels.find((p) => p.id === id);
+          return {
+            panelId: id,
+            panelName: panel?.name ?? `Panel ${id}`,
+            success: event?.status === 'success',
+            configVersion: null,
+            latencyMs: event?.latencyMs ?? null,
+            error: event?.error?.message ?? null,
+            retries: 0,
+          };
+        });
 
-      const succeeded = results.filter((r) => r.success).length;
-      const failed = results.filter((r) => !r.success).length;
+        const succeeded = results.filter((r) => r.success).length;
+        const failed = results.filter((r) => !r.success).length;
 
-      setPushResults({
-        totalPanels: selectedIds.length,
-        succeeded,
-        failed,
-        results,
-        configVersion: 0,
-        pushedAt: new Date().toISOString(),
-      });
+        setPushResults({
+          totalPanels: selectedIds.length,
+          succeeded,
+          failed,
+          results,
+          configVersion: 0,
+          pushedAt: new Date().toISOString(),
+        });
+      }
+
       setCurrentStep(4);
     }
-  }, [currentStep, isPushing, pushProgress, selectedPanelIds, panels]);
+  }, [currentStep, isPushing, pushProgress, selectedPanelIds, panels, pushResults]);
 
   const handleNextToDiff = useCallback(async () => {
     if (selectedPanelIds.size === 0) return;
@@ -193,6 +196,11 @@ export function PushWizard({ panels }: PushWizardProps) {
       const json = await res.json();
 
       if (json.success) {
+        // Store the real PushAllResult from the API response (has accurate configVersion/retries)
+        // WebSocket events still drive step 3 progress UI in real-time
+        if (json.data) {
+          setPushResults(json.data as PushAllResult);
+        }
         // Push initiated successfully -- real-time updates via WebSocket
         setCurrentStep(3);
       } else {
