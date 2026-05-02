@@ -74,6 +74,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - `AGENTS.md` is a symlink to `CLAUDE.md`; project rules and learned sections are edited in that single file.
 - Default dev port is 3333 only when no `-p`/`--port` in argv and `PORT` is unset; the dev/start launchers forward resolved ports to the Next CLI.
+- Next.js dev may block `/_next/webpack-hmr` when the document host and the HMR WebSocket host differ (e.g. `localhost` vs `127.0.0.1`); `next.config.ts` sets `allowedDevOrigins` for both.
+- `npm run dev` runs through `scripts/dev.cjs`, which appends `--max-old-space-size=8192` to `NODE_OPTIONS` when no `--max-old-space-size` is already set, to reduce Turbopack/HMR heap out-of-memory failures on long sessions.
+- GeoIP refresh (`geoip.dat`) is heavy on memory; the pipeline streams the download to disk with backpressure, decodes protobuf straight into the country `Map` (no large intermediate array), and tries the jsDelivr mirror before GitHub `latest`.
 - Next.js allows only one `next dev` process per project directory; a second instance fails even on another port—use a separate checkout or worktree for concurrent dev servers on the same machine.
 - Server reachability test is ICMP ping to the hostname only; it does not validate API key or TCP port. Panel reachability test is HTTP HEAD to the panel base URL; it does not call `/api/sync/receive` or validate the API key.
 - Central-to-remote config push targets `{Panel URL}/api/sync/receive` with `X-API-Key` and HMAC `X-Signature`; the remote must store a bcrypt hash of the same plaintext key for verification to succeed.
