@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: Multi-Panel Chain Routing
-status: in-progress
-stopped_at: Completed 12.8-03 gap closure (2026-05-02)
-last_updated: "2026-05-02T21:00:00Z"
-last_activity: 2026-05-02 -- 12.8 gap closure complete (geo-routing mock for chain-router tests)
+milestone_name: milestone
+status: completed
+stopped_at: context exhaustion at 75% (2026-05-02)
+last_updated: "2026-05-02T09:47:02.751Z"
+last_activity: 2026-05-02 -- 12.8 complete (HMAC auth + response unwrap + panelCredentials)
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 34
-  completed_plans: 36
+  total_phases: 20
+  completed_phases: 18
+  total_plans: 45
+  completed_plans: 46
   percent: 100
 ---
 
@@ -109,8 +109,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-02T20:46:12Z
-Stopped at: Completed 12.9-01 (WS_TO_QUERY_KEYS aligned with hook queryKeys)
+Last session: 2026-05-02T09:47:02.746Z
+Stopped at: context exhaustion at 75% (2026-05-02)
 Resume file: None
 
 ## Quick Tasks Completed
