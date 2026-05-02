@@ -91,7 +91,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12.7: Tailscale milestone verification** — TSCL-01–04; 11.1-VERIFICATION.md created; 11.2 corrected; audit score raised to 26/35
 - [x] **Phase 12.8: Sync apply & receive contracts** — GAPL-01, CHAIN-01 (applier path); HMAC + body/response alignment for `config-applier` → `/api/sync/apply` and `panel-sync-client` → `/api/sync/receive` (shipped 2026-05-02)
 - [x] **Phase 12.9: WebSocket → React Query key alignment** — GAPL-02, PROJ-RT-01; `providers.tsx` invalidation keys match `use-dashboard-stats`, `use-system-resources`, `use-multi-panel-status` (shipped 2026-05-02)
-- [ ] **Phase 12.10: Push wizard & per-panel sync fixes** — CPUSH-01–06, VISED-03 (closure); real panel API keys in PushWizard/rollback; `generatePerPanelConfig` / Xray rule panel scoping; reliable per-panel status/errors
+- [x] **Phase 12.10: Push wizard & per-panel sync fixes** — CPUSH-01–06, VISED-03 (closure); real panel API keys in PushWizard/rollback; `generatePerPanelConfig` / Xray rule panel scoping; reliable per-panel status/errors
 - [ ] **Phase 12.11: Tailscale transport in chain apply** — TSCL-04, CHAIN-01 (transport); `chain-router` / `chains/apply` use panel URL / tailnet resolution (not raw `hostname:22`)
 - [ ] **Phase 12.12: 12.x verification artifacts** — PROJ-AUTH-01 evidence; `12.1-`, `12.4-`, `12.6-`, `12.7-VERIFICATION.md`; reconcile `REQUIREMENTS.md` checkboxes with integration truth
 
@@ -322,9 +322,9 @@ Plans:
 **Plans:** 3 plans (1 wave)
 
 Plans:
-- [ ] 12.10-01-PLAN.md -- Fix generatePerPanelConfig Xray rule panel scoping and update test (Wave 1)
-- [ ] 12.10-02-PLAN.md -- Add per-panel API key inputs to PushWizard, fix empty key bugs, fix step 4 results (Wave 1)
-- [ ] 12.10-03-PLAN.md -- Fix chains/apply to accept panelApiKeys, add API key dialog to ChainFlowEditor (Wave 1)
+- [x] 12.10-01-PLAN.md -- Fix generatePerPanelConfig Xray rule panel scoping and update test (Wave 1)
+- [x] 12.10-02-PLAN.md -- Add per-panel API key inputs to PushWizard, fix empty key bugs, fix step 4 results (Wave 1)
+- [x] 12.10-03-PLAN.md -- Fix chains/apply to accept panelApiKeys, add API key dialog to ChainFlowEditor (Wave 1)
 
 ### Phase 12.11: Tailscale transport in chain apply
 **Goal:** Chain apply and routing paths that target remote panels use Tailscale/panel URL transport resolution (`resolveTransportAddress` / tailnet APIs), not ad hoc `hostname` with SSH default port.
@@ -427,7 +427,7 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.12 (12
 | 12.7 | v1.1 audit | 1/1 | Complete | 2026-05-01 |
 | 12.8 | v12.x closure | 3/3 | Complete | 2026-05-02 |
 | 12.9 | v12.x closure | 1/1 | Complete | 2026-05-02 |
-| 12.10 | v12.x closure | 0/3 | Planned | — |
+| 12.10 | v12.x closure | 3/3 | Complete | 2026-05-02 |
 | 12.11 | v12.x closure | 0/3 | Planned | — |
 | 12.12 | v12.x closure | 0/0 | Planned | — |
 
