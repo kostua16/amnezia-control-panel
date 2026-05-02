@@ -1,7 +1,14 @@
 import { describe, it, mock, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyChainConfig } from '../chain-router';
+import { applyChainConfig, generateChainConfig } from '../chain-router';
+import { __setDeps, __resetDeps } from '../transport-resolver';
 import type { ChainConfig } from '@/types/chain';
+import type { Server } from '@/types/server';
+
+// ─── Shared test mocks ──────────────────────────────────
+
+const mockGetNodeIP = mock.fn(async (_hostname?: string) => null);
+const mockIsReachable = mock.fn(async (_hostname: string) => true);
 
 function makeChainConfig(): ChainConfig {
   return {
@@ -121,5 +128,137 @@ describe('applyChainConfig', () => {
     const result = await applyChainConfig(makeChainConfig(), '1.2.3.4', credentials);
 
     assert.ok(result.appliedTo !== undefined, 'Should return a valid result object');
+  });
+});
+
+// ─── generateChainConfig tests ──────────────────────────
+
+describe('generateChainConfig', () => {
+  beforeEach(() => {
+    mockGetNodeIP.mock.resetCalls();
+    mockIsReachable.mock.resetCalls();
+    mockGetNodeIP.mock.mockImplementation(async (_hostname?: string) => null);
+    mockIsReachable.mock.mockImplementation(async (_hostname: string) => true);
+    __setDeps({ getNodeIP: mockGetNodeIP, isReachable: mockIsReachable });
+  });
+
+  afterEach(() => {
+    __resetDeps();
+  });
+
+  function makeServers(): Server[] {
+    return [
+      {
+        id: 1,
+        name: 'Entry',
+        hostname: 'entry.example.com',
+        port: 22,
+        isActive: true,
+        tailnetIP: '100.64.0.1',
+        tailnetHostname: 'entry',
+        createdAt: new Date(),
+      },
+      {
+        id: 2,
+        name: 'Exit',
+        hostname: 'exit.example.com',
+        port: 22,
+        isActive: true,
+        tailnetIP: '100.64.0.2',
+        tailnetHostname: 'exit',
+        createdAt: new Date(),
+      },
+    ];
+  }
+
+  // Test 1: Tailscale IPs in WireGuard peer endpoints
+  it('produces WireGuard peer endpoints with Tailscale IPs (100.x.y.z), NOT server.hostname', async () => {
+    const servers = makeServers();
+    const serverMapping: Record<number, number> = { 0: 1, 1: 2 };
+
+    const config = await generateChainConfig('2hop-linear', servers, serverMapping);
+
+    // At least one endpoint should contain the Tailscale IP
+    const allEndpoints = config.wireguardPeers.map((p) => p.endpoint);
+    const hasTailscale = allEndpoints.some(
+      (ep) => ep.includes('100.64.0.1') || ep.includes('100.64.0.2'),
+    );
+    assert.ok(hasTailscale, `Expected Tailscale IP in endpoints, got: ${allEndpoints.join(', ')}`);
+
+    // No endpoint should contain raw hostname
+    const hasRawHostname = allEndpoints.some(
+      (ep) => ep.includes('entry.example.com') || ep.includes('exit.example.com'),
+    );
+    assert.ok(!hasRawHostname, `Endpoints should NOT contain raw hostnames, got: ${allEndpoints.join(', ')}`);
+  });
+
+  // Test 2: WireGuard port uses service port (51820), NOT server.port (22)
+  it('uses WireGuard service port (default 51820) in peer endpoints, NOT server.port', async () => {
+    const servers = makeServers();
+    // server.port is 22 (SSH), but WireGuard should use 51820
+    const serverMapping: Record<number, number> = { 0: 1, 1: 2 };
+
+    const config = await generateChainConfig('2hop-linear', servers, serverMapping);
+
+    // No endpoint should contain port 22 (SSH port)
+    const allEndpoints = config.wireguardPeers.map((p) => p.endpoint);
+    const hasSSH22 = allEndpoints.some((ep) => ep.endsWith(':22'));
+    assert.ok(!hasSSH22, `Endpoints should NOT use SSH port 22, got: ${allEndpoints.join(', ')}`);
+
+    // Endpoints should use port 51820 (default WireGuard port)
+    const hasWGPort = allEndpoints.some((ep) => ep.includes(':51820'));
+    assert.ok(hasWGPort, `Expected WireGuard port 51820 in endpoints, got: ${allEndpoints.join(', ')}`);
+  });
+
+  // Test 3: generateChainConfig is async
+  it('returns a Promise (is async)', async () => {
+    const servers = makeServers();
+    const serverMapping: Record<number, number> = { 0: 1, 1: 2 };
+
+    const result = generateChainConfig('2hop-linear', servers, serverMapping);
+    assert.ok(result instanceof Promise, 'generateChainConfig should return a Promise');
+    const config = await result;
+    assert.ok(config.templateId, 'Resolved config should have templateId');
+  });
+
+  // Test 4: Fallback to server.hostname when transport resolution fails
+  it('falls back to server.hostname when transport resolution fails (with warning)', async () => {
+    // No tailnetIP -- resolution will fail all tiers
+    const servers: Server[] = [
+      {
+        id: 1, name: 'Entry', hostname: 'raw.example.com', port: 22,
+        isActive: true, createdAt: new Date(),
+      },
+      {
+        id: 2, name: 'Exit', hostname: 'raw2.example.com', port: 22,
+        isActive: true, createdAt: new Date(),
+      },
+    ];
+    const serverMapping: Record<number, number> = { 0: 1, 1: 2 };
+
+    // Capture console.warn
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => { warnings.push(args.join(' ')); };
+
+    try {
+      const config = await generateChainConfig('2hop-linear', servers, serverMapping);
+
+      // Should still produce a config (fallback behavior)
+      assert.ok(config.templateId, 'Should still produce a config');
+      assert.ok(config.nodes.length === 2, 'Should have 2 nodes');
+
+      // Endpoints should contain raw hostname (fallback)
+      const allEndpoints = config.wireguardPeers.map((p) => p.endpoint);
+      const hasRawHostname = allEndpoints.some(
+        (ep) => ep.includes('raw.example.com') || ep.includes('raw2.example.com'),
+      );
+      assert.ok(hasRawHostname, `Fallback should use raw hostname, got: ${allEndpoints.join(', ')}`);
+
+      // Warning should have been logged
+      assert.ok(warnings.length > 0, 'Should log a warning when transport resolution fails');
+    } finally {
+      console.warn = origWarn;
+    }
   });
 });
