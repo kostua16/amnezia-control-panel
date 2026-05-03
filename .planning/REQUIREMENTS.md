@@ -131,8 +131,8 @@ Requirements for multi-panel chain routing milestone. Each maps to roadmap phase
 
 - [ ] **GEO-01**: Geo-routing rules are persisted to SQLite (replacing v1.0 in-memory stores)
 - [ ] **GEO-02**: Admin can define geo-routing rules by country code, region, or custom criteria
-- [ ] **GEO-03**: Traffic is routed to specific chain hops based on destination geo (via GeoIP lookup)
-- [ ] **GEO-04**: System can auto-load routing rule files from v2fly/geoip repository (sendmiche/rulite support is a future enhancement)
+- [x] **GEO-03**: Traffic is routed to specific chain hops based on destination geo (via GeoIP lookup)
+- [x] **GEO-04**: System can auto-load routing rule files from v2fly/geoip repository (sendmiche/rulite support is a future enhancement)
 
 ### Routing Rules
 
@@ -228,9 +228,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TSCL-01 | Phase 11.1 / 12.7 / 12.12 | Pending |
-| TSCL-02 | Phase 11.1 / 12.7 / 12.12 | Pending |
-| TSCL-03 | Phase 11.1 / 12.7 / 12.12 | Pending |
+| TSCL-01 | Phase 11.1 / 12.7 / 12.14 | Done |
+| TSCL-02 | Phase 11.1 / 12.7 / 12.14 | Done |
+| TSCL-03 | Phase 11.1 / 12.7 / 12.14 | Done |
 | TSCL-04 | Phase 12.11 | Pending |
 | MPAN-01 | Phase 11.2 | Pending |
 | MPAN-02 | Phase 11.2 | Pending |
@@ -250,8 +250,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CHAIN-03 | Phase 11.4 | Pending |
 | GEO-01 | Phase 11.5 | Pending |
 | GEO-02 | Phase 11.5 | Pending |
-| GEO-03 | Phase 12.14 | Pending |
-| GEO-04 | Phase 12.14 | Pending |
+| GEO-03 | Phase 12.14 | Done |
+| GEO-04 | Phase 12.14 | Done |
 | RULE-01 | Phase 11.5 | Done (11.5-01, 11.5-03) |
 | RULE-02 | Phase 11.5 | Pending |
 | RULE-03 | Phase 11.5 | Done (11.5-03) |
@@ -337,4 +337,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-29*
-*Last updated: 2026-05-02 — `/gsd-plan-milestone-gaps`: traceability repointed to Phases 12.8–12.12 from v12.x closure audit*
+*Last updated: 2026-05-03 — `/gsd-plan-phase` 12.14: GEO-03/04 + TSCL-01/02/03 checkboxes and traceability reconciled*
