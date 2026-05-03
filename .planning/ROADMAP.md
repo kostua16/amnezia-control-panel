@@ -95,7 +95,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12.11: Tailscale transport in chain apply** -- TSCL-04, CHAIN-01 (transport); `chain-router` / `chains/apply` use panel URL / tailnet resolution (not raw `hostname:22`)
 - [x] **Phase 12.12: 12.x verification artifacts** -- PROJ-AUTH-01 evidence; `12.1-`, `12.4-`, `12.6-`, `12.7-`, `12.11-VERIFICATION.md`; `REQUIREMENTS.md` 7 checkboxes reconciled (2026-05-02)
 - [x] **Phase 12.13: Verification artifacts (12.1, 12.4)** ~~PROJ-AUTH-01, GAPL-01, GAPL-02 evidence; create `12.1-VERIFICATION.md` and `12.4-VERIFICATION.md`~~ ✅ 2026-05-03
-- [ ] **Phase 12.14: Verification artifacts (12.6, 12.7)** -- GEO-03, GEO-04, TSCL-01-03 evidence; create `12.6-VERIFICATION.md` and `12.7-VERIFICATION.md`
+- [x] **Phase 12.14: Verification artifacts (12.6, 12.7)** -- GEO-03, GEO-04, TSCL-01-03 evidence; create `12.6-VERIFICATION.md` and `12.7-VERIFICATION.md` (2026-05-03)
 - [ ] **Phase 12.15: Requirements reconciliation & middleware hardening** -- 15+ checkboxes, traceability table, middleware matcher `/panels/:path*` + `/templates/:path*`
 
 ### Phase 12.13: Verification artifacts (12.1, 12.4)
