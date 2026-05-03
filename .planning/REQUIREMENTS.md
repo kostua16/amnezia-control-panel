@@ -250,8 +250,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CHAIN-03 | Phase 11.4 | Pending |
 | GEO-01 | Phase 11.5 | Pending |
 | GEO-02 | Phase 11.5 | Pending |
-| GEO-03 | Phases 12.6 / 12.12 | Pending |
-| GEO-04 | Phases 12.6 / 12.12 | Pending |
+| GEO-03 | Phase 12.14 | Pending |
+| GEO-04 | Phase 12.14 | Pending |
 | RULE-01 | Phase 11.5 | Done (11.5-01, 11.5-03) |
 | RULE-02 | Phase 11.5 | Pending |
 | RULE-03 | Phase 11.5 | Done (11.5-03) |
@@ -263,7 +263,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TMPL-03 | Phase 11.7 | Pending |
 | TMPL-04 | Phase 11.7 | Pending |
 | DASH-01 | Phase 11.8 | Pending |
-| PROJ-AUTH-01 | Phase 12.12 | Pending |
+| PROJ-AUTH-01 | Phase 12.13 | Pending |
 | PROJ-RT-01 | Phase 12.9 | Done |
 | PROJ-TRACE-01 | Phase 12.3 | Done |
 | GAPL-01 | Phase 12.8 | Pending |

@@ -93,7 +93,31 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12.9: WebSocket → React Query key alignment** — GAPL-02, PROJ-RT-01; `providers.tsx` invalidation keys match `use-dashboard-stats`, `use-system-resources`, `use-multi-panel-status` (shipped 2026-05-02)
 - [x] **Phase 12.10: Push wizard & per-panel sync fixes** — CPUSH-01–06, VISED-03 (closure); real panel API keys in PushWizard/rollback; `generatePerPanelConfig` / Xray rule panel scoping; reliable per-panel status/errors
 - [x] **Phase 12.11: Tailscale transport in chain apply** — TSCL-04, CHAIN-01 (transport); `chain-router` / `chains/apply` use panel URL / tailnet resolution (not raw `hostname:22`)
-- [ ] **Phase 12.12: 12.x verification artifacts** — PROJ-AUTH-01 evidence; `12.1-`, `12.4-`, `12.6-`, `12.7-VERIFICATION.md`; reconcile `REQUIREMENTS.md` checkboxes with integration truth
+- [x] **Phase 12.12: 12.x verification artifacts** — PROJ-AUTH-01 evidence; `12.1-`, `12.4-`, `12.6-`, `12.7-`, `12.11-VERIFICATION.md`; `REQUIREMENTS.md` 7 checkboxes reconciled (2026-05-02)
+- [ ] **Phase 12.13: Verification artifacts (12.1, 12.4)** — PROJ-AUTH-01, GAPL-01, GAPL-02 evidence; create `12.1-VERIFICATION.md` and `12.4-VERIFICATION.md`
+- [ ] **Phase 12.14: Verification artifacts (12.6, 12.7)** — GEO-03, GEO-04, TSCL-01–03 evidence; create `12.6-VERIFICATION.md` and `12.7-VERIFICATION.md`
+- [ ] **Phase 12.15: Requirements reconciliation & middleware hardening** — 15+ checkboxes, traceability table, middleware matcher `/panels/:path*` + `/templates/:path*`
+
+### Phase 12.13: Verification artifacts (12.1, 12.4)
+**Goal:** Create VERIFICATION.md for phases 12.1 and 12.4 with structured evidence for PROJ-AUTH-01, GAPL-01, GAPL-02.
+**Depends on:** None (documentation, code already shipped)
+**Requirements:** PROJ-AUTH-01, GAPL-01, GAPL-02
+**Gap closure:** Closes BLOCKER-1 (partial) and PROJ-AUTH-01 unsatisfied requirement from v12.x audit
+**Plans:** TBD (`/gsd-plan-phase 12.13`)
+
+### Phase 12.14: Verification artifacts (12.6, 12.7)
+**Goal:** Create VERIFICATION.md for phases 12.6 and 12.7 with structured evidence for GEO-03, GEO-04, TSCL-01–03.
+**Depends on:** None (documentation, code already shipped)
+**Requirements:** GEO-03, GEO-04, TSCL-01, TSCL-02, TSCL-03
+**Gap closure:** Closes BLOCKER-1 (remaining), upgrades GEO-03/04 from partial to satisfied
+**Plans:** TBD (`/gsd-plan-phase 12.14`)
+
+### Phase 12.15: Requirements reconciliation & middleware hardening
+**Goal:** Reconcile 15+ unchecked REQUIREMENTS.md checkboxes with verified evidence; update stale traceability entries; harden middleware matcher.
+**Depends on:** Phase 12.13, Phase 12.14 (VERIFICATION.md must exist before reconciliation)
+**Requirements:** GAPL-01, CHAIN-01 (traceability fix); PROJ-AUTH-01 (verification closure)
+**Gap closure:** Closes WARNING-1 (middleware matcher), FLOW-6 (verification closure), and REQUIREMENTS.md checkbox debt
+**Plans:** TBD (`/gsd-plan-phase 12.15`)
 
 ## Phase Details
 
@@ -346,9 +370,9 @@ Plans:
 **Plans:** 3 plans (2 waves) — Planned 2026-05-02
 
 Plans:
-- [ ] 12.12-01-PLAN.md -- VERIFICATION.md for phases 12.1 (PROJ-AUTH-01) and 12.4 (GAPL-01, GAPL-02) (Wave 1)
-- [ ] 12.12-02-PLAN.md -- VERIFICATION.md for phases 12.6 (GEO-03, GEO-04) and 12.7 (TSCL-01-03) (Wave 1)
-- [ ] 12.12-03-PLAN.md -- VERIFICATION.md for phase 12.11 (TSCL-04) and REQUIREMENTS.md checkbox reconciliation (Wave 2)
+- [x] 12.12-01-PLAN.md -- VERIFICATION.md for phases 12.1 (PROJ-AUTH-01) and 12.4 (GAPL-01, GAPL-02) (Wave 1)
+- [x] 12.12-02-PLAN.md -- VERIFICATION.md for phases 12.6 (GEO-03, GEO-04) and 12.7 (TSCL-01-03) (Wave 1)
+- [x] 12.12-03-PLAN.md -- VERIFICATION.md for phase 12.11 (TSCL-04) and REQUIREMENTS.md checkbox reconciliation (Wave 2)
 
 ## Progress
 
@@ -434,7 +458,10 @@ Phases execute in numeric order: 11.1 -> … -> 11.8 -> 12.1 -> … -> 12.12 (12
 | 12.9 | v12.x closure | 1/1 | Complete | 2026-05-02 |
 | 12.10 | v12.x closure | 3/3 | Complete | 2026-05-02 |
 | 12.11 | v12.x closure | 3/3 | Complete | 2026-05-02 |
-| 12.12 | v12.x closure | 3/3 | Planned | — |
+| 12.12 | v12.x closure | 3/3 | Complete | 2026-05-02 |
+| 12.13 | v12.x closure | 0 | Pending | -- |
+| 12.14 | v12.x closure | 0 | Pending | -- |
+| 12.15 | v12.x closure | 0 | Pending | -- |
 
 ## Coverage
 
@@ -446,4 +473,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-02 - Phase 12.12 planned: 3 plans (2 waves) for 12.x verification artifacts*
+*Last updated: 2026-05-02 - Phase 12.12 complete: all 12.x VERIFICATION.md created, REQUIREMENTS.md reconciled*
