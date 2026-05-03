@@ -26,10 +26,10 @@ progress:
 
 ## Current Position
 
-Phase: 12.11 of 12.12 (Tailscale Transport in Chain Apply) -- COMPLETE
-Plan: 3 of 3 in current phase (verified)
-Status: 12.11 verified (15/15 must-haves, TSCL-04 + CHAIN-01)
-Last activity: 2026-05-02 -- 12.11 verified (Tailscale transport resolution wired into chain apply paths)
+Phase: 12.14 of 12.15 (Verification artifacts 12.6, 12.7) -- PLANNED
+Plan: 0 of 3 in current phase (planned)
+Status: 12.13 complete (7/7 must-haves, PROJ-AUTH-01 + GAPL-01 + GAPL-02)
+Last activity: 2026-05-03 -- 12.13 complete (12.1-VERIFICATION.md + 12.4-VERIFICATION.md created)
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -122,4 +122,4 @@ Resume file: None
 
 ---
 *State initialized: 2026-04-27*
-*Last updated: 2026-05-02 - 12.9-01 complete (WS_TO_QUERY_KEYS aligned with hook queryKeys)*
+*Last updated: 2026-05-03 - 12.13 complete (12.1 + 12.4 VERIFICATION.md created)*
