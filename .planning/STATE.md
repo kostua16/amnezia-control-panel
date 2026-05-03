@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: milestone
 status: completed
 stopped_at: context exhaustion at 75% (2026-05-02)
-last_updated: "2026-05-02T12:00:00.000Z"
-last_activity: 2026-05-02 -- 12.11 verified (Tailscale transport resolution wired into chain apply paths)
+last_updated: "2026-05-02T12:30:00.000Z"
+last_activity: 2026-05-02 -- 12.12 complete (all 12.x VERIFICATION.md created, REQUIREMENTS.md reconciled)
 progress:
   total_phases: 20
-  completed_phases: 18
-  total_plans: 48
-  completed_plans: 46
+  completed_phases: 20
+  total_plans: 51
+  completed_plans: 49
   percent: 100
 ---
 

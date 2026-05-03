@@ -103,7 +103,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Depends on:** None (documentation, code already shipped)
 **Requirements:** PROJ-AUTH-01, GAPL-01, GAPL-02
 **Gap closure:** Closes BLOCKER-1 (partial) and PROJ-AUTH-01 unsatisfied requirement from v12.x audit
-**Plans:** TBD (`/gsd-plan-phase 12.13`)
+**Plans:** 2 plans (1 wave) -- Planned 2026-05-03
+
+Plans:
+- [ ] 12.13-01-PLAN.md -- Create 12.1-VERIFICATION.md with PROJ-AUTH-01 evidence (Wave 1)
+- [ ] 12.13-02-PLAN.md -- Create 12.4-VERIFICATION.md with GAPL-01 and GAPL-02 evidence (Wave 1)
 
 ### Phase 12.14: Verification artifacts (12.6, 12.7)
 **Goal:** Create VERIFICATION.md for phases 12.6 and 12.7 with structured evidence for GEO-03, GEO-04, TSCL-01–03.
@@ -473,4 +477,4 @@ v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GE
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-02 - Phase 12.12 complete: all 12.x VERIFICATION.md created, REQUIREMENTS.md reconciled*
+*Last updated: 2026-05-03 - Phase 12.13 planned: 2 plans (1 wave) for 12.1 and 12.4 VERIFICATION artifacts
