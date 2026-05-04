@@ -55,6 +55,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          track_progress: true
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns 50
@@ -117,6 +118,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          track_progress: true
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns 35
