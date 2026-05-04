@@ -10,6 +10,21 @@ on:
   pull_request_review:
     types: [submitted]
 
+env:
+  NODE_VERSION: '22.x'
+  ANTHROPIC_BASE_URL: '${{ vars.ANTHROPIC_BASE_URL }}'
+  ANTHROPIC_API_KEY: '${{ secrets.ZAI_API_KEY }}'
+  ANTHROPIC_AUTH_TOKEN: '${{ secrets.ZAI_API_KEY }}'
+  API_TIMEOUT_MS: '${{ vars.API_TIMEOUT_MS }}'
+  DISABLE_TELEMETRY: '${{ vars.DISABLE_TELEMETRY }}'
+  CLAUDE_CODE_ENABLE_TELEMETRY: '${{ vars.CLAUDE_CODE_ENABLE_TELEMETRY }}'
+  CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: '${{ vars.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}'
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}'
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: '${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}'
+  ANTHROPIC_DEFAULT_SONNET_MODEL: '${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}'
+  ANTHROPIC_DEFAULT_OPUS_MODEL: '${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}'
+  CLAUDE_CODE_SUBAGENT_MODEL: '${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}'
+
 jobs:
   claude:
     if: |
@@ -18,14 +33,13 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
       pull-requests: write
       issues: write
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
-    env:
-      NODE_VERSION: '22.x'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -55,19 +69,6 @@ jobs:
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
-        env:
-          ANTHROPIC_BASE_URL: '${{ vars.ANTHROPIC_BASE_URL }}'
-          ANTHROPIC_API_KEY: '${{ secrets.ZAI_API_KEY }}'
-          ANTHROPIC_AUTH_TOKEN: '${{ secrets.ZAI_API_KEY }}'
-          API_TIMEOUT_MS: '${{ vars.API_TIMEOUT_MS }}'
-          DISABLE_TELEMETRY: '${{ vars.DISABLE_TELEMETRY }}'
-          CLAUDE_CODE_ENABLE_TELEMETRY: '${{ vars.CLAUDE_CODE_ENABLE_TELEMETRY }}'
-          CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: '${{ vars.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}'
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}'
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: '${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}'
-          ANTHROPIC_DEFAULT_SONNET_MODEL: '${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}'
-          ANTHROPIC_DEFAULT_OPUS_MODEL: '${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}'
-          CLAUDE_CODE_SUBAGENT_MODEL: '${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}'
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
           claude_args: |
@@ -75,20 +76,3 @@ jobs:
             --max-turns 70
             --allowedTools "Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
             --system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files. Use GSD workflow for implementation tasks."
-          settings: |
-            {
-              "env": {
-                "ANTHROPIC_BASE_URL": "${{ vars.ANTHROPIC_BASE_URL }}",
-                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
-                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}",
-                "API_TIMEOUT_MS": "${{ vars.API_TIMEOUT_MS }}",
-                "DISABLE_TELEMETRY": "${{ vars.DISABLE_TELEMETRY }}",
-                "CLAUDE_CODE_ENABLE_TELEMETRY": "${{ vars.CLAUDE_CODE_ENABLE_TELEMETRY }}",
-                "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "${{ vars.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}",
-                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}",
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}",
-                "ANTHROPIC_DEFAULT_SONNET_MODEL": "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}",
-                "ANTHROPIC_DEFAULT_OPUS_MODEL": "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}",
-                "CLAUDE_CODE_SUBAGENT_MODEL": "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
-              }
-            }
