@@ -10,20 +10,9 @@ on:
   pull_request_review:
     types: [submitted]
 
-env:
-  NODE_VERSION: '22.x'
-  ANTHROPIC_BASE_URL: '${{ vars.ANTHROPIC_BASE_URL }}'
-  ANTHROPIC_API_KEY: '${{ secrets.ZAI_API_KEY }}'
-  ANTHROPIC_AUTH_TOKEN: '${{ secrets.ZAI_API_KEY }}'
-  API_TIMEOUT_MS: '${{ vars.API_TIMEOUT_MS }}'
-  DISABLE_TELEMETRY: '${{ vars.DISABLE_TELEMETRY }}'
-  CLAUDE_CODE_ENABLE_TELEMETRY: '${{ vars.CLAUDE_CODE_ENABLE_TELEMETRY }}'
-  CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: '${{ vars.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}'
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}'
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: '${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}'
-  ANTHROPIC_DEFAULT_SONNET_MODEL: '${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}'
-  ANTHROPIC_DEFAULT_OPUS_MODEL: '${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}'
-  CLAUDE_CODE_SUBAGENT_MODEL: '${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}'
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
 
 jobs:
   claude:
@@ -39,33 +28,37 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      actions: read
+    env:
+      NODE_VERSION: "22.x"
+      DISABLE_TELEMETRY: "1"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
+          cache: "npm"
       - name: Install dependencies
         run: npm ci
-
-      - name: gsd-cache
+      - name: Cache GSD installation
+        id: gsd-cache
         uses: actions/cache@v4
         with:
-          path: .claude/skills/gsd-*
-          key: gsd-${{ hashFiles('package.json') }}
-          restore-keys: gsd-
-
+          path: |
+            .claude/skills/gsd-*
+            .claude/commands/gsd/*
+            .claude/get-shit-done/*
+            .claude/hooks/*
+          key: gsd-v1-${{ hashFiles('.claude/package.json') }}
+          restore-keys: |
+            gsd-v1-
       - name: Install GSD
         if: steps.gsd-cache.outputs.cache-hit != 'true'
         run: npx get-shit-done-cc@latest --claude --local --minimal
-
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
@@ -76,3 +69,17 @@ jobs:
             --max-turns 70
             --allowedTools "Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
             --system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files. Use GSD workflow for implementation tasks."
+          settings: |
+            {
+              "env": {
+                "ANTHROPIC_BASE_URL": "${{ vars.ANTHROPIC_BASE_URL }}",
+                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
+                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}",
+                "API_TIMEOUT_MS": "${{ vars.API_TIMEOUT_MS }}",
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}",
+                "CLAUDE_CODE_SUBAGENT_MODEL": "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
+              }
+            }
