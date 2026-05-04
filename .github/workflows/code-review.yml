@@ -1,4 +1,4 @@
-name: Zai Code Bot
+name: Code Review
 
 on:
   pull_request:
@@ -12,54 +12,23 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  id-token: write
+  actions: read
 
-env:
-  NODE_VERSION: '22.x'
-  ANTHROPIC_BASE_URL: '${{ vars.ANTHROPIC_BASE_URL }}'
-  ANTHROPIC_API_KEY: '${{ secrets.ZAI_API_KEY }}'
-  ANTHROPIC_AUTH_TOKEN: '${{ secrets.ZAI_API_KEY }}'
-  API_TIMEOUT_MS: '${{ vars.API_TIMEOUT_MS }}'
-  DISABLE_TELEMETRY: '${{ vars.DISABLE_TELEMETRY }}'
-  CLAUDE_CODE_ENABLE_TELEMETRY: '${{ vars.CLAUDE_CODE_ENABLE_TELEMETRY }}'
-  CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: '${{ vars.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}'
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}'
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: '${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}'
-  ANTHROPIC_DEFAULT_SONNET_MODEL: '${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}'
-  ANTHROPIC_DEFAULT_OPUS_MODEL: '${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}'
-  CLAUDE_CODE_SUBAGENT_MODEL: '${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}'
+concurrency:
+  group: code-review-${{ github.event.issue.number || github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
 
 jobs:
-  # zai-review:
-  #   runs-on: ubuntu-latest
-  #   if: github.event_name == 'pull_request' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment'
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v6
-  #       with:
-  #         fetch-depth: 0
-          
-  #     - name: Setup Node.js
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: ${{ env.NODE_VERSION }}
-  #         cache: 'npm'
-
-  #     - name: Install dependencies
-  #       run: npm ci
-
-  #     - name: ZAI Bot review
-  #       uses: AndreiDrang/zai-code-bot@v0.0.6
-  #       with:
-  #         ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
-  #         ZAI_MODEL: ${{ vars.ZAI_MODEL }}
-  #         GITHUB_TOKEN: ${{ github.token }}
-
   claude-main-review:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login != 'dependabot[bot]' && (github.event_name == 'pull_request' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment')
+    if:  github.event.pull_request.user.login != 'dependabot[bot]' && (github.event_name == 'pull_request' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment')
+    env:
+      NODE_VERSION: "22.x"
+      DISABLE_TELEMETRY: "1"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           
@@ -72,12 +41,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: gsd-cache
+      - name: Cache GSD installation
+        id: gsd-cache
         uses: actions/cache@v4
         with:
-          path: .claude/skills/gsd-*
-          key: gsd-${{ hashFiles('package.json') }}
-          restore-keys: gsd-
+          path: |
+            .claude/skills/gsd-*
+            .claude/commands/gsd/*
+            .claude/get-shit-done/*
+            .claude/hooks/*
+          key: gsd-v1-${{ hashFiles('.claude/package.json') }}
+          restore-keys: |
+            gsd-v1-
 
       - name: Install GSD
         if: steps.gsd-cache.outputs.cache-hit != 'true'
@@ -88,9 +63,10 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          track_progress: true
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
-            --max-turns 70
+            --max-turns 50
             --allowedTools "Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
           prompt: |
             Review this pull request for:
@@ -99,13 +75,31 @@ jobs:
             - Performance concerns
             - Adherence to coding conventions
             Post your findings as review comments.
+            Use GSD workflow for audit and review tasks.
+          settings: |
+            {
+              "env": {
+                "ANTHROPIC_BASE_URL": "${{ vars.ANTHROPIC_BASE_URL }}",
+                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
+                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}",
+                "API_TIMEOUT_MS": "${{ vars.API_TIMEOUT_MS }}",
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}",
+                "CLAUDE_CODE_SUBAGENT_MODEL": "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
+              }
+            }
 
   claude-security-review:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login != 'dependabot[bot]' && (github.event_name == 'pull_request' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment')
+    if:  github.event.pull_request.user.login != 'dependabot[bot]' && (github.event_name == 'pull_request' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment')
+    env:
+      NODE_VERSION: "22.x"
+      DISABLE_TELEMETRY: "1"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           
@@ -118,12 +112,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: gsd-cache
+      - name: Cache GSD installation
+        id: gsd-cache
         uses: actions/cache@v4
         with:
-          path: .claude/skills/gsd-*
-          key: gsd-${{ hashFiles('package.json') }}
-          restore-keys: gsd-
+          path: |
+            .claude/skills/gsd-*
+            .claude/commands/gsd/*
+            .claude/get-shit-done/*
+            .claude/hooks/*
+          key: gsd-v1-${{ hashFiles('.claude/package.json') }}
+          restore-keys: |
+            gsd-v1-
 
       - name: Install GSD
         if: steps.gsd-cache.outputs.cache-hit != 'true'
@@ -132,9 +132,10 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          track_progress: true
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
-            --max-turns 70
+            --max-turns 35
             --allowedTools "Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
           prompt: |
             Review this PR strictly from a security perspective:
@@ -142,46 +143,20 @@ jobs:
             - Authentication and authorization gaps
             - Hardcoded secrets or credentials
             - Known vulnerabilities in dependencies
+            Post your findings as review comments.
+            Use GSD workflow for audit and review tasks.
+          settings: |
+            {
+              "env": {
+                "ANTHROPIC_BASE_URL": "${{ vars.ANTHROPIC_BASE_URL }}",
+                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
+                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}",
+                "API_TIMEOUT_MS": "${{ vars.API_TIMEOUT_MS }}",
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}",
+                "CLAUDE_CODE_SUBAGENT_MODEL": "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
+              }
+            }
  
-  claude-performance-review:
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login != 'dependabot[bot]' && (github.event_name == 'pull_request' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment')
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: gsd-cache
-        uses: actions/cache@v4
-        with:
-          path: .claude/skills/gsd-*
-          key: gsd-${{ hashFiles('package.json') }}
-          restore-keys: gsd-
-
-      - name: Install GSD
-        if: steps.gsd-cache.outputs.cache-hit != 'true'
-        run: npx get-shit-done-cc@latest --claude --local --minimal
-      
-      - uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
-          claude_args: |
-            --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
-            --max-turns 70
-            --allowedTools "Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
-          prompt: |
-            Review this PR from a performance perspective:
-            - N+1 queries or inefficient loops
-            - Potential memory leaks
-            - Unnecessary re-renders
-            - Bundle size impact

@@ -1,0 +1,37 @@
+version: 2
+
+updates:
+  # Keep GitHub Actions up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    review-automated: true
+
+  # Keep npm dependencies up to date
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    # Group all patch/minor updates into single PRs to reduce noise
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "patch"
+          - "minor"
+      development-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "patch"
+          - "minor"
+    review-automated: true
