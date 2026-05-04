@@ -35,49 +35,39 @@ jobs:
         uses: anthropics/claude-code-action@v1
         env:
           NODE_VERSION: '22.x'
-          ANTHROPIC_BASE_URL: '${{ secrets.ANTHROPIC_BASE_URL }}'
+          ANTHROPIC_BASE_URL: '${{ vars.ANTHROPIC_BASE_URL }}'
           ANTHROPIC_API_KEY: '${{ secrets.ZAI_API_KEY }}'
           ANTHROPIC_AUTH_TOKEN: '${{ secrets.ZAI_API_KEY }}'
-          API_TIMEOUT_MS: '${{ secrets.API_TIMEOUT_MS }}'
-          DISABLE_TELEMETRY: '${{ secrets.DISABLE_TELEMETRY }}'
-          CLAUDE_CODE_ENABLE_TELEMETRY: '${{ secrets.CLAUDE_CODE_ENABLE_TELEMETRY }}'
-          CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: '${{ secrets.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}'
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '${{ secrets.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}'
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: '${{ secrets.ANTHROPIC_DEFAULT_HAIKU_MODEL }}'
-          ANTHROPIC_DEFAULT_SONNET_MODEL: '${{ secrets.ANTHROPIC_DEFAULT_SONNET_MODEL }}'
-          ANTHROPIC_DEFAULT_OPUS_MODEL: '${{ secrets.ANTHROPIC_DEFAULT_OPUS_MODEL }}'
-          CLAUDE_CODE_SUBAGENT_MODEL: '${{ secrets.CLAUDE_CODE_SUBAGENT_MODEL }}'
+          API_TIMEOUT_MS: '${{ vars.API_TIMEOUT_MS }}'
+          DISABLE_TELEMETRY: '${{ vars.DISABLE_TELEMETRY }}'
+          CLAUDE_CODE_ENABLE_TELEMETRY: '${{ vars.CLAUDE_CODE_ENABLE_TELEMETRY }}'
+          CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: '${{ vars.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}'
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}'
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: '${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}'
+          ANTHROPIC_DEFAULT_SONNET_MODEL: '${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}'
+          ANTHROPIC_DEFAULT_OPUS_MODEL: '${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}'
+          CLAUDE_CODE_SUBAGENT_MODEL: '${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}'
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
-
-          # Optional: Customize the trigger phrase (default: @claude)
-          # trigger_phrase: "/claude"
-
-          # Optional: Trigger when specific user is assigned to an issue
-          # assignee_trigger: "claude-bot"
-
-          # Optional: Configure Claude's behavior with CLI arguments
           claude_args: |
-            --model ${{ secrets.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+            --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns 70
             --allowedTools "Bash(npm *),Bash(ls *),Bash(git *)" 
             --system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files."
-
-          # Optional: Advanced settings configuration
           settings: |
             {
               "env": {
-                "ANTHROPIC_BASE_URL": "${{ secrets.ANTHROPIC_BASE_URL }}",
+                "ANTHROPIC_BASE_URL": "${{ vars.ANTHROPIC_BASE_URL }}",
                 "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
                 "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}",
-                "API_TIMEOUT_MS": "${{ secrets.API_TIMEOUT_MS }}",
-                "DISABLE_TELEMETRY": "${{ secrets.DISABLE_TELEMETRY }}",
-                "CLAUDE_CODE_ENABLE_TELEMETRY": "${{ secrets.CLAUDE_CODE_ENABLE_TELEMETRY }}",
-                "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "${{ secrets.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}",
-                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "${{ secrets.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}",
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${{ secrets.ANTHROPIC_DEFAULT_HAIKU_MODEL }}",
-                "ANTHROPIC_DEFAULT_SONNET_MODEL": "${{ secrets.ANTHROPIC_DEFAULT_SONNET_MODEL }}",
-                "ANTHROPIC_DEFAULT_OPUS_MODEL": "${{ secrets.ANTHROPIC_DEFAULT_OPUS_MODEL }}",
-                "CLAUDE_CODE_SUBAGENT_MODEL": "${{ secrets.CLAUDE_CODE_SUBAGENT_MODEL }}"
+                "API_TIMEOUT_MS": "${{ vars.API_TIMEOUT_MS }}",
+                "DISABLE_TELEMETRY": "${{ vars.DISABLE_TELEMETRY }}",
+                "CLAUDE_CODE_ENABLE_TELEMETRY": "${{ vars.CLAUDE_CODE_ENABLE_TELEMETRY }}",
+                "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "${{ vars.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}",
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}",
+                "CLAUDE_CODE_SUBAGENT_MODEL": "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
               }
             }
