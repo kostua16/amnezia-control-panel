@@ -23,6 +23,7 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      workflows: write
       actions: read # Required for Claude to read CI results on PRs
     env:
       NODE_VERSION: '22.x'
