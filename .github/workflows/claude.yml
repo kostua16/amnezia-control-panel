@@ -33,8 +33,20 @@ jobs:
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          API_TIMEOUT_MS: ${{ secrets.API_TIMEOUT_MS }}
+          DISABLE_TELEMETRY: ${{ secrets.DISABLE_TELEMETRY }}
+          CLAUDE_CODE_ENABLE_TELEMETRY: ${{ secrets.CLAUDE_CODE_ENABLE_TELEMETRY }}
+          CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: ${{ secrets.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY }}
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: ${{ secrets.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ secrets.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ secrets.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ secrets.ANTHROPIC_DEFAULT_OPUS_MODEL }}
+          CLAUDE_CODE_SUBAGENT_MODEL: ${{ secrets.CLAUDE_CODE_SUBAGENT_MODEL }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
 
           # Optional: Customize the trigger phrase (default: @claude)
           # trigger_phrase: "/claude"
@@ -54,6 +66,7 @@ jobs:
             {
               "env": {
                 "ANTHROPIC_BASE_URL": "${{ secrets.ANTHROPIC_BASE_URL }}",
+                "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_AUTH_TOKEN }}",
                 "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ANTHROPIC_AUTH_TOKEN }}",
                 "API_TIMEOUT_MS": "${{ secrets.API_TIMEOUT_MS }}",
                 "DISABLE_TELEMETRY": "${{ secrets.DISABLE_TELEMETRY }}",
