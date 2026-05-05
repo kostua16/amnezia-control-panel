@@ -52,8 +52,8 @@ COPY --from=builder --chown=appuser:appgroup /app/.next/static ./.next/static
 COPY --from=builder /app/server.mjs ./server.mjs
 
 # Copy Prisma schema and migrations so prisma migrate can run at startup
+# NOTE: If new runtime files are added (e.g. new prisma config), copy them here.
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 
 # Copy Prisma client generated code
 COPY --from=builder /app/src/generated ./src/generated
