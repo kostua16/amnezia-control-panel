@@ -63,7 +63,7 @@ COPY --from=builder /app/instrumentation.ts ./instrumentation.ts
 
 # Copy entrypoint script (runs migrations before starting server)
 COPY --from=builder /app/docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
 USER appuser
 
