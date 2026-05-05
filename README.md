@@ -61,8 +61,8 @@ docker compose up -d
 
 | Variable | Default | Description |
 |---|---|---|
-| `JWT_SECRET` | (required) | Secret for signing JWT tokens |
-| `ADMIN_PASSWORD` | `admin` | Initial admin password |
+| `JWT_SECRET` | **(required)** | Secret for signing JWT tokens — generate with `openssl rand -hex 32` |
+| `ADMIN_PASSWORD` | **(required)** | Initial admin password |
 | `PORT` | `3333` | Host port mapping |
 | `DATABASE_URL` | `file:/app/data/prisma/dev.db` | SQLite database path |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3333` | Public URL of the panel |
@@ -85,6 +85,7 @@ docker run -d \
   -p 3333:3333 \
   -e JWT_SECRET="$(openssl rand -hex 32)" \
   -e ADMIN_PASSWORD="your-secure-password" \
+  -e DATABASE_URL="file:/app/data/prisma/dev.db" \
   -v amnezia-db:/app/data/prisma \
   -v amnezia-geoip:/app/data/geoip \
   amnezia-control-panel

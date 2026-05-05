@@ -9,8 +9,8 @@ services:
       - NODE_ENV=production
       - PORT=3333
       - HOSTNAME=0.0.0.0
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required — generate one with: openssl rand -hex 32}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
       - DATABASE_URL=file:/app/data/prisma/dev.db
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3333}
     volumes:

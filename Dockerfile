@@ -1,14 +1,14 @@
 # ─── Stage 1: Dependencies ────────────────────────────────────────────────────
 # Install both prod + dev dependencies; native modules (better-sqlite3) are built
 # here so the builder stage can reuse the cache.
-FROM node:22-alpine AS deps
+FROM node:22-alpine3.21 AS deps
 
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # ─── Stage 2: Builder ─────────────────────────────────────────────────────────
 FROM deps AS builder
@@ -25,7 +25,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ─── Stage 3: Runner ──────────────────────────────────────────────────────────
-FROM node:22-alpine AS runner
+FROM node:22-alpine3.21 AS runner
 
 WORKDIR /app
 
@@ -61,6 +61,10 @@ COPY --from=builder /app/src/generated ./src/generated
 # Copy instrumentation for background health checks / broadcaster
 COPY --from=builder /app/instrumentation.ts ./instrumentation.ts
 
+# Copy entrypoint script (runs migrations before starting server)
+COPY --from=builder /app/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x docker-entrypoint.sh
+
 USER appuser
 
 EXPOSE 3333
@@ -68,4 +72,5 @@ EXPOSE 3333
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3333/ || exit 1
 
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "server.mjs"]
