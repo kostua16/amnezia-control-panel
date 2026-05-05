@@ -72,6 +72,11 @@ jobs:
       - name: Install GSD
         if: steps.gsd-cache.outputs.cache-hit != 'true'
         run: npx get-shit-done-cc@latest --claude --local --minimal
+        
+      - name: Setup git identity
+        run: |
+          git config --global user.email "claude[bot]@users.noreply.github.com"
+          git config --global user.name "claude[bot]"
       
       - name: Run Claude Code
         id: claude
