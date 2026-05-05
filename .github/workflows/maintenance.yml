@@ -1,0 +1,65 @@
+name: Weekly Maintenance
+on:
+  schedule:
+    - cron: "0 0 * * 0" # Every Sunday at midnight
+  workflow_dispatch: # Manual trigger option
+  
+concurrency:
+  group: maintenance-${{ github.sha }}
+  cancel-in-progress: false
+  
+env:
+  MAX_TURNS: 150
+  NODE_VERSION: "22.x"
+  DISABLE_TELEMETRY: "1"
+  API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}"
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}"
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}"
+  CLAUDE_CODE_SUBAGENT_MODEL: "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
+  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          track_progress: true
+          claude_args: |
+            --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+            --max-turns ${{ env.MAX_TURNS }}
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(npm:*),Bash(gh issue:*),Bash(git:*)"
+          prompt: |
+            REPO: ${{ github.repository }}
+
+            Perform weekly repository maintenance:
+
+            1. Check for outdated dependencies in package.json
+            2. Scan for security vulnerabilities using `npm audit`
+            3. Review open issues older than 90 days
+            4. Check for TODO comments in recent commits
+            5. Verify README.md examples still work
+
+            Create a single issue summarizing any findings.
+            If critical security issues are found, also comment on open PRs.
+            Use GSD workflow for audit and review and investigation tasks.
+          settings: |
+            {
+              "env": {
+                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
+                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}"
+              }
+            }

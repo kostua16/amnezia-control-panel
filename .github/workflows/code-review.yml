@@ -33,6 +33,7 @@ env:
 jobs:
   claude-main-review:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     if:  github.event.pull_request.user.login != 'dependabot[bot]' && (github.event_name == 'pull_request' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment')
     steps:
       - name: Checkout repository
@@ -75,13 +76,23 @@ jobs:
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns 70
-            --allowedTools "Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: '${{ github.event.pull_request.number }}'
+
             Review this pull request for:
-            - Code correctness and logic issues
-            - Security vulnerabilities
-            - Performance concerns
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Security implications
+            - Performance considerations
             - Adherence to coding conventions
+            - Code correctness and logic issues
+            - Compliance with project coding standards
+            - Proper test coverage (unit and integration)
+            - Documentation for new features
+            - Potential breaking changes
+            - License header requirements
             Post your findings as review comments.
             Use GSD workflow for audit and review tasks.
           settings: |
@@ -94,6 +105,7 @@ jobs:
 
   claude-security-review:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     if:  github.event.pull_request.user.login != 'dependabot[bot]' && (github.event_name == 'pull_request' || (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment')
     steps:
       - name: Checkout repository
@@ -134,15 +146,37 @@ jobs:
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns 45
-            --allowedTools "Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(npm *),Bash(gh pr comment:*),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
           prompt: |
-            Review this PR strictly from a security perspective:
-            - SQL injection, XSS, CSRF risks
+            REPO: ${{ github.repository }}
+            PR NUMBER: '${{ github.event.pull_request.number }}'
+            
+            Perform a comprehensive security review:
+
+            ## OWASP Top 10 Analysis
+            - SQL Injection vulnerabilities
+            - Cross-Site Scripting (XSS)
+            - Broken Authentication
+            - Sensitive Data Exposure
+            - XML External Entities (XXE)
+            - Broken Access Control
+            - Security Misconfiguration
+            - Cross-Site Request Forgery (CSRF)
+            - Using Components with Known Vulnerabilities
+            - Insufficient Logging & Monitoring
+
+            ## Additional Security Checks
             - Authentication and authorization gaps
             - Hardcoded secrets or credentials
+            - Insecure cryptographic practices
+            - Unsafe deserialization
+            - Server-Side Request Forgery (SSRF)
+            - Race conditions or TOCTOU issues
             - Known vulnerabilities in dependencies
-            Post your findings as review comments.
-            Use GSD workflow for audit and review tasks.
+
+            Rate severity as: CRITICAL, HIGH, MEDIUM, LOW, or NONE.
+            Post detailed findings with recommendations.
+            Use GSD workflow for analysis,audit and review tasks.
           settings: |
             {
               "env": {
