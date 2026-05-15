@@ -65,13 +65,65 @@ jobs:
             .claude/commands/gsd/*
             .claude/get-shit-done/*
             .claude/hooks/*
-          key: gsd-v1-${{ hashFiles('.claude/package.json') }}
+          key: gsd-v1-${{ hashFiles('.claude/gsd-file-manifest.json') }}
           restore-keys: |
             gsd-v1-
       
       - name: Install GSD
         if: steps.gsd-cache.outputs.cache-hit != 'true'
-        run: npx get-shit-done-cc@latest --claude --local --minimal
+        run: npx get-shit-done-cc@latest --claude --local --minimal 
+
+      - name: Cache ClaudeKit installation
+        id: claudekit-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .claude/.ck.json
+            .claude/.ckignore
+            .claude/.env.example
+            .claude/.gitignore
+            .claude/.mcp.json.example
+            .claude/settings.json
+            .claude/statusline.cjs
+            .claude/metadata.json
+            .claude/rules/*.md
+            .claude/agents/*.md
+            .claude/hooks/*.cjs
+            .claude/hooks/*.sh
+            .claude/hooks/node-hook-runner.sh
+            .claude/hooks/lib/*
+            .claude/hooks/lib/**/*
+            .claude/hooks/scout-block/*
+            .claude/hooks/scout-block/**/*
+            .claude/hooks/notifications/*
+            .claude/hooks/notifications/**/*
+            .claude/hooks/docs/*
+            .claude/hooks/docs/**/*
+            .claude/skills/.env.example
+            .claude/skills/.gitignore
+            .claude/skills/INSTALLATION.md
+            .claude/skills/README.md
+            .claude/skills/THIRD_PARTY_NOTICES.md
+            .claude/skills/agent_skills_spec.md
+            .claude/skills/_shared/lib/*
+            .claude/skills/_shared/lib/**/*
+            .claude/skills/_shared/tests/*
+            .claude/skills/_shared/tests/**/*
+            .claude/skills/*/SKILL.md
+            .claude/skills/*/.env.example
+            .claude/skills/*/references/*.md
+            .claude/skills/*/scripts/*
+            .claude/skills/*/scripts/**/*
+            .claude/session-state/.gitkeep
+          key: claudekit-v1-${{ hashFiles('.claude/metadata.json', '.claude/.ck.json') }}
+          restore-keys: |
+            claudekit-v1-
+
+      - name: Install ClaudeKit
+        if: steps.claudekit-cache.outputs.cache-hit != 'true'
+        run: |
+          npm install -g claudekit-cli
+          ck init --kit engineer -y --fresh --force
         
       - name: Setup git identity
         run: |
