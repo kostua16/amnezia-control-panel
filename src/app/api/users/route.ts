@@ -27,7 +27,7 @@ const createUserSchema = z.object({
     .max(64, 'Username must be at most 64 characters'),
   password: z
     .string()
-    .min(3, 'Password must be at least 3 characters'),
+    .min(12, 'Password must be at least 12 characters'),
   displayName: z.string().optional(),
   trafficQuotaBytes: z.number().int().min(0).optional(),
   speedLimitKbps: z.number().int().min(0).optional(),

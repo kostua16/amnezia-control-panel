@@ -1,0 +1,57 @@
+# Dependencies
+node_modules
+npm-cache
+.npm-cache
+
+# Build output
+.next
+/out
+dist
+
+# Version control
+.git
+.gitignore
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# SQLite databases (persisted via volume)
+prisma/*.db
+prisma/*.db-journal
+
+# GeoIP data (persisted via volume)
+data/geoip/geoip.dat
+data/geoip/geoip.dat.tmp
+
+# Logs
+logs
+*.log
+
+# Claude / CI artifacts
+.claude
+.github
+.planning
+.codex
+.caliber
+cursor
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Misc
+README.md
+LICENSE
+AGENTS.md
+CLAUDE.md
+docs
+scripts/dev.cjs

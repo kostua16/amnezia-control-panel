@@ -16,7 +16,7 @@ const updateUserSchema = z.object({
   trafficQuotaBytes: z.number().int().min(0).optional(),
   speedLimitKbps: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),
-  newPassword: z.string().min(3, 'Password must be at least 3 characters').optional(),
+  newPassword: z.string().min(12, 'Password must be at least 12 characters').optional(),
   services: z.array(serviceTypeEnum).optional(),
 });
 
