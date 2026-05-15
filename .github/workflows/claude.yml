@@ -90,7 +90,6 @@ jobs:
             .claude/agents/*.md
             .claude/hooks/*.cjs
             .claude/hooks/*.sh
-            .claude/hooks/node-hook-runner.sh
             .claude/hooks/lib/*
             .claude/hooks/lib/**/*
             .claude/hooks/scout-block/*
@@ -115,7 +114,7 @@ jobs:
             .claude/skills/*/scripts/*
             .claude/skills/*/scripts/**/*
             .claude/session-state/.gitkeep
-          key: claudekit-v1-${{ hashFiles('.claude/metadata.json', '.claude/.ck.json') }}
+          key: claudekit-v1-${{ hashFiles('.claude/metadata.json', '.claude/.ck.json', '.claude/.ckignore', '.claude/hooks/lib/*', '.claude/hooks/node-hook-runner.sh', '.claude/skills/_shared/lib/**/*') }}
           restore-keys: |
             claudekit-v1-
 
