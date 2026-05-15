@@ -121,7 +121,7 @@ jobs:
       - name: Install ClaudeKit
         if: steps.claudekit-cache.outputs.cache-hit != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CK_TOKEN }}
         run: |
           npm install -g claudekit-cli
           ck init --kit engineer -y --fresh --force
