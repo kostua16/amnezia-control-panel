@@ -114,9 +114,9 @@ jobs:
             .claude/skills/*/scripts/*
             .claude/skills/*/scripts/**/*
             .claude/session-state/.gitkeep
-          key: claudekit-v1-${{ hashFiles('.claude/metadata.json', '.claude/.ck.json', '.claude/.ckignore', '.claude/hooks/lib/*', '.claude/hooks/node-hook-runner.sh', '.claude/skills/_shared/lib/**/*') }}
+          key: claudekit-v2-${{ hashFiles('.claude/metadata.json', '.claude/.ck.json', '.claude/.ckignore', '.claude/hooks/lib/*', '.claude/hooks/node-hook-runner.sh', '.claude/skills/_shared/lib/**/*') }}
           restore-keys: |
-            claudekit-v1-
+            claudekit-v2-
 
       - name: Install ClaudeKit
         if: steps.claudekit-cache.outputs.cache-hit != 'true'
