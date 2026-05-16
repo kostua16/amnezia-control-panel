@@ -17,11 +17,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-environment
         with:
-          node-version: "22.x"
-          cache: "npm"
-      - run: npm ci
+          install-deps: "true"
       - run: npm run lint
       - run: npm run format:check
 
@@ -31,27 +29,36 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-environment
         with:
-          node-version: "22.x"
-          cache: "npm"
-      - run: npm ci
-      - run: npx prisma generate
+          install-deps: "true"
+          generate-prisma: "true"
       - run: npx tsc --noEmit
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-environment
+        with:
+          install-deps: "true"
+          generate-prisma: "true"
+      - run: npm test
 
   build:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [lint, typecheck]
+    needs: [lint, typecheck, test]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-environment
         with:
-          node-version: "22.x"
-          cache: "npm"
-      - run: npm ci
-      - run: npx prisma generate
+          install-deps: "true"
+          generate-prisma: "true"
       - run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"

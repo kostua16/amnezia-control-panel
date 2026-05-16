@@ -1,0 +1,86 @@
+name: Release Notes
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
+
+jobs:
+  generate-release-notes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get previous tag
+        id: prev-tag
+        run: |
+          PREV=$(git tag --sort=-creatordate | sed -n '2p')
+          echo "tag=${PREV:-$(git rev-list --max-parents=0 HEAD)}" >> "$GITHUB_OUTPUT"
+
+      - name: Get commit log
+        id: commits
+        env:
+          PREV_TAG: ${{ steps.prev-tag.outputs.tag }}
+          CURRENT_TAG: ${{ github.ref_name }}
+        run: |
+          echo "log<<EOF" >> "$GITHUB_OUTPUT"
+          git log "${PREV_TAG}..${CURRENT_TAG}" --pretty=format:"- %s (%h)" --no-merges | head -100 >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          track_progress: true
+          claude_args: |
+            --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
+            --max-turns 50
+            --allowedTools "Bash(cat *),Bash(git log *),Bash(git diff *)"
+          prompt: |
+            Generate release notes for ${{ github.ref_name }}.
+
+            Commits since ${{ steps.prev-tag.outputs.tag }}:
+            ${{ steps.commits.outputs.log }}
+
+            Format as GitHub Release markdown with these sections:
+            ## What's New (feat: commits)
+            ## Bug Fixes (fix: commits)
+            ## Other Changes (refactor, docs, chore)
+            ## Breaking Changes (commits with BREAKING CHANGE or !)
+
+            Omit empty sections. Write output to /tmp/release-notes.md
+
+            TURN BUDGET: Max 50 turns.
+          settings: |
+            {
+              "env": {
+                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
+                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}"
+              }
+            }
+
+      - name: Create GitHub Release (draft)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -f /tmp/release-notes.md ]; then
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file /tmp/release-notes.md \
+              --draft
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              --draft
+          fi

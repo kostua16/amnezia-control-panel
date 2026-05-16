@@ -1,0 +1,30 @@
+name: PR Size Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  size-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check PR size
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ADDITIONS: ${{ github.event.pull_request.additions }}
+          DELETIONS: ${{ github.event.pull_request.deletions }}
+          FILES: ${{ github.event.pull_request.changed_files }}
+        run: |
+          TOTAL=$((ADDITIONS + DELETIONS))
+
+          if [ "$TOTAL" -gt 500 ]; then
+            gh pr comment "$PR_NUMBER" --body "> **Large PR** ($TOTAL lines across $FILES files)
+          >
+          > Consider splitting into smaller, focused PRs for easier review."
+            gh pr edit "$PR_NUMBER" --add-label "large-pr" 2>/dev/null || true
+          fi

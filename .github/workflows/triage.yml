@@ -6,9 +6,9 @@ on:
 concurrency:
   group: maintenance-${{ github.event.issue.number || github.sha }}
   cancel-in-progress: true
-  
+
 env:
-  MAX_TURNS: 350
+  MAX_TURNS: 100
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
@@ -31,34 +31,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Cache GSD installation
-        id: gsd-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            .claude/skills/gsd-*
-            .claude/commands/gsd/*
-            .claude/get-shit-done/*
-            .claude/hooks/*
-          key: gsd-v3-${{ hashFiles('.claude/package.json') }}
-          restore-keys: |
-            gsd-v3-
-
-      - name: Install GSD
-        if: steps.gsd-cache.outputs.cache-hit != 'true'
-        run: npx get-shit-done-cc@latest --claude --local
+          install-gsd: "true"
 
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
           track_progress: true
           claude_args: |
-            --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+            --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(./.github/workflows/scripts/gh.sh:*),Bash(./.github/workflows/scripts/edit-issue-labels.sh:*)"
           prompt: |

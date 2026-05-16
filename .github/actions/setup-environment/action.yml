@@ -1,0 +1,48 @@
+name: "Setup Environment"
+description: "Setup Node.js, optionally install deps and GSD"
+
+inputs:
+  node-version:
+    description: "Node.js version"
+    default: "22.x"
+  install-deps:
+    description: "Run npm ci with cache"
+    default: "false"
+  generate-prisma:
+    description: "Run npx prisma generate"
+    default: "false"
+  install-gsd:
+    description: "Install GSD framework with cache"
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: ${{ inputs.install-deps == 'true' && 'npm' || '' }}
+
+    - if: inputs.install-deps == 'true'
+      run: npm ci
+      shell: bash
+
+    - if: inputs.generate-prisma == 'true'
+      run: npx prisma generate
+      shell: bash
+
+    - if: inputs.install-gsd == 'true'
+      id: gsd-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          .claude/skills/gsd-*
+          .claude/commands/gsd/*
+          .claude/get-shit-done/*
+          .claude/hooks/*
+        key: gsd-v3-${{ hashFiles('.claude/package.json') }}
+        restore-keys: gsd-v3-
+
+    - if: inputs.install-gsd == 'true' && steps.gsd-cache.outputs.cache-hit != 'true'
+      run: npx get-shit-done-cc@latest --claude --local
+      shell: bash

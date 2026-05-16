@@ -1,0 +1,103 @@
+name: Performance Check
+
+on:
+  pull_request:
+    paths: ['src/**', 'package.json', 'next.config.*']
+
+permissions:
+  pull-requests: write
+  contents: read
+
+concurrency:
+  group: perf-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  bundle-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          install-deps: "true"
+          generate-prisma: "true"
+
+      - name: Build and measure PR
+        id: pr-build
+        run: |
+          START=$(date +%s)
+          npm run build 2>&1 | tail -20 > /tmp/build-output.txt
+          END=$(date +%s)
+          DURATION=$((END - START))
+          SIZE=$(du -sb .next | cut -f1)
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+          echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Checkout main for baseline
+        run: |
+          git stash || true
+          git checkout origin/main
+
+      - name: Build and measure main
+        id: main-build
+        run: |
+          npm ci
+          npx prisma generate
+          START=$(date +%s)
+          npm run build 2>&1 | tail -20 > /tmp/main-build-output.txt
+          END=$(date +%s)
+          DURATION=$((END - START))
+          SIZE=$(du -sb .next | cut -f1)
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+          echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Compare and comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_SIZE: ${{ steps.pr-build.outputs.size }}
+          PR_DURATION: ${{ steps.pr-build.outputs.duration }}
+          MAIN_SIZE: ${{ steps.main-build.outputs.size }}
+          MAIN_DURATION: ${{ steps.main-build.outputs.duration }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$MAIN_SIZE" -eq 0 ]; then MAIN_SIZE=1; fi
+
+          SIZE_DIFF=$(( (PR_SIZE - MAIN_SIZE) * 100 / MAIN_SIZE ))
+          TIME_DIFF=$(( (PR_DURATION - MAIN_DURATION) * 100 / (MAIN_DURATION + 1) ))
+
+          PR_SIZE_MB=$(echo "scale=2; $PR_SIZE / 1048576" | bc)
+          MAIN_SIZE_MB=$(echo "scale=2; $MAIN_SIZE / 1048576" | bc)
+
+          if [ "$SIZE_DIFF" -gt 5 ] || [ "$TIME_DIFF" -gt 20 ]; then
+            ICON="warning"
+          else
+            ICON="white_check_mark"
+          fi
+
+          BODY="## :${ICON}: Build Performance
+
+          | Metric | main | PR | Delta |
+          |--------|------|-----|-------|
+          | Bundle size | ${MAIN_SIZE_MB}MB | ${PR_SIZE_MB}MB | ${SIZE_DIFF}% |
+          | Build time | ${MAIN_DURATION}s | ${PR_DURATION}s | ${TIME_DIFF}% |"
+
+          if [ "$SIZE_DIFF" -gt 5 ]; then
+            BODY="$BODY
+
+          > **Warning:** Bundle size increased by ${SIZE_DIFF}%. Please review."
+          fi
+          if [ "$TIME_DIFF" -gt 20 ]; then
+            BODY="$BODY
+
+          > **Warning:** Build time increased by ${TIME_DIFF}%. Consider investigating."
+          fi
+
+          gh pr comment "$PR_NUMBER" --body "$BODY"

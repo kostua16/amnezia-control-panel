@@ -1,6 +1,6 @@
 name: Auto Fix CI Failures
 
-# ⚠️ SECURITY NOTE
+# SECURITY NOTE
 #
 # This workflow checks out the PR branch and runs build/test commands
 # (npm, bun, etc.) against it with elevated permissions (contents:write,
@@ -27,7 +27,7 @@ permissions:
   pull-requests: write
   actions: read
   issues: write
-  id-token: write # Required for OIDC token exchange
+  id-token: write
 
 env:
   MAX_TURNS: 350
@@ -118,32 +118,12 @@ jobs:
               failedJobs: failedJobs.map(j => j.name),
               errorLogs: errorLogs
             };
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+
+      - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Cache GSD installation
-        id: gsd-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            .claude/skills/gsd-*
-            .claude/commands/gsd/*
-            .claude/get-shit-done/*
-            .claude/hooks/*
-          key: gsd-v3-${{ hashFiles('.claude/package.json') }}
-          restore-keys: |
-            gsd-v3-
-      
-      - name: Install GSD
-        if: steps.gsd-cache.outputs.cache-hit != 'true'
-        run: npx get-shit-done-cc@latest --claude --local
+          install-deps: "true"
+          install-gsd: "true"
 
       - name: Fix CI failures with Claude
         id: claude
@@ -154,7 +134,7 @@ jobs:
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}
-            --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*)'"
+            --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*)'
           prompt: |
             /gsd-debug
             Failed CI Run: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
@@ -169,6 +149,53 @@ jobs:
 
             Investigate root cause, then apply fix.
             After fixing, run: npm run lint && npx tsc --noEmit && npm run build
-            Commit and push the fix to the branch.
+            Do NOT commit or push — the workflow handles that.
 
             TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet HEAD; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push fix
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
+        run: |
+          git add -A
+          git commit -m "fix(ci): auto-fix CI failures" || true
+          git push origin "$BRANCH_NAME"
+
+      - name: Create fix PR
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
+          BASE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          RUN_URL: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
+        run: |
+          gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$BRANCH_NAME" \
+            --title "fix(ci): auto-fix failures from #${PR_NUMBER}" \
+            --body "Automated fix for failed CI run: ${RUN_URL}
+
+          **Review required before merge.** This PR was created by the CI auto-fix workflow.
+
+          Related PR: #${PR_NUMBER}" \
+            --label "auto-fix" --label "needs-review" 2>/dev/null || \
+          gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$BRANCH_NAME" \
+            --title "fix(ci): auto-fix failures from #${PR_NUMBER}" \
+            --body "Automated fix for failed CI run: ${RUN_URL}
+
+          **Review required before merge.** This PR was created by the CI auto-fix workflow.
+
+          Related PR: #${PR_NUMBER}"
