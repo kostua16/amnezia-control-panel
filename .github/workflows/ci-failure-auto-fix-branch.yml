@@ -13,7 +13,7 @@ name: Auto Fix CI Failures (Direct Push)
 # that accept contributions from untrusted or semi-trusted collaborators.
 #
 # This workflow handles direct pushes to main/develop with no associated PR.
-# For CI failures on PRs, see ci-failure-auto-fix.yml (sibling workflow).
+# For CI failures on PRs, see ci-failure-auto-fix-pr.yml (sibling workflow).
 #
 # The head_branch allow-list (main, develop) further limits exposure:
 # only failures on those protected branches trigger the auto-fix attempt.
