@@ -165,6 +165,30 @@ jobs:
           git commit -m "fix(ci): auto-fix CI failures" || true
           git push origin "$BRANCH_NAME"
 
+      - name: Find related failure issues
+        id: failure_issues
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        with:
+          script: |
+            const branch = process.env.BRANCH;
+            const q = [
+              `repo:${context.repo.owner}/${context.repo.repo}`,
+              'is:issue', 'is:open',
+              'label:auto-fix', 'label:ci-failure',
+              `"${branch}" in:title`
+            ].join(' ');
+            try {
+              const result = await github.rest.search.issuesAndPullRequests({ q, per_page: 10 });
+              const nums = result.data.items.map(i => String(i.number)).join(',');
+              core.setOutput('issue_numbers', nums);
+            } catch (e) {
+              core.warning(`Issue search failed: ${e.message}`);
+              core.setOutput('issue_numbers', '');
+            }
+
       - name: Create fix PR
         if: steps.changes.outputs.has_changes == 'true'
         env:
@@ -172,19 +196,122 @@ jobs:
           BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
           BASE_BRANCH: ${{ github.event.workflow_run.head_branch }}
           RUN_URL: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
+          ISSUE_NUMBERS: ${{ steps.failure_issues.outputs.issue_numbers }}
         run: |
+          CLOSES_TEXT=""
+          if [ -n "$ISSUE_NUMBERS" ]; then
+            CLOSES_TEXT=$(printf '\n\n%s' "$(echo "$ISSUE_NUMBERS" | tr ',' '\n' | grep -v '^$' | sed 's/^/Closes #/')")
+          fi
+          BODY=$(printf 'Automated fix for failed CI run on `%s`: %s\n\n**Review required before merge.** This PR was created by the CI auto-fix workflow (direct push path).%s' \
+            "$BASE_BRANCH" "$RUN_URL" "$CLOSES_TEXT")
           gh pr create \
             --base "$BASE_BRANCH" \
             --head "$BRANCH_NAME" \
             --title "fix(ci): auto-fix failures on ${BASE_BRANCH}" \
-            --body "Automated fix for failed CI run on \`${BASE_BRANCH}\`: ${RUN_URL}
-
-          **Review required before merge.** This PR was created by the CI auto-fix workflow (direct push path)." \
+            --body "$BODY" \
             --label "auto-fix" --label "needs-review" 2>/dev/null || \
           gh pr create \
             --base "$BASE_BRANCH" \
             --head "$BRANCH_NAME" \
             --title "fix(ci): auto-fix failures on ${BASE_BRANCH}" \
-            --body "Automated fix for failed CI run on \`${BASE_BRANCH}\`: ${RUN_URL}
+            --body "$BODY"
 
-          **Review required before merge.** This PR was created by the CI auto-fix workflow (direct push path)."
+  report-failure:
+    needs: [auto-fix-branch]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect auto-fix failure details
+        id: collect
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId
+            });
+            const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure');
+            const failedSteps = [];
+            const logSnippets = [];
+            for (const job of failedJobs) {
+              const steps = (job.steps || []).filter(s => s.conclusion === 'failure');
+              for (const step of steps) {
+                failedSteps.push(`${job.name} / ${step.name}`);
+              }
+              try {
+                const logsResp = await github.rest.actions.downloadJobLogsForWorkflowRun({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  job_id: job.id
+                });
+                const raw = typeof logsResp.data === 'string' ? logsResp.data : String(logsResp.data);
+                logSnippets.push({ name: job.name, log: raw.slice(-3000) });
+              } catch (e) {
+                logSnippets.push({ name: job.name, log: `(log unavailable: ${e.message})` });
+              }
+            }
+            core.setOutput('failed_steps', JSON.stringify(failedSteps));
+            core.setOutput('log_snippets', JSON.stringify(logSnippets));
+
+      - name: Create failure issue
+        uses: actions/github-script@v7
+        env:
+          AUTO_FIX_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          FAILED_STEPS: ${{ steps.collect.outputs.failed_steps }}
+          LOG_SNIPPETS: ${{ steps.collect.outputs.log_snippets }}
+        with:
+          script: |
+            const branch = process.env.BRANCH;
+            const autoFixRunUrl = process.env.AUTO_FIX_RUN_URL;
+            const ciRunUrl = process.env.CI_RUN_URL;
+            const failedSteps = JSON.parse(process.env.FAILED_STEPS || '[]');
+            const logSnippets = JSON.parse(process.env.LOG_SNIPPETS || '[]');
+
+            const title = `[auto-fix] Failed on ${branch}`;
+
+            const stepsSection = failedSteps.length > 0
+              ? `## Failed Steps\n${failedSteps.map(s => `- ${s}`).join('\n')}`
+              : '## Failed Steps\n_No failed step details available_';
+
+            const logsSection = logSnippets.length > 0
+              ? logSnippets.map(({ name, log }) => `### ${name}\n\`\`\`\n${log}\n\`\`\``).join('\n\n')
+              : '_No logs available_';
+
+            const body = [
+              '## Auto-fix Workflow Failure',
+              '',
+              'The auto-fix workflow itself failed and could not create a fix PR.',
+              '',
+              '| | |',
+              '|---|---|',
+              `| **Auto-fix run** | ${autoFixRunUrl} |`,
+              `| **Triggering CI run** | ${ciRunUrl} |`,
+              `| **Branch** | \`${branch}\` |`,
+              '',
+              stepsSection,
+              '',
+              '## Log Tails',
+              '',
+              logsSection,
+            ].join('\n');
+
+            for (const [name, color] of [['auto-fix', 'e4e669'], ['ci-failure', 'd73a4a']]) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch (e) {
+                if (e.status === 404) {
+                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color });
+                }
+              }
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['auto-fix', 'ci-failure']
+            });
