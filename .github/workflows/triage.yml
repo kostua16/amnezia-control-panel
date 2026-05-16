@@ -39,6 +39,7 @@ jobs:
             --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(./.github/workflows/scripts/gh.sh:*),Bash(./.github/workflows/scripts/edit-issue-labels.sh:*)"
           prompt: |
+            /gsd-debug 
             REPO: '${{ github.repository }}'
             ISSUE NUMBER: '${{ github.event.issue.number }}'
             TITLE: '${{ github.event.issue.title }}'
