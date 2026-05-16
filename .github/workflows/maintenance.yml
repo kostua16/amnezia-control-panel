@@ -1,7 +1,7 @@
-name: Weekly Maintenance
+name: Daily Maintenance
 on:
   schedule:
-    - cron: "0 0 * * 0" # Every Sunday at midnight
+    - cron: "0 6,18 * * *" # Twice daily at 06:00 and 18:00 UTC
   workflow_dispatch: # Manual trigger option
 
 concurrency:
@@ -46,21 +46,26 @@ jobs:
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(npm:*),Bash(gh issue:*),Bash(git:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(npm *),Bash(gh issue:*),Bash(git *)"
           prompt: |
             /gsd-health && /gsd-stats
             REPO: ${{ github.repository }}
 
-            Perform weekly repository maintenance:
+            Perform daily repository maintenance:
 
             1. Run /gsd-health to diagnose planning directory status
-            2. Run /ck:security-scan for dependency vulnerability scan
+            2. Run /ck:security-scan for dependency vulnerabilities (npm audit)
             3. Run /gsd-progress to summarize phase completion status
-            4. Review open issues older than 90 days with /gsd-inbox
-            5. Check for TODO comments in recent commits (git log --grep TODO)
+            4. Check for TODO/FIXME comments in recent commits (last 12h): `git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`
+            5. Review open issues older than 90 days with /gsd-inbox
 
-            Create a single issue summarizing all findings.
-            If critical security issues are found, also comment on open PRs.
+            For EACH category where findings exist, create a NEW GitHub issue:
+            - Security findings: `gh issue create --title "Security: [summary of vulnerabilities]" --label "security" --body "[detailed findings]"`
+            - Stale issues (older than 90 days): `gh issue create --title "Maintenance: stale issues review" --label "maintenance" --body "[list of stale issues]"`
+            - TODO/FIXME findings: `gh issue create --title "Maintenance: unresolved TODOs" --label "maintenance" --body "[list of TODOs with commit references]"`
+
+            Do NOT create issues if no findings exist in that category.
+            If critical security issues (HIGH/CRITICAL severity) are found, also comment on all open PRs.
 
             TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
           settings: |

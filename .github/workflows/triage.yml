@@ -43,7 +43,7 @@ jobs:
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(./.github/workflows/scripts/gh.sh:*),Bash(./.github/workflows/scripts/edit-issue-labels.sh:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(./.github/workflows/scripts/gh.sh:*),Bash(./.github/workflows/scripts/edit-issue-labels.sh:*),Bash(gh issue close:*)"
           prompt: |
             /gsd-inbox
             REPO: '${{ github.repository }}'
@@ -67,7 +67,10 @@ jobs:
             `./.github/workflows/scripts/edit-issue-labels.sh --add-label "label1" --add-label "label2"`
             (the issue number is read automatically from the workflow event)
 
-            If duplicate, post a comment referencing the original issue.
+            If duplicate:
+            1. Post a comment: "Duplicate of #[original issue number]. Closing."
+            2. Add label "duplicate": `./.github/workflows/scripts/edit-issue-labels.sh --add-label "duplicate"`
+            3. Close the issue: `gh issue close ${{ github.event.issue.number }} --reason "not planned" --comment "Closing as duplicate of #[original issue number]"`
 
             TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
           settings: |
