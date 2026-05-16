@@ -1,7 +1,7 @@
 name: Issue Triage
 on:
   issues:
-    types: [opened, reopened]
+    types: [opened]
 
 concurrency:
   group: maintenance-${{ github.event.issue.number || github.sha }}
