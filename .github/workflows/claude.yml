@@ -88,7 +88,7 @@ jobs:
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
-            --system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files. Use GSD workflow for implementation tasks. TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result."
+            --system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files. TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result. Route tasks to the right GSD command: /gsd-quick for small fixes and ad-hoc tasks, /gsd-debug for bug investigation, /gsd-ship for PR shipping pipeline, /gsd-capture for capturing ideas and notes, /gsd-progress to check project status."
           settings: |
             {
               "env": {

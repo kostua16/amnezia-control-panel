@@ -156,7 +156,7 @@ jobs:
             --max-turns ${{ env.MAX_TURNS }}
             --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*)'"
           prompt: |
-            /fix-ci 
+            /gsd-debug
             Failed CI Run: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
             Failed Jobs: ${{ join(fromJSON(steps.failure_details.outputs.result).failedJobs, ', ') }}
             PR Number: ${{ steps.pr.outputs.number }}
@@ -166,5 +166,9 @@ jobs:
 
             Error logs:
             ${{ toJSON(fromJSON(steps.failure_details.outputs.result).errorLogs) }}
+
+            Investigate root cause, then apply fix.
+            After fixing, run: npm run lint && npx tsc --noEmit && npm run build
+            Commit and push the fix to the branch.
 
             TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.

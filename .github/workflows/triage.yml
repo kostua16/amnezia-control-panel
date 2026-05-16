@@ -39,30 +39,29 @@ jobs:
             --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(./.github/workflows/scripts/gh.sh:*),Bash(./.github/workflows/scripts/edit-issue-labels.sh:*)"
           prompt: |
-            /gsd-debug 
+            /gsd-inbox
             REPO: '${{ github.repository }}'
             ISSUE NUMBER: '${{ github.event.issue.number }}'
             TITLE: '${{ github.event.issue.title }}'
             BODY: '${{ github.event.issue.body }}'
             AUTHOR: '${{ github.event.issue.user.login }}'
 
-            Analyze this new issue and:
-            1. Determine if it's a bug report, feature request, or question
+            Triage this new issue:
+            1. Classify as bug report, feature request, or question
             2. Assess priority (critical, high, medium, low)
-            3. Suggest appropriate labels
-            4. Check if it duplicates existing issues
+            3. Assign appropriate labels
+            4. Check for duplicates against existing issues
 
             Use ./.github/workflows/scripts/gh.sh to interact with GitHub:
             - `./.github/workflows/scripts/gh.sh issue view [number]` to view the issue
             - `./.github/workflows/scripts/gh.sh search issues "query"` to find similar issues
             - `./.github/workflows/scripts/gh.sh label list` to see available labels
 
-            Based on your analysis, add the appropriate labels using:
+            Add labels using:
             `./.github/workflows/scripts/edit-issue-labels.sh --add-label "label1" --add-label "label2"`
             (the issue number is read automatically from the workflow event)
 
-            If it appears to be a duplicate, post a comment mentioning the original issue.
-            Use GSD workflow for audit and review and investigation tasks.
+            If duplicate, post a comment referencing the original issue.
 
             TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
           settings: |

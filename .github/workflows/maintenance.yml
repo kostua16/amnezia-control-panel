@@ -43,19 +43,19 @@ jobs:
             --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(npm:*),Bash(gh issue:*),Bash(git:*)"
           prompt: |
+            /gsd-health && /gsd-stats
             REPO: ${{ github.repository }}
 
             Perform weekly repository maintenance:
 
-            1. Check for outdated dependencies in package.json
-            2. Scan for security vulnerabilities using `npm audit`
-            3. Review open issues older than 90 days
-            4. Check for TODO comments in recent commits
-            5. Verify README.md examples still work
+            1. Run /gsd-health to diagnose planning directory status
+            2. Run /ck:security-scan for dependency vulnerability scan
+            3. Run /gsd-progress to summarize phase completion status
+            4. Review open issues older than 90 days with /gsd-inbox
+            5. Check for TODO comments in recent commits (git log --grep TODO)
 
-            Create a single issue summarizing any findings.
+            Create a single issue summarizing all findings.
             If critical security issues are found, also comment on open PRs.
-            Use GSD workflow for audit and review and investigation tasks.
 
             TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
           settings: |
