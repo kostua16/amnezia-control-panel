@@ -1,10 +1,10 @@
-name: Auto Fix CI Failures
+name: Auto Fix CI Failures (Direct Push)
 
 # SECURITY NOTE
 #
-# This workflow checks out the PR branch and runs build/test commands
+# This workflow checks out a branch and runs build/test commands
 # (npm, bun, etc.) against it with elevated permissions (contents:write,
-# id-token:write). This means code from the PR branch executes in a
+# id-token:write). This means code from the branch executes in a
 # trusted context with access to secrets and the ability to push to the
 # repository.
 #
@@ -12,14 +12,11 @@ name: Auto Fix CI Failures
 # is fully trusted with these permissions. Do not use this in repositories
 # that accept contributions from untrusted or semi-trusted collaborators.
 #
-# The pull_requests length check below limits this to same-repo PRs (fork PRs
-# are excluded), but anyone who can push a branch to this repository can
-# control what code runs here.
+# This workflow handles direct pushes to main/develop with no associated PR.
+# For CI failures on PRs, see ci-failure-auto-fix.yml (sibling workflow).
 #
-# For CI failures on direct pushes to main/develop (no associated PR),
-# see ci-failure-auto-fix-branch.yml (sibling workflow). The two workflows
-# are mutually exclusive: this one fires when pull_requests != '[]', the
-# sibling fires when pull_requests == '[]'.
+# The head_branch allow-list (main, develop) further limits exposure:
+# only failures on those protected branches trigger the auto-fix attempt.
 
 on:
   workflow_run:
@@ -47,10 +44,11 @@ env:
   ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 
 jobs:
-  auto-fix:
+  auto-fix-branch:
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
-      toJSON(github.event.workflow_run.pull_requests) != '[]' &&
+      toJSON(github.event.workflow_run.pull_requests) == '[]' &&
+      (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'develop') &&
       !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-')
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -66,14 +64,6 @@ jobs:
         run: |
           git config --global user.email "claude[bot]@users.noreply.github.com"
           git config --global user.name "claude[bot]"
-
-      - name: Resolve linked PR
-        id: pr
-        env:
-          PULL_REQUESTS_JSON: ${{ toJSON(github.event.workflow_run.pull_requests) }}
-        run: |
-          pr_number=$(jq -r '.[0].number // empty' <<<"$PULL_REQUESTS_JSON")
-          echo "number=$pr_number" >> "$GITHUB_OUTPUT"
 
       - name: Create fix branch
         id: branch
@@ -144,7 +134,6 @@ jobs:
             /gsd-debug
             Failed CI Run: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
             Failed Jobs: ${{ join(fromJSON(steps.failure_details.outputs.result).failedJobs, ', ') }}
-            PR Number: ${{ steps.pr.outputs.number }}
             Branch Name: ${{ steps.branch.outputs.branch_name }}
             Base Branch: ${{ github.event.workflow_run.head_branch }}
             Repository: ${{ github.repository }}
@@ -182,25 +171,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
           BASE_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
           RUN_URL: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
         run: |
           gh pr create \
             --base "$BASE_BRANCH" \
             --head "$BRANCH_NAME" \
-            --title "fix(ci): auto-fix failures from #${PR_NUMBER}" \
-            --body "Automated fix for failed CI run: ${RUN_URL}
+            --title "fix(ci): auto-fix failures on ${BASE_BRANCH}" \
+            --body "Automated fix for failed CI run on \`${BASE_BRANCH}\`: ${RUN_URL}
 
-          **Review required before merge.** This PR was created by the CI auto-fix workflow.
-
-          Related PR: #${PR_NUMBER}" \
+          **Review required before merge.** This PR was created by the CI auto-fix workflow (direct push path)." \
             --label "auto-fix" --label "needs-review" 2>/dev/null || \
           gh pr create \
             --base "$BASE_BRANCH" \
             --head "$BRANCH_NAME" \
-            --title "fix(ci): auto-fix failures from #${PR_NUMBER}" \
-            --body "Automated fix for failed CI run: ${RUN_URL}
+            --title "fix(ci): auto-fix failures on ${BASE_BRANCH}" \
+            --body "Automated fix for failed CI run on \`${BASE_BRANCH}\`: ${RUN_URL}
 
-          **Review required before merge.** This PR was created by the CI auto-fix workflow.
-
-          Related PR: #${PR_NUMBER}"
+          **Review required before merge.** This PR was created by the CI auto-fix workflow (direct push path)."
