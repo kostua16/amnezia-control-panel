@@ -9,6 +9,7 @@ permissions:
   id-token: write
 
 env:
+  MAX_TURNS: 300
   ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 
 jobs:
@@ -43,7 +44,7 @@ jobs:
           track_progress: true
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
-            --max-turns 50
+            --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "Bash(cat *),Bash(git log *),Bash(git diff *)"
           prompt: |
             Generate release notes for ${{ github.ref_name }}.

@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 350
+  MAX_TURNS: 300
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"

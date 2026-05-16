@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  MAX_TURNS: 300
   ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 
 jobs:
@@ -44,7 +45,7 @@ jobs:
           track_progress: true
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
-            --max-turns 100
+            --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(gh pr comment:*)"
           prompt: |
             Review this Dependabot dependency update PR for:
