@@ -8,7 +8,7 @@ concurrency:
   cancel-in-progress: true
   
 env:
-  MAX_TURNS: 105
+  MAX_TURNS: 350
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
@@ -62,6 +62,8 @@ jobs:
 
             If it appears to be a duplicate, post a comment mentioning the original issue.
             Use GSD workflow for audit and review and investigation tasks.
+
+            TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
           settings: |
             {
               "env": {

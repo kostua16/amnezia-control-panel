@@ -20,6 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  MAX_TURNS: 350
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
@@ -75,7 +76,7 @@ jobs:
           track_progress: true
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
-            --max-turns 70
+            --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
           prompt: |
             REPO: ${{ github.repository }}
@@ -95,6 +96,8 @@ jobs:
             - License header requirements
             Post your findings as review comments.
             Use GSD workflow for audit and review tasks.
+
+            TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
           settings: |
             {
               "env": {
@@ -145,7 +148,7 @@ jobs:
           track_progress: true
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
-            --max-turns 55
+            --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(npm *),Bash(gh pr comment:*),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
           prompt: |
             REPO: ${{ github.repository }}
@@ -177,6 +180,8 @@ jobs:
             Rate severity as: CRITICAL, HIGH, MEDIUM, LOW, or NONE.
             Post detailed findings with recommendations.
             Use GSD workflow for analysis,audit and review tasks.
+
+            TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
           settings: |
             {
               "env": {

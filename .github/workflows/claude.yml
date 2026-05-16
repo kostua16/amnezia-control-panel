@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
   
 env:
-  MAX_TURNS: 100
+  MAX_TURNS: 350
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
@@ -88,7 +88,7 @@ jobs:
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
-            --system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files. Use GSD workflow for implementation tasks."
+            --system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files. Use GSD workflow for implementation tasks. TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result."
           settings: |
             {
               "env": {
