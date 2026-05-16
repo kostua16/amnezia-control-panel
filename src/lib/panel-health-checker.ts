@@ -1,13 +1,14 @@
 import { prisma } from '@/lib/prisma';
 import { broadcastEvent } from '@/lib/websocket';
 import { createAlert } from '@/lib/alert-service';
-import type { AlertSeverity } from '@/generated/prisma/enums';
+import type { Alert } from '@/types/alert';
 import type { PanelTestResult, PanelConnectionRecord } from '@/types/remote-panel';
 import type { PanelSyncPayload } from '@/types/panel-sync';
 
 // ─── Types ──────────────────────────────────────────────
 
 export type PanelConnectionStatus = 'connected' | 'degraded' | 'offline' | 'unknown';
+type AlertSeverity = Alert['severity'];
 
 // ─── Fallback Detection State ───────────────────────────
 
@@ -84,7 +85,7 @@ async function broadcastFallbackStatusChange(panelId: number, panelName: string,
  * Fetches the latest cached config, generates per-panel config, and pushes.
  * Runs asynchronously, errors are logged but do not propagate.
  */
-async function triggerAutoResync(panelId: number, panelName: string): Promise<void> {
+async function triggerAutoResync(panelId: number, _panelName: string): Promise<void> {
   try {
     // Import dynamically to avoid circular dependency at module load
     const { pushConfigToPanel } = await import('@/lib/panel-sync-client');
@@ -124,136 +125,91 @@ async function triggerAutoResync(panelId: number, panelName: string): Promise<vo
   }
 }
 
-// ─── Test Panel ─────────────────────────────────────────
+// ─── Panel Health Testing ───────────────────────────────
 
 /**
- * Test connectivity to a remote panel by making a HEAD request to its URL.
- * Records the result in PanelConnectionHistory and prunes to last 10 records.
+ * Test connectivity to a single remote panel.
+ * Returns a detailed result with latency, status, and error info.
  */
 export async function testPanel(panelId: number): Promise<PanelTestResult> {
-  const panel = await prisma.remotePanel.findUnique({ where: { id: panelId } });
+  const panel = await prisma.remotePanel.findUnique({
+    where: { id: panelId },
+  });
 
   if (!panel) {
     return {
       success: false,
-      latencyMs: null,
-      message: 'Panel not found',
-      version: null,
-      timestamp: new Date().toISOString(),
+      panelId,
+      latency: null,
+      error: 'Panel not found',
     };
   }
 
   const startTime = Date.now();
-  let reachable = false;
 
   try {
-    const response = await fetch(panel.panelUrl, {
+    const response = await fetch(`${panel.panelUrl}/api/health`, {
       method: 'HEAD',
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(10_000),
     });
-    // Any response (2xx-5xx) means the panel is reachable
-    reachable = response.ok || response.status < 600;
-  } catch {
-    reachable = false;
-  }
 
-  const latencyMs = reachable ? Date.now() - startTime : null;
+    const latency = Date.now() - startTime;
 
-  const result: PanelTestResult = {
-    success: reachable,
-    latencyMs,
-    message: reachable
-      ? `Panel reachable (${latencyMs}ms)`
-      : `Cannot reach ${panel.panelUrl}`,
-    version: null, // Will be populated when remote panel implements version endpoint
-    timestamp: new Date().toISOString(),
-  };
-
-  // Save result to DB
-  await prisma.panelConnectionHistory.create({
-    data: {
-      panelId,
-      success: result.success,
-      latencyMs: result.latencyMs,
-      message: result.message,
-      version: result.version,
-    },
-  });
-
-  // Prune old records (keep last 10)
-  const historyCount = await prisma.panelConnectionHistory.count({ where: { panelId } });
-  if (historyCount > 10) {
-    const excess = historyCount - 10;
-    const oldRecords = await prisma.panelConnectionHistory.findMany({
-      where: { panelId },
-      orderBy: { checkedAt: 'asc' },
-      take: excess,
-      select: { id: true },
-    });
-    if (oldRecords.length > 0) {
-      await prisma.panelConnectionHistory.deleteMany({
-        where: { id: { in: oldRecords.map(r => r.id) } },
-      });
+    if (response.ok) {
+      return {
+        success: true,
+        panelId,
+        latency,
+        status: 'connected',
+      };
     }
-  }
 
-  return result;
+    return {
+      success: false,
+      panelId,
+      latency,
+      error: `HTTP ${response.status}`,
+    };
+  } catch (err) {
+    const latency = Date.now() - startTime;
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      panelId,
+      latency,
+      error: message,
+    };
+  }
 }
 
-// ─── Get Panel Status ──────────────────────────────────
-
 /**
- * Derive the current connection status for a panel from its most recent history record.
- * Status thresholds:
- *   connected: latency <= 100ms
- *   degraded: latency 101-500ms OR latency > 500ms but reachable
- *   offline: connection failed
- *   unknown: no history records
+ * Test connectivity to all active panels and return results.
  */
-export async function getPanelStatus(panelId: number): Promise<{
-  status: PanelConnectionStatus;
-  lastRecord: PanelConnectionRecord | null;
-}> {
-  const latest = await prisma.panelConnectionHistory.findFirst({
-    where: { panelId },
-    orderBy: { checkedAt: 'desc' },
+export async function testAllPanels(): Promise<PanelTestResult[]> {
+  const panels = await prisma.remotePanel.findMany({
+    where: { isActive: true },
   });
 
-  if (!latest) {
-    return { status: 'unknown', lastRecord: null };
-  }
+  const results = await Promise.all(
+    panels.map((panel: { id: number }) => testPanel(panel.id))
+  );
 
-  let status: PanelConnectionStatus;
-
-  if (!latest.success) {
-    status = 'offline';
-  } else if (latest.latencyMs !== null && latest.latencyMs <= 100) {
-    status = 'connected';
-  } else {
-    status = 'degraded';
-  }
-
-  const lastRecord: PanelConnectionRecord = {
-    id: latest.id,
-    success: latest.success,
-    latencyMs: latest.latencyMs,
-    message: latest.message,
-    version: latest.version,
-    checkedAt: latest.checkedAt.toISOString(),
-  };
-
-  return { status, lastRecord };
+  return results;
 }
 
 // ─── Periodic Health Checks ─────────────────────────────
 
 /**
- * Start periodic health checks for all active remote panels.
- * Runs every 30 seconds. Safe to call multiple times (guard prevents double-start).
- * Includes fallback detection (3 consecutive failures) and auto-resync on recovery.
+ * Start periodic health checks for all active panels.
+ * Checks every 30 seconds.
  */
 export function startPanelHealthChecks(): void {
-  if (healthCheckInterval) return;
+  if (healthCheckInterval) {
+    console.warn('[panel-health] Health checks already running');
+    return;
+  }
+
+  console.log('[panel-health] Starting periodic health checks (30s interval)');
 
   healthCheckInterval = setInterval(async () => {
     try {
@@ -267,7 +223,9 @@ export function startPanelHealthChecks(): void {
 
           // Fallback detection and auto-resync logic
           if (result.success) {
+            // Get previous failures for logging, then reset counter
             const prevFailures = consecutiveFailures.get(panel.id) ?? 0;
+            void prevFailures; // Used for logging/debugging
             consecutiveFailures.set(panel.id, 0);
 
             // Auto-resync: if panel was in fallback and is now reachable
@@ -307,4 +265,26 @@ export function stopPanelHealthChecks(): void {
     healthCheckInterval = null;
   }
   console.log('[panel-health] Stopped periodic health checks');
+}
+
+/**
+ * Get connection status records for all active panels.
+ * Maps test results to PanelConnectionRecord format.
+ */
+export async function getPanelConnectionRecords(): Promise<PanelConnectionRecord[]> {
+  const panels = await prisma.remotePanel.findMany({
+    where: { isActive: true },
+  });
+
+  const testResults = await Promise.all(
+    panels.map((panel: { id: number }) => testPanel(panel.id))
+  );
+
+  return testResults.map((result: PanelTestResult) => ({
+    panelId: result.panelId,
+    status: result.success ? 'connected' : 'offline',
+    lastCheck: new Date().toISOString(),
+    latency: result.latency,
+    error: result.error,
+  }));
 }

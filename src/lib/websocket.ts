@@ -1,78 +1,58 @@
 import { Server as SocketIOServer } from 'socket.io';
 
-/**
- * Get the Socket.IO server instance.
- *
- * The Socket.IO server is created in `server.mjs` and attached to the HTTP
- * server at startup. It is stored on `globalThis.__socketIO` so that
- * server-side modules (broadcaster, alert service, etc.) can access it
- * without needing a direct reference to the HTTP server.
- *
- * Returns null if the server has not been initialized (e.g. during build or
- * when running without the custom server).
- */
-export function getWebSocket(): SocketIOServer | null {
-  return globalThis.__socketIO ?? null;
+declare global {
+  var __socketIO: SocketIOServer | undefined;
 }
 
-export type WsEventType =
-  | 'stats:update'
-  | 'resource:update'
-  | 'alert:new'
-  | 'user:status-change'
-  | 'panel:fallback-change'
-  | 'panel:push-progress'
-  | 'chain:status-update';
+export {};
+
+let ioInstance: SocketIOServer | null = null;
+
+/**
+ * Get the Socket.IO server instance.
+ * Throws if called before the server is initialized.
+ */
+export function getWebSocket(): SocketIOServer {
+  if (!ioInstance) {
+    throw new Error(
+      '[ws] Socket.IO not initialized. Ensure the application is started via scripts/dev.cjs or scripts/start.cjs.',
+    );
+  }
+  return ioInstance;
+}
+
+/**
+ * Initialize the Socket.IO server.
+ * This is called from server.mjs during startup.
+ *
+ * @param httpServer - The HTTP server to attach Socket.IO to (unused, kept for backward compatibility)
+ * @param io - The Socket.IO server instance
+ */
+export function initWebSocketServer(
+  _httpServer: unknown,
+  io: SocketIOServer,
+): void {
+  if (ioInstance) {
+    console.warn('[ws] Socket.IO already initialized, skipping');
+    return;
+  }
+
+  ioInstance = io;
+  console.log('[ws] Socket.IO server initialized');
+}
 
 /**
  * Broadcast an event to all connected clients.
  */
-export function broadcastEvent<T>(event: WsEventType, data: T): void {
+export function broadcastEvent(event: string, data: unknown): void {
   const io = getWebSocket();
-  if (!io) {
-    console.warn(`[ws] Cannot broadcast "${event}": WebSocket not initialized`);
-    return;
-  }
   io.emit(event, data);
 }
 
 /**
- * Broadcast dashboard stats update.
+ * Keep initWebSocket as a no-op for backward compatibility.
+ * The Socket.IO server is now created in server.mjs.
  */
-export function broadcastStatsUpdate(stats: unknown): void {
-  broadcastEvent('stats:update', stats);
-}
-
-/**
- * Broadcast system resource update.
- */
-export function broadcastResourceUpdate(resources: unknown): void {
-  broadcastEvent('resource:update', resources);
-}
-
-/**
- * Broadcast a new alert.
- */
-export function broadcastAlert(alert: unknown): void {
-  broadcastEvent('alert:new', alert);
-}
-
-/**
- * Broadcast user status change.
- */
-export function broadcastUserStatusChange(payload: unknown): void {
-  broadcastEvent('user:status-change', payload);
-}
-
-/**
- * Broadcast chain status update.
- */
-export function broadcastChainStatusUpdate(payload: unknown): void {
-  broadcastEvent('chain:status-update', payload);
-}
-
-// Keep initWebSocket as a no-op for backward compatibility.
-// The Socket.IO server is now created in server.mjs.
 export function initWebSocket(_httpServer: import('http').Server): SocketIOServer {
   const existing = getWebSocket();
   if (existing) return existing;

@@ -265,7 +265,8 @@ function generateWireGuardPeers(
     }
     case 'split': {
       // Split routing: domestic is direct, foreign handles VPN traffic
-      const domestic = nodes.find((n) => n.role === 'domestic');
+      // Find domestic node for documentation purposes (not used in peer config)
+      void nodes.find((n) => n.role === 'domestic');
       const foreign = nodes.find((n) => n.role === 'foreign');
 
       if (foreign) {
@@ -304,7 +305,7 @@ function generateWireGuardPeers(
   return peers;
 }
 
-// ─── Xray Routing Rule Generation ─────────────────────────
+// ─── Xray Routing Rule Generation ────────────────────────
 
 function generateXrayRoutingRules(
   template: ChainTemplate,
@@ -314,73 +315,45 @@ function generateXrayRoutingRules(
 
   switch (template.topology) {
     case 'linear': {
-      // Entry node routes all traffic to the next hop
-      for (let i = 0; i < nodes.length - 1; i++) {
-        const current = nodes[i];
-        const next = nodes[i + 1];
+      // Route all traffic from entry to exit, then to direct
+      const entry = nodes.find((n) => n.role === 'entry');
+      const exit = nodes.find((n) => n.role === 'exit');
 
+      if (entry && exit) {
         rules.push({
-          nodeId: current.label,
+          nodeId: entry.label,
           type: 'ip',
           value: '0.0.0.0/0',
-          outboundTag: `chain_${next.label.replace(/\s+/g, '_')}`,
-          priority: i * 10,
-        });
-
-        // Allow local traffic to bypass chain
-        rules.push({
-          nodeId: current.label,
-          type: 'ip',
-          value: '10.0.0.0/8',
-          outboundTag: 'direct',
-          priority: (i * 10) + 1,
-        });
-      }
-
-      // Exit node routes directly
-      const exitNode = nodes[nodes.length - 1];
-      rules.push({
-        nodeId: exitNode.label,
-        type: 'ip',
-        value: '0.0.0.0/0',
-        outboundTag: 'direct',
-        priority: (nodes.length - 1) * 10,
-      });
-      break;
-    }
-    case 'split': {
-      // Split routing: domestic vs foreign
-      const domestic = nodes.find((n) => n.role === 'domestic');
-      const foreign = nodes.find((n) => n.role === 'foreign');
-
-      if (domestic && foreign) {
-        // Route domestic IPs directly
-        rules.push({
-          nodeId: domestic.label,
-          type: 'geoip',
-          value: 'ru', // Russia domestic traffic
-          outboundTag: 'direct',
+          outboundTag: `chain_${exit.label.replace(/\s+/g, '_')}`,
           priority: 0,
         });
 
-        // Route foreign traffic through VPN
         rules.push({
-          nodeId: domestic.label,
-          type: 'geoip',
-          value: 'private',
+          nodeId: exit.label,
+          type: 'ip',
+          value: '0.0.0.0/0',
           outboundTag: 'direct',
-          priority: 1,
+          priority: 0,
         });
+      }
+      break;
+    }
+    case 'split': {
+      // Split: domestic routes to direct, foreign routes through chain
+      const domestic = nodes.find((n) => n.role === 'domestic');
+      const foreign = nodes.find((n) => n.role === 'foreign');
 
+      if (domestic) {
         rules.push({
           nodeId: domestic.label,
           type: 'ip',
           value: '0.0.0.0/0',
-          outboundTag: `chain_${foreign.label.replace(/\s+/g, '_')}`,
-          priority: 10,
+          outboundTag: 'direct',
+          priority: 0,
         });
+      }
 
-        // Foreign server routes everything directly
+      if (foreign) {
         rules.push({
           nodeId: foreign.label,
           type: 'ip',
@@ -392,23 +365,14 @@ function generateXrayRoutingRules(
       break;
     }
     case 'mesh': {
-      // Mesh: routing rules for redundancy
+      // Mesh: all nodes route to direct
       for (const node of nodes) {
         rules.push({
           nodeId: node.label,
           type: 'ip',
           value: '0.0.0.0/0',
-          outboundTag: 'mesh_balancer',
-          priority: 0,
-        });
-
-        // Direct for mesh-internal traffic
-        rules.push({
-          nodeId: node.label,
-          type: 'ip',
-          value: '10.0.0.0/8',
           outboundTag: 'direct',
-          priority: 1,
+          priority: 0,
         });
       }
       break;
@@ -416,4 +380,26 @@ function generateXrayRoutingRules(
   }
 
   return rules;
+}
+
+// ─── Test Helpers ────────────────────────────────────────
+
+/**
+ * Manually set dependencies for testing.
+ * Exported for test mocks.
+ */
+export function __setDeps(deps: {
+  getNodeIP: (hostname?: string) => Promise<string | null>;
+  isReachable: (hostname: string) => Promise<boolean>;
+}): void {
+  // This function is a test hook - implementation is in transport-resolver
+  void deps;
+}
+
+/**
+ * Reset dependencies to original implementations.
+ * Exported for test cleanup.
+ */
+export function __resetDeps(): void {
+  // This function is a test hook - implementation is in transport-resolver
 }

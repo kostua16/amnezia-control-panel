@@ -10,10 +10,14 @@
  * matching the default fail-open behavior of resolveGeoRoute.
  */
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const Module = require('module');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const path = require('path');
 const originalResolveFilename = Module._resolveFilename;
 
+// Exports are defined but not used — this is intentional for the mock module
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const geoRoutingMockExports = {
   resolveGeoRoute: async (_ip) => ({ matched: false, action: 'ALLOW' }),
   evaluateGeoRules: (_dest, _rules) => ({ matched: false, action: 'ALLOW' }),

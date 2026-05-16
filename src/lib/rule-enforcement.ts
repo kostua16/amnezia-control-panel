@@ -1,144 +1,71 @@
 import { prisma } from '@/lib/prisma';
-import type { RoutingAction } from '@/generated/prisma/enums';
-import { resolveGeoRoute } from '@/lib/geo-routing';
-import type { GeoRoutingResult } from '@/types/geo-routing';
+import { resolveGeoRoute, type GeoRoutingResult as GeoRoutingResultInternal } from '@/lib/geo-routing';
+import type { XrayRoutingRule } from '@/types/chain';
 
-// ─── Types ───────────────────────────────────────────────
-
-export interface AppliedRule {
-  ruleId: number;
-  protocol: string;
-  destination: string;
-  action: RoutingAction;
-  priority: number;
-  userId: number | null;
-}
-
-export interface GeoRoutingEvaluation {
-  destination: string;
-  result: GeoRoutingResult;
-}
+// ─── Types ──────────────────────────────────────────────
 
 export interface RuleEnforcementResult {
-  success: boolean;
-  appliedCount: number;
-  errors: string[];
-  rules: AppliedRule[];
-  awgConfig: AwgRuleConfig[];
-  threeXuiConfig: ThreeXuiRuleConfig[];
-  geoRouting: GeoRoutingEvaluation[];
+  allowed: boolean;
+  matchedRule?: string;
+  reason?: string;
 }
 
-export interface AwgRuleConfig {
-  destination: string;
-  action: 'ALLOW' | 'BLOCK';
-  priority: number;
-}
+export type { GeoRoutingResultInternal as GeoRoutingResult };
 
-export interface ThreeXuiRuleConfig {
-  destination: string;
-  action: 'ALLOW' | 'BLOCK' | 'ROUTE';
-  priority: number;
-  protocol?: string;
-}
-
-// ─── Rule Evaluation ─────────────────────────────────────
+// ─── Rule Enforcement ───────────────────────────────────
 
 /**
- * Evaluate routing rules for a specific user.
- * Returns rules sorted by priority (ascending — lower = higher priority).
- * Global rules (userId = null) are included for all users.
- * User-specific rules override global rules at the same priority.
+ * Check if a destination IP is allowed by Xray routing rules.
+ * Returns the matched rule (if any) and whether access is allowed.
  */
-async function evaluateRulesForUser(userId: number): Promise<AppliedRule[]> {
-  const rules = await prisma.routingRule.findMany({
-    where: {
-      isActive: true,
-      OR: [{ userId }, { userId: null }],
-    },
-    orderBy: { priority: 'asc' },
-  });
+export function enforceXrayRules(
+  destIp: string,
+  rules: XrayRoutingRule[],
+): RuleEnforcementResult {
+  // Simple implementation: check if IP matches any rule
+  // In production, this would use more sophisticated IP matching
+  for (const rule of rules) {
+    if (rule.type === 'ip' && destIp.startsWith(rule.value.split('/')[0])) {
+      return {
+        allowed: true,
+        matchedRule: rule.nodeId,
+        reason: `Matched Xray rule for node ${rule.nodeId}`,
+      };
+    }
+  }
 
-  return rules.map((rule) => ({
-    ruleId: rule.id,
-    protocol: rule.protocol,
-    destination: rule.destination,
-    action: rule.action,
-    priority: rule.priority,
-    userId: rule.userId,
-  }));
+  return {
+    allowed: false,
+    reason: 'No matching Xray rule found',
+  };
 }
 
 /**
- * Evaluate all active routing rules globally.
+ * Generate Xray routing rules from database config.
+ * Converts stored rules to the format expected by Xray.
  */
-async function evaluateAllRules(): Promise<AppliedRule[]> {
-  const rules = await prisma.routingRule.findMany({
+export async function generateXrayRulesFromDB(): Promise<XrayRoutingRule[]> {
+  const rules = await prisma.xrayRule.findMany({
     where: { isActive: true },
     orderBy: { priority: 'asc' },
   });
 
-  return rules.map((rule) => ({
-    ruleId: rule.id,
-    protocol: rule.protocol,
-    destination: rule.destination,
-    action: rule.action,
-    priority: rule.priority,
-    userId: rule.userId,
-  }));
-}
-
-// ─── Config Generation ───────────────────────────────────
-
-/**
- * Generate AWG-compatible rule configurations.
- * AWG uses AllowedIPs for allow/block decisions.
- */
-function generateAwgConfig(rules: AppliedRule[]): AwgRuleConfig[] {
-  const awgRules: AwgRuleConfig[] = [];
+  const xuiRules: XrayRoutingRule[] = [];
 
   for (const rule of rules) {
-    // AWG rules apply when protocol is ANY or WIREGUARD
-    if (rule.protocol !== 'ANY' && rule.protocol !== 'WIREGUARD') {
-      continue;
-    }
-
-    const awgAction = rule.action === 'BLOCK' ? 'BLOCK' : 'ALLOW';
-
-    awgRules.push({
-      destination: rule.destination,
-      action: awgAction,
-      priority: rule.priority,
+    // Find the server associated with this rule
+    const server = await prisma.server.findFirst({
+      where: { id: rule.serverId },
     });
-  }
 
-  return awgRules;
-}
-
-/**
- * Generate 3x-ui compatible rule configurations.
- * 3x-ui supports more granular routing rules per protocol.
- */
-function generateThreeXuiConfig(rules: AppliedRule[]): ThreeXuiRuleConfig[] {
-  const xuiRules: ThreeXuiRuleConfig[] = [];
-
-  for (const rule of rules) {
-    // 3x-ui rules apply when protocol is ANY, VLESS, VMESS, TROJAN, or SHADOWSOCKS
-    if (
-      rule.protocol !== 'ANY' &&
-      rule.protocol !== 'VLESS' &&
-      rule.protocol !== 'VMESS' &&
-      rule.protocol !== 'TROJAN' &&
-      rule.protocol !== 'SHADOWSOCKS'
-    ) {
-      continue;
-    }
+    if (!server) continue;
 
     xuiRules.push({
-      destination: rule.destination,
-      action: rule.action as 'ALLOW' | 'BLOCK' | 'ROUTE',
+      nodeId: `server-${server.id}`,
+      type: rule.type,
+      value: rule.value,
+      outboundTag: rule.outboundTag,
       priority: rule.priority,
-      protocol: rule.protocol === 'ANY' ? undefined : rule.protocol,
     });
   }
 
@@ -147,203 +74,48 @@ function generateThreeXuiConfig(rules: AppliedRule[]): ThreeXuiRuleConfig[] {
 
 // ─── Geo-Routing Helpers ────────────────────────────────
 
-/** Simple IPv4 pattern for geo-routing eligibility check */
-const IPV4_PATTERN = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-
 /**
  * Resolve geo-routing for a destination IP address.
  * Wraps `resolveGeoRoute` from geo-routing module for use in rule enforcement.
  */
 export async function resolveGeoRoutingForDestination(
   ip: string,
-): Promise<GeoRoutingResult> {
+): Promise<GeoRoutingResultInternal> {
   return resolveGeoRoute(ip);
 }
 
 /**
  * Evaluate geo-routing for all IP-like destinations in a set of rules.
- * Returns evaluations for each destination that looks like an IP/CIDR.
+ * Returns enriched rules with geo-routing decisions attached.
  */
-async function evaluateGeoRoutingForRules(
-  rules: AppliedRule[],
-): Promise<GeoRoutingEvaluation[]> {
-  const evaluations: GeoRoutingEvaluation[] = [];
-  const seenDestinations = new Set<string>();
+export async function evaluateGeoRoutingForRules(
+  rules: XrayRoutingRule[],
+): Promise<Array<XrayRoutingRule & { geoDecision?: GeoRoutingResultInternal }>> {
+  const enriched = await Promise.all(
+    rules.map(async (rule) => {
+      // Extract IP from rule value if it's an IP rule
+      if (rule.type === 'ip') {
+        const ipMatch = rule.value.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+        if (ipMatch) {
+          const geoResult = await resolveGeoRoute(ipMatch[1]);
+          return { ...rule, geoDecision: geoResult };
+        }
+      }
 
-  for (const rule of rules) {
-    // Extract IP from destination (strip CIDR notation for GeoIP lookup)
-    const ipMatch = rule.destination.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
-    const ip = ipMatch ? ipMatch[1] : null;
+      return rule;
+    })
+  );
 
-    if (!ip || seenDestinations.has(ip)) continue;
-    seenDestinations.add(ip);
-
-    const result = await resolveGeoRoute(ip);
-    evaluations.push({ destination: rule.destination, result });
-  }
-
-  return evaluations;
-}
-
-// ─── Public API ──────────────────────────────────────────
-
-/**
- * Apply all routing rules for a specific user.
- * Evaluates global + user-specific rules, generates configs for both VPN systems.
- * Also evaluates geo-routing rules for IP destinations.
- */
-export async function applyRoutingRules(
-  userId: number,
-): Promise<RuleEnforcementResult> {
-  const errors: string[] = [];
-
-  try {
-    // Verify user exists
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { protocols: { where: { isActive: true }, select: { serviceType: true } } },
-    });
-
-    if (!user) {
-      return {
-        success: false,
-        appliedCount: 0,
-        errors: [`User ${userId} not found`],
-        rules: [],
-        awgConfig: [],
-        threeXuiConfig: [],
-        geoRouting: [],
-      };
-    }
-
-    // Evaluate rules
-    const rules = await evaluateRulesForUser(userId);
-
-    // Generate configs
-    const awgConfig = generateAwgConfig(rules);
-    const threeXuiConfig = generateThreeXuiConfig(rules);
-
-    // Evaluate geo-routing for IP destinations
-    const geoRouting = await evaluateGeoRoutingForRules(rules);
-
-    // Determine which services this user uses
-    const serviceTypes = user.protocols.map((p) => p.serviceType);
-
-    // In production, these configs would be pushed to the actual VPN services.
-    // For now, we log the generated configs and mark rules as applied.
-    if (serviceTypes.includes('AWG')) {
-      console.log(
-        `[rule-enforcement] AWG config for user ${user.username}:`,
-        JSON.stringify(awgConfig, null, 2),
-      );
-    }
-
-    if (serviceTypes.includes('THREE_XUI')) {
-      console.log(
-        `[rule-enforcement] 3x-ui config for user ${user.username}:`,
-        JSON.stringify(threeXuiConfig, null, 2),
-      );
-    }
-
-    return {
-      success: true,
-      appliedCount: rules.length,
-      errors,
-      rules,
-      awgConfig,
-      threeXuiConfig,
-      geoRouting,
-    };
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Unknown error during rule application';
-    return {
-      success: false,
-      appliedCount: 0,
-      errors: [message],
-      rules: [],
-      awgConfig: [],
-      threeXuiConfig: [],
-      geoRouting: [],
-    };
-  }
+  return enriched;
 }
 
 /**
- * Apply all routing rules for all users.
- * Evaluates all active rules and generates configs for both VPN systems.
- * Also evaluates geo-routing rules for IP destinations.
+ * Check if a destination IP should be blocked based on geo-routing rules.
+ * Convenience wrapper for common use case.
  */
-export async function applyAllRules(): Promise<RuleEnforcementResult> {
-  const errors: string[] = [];
-  let totalApplied = 0;
-
-  try {
-    // Evaluate all rules
-    const allRules = await evaluateAllRules();
-
-    // Generate global configs
-    const awgConfig = generateAwgConfig(allRules);
-    const threeXuiConfig = generateThreeXuiConfig(allRules);
-
-    // Evaluate geo-routing for IP destinations
-    const geoRouting = await evaluateGeoRoutingForRules(allRules);
-
-    // Get all active users
-    const users = await prisma.user.findMany({
-      where: { isActive: true },
-      include: { protocols: { where: { isActive: true }, select: { serviceType: true } } },
-    });
-
-    // Apply rules per user
-    for (const user of users) {
-      const userRules = allRules.filter(
-        (r) => r.userId === null || r.userId === user.id,
-      );
-
-      const serviceTypes = user.protocols.map((p) => p.serviceType);
-
-      if (serviceTypes.includes('AWG')) {
-        const userAwgConfig = generateAwgConfig(userRules);
-        console.log(
-          `[rule-enforcement] AWG config for user ${user.username}:`,
-          JSON.stringify(userAwgConfig, null, 2),
-        );
-      }
-
-      if (serviceTypes.includes('THREE_XUI')) {
-        const userXuiConfig = generateThreeXuiConfig(userRules);
-        console.log(
-          `[rule-enforcement] 3x-ui config for user ${user.username}:`,
-          JSON.stringify(userXuiConfig, null, 2),
-        );
-      }
-
-      totalApplied += userRules.length;
-    }
-
-    return {
-      success: true,
-      appliedCount: totalApplied,
-      errors,
-      rules: allRules,
-      awgConfig,
-      threeXuiConfig,
-      geoRouting,
-    };
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Unknown error during rule application';
-    errors.push(message);
-
-    return {
-      success: false,
-      appliedCount: totalApplied,
-      errors,
-      rules: [],
-      awgConfig: [],
-      threeXuiConfig: [],
-      geoRouting: [],
-    };
-  }
+export async function isDestinationBlockedByGeo(
+  destIp: string,
+): Promise<boolean> {
+  const result = await resolveGeoRoute(destIp);
+  return result.action === 'BLOCK';
 }

@@ -35,8 +35,10 @@ export interface PanelConnectionRecord {
 
 export interface PanelTestResult {
   success: boolean;
-  latencyMs: number | null;
-  message: string;
-  version: string | null;
-  timestamp: string;
+  panelId: number;
+  latency: number | null;
+  status?: PanelConnectionStatus;
+  error?: string;
 }
+
+export type PanelConnectionStatus = 'connected' | 'degraded' | 'offline' | 'unknown';
