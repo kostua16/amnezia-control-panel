@@ -65,14 +65,14 @@ jobs:
             .claude/commands/gsd/*
             .claude/get-shit-done/*
             .claude/hooks/*
-          key: gsd-v1-${{ hashFiles('.claude/gsd-file-manifest.json') }}
+          key: gsd-v3-${{ hashFiles('.claude/gsd-file-manifest.json') }}
           restore-keys: |
-            gsd-v1-
+            gsd-v3-
       
       - name: Install GSD
         if: steps.gsd-cache.outputs.cache-hit != 'true'
-        run: npx get-shit-done-cc@latest --claude --local --minimal 
-        
+        run: npx get-shit-done-cc@latest --claude --local
+
       - name: Setup git identity
         run: |
           git config --global user.email "claude[bot]@users.noreply.github.com"

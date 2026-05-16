@@ -30,6 +30,29 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache GSD installation
+        id: gsd-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .claude/skills/gsd-*
+            .claude/commands/gsd/*
+            .claude/get-shit-done/*
+            .claude/hooks/*
+          key: gsd-v3-${{ hashFiles('.claude/package.json') }}
+          restore-keys: |
+            gsd-v3-
+
+      - name: Install GSD
+        if: steps.gsd-cache.outputs.cache-hit != 'true'
+        run: npx get-shit-done-cc@latest --claude --local
+
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}

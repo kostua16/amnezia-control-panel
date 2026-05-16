@@ -137,13 +137,13 @@ jobs:
             .claude/commands/gsd/*
             .claude/get-shit-done/*
             .claude/hooks/*
-          key: gsd-v1-${{ hashFiles('.claude/package.json') }}
+          key: gsd-v3-${{ hashFiles('.claude/package.json') }}
           restore-keys: |
-            gsd-v1-
+            gsd-v3-
       
       - name: Install GSD
         if: steps.gsd-cache.outputs.cache-hit != 'true'
-        run: npx get-shit-done-cc@latest --claude --local --minimal
+        run: npx get-shit-done-cc@latest --claude --local
 
       - name: Fix CI failures with Claude
         id: claude
