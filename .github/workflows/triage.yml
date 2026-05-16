@@ -1,14 +1,14 @@
 name: Issue Triage
 on:
   issues:
-    types: [opened]
+    types: [opened, reopened]
 
 concurrency:
-  group: maintenance-${{ github.event.issue.number || github.event.pull_request.number || github.sha }}
+  group: maintenance-${{ github.event.issue.number || github.sha }}
   cancel-in-progress: true
   
 env:
-  MAX_TURNS: 45
+  MAX_TURNS: 105
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
