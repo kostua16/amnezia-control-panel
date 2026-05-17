@@ -33,13 +33,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: |
+      github.event.issue.state != 'closed' &&
       (
-        github.event_name == 'issue_comment' &&
-        !github.event.issue.pull_request &&
-        contains(github.event.comment.body, '/fix')
-      ) || (
-        github.event_name == 'issues' &&
-        github.event.label.name == 'triaged'
+        (
+          github.event_name == 'issue_comment' &&
+          !github.event.issue.pull_request &&
+          contains(github.event.comment.body, '/fix')
+        ) || (
+          github.event_name == 'issues' &&
+          github.event.label.name == 'triaged'
+        )
       )
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +54,14 @@ jobs:
         run: |
           git config --global user.email "claude[bot]@users.noreply.github.com"
           git config --global user.name "claude[bot]"
+
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          for label in fixed canceled; do
+            gh label create "$label" --color 0e8a16 --description "Issue resolved by auto-fix" --force 2>/dev/null || true
+          done
 
       - name: Extract fix message
         id: extract
@@ -166,11 +177,20 @@ jobs:
             --title "fix: resolve #${ISSUE_NUM} - ${ISSUE_TITLE}" \
             --body "$BODY"
 
+      - name: Label issue as fixed
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+        run: |
+          gh issue edit "$ISSUE_NUM" --add-label "fixed"
+
       - name: Comment on issue if no changes
         if: steps.changes.outputs.has_changes == 'false'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ github.event.issue.number }}
         run: |
+          gh issue edit "$ISSUE_NUM" --add-label "canceled"
           gh issue comment "$ISSUE_NUM" \
             --body "The auto-fix workflow ran but could not produce code changes. Manual investigation may be needed."
