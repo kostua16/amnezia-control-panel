@@ -102,9 +102,10 @@ jobs:
                 repo: context.repo.repo,
                 job_id: job.id
               });
+              const raw = typeof logs.data === 'string' ? logs.data : String(logs.data);
               errorLogs.push({
                 jobName: job.name,
-                logs: logs.data
+                logs: raw.slice(-5000)
               });
             }
 
