@@ -1,4 +1,4 @@
-name: Auto Fix CI Failures (Direct Push)
+name: Fix Branch
 
 # SECURITY NOTE
 #
@@ -13,7 +13,7 @@ name: Auto Fix CI Failures (Direct Push)
 # that accept contributions from untrusted or semi-trusted collaborators.
 #
 # This workflow handles direct pushes to main/develop with no associated PR.
-# For CI failures on PRs, see ci-failure-auto-fix-pr.yml (sibling workflow).
+# For CI failures on PRs, see fix-pr.yml (sibling workflow).
 #
 # The head_branch allow-list (main, develop) further limits exposure:
 # only failures on those protected branches trigger the auto-fix attempt.
@@ -32,19 +32,10 @@ permissions:
   id-token: write
 
 env:
-  MAX_TURNS: 50
   NODE_VERSION: "22.x"
-  DISABLE_TELEMETRY: "1"
-  API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}"
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
-  ANTHROPIC_DEFAULT_SONNET_MODEL: "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}"
-  ANTHROPIC_DEFAULT_OPUS_MODEL: "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}"
-  CLAUDE_CODE_SUBAGENT_MODEL: "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
-  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 
 jobs:
-  auto-fix-branch:
+  fix:
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
       toJSON(github.event.workflow_run.pull_requests) == '[]' &&
@@ -57,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
-          fetch-depth: 0
+          fetch-depth: 1
           token: ${{ secrets.GH_PAT }}
 
       - name: Setup git identity
@@ -103,9 +94,13 @@ jobs:
                 job_id: job.id
               });
               const raw = typeof logs.data === 'string' ? logs.data : String(logs.data);
+              // Filter to error lines only — strip warnings and noise
+              const errorLines = raw.split('\n')
+                .filter(line => line.includes('##[error]') || line.includes('error TS'))
+                .join('\n');
               errorLogs.push({
                 jobName: job.name,
-                logs: raw.slice(-5000)
+                logs: errorLines.slice(-3000)
               });
             }
 
@@ -115,30 +110,64 @@ jobs:
               errorLogs: errorLogs
             };
 
+      - name: Detect transient failures
+        id: fixability
+        if: steps.failure_details.outputs.result
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { errorLogs } = ${{ steps.failure_details.outputs.result }};
+            const allLogs = errorLogs.map(e => e.logs).join('\n');
+
+            // Detect transient patterns (network, rate limit, OOM, runner issues)
+            const transientPatterns = [
+              /ETIMEDOUT/i, /ECONNRESET/i, /ENOTFOUND/i,
+              /Failed sending HTTP request/i,
+              /rate limit/i, /throttle/i,
+              /Runner cancelled/i, /shutdown signal/i,
+              /out of memory/i, /\bOOM\b/i
+            ];
+            const isTransient = transientPatterns.some(p => p.test(allLogs));
+
+            if (isTransient) {
+              core.setOutput('fixable', 'false');
+              core.setOutput('reason', 'Transient failure detected (network/rate-limit/OOM/runner)');
+              core.setOutput('label', 'transient-failure');
+              return;
+            }
+
+            // Count distinct error files
+            const errorFiles = new Set(allLogs.match(/src\/[^\s:]+\.ts/g) || []);
+
+            // Detect unfixable patterns
+            const reasons = [];
+            if (/Property '\w+' does not exist on type 'PrismaClient'/.test(allLogs))
+              reasons.push('Missing Prisma model — requires schema migration');
+            if (errorFiles.size > 6)
+              reasons.push(`${errorFiles.size} files with errors (exceeds 6-file cap)`);
+            if (!allLogs.includes('##[error]') && !allLogs.includes('error TS'))
+              reasons.push('No actual errors found (warnings only)');
+
+            const fixable = reasons.length === 0;
+            core.setOutput('fixable', String(fixable));
+            if (!fixable) core.setOutput('reason', reasons.join('; '));
+
       - uses: ./.github/actions/setup-environment
+        if: steps.fixability.outputs.fixable == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           install-deps: "true"
+          generate-prisma: "true"
           install-gsd: "true"
 
-      - name: Fix CI failures with Claude
-        id: claude
-        uses: anthropics/claude-code-action@v1
+      - name: Warm TypeScript cache
+        if: steps.fixability.outputs.fixable == 'true'
+        run: npx tsc --noEmit 2>/dev/null || true
+
+      - uses: ./.github/actions/run-claude
+        if: steps.fixability.outputs.fixable == 'true'
         with:
-          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
-          track_progress: false
-          show_full_output: ${{ vars.CLAUDE_DEBUG || false }}
-          claude_args: |
-            --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
-            --max-turns ${{ env.MAX_TURNS }}
-            --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*)'
-          settings: |
-            {
-              "env": {
-                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
-                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}"
-              }
-            }
+          allowed-bots: "claude[bot],github-actions[bot]"
           prompt: |
             /gsd-debug
             Failed CI Run: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
@@ -175,6 +204,7 @@ jobs:
 
       - name: Check for changes
         id: changes
+        if: steps.fixability.outputs.fixable == 'true'
         run: |
           if git diff --quiet HEAD; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
@@ -182,15 +212,11 @@ jobs:
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit and push fix
+      - uses: ./.github/actions/commit-and-push
         if: steps.changes.outputs.has_changes == 'true'
-        env:
-          BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
-        run: |
-          git add -A
-          git commit -m "fix(ci): auto-fix CI failures" || true
-          git config --local "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(printf '%s' "x-access-token:${{ secrets.GH_PAT }}" | base64 -w 0)"
-          git push origin "$BRANCH_NAME"
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: Find related failure issues
         id: failure_issues
@@ -244,117 +270,13 @@ jobs:
             --body "$BODY"
 
   report-failure:
-    needs: [auto-fix-branch]
+    needs: [fix]
     if: failure()
     runs-on: ubuntu-latest
     steps:
-      - name: Collect auto-fix failure details
-        id: collect
-        uses: actions/github-script@v7
+      - uses: ./.github/actions/report-failure
         with:
-          script: |
-            const jobs = await github.rest.actions.listJobsForWorkflowRun({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              run_id: context.runId
-            });
-            const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure');
-            const failedSteps = [];
-            const logSnippets = [];
-            for (const job of failedJobs) {
-              const steps = (job.steps || []).filter(s => s.conclusion === 'failure');
-              for (const step of steps) {
-                failedSteps.push(`${job.name} / ${step.name}`);
-              }
-              try {
-                const logsResp = await github.rest.actions.downloadJobLogsForWorkflowRun({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  job_id: job.id
-                });
-                const raw = typeof logsResp.data === 'string' ? logsResp.data : String(logsResp.data);
-                logSnippets.push({ name: job.name, log: raw.slice(-3000) });
-              } catch (e) {
-                logSnippets.push({ name: job.name, log: `(log unavailable: ${e.message})` });
-              }
-            }
-            core.setOutput('failed_steps', JSON.stringify(failedSteps));
-            core.setOutput('log_snippets', JSON.stringify(logSnippets));
-
-      - name: Create failure issue
-        uses: actions/github-script@v7
-        env:
-          AUTO_FIX_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
-          BRANCH: ${{ github.event.workflow_run.head_branch }}
-          FAILED_STEPS: ${{ steps.collect.outputs.failed_steps }}
-          LOG_SNIPPETS: ${{ steps.collect.outputs.log_snippets }}
-        with:
-          script: |
-            const branch = process.env.BRANCH;
-            const autoFixRunUrl = process.env.AUTO_FIX_RUN_URL;
-            const ciRunUrl = process.env.CI_RUN_URL;
-            const failedSteps = JSON.parse(process.env.FAILED_STEPS || '[]');
-            const logSnippets = JSON.parse(process.env.LOG_SNIPPETS || '[]');
-
-            const title = `[auto-fix] Failed on ${branch}`;
-
-            const stepsSection = failedSteps.length > 0
-              ? `## Failed Steps\n${failedSteps.map(s => `- ${s}`).join('\n')}`
-              : '## Failed Steps\n_No failed step details available_';
-
-            const logsSection = logSnippets.length > 0
-              ? logSnippets.map(({ name, log }) =>
-                  `<details><summary>${name}</summary>\n\n\`\`\`\n${log}\n\`\`\`\n</details>`
-                ).join('\n\n')
-              : '_No logs available_';
-
-            const body = [
-              '## Auto-fix Workflow Failure',
-              '',
-              'The auto-fix workflow itself failed and could not create a fix PR.',
-              '',
-              '| | |',
-              '|---|---|',
-              `| **Auto-fix run** | ${autoFixRunUrl} |`,
-              `| **Triggering CI run** | ${ciRunUrl} |`,
-              `| **Branch** | \`${branch}\` |`,
-              '',
-              stepsSection,
-              '',
-              '## Log Tails',
-              '',
-              logsSection,
-            ].join('\n');
-
-            for (const [name, color] of [['auto-fix', 'e4e669'], ['ci-failure', 'd73a4a'], ['auto-fix-failed', 'd93f0b']]) {
-              try {
-                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
-              } catch (e) {
-                if (e.status === 404) {
-                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color });
-                }
-              }
-            }
-
-            const { data: issue } = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body,
-              labels: ['auto-fix', 'ci-failure', 'auto-fix-failed']
-            });
-
-            // Trigger triage workflow since issues opened by GITHUB_TOKEN
-            // don't fire the issues:opened event
-            try {
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'triage.yml',
-                ref: 'main',
-                inputs: { issue_number: String(issue.number) }
-              });
-            } catch (e) {
-              core.warning(`Failed to dispatch triage: ${e.message}`);
-            }
+          mode: "issue"
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          triggering-run-url: ${{ github.event.workflow_run.html_url }}
+          branch: ${{ github.event.workflow_run.head_branch }}

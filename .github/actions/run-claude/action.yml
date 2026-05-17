@@ -1,0 +1,83 @@
+name: "Run Claude"
+description: "claude-code-action wrapper with shared settings, model pin, default tools"
+
+inputs:
+  api-key:
+    description: "API key override. Defaults to secrets.ZAI_API_KEY."
+    default: ${{ github.secrets.ZAI_API_KEY || github.secrets.ANTHROPIC_API_KEY || github.secrets.ANTHROPIC_AUTH_TOKEN || github.secrets.CLAUDE_API_KEY || github.secrets.API_KEY }}
+    required: false
+  api-url:
+    description: "Anthropic API URL"
+    default: "${{ github.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' }}"
+  prompt:
+    description: "Prompt for Claude"
+    required: true
+  max-turns:
+    description: "Maximum turns"
+    default: "50"
+  track-progress:
+    description: "Track progress"
+    default: "false"
+  allowed-bots:
+    description: "Allowed bots"
+    required: false
+  allowed-tools:
+    description: "Allowed tools"
+    default: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*)"
+  api-timeout:
+    description: "API timeout"
+    default: "${{ github.env.API_TIMEOUT_MS || 30000 }}"
+  disable-telemetry:
+    description: "Disable telemetry"
+    default: "1"
+  haiku-model:
+    description: "Anthropic default haiku model"
+    default: "${{ github.env.ANTHROPIC_DEFAULT_HAIKU_MODEL || 'claude-haiku-4-5-20251001' }}"
+  sonnet-model:
+    description: "Anthropic default sonnet model"
+    default: "${{ github.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-20250514' }}"
+  opus-model:
+    description: "Anthropic default opus model"
+    default: "${{ github.env.ANTHROPIC_DEFAULT_OPUS_MODEL || 'claude-opus-4-20250514' }}"
+  model:
+    description: "Anthropic model"
+    default: "${{ github.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-20250514' }}"
+  subagent-model:
+    description: "Claude code subagent model"
+    default: "${{ github.env.CLAUDE_CODE_SUBAGENT_MODEL || 'claude-haiku-4-5-20251001' }}"
+  claude-debug:
+    description: "Claude debug"
+    default: "${{ github.env.CLAUDE_DEBUG || false }}"
+runs:
+  using: composite
+  steps:
+    - name: Run Claude Code
+      uses: anthropics/claude-code-action@v1
+      env:
+        DISABLE_TELEMETRY: ${{ inputs.disable-telemetry }}
+        API_TIMEOUT_MS: ${{ inputs.api-timeout }}
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: ${{ inputs.disable-telemetry }}
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.haiku-model }}
+        ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.sonnet-model }}
+        ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.opus-model }}
+        CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.subagent-model }}
+        ANTHROPIC_BASE_URL: ${{ inputs.api-url }}
+        ANTHROPIC_API_KEY: ${{ inputs.api-key }}
+        ANTHROPIC_AUTH_TOKEN: ${{ inputs.api-key }}
+      with:
+        anthropic_api_key: ${{ inputs.api-key }}
+        allowed_bots: ${{ inputs.allowed-bots }}
+        track_progress: ${{ inputs.track-progress }}
+        show_full_output: ${{ inputs.claude-debug || false }}
+        claude_args: |
+          --model ${{ inputs.model }}
+          --max-turns ${{ inputs.max-turns }}
+          --allowedTools '${{ inputs.allowed-tools }}'
+        prompt: ${{ inputs.prompt }}
+        settings: |
+          {
+            "env": {
+              "ANTHROPIC_API_KEY": "${{ inputs.api-key }}",
+              "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
+            }
+          }

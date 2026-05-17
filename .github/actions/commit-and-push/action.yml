@@ -1,0 +1,37 @@
+name: "Commit and Push"
+description: "git add + commit + push with retry (3 attempts, 5s backoff)"
+
+inputs:
+  branch-name:
+    description: "Target branch to push to"
+    required: true
+  commit-message:
+    description: "Commit message"
+    default: "fix(ci): auto-fix CI failures"
+  token:
+    description: "GitHub token for push auth"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Commit and push with retry
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch-name }}
+        MSG: ${{ inputs.commit-message }}
+        TOKEN: ${{ inputs.token }}
+      run: |
+        git add -A
+        git commit -m "$MSG" || true
+        git config --local "http.https://github.com/.extraheader" \
+          "AUTHORIZATION: basic $(printf '%s' "x-access-token:${TOKEN}" | base64 -w 0)"
+        for i in 1 2 3; do
+          if git push origin "$BRANCH"; then
+            echo "Push succeeded on attempt $i"
+            break
+          else
+            echo "Push failed on attempt $i, retrying in 5s..."
+            sleep 5
+          fi
+        done
