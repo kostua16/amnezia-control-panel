@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 300
+  MAX_TURNS: 100
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
@@ -23,7 +23,7 @@ env:
 jobs:
   maintenance:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
       contents: write
       issues: write

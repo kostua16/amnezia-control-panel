@@ -9,7 +9,7 @@ permissions:
   id-token: write
 
 env:
-  MAX_TURNS: 300
+  MAX_TURNS: 80
   ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 
 jobs:

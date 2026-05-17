@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  MAX_TURNS: 300
+  MAX_TURNS: 100
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
@@ -54,7 +54,7 @@ jobs:
 
   claude-main-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     needs: [check-paths]
     if: |
       !failure() && !cancelled() &&
@@ -121,7 +121,7 @@ jobs:
 
   claude-security-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     needs: [check-paths]
     if: |
       !failure() && !cancelled() &&
