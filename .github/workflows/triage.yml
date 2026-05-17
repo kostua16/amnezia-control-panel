@@ -110,6 +110,14 @@ jobs:
             3. Close the issue: `gh issue close ${{ steps.resolve.outputs.number }} --reason "not planned" --comment "Closing as duplicate of #[original issue number]"`
 
             TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
+
+            After completing triage, post a summary comment on issue #${{ steps.resolve.outputs.number }} using:
+              gh issue comment ${{ steps.resolve.outputs.number }} --body "## Triage Result
+              - Classification: [bug/feature/question]
+              - Priority: [critical/high/medium/low]
+              - Labels applied: [list]
+              - Duplicates found: [none or list]"
+            This provides feedback since automated progress tracking is not available for workflow_dispatch triggers.
           settings: |
             {
               "env": {
