@@ -48,7 +48,7 @@ jobs:
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(npm *),Bash(gh issue:*),Bash(git *)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm *),Bash(gh issue:*),Bash(git *)"
           prompt: |
             /gsd-health && /gsd-stats
             REPO: ${{ github.repository }}
