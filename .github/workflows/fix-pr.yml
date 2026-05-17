@@ -36,7 +36,7 @@ permissions:
 
 env:
   NODE_VERSION: "22.x"
-
+  MAX_TURNS: "70"
 jobs:
   fix:
     if: |
@@ -189,6 +189,7 @@ jobs:
         if: steps.fixability.outputs.fixable == 'true'
         with:
           allowed-bots: "claude[bot],github-actions[bot]"
+          max-turns: ${{ env.MAX_TURNS }}
           prompt: |
             /gsd-debug
             Failed CI Run: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
@@ -204,8 +205,6 @@ jobs:
             Affected files: ${{ steps.affected_files.outputs.files || '(extract from error logs above)' }}
 
             === CI AUTO-FIX PROTOCOL ===
-
-            BUDGET: 50 turns total. Plan: ≤10 investigate, ≤30 fix, ≤10 verify.
 
             SCOPE (MANDATORY):
             - Maximum 6 files total. Count before editing. If you need more, STOP and report.

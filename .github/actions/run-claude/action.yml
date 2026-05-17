@@ -14,7 +14,7 @@ inputs:
     required: true
   max-turns:
     description: "Maximum turns"
-    default: "50"
+    default: "70"
   track-progress:
     description: "Track progress"
     default: "false"
@@ -51,6 +51,23 @@ inputs:
 runs:
   using: composite
   steps:
+    - id: turn_budget
+      shell: bash
+      run: |
+        max="${{ inputs.max-turns }}"
+        if ! [[ "$max" =~ ^[0-9]+$ ]]; then
+          echo "::error::max-turns must be a non-negative integer, got: $max"
+          exit 1
+        fi
+        budget=$(( max * 80 / 100 ))
+        investigate=$(( budget * 20 / 100 ))
+        verify=$(( budget * 20 / 100 ))
+        main=$(( budget - investigate - verify ))
+        echo "budget=$budget" >> "$GITHUB_OUTPUT"
+        echo "investigate=$investigate" >> "$GITHUB_OUTPUT"
+        echo "main=$main" >> "$GITHUB_OUTPUT"
+        echo "verify=$verify" >> "$GITHUB_OUTPUT"
+
     - name: Run Claude Code
       uses: anthropics/claude-code-action@v1
       env:
@@ -73,7 +90,7 @@ runs:
           --model ${{ inputs.model }}
           --max-turns ${{ inputs.max-turns }}
           --allowedTools '${{ inputs.allowed-tools }}'
-        prompt: ${{ inputs.prompt }}
+        prompt: "${{ inputs.prompt }}. TURN BUDGET: ${{ steps.turn_budget.outputs.budget }} turns total. Plan: ≤${{ steps.turn_budget.outputs.investigate }} investigate, ≤${{ steps.turn_budget.outputs.main }} main work (fix, change, etc), ≤${{ steps.turn_budget.outputs.verify }} verify. Be efficient."
         settings: |
           {
             "env": {

@@ -12,7 +12,7 @@ concurrency:
 
 env:
   NODE_VERSION: "22.x"
-
+  MAX_TURNS: "100"
 permissions:
   contents: write
   pull-requests: write
@@ -80,7 +80,7 @@ jobs:
 
       - uses: ./.github/actions/run-claude
         with:
-          max-turns: "80"
+          max-turns: ${{ env.MAX_TURNS }}
           track-progress: "true"
           allowed-bots: "claude[bot],github-actions[bot]"
           allowed-tools: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(gh issue view:*),Bash(gh issue list:*)"
@@ -111,8 +111,6 @@ jobs:
             AFTER FIXING:
             - Post a comment on the issue listing any remaining/unresolved issues from the original report
             - Format: "## Fixed\n- [what was fixed]\n## Remaining\n- [unresolved items from the issue]"
-
-            TURN BUDGET: Max 80 turns. Be efficient.
 
       - name: Check for changes
         id: changes
