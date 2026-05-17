@@ -35,7 +35,7 @@ permissions:
   id-token: write
 
 env:
-  MAX_TURNS: 80
+  MAX_TURNS: 50
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
@@ -125,6 +125,14 @@ jobs:
               errorLogs: errorLogs
             };
 
+      - name: Extract affected files
+        id: affected_files
+        env:
+          ERROR_LOGS: ${{ toJSON(fromJSON(steps.failure_details.outputs.result).errorLogs) }}
+        run: |
+          FILES=$(echo "$ERROR_LOGS" | grep -oE '[a-zA-Z0-9_./-]+\.(ts|tsx|js|jsx)\([0-9]+' | sed 's/(.*//' | sort -u | head -6 | tr '\n' ',' | sed 's/,$//')
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+
       - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -162,17 +170,28 @@ jobs:
             Error logs:
             ${{ toJSON(fromJSON(steps.failure_details.outputs.result).errorLogs) }}
 
-            Investigate root cause, then apply fix.
+            Affected files: ${{ steps.affected_files.outputs.files || '(extract from error logs above)' }}
 
-            STRICT SCOPE:
-            - Identify the SINGLE root cause that explains all failures — ignore symptoms
-            - Fix only that root cause — do NOT refactor or touch unrelated files
-            - After fixing, run: npm run lint && npx tsc --noEmit && npm run build
-            - If lint/types fail, fix ONLY errors you introduced — do not expand scope
-            - Do NOT commit or push — the workflow handles that
-            - Stop after 60 turns even if incomplete — partial fixes are better than timeouts
+            === CI AUTO-FIX PROTOCOL ===
 
-            TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Be efficient.
+            BUDGET: 50 turns total. Plan: ≤10 investigate, ≤30 fix, ≤10 verify.
+
+            SCOPE (MANDATORY):
+            - Maximum 6 files total. Count before editing. If you need more, STOP and report.
+            - Fix ONLY files listed in Affected files above, or files directly referenced in error logs.
+            - Read each file max 2 times before editing.
+            - Identify the SINGLE root cause — fix that, not symptoms.
+
+            PRIORITY: Fix type errors first (they often cause lint errors downstream).
+
+            ANTI-CASCADE: If your fix creates NEW errors in unrelated files, your approach is wrong.
+            Revert and try a different approach. Do NOT expand scope to chase cascading errors.
+
+            EARLY EXIT (CRITICAL): After EACH fix cycle, run `npx tsc --noEmit && npm run lint`.
+            If BOTH pass → STOP immediately. Do NOT make additional improvements.
+            If build is needed: run `npm run build`. If it passes → STOP.
+
+            DO NOT commit or push — the workflow handles that.
 
       - name: Check for changes
         id: changes
