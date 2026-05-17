@@ -60,6 +60,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          allowed_bots: "github-actions[bot]"
           track_progress: ${{ github.event_name != 'workflow_dispatch' }}
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
