@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // Claude skills/agents use CommonJS require():
+    '.claude/**',
   ]),
   eslintConfigPrettier,
 ]);
