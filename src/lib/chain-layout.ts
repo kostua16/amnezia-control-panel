@@ -11,11 +11,11 @@ interface LayoutNode {
   label: string;
 }
 
-const NODE_WIDTH = 200;
-const NODE_HEIGHT = 100;
+export const NODE_WIDTH = 200;
+export const NODE_HEIGHT = 100;
 const HORIZONTAL_GAP = 100;
 const VERTICAL_GAP = 60;
-const CANVAS_PADDING = 40;
+export const CANVAS_PADDING = 40;
 
 /**
  * Calculate x,y positions for chain nodes based on topology.

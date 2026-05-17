@@ -1,13 +1,13 @@
 'use client';
 
 import { memo } from 'react';
-import type { NodeProps } from '@xyflow/react';
+import type { NodeProps, Node } from '@xyflow/react';
 import { clsx } from 'clsx';
 import type { PanelGroupData } from '@/types/chain-flow';
 
 function PanelGroupNodeRaw({
   data,
-}: NodeProps<{ data: PanelGroupData }>) {
+}: NodeProps<Node<PanelGroupData>>) {
   const { panelName, isActive } = data;
 
   return (

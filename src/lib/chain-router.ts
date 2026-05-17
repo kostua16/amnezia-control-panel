@@ -64,7 +64,7 @@ export async function generateChainConfig(
   }
 
   // Resolve transport for each server in the chain
-  let prisma: { service: { findFirst: (args: unknown) => Promise<{ port: number } | null> } } | null = null;
+  let prisma: Awaited<typeof import('./prisma')['prisma']> | null = null;
   try {
     const mod = await import('./prisma');
     prisma = mod.prisma;

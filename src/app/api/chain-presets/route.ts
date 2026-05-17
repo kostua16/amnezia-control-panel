@@ -42,7 +42,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const preset = await createChainPreset(parsed.data);
+    const preset = await createChainPreset({
+      name: parsed.data.name,
+      description: parsed.data.description,
+      topology: parsed.data.topology,
+      nodeCount: parsed.data.nodeCount,
+      routingBundleId: parsed.data.routingBundleId ?? undefined,
+    });
 
     return NextResponse.json({ success: true, data: preset }, { status: 201 });
   } catch (err) {

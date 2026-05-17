@@ -97,7 +97,7 @@ export async function seedTemplates(): Promise<{ seeded: number; skipped: number
         category: tmpl.category,
         ruleCount: tmpl.rules.length,
         isBuiltIn: true,
-        rules: tmpl.rules,
+        rules: tmpl.rules as unknown as import('@/generated/prisma/internal/prismaNamespace').InputJsonValue,
       },
     });
     seeded++;
@@ -130,7 +130,7 @@ export async function applyTemplateRules(
     return { created: 0, skipped: 0, errors: ['Template not found'] };
   }
 
-  const rules = template.rules as TemplateRuleDef[];
+  const rules = template.rules as unknown as TemplateRuleDef[];
   const result: ApplyTemplateResult = { created: 0, skipped: 0, errors: [] };
 
   for (const ruleDef of rules) {

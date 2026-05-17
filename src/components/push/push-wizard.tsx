@@ -68,6 +68,7 @@ export function PushWizard({ panels }: PushWizardProps) {
   }, []);
 
   const { isConnected, lastEvent } = useWebSocket({
+    autoConnect: true,
     events: ['panel:push-progress'],
   });
 

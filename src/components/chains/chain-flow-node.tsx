@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { clsx } from 'clsx';
 import { Server } from 'lucide-react';
 import type { ChainBuilderNode } from '@/lib/chain-flow-utils';
@@ -28,7 +28,7 @@ const protocolBadge: Record<ChainNode['protocol'], string> = {
   xray: 'bg-sky-500/20 text-sky-300',
 };
 
-function ChainFlowNodeRaw({ data, selected }: NodeProps<{ data: ChainBuilderNode }>) {
+function ChainFlowNodeRaw({ data, selected }: NodeProps<Node<ChainBuilderNode>>) {
   const node = data;
 
   return (

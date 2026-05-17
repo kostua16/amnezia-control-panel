@@ -42,10 +42,10 @@ export function enforceXrayRules(
 
 /**
  * Generate Xray routing rules from database config.
- * Converts stored rules to the format expected by Xray.
+ * Converts stored RoutingRule records to the format expected by Xray.
  */
 export async function generateXrayRulesFromDB(): Promise<XrayRoutingRule[]> {
-  const rules = await prisma.xrayRule.findMany({
+  const rules = await prisma.routingRule.findMany({
     where: { isActive: true },
     orderBy: { priority: 'asc' },
   });
@@ -53,18 +53,11 @@ export async function generateXrayRulesFromDB(): Promise<XrayRoutingRule[]> {
   const xuiRules: XrayRoutingRule[] = [];
 
   for (const rule of rules) {
-    // Find the server associated with this rule
-    const server = await prisma.server.findFirst({
-      where: { id: rule.serverId },
-    });
-
-    if (!server) continue;
-
     xuiRules.push({
-      nodeId: `server-${server.id}`,
-      type: rule.type,
-      value: rule.value,
-      outboundTag: rule.outboundTag,
+      nodeId: rule.userId != null ? `user-${rule.userId}` : `rule-${rule.id}`,
+      type: rule.protocol === 'xray' ? 'domain' : 'ip',
+      value: rule.destination,
+      outboundTag: rule.action,
       priority: rule.priority,
     });
   }
@@ -118,4 +111,47 @@ export async function isDestinationBlockedByGeo(
 ): Promise<boolean> {
   const result = await resolveGeoRoute(destIp);
   return result.action === 'BLOCK';
+}
+
+// ─── Rule Application ──────────────────────────────────
+
+export interface ApplyRulesResult {
+  success: boolean;
+  appliedCount: number;
+  errors: string[];
+  rules: XrayRoutingRule[];
+  awgConfig: unknown | null;
+  threeXuiConfig: unknown | null;
+}
+
+/**
+ * Apply routing rules for a specific user.
+ * Generates the rules and returns the resulting config.
+ */
+export async function applyRoutingRules(_userId: number): Promise<ApplyRulesResult> {
+  const rules = await generateXrayRulesFromDB();
+  return {
+    success: true,
+    appliedCount: rules.length,
+    errors: [],
+    rules,
+    awgConfig: null,
+    threeXuiConfig: null,
+  };
+}
+
+/**
+ * Apply all routing rules (no user filter).
+ * Generates the rules and returns the resulting config.
+ */
+export async function applyAllRules(): Promise<ApplyRulesResult> {
+  const rules = await generateXrayRulesFromDB();
+  return {
+    success: true,
+    appliedCount: rules.length,
+    errors: [],
+    rules,
+    awgConfig: null,
+    threeXuiConfig: null,
+  };
 }

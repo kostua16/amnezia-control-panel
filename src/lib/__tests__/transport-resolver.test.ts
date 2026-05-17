@@ -22,11 +22,11 @@ beforeEach(async () => {
   mockIsReachable = mock.fn(async (_hostname: string) => true);
 
   // Import the deps setter/resetter after mocking is configured
-  const module = await import('../transport-resolver');
+  const resolver = await import('../transport-resolver');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  setDeps = (module as any).__setDeps;
+  setDeps = (resolver as any).__setDeps;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  resetDeps = (module as any).__resetDeps;
+  resetDeps = (resolver as any).__resetDeps;
 
   setDeps({
     getNodeIP: mockGetNodeIP,

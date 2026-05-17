@@ -25,6 +25,8 @@ const WS_EVENTS: WsEventType[] = [
   'alert:new',
   'user:status-change',
   'panel:fallback-change',
+  'panel:push-progress',
+  'chain:status-update',
 ];
 
 /**
@@ -61,13 +63,13 @@ export function Providers({ children }: ProvidersProps) {
 
   const { isConnected, lastEvent } = useWebSocket({
     autoConnect: true,
-    events: WS_EVENTS,
+    events: WS_EVENTS as WsEventType[],
   });
 
   // Bridge: invalidate React Query caches when WebSocket events arrive
   useEffect(() => {
     for (const [eventType, queryKeys] of Object.entries(WS_TO_QUERY_KEYS)) {
-      if (lastEvent[eventType]) {
+      if (queryKeys && lastEvent[eventType]) {
         for (const queryKey of queryKeys) {
           queryClient.invalidateQueries({ queryKey });
         }

@@ -198,6 +198,7 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
     ...(customPositions[pos.id] ?? {}),
   }));
   const connections = calculateConnections(positions, topology);
+  const posLookup = new Map(positions.map((p) => [p.id, p]));
 
   // Determine SVG canvas size
   const maxX = positions.length > 0
@@ -329,10 +330,13 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
         >
           {/* Connection lines */}
           {connections.map((conn, i) => {
-            const fromX = conn.from.x + NODE_WIDTH / 2;
-            const fromY = conn.from.y + NODE_HEIGHT / 2;
-            const toX = conn.to.x + NODE_WIDTH / 2;
-            const toY = conn.to.y + NODE_HEIGHT / 2;
+            const fromPos = posLookup.get(conn.from);
+            const toPos = posLookup.get(conn.to);
+            if (!fromPos || !toPos) return null;
+            const fromX = fromPos.x + NODE_WIDTH / 2;
+            const fromY = fromPos.y + NODE_HEIGHT / 2;
+            const toX = toPos.x + NODE_WIDTH / 2;
+            const toY = toPos.y + NODE_HEIGHT / 2;
             const midX = (fromX + toX) / 2;
 
             return (
@@ -354,10 +358,13 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
 
           {/* Arrowheads */}
           {connections.map((conn, i) => {
-            const fromX = conn.from.x + NODE_WIDTH / 2;
-            const fromY = conn.from.y + NODE_HEIGHT / 2;
-            const toX = conn.to.x + NODE_WIDTH / 2;
-            const toY = conn.to.y + NODE_HEIGHT / 2;
+            const fromPos = posLookup.get(conn.from);
+            const toPos = posLookup.get(conn.to);
+            if (!fromPos || !toPos) return null;
+            const fromX = fromPos.x + NODE_WIDTH / 2;
+            const fromY = fromPos.y + NODE_HEIGHT / 2;
+            const toX = toPos.x + NODE_WIDTH / 2;
+            const toY = toPos.y + NODE_HEIGHT / 2;
 
             const dx = toX - fromX;
             const dy = toY - fromY;

@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSystemResources } from '@/lib/resource-monitor';
-import { broadcastStatsUpdate, broadcastResourceUpdate } from '@/lib/websocket';
+import { broadcastEvent } from '@/lib/websocket';
 
 let statsInterval: ReturnType<typeof setInterval> | null = null;
 let resourcesInterval: ReturnType<typeof setInterval> | null = null;
@@ -27,7 +27,7 @@ export function startBroadcaster(): void {
           prisma.service.count(),
         ]);
 
-      broadcastStatsUpdate({
+      broadcastEvent('stats:update', {
         totalUsers,
         activeUsers,
         blockedUsers,
@@ -45,7 +45,7 @@ export function startBroadcaster(): void {
   resourcesInterval = setInterval(() => {
     try {
       const resources = getSystemResources();
-      broadcastResourceUpdate(resources);
+      broadcastEvent('resource:update', resources);
     } catch (err) {
       console.error('[broadcaster] Resources push failed:', err);
     }

@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { broadcastAlert } from '@/lib/websocket';
+import { broadcastEvent } from '@/lib/websocket';
 import type { AlertSeverity } from '@/generated/prisma/enums';
 
 export interface AlertData {
@@ -34,7 +34,7 @@ export async function createAlert(
   const alertData = toAlertData(alert);
 
   // Broadcast to all connected WebSocket clients
-  broadcastAlert(alertData);
+  broadcastEvent('alert:new', alertData);
 
   return alertData;
 }

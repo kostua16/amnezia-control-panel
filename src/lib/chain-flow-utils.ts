@@ -5,6 +5,7 @@ import type { CrossPanelEdgeData } from '@/types/chain-flow';
 import { calculateNodePositions, CANVAS_PADDING } from '@/lib/chain-layout';
 
 export interface ChainBuilderNode {
+  [key: string]: unknown;
   id: string;
   serverId: number | null;
   label: string;
@@ -18,7 +19,7 @@ export interface ChainBuilderNode {
 export function toFlowNodes(
   builderNodes: ChainBuilderNode[],
   positions: Record<string, { x: number; y: number }>,
-): Node<{ data: ChainBuilderNode }>[] {
+): Node<ChainBuilderNode>[] {
   return builderNodes.map((builderNode) => ({
     id: builderNode.id,
     type: 'chainNode',
@@ -66,8 +67,8 @@ export function toFlowEdges(
     if (cross && serverPanelMap && panels) {
       const sourceServerId = nodeServerMap.get(fromId);
       const targetServerId = nodeServerMap.get(toId);
-      const sourcePanelId = sourceServerId !== undefined ? serverPanelMap[sourceServerId] : undefined;
-      const targetPanelId = targetServerId !== undefined ? serverPanelMap[targetServerId] : undefined;
+      const sourcePanelId = sourceServerId != null ? serverPanelMap[sourceServerId] : undefined;
+      const targetPanelId = targetServerId != null ? serverPanelMap[targetServerId] : undefined;
 
       if (sourcePanelId !== undefined && targetPanelId !== undefined) {
         edgeData = {

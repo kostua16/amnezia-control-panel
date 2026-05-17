@@ -7,6 +7,7 @@ import { PushWizard } from '@/components/push/push-wizard';
 import { ChainFlowEditor } from '@/components/chains/chain-flow-editor';
 import { buildServerPanelMap } from '@/lib/build-server-panel-map';
 import type { Server } from '@/types/server';
+import type { RemotePanel } from '@/types/remote-panel';
 
 interface PanelItem {
   id: number;
@@ -120,7 +121,7 @@ export default function PushConfigurationPage() {
               </div>
               <ChainFlowEditor
                 servers={servers}
-                panels={panels}
+                panels={panels as unknown as RemotePanel[]}
                 serverPanelMap={serverPanelMap}
               />
             </div>

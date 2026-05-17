@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import { Activity, Wifi, WifiOff } from 'lucide-react';
-import { useChainStatus, formatBytesPerSec } from '@/hooks/use-chain-status';
+import { useChainStatus } from '@/hooks/use-chain-status';
 import {
   calculateNodePositions,
   calculateConnections,
@@ -29,14 +29,21 @@ const statusGlow: Record<string, string> = {
   down: 'shadow-red-400/30',
 };
 
+function formatBytesPerSec(bytesPerSec: number): string {
+  if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`;
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+}
+
 export function ChainVisualization({
   chainId,
   pollInterval,
 }: ChainVisualizationProps) {
-  const { status, isLoading, error, isConnected, refetch } = useChainStatus({
-    chainId,
-    pollInterval,
-  });
+  const numericChainId = Number(chainId) || null;
+  const { status, isLoading, error, refetch } = useChainStatus(
+    numericChainId,
+    { pollInterval, enabled: true },
+  );
   const animFrameRef = useRef<number | null>(null);
 
   // Animated traffic dots using SVG
@@ -97,9 +104,12 @@ export function ChainVisualization({
 
   // Build lookup maps
   const nodeLookup = new Map(status.nodes.map((n) => [n.id, n]));
+  const posLookup = new Map(positions.map((p) => [p.id, p]));
   const connectionLookup = new Map(
     status.connections.map((c) => [`${c.fromNode}-${c.toNode}`, c]),
   );
+
+  const isConnected = status !== null;
 
   // SVG dimensions
   const maxX =
@@ -160,13 +170,17 @@ export function ChainVisualization({
 
           {/* Connection lines */}
           {connections.map((conn, i) => {
-            const fromX = conn.from.x + NODE_WIDTH / 2;
-            const fromY = conn.from.y + NODE_HEIGHT / 2;
-            const toX = conn.to.x + NODE_WIDTH / 2;
-            const toY = conn.to.y + NODE_HEIGHT / 2;
+            const fromPos = posLookup.get(conn.from);
+            const toPos = posLookup.get(conn.to);
+            if (!fromPos || !toPos) return null;
 
-            const connKey = `${conn.from.id}-${conn.to.id}`;
-            const reverseKey = `${conn.to.id}-${conn.from.id}`;
+            const fromX = fromPos.x + NODE_WIDTH / 2;
+            const fromY = fromPos.y + NODE_HEIGHT / 2;
+            const toX = toPos.x + NODE_WIDTH / 2;
+            const toY = toPos.y + NODE_HEIGHT / 2;
+
+            const connKey = `${conn.from}-${conn.to}`;
+            const reverseKey = `${conn.to}-${conn.from}`;
             const metrics =
               connectionLookup.get(connKey) ??
               connectionLookup.get(reverseKey);
@@ -296,7 +310,7 @@ export function ChainVisualization({
 
         {/* Node cards */}
         {status.nodes.map((node) => {
-          const pos = positions.find((p) => p.id === node.id);
+          const pos = posLookup.get(node.id);
           if (!pos) return null;
 
           return (

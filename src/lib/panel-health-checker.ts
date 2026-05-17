@@ -268,6 +268,42 @@ export function stopPanelHealthChecks(): void {
 }
 
 /**
+ * Get status for a single panel with latest connection record.
+ * Used by API routes to provide per-panel status data.
+ */
+export async function getPanelStatus(panelId: number): Promise<{
+  status: PanelConnectionStatus;
+  lastRecord: PanelConnectionRecord | null;
+}> {
+  const result = await testPanel(panelId);
+
+  let lastRecord: PanelConnectionRecord | null = null;
+  try {
+    const history = await prisma.panelConnectionHistory.findFirst({
+      where: { panelId },
+      orderBy: { checkedAt: 'desc' },
+    });
+    if (history) {
+      lastRecord = {
+        id: history.id,
+        success: history.success,
+        latencyMs: history.latencyMs,
+        message: history.message,
+        version: history.version,
+        checkedAt: history.checkedAt.toISOString(),
+      };
+    }
+  } catch {
+    // panelConnectionHistory table may not exist
+  }
+
+  return {
+    status: result.success ? 'connected' : 'offline',
+    lastRecord,
+  };
+}
+
+/**
  * Get connection status records for all active panels.
  * Maps test results to PanelConnectionRecord format.
  */
@@ -280,11 +316,13 @@ export async function getPanelConnectionRecords(): Promise<PanelConnectionRecord
     panels.map((panel: { id: number }) => testPanel(panel.id))
   );
 
-  return testResults.map((result: PanelTestResult) => ({
-    panelId: result.panelId,
-    status: result.success ? 'connected' : 'offline',
-    lastCheck: new Date().toISOString(),
-    latency: result.latency,
-    error: result.error,
+  const now = new Date().toISOString();
+  return testResults.map((result: PanelTestResult, index: number) => ({
+    id: panels[index]?.id ?? 0,
+    success: result.success,
+    latencyMs: result.latency,
+    message: result.error ?? (result.success ? 'OK' : 'Failed'),
+    version: null,
+    checkedAt: now,
   }));
 }

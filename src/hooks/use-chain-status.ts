@@ -65,7 +65,7 @@ export function useChainStatus(
   // Initial fetch
   useEffect(() => {
     void fetchStatus();
-  }, [chainId, enabled]); // Only re-run when chainId or enabled changes
+  }, [chainId, enabled, fetchStatus]); // Re-run when chainId, enabled, or fetchStatus changes
 
   // Polling
   useEffect(() => {

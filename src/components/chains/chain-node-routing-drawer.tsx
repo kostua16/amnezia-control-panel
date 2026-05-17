@@ -165,6 +165,34 @@ interface RoutingFormErrors {
 
 type AutoSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+function AutoSaveIndicator({ status }: { status: AutoSaveStatus }) {
+  if (status === 'idle') return null;
+  if (status === 'saving') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Saving...
+      </span>
+    );
+  }
+  if (status === 'saved') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-green-500">
+        <Check className="h-3 w-3" />
+        Saved
+      </span>
+    );
+  }
+  if (status === 'error') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-destructive">
+        Error
+      </span>
+    );
+  }
+  return null;
+}
+
 // ─── Component ───────────────────────────────────────────
 
 export function ChainNodeRoutingDrawer({
@@ -850,36 +878,6 @@ export function ChainNodeRoutingDrawer({
     setRoutingLoading(true);
     fetchRoutingRules();
   }, [fetchGeoRules, fetchRoutingRules]);
-
-  // ─── Auto-save status indicator ─────────────────────
-
-  function AutoSaveIndicator({ status }: { status: AutoSaveStatus }) {
-    if (status === 'idle') return null;
-    if (status === 'saving') {
-      return (
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Saving...
-        </span>
-      );
-    }
-    if (status === 'saved') {
-      return (
-        <span className="inline-flex items-center gap-1 text-xs text-green-500">
-          <Check className="h-3 w-3" />
-          Saved
-        </span>
-      );
-    }
-    if (status === 'error') {
-      return (
-        <span className="inline-flex items-center gap-1 text-xs text-destructive">
-          Error
-        </span>
-      );
-    }
-    return null;
-  }
 
   // ─── Guard ──────────────────────────────────────────
 

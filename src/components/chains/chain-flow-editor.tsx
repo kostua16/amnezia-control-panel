@@ -112,7 +112,7 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
 
   // Convert local nodes to React Flow nodes/edges
   // Build panel groups when serverPanelMap is provided
-  const flowNodes = useMemo(() => {
+  const flowNodes: Node[] = useMemo(() => {
     const positions = getDefaultPositions(localNodes.length, topology);
     const mergedPositions = { ...positions, ...customPositions };
 
@@ -205,7 +205,7 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
   }, [localConnections, localNodes, serverPanelMap, panels]);
 
   // Use React Flow state hooks
-  const [reactFlowNodes, setReactFlowNodes, onNodesChange] = useNodesState(flowNodes);
+  const [reactFlowNodes, setReactFlowNodes, onNodesChange] = useNodesState<Node>(flowNodes);
   const [reactFlowEdges, setReactFlowEdges, onEdgesChange] = useEdgesState(flowEdges);
 
   // Sync React Flow nodes to local nodes when positions change
@@ -244,7 +244,7 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
   // Close add menu on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as HTMLElement)) {
         setShowAddMenu(false);
       }
     }
@@ -340,18 +340,6 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
     [servers, localNodes.length],
   );
 
-  // Save chain -- opens the API key dialog
-  const handleSaveClick = useCallback(() => {
-    if (localNodes.length === 0) return;
-    if (saveDialogPanels.length === 0) {
-      // No panels to provide keys for -- save directly
-      handleSaveDirect();
-    } else {
-      setSaveError(null);
-      setSaveDialogOpen(true);
-    }
-  }, [localNodes.length, saveDialogPanels.length]);
-
   // Performs the actual save with collected keys
   const handleSaveDirect = useCallback(async () => {
     setSaving(true);
@@ -388,6 +376,18 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
       setSaving(false);
     }
   }, [localNodes, selectedTemplate, onApply, panelApiKeys]);
+
+  // Save chain -- opens the API key dialog
+  const handleSaveClick = useCallback(() => {
+    if (localNodes.length === 0) return;
+    if (saveDialogPanels.length === 0) {
+      // No panels to provide keys for -- save directly
+      handleSaveDirect();
+    } else {
+      setSaveError(null);
+      setSaveDialogOpen(true);
+    }
+  }, [localNodes.length, saveDialogPanels.length, handleSaveDirect]);
 
   // Keyboard: Delete for selected nodes/edges
   useEffect(() => {

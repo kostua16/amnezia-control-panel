@@ -4,6 +4,16 @@ declare global {
   var __socketIO: SocketIOServer | undefined;
 }
 
+/** WebSocket event types used across the application */
+export type WsEventType =
+  | 'stats:update'
+  | 'resource:update'
+  | 'alert:new'
+  | 'user:status-change'
+  | 'panel:fallback-change'
+  | 'panel:push-progress'
+  | 'chain:status-update';
+
 export {};
 
 let ioInstance: SocketIOServer | null = null;
@@ -60,4 +70,19 @@ export function initWebSocket(_httpServer: import('http').Server): SocketIOServe
     '[ws] initWebSocket called but Socket.IO was not initialized by server.mjs. ' +
     'Ensure the application is started via scripts/dev.cjs or scripts/start.cjs.',
   );
+}
+
+/** Broadcast an alert to all connected clients. */
+export function broadcastAlert(data: unknown): void {
+  broadcastEvent('alert:new', data);
+}
+
+/** Broadcast dashboard stats update. */
+export function broadcastStatsUpdate(data: unknown): void {
+  broadcastEvent('stats:update', data);
+}
+
+/** Broadcast system resource update. */
+export function broadcastResourceUpdate(data: unknown): void {
+  broadcastEvent('resource:update', data);
 }
