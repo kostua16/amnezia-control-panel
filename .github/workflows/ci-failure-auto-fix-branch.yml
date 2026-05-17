@@ -58,7 +58,7 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: Setup git identity
         run: |
@@ -207,7 +207,7 @@ jobs:
       - name: Create fix PR
         if: steps.changes.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
           BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
           BASE_BRANCH: ${{ github.event.workflow_run.head_branch }}
           RUN_URL: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
