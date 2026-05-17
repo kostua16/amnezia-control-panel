@@ -173,4 +173,4 @@ jobs:
           ISSUE_NUM: ${{ github.event.issue.number }}
         run: |
           gh issue comment "$ISSUE_NUM" \
-            --body "The \`/fix\` workflow ran but could not produce code changes. Manual investigation may be needed."
+            --body "The auto-fix workflow ran but could not produce code changes. Manual investigation may be needed."
