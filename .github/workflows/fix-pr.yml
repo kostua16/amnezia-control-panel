@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 300
+  MAX_TURNS: 80
   NODE_VERSION: "22.x"
   DISABLE_TELEMETRY: "1"
   API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
@@ -31,7 +31,7 @@ permissions:
 jobs:
   fix:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     if: |
       (
         github.event_name == 'issue_comment' &&
@@ -88,8 +88,8 @@ jobs:
             --max-turns ${{ env.MAX_TURNS }}
             --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(gh issue view:*),Bash(gh issue list:*)'
           prompt: |
-            /gsd-quick
-            Fix the following GitHub issue by implementing the necessary code changes.
+            /gsd-debug
+            Fix the following GitHub issue.
 
             ISSUE NUMBER: #${{ github.event.issue.number }}
             ISSUE TITLE: ${{ github.event.issue.title }}
@@ -98,14 +98,24 @@ jobs:
             Steps:
             1. Run `gh issue view ${{ github.event.issue.number }}` to read full issue description
             2. Run `gh issue view ${{ github.event.issue.number }} --comments` to read the conversation
-            3. Understand the problem from the issue context and the fix instruction
-            4. Implement the fix in the codebase
+            3. Identify the SINGLE root cause that explains the failure — ignore symptoms and downstream errors
+            4. Implement a minimal, targeted fix for that ONE root cause only
             5. Run: npm run lint && npx tsc --noEmit
-            6. Ensure the fix is complete and correct
+            6. If lint/types fail, fix ONLY the errors you introduced — do not expand scope
 
-            Do NOT commit or push — the workflow handles that.
+            STRICT SCOPE RULES:
+            - Do NOT commit or push — the workflow handles that
+            - Do NOT fix multiple unrelated issues in one run — one root cause per PR
+            - Do NOT refactor, reformat, or touch files unrelated to the root cause
+            - If the issue mentions 5 errors, find the ONE underlying cause that produces all of them
+            - If the fix is not clear after reading the issue, post a comment explaining what's needed and stop
+            - Stop after 60 turns even if incomplete — partial fixes are better than timeouts
 
-            TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish before the limit.
+            AFTER FIXING:
+            - Post a comment on the issue listing any remaining/unresolved issues from the original report
+            - Format: "## Fixed\n- [what was fixed]\n## Remaining\n- [unresolved items from the issue]"
+
+            TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Be efficient.
           settings: |
             {
               "env": {
