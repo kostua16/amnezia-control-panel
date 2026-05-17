@@ -314,10 +314,24 @@ jobs:
               }
             }
 
-            await github.rest.issues.create({
+            const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: '[workflow-health] Hourly optimization workflow failed',
               body: `## Workflow Health Check Failure\n\n**Run:** ${runUrl}\n\nThe hourly workflow health check and optimization workflow itself failed. Manual investigation needed.`,
               labels: ['auto-fix', 'ci-failure']
             });
+
+            // Trigger triage workflow since issues opened by GITHUB_TOKEN
+            // don't fire the issues:opened event
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'triage.yml',
+                ref: 'main',
+                inputs: { issue_number: String(issue.number) }
+              });
+            } catch (e) {
+              core.warning(`Failed to dispatch triage: ${e.message}`);
+            }
