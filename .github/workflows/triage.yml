@@ -18,14 +18,6 @@ concurrency:
 env:
   MAX_TURNS: 80
   NODE_VERSION: "22.x"
-  DISABLE_TELEMETRY: "1"
-  API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}"
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
-  ANTHROPIC_DEFAULT_SONNET_MODEL: "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}"
-  ANTHROPIC_DEFAULT_OPUS_MODEL: "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}"
-  CLAUDE_CODE_SUBAGENT_MODEL: "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
-  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 
 jobs:
   triage:
@@ -72,16 +64,13 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           install-gsd: "true"
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: ./.github/actions/run-claude
         with:
-          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
-          allowed_bots: "github-actions[bot]"
-          track_progress: ${{ github.event_name != 'workflow_dispatch' }}
-          show_full_output: ${{ vars.CLAUDE_DEBUG || false }}
-          claude_args: |
-            --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
-            --max-turns ${{ env.MAX_TURNS }}
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh label:*),Bash(./.github/workflows/scripts/gh.sh:*),Bash(./.github/workflows/scripts/edit-issue-labels.sh:*),Bash(gh issue close:*)"
+          model: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
+          max-turns: "${{ env.MAX_TURNS }}"
+          track-progress: "${{ github.event_name != 'workflow_dispatch' }}"
+          allowed-bots: "github-actions[bot]"
+          allowed-tools: "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh label:*),Bash(./.github/workflows/scripts/gh.sh:*),Bash(./.github/workflows/scripts/edit-issue-labels.sh:*),Bash(gh issue close:*)"
           prompt: |
             /gsd-inbox
             REPO: '${{ github.repository }}'
@@ -115,8 +104,6 @@ jobs:
             2. Add label "duplicate": `./.github/workflows/scripts/edit-issue-labels.sh --add-label "duplicate"`
             3. Close the issue: `gh issue close ${{ steps.resolve.outputs.number }} --reason "not planned" --comment "Closing as duplicate of #[original issue number]"`
 
-            TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
-
             After completing triage, post a summary comment on issue #${{ steps.resolve.outputs.number }}.
             Use this EXACT format — gh issue comment with a multi-line body:
 
@@ -129,10 +116,3 @@ jobs:
 
             IMPORTANT: Only list labels YOU added. If a label was already on the issue, do NOT claim you applied it.
             This provides feedback since automated progress tracking is not available for workflow_dispatch triggers.
-          settings: |
-            {
-              "env": {
-                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
-                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}"
-              }
-            }

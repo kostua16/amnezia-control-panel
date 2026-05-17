@@ -10,7 +10,6 @@ permissions:
 
 env:
   MAX_TURNS: 80
-  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 
 jobs:
   generate-release-notes:
@@ -38,15 +37,12 @@ jobs:
           echo "" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: ./.github/actions/run-claude
         with:
-          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
-          track_progress: false
-          show_full_output: ${{ vars.CLAUDE_DEBUG || false }}
-          claude_args: |
-            --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
-            --max-turns ${{ env.MAX_TURNS }}
-            --allowedTools "Bash(cat *),Bash(git log *),Bash(git diff *)"
+          model: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
+          max-turns: "${{ env.MAX_TURNS }}"
+          track-progress: "false"
+          allowed-tools: "Bash(cat *),Bash(git log *),Bash(git diff *)"
           prompt: |
             Generate release notes for ${{ github.ref_name }}.
 
@@ -60,15 +56,6 @@ jobs:
             ## Breaking Changes (commits with BREAKING CHANGE or !)
 
             Omit empty sections. Write output to /tmp/release-notes.md
-
-            TURN BUDGET: Max 50 turns.
-          settings: |
-            {
-              "env": {
-                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
-                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}"
-              }
-            }
 
       - name: Create GitHub Release (draft)
         env:

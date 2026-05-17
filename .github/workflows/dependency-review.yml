@@ -15,7 +15,6 @@ concurrency:
 
 env:
   MAX_TURNS: 80
-  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 
 jobs:
   ai-dependency-review:
@@ -39,15 +38,12 @@ jobs:
           head -200 /tmp/dep-diff.txt >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: ./.github/actions/run-claude
         with:
-          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
-          track_progress: true
-          show_full_output: ${{ vars.CLAUDE_DEBUG || false }}
-          claude_args: |
-            --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
-            --max-turns ${{ env.MAX_TURNS }}
-            --allowedTools "Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(gh pr comment:*)"
+          model: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
+          max-turns: "${{ env.MAX_TURNS }}"
+          track-progress: "true"
+          allowed-tools: "Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(gh pr comment:*)"
           prompt: |
             Review this Dependabot dependency update PR for:
             1. Breaking changes (check changelogs for major version bumps)
@@ -64,12 +60,3 @@ jobs:
             - APPROVE: safe patch/minor with no breaking changes
             - REVIEW NEEDED: major bump or breaking changes detected
             - BLOCK: new security vulnerability introduced
-
-            TURN BUDGET: Max 100 turns.
-          settings: |
-            {
-              "env": {
-                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
-                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}"
-              }
-            }

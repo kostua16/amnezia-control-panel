@@ -24,6 +24,10 @@ inputs:
   allowed-tools:
     description: "Allowed tools"
     default: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*)"
+  system-prompt:
+    description: "Custom system prompt. When empty, Claude uses its built-in default. Note: literal { and } must be escaped as {{ and }}."
+    required: false
+    default: ""
   api-timeout:
     description: "API timeout"
     default: "${{ github.env.API_TIMEOUT_MS || 30000 }}"
@@ -86,11 +90,22 @@ runs:
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
         show_full_output: ${{ inputs.claude-debug || false }}
-        claude_args: |
+        claude_args: |-
           --model ${{ inputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          --allowedTools '${{ inputs.allowed-tools }}'
-        prompt: "${{ inputs.prompt }}. TURN BUDGET: ${{ steps.turn_budget.outputs.budget }} turns total. Plan: ≤${{ steps.turn_budget.outputs.investigate }} investigate, ≤${{ steps.turn_budget.outputs.main }} main work (fix, change, etc), ≤${{ steps.turn_budget.outputs.verify }} verify. Be efficient."
+          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}
+        prompt: |-
+          ${{ inputs.prompt }}.
+
+          AGENT TURN LIMIT — maximum ${{ steps.turn_budget.outputs.budget }} turns (do not exceed):
+            - You have at most ${{ steps.turn_budget.outputs.budget }} turns total.
+            - Phase allocation (do not exceed):
+              • ≤${{ steps.turn_budget.outputs.investigate }} turns — investigate only (read logs, reproduce, search codebase).
+              • ≤${{ steps.turn_budget.outputs.main }} turns — implement (edit files, run fixes, commit).
+              • ≤${{ steps.turn_budget.outputs.verify }} turns — verify only (run tests, lint, confirm the fix).
+            - Once a phase budget is used up, move to the next phase; do not keep exploring after investigate is done.
+            - Prefer fewer tool calls per turn; avoid re-reading the same files.
+            - If you cannot finish in time, STOP and report: what you did, what remains, and your best partial result.
         settings: |
           {
             "env": {
