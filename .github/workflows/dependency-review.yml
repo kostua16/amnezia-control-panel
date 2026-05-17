@@ -29,6 +29,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           install-deps: "true"
+          install-rtk: "true"
 
       - name: Get dependency diff
         id: diff

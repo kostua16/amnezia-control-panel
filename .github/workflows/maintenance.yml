@@ -30,6 +30,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           install-gsd: "true"
+          install-rtk: "true"
 
       - id: claude_run
         continue-on-error: true

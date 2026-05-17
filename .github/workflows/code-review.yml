@@ -65,6 +65,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           install-deps: "true"
           install-gsd: "true"
+          install-rtk: "true"
 
       - name: Main Claude review
         id: claude
@@ -119,6 +120,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           install-deps: "true"
           install-gsd: "true"
+          install-rtk: "true"
 
       - uses: ./.github/actions/run-claude
         with:

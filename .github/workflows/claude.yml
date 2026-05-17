@@ -44,6 +44,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           install-deps: "true"
           install-gsd: "true"
+          install-rtk: "true"
 
       - name: Setup git identity
         run: |

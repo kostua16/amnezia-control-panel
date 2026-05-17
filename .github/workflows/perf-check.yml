@@ -25,6 +25,7 @@ jobs:
         with:
           install-deps: "true"
           generate-prisma: "true"
+          install-rtk: "true"
 
       - name: Build and measure PR
         id: pr-build

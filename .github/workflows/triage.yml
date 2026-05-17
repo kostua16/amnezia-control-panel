@@ -63,6 +63,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           install-gsd: "true"
+          install-rtk: "true"
 
       - uses: ./.github/actions/run-claude
         with:

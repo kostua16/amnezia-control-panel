@@ -14,6 +14,9 @@ inputs:
   install-gsd:
     description: "Install GSD framework with cache"
     default: "false"
+  install-rtk:
+    description: "Install RTK (Rust Token Killer) with cache and init hooks"
+    default: "false"
 
 runs:
   using: "composite"
@@ -46,4 +49,23 @@ runs:
 
     - if: inputs.install-gsd == 'true' && steps.gsd-cache.outputs.cache-hit != 'true'
       run: npx get-shit-done-cc@latest --claude --local
+      shell: bash
+
+    - if: inputs.install-rtk == 'true'
+      id: rtk-cache
+      uses: actions/cache@v5
+      with:
+        path: ~/.local/bin/rtk
+        key: rtk-${{ runner.os }}-latest
+
+    - if: inputs.install-rtk == 'true' && steps.rtk-cache.outputs.cache-hit != 'true'
+      run: curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+      shell: bash
+
+    - if: inputs.install-rtk == 'true'
+      run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      shell: bash
+
+    - if: inputs.install-rtk == 'true'
+      run: rtk init -g --auto-patch
       shell: bash

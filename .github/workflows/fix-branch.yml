@@ -159,6 +159,7 @@ jobs:
           install-deps: "true"
           generate-prisma: "true"
           install-gsd: "true"
+          install-rtk: "true"
 
       - name: Warm TypeScript cache
         if: steps.fixability.outputs.fixable == 'true'

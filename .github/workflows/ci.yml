@@ -20,6 +20,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           install-deps: "true"
+          install-rtk: "true"
       - run: npm run lint
       - run: npm run format:check
 
@@ -33,6 +34,7 @@ jobs:
         with:
           install-deps: "true"
           generate-prisma: "true"
+          install-rtk: "true"
       - run: npx tsc --noEmit
 
   test:
@@ -46,6 +48,7 @@ jobs:
         with:
           install-deps: "true"
           generate-prisma: "true"
+          install-rtk: "true"
       - run: npm test
 
   build:
@@ -59,6 +62,7 @@ jobs:
         with:
           install-deps: "true"
           generate-prisma: "true"
+          install-rtk: "true"
       - run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
