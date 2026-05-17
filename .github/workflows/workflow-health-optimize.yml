@@ -239,6 +239,7 @@ jobs:
         run: |
           git add -A
           git commit -m "ci(workflows): hourly optimization pass" || true
+          git config --local "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(printf '%s' "x-access-token:${{ secrets.GH_PAT }}" | base64)"
           git push origin "$BRANCH_NAME"
 
       - name: Create optimization PR

@@ -140,6 +140,7 @@ jobs:
         run: |
           git add -A
           git commit -m "fix: resolve #${{ github.event.issue.number }}" || true
+          git config --local "http.https://github.com/.extraheader" "AUTHORIZATION: basic $(printf '%s' "x-access-token:${{ secrets.GH_PAT }}" | base64)"
           git push origin "$BRANCH_NAME"
 
       - name: Create fix PR
