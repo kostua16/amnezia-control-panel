@@ -77,7 +77,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
           allowed_bots: "github-actions[bot]"
           track_progress: ${{ github.event_name != 'workflow_dispatch' }}
-          show_full_output: true
+          show_full_output: ${{ vars.CLAUDE_DEBUG || false }}
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}

@@ -137,6 +137,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
           allowed_bots: "claude[bot],github-actions[bot]"
           track_progress: false
+          show_full_output: ${{ vars.CLAUDE_DEBUG || false }}
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}
