@@ -30,6 +30,23 @@
 - `maintenance.yml:45` — `false` (`schedule` and `workflow_dispatch` both incompatible)
 - `release-notes.yml:44` — `false` (`push` incompatible)
 
+### Bot Actor Blocking
+`claude-code-action@v1` blocks bot actors by default with error:
+```
+Workflow initiated by non-human actor: github-actions (type: Bot).
+Add bot to allowed_bots list or use '*' to allow all bots.
+```
+Workflows triggered by other workflows (e.g. auto-fix dispatching triage via `workflow_dispatch`) run as `github-actions[bot]`. Must add `allowed_bots: "github-actions[bot]"` to the `claude-code-action` step.
+
+**Fixed:**
+- `triage.yml` — added `allowed_bots: "github-actions[bot]"`
+
+**Unaffected:**
+- `claude.yml`, `code-review.yml` — triggered by human comments/reviews
+- `maintenance.yml`, `release-notes.yml` — triggered by schedule/push, actor is human who pushed
+- `ci-failure-auto-fix-pr.yml`, `ci-failure-auto-fix-branch.yml` — triggered by `workflow_run`, actor inherits from the triggering CI run (human who pushed)
+- `dependency-review.yml` — triggered by Dependabot PRs, filtered to `dependabot[bot]` but Dependabot may need `allowed_bots` if it fails
+
 ### GITHUB_TOKEN Issue Creation
 Issues opened by `GITHUB_TOKEN` do NOT fire `issues:opened` events. The auto-fix workflows manually dispatch `triage.yml` via `workflow_dispatch` to work around this.
 
