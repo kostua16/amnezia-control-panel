@@ -304,7 +304,9 @@ jobs:
               : '## Failed Steps\n_No failed step details available_';
 
             const logsSection = logSnippets.length > 0
-              ? logSnippets.map(({ name, log }) => `### ${name}\n\`\`\`\n${log}\n\`\`\``).join('\n\n')
+              ? logSnippets.map(({ name, log }) =>
+                  `<details><summary>${name}</summary>\n\n\`\`\`\n${log}\n\`\`\`\n</details>`
+                ).join('\n\n')
               : '_No logs available_';
 
             const body = [
@@ -325,7 +327,7 @@ jobs:
               logsSection,
             ].join('\n');
 
-            for (const [name, color] of [['auto-fix', 'e4e669'], ['ci-failure', 'd73a4a']]) {
+            for (const [name, color] of [['auto-fix', 'e4e669'], ['ci-failure', 'd73a4a'], ['auto-fix-failed', 'd93f0b']]) {
               try {
                 await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
               } catch (e) {
@@ -340,7 +342,7 @@ jobs:
               repo: context.repo.repo,
               title,
               body,
-              labels: ['auto-fix', 'ci-failure']
+              labels: ['auto-fix', 'ci-failure', 'auto-fix-failed']
             });
 
             // Trigger triage workflow since issues opened by GITHUB_TOKEN
