@@ -90,10 +90,15 @@ jobs:
             AUTHOR: '${{ steps.issue_details.outputs.author || github.event.issue.user.login }}'
 
             Triage this new issue:
+            IMPORTANT SCOPE: This is a TRIAGE-ONLY task. DO NOT attempt to fix, resolve, or implement anything.
+            DO NOT read source code files, DO NOT suggest code changes, DO NOT create pull requests.
+            STOP after applying labels and posting the summary comment.
+
             1. Classify as bug report, feature request, or question
             2. Assess priority (critical, high, medium, low)
             3. Assign appropriate labels
             4. Check for duplicates against existing issues
+            5. Add the "triaged" label: ./.github/workflows/scripts/edit-issue-labels.sh --add-label "triaged"
 
             Use ./.github/workflows/scripts/gh.sh to interact with GitHub:
             - `./.github/workflows/scripts/gh.sh issue view [number]` to view the issue
@@ -111,12 +116,17 @@ jobs:
 
             TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
 
-            After completing triage, post a summary comment on issue #${{ steps.resolve.outputs.number }} using:
+            After completing triage, post a summary comment on issue #${{ steps.resolve.outputs.number }}.
+            Use this EXACT format — gh issue comment with a multi-line body:
+
               gh issue comment ${{ steps.resolve.outputs.number }} --body "## Triage Result
-              - Classification: [bug/feature/question]
-              - Priority: [critical/high/medium/low]
-              - Labels applied: [list]
-              - Duplicates found: [none or list]"
+              - **Classification:** <bug/feature/question>
+              - **Priority:** <critical/high/medium/low>
+              - **Labels applied:** <comma-separated list of labels you added>
+              - **Duplicates found:** <none, or #issue numbers>
+              - **Notes:** <one sentence if relevant, or omit this line>"
+
+            IMPORTANT: Only list labels YOU added. If a label was already on the issue, do NOT claim you applied it.
             This provides feedback since automated progress tracking is not available for workflow_dispatch triggers.
           settings: |
             {
