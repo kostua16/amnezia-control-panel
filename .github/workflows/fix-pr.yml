@@ -43,6 +43,8 @@ jobs:
       github.event.workflow_run.conclusion == 'failure' &&
       toJSON(github.event.workflow_run.pull_requests) != '[]' &&
       !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-')
+    outputs:
+      pr-number: ${{ steps.pr.outputs.number }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -301,4 +303,4 @@ jobs:
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           triggering-run-url: ${{ github.event.workflow_run.html_url }}
           branch: ${{ github.event.workflow_run.head_branch }}
-          pr-number: ${{ github.event.workflow_run.pull_requests[0].number || '' }}
+          pr-number: ${{ needs.fix.outputs.pr-number }}
