@@ -26,7 +26,7 @@ runs:
   steps:
     - name: Collect failure details
       id: collect
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       with:
         script: |
           const jobs = await github.rest.actions.listJobsForWorkflowRun({
@@ -58,7 +58,7 @@ runs:
           core.setOutput('log_snippets', JSON.stringify(logSnippets));
 
     - name: Create issue or comment
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       env:
         MODE: ${{ inputs.mode }}
         ISSUE_NUMBER: ${{ inputs.issue-number }}

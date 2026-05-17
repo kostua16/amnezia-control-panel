@@ -18,10 +18,11 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
         cache: ${{ inputs.install-deps == 'true' && 'npm' || '' }}
+        package-manager-cache: false
 
     - if: inputs.install-deps == 'true'
       run: npm ci
@@ -33,7 +34,7 @@ runs:
 
     - if: inputs.install-gsd == 'true'
       id: gsd-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           .claude/skills/gsd-*
