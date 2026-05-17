@@ -1,0 +1,297 @@
+name: Workflow Health Check & Optimize
+
+on:
+  schedule:
+    - cron: "0 * * * *" # Every hour at :00
+  workflow_dispatch:
+
+concurrency:
+  group: workflow-health-optimize
+  cancel-in-progress: false
+
+env:
+  MAX_TURNS: 300
+  NODE_VERSION: "22.x"
+  DISABLE_TELEMETRY: "1"
+  API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}"
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}"
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}"
+  CLAUDE_CODE_SUBAGENT_MODEL: "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
+  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  issues: write
+  id-token: write
+
+jobs:
+  collect-runs:
+    name: Collect Workflow Runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      has-runs: ${{ steps.collect.outputs.has_runs }}
+      runs-data: ${{ steps.collect.outputs.runs_data }}
+    steps:
+      - name: Collect workflow runs from past hour
+        id: collect
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+            const runs = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              created: `${oneHourAgo}..${new Date().toISOString()}`,
+              per_page: 50,
+              status: 'completed'
+            });
+
+            if (runs.data.workflow_runs.length === 0) {
+              core.setOutput('has_runs', 'false');
+              core.setOutput('runs_data', '[]');
+              core.info('No completed workflow runs in the past hour');
+              return;
+            }
+
+            core.setOutput('has_runs', 'true');
+            core.info(`Found ${runs.data.workflow_runs.length} completed runs`);
+
+            const runSummaries = [];
+            for (const run of runs.data.workflow_runs) {
+              const summary = {
+                name: run.name,
+                status: run.conclusion,
+                runNumber: run.run_number,
+                duration: `${Math.round((new Date(run.updated_at) - new Date(run.run_started_at || run.created_at)) / 1000)}s`,
+                url: run.html_url,
+                headBranch: run.head_branch,
+                event: run.event,
+                runStartedAt: run.run_started_at || run.created_at,
+                runUpdatedAt: run.updated_at
+              };
+
+              // Collect failure logs for failed runs
+              if (run.conclusion === 'failure') {
+                try {
+                  const jobs = await github.rest.actions.listJobsForWorkflowRun({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: run.id
+                  });
+
+                  const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure');
+                  summary.failedJobs = failedJobs.map(j => ({
+                    name: j.name,
+                    steps: (j.steps || [])
+                      .filter(s => s.conclusion === 'failure')
+                      .map(s => s.name)
+                  }));
+
+                  // Get last 2000 chars of log per failed job
+                  for (const fj of failedJobs) {
+                    try {
+                      const logs = await github.rest.actions.downloadJobLogsForWorkflowRun({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        job_id: fj.id
+                      });
+                      const raw = typeof logs.data === 'string' ? logs.data : String(logs.data);
+                      fj.logTail = raw.slice(-2000);
+                    } catch (e) {
+                      fj.logTail = `(log unavailable: ${e.message})`;
+                    }
+                  }
+                  summary.failureLogs = failedJobs.map(j => ({
+                    job: j.name,
+                    failedSteps: (j.steps || []).filter(s => s.conclusion === 'failure').map(s => s.name),
+                    logTail: j.logTail
+                  }));
+                } catch (e) {
+                  summary.failureLogs = [{ job: 'unknown', failedSteps: [], logTail: `Could not fetch jobs: ${e.message}` }];
+                }
+              }
+
+              runSummaries.push(summary);
+            }
+
+            const json = JSON.stringify(runSummaries);
+            // Truncate to 50KB to stay within action limits
+            const truncated = json.length > 51200 ? json.substring(0, 51200) + '...[truncated]' : json;
+            core.setOutput('runs_data', truncated);
+
+  optimize:
+    name: Analyze & Optimize Workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [collect-runs]
+    if: needs.collect-runs.outputs.has-runs == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup git identity
+        run: |
+          git config --global user.email "claude[bot]@users.noreply.github.com"
+          git config --global user.name "claude[bot]"
+
+      - name: Create optimization branch
+        id: branch
+        run: |
+          BRANCH_NAME="claude-workflow-optimize-$(date +%Y%m%d-%H%M)"
+          git checkout -b "$BRANCH_NAME"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: "true"
+          install-gsd: "true"
+
+      - name: Analyze runs and optimize workflows
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
+          track_progress: false
+          show_full_output: ${{ vars.CLAUDE_DEBUG || false }}
+          claude_args: |
+            --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+            --max-turns ${{ env.MAX_TURNS }}
+            --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(echo:*)'
+          prompt: |
+            REPO: ${{ github.repository }}
+
+            ## Task: Analyze Workflow Runs and Optimize Workflow Files
+
+            You have access to completed workflow run data from the past hour AND the workflow YAML files in `.github/workflows/`.
+
+            ### Completed Runs Data
+            ```json
+            ${{ needs.collect-runs.outputs.runs-data }}
+            ```
+
+            ### Instructions
+
+            1. **Read all workflow files** in `.github/workflows/` to understand current configurations.
+
+            2. **Analyze the runs data** for:
+               - Failed runs: What caused failures? Can the workflow be made more resilient?
+               - Recurring failure patterns across multiple runs
+               - Cancelled runs: Are concurrency settings too aggressive? Or are redundant triggers firing?
+               - Slow runs (>5 min): Can caching, timeout, or step ordering be improved?
+               - Successful runs: Any optimization opportunities (caching, parallelization)?
+
+            3. **Apply improvements** to the workflow YAML files. Categories of improvements:
+               - **Fix broken workflows**: Add missing env vars, fix typos, correct action versions
+               - **Improve resilience**: Better error handling, retry logic, fallback steps
+               - **Optimize performance**: Add/improve caching, adjust timeouts, reorder steps
+               - **Enhance robustness**: Tighten `if` conditions, add missing concurrency groups
+               - **Extend capabilities**: Add missing triggers, improve allowed tools, add useful checks
+               - **Reduce redundancy**: Merge overlapping triggers, remove duplicate steps
+
+            4. **Guidelines for changes**:
+               - ONLY modify files in `.github/workflows/` directory
+               - Keep changes minimal and focused — don't rewrite entire files
+               - Preserve existing env var patterns (`${{ vars.* }}`, `${{ secrets.* }}`)
+               - Preserve the `setup-environment` composite action usage pattern
+               - Preserve the `claude-code-action` integration pattern
+               - Add comments explaining WHY a change was made
+               - Do NOT change files outside `.github/workflows/`
+
+            5. **After making changes**, validate all modified YAML files parse correctly:
+               ```bash
+               for f in .github/workflows/*.yml; do python3 -c "import yaml; yaml.safe_load(open('$f'))" 2>&1 || echo "INVALID: $f"; done
+               ```
+
+            6. Do NOT commit or push — the workflow handles that.
+
+            TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. If you find no improvements worth making, that's fine — just finish cleanly.
+          settings: |
+            {
+              "env": {
+                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
+                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}"
+              }
+            }
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet HEAD; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push changes
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
+        run: |
+          git add -A
+          git commit -m "ci(workflows): hourly optimization pass" || true
+          git push origin "$BRANCH_NAME"
+
+      - name: Create optimization PR
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/main...HEAD -- '.github/workflows/' | sed 's/^/  - /')
+          BODY=$(printf '## Hourly Workflow Optimization\n\nAutomated analysis of workflow runs from the past hour.\n\n### Changed Files\n%s\n\n### What this PR does\nAnalyzes completed workflow runs for failures, performance issues, and improvement opportunities, then applies fixes to workflow files.\n\n---\n*Auto-generated by workflow-health-optimize workflow.*' "$CHANGED_FILES")
+          gh pr create \
+            --base main \
+            --head "$BRANCH_NAME" \
+            --title "ci(workflows): hourly optimization - $(date +%Y-%m-%d-%H:%M)" \
+            --body "$BODY" \
+            --label "auto-fix" --label "needs-review" 2>/dev/null || \
+          gh pr create \
+            --base main \
+            --head "$BRANCH_NAME" \
+            --title "ci(workflows): hourly optimization - $(date +%Y-%m-%d-%H:%M)" \
+            --body "$BODY"
+
+      - name: Log no-changes result
+        if: steps.changes.outputs.has_changes == 'false'
+        run: echo "No workflow improvements identified this hour."
+
+  report-failure:
+    needs: [collect-runs, optimize]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report workflow health check failure
+        uses: actions/github-script@v7
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const runUrl = process.env.RUN_URL;
+
+            for (const [name, color] of [['auto-fix', 'e4e669'], ['ci-failure', 'd73a4a']]) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch (e) {
+                if (e.status === 404) {
+                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color });
+                }
+              }
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '[workflow-health] Hourly optimization workflow failed',
+              body: `## Workflow Health Check Failure\n\n**Run:** ${runUrl}\n\nThe hourly workflow health check and optimization workflow itself failed. Manual investigation needed.`,
+              labels: ['auto-fix', 'ci-failure']
+            });
