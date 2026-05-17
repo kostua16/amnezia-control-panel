@@ -126,11 +126,18 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
           track_progress: false
-          show_full_output: ${{ vars.CLAUDE_DEBUG || false }}
+          show_full_output: true
           claude_args: |
             --model ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
             --max-turns ${{ env.MAX_TURNS }}
             --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*)'
+          settings: |
+            {
+              "env": {
+                "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
+                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}"
+              }
+            }
           prompt: |
             /gsd-debug
             Failed CI Run: ${{ fromJSON(steps.failure_details.outputs.result).runUrl }}
