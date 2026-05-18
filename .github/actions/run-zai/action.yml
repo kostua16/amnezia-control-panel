@@ -36,9 +36,35 @@ inputs:
     description: "Claude debug"
     required: false
     default: "false"
+  haiku-model:
+    description: "Override default haiku model (glm-4.7)"
+    required: false
+    default: "glm-4.7"
+  sonnet-model:
+    description: "Override default sonnet model (glm-5)"
+    required: false
+    default: "glm-5"
+  opus-model:
+    description: "Override default opus model (glm-5.1)"
+    required: false
+    default: "glm-5.1"
 runs:
   using: composite
   steps:
+    - id: resolve-models
+      shell: bash
+      run: |
+        resolve() {
+          case "$1" in
+            haiku)  echo '${{ inputs.haiku-model }}' ;;
+            sonnet) echo '${{ inputs.sonnet-model }}' ;;
+            opus)   echo '${{ inputs.opus-model }}' ;;
+            *)      echo "$1" ;;
+          esac
+        }
+        echo "model=$(resolve '${{ inputs.model }}')" >> "$GITHUB_OUTPUT"
+        echo "agent_model=$(resolve '${{ inputs.agent-model }}')" >> "$GITHUB_OUTPUT"
+
     - name: Run ZAI
       uses: ./.github/actions/run-claude-params
       with:
@@ -50,9 +76,9 @@ runs:
         allowed-bots: ${{ inputs.allowed-bots }}
         allowed-tools: ${{ inputs.allowed-tools }}
         system-prompt: ${{ inputs.system-prompt }}
-        haiku-model: 'glm-4.7'
-        sonnet-model: 'glm-5'
-        opus-model: 'glm-5.1'
-        model: ${{ inputs.model }}
-        subagent-model: ${{ inputs.agent-model }}
+        haiku-model: ${{ inputs.haiku-model }}
+        sonnet-model: ${{ inputs.sonnet-model }}
+        opus-model: ${{ inputs.opus-model }}
+        model: ${{ steps.resolve-models.outputs.model }}
+        subagent-model: ${{ steps.resolve-models.outputs.agent_model }}
         claude-debug: ${{ inputs.claude-debug }}
