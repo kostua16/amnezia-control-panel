@@ -104,7 +104,7 @@ jobs:
               : `execution output unreadable: ${parseError}`;
 
             const runUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
-            const model = '${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}';
+            const model = 'sonnet';
 
             const body = [
               `## Daily Maintenance Failure`,
