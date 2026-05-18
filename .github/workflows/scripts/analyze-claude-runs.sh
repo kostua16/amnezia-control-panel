@@ -10,6 +10,7 @@
 #   --json      Output JSON instead of human-readable table
 #
 # Requires: gh CLI (authenticated), jq
+# Compatible with Bash 3.2 (macOS)
 
 set -euo pipefail
 
@@ -29,36 +30,12 @@ if ! command -v gh &>/dev/null || ! command -v jq &>/dev/null; then
   exit 1
 fi
 
-# --- Pattern definitions ---
-# Each: category_name severity regex
-# Matched in order — first match wins for a given line.
-KNOWN_PATTERNS=(
-  "permission_denials warning  \"permission_denials_count\": ([1-9]\d*)"
-  "git_push_403      error    fatal: unable to access.*returned error: 403"
-  "graphql_pr_fail   error    pull request create failed: GraphQL:"
-  "turn_limit_hit    error    \"num_turns\": (\d+)"
-  "zero_turns        error    \"num_turns\": 0"
-  "internal_error    warning  Internal error: directory mismatch"
-  "disallowed_tools  info     DISALLOWED_TOOLS: (.*)"
-  "action_not_found  error    Can't find 'action\.yml'"
-  "graphql_user_err  warning  Failed to fetch user display name.*GraphqlResponseError"
-)
+# --- Accumulators via temp files (Bash 3.2 compatible) ---
+TMPDIR=$(mktemp -d /tmp/claude-analyze-XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT
 
-# Fallback uncategorized patterns (only checked if no known pattern matched)
-UNCATEGORIZED_PATTERNS=(
-  "uncategorized error   ##\[error\](.*)"
-  "uncategorized error   ^\s*Error:\s+(.+)"
-  "uncategorized error   ERR_TEST_FAILURE"
-  "uncategorized error   exit code ([1-9]\d*)"
-  "uncategorized error   \"is_error\":\s*true"
-  "uncategorized error   ^fatal:\s+(.+)"
-  "uncategorized error   Process completed with exit code ([1-9])"
-)
-
-# --- Accumulators ---
-declare -A CAT_COUNTS   # category -> count of runs with this category
-declare -A CAT_RUNS     # category -> newline-separated list of run ids
-declare -A CAT_DETAILS  # category -> newline-separated detail snippets
+mkdir -p "$TMPDIR/cats"
+touch "$TMPDIR/all-findings.jsonl"
 TOTAL=0
 
 # --- Fetch runs ---
@@ -69,14 +46,39 @@ RUNS_JSON=$(gh run list --limit "$LIMIT" --json databaseId,status,conclusion,nam
 RUN_COUNT=$(echo "$RUNS_JSON" | jq 'length')
 echo "Analyzing $RUN_COUNT runs..." >&2
 
+# --- Helper: add a finding for a run ---
+add_finding() {
+  local run_id="$1" category="$2" severity="$3" message="$4" detail="$5"
+  # Sanitize detail: strip newlines, truncate
+  detail=$(printf '%s' "$detail" | tr '\n' ' ' | cut -c1-300)
+  # Write to per-category file
+  echo "$run_id" >> "$TMPDIR/cats/$category.ids"
+  echo "$detail" >> "$TMPDIR/cats/$category.details"
+  # Write structured line for JSON output
+  jq -n --arg rid "$run_id" --arg cat "$category" --arg sev "$severity" \
+    --arg msg "$message" --arg det "$detail" \
+    '{run_id:$rid,category:$cat,severity:$sev,message:$msg,detail:$det}' \
+    >> "$TMPDIR/all-findings.jsonl"
+}
+
+# --- Helper: extract number after pattern using sed (replaces grep -oP '\K') ---
+extract_num() {
+  sed -n "s/.*$1[[:space:]]*\([0-9][0-9]*\).*/\1/p" | head -1
+}
+
+extract_val() {
+  sed -n "s/.*$1[[:space:]]*:*[[:space:]]*\"\{0,1\}\([^\",[:space:]]*\).*/\1/p" | head -1
+}
+
 # --- Process each run ---
-for ROW in $(echo "$RUNS_JSON" | jq -c '.[]'); do
+RUNS_ROWS_FILE="$TMPDIR/runs.jsonl"
+echo "$RUNS_JSON" | jq -c '.[]' > "$RUNS_ROWS_FILE"
+while IFS= read -r ROW; do
   RUN_ID=$(echo "$ROW" | jq -r '.databaseId')
   CONCLUSION=$(echo "$ROW" | jq -r '.conclusion')
   WF_NAME=$(echo "$ROW" | jq -r '.name')
   TOTAL=$((TOTAL + 1))
 
-  # Only analyze failures for patterns (success runs contribute to totals only)
   if [[ "$CONCLUSION" != "failure" ]]; then
     continue
   fi
@@ -86,138 +88,100 @@ for ROW in $(echo "$RUNS_JSON" | jq -c '.[]'); do
   LOG=""
   LOG=$(gh run view "$RUN_ID" --log 2>/dev/null) || continue
 
-  declare -A RUN_FINDINGS  # category -> detail (first match per category)
-  HAS_FINDING=false
-
-  # Check for claude-execution-output.json content in logs
-  EXEC_JSON=$(echo "$LOG" | grep -oP '"claude-execution-output\.json.*?(?=\n\S)' | head -1 || true)
-
   # --- Known patterns ---
-  # 1. Permission denials from JSON
-  PD_COUNT=$(echo "$LOG" | grep -oP '"permission_denials_count":\s*\K[0-9]+' | head -1 || true)
+
+  # 1. Permission denials
+  PD_COUNT=$(echo "$LOG" | grep -o '"permission_denials_count":[[:space:]]*[0-9]*' | grep -o '[0-9]*$' | head -1 || true)
   if [[ -n "$PD_COUNT" && "$PD_COUNT" -gt 0 ]]; then
-    if [[ "$PD_COUNT" -gt 5 ]]; then
-      SEV="error"
-    else
-      SEV="warning"
-    fi
+    if [[ "$PD_COUNT" -gt 5 ]]; then SEV="error"; else SEV="warning"; fi
+    DISALLOWED=$(echo "$LOG" | grep -o 'DISALLOWED_TOOLS:.*' | head -1 | sed 's/DISALLOWED_TOOLS:[[:space:]]*//' || true)
     DETAIL="${PD_COUNT} denials"
-    RUN_FINDINGS["permission_denials"]="$SEV|$DETAIL"
-    HAS_FINDING=true
+    [[ -n "$DISALLOWED" ]] && DETAIL="DISALLOWED_TOOLS: $DISALLOWED"
+    add_finding "$RUN_ID" "permission_denials" "$SEV" "${PD_COUNT} tool permission denials" "$DETAIL"
   fi
 
   # 2. Git Push 403
-  if echo "$LOG" | grep -qP 'fatal: unable to access.*returned error: 403'; then
-    RUN_FINDINGS["git_push_403"]="error|Git push HTTP 403"
-    HAS_FINDING=true
+  if echo "$LOG" | grep -qE 'fatal: unable to access.*returned error: 403'; then
+    LINE=$(echo "$LOG" | grep -m1 'returned error: 403' | head -c 200 || true)
+    add_finding "$RUN_ID" "git_push_403" "error" "Git push failed with HTTP 403" "$LINE"
   fi
 
   # 3. GraphQL PR failure
-  if echo "$LOG" | grep -qP 'pull request create failed: GraphQL:'; then
-    RUN_FINDINGS["graphql_pr_fail"]="error|GraphQL PR creation failed"
-    HAS_FINDING=true
+  if echo "$LOG" | grep -q 'pull request create failed: GraphQL:'; then
+    add_finding "$RUN_ID" "graphql_pr_fail" "error" "GraphQL PR creation failed" "pull request create failed: GraphQL:"
   fi
 
   # 4. Turn limit hit
-  NUM_TURNS=$(echo "$LOG" | grep -oP '"num_turns":\s*\K[0-9]+' | tail -1 || true)
-  MAX_TURNS=$(echo "$LOG" | grep -oP '"max_turns":\s*\K[0-9]+' | tail -1 || true)
-  IS_ERROR=$(echo "$LOG" | grep -oP '"is_error":\s*\K(true|false)' | tail -1 || true)
-  if [[ -n "$NUM_TURNS" && -n "$MAX_TURNS" && "$NUM_TURNS" -eq "$MAX_TURNS" && "$IS_ERROR" == "true" ]]; then
-    RUN_FINDINGS["turn_limit_hit"]="error|Turns: $NUM_TURNS/$MAX_TURNS"
-    HAS_FINDING=true
+  NUM_TURNS=$(echo "$LOG" | grep -o '"num_turns":[[:space:]]*[0-9]*' | grep -o '[0-9]*$' | tail -1 || true)
+  MAX_T=$(echo "$LOG" | grep -o '"max_turns":[[:space:]]*[0-9]*' | grep -o '[0-9]*$' | tail -1 || true)
+  IS_ERR=$(echo "$LOG" | grep -o '"is_error":[[:space:]]*[a-z]*' | grep -o '[a-z]*$' | tail -1 || true)
+  if [[ -n "$NUM_TURNS" && -n "$MAX_T" && "$NUM_TURNS" -eq "$MAX_T" && "$IS_ERR" == "true" ]]; then
+    add_finding "$RUN_ID" "turn_limit_hit" "error" "Turn limit hit with error" "Turns: $NUM_TURNS/$MAX_T"
   fi
 
   # 5. Zero turns
   if [[ -n "$NUM_TURNS" && "$NUM_TURNS" -eq 0 ]]; then
-    RUN_FINDINGS["zero_turns"]="error|Zero turns used"
-    HAS_FINDING=true
+    add_finding "$RUN_ID" "zero_turns" "error" "Claude used zero turns" "num_turns: 0"
   fi
 
   # 6. Internal error
-  if echo "$LOG" | grep -qP 'Internal error: directory mismatch'; then
-    RUN_FINDINGS["internal_error"]="warning|Directory mismatch"
-    HAS_FINDING=true
+  if echo "$LOG" | grep -q 'Internal error: directory mismatch'; then
+    add_finding "$RUN_ID" "internal_error" "warning" "Internal directory mismatch" "Internal error: directory mismatch"
   fi
 
-  # 7. Disallowed tools
-  DISALLOWED=$(echo "$LOG" | grep -oP 'DISALLOWED_TOOLS: \K.*' | head -1 || true)
-  if [[ -n "$DISALLOWED" ]]; then
-    RUN_FINDINGS["disallowed_tools"]="info|$DISALLOWED"
-    HAS_FINDING=true
+  # 7. Disallowed tools (log-level)
+  DISALLOWED=$(echo "$LOG" | grep -o 'DISALLOWED_TOOLS:.*' | head -1 | sed 's/DISALLOWED_TOOLS:[[:space:]]*//' || true)
+  if [[ -n "$DISALLOWED" && -z "$PD_COUNT" ]] || [[ -n "$DISALLOWED" && -n "$PD_COUNT" && "$PD_COUNT" -eq 0 ]]; then
+    add_finding "$RUN_ID" "disallowed_tools" "info" "Disallowed tools detected" "$DISALLOWED"
   fi
 
   # 8. Action not found
-  if echo "$LOG" | grep -qP "Can't find 'action\.yml'"; then
-    RUN_FINDINGS["action_not_found"]="error|Missing action.yml"
-    HAS_FINDING=true
+  if echo "$LOG" | grep -q "Can't find 'action.yml'"; then
+    add_finding "$RUN_ID" "action_not_found" "error" "Missing action.yml" "action.yml not found"
   fi
 
   # 9. GraphQL user error
-  if echo "$LOG" | grep -qP 'Failed to fetch user display name.*GraphqlResponseError'; then
-    RUN_FINDINGS["graphql_user_err"]="warning|GraphQL user fetch failed"
-    HAS_FINDING=true
+  if echo "$LOG" | grep -qE 'Failed to fetch user display name.*GraphqlResponseError'; then
+    add_finding "$RUN_ID" "graphql_user_err" "warning" "GraphQL user fetch failed" "GraphqlResponseError"
   fi
 
   # 10. Rate limited (all 3 attempts)
-  RUN1_FAIL=$(echo "$LOG" | grep -c 'Run Claude Code (attempt 1)' || true)
-  RUN2_FAIL=$(echo "$LOG" | grep -c 'Run Claude Code (attempt 2)' || true)
-  RUN3_FAIL=$(echo "$LOG" | grep -c 'Run Claude Code (attempt 3)' || true)
-  CHECK_429=$(echo "$LOG" | grep -c 'is_rate_limited=true' || true)
-  if [[ "$RUN1_FAIL" -gt 0 && "$RUN2_FAIL" -gt 0 && "$RUN3_FAIL" -gt 0 && "$CHECK_429" -ge 3 ]]; then
-    RUN_FINDINGS["rate_limited"]="error|All 3 attempts rate limited"
-    HAS_FINDING=true
+  CHECKS=$(echo "$LOG" | grep -c 'is_rate_limited=true' || true)
+  if [[ "$CHECKS" -ge 3 ]]; then
+    add_finding "$RUN_ID" "rate_limited" "error" "All 3 attempts rate limited" "All attempts hit 429"
   fi
 
-  # --- Uncategorized (fallback) ---
-  # Collect lines matching generic error signatures not already captured
-  UNCATEG_LINES=()
-  while IFS= read -r LINE; do
-    LINE="$LINE"
-    [[ -z "$LINE" ]] && continue
-    # Skip if this line already matched a known category
-    SKIP=false
-    for KEY in "${!RUN_FINDINGS[@]}"; do
-      DETAIL="${RUN_FINDINGS[$KEY]#*|}"
-      if [[ "$LINE" == *"$DETAIL"* ]]; then
-        SKIP=true
-        break
-      fi
-    done
-    $SKIP && continue
-    UNCATEG_LINES+=("$LINE")
-  done < <(
-    echo "$LOG" | grep -E '##\[error\]|^\s*Error:\s+|ERR_TEST_FAILURE|exit code [1-9]|"is_error":\s*true|^fatal:\s+|Process completed with exit code [1-9]' | sort -u | head -3
-  )
-
-  if [[ ${#UNCATEG_LINES[@]} -gt 0 ]]; then
-    DETAIL=$(printf '%s\n' "${UNCATEG_LINES[@]}" | head -3 | jq -Rs '.[0:200]' | tr -d '"')
-    RUN_FINDINGS["uncategorized"]="error|$DETAIL"
-    HAS_FINDING=true
+  # 11. Uncategorized errors (fallback)
+  UNCATEG=$(echo "$LOG" \
+    | grep -E '##\[error\]|Error:|ERR_TEST_FAILURE|"is_error".*true|^fatal:' \
+    | grep -v 'Claude Code failed with a non-rate-limit error' \
+    | grep -v 'returned error: 403' \
+    | grep -v 'pull request create failed: GraphQL:' \
+    | grep -v 'Internal error: directory mismatch' \
+    | grep -v "Can't find 'action" \
+    | grep -v 'GraphqlResponseError' \
+    | sort -u | head -3 || true)
+  if [[ -n "$UNCATEG" ]]; then
+    COUNT=$(echo "$UNCATEG" | wc -l | tr -d ' ')
+    DETAIL=$(echo "$UNCATEG" | head -3 | head -c 300)
+    add_finding "$RUN_ID" "uncategorized" "error" "$COUNT unrecognized error(s) from Claude run" "$DETAIL"
   fi
 
-  # --- Accumulate ---
-  for CAT in "${!RUN_FINDINGS[@]}"; do
-    COUNT=${CAT_COUNTS[$CAT]:-0}
-    CAT_COUNTS[$CAT]=$((COUNT + 1))
-    CAT_RUNS[$CAT]="${CAT_RUNS[$CAT]:-}
-$RUN_ID"
-    CAT_DETAILS[$CAT]="${CAT_DETAILS[$CAT]:-}
-${RUN_FINDINGS[$CAT]#*|}"
-  done
-
-  unset RUN_FINDINGS
-done
+done < "$RUNS_ROWS_FILE"
 
 # --- Output ---
 if $JSON_OUTPUT; then
-  # Build JSON structure
   CATEGORIES_JSON="{}"
-  for CAT in "${!CAT_COUNTS[@]}"; do
-    COUNT=${CAT_COUNTS[$CAT]}
-    RUNS=$(echo "${CAT_RUNS[$CAT]}" | sed '/^$/d' | jq -R . | jq -s .)
-    CATEGORIES_JSON=$(echo "$CATEGORIES_JSON" | jq --arg cat "$CAT" --argjson count "$COUNT" --argjson runs "$RUNS" \
-      '. + { ($cat): { count: $count, runs: $runs } }')
-  done
+  if ls "$TMPDIR/cats"/*.ids 1>/dev/null 2>&1; then
+    for CAT_FILE in "$TMPDIR/cats"/*.ids; do
+      [[ -f "$CAT_FILE" ]] || continue
+      CAT=$(basename "$CAT_FILE" .ids)
+      COUNT=$(wc -l < "$CAT_FILE" | tr -d ' ')
+      RUNS=$(sort -u "$CAT_FILE" | jq -R . | jq -s .)
+      CATEGORIES_JSON=$(echo "$CATEGORIES_JSON" | jq --arg cat "$CAT" --argjson count "$COUNT" --argjson runs "$RUNS" \
+        '. + { ($cat): { count: $count, runs: $runs } }')
+    done
+  fi
 
   jq -n \
     --arg analyzed "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -229,20 +193,34 @@ else
   echo "=== Claude CI Run Analysis ($TOTAL runs) ==="
   echo ""
 
-  for CAT in "${!CAT_COUNTS[@]}"; do
-    COUNT=${CAT_COUNTS[$CAT]}
-    PCT=$((COUNT * 100 / TOTAL))
-    echo "  $CAT: $COUNT runs ($PCT%)"
-  done
+  if ls "$TMPDIR/cats"/*.ids 1>/dev/null 2>&1; then
+    for CAT_FILE in "$TMPDIR/cats"/*.ids; do
+      [[ -f "$CAT_FILE" ]] || continue
+      CAT=$(basename "$CAT_FILE" .ids)
+      COUNT=$(wc -l < "$CAT_FILE" | tr -d ' ')
+      PCT=$((COUNT * 100 / TOTAL))
+      echo "  $CAT: $COUNT runs ($PCT%)"
+    done
+  else
+    echo "  No failures found."
+  fi
 
   echo ""
   echo "--- Details per category ---"
   echo ""
 
-  for CAT in "${!CAT_COUNTS[@]}"; do
-    echo "[$CAT]"
-    echo "  Runs: $(echo "${CAT_RUNS[$CAT]}" | sed '/^$/d' | tr '\n' ' ')"
-    echo "  Sample details: $(echo "${CAT_DETAILS[$CAT]}" | sed '/^$/d' | head -2)"
-    echo ""
-  done
+  if ls "$TMPDIR/cats"/*.ids 1>/dev/null 2>&1; then
+    for CAT_FILE in "$TMPDIR/cats"/*.ids; do
+      [[ -f "$CAT_FILE" ]] || continue
+      CAT=$(basename "$CAT_FILE" .ids)
+      RUNS=$(sort -u "$CAT_FILE" | tr '\n' ' ')
+      DETAILS=$(head -2 "${CAT_FILE%.ids}.details" | tr '\n' ' ')
+      echo "[$CAT]"
+      echo "  Runs: $RUNS"
+      echo "  Sample details: $DETAILS"
+      echo ""
+    done
+  else
+    echo "  (no failure details to show)"
+  fi
 fi
