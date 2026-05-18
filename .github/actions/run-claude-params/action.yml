@@ -68,6 +68,20 @@ runs:
         echo "main=$main" >> "$GITHUB_OUTPUT"
         echo "verify=$verify" >> "$GITHUB_OUTPUT"
 
+    - id: resolve-models
+      shell: bash
+      run: |
+        resolve() {
+          case "$1" in
+            haiku)  echo '${{ inputs.haiku-model }}' ;;
+            sonnet) echo '${{ inputs.sonnet-model }}' ;;
+            opus)   echo '${{ inputs.opus-model }}' ;;
+            *)      echo "$1" ;;
+          esac
+        }
+        echo "model=$(resolve '${{ inputs.model }}')" >> "$GITHUB_OUTPUT"
+        echo "subagent_model=$(resolve '${{ inputs.subagent-model }}')" >> "$GITHUB_OUTPUT"
+
     - name: Run Claude Code
       uses: anthropics/claude-code-action@v1
       env:
@@ -77,7 +91,7 @@ runs:
         ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.haiku-model }}
         ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.sonnet-model }}
         ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.opus-model }}
-        CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.subagent-model }}
+        CLAUDE_CODE_SUBAGENT_MODEL: ${{ steps.resolve-models.outputs.subagent_model }}
         ANTHROPIC_BASE_URL: ${{ inputs.api-url }}
         ANTHROPIC_API_KEY: ${{ inputs.api-key }}
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.api-key }}
@@ -87,7 +101,7 @@ runs:
         track_progress: ${{ inputs.track-progress }}
         show_full_output: ${{ inputs.claude-debug || false }}
         claude_args: |-
-          --model ${{ inputs.model }}
+          --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
           --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}
         prompt: |-

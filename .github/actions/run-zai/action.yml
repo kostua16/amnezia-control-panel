@@ -28,7 +28,7 @@ inputs:
     description: "Override default model (glm-5)"
     required: false
     default: "sonnet"
-  agent-model:
+  subagent-model:
     description: "Override default agent model (glm-5)"
     required: false
     default: "haiku"
@@ -51,19 +51,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - id: resolve-models
-      shell: bash
-      run: |
-        resolve() {
-          case "$1" in
-            haiku)  echo '${{ inputs.haiku-model }}' ;;
-            sonnet) echo '${{ inputs.sonnet-model }}' ;;
-            opus)   echo '${{ inputs.opus-model }}' ;;
-            *)      echo "$1" ;;
-          esac
-        }
-        echo "model=$(resolve '${{ inputs.model }}')" >> "$GITHUB_OUTPUT"
-        echo "agent_model=$(resolve '${{ inputs.agent-model }}')" >> "$GITHUB_OUTPUT"
 
     - name: Run ZAI
       uses: ./.github/actions/run-claude-params
@@ -79,6 +66,6 @@ runs:
         haiku-model: ${{ inputs.haiku-model }}
         sonnet-model: ${{ inputs.sonnet-model }}
         opus-model: ${{ inputs.opus-model }}
-        model: ${{ steps.resolve-models.outputs.model }}
-        subagent-model: ${{ steps.resolve-models.outputs.agent_model }}
+        model: ${{ inputs.model }}
+        subagent-model: ${{ inputs.subagent-model }}
         claude-debug: ${{ inputs.claude-debug }}

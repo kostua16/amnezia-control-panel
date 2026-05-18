@@ -28,7 +28,7 @@ inputs:
     description: "Override default model (claude-sonnet-4-5-sonnet)"
     required: false
     default: "sonnet"
-  agent-model:
+  subagent-model:
     description: "Override default agent model (claude-haiku-4-5-20251001)"
     required: false
     default: "haiku"
@@ -48,7 +48,7 @@ runs:
         sonnet-model: 'claude-sonnet-4-5-20250929'
         opus-model: 'claude-opus-4-5-20251101'
         model: ${{ inputs.model }}
-        subagent-model: ${{ inputs.agent-model }}
+        subagent-model: ${{ inputs.subagent-model }}
         prompt: ${{ inputs.prompt }}
         max-turns: ${{ inputs.max-turns }}
         track-progress: ${{ inputs.track-progress }}
