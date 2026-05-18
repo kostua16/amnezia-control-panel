@@ -152,8 +152,17 @@ jobs:
             core.setOutput('fixable', String(fixable));
             if (!fixable) core.setOutput('reason', reasons.join('; '));
 
-      - uses: ./.github/actions/setup-environment
+      # --- Prettier shortcut (no Claude) ---
+      - uses: ./.github/actions/prettier-auto-fix
+        id: prettier
         if: steps.fixability.outputs.fixable == 'true'
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: ./.github/actions/setup-environment
+        if: steps.fixability.outputs.fixable == 'true' && steps.prettier.outputs.prettier_only != 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           install-deps: "true"
@@ -162,11 +171,11 @@ jobs:
           install-rtk: "true"
 
       - name: Warm TypeScript cache
-        if: steps.fixability.outputs.fixable == 'true'
+        if: steps.fixability.outputs.fixable == 'true' && steps.prettier.outputs.prettier_only != 'true'
         run: npx tsc --noEmit 2>/dev/null || true
 
       - uses: ./.github/actions/run-zai
-        if: steps.fixability.outputs.fixable == 'true'
+        if: steps.fixability.outputs.fixable == 'true' && steps.prettier.outputs.prettier_only != 'true'
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           allowed-bots: "claude[bot],github-actions[bot]"
@@ -217,6 +226,7 @@ jobs:
         if: steps.changes.outputs.has_changes == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: ${{ steps.prettier.outputs.prettier_only == 'true' && 'style: auto-fix prettier formatting' || 'fix(ci): auto-fix CI failures' }}
           token: ${{ secrets.GH_PAT }}
 
       - name: Find related failure issues

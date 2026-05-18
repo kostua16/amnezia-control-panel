@@ -1,0 +1,79 @@
+name: Prettier Auto-Fix
+description: Detect Prettier-only CI failures and apply formatting fix without AI
+
+inputs:
+  run-id:
+    description: "The CI workflow run ID to inspect"
+    required: true
+  github-token:
+    description: "GitHub token for API access"
+    required: true
+  node-version:
+    description: "Node.js version"
+    default: "22.x"
+  prettier-glob:
+    description: "Glob pattern for prettier --write"
+    default: 'src/**/*.{ts,tsx,css}'
+
+outputs:
+  prettier_only:
+    description: "'true' if failure was Prettier-only"
+    value: ${{ steps.detect.outputs.prettier_only }}
+
+runs:
+  using: composite
+  steps:
+    - name: Detect Prettier-only failure
+      id: detect
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        RUN_ID: ${{ inputs.run-id }}
+        REPO: ${{ github.repository }}
+      run: |
+        # Get failed job names
+        FAILED=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" \
+          --jq '.jobs[] | select(.conclusion=="failure") | .name')
+        FAILED_COUNT=$(echo "$FAILED" | wc -l | tr -d ' ')
+
+        # Only proceed if exactly Lint job failed
+        if [[ "$FAILED_COUNT" != "1" ]] || [[ "$FAILED" != *"Lint"* ]]; then
+          echo "prettier_only=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Not Prettier-only: $FAILED_COUNT failed job(s)"
+          exit 0
+        fi
+
+        # Download Lint job logs
+        JOB_ID=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" \
+          --jq '.jobs[] | select(.conclusion=="failure") | .id')
+        LOGS=$(gh api "repos/$REPO/actions/jobs/$JOB_ID/logs" 2>/dev/null || true)
+
+        # Prettier signature: summary line + fix hint
+        if echo "$LOGS" | grep -q "Code style issues found in" && \
+           echo "$LOGS" | grep -q "Run Prettier with --write to fix"; then
+          echo "prettier_only=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::Detected Prettier-only failure — applying mechanical fix"
+        else
+          echo "prettier_only=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Lint failed but not Prettier-only"
+        fi
+
+    - uses: actions/setup-node@v5
+      if: steps.detect.outputs.prettier_only == 'true'
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+
+    - name: Install dependencies
+      if: steps.detect.outputs.prettier_only == 'true'
+      shell: bash
+      run: npm ci
+
+    - name: Run Prettier
+      if: steps.detect.outputs.prettier_only == 'true'
+      shell: bash
+      run: |
+        COUNT_BEFORE=$(git diff --name-only | wc -l)
+        npx prettier --write ${{ inputs.prettier-glob }}
+        COUNT_AFTER=$(git diff --name-only | wc -l)
+        echo "::notice::Formatted files changed: $COUNT_AFTER (was $COUNT_BEFORE)"
