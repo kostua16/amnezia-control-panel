@@ -67,5 +67,5 @@ runs:
       shell: bash
 
     - if: inputs.install-rtk == 'true'
-      run: rtk init -g --auto-patch
+      run: mkdir -p "$HOME/.claude" && rtk init -g --auto-patch
       shell: bash
