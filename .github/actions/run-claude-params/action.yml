@@ -51,6 +51,9 @@ inputs:
   additional-permissions:
     description: "Additional GitHub permissions for the App token (e.g. 'issues: write')"
     default: ""
+  github-token:
+    description: "GitHub token for issue reporting and log download"
+    default: "${{ github.token }}"
 runs:
   using: composite
   steps:
@@ -282,6 +285,315 @@ runs:
               "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
             }
           }
+
+    # --- Scan Claude logs for known error patterns ---
+    - name: scan-claude-logs
+      id: scan-logs
+      if: always()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_JOB_NAME: ${{ github.job }}
+        MAX_TURNS_INPUT: ${{ inputs.max-turns }}
+      run: |
+        # Determine which attempt ran (use last completed attempt)
+        ATTEMPT=0
+        CONCLUSION="success"
+        if [[ "${{ steps.claude-run-3.outcome }}" == "failure" ]]; then
+          ATTEMPT=3; CONCLUSION="failure"
+        elif [[ "${{ steps.claude-run-3.outcome }}" == "success" ]]; then
+          ATTEMPT=3; CONCLUSION="success"
+        elif [[ "${{ steps.claude-run-2.outcome }}" == "failure" ]]; then
+          ATTEMPT=2; CONCLUSION="failure"
+        elif [[ "${{ steps.claude-run-2.outcome }}" == "success" ]]; then
+          ATTEMPT=2; CONCLUSION="success"
+        elif [[ "${{ steps.claude-run-1.outcome }}" == "failure" ]]; then
+          ATTEMPT=1; CONCLUSION="failure"
+        elif [[ "${{ steps.claude-run-1.outcome }}" == "success" ]]; then
+          ATTEMPT=1; CONCLUSION="success"
+        fi
+
+        # Skip if no Claude step ran at all
+        if [[ "$ATTEMPT" -eq 0 ]]; then
+          echo "No Claude attempt ran — skipping scan."
+          echo "claude_issues_json={}" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Read claude-execution-output.json if it exists
+        EXEC_JSON_PATH="/home/runner/work/_temp/claude-execution-output.json"
+        NUM_TURNS="null"
+        IS_ERROR="null"
+        PERM_DENIALS="0"
+        if [[ -f "$EXEC_JSON_PATH" ]]; then
+          NUM_TURNS=$(jq -r '.num_turns // "null"' "$EXEC_JSON_PATH" 2>/dev/null || echo "null")
+          IS_ERROR=$(jq -r '.is_error // "null"' "$EXEC_JSON_PATH" 2>/dev/null || echo "null")
+          PERM_DENIALS=$(jq -r '.permission_denials_count // 0' "$EXEC_JSON_PATH" 2>/dev/null || echo "0")
+        fi
+
+        # Download current job logs
+        LOG_FILE=$(mktemp)
+        # Find the current job ID within the run
+        JOBS_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" --jq '.jobs[] | select(.name == env.GITHUB_JOB_NAME) | .id' 2>/dev/null || echo "")
+        if [[ -n "$JOBS_JSON" ]]; then
+          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${JOBS_JSON}/logs" > "$LOG_FILE" 2>/dev/null || true
+        fi
+
+        if [[ ! -s "$LOG_FILE" ]]; then
+          echo "Could not download job logs — skipping scan."
+          echo "claude_issues_json={}" >> "$GITHUB_OUTPUT"
+          rm -f "$LOG_FILE"
+          exit 0
+        fi
+
+        # --- Pattern matching ---
+        FINDINGS="[]"
+
+        # 1. Permission denials
+        if [[ "$PERM_DENIALS" -gt 0 ]]; then
+          if [[ "$PERM_DENIALS" -gt 5 ]]; then SEV="error"; else SEV="warning"; fi
+          DISALLOWED=$(grep -oP 'DISALLOWED_TOOLS: \K.*' "$LOG_FILE" | head -1 || echo "")
+          DETAIL="Consider adding denied tools to allowed-tools"
+          [[ -n "$DISALLOWED" ]] && DETAIL="DISALLOWED_TOOLS: $DISALLOWED"
+          FINDINGS=$(echo "$FINDINGS" | jq --arg sev "$SEV" --arg msg "${PERM_DENIALS} tool permission denials" --arg det "$DETAIL" \
+            '. + [{category:"permission_denials",severity:$sev,message:$msg,detail:$det}]')
+        fi
+
+        # 2. Git Push 403
+        if grep -qP 'fatal: unable to access.*returned error: 403' "$LOG_FILE"; then
+          LINE=$(grep -m1 'fatal: unable to access.*returned error: 403' "$LOG_FILE" | head -c 200)
+          FINDINGS=$(echo "$FINDINGS" | jq --arg det "$LINE" \
+            '. + [{category:"git_push_403",severity:"error",message:"Git push failed with HTTP 403",detail:$det}]')
+        fi
+
+        # 3. GraphQL PR failure
+        if grep -qP 'pull request create failed: GraphQL:' "$LOG_FILE"; then
+          FINDINGS=$(echo "$FINDINGS" | jq \
+            '. + [{category:"graphql_pr_fail",severity:"error",message:"GraphQL PR creation failed",detail:"pull request create failed: GraphQL:"}]')
+        fi
+
+        # 4. Turn limit hit
+        if [[ "$NUM_TURNS" != "null" && "$NUM_TURNS" -gt 0 ]]; then
+          MAX_T="$MAX_TURNS_INPUT"
+          if [[ "$NUM_TURNS" -ge "$MAX_T" && "$IS_ERROR" == "true" ]]; then
+            FINDINGS=$(echo "$FINDINGS" | jq --arg t "$NUM_TURNS" --arg m "$MAX_T" \
+              '. + [{category:"turn_limit_hit",severity:"error",message:"Turn limit hit with error",detail:"Turns: \($t)/\($m)"}]')
+          fi
+        fi
+
+        # 5. Zero turns
+        if [[ "$NUM_TURNS" == "0" ]]; then
+          FINDINGS=$(echo "$FINDINGS" | jq \
+            '. + [{category:"zero_turns",severity:"error",message:"Claude used zero turns",detail:"num_turns: 0"}]')
+        fi
+
+        # 6. Internal error
+        if grep -qP 'Internal error: directory mismatch' "$LOG_FILE"; then
+          FINDINGS=$(echo "$FINDINGS" | jq \
+            '. + [{category:"internal_error",severity:"warning",message:"Internal directory mismatch",detail:"Internal error: directory mismatch"}]')
+        fi
+
+        # 7. Disallowed tools (log-level, even if JSON didn't report counts)
+        DISALLOWED_LOG=$(grep -oP 'DISALLOWED_TOOLS: \K.*' "$LOG_FILE" | head -1 || true)
+        if [[ -n "$DISALLOWED_LOG" && "$PERM_DENIALS" -eq 0 ]]; then
+          FINDINGS=$(echo "$FINDINGS" | jq --arg det "$DISALLOWED_LOG" \
+            '. + [{category:"disallowed_tools",severity:"info",message:"Disallowed tools detected",detail:$det}]')
+        fi
+
+        # 8. Action not found
+        if grep -qP "Can't find 'action\.yml'" "$LOG_FILE"; then
+          FINDINGS=$(echo "$FINDINGS" | jq \
+            '. + [{category:"action_not_found",severity:"error",message:"Missing action.yml",detail:"action.yml not found"}]')
+        fi
+
+        # 9. GraphQL user error
+        if grep -qP 'Failed to fetch user display name.*GraphqlResponseError' "$LOG_FILE"; then
+          FINDINGS=$(echo "$FINDINGS" | jq \
+            '. + [{category:"graphql_user_err",severity:"warning",message:"GraphQL user fetch failed",detail:"GraphqlResponseError"}]')
+        fi
+
+        # 10. Rate limited all 3 attempts
+        CHECKS=$(grep -c 'is_rate_limited=true' "$LOG_FILE" || true)
+        if [[ "$CHECKS" -ge 3 ]]; then
+          FINDINGS=$(echo "$FINDINGS" | jq \
+            '. + [{category:"rate_limited",severity:"error",message:"All 3 attempts rate limited",detail:"All attempts hit 429"}]')
+        fi
+
+        # 11. Uncategorized errors (fallback)
+        # Collect lines matching generic error signatures, excluding already-captured patterns
+        CAPPED_CATS=$(echo "$FINDINGS" | jq -r '.[].category')
+        UNCATEG_LINES=()
+        while IFS= read -r ULINE; do
+          [[ -z "$ULINE" ]] && continue
+          UNCATEG_LINES+=("$ULINE")
+        done < <(
+          grep -E '##\[error\]|^\s*Error:\s+|ERR_TEST_FAILURE|"is_error":\s*true|^fatal:\s+|Process completed with exit code [1-9]' "$LOG_FILE" \
+            | grep -vF 'Claude Code failed with a non-rate-limit error' \
+            | grep -vP 'fatal: unable to access.*returned error: 403' \
+            | grep -vP 'pull request create failed: GraphQL:' \
+            | grep -vP 'Internal error: directory mismatch' \
+            | grep -vP "Can't find 'action\.yml'" \
+            | grep -vP 'Failed to fetch user display name.*GraphqlResponseError' \
+            | sort -u | head -3
+        )
+        if [[ ${#UNCATEG_LINES[@]} -gt 0 ]]; then
+          DETAIL=$(printf '%s\n' "${UNCATEG_LINES[@]}" | head -3 | head -c 300 | jq -Rs .)
+          FINDINGS=$(echo "$FINDINGS" | jq --argjson count "${#UNCATEG_LINES[@]}" --argjson det "$DETAIL" \
+            '. + [{category:"uncategorized",severity:"error",message:"\($count) unrecognized error(s) from Claude run",detail:$det}]')
+        fi
+
+        # Build final JSON
+        RESULT=$(jq -n \
+          --arg run_id "$GITHUB_RUN_ID" \
+          --arg workflow "$GITHUB_JOB_NAME" \
+          --arg conclusion "$CONCLUSION" \
+          --argjson attempt "$ATTEMPT" \
+          --argjson num_turns "$NUM_TURNS" \
+          --arg max_turns "$MAX_TURNS_INPUT" \
+          --argjson perm_denials "$PERM_DENIALS" \
+          --argjson is_error "$IS_ERROR" \
+          --argjson findings "$FINDINGS" \
+          '{run_id:($run_id|tonumber),workflow:$workflow,conclusion:$conclusion,attempt:$attempt,num_turns:$num_turns,max_turns:($max_turns|tonumber),permission_denials_count:$perm_denials,is_error:$is_error,findings:$findings}')
+
+        # Only set output if there are findings
+        FINDING_COUNT=$(echo "$FINDINGS" | jq 'length')
+        if [[ "$FINDING_COUNT" -gt 0 ]]; then
+          # Write to file to avoid GITHUB_OUTPUT line-length limits
+          RESULT_FILE=$(mktemp /tmp/claude-issues-XXXXXX.json)
+          echo "$RESULT" > "$RESULT_FILE"
+          echo "claude_issues_file=$RESULT_FILE" >> "$GITHUB_OUTPUT"
+          echo "has_findings=true" >> "$GITHUB_OUTPUT"
+          echo "Scanned Claude logs — $FINDING_COUNT finding(s): $(echo "$FINDINGS" | jq -r '.[].category' | tr '\n' ',' | sed 's/,$//')"
+        else
+          echo "claude_issues_file=" >> "$GITHUB_OUTPUT"
+          echo "has_findings=false" >> "$GITHUB_OUTPUT"
+          echo "Scanned Claude logs — no issues found."
+        fi
+
+        rm -f "$LOG_FILE"
+
+    # --- Report findings to rolling GitHub issue ---
+    - name: report-claude-issues
+      if: always() && steps.scan-logs.outputs.has_findings == 'true'
+      uses: actions/github-script@v8
+      env:
+        ISSUES_FILE: ${{ steps.scan-logs.outputs.claude_issues_file }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const issuesFile = process.env.ISSUES_FILE;
+          if (!issuesFile || !fs.existsSync(issuesFile)) {
+            core.info('No issues file — skipping report.');
+            return;
+          }
+
+          const data = JSON.parse(fs.readFileSync(issuesFile, 'utf8'));
+          if (!data.findings || data.findings.length === 0) {
+            core.info('No findings — skipping report.');
+            return;
+          }
+
+          const { owner, repo } = context.repo;
+
+          // Ensure labels exist
+          for (const [name, color] of [['ci-failure', 'd73a4a'], ['claude-health', '0e8a16'], ['claude-health-critical', 'b60205']]) {
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name });
+            } catch (e) {
+              if (e.status === 404) {
+                try {
+                  await github.rest.issues.createLabel({ owner, repo, name, color });
+                } catch (createErr) {
+                  core.warning(`Could not create label '${name}': ${createErr.message}`);
+                }
+              }
+            }
+          }
+
+          // Find existing rolling issue
+          let issueNumber = null;
+          try {
+            const issues = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'claude-health', per_page: 10
+            });
+            const tracker = issues.data.find(i => i.title === '[claude-health] CI Claude Issue Tracker');
+            if (tracker) issueNumber = tracker.number;
+          } catch (e) {
+            core.warning(`Failed to search for tracker issue: ${e.message}`);
+          }
+
+          // Create if not found
+          if (!issueNumber) {
+            try {
+              const created = await github.rest.issues.create({
+                owner, repo,
+                title: '[claude-health] CI Claude Issue Tracker',
+                body: [
+                  '# Claude CI Issue Tracker',
+                  '',
+                  'This is a **rolling issue** that collects categorized failure reports from Claude CI runs.',
+                  'Each failed run appends a comment with its findings.',
+                  '',
+                  'Labels:',
+                  '- `claude-health` — this tracker',
+                  '- `claude-health-critical` — auto-added when a finding has severity `error`',
+                  '- `ci-failure` — general CI failure tag',
+                ].join('\n'),
+                labels: ['ci-failure', 'claude-health']
+              });
+              issueNumber = created.data.number;
+              core.info(`Created tracker issue #${issueNumber}`);
+            } catch (e) {
+              core.warning(`Failed to create tracker issue: ${e.message}`);
+              return;
+            }
+          }
+
+          // Build comment body
+          const hasError = data.findings.some(f => f.severity === 'error');
+          const statusEmoji = data.conclusion === 'failure' ? ':x: FAILED' : ':white_check_mark: SUCCESS';
+          const timestamp = new Date().toISOString();
+
+          let table = '| Category | Severity | Detail |\n|----------|----------|--------|\n';
+          for (const f of data.findings) {
+            const sevIcon = f.severity === 'error' ? ':red_circle:' : f.severity === 'warning' ? ':warning:' : ':information_source:';
+            const detail = (f.detail || '').substring(0, 150).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+            table += `| ${f.category} | ${sevIcon} ${f.severity} | ${detail} |\n`;
+          }
+
+          const comment = [
+            `## Run ${data.run_id} — ${data.workflow} — ${statusEmoji}`,
+            '',
+            table,
+            `_Attempt: ${data.attempt}/3 | Turns: ${data.num_turns}/${data.max_turns} | ${timestamp}_`,
+            `_Run: https://github.com/${owner}/${repo}/actions/runs/${data.run_id}_`,
+          ].join('\n');
+
+          try {
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: issueNumber, body: comment
+            });
+            core.info(`Posted findings to issue #${issueNumber}`);
+          } catch (e) {
+            core.warning(`Failed to post comment: ${e.message}`);
+          }
+
+          // Add critical label if error-severity finding
+          if (hasError) {
+            try {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: issueNumber, labels: ['claude-health-critical']
+              });
+            } catch (e) {
+              core.warning(`Failed to add critical label: ${e.message}`);
+            }
+          }
+
+          // Clean up temp file
+          try { fs.unlinkSync(issuesFile); } catch (_) {}
 
     # Belt-and-suspenders: fail job if attempt 1 failed but was non-429
     # (attempts 2/3 are skipped so no step naturally fails the job)

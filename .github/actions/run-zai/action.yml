@@ -74,3 +74,4 @@ runs:
         subagent-model: ${{ inputs.subagent-model }}
         claude-debug: ${{ inputs.claude-debug }}
         additional-permissions: ${{ inputs.additional-permissions }}
+        github-token: ${{ github.token }}
