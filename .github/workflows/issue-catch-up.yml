@@ -347,7 +347,7 @@ jobs:
           track-progress: "false"
           claude-debug: "true"
           allowed-bots: "github-actions[bot]"
-          allowed-tools: "Bash(gh:*),Read,Grep"
+          allowed-tools: "Bash(rtk:*),Bash(gh:*),Read,Grep"
           additional-permissions: "issues: write"
           prompt: |
             ## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues
