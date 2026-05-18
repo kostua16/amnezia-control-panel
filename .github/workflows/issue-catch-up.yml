@@ -40,7 +40,7 @@ jobs:
         with:
           script: |
             const EXEMPT_LABELS = ['keep-open', 'backlog', 'in-progress', 'fixed'];
-            const MAX_ACTIONS = 10;
+            const MAX_ACTIONS = 30;
 
             // --- Fetch all open issues ---
             const allIssues = [];
@@ -145,8 +145,8 @@ jobs:
               const hasNeedsReview = labels.includes('needs-review');
               const createdAt = new Date(issue.created_at);
 
-              // Bucket: should_close_dupe
-              if (hasDuplicate && !hasTriaged) {
+              // Bucket: should_close_dupe — close any issue with duplicate label
+              if (hasDuplicate) {
                 buckets.should_close_dupe.push({ number: num, title: issue.title });
                 continue;
               }
@@ -233,6 +233,8 @@ jobs:
 
               // Bucket: triaged_no_fix — has triaged, no linked PR, no active fix, <2 fix attempts
               // Only consider issues triaged >1h ago (give triage workflow time to settle)
+              // Skip auto-generated issues whose titles match patterns from failed workflows
+              const AUTO_GEN_PATTERNS = [/\[auto-fix\]/, /\[workflow-health\]/];
               const triageResultComment = comments.find(c =>
                 c.body.includes('Triage Result')
               );
@@ -240,7 +242,7 @@ jobs:
                 ? new Date(triageResultComment.created_at)
                 : createdAt;
               const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-              if (triagedAt < oneHourAgo) {
+              if (triagedAt < oneHourAgo && !AUTO_GEN_PATTERNS.some(p => p.test(issue.title))) {
                 buckets.triaged_no_fix.push({
                   number: num,
                   title: issue.title,
@@ -256,6 +258,29 @@ jobs:
                   number: num,
                   title: issue.title,
                   triage_result: triageResultComment.body.substring(0, 2000)
+                });
+              }
+            }
+
+            // --- Title-based dedup: close newer duplicates of same title ---
+            const titleGroups = {};
+            for (const issue of allIssues) {
+              const labels = issue.labels.map(l => l.name);
+              if (EXEMPT_LABELS.some(el => labels.includes(el))) continue;
+              if (labels.includes('canceled') || labels.includes('duplicate')) continue;
+              const key = issue.title.trim().toLowerCase();
+              if (!titleGroups[key]) titleGroups[key] = [];
+              titleGroups[key].push({ number: issue.number, title: issue.title, created: issue.created_at });
+            }
+            for (const [title, issues] of Object.entries(titleGroups)) {
+              if (issues.length < 2) continue;
+              issues.sort((a, b) => new Date(a.created) - new Date(b.created));
+              const canonical = issues[0];
+              for (let i = 1; i < issues.length; i++) {
+                buckets.should_close_dupe.push({
+                  number: issues[i].number,
+                  title: issues[i].title,
+                  duplicate_of: canonical.number
                 });
               }
             }
@@ -321,7 +346,7 @@ jobs:
           max-turns: "50"
           track-progress: "false"
           allowed-bots: "github-actions[bot]"
-          allowed-tools: "Bash(gh issue comment:*),Bash(gh issue close:*),Bash(gh issue edit:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh label list:*),Bash(gh search issues:*),Read,Grep"
+          allowed-tools: "Bash(gh:*),Read,Grep"
           additional-permissions: "issues: write"
           prompt: |
             ## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues
@@ -344,6 +369,13 @@ jobs:
             ### Phase 1: Close Stale Issues (turns 1-5)
 
             For each `should_close_dupe` issue:
+            - If `duplicate_of` field is present (title-based dedup):
+            ```
+            gh issue comment NUM --body "Closing as duplicate of #DUPLICATE_OF — same title."
+            gh issue edit NUM --add-label "duplicate"
+            gh issue close NUM --reason "not planned"
+            ```
+            - Otherwise (label-based dedup):
             ```
             gh issue close NUM --reason "not planned" --comment "Auto-closed by catch-up workflow — duplicate label confirmed."
             ```
