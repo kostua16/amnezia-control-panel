@@ -53,11 +53,13 @@ jobs:
         run: |
           gh api "repos/${{ github.repository }}/issues/$ISSUE_NUM" \
             --jq '{title: .title, body: .body, author: .user.login}' > /tmp/issue.json
-          echo "title=$(jq -r .title /tmp/issue.json)" >> "$GITHUB_OUTPUT"
-          echo "body<<GHEOF" >> "$GITHUB_OUTPUT"
-          jq -r .body /tmp/issue.json >> "$GITHUB_OUTPUT"
-          echo "GHEOF" >> "$GITHUB_OUTPUT"
-          echo "author=$(jq -r .author /tmp/issue.json)" >> "$GITHUB_OUTPUT"
+          {
+            echo "title=$(jq -r .title /tmp/issue.json)"
+            echo "body<<GHEOF"
+            jq -r .body /tmp/issue.json
+            echo "GHEOF"
+            echo "author=$(jq -r .author /tmp/issue.json)"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -67,6 +69,7 @@ jobs:
 
       - uses: ./.github/actions/run-claude
         with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
           model: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "${{ github.event_name != 'workflow_dispatch' }}"

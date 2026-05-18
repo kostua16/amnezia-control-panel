@@ -189,6 +189,7 @@ jobs:
       - uses: ./.github/actions/run-claude
         if: steps.fixability.outputs.fixable == 'true'
         with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
           allowed-bots: "claude[bot],github-actions[bot]"
           max-turns: ${{ env.MAX_TURNS }}
           prompt: |

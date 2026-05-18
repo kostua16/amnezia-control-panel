@@ -35,12 +35,11 @@ jobs:
         id: diff
         run: |
           git diff origin/main -- package.json package-lock.json > /tmp/dep-diff.txt
-          echo "diff<<EOF" >> "$GITHUB_OUTPUT"
-          head -200 /tmp/dep-diff.txt >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          { echo "diff<<EOF"; head -200 /tmp/dep-diff.txt; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/run-claude
         with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
           model: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "true"

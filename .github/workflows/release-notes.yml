@@ -32,13 +32,16 @@ jobs:
           PREV_TAG: ${{ steps.prev-tag.outputs.tag }}
           CURRENT_TAG: ${{ github.ref_name }}
         run: |
-          echo "log<<EOF" >> "$GITHUB_OUTPUT"
-          git log "${PREV_TAG}..${CURRENT_TAG}" --pretty=format:"- %s (%h)" --no-merges | head -100 >> "$GITHUB_OUTPUT"
-          echo "" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          {
+            echo "log<<EOF"
+            git log "${PREV_TAG}..${CURRENT_TAG}" --pretty=format:"- %s (%h)" --no-merges | head -100
+            echo ""
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/run-claude
         with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
           model: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "false"

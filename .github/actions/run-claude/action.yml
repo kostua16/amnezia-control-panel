@@ -3,12 +3,12 @@ description: "claude-code-action wrapper with shared settings, model pin, defaul
 
 inputs:
   api-key:
-    description: "API key override. Defaults to secrets.ZAI_API_KEY."
-    default: ${{ github.secrets.ZAI_API_KEY || github.secrets.ANTHROPIC_API_KEY || github.secrets.ANTHROPIC_AUTH_TOKEN || github.secrets.CLAUDE_API_KEY || github.secrets.API_KEY }}
+    description: "API key override"
+    default: ""
     required: false
   api-url:
     description: "Anthropic API URL"
-    default: "${{ github.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' }}"
+    default: ""
   prompt:
     description: "Prompt for Claude"
     required: true
@@ -30,28 +30,28 @@ inputs:
     default: ""
   api-timeout:
     description: "API timeout"
-    default: "${{ github.env.API_TIMEOUT_MS || 30000 }}"
+    default: ""
   disable-telemetry:
     description: "Disable telemetry"
     default: "1"
   haiku-model:
     description: "Anthropic default haiku model"
-    default: "${{ github.env.ANTHROPIC_DEFAULT_HAIKU_MODEL || 'claude-haiku-4-5-20251001' }}"
+    default: ""
   sonnet-model:
     description: "Anthropic default sonnet model"
-    default: "${{ github.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-20250514' }}"
+    default: ""
   opus-model:
     description: "Anthropic default opus model"
-    default: "${{ github.env.ANTHROPIC_DEFAULT_OPUS_MODEL || 'claude-opus-4-20250514' }}"
+    default: ""
   model:
     description: "Anthropic model"
-    default: "${{ github.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-20250514' }}"
+    default: ""
   subagent-model:
     description: "Claude code subagent model"
-    default: "${{ github.env.CLAUDE_CODE_SUBAGENT_MODEL || 'claude-haiku-4-5-20251001' }}"
+    default: ""
   claude-debug:
     description: "Claude debug"
-    default: "${{ github.env.CLAUDE_DEBUG || false }}"
+    default: ""
 runs:
   using: composite
   steps:
@@ -72,26 +72,49 @@ runs:
         echo "main=$main" >> "$GITHUB_OUTPUT"
         echo "verify=$verify" >> "$GITHUB_OUTPUT"
 
+    - id: resolve-config
+      shell: bash
+      env:
+        RESOLVED_API_KEY: ${{ inputs.api-key || github.secrets.ZAI_API_KEY || github.secrets.ANTHROPIC_API_KEY || github.secrets.ANTHROPIC_AUTH_TOKEN || github.secrets.CLAUDE_API_KEY || github.secrets.API_KEY }}
+        RESOLVED_API_URL: ${{ inputs.api-url || env.ANTHROPIC_BASE_URL || env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' }}
+        RESOLVED_API_TIMEOUT: ${{ inputs.api-timeout || env.API_TIMEOUT_MS || env.API_TIMEOUT_MS || '30000' }}
+        RESOLVED_HAIKU_MODEL: ${{ inputs.haiku-model || env.ANTHROPIC_DEFAULT_HAIKU_MODEL || env.ANTHROPIC_DEFAULT_HAIKU_MODEL || 'claude-haiku-4-5-20251001' }}
+        RESOLVED_SONNET_MODEL: ${{ inputs.sonnet-model || env.ANTHROPIC_DEFAULT_SONNET_MODEL || env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-20250514' }}
+        RESOLVED_OPUS_MODEL: ${{ inputs.opus-model || env.ANTHROPIC_DEFAULT_OPUS_MODEL || env.ANTHROPIC_DEFAULT_OPUS_MODEL || 'claude-opus-4-20250514' }}
+        RESOLVED_MODEL: ${{ inputs.model || env.ANTHROPIC_DEFAULT_SONNET_MODEL || env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-20250514' }}
+        RESOLVED_SUBAGENT_MODEL: ${{ inputs.subagent-model || env.CLAUDE_CODE_SUBAGENT_MODEL || env.CLAUDE_CODE_SUBAGENT_MODEL || 'claude-haiku-4-5-20251001' }}
+        RESOLVED_CLAUDE_DEBUG: ${{ inputs.claude-debug || env.CLAUDE_DEBUG || env.CLAUDE_DEBUG || 'false' }}
+      run: |
+        echo "api_key=$RESOLVED_API_KEY" >> "$GITHUB_OUTPUT"
+        echo "api_url=$RESOLVED_API_URL" >> "$GITHUB_OUTPUT"
+        echo "api_timeout=$RESOLVED_API_TIMEOUT" >> "$GITHUB_OUTPUT"
+        echo "haiku_model=$RESOLVED_HAIKU_MODEL" >> "$GITHUB_OUTPUT"
+        echo "sonnet_model=$RESOLVED_SONNET_MODEL" >> "$GITHUB_OUTPUT"
+        echo "opus_model=$RESOLVED_OPUS_MODEL" >> "$GITHUB_OUTPUT"
+        echo "model=$RESOLVED_MODEL" >> "$GITHUB_OUTPUT"
+        echo "subagent_model=$RESOLVED_SUBAGENT_MODEL" >> "$GITHUB_OUTPUT"
+        echo "claude_debug=$RESOLVED_CLAUDE_DEBUG" >> "$GITHUB_OUTPUT"
+
     - name: Run Claude Code
       uses: anthropics/claude-code-action@v1
       env:
         DISABLE_TELEMETRY: ${{ inputs.disable-telemetry }}
-        API_TIMEOUT_MS: ${{ inputs.api-timeout }}
+        API_TIMEOUT_MS: ${{ steps.resolve-config.outputs.api_timeout }}
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: ${{ inputs.disable-telemetry }}
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.haiku-model }}
-        ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.sonnet-model }}
-        ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.opus-model }}
-        CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.subagent-model }}
-        ANTHROPIC_BASE_URL: ${{ inputs.api-url }}
-        ANTHROPIC_API_KEY: ${{ inputs.api-key }}
-        ANTHROPIC_AUTH_TOKEN: ${{ inputs.api-key }}
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ steps.resolve-config.outputs.haiku_model }}
+        ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ steps.resolve-config.outputs.sonnet_model }}
+        ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ steps.resolve-config.outputs.opus_model }}
+        CLAUDE_CODE_SUBAGENT_MODEL: ${{ steps.resolve-config.outputs.subagent_model }}
+        ANTHROPIC_BASE_URL: ${{ steps.resolve-config.outputs.api_url }}
+        ANTHROPIC_API_KEY: ${{ steps.resolve-config.outputs.api_key }}
+        ANTHROPIC_AUTH_TOKEN: ${{ steps.resolve-config.outputs.api_key }}
       with:
-        anthropic_api_key: ${{ inputs.api-key }}
+        anthropic_api_key: ${{ steps.resolve-config.outputs.api_key }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
-        show_full_output: ${{ inputs.claude-debug || false }}
+        show_full_output: ${{ steps.resolve-config.outputs.claude_debug || false }}
         claude_args: |-
-          --model ${{ inputs.model }}
+          --model ${{ steps.resolve-config.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
           --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}
         prompt: |-
@@ -109,7 +132,7 @@ runs:
         settings: |
           {
             "env": {
-              "ANTHROPIC_API_KEY": "${{ inputs.api-key }}",
-              "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
+              "ANTHROPIC_API_KEY": "${{ steps.resolve-config.outputs.api_key }}",
+              "ANTHROPIC_AUTH_TOKEN": "${{ steps.resolve-config.outputs.api_key }}"
             }
           }

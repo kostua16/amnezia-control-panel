@@ -71,6 +71,7 @@ jobs:
         id: claude
         uses: ./.github/actions/run-claude
         with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "true"
           allowed-tools: "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh pr edit:*),Bash(gh pr diff:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)"
@@ -124,6 +125,7 @@ jobs:
 
       - uses: ./.github/actions/run-claude
         with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
           model: "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}"
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "true"

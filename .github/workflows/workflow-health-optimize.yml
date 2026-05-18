@@ -177,6 +177,7 @@ jobs:
 
       - uses: ./.github/actions/run-claude
         with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
           max-turns: "${{ env.MAX_TURNS }}"
           allowed-tools: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(echo:*)"
           prompt: |

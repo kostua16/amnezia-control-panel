@@ -168,6 +168,7 @@ jobs:
       - uses: ./.github/actions/run-claude
         if: steps.fixability.outputs.fixable == 'true'
         with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
           allowed-bots: "claude[bot],github-actions[bot]"
           max-turns: ${{ env.MAX_TURNS }}
           prompt: |
@@ -255,6 +256,7 @@ jobs:
           if [ -n "$ISSUE_NUMBERS" ]; then
             CLOSES_TEXT=$(printf '\n\n%s' "$(echo "$ISSUE_NUMBERS" | tr ',' '\n' | grep -v '^$' | sed 's/^/Closes #/')")
           fi
+          # shellcheck disable=SC2016
           BODY=$(printf 'Automated fix for failed CI run on `%s`: %s\n\n**Review required before merge.** This PR was created by the CI auto-fix workflow (direct push path).%s' \
             "$BASE_BRANCH" "$RUN_URL" "$CLOSES_TEXT")
           gh pr create \
@@ -274,6 +276,8 @@ jobs:
     if: failure()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
       - uses: ./.github/actions/report-failure
         with:
           mode: "issue"
