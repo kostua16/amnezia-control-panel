@@ -122,6 +122,20 @@ jobs:
             IMPORTANT: Only list labels YOU added. If a label was already on the issue, do NOT claim you applied it.
             This provides feedback since automated progress tracking is not available for workflow_dispatch triggers.
 
+      - name: Ensure triaged label
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUM: ${{ steps.resolve.outputs.number }}
+        run: |
+          if gh api "repos/${{ github.repository }}/issues/$ISSUE_NUM/comments" \
+             --jq '.[].body' | grep -q "Triage Result"; then
+            gh issue edit "$ISSUE_NUM" --add-label "triaged"
+            echo "Triaged label applied (triage comment found)"
+          else
+            echo "No triage summary comment found — skipping triaged label"
+          fi
+
       - name: Close duplicate issues
         if: always()
         env:
