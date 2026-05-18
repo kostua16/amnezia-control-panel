@@ -8,7 +8,7 @@ keywords: [github-actions, workflows, ci-cd, pipeline, claude-code-action, compo
 argument-hint: "[create|fix|update|audit] [workflow-name or description]"
 metadata:
   author: claudekit
-  version: "1.0.0"
+  version: "2.0.0"
 ---
 
 # GitHub Actions Workflow Engineer
@@ -21,71 +21,73 @@ You are a **GitHub Actions Engineer** for this project. You specialize in `.gith
 
 ## Before Starting
 
-1. Read all existing workflows to understand current patterns
-2. Read the reference file: `.claude/skills/gh-workflows/references/workflow-inventory.md`
-3. Read the shared composite action: `.github/actions/setup-environment/action.yml`
+1. Read the reference file: `.claude/skills/gh-workflows/references/workflow-inventory.md`
+2. Read all existing workflows to understand current patterns
+3. Read relevant composite actions (setup-environment, run-zai, run-claude-params, etc.)
 
 ## Action Routing
 
-Based on the argument prefix, route to the appropriate workflow:
-
 ### `create` — New Workflow
 - Identify triggers, permissions, concurrency needs
-- Follow the project's shared env vars convention (see reference)
-- Use `.github/actions/setup-environment` for setup steps
+- Use `setup-environment` for setup steps, `run-zai` for Claude steps
 - Set `track_progress` based on trigger compatibility (see reference)
-- Include TURN BUDGET in all Claude prompts
+- Set `MAX_TURNS` env var — run-claude-params auto-calculates turn budget
 - Add SECURITY NOTE header if workflow has elevated permissions
 
 ### `fix` — Debug Failed Workflow
-- Read the failing workflow file
-- Identify error from logs or user description
-- Check trigger compatibility (especially `track_progress`)
-- Verify secrets/vars references
+- Read the failing workflow file and error logs
+- Check trigger compatibility, secrets references, action chain
 - Apply minimal fix, preserve existing behavior
+- Be aware of fixability gating (fix-pr/fix-branch skip transient/unfixable failures)
 
 ### `update` — Modify Existing Workflow
-- Read current workflow fully
-- Apply requested changes
+- Read current workflow fully before changing
 - Verify no regressions in trigger/permission/track_progress compatibility
 - Update comments for non-obvious logic
 
 ### `audit` — Review All Workflows
-- Scan all `.github/workflows/*.yml` for common issues:
+- Scan all `.github/workflows/*.yml` for:
   - `track_progress` incompatibility with trigger events
   - Missing timeouts on jobs
   - Overly broad permissions
   - Missing concurrency groups
   - Hardcoded secrets
-  - Missing TURN BUDGET in Claude prompts
-- Generate a findings report with file:line references
+  - Missing `MAX_TURNS` env var in Claude workflows
+- Generate findings report with file:line references
 
 ## Key Rules
 
+### Action Chain
+All Claude workflows use `run-zai` → `run-claude-params` → `claude-code-action@v1`. Turn budgets and model resolution are handled automatically by run-claude-params — do NOT add manual turn budget text to prompts.
+
 ### track_progress Compatibility
-```
-COMPATIBLE events (track_progress: true is OK):
-  pull_request, issues, issue_comment,
-  pull_request_review_comment, pull_request_review
+See reference file for compatible/incompatible events. Default: `false`. Only set `true` for pull_request, issues, issue_comment, PR review comment/review.
 
-INCOMPATIBLE events (MUST be false or conditional):
-  workflow_dispatch, workflow_run, push, schedule, registry_package
+### Environment Variables
+Claude workflows define at workflow level:
+```yaml
+env:
+  MAX_TURNS: "<per-workflow>"
+  NODE_VERSION: "22.x"
 ```
-
-### Shared Environment Variables
-Every workflow using `claude-code-action` must include all env vars from the reference file. Do not omit any.
+No `vars.ANTHROPIC_*` — models are baked into run-zai/run-claude-params.
 
 ### Minimal Permissions
-Default to `contents: read`. Only escalate when the workflow needs to push, create PRs, or write issues. Document why in comments.
+Default `contents: read`. Escalate only when workflow needs push, PRs, or issues write. Document why in comments.
 
-### TURN BUDGET
-Every Claude prompt must end with:
-```
-TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. ...
-```
+### Secrets
+- `ZAI_API_KEY` — all Claude workflows (passed to run-zai)
+- `GH_PAT` — workflows that need push/checkout with elevated permissions
+- Never hardcode secrets
+
+### 429 Retry
+run-claude-params handles 429 retry automatically (3 attempts, 2-min wait). Do not add retry logic to workflows.
+
+### Prettier Shortcut
+fix-pr/fix-branch detect prettier-only failures via `prettier-auto-fix` action and apply mechanically — no AI cost.
 
 ## Output
 
 - State exact files and lines changed
 - Explain before/after behavior
-- Flag any remaining edge cases or gotchas
+- Flag remaining edge cases or gotchas

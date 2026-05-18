@@ -1,114 +1,108 @@
 # Workflow Inventory & Reference
 
-## Current Workflows
+## Workflows (15)
 
-| Workflow | File | Triggers | Uses Claude | track_progress |
-|----------|------|----------|-------------|----------------|
-| CI | `ci.yml` | `push(main)`, `pull_request` | No | N/A |
-| Claude Code | `claude.yml` | `issue_comment`, `pull_request_review_comment`, `issues`, `pull_request_review` | Yes | `true` (all compatible) |
-| Code Review | `code-review.yml` | `pull_request`, `issue_comment`, `pull_request_review_comment` | Yes | `true` (all compatible) |
-| Issue Triage | `triage.yml` | `issues`, `issue_comment`, `workflow_dispatch` | Yes | conditional |
-| Auto Fix CI (PR) | `ci-failure-auto-fix-pr.yml` | `workflow_run(CI)` | Yes | `false` |
-| Auto Fix CI (Branch) | `ci-failure-auto-fix-branch.yml` | `workflow_run(CI)` | Yes | `false` |
-| Daily Maintenance | `maintenance.yml` | `schedule(cron)`, `workflow_dispatch` | Yes | `false` (both triggers incompatible) |
-| Stale Issues | `stale.yml` | `schedule(cron)`, `workflow_dispatch` | No | N/A |
-| Release Notes | `release-notes.yml` | `push(tags v*)` | Yes | `false` (`push` incompatible) |
-| Perf Check | `perf-check.yml` | `pull_request(paths)` | No | N/A |
-| PR Size Guard | `pr-size-guard.yml` | `pull_request` | No | N/A |
-| Dependency Review | `dependency-review.yml` | `pull_request(paths)` | Yes | `true` (compatible) |
+| Workflow | File | Triggers | Claude? | Action | Model | track_progress | Timeout | MAX_TURNS |
+|---|---|---|---|---|---|---|---|---|
+| CI | ci.yml | push(main), PR | No | N/A | N/A | N/A | 10-15m | N/A |
+| Claude Code | claude.yml | issue_comment, PR review comment, issues, PR review | Yes | run-zai | sonnet | true | 30m | 100 |
+| Code Review | code-review.yml | PR, issue_comment, PR review comment | Yes | run-zai | sonnet + opus (security) | true | 20m | 100 |
+| Fix Issue | fix-issue.yml | issue_comment(/fix), issues(labeled:triaged) | Yes | run-zai | sonnet | true | 20m | 100 |
+| Fix PR | fix-pr.yml | workflow_run(CI, failure) w/ PRs | Yes | run-zai | sonnet | false | 20m | 70 |
+| Fix Branch | fix-branch.yml | workflow_run(CI, failure) no PRs | Yes | run-zai | sonnet | false | 20m | 70 |
+| Issue Triage | triage.yml | issues, issue_comment(/triage), workflow_dispatch | Yes | run-zai | haiku | conditional | 15m | 80 |
+| Issue Catch-Up | issue-catch-up.yml | schedule(hourly :30), workflow_dispatch | Yes | run-zai | haiku | false | 10-30m | 50 |
+| Workflow Health | workflow-health-optimize.yml | schedule(hourly :00), workflow_dispatch | Yes | run-zai | sonnet | false | 10-20m | 25 |
+| Daily Maintenance | maintenance.yml | schedule(2x daily), workflow_dispatch | Yes | run-zai | sonnet | false | 30m | 100 |
+| Stale Issues | stale.yml | schedule(weekly), workflow_dispatch | No | N/A | N/A | N/A | N/A | N/A |
+| Release Notes | release-notes.yml | push(tags v*) | Yes | run-zai | haiku | false | 10m | 80 |
+| Perf Check | perf-check.yml | PR(paths: src, pkg) | No | N/A | N/A | N/A | 20m | N/A |
+| PR Size Guard | pr-size-guard.yml | PR(opened, synchronize) | No | N/A | N/A | N/A | 2m | N/A |
+| Dependency Review | dependency-review.yml | PR(paths: pkg files), dependabot only | Yes | run-zai | haiku | true | 15m | 80 |
 
-## Known Issues / Gotchas
+## Composite Actions (7)
 
-### track_progress Incompatibility
-`anthropics/claude-code-action@v1` only supports `track_progress` for:
-- `pull_request`, `issues`, `issue_comment`, `pull_request_review_comment`, `pull_request_review`
+| Action | Purpose | Key Inputs |
+|---|---|---|
+| setup-environment | Node.js setup, npm ci, prisma generate, GSD install, RTK install | node-version, install-deps, generate-prisma, install-gsd, install-rtk |
+| run-claude-params | Base: claude-code-action with turn budget calc, 429-gated 3x retry, model alias resolution | all params explicit (api-key, api-url, model, haiku-model, sonnet-model, opus-model, etc.) |
+| run-claude | Thin wrapper: Anthropic defaults (api-url: anthropic.com, claude-* models) | api-key, prompt, model |
+| run-zai | Thin wrapper: ZAI proxy defaults (api-url: z.ai, glm-* models) | api-key, prompt, model, haiku-model, sonnet-model, opus-model |
+| commit-and-push | git add + commit + push with 3x retry (5s backoff) | branch-name, commit-message, token |
+| report-failure | Collect failure logs → create issue or comment | mode, issue-number, auto-fix-run-url |
+| prettier-auto-fix | Detect prettier-only lint failures → apply without AI | run-id, github-token |
 
-**Fixed:**
-- `triage.yml:63` — conditional: `${{ github.event_name != 'workflow_dispatch' }}`
-- `ci-failure-auto-fix-pr.yml:138` — `false` (only `workflow_run`)
-- `ci-failure-auto-fix-branch.yml:128` — `false` (only `workflow_run`)
-- `maintenance.yml:45` — `false` (`schedule` and `workflow_dispatch` both incompatible)
-- `release-notes.yml:44` — `false` (`push` incompatible)
+## Helper Scripts (2)
 
-### Bot Actor Blocking
-`claude-code-action@v1` blocks bot actors by default with error:
+- **scripts/gh.sh** — safe gh wrapper (issue view/list, search issues, label list). Validates repo format, blocks `repo:`/`org:`/`user:` qualifiers.
+- **scripts/edit-issue-labels.sh** — label editor reading issue from `$GITHUB_EVENT_PATH`. Only `--add-label`/`--remove-label`, validates labels exist.
+
+## Architecture Patterns
+
+### Action Chain
 ```
-Workflow initiated by non-human actor: github-actions (type: Bot).
-Add bot to allowed_bots list or use '*' to allow all bots.
-```
-Workflows triggered by other workflows (e.g. auto-fix dispatching triage via `workflow_dispatch`) run as `github-actions[bot]`. Must add `allowed_bots: "github-actions[bot]"` to the `claude-code-action` step.
-
-**Fixed:**
-- `triage.yml` — added `allowed_bots: "github-actions[bot]"`
-
-**Unaffected:**
-- `claude.yml`, `code-review.yml` — triggered by human comments/reviews
-- `maintenance.yml`, `release-notes.yml` — triggered by schedule/push, actor is human who pushed
-- `ci-failure-auto-fix-pr.yml`, `ci-failure-auto-fix-branch.yml` — triggered by `workflow_run`, actor inherits from the triggering CI run (human who pushed)
-- `dependency-review.yml` — triggered by Dependabot PRs, filtered to `dependabot[bot]` but Dependabot may need `allowed_bots` if it fails
-
-### GITHUB_TOKEN Issue Creation
-Issues opened by `GITHUB_TOKEN` do NOT fire `issues:opened` events. The auto-fix workflows manually dispatch `triage.yml` via `workflow_dispatch` to work around this.
-
-### Auto-fix Branch Naming
-Auto-fix branches use the pattern `claude-auto-fix-ci-{sanitized-branch}-{run-id}`. The `!startsWith` check in `if` prevents infinite loops.
-
-### Concurrency Groups
-Most Claude-using workflows use issue/PR-numbered concurrency groups to prevent parallel runs on the same issue. `cancel-in-progress: true` for most; `false` for `claude.yml` (to avoid killing in-progress Claude sessions).
-
-## Composite Actions
-
-### `.github/actions/setup-environment`
-Shared setup action with inputs:
-- `node-version` (default: `"22.x"`) — Node.js version
-- `install-deps` (default: `"false"`) — Run `npm ci` with npm cache
-- `generate-prisma` (default: `"false"`) — Run `npx prisma generate`
-- `install-gsd` (default: `"false"`) — Install GSD framework with cache
-
-## Helper Scripts
-
-### `.github/workflows/scripts/gh.sh`
-Safe `gh` CLI wrapper. Only allows: `issue view`, `issue list`, `search issues`, `label list`.
-Validates repo format, blocks `repo:`/`org:`/`user:` qualifiers in search.
-
-### `.github/workflows/scripts/edit-issue-labels.sh`
-Label editor for triage. Reads issue number from `$GITHUB_EVENT_PATH`. Only accepts `--add-label` and `--remove-label`. Validates labels exist in repo before applying.
-
-## Shared Environment Variables
-
-All Claude-using workflows define these env vars at workflow level:
-```yaml
-env:
-  MAX_TURNS: "300"
-  NODE_VERSION: "22.x"
-  DISABLE_TELEMETRY: "1"
-  API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}"
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
-  ANTHROPIC_DEFAULT_SONNET_MODEL: "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}"
-  ANTHROPIC_DEFAULT_OPUS_MODEL: "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}"
-  CLAUDE_CODE_SUBAGENT_MODEL: "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
-  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
+workflows → run-zai (or run-claude) → run-claude-params → anthropics/claude-code-action@v1
 ```
 
-## Secrets & Variables Required
+### 429 Retry (in run-claude-params)
+On failure, probes API with minimal request. Only retries on HTTP 429 (rate limit). 3 attempts total, 2-min wait between retries. Non-429 failures skip retries.
+
+### Turn Budget (in run-claude-params)
+Calculates 80/20/20 split from MAX_TURNS and appends to prompt:
+- `budget = MAX_TURNS * 80%`
+- `investigate = budget * 20%`
+- `main = budget * 60%`
+- `verify = budget * 20%`
+
+### Model Resolution (in run-claude-params)
+Maps aliases → actual model IDs per wrapper:
+- **run-zai**: haiku→glm-4.7, sonnet→glm-5, opus→glm-5.1
+- **run-claude**: haiku→claude-haiku-4-5-20251001, sonnet→claude-sonnet-4-5-20250929, opus→claude-opus-4-5-20251101
+
+### Prettier Shortcut
+fix-pr/fix-branch use `prettier-auto-fix` action to detect prettier-only lint failures and apply mechanically — no AI cost.
+
+### Fixability Gating
+fix-pr/fix-branch classify failures as transient/unfixable/fixable. Only fixable failures invoke Claude. Transient (e.g. network) and unfixable (e.g. missing secret) are skipped.
+
+### Git Auth Fix
+claude-code-action invalidates checkout auth header. `commit-and-push` re-sets it with `base64 -w 0`.
+
+### Infinite Loop Prevention
+- fix-issue: labels `canceled` when no changes made
+- fix-pr: avoids `/fix` mention in no-changes comment
+- fix-branch: `!startsWith(branch, 'claude-auto-fix-ci-')` prevents self-triggering
+
+### track_progress Compatibility
+```
+COMPATIBLE (track_progress: true is OK):
+  pull_request, issues, issue_comment,
+  pull_request_review_comment, pull_request_review
+
+INCOMPATIBLE (MUST be false or conditional):
+  workflow_dispatch, workflow_run, push, schedule, registry_package
+```
+
+### Other Patterns
+- **GITHUB_TOKEN issue creation**: issues opened by GITHUB_TOKEN don't fire events → workflows manually dispatch triage.yml
+- **Triaged label hard-gate**: triage.yml only adds `triaged` label after verifying triage comment exists
+- **Error log truncation**: report-failure truncates job logs to last 3000 chars per job
+- **Bot actor**: workflows triggered by other workflows run as `github-actions[bot]` — must add `allowed_bots`
+
+## Secrets
 
 | Name | Type | Used By |
-|------|------|---------|
-| `ZAI_API_KEY` | secret | All Claude workflows (`anthropic_api_key`, `settings.env`) |
-| `GITHUB_TOKEN` | auto | Auto-fix workflows (checkout, push, PR creation) |
-| `API_TIMEOUT_MS` | var | All Claude workflows |
-| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | var | All Claude workflows |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | var | Triage, maintenance, release notes, dependency review |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL` | var | Code review, auto-fix, claude.yml |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL` | var | Security review |
-| `CLAUDE_CODE_SUBAGENT_MODEL` | var | All Claude workflows |
-| `ANTHROPIC_BASE_URL` | var | All Claude workflows |
+|---|---|---|
+| ZAI_API_KEY | secret | All Claude workflows (via run-zai) |
+| GH_PAT | secret | fix-issue, fix-pr, fix-branch, workflow-health-optimize, issue-catch-up, triage (checkout, push, cross-workflow triggers) |
+| GITHUB_TOKEN | auto | All workflows (default) |
 
-## Model Usage Patterns
+## Env Vars (workflow-level convention)
 
-| Workflow Purpose | Model | Why |
-|------------------|-------|-----|
-| Triage, maintenance, release notes, dep review | Haiku | Fast, cheap, simple classification/writing |
-| Code review, auto-fix, general Claude | Sonnet | Balanced quality/cost |
-| Security review | Opus | Highest quality for security analysis |
+```yaml
+env:
+  MAX_TURNS: "<varies by workflow>"
+  NODE_VERSION: "22.x"
+```
+
+No `vars.ANTHROPIC_*` — all model config baked into run-zai/run-claude-params.

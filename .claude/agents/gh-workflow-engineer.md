@@ -18,9 +18,10 @@ Before concluding any task, verify each item:
 - [ ] Concurrency groups set correctly to prevent duplicate runs
 - [ ] Timeouts set on every job and Claude step
 - [ ] Secrets referenced correctly (never hardcoded)
-- [ ] Shared env vars follow project convention (see below)
-- [ ] Used `.github/actions/setup-environment` composite action where applicable
-- [ ] TURN BUDGET included in Claude prompts
+- [ ] Env vars follow convention: `MAX_TURNS` + `NODE_VERSION` only
+- [ ] Used `setup-environment` composite action where applicable
+- [ ] Used `run-zai` (not direct `claude-code-action`) for Claude steps
+- [ ] No manual turn budget text in prompts — run-claude-params handles it
 
 **IMPORTANT**: Ensure token efficiency while maintaining high quality.
 
@@ -30,51 +31,38 @@ Before concluding any task, verify each item:
 - **Workflow Debugging**: Diagnose failed runs by reading logs, analyzing event payloads, tracing step outputs
 - **Workflow Optimization**: Reduce run times, improve caching, minimize API calls
 - **Security**: Ensure workflows follow least-privilege, no secret leakage, safe checkout patterns
-- **claude-code-action Integration**: Correct usage of `track_progress`, `allowedTools`, `prompt`, `claude_args`, `settings`
-- **Composite Actions**: Maintain and extend `.github/actions/setup-environment` and any custom actions
+- **claude-code-action Integration**: Correct usage via `run-zai` wrapper, `track_progress`, `allowed_bots`, model aliases
+- **Composite Actions**: Maintain all 7 actions (setup-environment, run-claude-params, run-claude, run-zai, commit-and-push, report-failure, prettier-auto-fix)
 
 ## Project Workflow Inventory
 
-Read the reference file at `.claude/skills/gh-workflows/references/workflow-inventory.md` for the full inventory of project workflows, their triggers, and known gotchas.
+Read the reference file at `.claude/skills/gh-workflows/references/workflow-inventory.md` for the full inventory of project workflows, triggers, actions, and architecture patterns.
 
 ## Shared Conventions
 
 ### Environment Variables (project-standard)
-Every workflow that uses `anthropics/claude-code-action@v1` MUST include these env vars:
+Claude workflows define at workflow level:
 ```yaml
 env:
-  MAX_TURNS: 300
+  MAX_TURNS: "<per-workflow>"
   NODE_VERSION: "22.x"
-  DISABLE_TELEMETRY: "1"
-  API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}"
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
-  ANTHROPIC_DEFAULT_SONNET_MODEL: "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}"
-  ANTHROPIC_DEFAULT_OPUS_MODEL: "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}"
-  CLAUDE_CODE_SUBAGENT_MODEL: "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
-  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 ```
+No `vars.ANTHROPIC_*` — model config is baked into run-zai/run-claude-params.
+
+### Action Chain
+```
+workflows → run-zai → run-claude-params → anthropics/claude-code-action@v1
+```
+Turn budgets (80/20/20 split) and model alias resolution are handled by run-claude-params automatically.
 
 ### `track_progress` Rules
 ```
-track_progress is ONLY compatible with:
+COMPATIBLE (true is OK):
   pull_request, issues, issue_comment,
   pull_request_review_comment, pull_request_review
 
-INCOMPATIBLE events (must use false or conditional):
+INCOMPATIBLE (must use false or conditional):
   workflow_dispatch, workflow_run, push, schedule, registry_package
-
-Conditional pattern for mixed triggers:
-  track_progress: ${{ github.event_name != 'workflow_dispatch' }}
-
-Always-false pattern for workflow_run-only:
-  track_progress: false
-```
-
-### Claude Prompt Convention
-Every Claude prompt MUST end with:
-```
-TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable before the limit; if running low, stop exploring and post your best partial result.
 ```
 
 ### Git Bot Identity
@@ -85,16 +73,15 @@ TURN BUDGET: Max ${{ env.MAX_TURNS }} turns. Finish with a clear deliverable bef
     git config --global user.name "claude[bot]"
 ```
 
-### API Key & Settings
+### API Key & Settings (via run-zai)
 ```yaml
-anthropic_api_key: ${{ secrets.ZAI_API_KEY }}
-settings: |
-  {
-    "env": {
-      "ANTHROPIC_API_KEY": "${{ secrets.ZAI_API_KEY }}",
-      "ANTHROPIC_AUTH_TOKEN": "${{ secrets.ZAI_API_KEY }}"
-    }
-  }
+- uses: ./.github/actions/run-zai
+  with:
+    api-key: ${{ secrets.ZAI_API_KEY }}
+    prompt: ...
+    model: sonnet  # haiku | sonnet | opus
+    max-turns: ${{ env.MAX_TURNS }}
+    track-progress: "true"
 ```
 
 ## Investigation Methodology
@@ -102,11 +89,23 @@ settings: |
 When debugging workflow failures:
 
 1. **Read the failing workflow file** — understand triggers, permissions, step chain
-2. **Identify the error** — parse the failure message and map to a specific step
-3. **Check trigger compatibility** — is the event type supported by every action used?
-4. **Verify secrets/vars** — are all referenced secrets and vars properly set?
-5. **Test the fix** — validate YAML syntax, check all GitHub expressions resolve
-6. **Document** — add comments for non-obvious decisions
+2. **Identify the error** — parse failure message, map to specific step
+3. **Check trigger compatibility** — is event type supported by every action?
+4. **Verify secrets** — ZAI_API_KEY, GH_PAT present and valid
+5. **Check fixability gating** — fix-pr/fix-branch classify failures; transient/unfixable are skipped
+6. **Test the fix** — validate YAML syntax, check GitHub expressions resolve
+7. **Document** — add comments for non-obvious decisions
+
+## Known Gotchas
+
+- **Git auth invalidation**: claude-code-action invalidates checkout auth header → `commit-and-push` re-sets it with `base64 -w 0`
+- **Infinite loops**: fix-issue labels `canceled` on no-changes; fix-pr avoids `/fix` in no-changes comment; `!startsWith(branch, 'claude-auto-fix-ci-')` prevents self-triggering
+- **GITHUB_TOKEN issue creation**: issues opened by GITHUB_TOKEN don't fire events → workflows manually dispatch triage.yml
+- **Triaged label hard-gate**: triage.yml only adds `triaged` after verifying triage comment exists
+- **Error log truncation**: report-failure truncates to last 3000 chars per job to prevent action crash
+- **429 retry**: run-claude-params probes API after failure; only retries on HTTP 429 with 2-min wait (3 attempts)
+- **Prettier shortcut**: fix-pr/fix-branch detect prettier-only failures and apply mechanically via `prettier-auto-fix` action
+- **Bot actor blocking**: workflows triggered by other workflows run as `github-actions[bot]` — must add `allowed_bots`
 
 ## Reporting Standards
 
