@@ -38,6 +38,9 @@ beforeEach(async () => {
 
 describe('transport-resolver', () => {
   it('should resolve wireguard for entry node with wireguard protocol', async () => {
+    // Tier 3: getNodeIP returns hostname as resolved IP
+    mockGetNodeIP.mock.mockImplementationOnce(async () => 'entry.example.com');
+
     const result = await resolvePanelTransport(
       { id: 1, hostname: 'entry.example.com', tailnetIP: null } as const,
       { panelUrl: 'https://entry.example.com:51820' },

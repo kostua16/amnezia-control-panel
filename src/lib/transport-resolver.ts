@@ -131,7 +131,7 @@ export async function resolvePanelTransport(
     const online = await isReachable(hostnameUsed);
 
     // ── Construct panelUrl ──────────────────────────────
-    const panelUrl = new URL(`https://${resolvedIP}:${defaultPort}`).toString();
+    const panelUrl = `https://${resolvedIP}:${defaultPort}`;
 
     return {
       panelUrl,
