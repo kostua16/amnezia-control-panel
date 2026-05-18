@@ -1,0 +1,464 @@
+name: Issue Catch-Up
+
+on:
+  schedule:
+    - cron: "30 * * * *" # Every hour at :30 (offset from workflow-health-optimize at :00)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would happen without taking action"
+        type: boolean
+        default: false
+
+concurrency:
+  group: issue-catch-up
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: read
+  id-token: write
+
+env:
+  NODE_VERSION: "22.x"
+
+jobs:
+  collect-issues:
+    name: Collect Issues
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      has-actionable: ${{ steps.categorize.outputs.has_actionable }}
+      categorized: ${{ steps.categorize.outputs.categorized }}
+      rate-limited: ${{ steps.categorize.outputs.rate_limited }}
+    steps:
+      - name: Fetch and categorize open issues
+        id: categorize
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const EXEMPT_LABELS = ['keep-open', 'backlog', 'in-progress', 'fixed'];
+            const MAX_ACTIONS = 10;
+
+            // --- Fetch all open issues ---
+            const allIssues = [];
+            let page = 1;
+            while (true) {
+              const resp = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                per_page: 100,
+                page
+              });
+              if (resp.data.length === 0) break;
+              // Exclude PRs (they have pull_request property)
+              allIssues.push(...resp.data.filter(i => !i.pull_request));
+              if (resp.data.length < 100) break;
+              page++;
+            }
+            core.info(`Found ${allIssues.length} open issues`);
+
+            // --- Check active triage/fix workflow runs ---
+            const activeRuns = new Set();
+            for (const wf of ['triage.yml', 'fix-issue.yml']) {
+              try {
+                const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: wf,
+                  status: 'in_progress',
+                  per_page: 50
+                });
+                for (const r of runs.data.workflow_runs) {
+                  // Extract issue number from branch name or run metadata
+                  const match = r.head_branch?.match(/claude-fix-issue-(\d+)/);
+                  if (match) activeRuns.add(Number(match[1]));
+                }
+                // Also check queued runs
+                const queued = await github.rest.actions.listWorkflowRunsForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: wf,
+                  status: 'queued',
+                  per_page: 50
+                });
+                for (const r of queued.data.workflow_runs) {
+                  const match = r.head_branch?.match(/claude-fix-issue-(\d+)/);
+                  if (match) activeRuns.add(Number(match[1]));
+                }
+              } catch (e) {
+                core.warning(`Failed to check ${wf} runs: ${e.message}`);
+              }
+            }
+            core.info(`Active fix/triage runs for issues: ${[...activeRuns].join(',') || 'none'}`);
+
+            // --- Check for fix branches (indicates fix in progress even if workflow completed) ---
+            try {
+              const branches = await github.rest.repos.listBranches({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+              for (const b of branches.data) {
+                const match = b.name.match(/claude-fix-issue-(\d+)/);
+                if (match) activeRuns.add(Number(match[1]));
+              }
+            } catch (e) {
+              core.warning(`Failed to list branches: ${e.message}`);
+            }
+
+            // --- Categorize issues ---
+            const buckets = {
+              needs_retriage: [],
+              triage_dead_letter: [],
+              should_close_dupe: [],
+              should_close_canceled: [],
+              orphaned_fixed: [],
+              priority_escalation: [],
+              groupable_candidates: [],
+              triaged_no_fix: [],
+              fix_dead_letter: []
+            };
+
+            const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+            const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+            for (const issue of allIssues) {
+              const labels = issue.labels.map(l => l.name);
+              const num = issue.number;
+
+              // Skip exempt labels
+              if (EXEMPT_LABELS.some(el => labels.includes(el))) continue;
+
+              // Skip if active fix/triage run
+              if (activeRuns.has(num)) continue;
+
+              const hasTriaged = labels.includes('triaged');
+              const hasDuplicate = labels.includes('duplicate');
+              const hasCanceled = labels.includes('canceled');
+              const hasCritical = labels.includes('critical');
+              const hasHigh = labels.includes('high');
+              const hasNeedsReview = labels.includes('needs-review');
+              const createdAt = new Date(issue.created_at);
+
+              // Bucket: should_close_dupe
+              if (hasDuplicate && !hasTriaged) {
+                buckets.should_close_dupe.push({ number: num, title: issue.title });
+                continue;
+              }
+
+              // Bucket: should_close_canceled
+              if (hasCanceled) {
+                buckets.should_close_canceled.push({ number: num, title: issue.title });
+                continue;
+              }
+
+              // Bucket: orphaned_fixed — has 'fixed' label but still open >7d
+              if (labels.includes('fixed') && createdAt < sevenDaysAgo) {
+                buckets.orphaned_fixed.push({ number: num, title: issue.title });
+                continue;
+              }
+
+              // Bucket: priority_escalation — critical/high, no in-progress/fixed, open >48h
+              if ((hasCritical || hasHigh) && !hasTriaged && createdAt < twoDaysAgo) {
+                buckets.priority_escalation.push({ number: num, title: issue.title, labels });
+                continue;
+              }
+
+              // Fetch comments for triage/fix attempt counting
+              let comments = [];
+              try {
+                const commentsResp = await github.rest.issues.listComments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  per_page: 100
+                });
+                comments = commentsResp.data;
+              } catch (e) {
+                core.warning(`Failed to fetch comments for #${num}: ${e.message}`);
+              }
+
+              const triageComments = comments.filter(c =>
+                c.body.includes('/triage')
+              );
+              const fixComments = comments.filter(c =>
+                c.body.includes('/fix')
+              );
+
+              if (!hasTriaged) {
+                // Check triage cooldown — skip if /triage posted in last 2h
+                const recentTriage = triageComments.find(c =>
+                  new Date(c.created_at) > twoHoursAgo
+                );
+                if (recentTriage) continue;
+
+                // Bucket: triage_dead_letter — >=2 triage attempts without success
+                if (triageComments.length >= 2) {
+                  if (!hasNeedsReview) {
+                    buckets.triage_dead_letter.push({ number: num, title: issue.title });
+                  }
+                  continue;
+                }
+
+                // Bucket: needs_retriage — no triaged label, <2 past triage attempts
+                buckets.needs_retriage.push({
+                  number: num,
+                  title: issue.title,
+                  attempt: triageComments.length + 1
+                });
+                continue;
+              }
+
+              // Issue has triaged label from here on
+
+              // Check for linked PR in body or comments
+              const hasLinkedPR = /Fixes #\d+|pull\/\d+|PR:.*#\d+/.test(
+                (issue.body || '') + comments.map(c => c.body).join(' ')
+              );
+              if (hasLinkedPR) continue;
+
+              // Check fix attempt count
+              if (fixComments.length >= 2) {
+                // Bucket: fix_dead_letter — >=2 fix attempts without success
+                if (!hasNeedsReview) {
+                  buckets.fix_dead_letter.push({ number: num, title: issue.title });
+                }
+                continue;
+              }
+
+              // Bucket: triaged_no_fix — has triaged, no linked PR, no active fix, <2 fix attempts
+              // Only consider issues triaged >1h ago (give triage workflow time to settle)
+              const triageResultComment = comments.find(c =>
+                c.body.includes('Triage Result')
+              );
+              const triagedAt = triageResultComment
+                ? new Date(triageResultComment.created_at)
+                : createdAt;
+              const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+              if (triagedAt < oneHourAgo) {
+                buckets.triaged_no_fix.push({
+                  number: num,
+                  title: issue.title,
+                  attempt: fixComments.length + 1
+                });
+                continue;
+              }
+
+              // Bucket: groupable_candidates — triaged, no fix running, triage result >24h old
+              const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+              if (triagedAt < oneDayAgo && triageResultComment) {
+                buckets.groupable_candidates.push({
+                  number: num,
+                  title: issue.title,
+                  triage_result: triageResultComment.body.substring(0, 2000)
+                });
+              }
+            }
+
+            // --- Rate limit check ---
+            const totalActions =
+              buckets.needs_retriage.length +
+              buckets.should_close_dupe.length +
+              buckets.should_close_canceled.length +
+              buckets.orphaned_fixed.length +
+              buckets.priority_escalation.length +
+              buckets.triaged_no_fix.length +
+              buckets.triage_dead_letter.length +
+              buckets.fix_dead_letter.length;
+
+            const rateLimited = totalActions > MAX_ACTIONS;
+            if (rateLimited) {
+              core.warning(`Rate limit reached: ${totalActions} actions > ${MAX_ACTIONS} max`);
+            }
+
+            const hasActionable = totalActions > 0 || buckets.groupable_candidates.length >= 3;
+
+            core.setOutput('has_actionable', String(hasActionable));
+            core.setOutput('rate_limited', String(rateLimited));
+
+            const json = JSON.stringify(buckets);
+            const truncated = json.length > 51200
+              ? json.substring(0, 51200) + '...[truncated]'
+              : json;
+            core.setOutput('categorized', truncated);
+
+            core.info('=== Issue Catch-Up Summary ===');
+            for (const [bucket, items] of Object.entries(buckets)) {
+              core.info(`  ${bucket}: ${items.length}`);
+            }
+            core.info(`  Total actions: ${totalActions}`);
+            core.info(`  Rate limited: ${rateLimited}`);
+            core.info(`  Has actionable: ${hasActionable}`);
+
+  analyze-and-act:
+    name: Analyze & Act
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [collect-issues]
+    if: needs.collect-issues.outputs.has-actionable == 'true'
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          install-gsd: "true"
+          install-rtk: "true"
+
+      - uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          model: 'haiku'
+          max-turns: "50"
+          track-progress: "false"
+          allowed-bots: "github-actions[bot]"
+          allowed-tools: "Bash(gh issue comment:*),Bash(gh issue close:*),Bash(gh issue edit:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh label list:*),Bash(gh search issues:*),Read,Grep"
+          additional-permissions: "issues: write"
+          prompt: |
+            ## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues
+
+            REPO: ${{ github.repository }}
+            DRY RUN: ${{ github.event.inputs.dry_run || 'false' }}
+            RATE LIMITED: ${{ needs.collect-issues.outputs.rate-limited }}
+
+            ### Categorized Issues
+            ```json
+            ${{ needs.collect-issues.outputs.categorized }}
+            ```
+
+            ## PHASE-BASED EXECUTION (MANDATORY)
+
+            **IMPORTANT:** If DRY RUN is "true", prefix every action description with "DRY RUN:" and DO NOT execute any `gh issue close/create/edit/comment` commands. Instead, write a summary of what would happen.
+
+            **IMPORTANT:** If RATE LIMITED is "true", only execute Phase 1 (close stale issues) and Phase 3 (priority escalation). Skip all other phases.
+
+            ### Phase 1: Close Stale Issues (turns 1-5)
+
+            For each `should_close_dupe` issue:
+            ```
+            gh issue close NUM --reason "not planned" --comment "Auto-closed by catch-up workflow — duplicate label confirmed."
+            ```
+
+            For each `should_close_canceled` issue:
+            ```
+            gh issue close NUM --reason "not planned" --comment "Auto-closed by catch-up workflow — canceled label confirmed."
+            ```
+
+            ### Phase 2: Re-trigger Triage & Handle Dead Letters (turns 6-15)
+
+            For each `triage_dead_letter` issue:
+            ```
+            gh issue edit NUM --add-label "needs-review"
+            gh issue comment NUM --body "Triage attempted 2x without success. Manual review needed."
+            ```
+
+            For each `needs_retriage` issue:
+            ```
+            gh issue comment NUM --body "/triage"
+            gh issue comment NUM --body "Re-triaging issue (catch-up workflow, attempt N)"
+            ```
+            Where N is the attempt number from the JSON data.
+
+            ### Phase 3: Priority Escalation (turns 16-20)
+
+            For each `priority_escalation` issue:
+            ```
+            gh issue comment NUM --body "⚠️ Priority issue awaiting attention for >48h. Consider adding 'in-progress' label or assigning."
+            ```
+
+            ### Phase 4: Orphaned Fixed Reminders (turns 21-25)
+
+            For each `orphaned_fixed` issue:
+            ```
+            gh issue comment NUM --body "Issue marked 'fixed' but still open after 7 days. Please close if the fix PR was merged, or remove 'fixed' label if not resolved."
+            ```
+
+            ### Phase 5: Smart Grouping (turns 26-45)
+
+            ONLY if `groupable_candidates` has 3 or more items. Otherwise skip this phase.
+
+            Analyze the `triage_result` fields for semantic similarity. Group by:
+            - classification (bug/feature/question)
+            - priority level
+            - root cause area
+            - overlapping error messages or symptoms
+
+            For each group of 3 or more similar issues:
+            1. Create canonical issue:
+               ```
+               gh issue create --title "[GROUPED] Common: {summary}" --body "{details with linked issue numbers}" --label "triaged"
+               ```
+            2. For each original issue in the group:
+               ```
+               gh issue edit NUM --add-label "duplicate"
+               gh issue comment NUM --body "Grouped with #{canonical_number} and similar issues. Closing as duplicate."
+               gh issue close NUM --reason "not planned"
+               ```
+
+            ### Phase 6: Trigger Fixes & Handle Dead Letters (turns 46-50)
+
+            For each `fix_dead_letter` issue:
+            ```
+            gh issue edit NUM --add-label "needs-review"
+            gh issue comment NUM --body "Fix attempted 2x without success. Manual review needed."
+            ```
+
+            For each `triaged_no_fix` issue (max 5 per run):
+            - First check: `gh issue view NUM --json body,comments` — skip if body/comments contain PR URL or "Fixes #"
+            - If safe to proceed:
+            ```
+            gh issue comment NUM --body "/fix"
+            ```
+            Stop after 5 fix triggers, even if more candidates remain.
+
+  report-failure:
+    needs: [collect-issues, analyze-and-act]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report catch-up workflow failure
+        uses: actions/github-script@v8
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const runUrl = process.env.RUN_URL;
+
+            for (const [name, color] of [['auto-fix', 'e4e669'], ['ci-failure', 'd73a4a']]) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch (e) {
+                if (e.status === 404) {
+                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color });
+                }
+              }
+            }
+
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '[issue-catch-up] Hourly catch-up workflow failed',
+              body: `## Issue Catch-Up Failure\n\n**Run:** ${runUrl}\n\nThe hourly issue catch-up workflow failed. Manual investigation needed.`,
+              labels: ['auto-fix', 'ci-failure']
+            });
+
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'triage.yml',
+                ref: 'main',
+                inputs: { issue_number: String(issue.number) }
+              });
+            } catch (e) {
+              core.warning(`Failed to dispatch triage: ${e.message}`);
+            }
