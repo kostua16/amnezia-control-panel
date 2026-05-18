@@ -41,4 +41,8 @@ export interface PanelTestResult {
   error?: string;
 }
 
-export type PanelConnectionStatus = 'connected' | 'degraded' | 'offline' | 'unknown';
+export type PanelConnectionStatus =
+  | 'connected'
+  | 'degraded'
+  | 'offline'
+  | 'unknown';

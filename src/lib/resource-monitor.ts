@@ -32,9 +32,7 @@ function getCpuUsage(): number {
   return Math.min(100, Math.round(((totalDiff - idleDiff) / totalDiff) * 100));
 }
 
-function getAverageLoad(
-  cpus: os.CpuInfo[],
-): { idle: number; total: number } {
+function getAverageLoad(cpus: os.CpuInfo[]): { idle: number; total: number } {
   let idle = 0;
   let total = 0;
   for (const cpu of cpus) {
@@ -49,7 +47,12 @@ function getAverageLoad(
  * Get disk usage for the filesystem containing the project root.
  * Falls back to '/' on non-Windows, or the drive root on Windows.
  */
-function getDiskUsage(): { total: number; used: number; free: number; percent: number } {
+function getDiskUsage(): {
+  total: number;
+  used: number;
+  free: number;
+  percent: number;
+} {
   try {
     const isWin = process.platform === 'win32';
     const target = isWin ? 'C:' : '/';

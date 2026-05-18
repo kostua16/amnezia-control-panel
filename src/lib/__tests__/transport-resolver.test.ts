@@ -41,7 +41,7 @@ describe('transport-resolver', () => {
     const result = await resolvePanelTransport(
       { id: 1, hostname: 'entry.example.com', tailnetIP: null } as const,
       { panelUrl: 'https://entry.example.com:51820' },
-      51820
+      51820,
     );
 
     assert.strictEqual(result?.panelUrl, 'https://entry.example.com:51820');
@@ -56,7 +56,7 @@ describe('transport-resolver', () => {
     const result = await resolvePanelTransport(
       { id: 1, hostname: 'cached.example.com', tailnetIP: null } as const,
       { panelUrl: 'https://cached.example.com:51820' },
-      51820
+      51820,
     );
 
     assert.strictEqual(result?.tailscaleIP, '10.0.0.5');

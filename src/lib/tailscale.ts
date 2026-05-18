@@ -54,16 +54,24 @@ async function runTailscale(
       console.warn(`[tailscale] ${label} stderr: ${stderr.trim()}`);
     }
 
-    return { success: true, stdout: stdout ?? '', message: stdout?.trim() ?? 'OK' };
+    return {
+      success: true,
+      stdout: stdout ?? '',
+      message: stdout?.trim() ?? 'OK',
+    };
   } catch (err: unknown) {
     // D-04: fallback to /usr/bin/tailscale on ENOENT
     const isEnoent =
-      err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT';
+      err instanceof Error &&
+      'code' in err &&
+      (err as NodeJS.ErrnoException).code === 'ENOENT';
 
     if (isEnoent && bin === TAILSCALE_BIN) {
       bin = TAILSCALE_FALLBACK;
       try {
-        console.log(`[tailscale] Retrying ${label} with fallback: ${bin} ${args.join(' ')}`);
+        console.log(
+          `[tailscale] Retrying ${label} with fallback: ${bin} ${args.join(' ')}`,
+        );
 
         const { stdout, stderr } = await execFileAsync(bin, args, {
           timeout,
@@ -75,10 +83,16 @@ async function runTailscale(
           console.warn(`[tailscale] ${label} stderr: ${stderr.trim()}`);
         }
 
-        return { success: true, stdout: stdout ?? '', message: stdout?.trim() ?? 'OK' };
+        return {
+          success: true,
+          stdout: stdout ?? '',
+          message: stdout?.trim() ?? 'OK',
+        };
       } catch (fallbackErr: unknown) {
         const errMsg =
-          fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          fallbackErr instanceof Error
+            ? fallbackErr.message
+            : String(fallbackErr);
         console.error(`[tailscale] ${label} failed (fallback): ${errMsg}`);
         return { success: false, stdout: '', message: errMsg };
       }
@@ -86,7 +100,7 @@ async function runTailscale(
 
     const errMsg =
       err instanceof Error
-        ? (err as NodeJS.ErrnoException).message ?? String(err)
+        ? ((err as NodeJS.ErrnoException).message ?? String(err))
         : String(err);
 
     console.error(`[tailscale] ${label} failed: ${errMsg}`);
@@ -202,10 +216,7 @@ export async function isReachable(hostname: string): Promise<boolean> {
   }
 
   // Check self
-  if (
-    status.Self.HostName === hostname ||
-    status.Self.DNSName === hostname
-  ) {
+  if (status.Self.HostName === hostname || status.Self.DNSName === hostname) {
     return status.Self.Online;
   }
 
@@ -220,7 +231,8 @@ export async function isReachable(hostname: string): Promise<boolean> {
 }
 
 /** CIDR validation regex for advertiseRoutes. */
-const CIDR_REGEX = /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\/[0-9]{1,2}$/;
+const CIDR_REGEX =
+  /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\/[0-9]{1,2}$/;
 
 /**
  * Advertise subnet routes via tailscale.

@@ -56,9 +56,12 @@ export default function PushConfigurationPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Push Configuration</h1>
+        <h1 className="text-2xl font-bold text-foreground">
+          Push Configuration
+        </h1>
         <p className="text-muted-foreground mt-1">
-          Push chain configurations to remote panels or visually edit chain topology
+          Push chain configurations to remote panels or visually edit chain
+          topology
         </p>
       </div>
 
@@ -106,9 +109,7 @@ export default function PushConfigurationPage() {
           </div>
 
           {/* Push Wizard (primary) */}
-          {activeTab === 'push' && (
-            <PushWizard panels={panels} />
-          )}
+          {activeTab === 'push' && <PushWizard panels={panels} />}
 
           {/* Visual Chain Editor (secondary reference view) */}
           {activeTab === 'editor' && (
@@ -116,7 +117,8 @@ export default function PushConfigurationPage() {
               <div className="mb-3 flex items-center gap-2">
                 <Eye className="h-4 w-4 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  Visual reference -- panel boundaries shown for configured servers
+                  Visual reference -- panel boundaries shown for configured
+                  servers
                 </p>
               </div>
               <ChainFlowEditor

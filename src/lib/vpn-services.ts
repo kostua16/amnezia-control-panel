@@ -50,7 +50,9 @@ async function runCommand(
   serviceLabel: string,
 ): Promise<VpnServiceResult> {
   try {
-    console.log(`[vpn-services] Executing ${serviceLabel}: ${command} ${args.join(' ')}`);
+    console.log(
+      `[vpn-services] Executing ${serviceLabel}: ${command} ${args.join(' ')}`,
+    );
 
     const { stdout, stderr } = await execFileAsync(command, args, {
       timeout: 10_000,
@@ -97,7 +99,11 @@ export async function createAwgUser(
   }
 
   // STUB: Replace 'amneziawg' with the actual CLI path when available.
-  const result: VpnServiceResult = await runCommand('amneziawg', args, `AWG:createUser(${username})`);
+  const result: VpnServiceResult = await runCommand(
+    'amneziawg',
+    args,
+    `AWG:createUser(${username})`,
+  );
 
   if (result.success) {
     // When the real command is wired, parse stdout to extract actual keys/addresses.
@@ -117,9 +123,15 @@ export async function createAwgUser(
  *
  * STUB: Replace command with the real one.
  */
-export async function deleteAwgUser(username: string): Promise<VpnServiceResult> {
+export async function deleteAwgUser(
+  username: string,
+): Promise<VpnServiceResult> {
   sanitizeUsername(username);
-  return runCommand('amneziawg', ['remove-peer', '--name', username], `AWG:deleteUser(${username})`);
+  return runCommand(
+    'amneziawg',
+    ['remove-peer', '--name', username],
+    `AWG:deleteUser(${username})`,
+  );
 }
 
 /**
@@ -127,9 +139,15 @@ export async function deleteAwgUser(username: string): Promise<VpnServiceResult>
  *
  * STUB: Replace command with the real one.
  */
-export async function blockAwgUser(username: string): Promise<VpnServiceResult> {
+export async function blockAwgUser(
+  username: string,
+): Promise<VpnServiceResult> {
   sanitizeUsername(username);
-  return runCommand('amneziawg', ['block-peer', '--name', username], `AWG:blockUser(${username})`);
+  return runCommand(
+    'amneziawg',
+    ['block-peer', '--name', username],
+    `AWG:blockUser(${username})`,
+  );
 }
 
 /**
@@ -137,9 +155,15 @@ export async function blockAwgUser(username: string): Promise<VpnServiceResult> 
  *
  * STUB: Replace command with the real one.
  */
-export async function unblockAwgUser(username: string): Promise<VpnServiceResult> {
+export async function unblockAwgUser(
+  username: string,
+): Promise<VpnServiceResult> {
   sanitizeUsername(username);
-  return runCommand('amneziawg', ['unblock-peer', '--name', username], `AWG:unblockUser(${username})`);
+  return runCommand(
+    'amneziawg',
+    ['unblock-peer', '--name', username],
+    `AWG:unblockUser(${username})`,
+  );
 }
 
 // ─── 3x-ui (Xray Panel) ────────────────────────────────
@@ -160,7 +184,11 @@ export async function createThreeXuiUser(
 
   // STUB: Replace 'xui' with the actual CLI path when available.
   // 3x-ui typically has a web API; a CLI wrapper script may be needed.
-  const result: VpnServiceResult = await runCommand('xui', ['add-inbound', '--username', username], `3x-ui:createUser(${username})`);
+  const result: VpnServiceResult = await runCommand(
+    'xui',
+    ['add-inbound', '--username', username],
+    `3x-ui:createUser(${username})`,
+  );
 
   if (result.success) {
     // When the real command is wired, parse stdout to extract actual config.
@@ -178,9 +206,15 @@ export async function createThreeXuiUser(
  *
  * STUB: Replace command with the real one.
  */
-export async function deleteThreeXuiUser(username: string): Promise<VpnServiceResult> {
+export async function deleteThreeXuiUser(
+  username: string,
+): Promise<VpnServiceResult> {
   sanitizeUsername(username);
-  return runCommand('xui', ['remove-inbound', '--username', username], `3x-ui:deleteUser(${username})`);
+  return runCommand(
+    'xui',
+    ['remove-inbound', '--username', username],
+    `3x-ui:deleteUser(${username})`,
+  );
 }
 
 /**
@@ -188,9 +222,15 @@ export async function deleteThreeXuiUser(username: string): Promise<VpnServiceRe
  *
  * STUB: Replace command with the real one.
  */
-export async function blockThreeXuiUser(username: string): Promise<VpnServiceResult> {
+export async function blockThreeXuiUser(
+  username: string,
+): Promise<VpnServiceResult> {
   sanitizeUsername(username);
-  return runCommand('xui', ['block-inbound', '--username', username], `3x-ui:blockUser(${username})`);
+  return runCommand(
+    'xui',
+    ['block-inbound', '--username', username],
+    `3x-ui:blockUser(${username})`,
+  );
 }
 
 /**
@@ -198,7 +238,13 @@ export async function blockThreeXuiUser(username: string): Promise<VpnServiceRes
  *
  * STUB: Replace command with the real one.
  */
-export async function unblockThreeXuiUser(username: string): Promise<VpnServiceResult> {
+export async function unblockThreeXuiUser(
+  username: string,
+): Promise<VpnServiceResult> {
   sanitizeUsername(username);
-  return runCommand('xui', ['unblock-inbound', '--username', username], `3x-ui:unblockUser(${username})`);
+  return runCommand(
+    'xui',
+    ['unblock-inbound', '--username', username],
+    `3x-ui:unblockUser(${username})`,
+  );
 }

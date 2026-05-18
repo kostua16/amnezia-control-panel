@@ -12,10 +12,7 @@ interface RouteContext {
 
 // ─── GET: Fetch user speed limit ─────────────────────────
 
-export async function GET(
-  _request: NextRequest,
-  context: RouteContext,
-) {
+export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const userId = parseInt(id, 10);
@@ -57,10 +54,7 @@ export async function GET(
 
 // ─── PUT: Update user speed limit ────────────────────────
 
-export async function PUT(
-  request: NextRequest,
-  context: RouteContext,
-) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const userId = parseInt(id, 10);
@@ -76,7 +70,8 @@ export async function PUT(
     const parsed = updateSpeedSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },

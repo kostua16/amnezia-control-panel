@@ -62,7 +62,10 @@ const SPECIAL_OPTIONS = [
   { value: 'foreign' as const, label: 'Foreign' },
 ];
 
-const GEO_ACTION_OPTIONS: { value: 'ALLOW' | 'BLOCK' | 'ROUTE'; label: string }[] = [
+const GEO_ACTION_OPTIONS: {
+  value: 'ALLOW' | 'BLOCK' | 'ROUTE';
+  label: string;
+}[] = [
   { value: 'ALLOW', label: 'Allow' },
   { value: 'BLOCK', label: 'Block' },
   { value: 'ROUTE', label: 'Route' },
@@ -207,48 +210,70 @@ export function ChainNodeRoutingDrawer({
   const [geoRules, setGeoRules] = useState<GeoRoutingRule[]>([]);
   const [geoLoading, setGeoLoading] = useState(true);
   const [geoShowForm, setGeoShowForm] = useState(false);
-  const [geoEditingRule, setGeoEditingRule] = useState<GeoRoutingRule | null>(null);
-  const [geoDeleteConfirmId, setGeoDeleteConfirmId] = useState<number | null>(null);
+  const [geoEditingRule, setGeoEditingRule] = useState<GeoRoutingRule | null>(
+    null,
+  );
+  const [geoDeleteConfirmId, setGeoDeleteConfirmId] = useState<number | null>(
+    null,
+  );
   const [geoDeleteLoading, setGeoDeleteLoading] = useState(false);
   const [geoSubmitting, setGeoSubmitting] = useState(false);
   const [geoApiError, setGeoApiError] = useState<string | null>(null);
 
   // Geo form state
   const [geoFormName, setGeoFormName] = useState('');
-  const [geoFormMatchType, setGeoFormMatchType] = useState<GeoMatchType>('country');
+  const [geoFormMatchType, setGeoFormMatchType] =
+    useState<GeoMatchType>('country');
   const [geoFormCountryCode, setGeoFormCountryCode] = useState('');
   const [geoFormRegion, setGeoFormRegion] = useState('');
-  const [geoFormSpecial, setGeoFormSpecial] = useState<'domestic' | 'foreign'>('domestic');
-  const [geoFormAction, setGeoFormAction] = useState<'ALLOW' | 'BLOCK' | 'ROUTE'>('ALLOW');
+  const [geoFormSpecial, setGeoFormSpecial] = useState<'domestic' | 'foreign'>(
+    'domestic',
+  );
+  const [geoFormAction, setGeoFormAction] = useState<
+    'ALLOW' | 'BLOCK' | 'ROUTE'
+  >('ALLOW');
   const [geoFormPriority, setGeoFormPriority] = useState('0');
   const [geoFormIsActive, setGeoFormIsActive] = useState(true);
   const [geoFormErrors, setGeoFormErrors] = useState<GeoFormErrors>({});
 
   // Auto-save state for geo edit form
-  const geoAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [geoAutoSaveStatus, setGeoAutoSaveStatus] = useState<AutoSaveStatus>('idle');
+  const geoAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const [geoAutoSaveStatus, setGeoAutoSaveStatus] =
+    useState<AutoSaveStatus>('idle');
 
   // ── IP/domain rules state ────────────────────────────
   const [routingRules, setRoutingRules] = useState<RoutingRule[]>([]);
   const [routingLoading, setRoutingLoading] = useState(true);
   const [routingShowForm, setRoutingShowForm] = useState(false);
-  const [routingEditingRule, setRoutingEditingRule] = useState<RoutingRule | null>(null);
-  const [routingDeleteConfirmId, setRoutingDeleteConfirmId] = useState<number | null>(null);
+  const [routingEditingRule, setRoutingEditingRule] =
+    useState<RoutingRule | null>(null);
+  const [routingDeleteConfirmId, setRoutingDeleteConfirmId] = useState<
+    number | null
+  >(null);
   const [routingDeleteLoading, setRoutingDeleteLoading] = useState(false);
   const [routingSubmitting, setRoutingSubmitting] = useState(false);
   const [routingApiError, setRoutingApiError] = useState<string | null>(null);
 
   // Routing form state
-  const [routingFormProtocol, setRoutingFormProtocol] = useState<RuleProtocol>('ANY');
+  const [routingFormProtocol, setRoutingFormProtocol] =
+    useState<RuleProtocol>('ANY');
   const [routingFormDestination, setRoutingFormDestination] = useState('');
-  const [routingFormAction, setRoutingFormAction] = useState<RuleAction>('ALLOW');
+  const [routingFormAction, setRoutingFormAction] =
+    useState<RuleAction>('ALLOW');
   const [routingFormPriority, setRoutingFormPriority] = useState('0');
   const [routingFormIsActive, setRoutingFormIsActive] = useState(true);
-  const [routingFormErrors, setRoutingFormErrors] = useState<RoutingFormErrors>({});
+  const [routingFormErrors, setRoutingFormErrors] = useState<RoutingFormErrors>(
+    {},
+  );
 
   // Auto-save state for routing edit form
-  const routingAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [routingAutoSaveStatus, setRoutingAutoSaveStatus] = useState<AutoSaveStatus>('idle');
+  const routingAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const [routingAutoSaveStatus, setRoutingAutoSaveStatus] =
+    useState<AutoSaveStatus>('idle');
 
   // ── Apply to Panels state ────────────────────────────
   const [applyLoading, setApplyLoading] = useState(false);
@@ -331,8 +356,10 @@ export function ChainNodeRoutingDrawer({
 
   useEffect(() => {
     return () => {
-      if (geoAutoSaveTimerRef.current) clearTimeout(geoAutoSaveTimerRef.current);
-      if (routingAutoSaveTimerRef.current) clearTimeout(routingAutoSaveTimerRef.current);
+      if (geoAutoSaveTimerRef.current)
+        clearTimeout(geoAutoSaveTimerRef.current);
+      if (routingAutoSaveTimerRef.current)
+        clearTimeout(routingAutoSaveTimerRef.current);
     };
   }, []);
 
@@ -404,10 +431,16 @@ export function ChainNodeRoutingDrawer({
   const validateGeoForm = useCallback((): boolean => {
     const newErrors: GeoFormErrors = {};
     if (!geoFormName.trim()) newErrors.name = 'Name is required';
-    if (geoFormMatchType === 'country' && !/^[A-Za-z]{2}$/.test(geoFormCountryCode)) {
+    if (
+      geoFormMatchType === 'country' &&
+      !/^[A-Za-z]{2}$/.test(geoFormCountryCode)
+    ) {
       newErrors.countryCode = 'Must be exactly 2 letters';
     }
-    if (isNaN(parseInt(geoFormPriority, 10)) || parseInt(geoFormPriority, 10) < 0) {
+    if (
+      isNaN(parseInt(geoFormPriority, 10)) ||
+      parseInt(geoFormPriority, 10) < 0
+    ) {
       newErrors.priority = 'Priority must be 0 or greater';
     }
     setGeoFormErrors(newErrors);
@@ -416,13 +449,16 @@ export function ChainNodeRoutingDrawer({
 
   const geoAutoSave = useCallback(
     (data: GeoRuleCreate, ruleId?: number) => {
-      if (geoAutoSaveTimerRef.current) clearTimeout(geoAutoSaveTimerRef.current);
+      if (geoAutoSaveTimerRef.current)
+        clearTimeout(geoAutoSaveTimerRef.current);
 
       setGeoAutoSaveStatus('saving');
 
       geoAutoSaveTimerRef.current = setTimeout(async () => {
         try {
-          const url = ruleId ? `/api/routing/geo/${ruleId}` : '/api/routing/geo';
+          const url = ruleId
+            ? `/api/routing/geo/${ruleId}`
+            : '/api/routing/geo';
           const method = ruleId ? 'PUT' : 'POST';
           const response = await fetch(url, {
             method,
@@ -598,8 +634,13 @@ export function ChainNodeRoutingDrawer({
       if (targetIndex < 0 || targetIndex >= filteredGeoRules.length) return;
 
       const reorderPairs = filteredGeoRules.map((rule, i) => {
-        if (i === index) return { id: rule.id, priority: filteredGeoRules[targetIndex].priority };
-        if (i === targetIndex) return { id: rule.id, priority: filteredGeoRules[index].priority };
+        if (i === index)
+          return {
+            id: rule.id,
+            priority: filteredGeoRules[targetIndex].priority,
+          };
+        if (i === targetIndex)
+          return { id: rule.id, priority: filteredGeoRules[index].priority };
         return { id: rule.id, priority: rule.priority };
       });
 
@@ -656,14 +697,19 @@ export function ChainNodeRoutingDrawer({
   const closeRoutingForm = useCallback(() => {
     setRoutingShowForm(false);
     setRoutingEditingRule(null);
-    if (routingAutoSaveTimerRef.current) clearTimeout(routingAutoSaveTimerRef.current);
+    if (routingAutoSaveTimerRef.current)
+      clearTimeout(routingAutoSaveTimerRef.current);
     setRoutingAutoSaveStatus('idle');
   }, []);
 
   const validateRoutingForm = useCallback((): boolean => {
     const newErrors: RoutingFormErrors = {};
-    if (!routingFormDestination.trim()) newErrors.destination = 'Destination is required';
-    if (isNaN(parseInt(routingFormPriority, 10)) || parseInt(routingFormPriority, 10) < 0) {
+    if (!routingFormDestination.trim())
+      newErrors.destination = 'Destination is required';
+    if (
+      isNaN(parseInt(routingFormPriority, 10)) ||
+      parseInt(routingFormPriority, 10) < 0
+    ) {
       newErrors.priority = 'Priority must be 0 or greater';
     }
     setRoutingFormErrors(newErrors);
@@ -672,13 +718,16 @@ export function ChainNodeRoutingDrawer({
 
   const routingAutoSave = useCallback(
     (data: RoutingRuleCreate, ruleId?: number) => {
-      if (routingAutoSaveTimerRef.current) clearTimeout(routingAutoSaveTimerRef.current);
+      if (routingAutoSaveTimerRef.current)
+        clearTimeout(routingAutoSaveTimerRef.current);
 
       setRoutingAutoSaveStatus('saving');
 
       routingAutoSaveTimerRef.current = setTimeout(async () => {
         try {
-          const url = ruleId ? `/api/routing/rules/${ruleId}` : '/api/routing/rules';
+          const url = ruleId
+            ? `/api/routing/rules/${ruleId}`
+            : '/api/routing/rules';
           const method = ruleId ? 'PUT' : 'POST';
           const response = await fetch(url, {
             method,
@@ -770,9 +819,12 @@ export function ChainNodeRoutingDrawer({
     setRoutingDeleteLoading(true);
     setRoutingApiError(null);
     try {
-      const response = await fetch(`/api/routing/rules/${routingDeleteConfirmId}`, {
-        method: 'DELETE',
-      });
+      const response = await fetch(
+        `/api/routing/rules/${routingDeleteConfirmId}`,
+        {
+          method: 'DELETE',
+        },
+      );
       if (!response.ok) {
         const result = await response.json();
         setRoutingApiError(result.error || 'Failed to delete rule');
@@ -817,8 +869,10 @@ export function ChainNodeRoutingDrawer({
       if (targetIndex < 0 || targetIndex >= routingRules.length) return;
 
       const reorderPairs: ReorderPair[] = routingRules.map((rule, i) => {
-        if (i === index) return { id: rule.id, priority: routingRules[targetIndex].priority };
-        if (i === targetIndex) return { id: rule.id, priority: routingRules[index].priority };
+        if (i === index)
+          return { id: rule.id, priority: routingRules[targetIndex].priority };
+        if (i === targetIndex)
+          return { id: rule.id, priority: routingRules[index].priority };
         return { id: rule.id, priority: rule.priority };
       });
 
@@ -900,7 +954,9 @@ export function ChainNodeRoutingDrawer({
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-base font-semibold">{node.label}</span>
+              <span className="truncate text-base font-semibold">
+                {node.label}
+              </span>
               <span
                 className={clsx(
                   'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase',
@@ -910,7 +966,9 @@ export function ChainNodeRoutingDrawer({
                 {roleLabels[node.role]}
               </span>
             </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">Routing Rules</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Routing Rules
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -942,10 +1000,17 @@ export function ChainNodeRoutingDrawer({
         </div>
 
         {/* Tab content */}
-        <div className="flex-1 overflow-y-auto" style={{ height: 'calc(100vh - 180px)' }}>
+        <div
+          className="flex-1 overflow-y-auto"
+          style={{ height: 'calc(100vh - 180px)' }}
+        >
           {/* ── Geo Tab ────────────────────────────── */}
           {activeTab === 'geo' && (
-            <div className="p-4 space-y-3" role="tabpanel" aria-label="Geo routing rules">
+            <div
+              className="p-4 space-y-3"
+              role="tabpanel"
+              aria-label="Geo routing rules"
+            >
               {geoApiError && (
                 <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {geoApiError}
@@ -955,13 +1020,15 @@ export function ChainNodeRoutingDrawer({
               {geoLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-sm text-muted-foreground">Loading rules...</span>
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    Loading rules...
+                  </span>
                 </div>
               ) : filteredGeoRules.length === 0 ? (
                 <div className="py-12 text-center">
                   <p className="text-sm text-muted-foreground">
-                    No routing rules for this chain. Add rules to control how traffic flows
-                    through this node.
+                    No routing rules for this chain. Add rules to control how
+                    traffic flows through this node.
                   </p>
                 </div>
               ) : (
@@ -969,12 +1036,24 @@ export function ChainNodeRoutingDrawer({
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="px-2 py-2 font-medium text-muted-foreground w-14">Order</th>
-                        <th className="px-2 py-2 font-medium text-muted-foreground">Name</th>
-                        <th className="px-2 py-2 font-medium text-muted-foreground">Match</th>
-                        <th className="px-2 py-2 font-medium text-muted-foreground">Action</th>
-                        <th className="px-2 py-2 font-medium text-muted-foreground">Active</th>
-                        <th className="px-2 py-2 text-right font-medium text-muted-foreground">Actions</th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground w-14">
+                          Order
+                        </th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground">
+                          Name
+                        </th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground">
+                          Match
+                        </th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground">
+                          Action
+                        </th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground">
+                          Active
+                        </th>
+                        <th className="px-2 py-2 text-right font-medium text-muted-foreground">
+                          Actions
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1007,12 +1086,17 @@ export function ChainNodeRoutingDrawer({
                             </div>
                           </td>
                           <td className="px-2 py-2">
-                            <span className="text-sm font-medium">{rule.name}</span>
+                            <span className="text-sm font-medium">
+                              {rule.name}
+                            </span>
                           </td>
                           <td className="px-2 py-2">
-                            {rule.matchType === 'country' && rule.target.countryCode ? (
+                            {rule.matchType === 'country' &&
+                            rule.target.countryCode ? (
                               <span className="inline-flex items-center gap-1 text-xs">
-                                <span>{countryCodeToFlag(rule.target.countryCode)}</span>
+                                <span>
+                                  {countryCodeToFlag(rule.target.countryCode)}
+                                </span>
                                 <code className="rounded bg-muted px-1 py-0.5 font-mono">
                                   {rule.target.countryCode}
                                 </code>
@@ -1024,7 +1108,9 @@ export function ChainNodeRoutingDrawer({
                               </span>
                             ) : (
                               <span className="text-xs">
-                                {rule.target.special === 'domestic' ? 'Domestic' : 'Foreign'}
+                                {rule.target.special === 'domestic'
+                                  ? 'Domestic'
+                                  : 'Foreign'}
                               </span>
                             )}
                           </td>
@@ -1073,7 +1159,9 @@ export function ChainNodeRoutingDrawer({
                   {/* Geo delete confirmation */}
                   {geoDeleteConfirmId !== null && (
                     <div className="rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2">
-                      <p className="text-sm">Are you sure you want to delete this rule?</p>
+                      <p className="text-sm">
+                        Are you sure you want to delete this rule?
+                      </p>
                       <div className="mt-2 flex items-center justify-end gap-2">
                         <Button
                           variant="outline"
@@ -1089,7 +1177,9 @@ export function ChainNodeRoutingDrawer({
                           onClick={handleGeoDelete}
                           disabled={geoDeleteLoading}
                         >
-                          {geoDeleteLoading && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+                          {geoDeleteLoading && (
+                            <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                          )}
                           Delete
                         </Button>
                       </div>
@@ -1105,12 +1195,16 @@ export function ChainNodeRoutingDrawer({
                     <span className="text-sm font-medium">
                       {geoEditingRule ? 'Edit Rule' : 'New Geo Rule'}
                     </span>
-                    {geoEditingRule && <AutoSaveIndicator status={geoAutoSaveStatus} />}
+                    {geoEditingRule && (
+                      <AutoSaveIndicator status={geoAutoSaveStatus} />
+                    )}
                   </div>
 
                   {/* Name */}
                   <div className="space-y-1">
-                    <label className="block text-xs font-medium text-muted-foreground">Name</label>
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Name
+                    </label>
                     <Input
                       type="text"
                       placeholder="e.g., Block CN traffic"
@@ -1126,16 +1220,23 @@ export function ChainNodeRoutingDrawer({
                       )}
                     />
                     {geoFormErrors.name && (
-                      <p className="text-xs text-destructive">{geoFormErrors.name}</p>
+                      <p className="text-xs text-destructive">
+                        {geoFormErrors.name}
+                      </p>
                     )}
                   </div>
 
                   {/* Match type */}
                   <div className="space-y-1">
-                    <span className="block text-xs font-medium text-muted-foreground">Match Type</span>
+                    <span className="block text-xs font-medium text-muted-foreground">
+                      Match Type
+                    </span>
                     <div className="flex gap-3">
                       {MATCH_TYPE_OPTIONS.map((opt) => (
-                        <label key={opt.value} className="flex items-center gap-1.5 text-xs">
+                        <label
+                          key={opt.value}
+                          className="flex items-center gap-1.5 text-xs"
+                        >
                           <input
                             type="radio"
                             name="drawer-geo-match-type"
@@ -1157,13 +1258,17 @@ export function ChainNodeRoutingDrawer({
                   {/* Country code */}
                   {geoFormMatchType === 'country' && (
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-muted-foreground">Country Code</label>
+                      <label className="block text-xs font-medium text-muted-foreground">
+                        Country Code
+                      </label>
                       <Input
                         type="text"
                         placeholder="e.g., US, CN"
                         value={geoFormCountryCode}
                         onChange={(e) => {
-                          setGeoFormCountryCode(e.target.value.toUpperCase().slice(0, 2));
+                          setGeoFormCountryCode(
+                            e.target.value.toUpperCase().slice(0, 2),
+                          );
                           if (geoEditingRule) handleGeoFieldChange();
                         }}
                         disabled={geoSubmitting}
@@ -1174,7 +1279,9 @@ export function ChainNodeRoutingDrawer({
                         )}
                       />
                       {geoFormErrors.countryCode && (
-                        <p className="text-xs text-destructive">{geoFormErrors.countryCode}</p>
+                        <p className="text-xs text-destructive">
+                          {geoFormErrors.countryCode}
+                        </p>
                       )}
                     </div>
                   )}
@@ -1182,7 +1289,9 @@ export function ChainNodeRoutingDrawer({
                   {/* Region */}
                   {geoFormMatchType === 'region' && (
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-muted-foreground">Region</label>
+                      <label className="block text-xs font-medium text-muted-foreground">
+                        Region
+                      </label>
                       <select
                         value={geoFormRegion}
                         onChange={(e) => {
@@ -1197,7 +1306,9 @@ export function ChainNodeRoutingDrawer({
                       >
                         <option value="">Select region...</option>
                         {REGION_OPTIONS.map((r) => (
-                          <option key={r} value={r}>{r}</option>
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -1206,11 +1317,15 @@ export function ChainNodeRoutingDrawer({
                   {/* Special */}
                   {geoFormMatchType === 'special' && (
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-muted-foreground">Special Match</label>
+                      <label className="block text-xs font-medium text-muted-foreground">
+                        Special Match
+                      </label>
                       <select
                         value={geoFormSpecial}
                         onChange={(e) => {
-                          setGeoFormSpecial(e.target.value as 'domestic' | 'foreign');
+                          setGeoFormSpecial(
+                            e.target.value as 'domestic' | 'foreign',
+                          );
                           if (geoEditingRule) handleGeoFieldChange();
                         }}
                         disabled={geoSubmitting}
@@ -1220,7 +1335,9 @@ export function ChainNodeRoutingDrawer({
                         )}
                       >
                         {SPECIAL_OPTIONS.map((s) => (
-                          <option key={s.value} value={s.value}>{s.label}</option>
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -1228,10 +1345,15 @@ export function ChainNodeRoutingDrawer({
 
                   {/* Action */}
                   <div className="space-y-1">
-                    <span className="block text-xs font-medium text-muted-foreground">Action</span>
+                    <span className="block text-xs font-medium text-muted-foreground">
+                      Action
+                    </span>
                     <div className="flex gap-3">
                       {GEO_ACTION_OPTIONS.map((opt) => (
-                        <label key={opt.value} className="flex items-center gap-1.5 text-xs">
+                        <label
+                          key={opt.value}
+                          className="flex items-center gap-1.5 text-xs"
+                        >
                           <input
                             type="radio"
                             name="drawer-geo-action"
@@ -1252,7 +1374,9 @@ export function ChainNodeRoutingDrawer({
 
                   {/* Priority */}
                   <div className="space-y-1">
-                    <label className="block text-xs font-medium text-muted-foreground">Priority</label>
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Priority
+                    </label>
                     <Input
                       type="number"
                       min={0}
@@ -1268,7 +1392,9 @@ export function ChainNodeRoutingDrawer({
                       )}
                     />
                     {geoFormErrors.priority && (
-                      <p className="text-xs text-destructive">{geoFormErrors.priority}</p>
+                      <p className="text-xs text-destructive">
+                        {geoFormErrors.priority}
+                      </p>
                     )}
                   </div>
 
@@ -1289,12 +1415,23 @@ export function ChainNodeRoutingDrawer({
 
                   {/* Form actions */}
                   <div className="flex items-center justify-end gap-2 pt-1">
-                    <Button variant="outline" size="sm" onClick={closeGeoForm} disabled={geoSubmitting}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={closeGeoForm}
+                      disabled={geoSubmitting}
+                    >
                       Cancel
                     </Button>
                     {!geoEditingRule && (
-                      <Button size="sm" onClick={handleGeoCreate} disabled={geoSubmitting}>
-                        {geoSubmitting && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+                      <Button
+                        size="sm"
+                        onClick={handleGeoCreate}
+                        disabled={geoSubmitting}
+                      >
+                        {geoSubmitting && (
+                          <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                        )}
                         Create Rule
                       </Button>
                     )}
@@ -1304,7 +1441,12 @@ export function ChainNodeRoutingDrawer({
 
               {/* Add Rule button */}
               {!geoShowForm && (
-                <Button variant="outline" size="sm" onClick={openGeoCreateForm} className="w-full">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openGeoCreateForm}
+                  className="w-full"
+                >
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
                   Add Rule
                 </Button>
@@ -1314,7 +1456,11 @@ export function ChainNodeRoutingDrawer({
 
           {/* ── IP & Domain Tab ────────────────────── */}
           {activeTab === 'ip-domain' && (
-            <div className="p-4 space-y-3" role="tabpanel" aria-label="IP and domain routing rules">
+            <div
+              className="p-4 space-y-3"
+              role="tabpanel"
+              aria-label="IP and domain routing rules"
+            >
               {routingApiError && (
                 <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {routingApiError}
@@ -1324,7 +1470,9 @@ export function ChainNodeRoutingDrawer({
               {routingLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-sm text-muted-foreground">Loading rules...</span>
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    Loading rules...
+                  </span>
                 </div>
               ) : routingRules.length === 0 ? (
                 <div className="py-12 text-center">
@@ -1337,12 +1485,24 @@ export function ChainNodeRoutingDrawer({
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="px-2 py-2 font-medium text-muted-foreground w-14">Order</th>
-                        <th className="px-2 py-2 font-medium text-muted-foreground">Protocol</th>
-                        <th className="px-2 py-2 font-medium text-muted-foreground">Destination</th>
-                        <th className="px-2 py-2 font-medium text-muted-foreground">Action</th>
-                        <th className="px-2 py-2 font-medium text-muted-foreground">Active</th>
-                        <th className="px-2 py-2 text-right font-medium text-muted-foreground">Actions</th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground w-14">
+                          Order
+                        </th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground">
+                          Protocol
+                        </th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground">
+                          Destination
+                        </th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground">
+                          Action
+                        </th>
+                        <th className="px-2 py-2 font-medium text-muted-foreground">
+                          Active
+                        </th>
+                        <th className="px-2 py-2 text-right font-medium text-muted-foreground">
+                          Actions
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1375,7 +1535,9 @@ export function ChainNodeRoutingDrawer({
                             </div>
                           </td>
                           <td className="px-2 py-2">
-                            <span className="text-xs">{protocolLabel(rule.protocol)}</span>
+                            <span className="text-xs">
+                              {protocolLabel(rule.protocol)}
+                            </span>
                           </td>
                           <td className="px-2 py-2">
                             <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono">
@@ -1412,7 +1574,9 @@ export function ChainNodeRoutingDrawer({
                               </button>
                               <button
                                 className="rounded p-1 text-destructive hover:bg-destructive/10"
-                                onClick={() => setRoutingDeleteConfirmId(rule.id)}
+                                onClick={() =>
+                                  setRoutingDeleteConfirmId(rule.id)
+                                }
                                 aria-label="Delete rule"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -1427,7 +1591,9 @@ export function ChainNodeRoutingDrawer({
                   {/* Routing delete confirmation */}
                   {routingDeleteConfirmId !== null && (
                     <div className="rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2">
-                      <p className="text-sm">Are you sure you want to delete this rule?</p>
+                      <p className="text-sm">
+                        Are you sure you want to delete this rule?
+                      </p>
                       <div className="mt-2 flex items-center justify-end gap-2">
                         <Button
                           variant="outline"
@@ -1443,7 +1609,9 @@ export function ChainNodeRoutingDrawer({
                           onClick={handleRoutingDelete}
                           disabled={routingDeleteLoading}
                         >
-                          {routingDeleteLoading && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+                          {routingDeleteLoading && (
+                            <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                          )}
                           Delete
                         </Button>
                       </div>
@@ -1459,12 +1627,16 @@ export function ChainNodeRoutingDrawer({
                     <span className="text-sm font-medium">
                       {routingEditingRule ? 'Edit Rule' : 'New Routing Rule'}
                     </span>
-                    {routingEditingRule && <AutoSaveIndicator status={routingAutoSaveStatus} />}
+                    {routingEditingRule && (
+                      <AutoSaveIndicator status={routingAutoSaveStatus} />
+                    )}
                   </div>
 
                   {/* Protocol */}
                   <div className="space-y-1">
-                    <label className="block text-xs font-medium text-muted-foreground">Protocol</label>
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Protocol
+                    </label>
                     <select
                       value={routingFormProtocol}
                       onChange={(e) => {
@@ -1478,14 +1650,18 @@ export function ChainNodeRoutingDrawer({
                       )}
                     >
                       {PROTOCOL_OPTIONS.map((p) => (
-                        <option key={p.value} value={p.value}>{p.label}</option>
+                        <option key={p.value} value={p.value}>
+                          {p.label}
+                        </option>
                       ))}
                     </select>
                   </div>
 
                   {/* Destination */}
                   <div className="space-y-1">
-                    <label className="block text-xs font-medium text-muted-foreground">Destination</label>
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Destination
+                    </label>
                     <Input
                       type="text"
                       placeholder="e.g., 1.2.3.0/24, example.com"
@@ -1501,16 +1677,23 @@ export function ChainNodeRoutingDrawer({
                       )}
                     />
                     {routingFormErrors.destination && (
-                      <p className="text-xs text-destructive">{routingFormErrors.destination}</p>
+                      <p className="text-xs text-destructive">
+                        {routingFormErrors.destination}
+                      </p>
                     )}
                   </div>
 
                   {/* Action */}
                   <div className="space-y-1">
-                    <span className="block text-xs font-medium text-muted-foreground">Action</span>
+                    <span className="block text-xs font-medium text-muted-foreground">
+                      Action
+                    </span>
                     <div className="flex gap-3">
                       {ROUTING_ACTION_OPTIONS.map((opt) => (
-                        <label key={opt.value} className="flex items-center gap-1.5 text-xs">
+                        <label
+                          key={opt.value}
+                          className="flex items-center gap-1.5 text-xs"
+                        >
                           <input
                             type="radio"
                             name="drawer-routing-action"
@@ -1518,7 +1701,8 @@ export function ChainNodeRoutingDrawer({
                             checked={routingFormAction === opt.value}
                             onChange={() => {
                               setRoutingFormAction(opt.value);
-                              if (routingEditingRule) handleRoutingFieldChange();
+                              if (routingEditingRule)
+                                handleRoutingFieldChange();
                             }}
                             disabled={routingSubmitting}
                             className="accent-accent"
@@ -1531,7 +1715,9 @@ export function ChainNodeRoutingDrawer({
 
                   {/* Priority */}
                   <div className="space-y-1">
-                    <label className="block text-xs font-medium text-muted-foreground">Priority</label>
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Priority
+                    </label>
                     <Input
                       type="number"
                       min={0}
@@ -1547,7 +1733,9 @@ export function ChainNodeRoutingDrawer({
                       )}
                     />
                     {routingFormErrors.priority && (
-                      <p className="text-xs text-destructive">{routingFormErrors.priority}</p>
+                      <p className="text-xs text-destructive">
+                        {routingFormErrors.priority}
+                      </p>
                     )}
                   </div>
 
@@ -1568,12 +1756,23 @@ export function ChainNodeRoutingDrawer({
 
                   {/* Form actions */}
                   <div className="flex items-center justify-end gap-2 pt-1">
-                    <Button variant="outline" size="sm" onClick={closeRoutingForm} disabled={routingSubmitting}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={closeRoutingForm}
+                      disabled={routingSubmitting}
+                    >
                       Cancel
                     </Button>
                     {!routingEditingRule && (
-                      <Button size="sm" onClick={handleRoutingCreate} disabled={routingSubmitting}>
-                        {routingSubmitting && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+                      <Button
+                        size="sm"
+                        onClick={handleRoutingCreate}
+                        disabled={routingSubmitting}
+                      >
+                        {routingSubmitting && (
+                          <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                        )}
                         Create Rule
                       </Button>
                     )}
@@ -1583,7 +1782,12 @@ export function ChainNodeRoutingDrawer({
 
               {/* Add Rule button */}
               {!routingShowForm && (
-                <Button variant="outline" size="sm" onClick={openRoutingCreateForm} className="w-full">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openRoutingCreateForm}
+                  className="w-full"
+                >
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
                   Add Rule
                 </Button>
@@ -1593,7 +1797,11 @@ export function ChainNodeRoutingDrawer({
 
           {/* ── Templates Tab ───────────────────────── */}
           {activeTab === 'templates' && (
-            <div className="p-4" role="tabpanel" aria-label="Routing rule templates">
+            <div
+              className="p-4"
+              role="tabpanel"
+              aria-label="Routing rule templates"
+            >
               <TemplateGallery onApplied={handleTemplateApplied} />
             </div>
           )}
@@ -1604,7 +1812,9 @@ export function ChainNodeRoutingDrawer({
           {applyError && (
             <p className="mb-2 text-xs text-destructive">{applyError}</p>
           )}
-          <p className="mb-3 text-xs text-muted-foreground">Changes are saved automatically.</p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Changes are saved automatically.
+          </p>
           <Button
             variant="default"
             size="sm"
@@ -1619,7 +1829,11 @@ export function ChainNodeRoutingDrawer({
             ) : (
               <Upload className="mr-1.5 h-3.5 w-3.5" />
             )}
-            {applyLoading ? 'Applying...' : applySuccess ? 'Applied' : 'Apply to Panels'}
+            {applyLoading
+              ? 'Applying...'
+              : applySuccess
+                ? 'Applied'
+                : 'Apply to Panels'}
           </Button>
         </div>
       </div>

@@ -10,28 +10,34 @@ import type { ChainConfig } from '@/types/chain';
 const diffRequestSchema = z.object({
   chainConfig: z.object({
     templateId: z.string().min(1),
-    nodes: z.array(z.object({
-      label: z.string(),
-      serverId: z.number().int(),
-      role: z.enum(['entry', 'middle', 'exit', 'domestic', 'foreign']),
-      protocol: z.enum(['wireguard', 'xray']),
-      hostname: z.string(),
-      port: z.number().int(),
-    })),
-    wireguardPeers: z.array(z.object({
-      nodeId: z.string(),
-      publicKey: z.string(),
-      allowedIPs: z.string(),
-      endpoint: z.string(),
-      persistentKeepalive: z.number().int().optional(),
-    })),
-    xrayRoutingRules: z.array(z.object({
-      nodeId: z.string(),
-      type: z.enum(['ip', 'domain', 'geoip']),
-      value: z.string(),
-      outboundTag: z.string(),
-      priority: z.number().int(),
-    })),
+    nodes: z.array(
+      z.object({
+        label: z.string(),
+        serverId: z.number().int(),
+        role: z.enum(['entry', 'middle', 'exit', 'domestic', 'foreign']),
+        protocol: z.enum(['wireguard', 'xray']),
+        hostname: z.string(),
+        port: z.number().int(),
+      }),
+    ),
+    wireguardPeers: z.array(
+      z.object({
+        nodeId: z.string(),
+        publicKey: z.string(),
+        allowedIPs: z.string(),
+        endpoint: z.string(),
+        persistentKeepalive: z.number().int().optional(),
+      }),
+    ),
+    xrayRoutingRules: z.array(
+      z.object({
+        nodeId: z.string(),
+        type: z.enum(['ip', 'domain', 'geoip']),
+        value: z.string(),
+        outboundTag: z.string(),
+        priority: z.number().int(),
+      }),
+    ),
     generatedAt: z.string().min(1),
   }),
 });
@@ -49,7 +55,11 @@ export async function POST(request: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Invalid request body', details: parsed.error.flatten() },
+        {
+          success: false,
+          error: 'Invalid request body',
+          details: parsed.error.flatten(),
+        },
         { status: 422 },
       );
     }
@@ -79,7 +89,10 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[api/panels/diff] Diff computation failed:', err);
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Diff computation failed' },
+      {
+        success: false,
+        error: err instanceof Error ? err.message : 'Diff computation failed',
+      },
       { status: 500 },
     );
   }

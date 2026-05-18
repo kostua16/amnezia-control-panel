@@ -12,12 +12,7 @@ import {
   Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { PanelStatusBadge } from './panel-status-badge';
 import { AddPanelForm } from './add-panel-form';
@@ -41,7 +36,9 @@ export function PanelList() {
   const [editingPanel, setEditingPanel] = useState<PanelItem | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [panelStatuses, setPanelStatuses] = useState<Record<number, PanelConnectionStatus>>({});
+  const [panelStatuses, setPanelStatuses] = useState<
+    Record<number, PanelConnectionStatus>
+  >({});
   const [selectedPanelId, setSelectedPanelId] = useState<number | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -56,7 +53,9 @@ export function PanelList() {
     } catch (err) {
       console.error('Failed to fetch panels:', err);
       if (panels.length === 0) {
-        setFetchError('Failed to load panels. Check your network connection and try again.');
+        setFetchError(
+          'Failed to load panels. Check your network connection and try again.',
+        );
       }
     } finally {
       setLoading(false);
@@ -98,7 +97,11 @@ export function PanelList() {
       }
 
       // Fetch statuses for all panels
-      fetchPanelStatuses(listJson.success ? listJson.data.map((p: PanelItem) => p.id) : panels.map((p) => p.id));
+      fetchPanelStatuses(
+        listJson.success
+          ? listJson.data.map((p: PanelItem) => p.id)
+          : panels.map((p) => p.id),
+      );
     }, 30_000);
 
     return () => clearInterval(interval);
@@ -128,7 +131,11 @@ export function PanelList() {
   };
 
   const handleDelete = async (panelId: number) => {
-    if (!confirm('Are you sure you want to remove this panel? This will delete all connection history. This cannot be undone.')) {
+    if (
+      !confirm(
+        'Are you sure you want to remove this panel? This will delete all connection history. This cannot be undone.',
+      )
+    ) {
       return;
     }
     setDeletingId(panelId);
@@ -188,7 +195,9 @@ export function PanelList() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Monitor className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground mb-2">No panels registered yet</p>
+            <p className="text-muted-foreground mb-2">
+              No panels registered yet
+            </p>
             <p className="text-sm text-muted-foreground mb-4">
               Add a remote panel to start managing your multi-panel topology.
             </p>
@@ -293,16 +302,26 @@ export function PanelList() {
         title="Add Panel"
       >
         <AddPanelForm
-          onPanelAdded={() => { setShowAddModal(false); fetchPanels(); }}
+          onPanelAdded={() => {
+            setShowAddModal(false);
+            fetchPanels();
+          }}
           onCancel={() => setShowAddModal(false)}
         />
       </Dialog>
 
       {editingPanel && (
-        <Dialog open={!!editingPanel} onClose={() => setEditingPanel(null)} title="Edit Panel">
+        <Dialog
+          open={!!editingPanel}
+          onClose={() => setEditingPanel(null)}
+          title="Edit Panel"
+        >
           <EditPanelForm
             panel={editingPanel}
-            onPanelUpdated={() => { setEditingPanel(null); fetchPanels(); }}
+            onPanelUpdated={() => {
+              setEditingPanel(null);
+              fetchPanels();
+            }}
             onCancel={() => setEditingPanel(null)}
           />
         </Dialog>

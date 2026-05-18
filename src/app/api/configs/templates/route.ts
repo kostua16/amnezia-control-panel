@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import {
-  getTemplates,
-  createTemplate,
-} from '@/lib/config-templates';
+import { getTemplates, createTemplate } from '@/lib/config-templates';
 
 const serviceTypeEnum = z.enum(['AWG', 'THREE_XUI']).optional();
 
@@ -26,9 +23,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const serviceType = searchParams.get('serviceType');
 
-    const parsed = serviceTypeEnum.safeParse(
-      serviceType ?? undefined,
-    );
+    const parsed = serviceTypeEnum.safeParse(serviceType ?? undefined);
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -58,7 +53,8 @@ export async function POST(request: NextRequest) {
     const parsed = createTemplateSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },

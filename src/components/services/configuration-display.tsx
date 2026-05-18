@@ -67,9 +67,7 @@ function ConfigCard({ section }: { section: ConfigSection }) {
           {section.icon}
           {section.title}
         </CardTitle>
-        <CardDescription>
-          Current configuration parameters
-        </CardDescription>
+        <CardDescription>Current configuration parameters</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">

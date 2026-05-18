@@ -15,16 +15,23 @@ const sizeConfig = {
   lg: 'h-12 w-12',
 };
 
-export function LoadingSpinner({ size = 'md', className, label }: LoadingSpinnerProps) {
+export function LoadingSpinner({
+  size = 'md',
+  className,
+  label,
+}: LoadingSpinnerProps) {
   return (
-    <div className={clsx('flex flex-col items-center justify-center gap-3', className)}>
+    <div
+      className={clsx(
+        'flex flex-col items-center justify-center gap-3',
+        className,
+      )}
+    >
       <Loader2
         className={clsx('animate-spin text-accent', sizeConfig[size])}
         aria-hidden="true"
       />
-      {label && (
-        <span className="text-sm text-muted-foreground">{label}</span>
-      )}
+      {label && <span className="text-sm text-muted-foreground">{label}</span>}
     </div>
   );
 }

@@ -96,7 +96,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const parsed = updateConfigSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },

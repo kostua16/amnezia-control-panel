@@ -22,10 +22,7 @@ async function fetchTopUserTraffic(
   return json.data;
 }
 
-export function useTopUserTraffic(
-  limit?: number,
-  period?: string,
-) {
+export function useTopUserTraffic(limit?: number, period?: string) {
   return useQuery({
     queryKey: ['top-user-traffic', limit, period],
     queryFn: () => fetchTopUserTraffic(limit, period),

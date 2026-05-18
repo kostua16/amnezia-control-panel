@@ -5,7 +5,11 @@ import { X, Loader2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { GeoRoutingRule, GeoRuleCreate, GeoMatchType } from '@/types/geo-routing';
+import type {
+  GeoRoutingRule,
+  GeoRuleCreate,
+  GeoMatchType,
+} from '@/types/geo-routing';
 
 // ─── Constants ───────────────────────────────────────────
 
@@ -29,11 +33,12 @@ const SPECIAL_OPTIONS = [
   { value: 'foreign' as const, label: 'Foreign' },
 ];
 
-const ACTION_OPTIONS: { value: 'ALLOW' | 'BLOCK' | 'ROUTE'; label: string }[] = [
-  { value: 'ALLOW', label: 'Allow' },
-  { value: 'BLOCK', label: 'Block' },
-  { value: 'ROUTE', label: 'Route' },
-];
+const ACTION_OPTIONS: { value: 'ALLOW' | 'BLOCK' | 'ROUTE'; label: string }[] =
+  [
+    { value: 'ALLOW', label: 'Allow' },
+    { value: 'BLOCK', label: 'Block' },
+    { value: 'ROUTE', label: 'Route' },
+  ];
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -53,7 +58,13 @@ interface FormErrors {
 
 // ─── Component ───────────────────────────────────────────
 
-export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }: GeoRuleDrawerProps) {
+export function GeoRuleDrawer({
+  open,
+  onClose,
+  rule,
+  onSubmit,
+  loading = false,
+}: GeoRuleDrawerProps) {
   const isEdit = rule !== null && rule !== undefined;
 
   const [name, setName] = useState('');
@@ -102,7 +113,9 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
     } else {
       document.body.style.overflow = '';
     }
-    return () => { document.body.style.overflow = ''; };
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [open]);
 
   // Escape to close
@@ -122,7 +135,8 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
 
     if (matchType === 'country') {
       if (!/^[A-Za-z]{2}$/.test(countryCode)) {
-        newErrors.countryCode = 'Must be exactly 2 letters (ISO 3166-1 alpha-2)';
+        newErrors.countryCode =
+          'Must be exactly 2 letters (ISO 3166-1 alpha-2)';
       }
     }
 
@@ -157,7 +171,7 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
       chainId: chainId ? parseInt(chainId, 10) : null,
       priority: parseInt(priority, 10) || 0,
       isActive,
-      source: isEdit ? (rule?.source) : 'custom',
+      source: isEdit ? rule?.source : 'custom',
     });
   };
 
@@ -178,7 +192,9 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
       <div className="fixed inset-y-0 right-0 z-50 w-96 max-w-full border-l border-border bg-background shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <h2 className="text-lg font-bold">{isEdit ? 'Edit Geo Rule' : 'Create Geo Rule'}</h2>
+          <h2 className="text-lg font-bold">
+            {isEdit ? 'Edit Geo Rule' : 'Create Geo Rule'}
+          </h2>
           <button
             onClick={onClose}
             className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -193,7 +209,10 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {/* Name */}
             <div className="space-y-1">
-              <label htmlFor="geo-rule-name" className="block text-sm font-medium text-foreground">
+              <label
+                htmlFor="geo-rule-name"
+                className="block text-sm font-medium text-foreground"
+              >
                 Name
               </label>
               <Input
@@ -204,7 +223,9 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
                 onChange={(e) => setName(e.target.value)}
                 onBlur={() => setTouched((p) => ({ ...p, name: true }))}
                 disabled={loading}
-                className={clsx(showError('name', errors.name) && 'border-destructive')}
+                className={clsx(
+                  showError('name', errors.name) && 'border-destructive',
+                )}
               />
               {showError('name', errors.name) && (
                 <p className="text-xs text-destructive">{errors.name}</p>
@@ -213,10 +234,15 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
 
             {/* Match type */}
             <div className="space-y-1">
-              <span className="block text-sm font-medium text-foreground">Match Type</span>
+              <span className="block text-sm font-medium text-foreground">
+                Match Type
+              </span>
               <div className="flex gap-3">
                 {MATCH_TYPE_OPTIONS.map((opt) => (
-                  <label key={opt.value} className="flex items-center gap-2 text-sm">
+                  <label
+                    key={opt.value}
+                    className="flex items-center gap-2 text-sm"
+                  >
                     <input
                       type="radio"
                       name="geo-match-type"
@@ -235,7 +261,10 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
             {/* Country code (shown when matchType = country) */}
             {matchType === 'country' && (
               <div className="space-y-1">
-                <label htmlFor="geo-country-code" className="block text-sm font-medium text-foreground">
+                <label
+                  htmlFor="geo-country-code"
+                  className="block text-sm font-medium text-foreground"
+                >
                   Country Code
                 </label>
                 <Input
@@ -243,14 +272,23 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
                   type="text"
                   placeholder="e.g., US, CN, DE"
                   value={countryCode}
-                  onChange={(e) => setCountryCode(e.target.value.toUpperCase().slice(0, 2))}
-                  onBlur={() => setTouched((p) => ({ ...p, countryCode: true }))}
+                  onChange={(e) =>
+                    setCountryCode(e.target.value.toUpperCase().slice(0, 2))
+                  }
+                  onBlur={() =>
+                    setTouched((p) => ({ ...p, countryCode: true }))
+                  }
                   disabled={loading}
                   maxLength={2}
-                  className={clsx(showError('countryCode', errors.countryCode) && 'border-destructive')}
+                  className={clsx(
+                    showError('countryCode', errors.countryCode) &&
+                      'border-destructive',
+                  )}
                 />
                 {showError('countryCode', errors.countryCode) && (
-                  <p className="text-xs text-destructive">{errors.countryCode}</p>
+                  <p className="text-xs text-destructive">
+                    {errors.countryCode}
+                  </p>
                 )}
                 <p className="text-xs text-muted-foreground">
                   ISO 3166-1 alpha-2 code (2 uppercase letters).
@@ -261,7 +299,10 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
             {/* Region (shown when matchType = region) */}
             {matchType === 'region' && (
               <div className="space-y-1">
-                <label htmlFor="geo-region" className="block text-sm font-medium text-foreground">
+                <label
+                  htmlFor="geo-region"
+                  className="block text-sm font-medium text-foreground"
+                >
                   Region
                 </label>
                 <select
@@ -278,7 +319,9 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
                 >
                   <option value="">Select region...</option>
                   {REGION_OPTIONS.map((r) => (
-                    <option key={r} value={r}>{r}</option>
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -287,13 +330,18 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
             {/* Special (shown when matchType = special) */}
             {matchType === 'special' && (
               <div className="space-y-1">
-                <label htmlFor="geo-special" className="block text-sm font-medium text-foreground">
+                <label
+                  htmlFor="geo-special"
+                  className="block text-sm font-medium text-foreground"
+                >
                   Special Match
                 </label>
                 <select
                   id="geo-special"
                   value={special}
-                  onChange={(e) => setSpecial(e.target.value as 'domestic' | 'foreign')}
+                  onChange={(e) =>
+                    setSpecial(e.target.value as 'domestic' | 'foreign')
+                  }
                   disabled={loading}
                   className={clsx(
                     'flex h-10 w-full rounded-md border border-border bg-background px-3 py-2',
@@ -303,7 +351,9 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
                   )}
                 >
                   {SPECIAL_OPTIONS.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -311,10 +361,15 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
 
             {/* Action */}
             <div className="space-y-1">
-              <span className="block text-sm font-medium text-foreground">Action</span>
+              <span className="block text-sm font-medium text-foreground">
+                Action
+              </span>
               <div className="flex gap-3">
                 {ACTION_OPTIONS.map((opt) => (
-                  <label key={opt.value} className="flex items-center gap-2 text-sm">
+                  <label
+                    key={opt.value}
+                    className="flex items-center gap-2 text-sm"
+                  >
                     <input
                       type="radio"
                       name="geo-action"
@@ -333,7 +388,10 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
             {/* Chain (only if Route) */}
             {action === 'ROUTE' && (
               <div className="space-y-1">
-                <label htmlFor="geo-chain-id" className="block text-sm font-medium text-foreground">
+                <label
+                  htmlFor="geo-chain-id"
+                  className="block text-sm font-medium text-foreground"
+                >
                   Chain ID
                 </label>
                 <Input
@@ -353,7 +411,10 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
 
             {/* Priority */}
             <div className="space-y-1">
-              <label htmlFor="geo-priority" className="block text-sm font-medium text-foreground">
+              <label
+                htmlFor="geo-priority"
+                className="block text-sm font-medium text-foreground"
+              >
                 Priority
               </label>
               <Input
@@ -364,7 +425,10 @@ export function GeoRuleDrawer({ open, onClose, rule, onSubmit, loading = false }
                 onChange={(e) => setPriority(e.target.value)}
                 onBlur={() => setTouched((p) => ({ ...p, priority: true }))}
                 disabled={loading}
-                className={clsx(showError('priority', errors.priority) && 'border-destructive')}
+                className={clsx(
+                  showError('priority', errors.priority) &&
+                    'border-destructive',
+                )}
               />
               {showError('priority', errors.priority) && (
                 <p className="text-xs text-destructive">{errors.priority}</p>

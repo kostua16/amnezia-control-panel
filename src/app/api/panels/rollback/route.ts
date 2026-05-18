@@ -26,7 +26,11 @@ export async function POST(request: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Invalid request body', details: parsed.error.flatten() },
+        {
+          success: false,
+          error: 'Invalid request body',
+          details: parsed.error.flatten(),
+        },
         { status: 422 },
       );
     }
@@ -54,7 +58,10 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[api/panels/rollback] Error:', err);
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Rollback failed' },
+      {
+        success: false,
+        error: err instanceof Error ? err.message : 'Rollback failed',
+      },
       { status: 500 },
     );
   }

@@ -5,14 +5,26 @@ import { prisma } from '@/lib/prisma';
 // ─── POST: Batch create rules ──────────────────────────────
 
 const batchCreateRuleSchema = z.object({
-  rules: z.array(z.object({
-    protocol: z.enum(['ANY', 'WIREGUARD', 'VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS']),
-    destination: z.string().min(1),
-    action: z.enum(['ALLOW', 'BLOCK', 'ROUTE']),
-    priority: z.number().int().min(0).default(0),
-    isActive: z.boolean().default(true),
-    userId: z.number().int().positive().nullable().optional().default(null),
-  })).min(1).max(100),
+  rules: z
+    .array(
+      z.object({
+        protocol: z.enum([
+          'ANY',
+          'WIREGUARD',
+          'VLESS',
+          'VMESS',
+          'TROJAN',
+          'SHADOWSOCKS',
+        ]),
+        destination: z.string().min(1),
+        action: z.enum(['ALLOW', 'BLOCK', 'ROUTE']),
+        priority: z.number().int().min(0).default(0),
+        isActive: z.boolean().default(true),
+        userId: z.number().int().positive().nullable().optional().default(null),
+      }),
+    )
+    .min(1)
+    .max(100),
 });
 
 export async function POST(request: NextRequest) {
@@ -21,7 +33,8 @@ export async function POST(request: NextRequest) {
     const parsed = batchCreateRuleSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -42,7 +55,10 @@ export async function POST(request: NextRequest) {
       const missingIds = uniqueIds.filter((id) => !existingIds.has(id));
       if (missingIds.length > 0) {
         return NextResponse.json(
-          { success: false, error: `Users not found: ${missingIds.join(', ')}` },
+          {
+            success: false,
+            error: `Users not found: ${missingIds.join(', ')}`,
+          },
           { status: 404 },
         );
       }
@@ -50,9 +66,7 @@ export async function POST(request: NextRequest) {
 
     // Batch create in transaction
     const created = await prisma.$transaction(
-      rules.map((rule) =>
-        prisma.routingRule.create({ data: rule }),
-      ),
+      rules.map((rule) => prisma.routingRule.create({ data: rule })),
     );
 
     return NextResponse.json(
@@ -80,7 +94,8 @@ export async function DELETE(request: NextRequest) {
     const parsed = batchDeleteSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },

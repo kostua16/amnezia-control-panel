@@ -126,8 +126,9 @@ export function AddPanelForm({ onPanelAdded, onCancel }: AddPanelFormProps) {
       } else {
         setErrors((prev) => ({
           ...prev,
-          panelUrl:
-            json.error?.includes('panelUrl') ? json.error : prev.panelUrl,
+          panelUrl: json.error?.includes('panelUrl')
+            ? json.error
+            : prev.panelUrl,
         }));
       }
     } catch {

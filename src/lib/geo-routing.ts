@@ -38,10 +38,7 @@ export function evaluateGeoRules(
   return { matched: false, action: 'ALLOW' };
 }
 
-function matchesTarget(
-  destination: GeoTarget,
-  ruleTarget: GeoTarget,
-): boolean {
+function matchesTarget(destination: GeoTarget, ruleTarget: GeoTarget): boolean {
   // Special targets
   if (ruleTarget.special === 'domestic' && destination.special === 'domestic') {
     return true;
@@ -52,14 +49,15 @@ function matchesTarget(
 
   // Country code match
   if (ruleTarget.countryCode && destination.countryCode) {
-    return ruleTarget.countryCode.toUpperCase() === destination.countryCode.toUpperCase();
+    return (
+      ruleTarget.countryCode.toUpperCase() ===
+      destination.countryCode.toUpperCase()
+    );
   }
 
   // Region match (substring)
   if (ruleTarget.region && destination.region) {
-    return (
-      destination.region.toLowerCase() === ruleTarget.region.toLowerCase()
-    );
+    return destination.region.toLowerCase() === ruleTarget.region.toLowerCase();
   }
 
   return false;
@@ -86,7 +84,9 @@ export function classifyDomesticForeign(
   domesticCountryCodes: string[],
 ): 'domestic' | 'foreign' {
   if (!countryCode) return 'foreign';
-  return domesticCountryCodes.map((c) => c.toUpperCase()).includes(countryCode.toUpperCase())
+  return domesticCountryCodes
+    .map((c) => c.toUpperCase())
+    .includes(countryCode.toUpperCase())
     ? 'domestic'
     : 'foreign';
 }
@@ -114,7 +114,7 @@ export async function evaluateGeoRulesFromDB(
     target: {
       countryCode: r.countryCode ?? undefined,
       region: r.region ?? undefined,
-      special: r.special as GeoRoutingRule['target']['special'] ?? undefined,
+      special: (r.special as GeoRoutingRule['target']['special']) ?? undefined,
     },
     action: r.action as 'ALLOW' | 'BLOCK' | 'ROUTE',
     chainId: r.chainId ?? undefined,
@@ -138,9 +138,7 @@ export async function evaluateGeoRulesFromDB(
  * Per D-04: fail open on any error.
  * Per D-06: IPv4 only.
  */
-export async function resolveGeoRoute(
-  ip: string,
-): Promise<GeoRoutingResult> {
+export async function resolveGeoRoute(ip: string): Promise<GeoRoutingResult> {
   try {
     const { countryCode } = await lookupGeoIP(ip);
 

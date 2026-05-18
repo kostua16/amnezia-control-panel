@@ -20,7 +20,12 @@ export const QUOTA_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 export async function checkUserQuotas(): Promise<{
   checked: number;
   alertsCreated: number;
-  details: Array<{ userId: number; username: string; percent: number; severity: AlertSeverity }>;
+  details: Array<{
+    userId: number;
+    username: string;
+    percent: number;
+    severity: AlertSeverity;
+  }>;
 }> {
   // Get all active users with their quotas
   const usersWithQuotas = await prisma.user.findMany({
@@ -36,7 +41,12 @@ export async function checkUserQuotas(): Promise<{
   const results = {
     checked: usersWithQuotas.length,
     alertsCreated: 0,
-    details: [] as Array<{ userId: number; username: string; percent: number; severity: AlertSeverity }>,
+    details: [] as Array<{
+      userId: number;
+      username: string;
+      percent: number;
+      severity: AlertSeverity;
+    }>,
   };
 
   for (const user of usersWithQuotas) {
@@ -108,7 +118,10 @@ async function checkQuotaThreshold(
 /**
  * Calculate a user's traffic usage as a percentage of their quota.
  */
-async function getUserUsagePercent(userId: number, quotaBytes: number): Promise<number> {
+async function getUserUsagePercent(
+  userId: number,
+  quotaBytes: number,
+): Promise<number> {
   // Sum traffic for the current month
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);

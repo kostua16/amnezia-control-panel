@@ -34,14 +34,22 @@ export function PushProgressTracker({
             <div className="flex-1">
               <p className="text-sm font-medium">{panelName}</p>
               <p className="text-xs text-muted-foreground">
-                <StatusText status={status} panelName={panelName} event={event} />
+                <StatusText
+                  status={status}
+                  panelName={panelName}
+                  event={event}
+                />
               </p>
             </div>
             {status === 'success' && event?.latencyMs != null && (
-              <span className="text-xs text-muted-foreground">({event.latencyMs}ms)</span>
+              <span className="text-xs text-muted-foreground">
+                ({event.latencyMs}ms)
+              </span>
             )}
             {status === 'failed' && event?.error && (
-              <span className="text-xs text-destructive">{event.error.message}</span>
+              <span className="text-xs text-destructive">
+                {event.error.message}
+              </span>
             )}
           </div>
         );

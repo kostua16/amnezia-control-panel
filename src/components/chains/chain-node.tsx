@@ -2,7 +2,13 @@
 
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { GripVertical, Trash2, ChevronDown, ChevronUp, Server } from 'lucide-react';
+import {
+  GripVertical,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  Server,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ChainNode } from '@/types/chain';
 
@@ -91,7 +97,9 @@ export function ChainNodeCard({
               {serverName || node.label}
             </p>
             {hostname && (
-              <p className="truncate text-xs text-muted-foreground">{hostname}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {hostname}
+              </p>
             )}
           </div>
         </div>

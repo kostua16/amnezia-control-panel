@@ -1,13 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle, XCircle, RotateCcw, AlertTriangle, Undo2 } from 'lucide-react';
+import {
+  CheckCircle,
+  XCircle,
+  RotateCcw,
+  AlertTriangle,
+  Undo2,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ErrorRecommendation } from './error-recommendation';
 import type { PushAllResult, PushResult } from '@/types/panel-sync';
-import type { StructuredPushError, PushProgressEvent } from '@/types/config-push';
+import type {
+  StructuredPushError,
+  PushProgressEvent,
+} from '@/types/config-push';
 
 interface PushResultSummaryProps {
   results: PushAllResult | null;
@@ -22,7 +31,9 @@ export function PushResultSummary({
   onRollback,
   onRetry,
 }: PushResultSummaryProps) {
-  const [rolledBackPanels, setRolledBackPanels] = useState<Set<number>>(new Set());
+  const [rolledBackPanels, setRolledBackPanels] = useState<Set<number>>(
+    new Set(),
+  );
 
   if (!results) return null;
 
@@ -32,7 +43,9 @@ export function PushResultSummary({
   // Track which error index is the first (for defaultExpanded)
   let firstErrorIndex = 0;
 
-  const getStructuredError = (result: PushResult): StructuredPushError | null => {
+  const getStructuredError = (
+    result: PushResult,
+  ): StructuredPushError | null => {
     // Check if we have a structured error from WebSocket progress events
     const progressEvent = progressMap?.get(result.panelId);
     if (progressEvent?.error) {
@@ -73,7 +86,8 @@ export function PushResultSummary({
         </div>
         {hasFailures && (
           <p className="text-sm text-muted-foreground mt-1">
-            {results.succeeded} of {results.totalPanels} panels updated successfully. Review failed panels below.
+            {results.succeeded} of {results.totalPanels} panels updated
+            successfully. Review failed panels below.
           </p>
         )}
       </div>
@@ -103,13 +117,21 @@ export function PushResultSummary({
                     {result.success ? (
                       <p className="text-xs text-muted-foreground">
                         Configuration applied to {result.panelName}
-                        {result.latencyMs != null ? ` (${result.latencyMs}ms)` : ''}
-                        {result.configVersion != null ? ` · v${result.configVersion}` : ''}
-                        {result.retries > 0 ? ` · ${result.retries} ${result.retries === 1 ? 'retry' : 'retries'}` : ''}
+                        {result.latencyMs != null
+                          ? ` (${result.latencyMs}ms)`
+                          : ''}
+                        {result.configVersion != null
+                          ? ` · v${result.configVersion}`
+                          : ''}
+                        {result.retries > 0
+                          ? ` · ${result.retries} ${result.retries === 1 ? 'retry' : 'retries'}`
+                          : ''}
                       </p>
                     ) : structuredError ? (
                       <p className="text-xs text-destructive">
-                        Push failed on {result.panelName}: {structuredError.message}. {structuredError.recommendation}
+                        Push failed on {result.panelName}:{' '}
+                        {structuredError.message}.{' '}
+                        {structuredError.recommendation}
                       </p>
                     ) : result.error ? (
                       <p className="text-xs text-destructive">{result.error}</p>
@@ -122,7 +144,9 @@ export function PushResultSummary({
                       className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
                       onClick={() => {
                         onRollback(result.panelId);
-                        setRolledBackPanels((prev) => new Set(prev).add(result.panelId));
+                        setRolledBackPanels((prev) =>
+                          new Set(prev).add(result.panelId),
+                        );
                       }}
                     >
                       <RotateCcw className="mr-1.5 h-3.5 w-3.5" />

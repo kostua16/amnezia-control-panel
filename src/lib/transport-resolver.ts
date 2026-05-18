@@ -55,7 +55,12 @@ export interface ResolvedTransport {
  * @param defaultPort - Port to use for the constructed panelUrl (default 443)
  */
 export async function resolvePanelTransport(
-  server: { id: number; tailnetIP?: string | null; tailnetHostname?: string | null; hostname: string },
+  server: {
+    id: number;
+    tailnetIP?: string | null;
+    tailnetHostname?: string | null;
+    hostname: string;
+  },
   panel: { panelUrl: string },
   defaultPort = 443,
 ): Promise<ResolvedTransport | null> {

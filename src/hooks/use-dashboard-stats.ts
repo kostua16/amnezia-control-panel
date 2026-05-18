@@ -4,7 +4,9 @@ import type { DashboardStats } from '@/types/monitoring';
 async function fetchDashboardStats(): Promise<DashboardStats> {
   const response = await fetch('/api/dashboard/stats');
   if (!response.ok) {
-    throw new Error(`Failed to fetch dashboard stats (status ${response.status})`);
+    throw new Error(
+      `Failed to fetch dashboard stats (status ${response.status})`,
+    );
   }
   const json = await response.json();
   if (!json.success) {

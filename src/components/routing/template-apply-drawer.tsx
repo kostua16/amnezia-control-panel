@@ -44,7 +44,9 @@ function matchTypeLabel(rule: TemplateRuleDef): string {
     case 'region':
       return `Region: ${rule.region ?? 'Unknown'}`;
     case 'special':
-      return rule.special === 'domestic' ? 'Special: Domestic' : 'Special: Foreign';
+      return rule.special === 'domestic'
+        ? 'Special: Domestic'
+        : 'Special: Foreign';
   }
 }
 
@@ -132,7 +134,9 @@ export function TemplateApplyDrawer({
           <div>
             <h2 className="text-lg font-bold">{template.name}</h2>
             {template.description && (
-              <p className="mt-0.5 text-sm text-muted-foreground">{template.description}</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {template.description}
+              </p>
             )}
           </div>
           <button
@@ -157,16 +161,26 @@ export function TemplateApplyDrawer({
           </h3>
 
           {rules.length === 0 ? (
-            <p className="text-sm text-muted-foreground">This template has no rules.</p>
+            <p className="text-sm text-muted-foreground">
+              This template has no rules.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="px-2 py-2 font-medium text-muted-foreground">Name</th>
-                    <th className="px-2 py-2 font-medium text-muted-foreground">Match</th>
-                    <th className="px-2 py-2 font-medium text-muted-foreground">Action</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground">Priority</th>
+                    <th className="px-2 py-2 font-medium text-muted-foreground">
+                      Name
+                    </th>
+                    <th className="px-2 py-2 font-medium text-muted-foreground">
+                      Match
+                    </th>
+                    <th className="px-2 py-2 font-medium text-muted-foreground">
+                      Action
+                    </th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground">
+                      Priority
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -194,7 +208,9 @@ export function TemplateApplyDrawer({
                         </span>
                       </td>
                       <td className="px-2 py-2 text-right">
-                        <span className="text-xs text-muted-foreground">{rule.priority}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {rule.priority}
+                        </span>
                       </td>
                     </tr>
                   ))}

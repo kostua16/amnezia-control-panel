@@ -13,17 +13,26 @@ export interface UseWebSocketOptions {
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
-  const { autoConnect = true, events, onMessage, onConnect, onDisconnect } = options;
+  const {
+    autoConnect = true,
+    events,
+    onMessage,
+    onConnect,
+    onDisconnect,
+  } = options;
   const [isConnected, setIsConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<Record<string, unknown>>({});
   const socketRef = useRef<Socket | null>(null);
   const reconnectCountRef = useRef(0);
   const MAX_RECONNECT_ATTEMPTS = 5;
 
-  const handleMessage = useCallback((data: unknown) => {
-    setLastEvent((prev) => ({ ...prev }));
-    onMessage?.(data);
-  }, [onMessage]);
+  const handleMessage = useCallback(
+    (data: unknown) => {
+      setLastEvent((prev) => ({ ...prev }));
+      onMessage?.(data);
+    },
+    [onMessage],
+  );
 
   useEffect(() => {
     if (!autoConnect) return;

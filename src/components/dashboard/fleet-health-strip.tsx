@@ -17,7 +17,10 @@ function SkeletonBadge() {
   return <div className="h-6 w-16 animate-pulse rounded-full bg-muted" />;
 }
 
-export function FleetHealthStrip({ summary, isLoading }: FleetHealthStripProps) {
+export function FleetHealthStrip({
+  summary,
+  isLoading,
+}: FleetHealthStripProps) {
   if (isLoading) {
     return (
       <div className="rounded-md border border-border bg-card p-4">

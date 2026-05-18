@@ -10,10 +10,7 @@ const CIDR_REGEX =
 const advertiseSchema = z.object({
   subnets: z
     .array(
-      z.string().regex(
-        CIDR_REGEX,
-        'Invalid CIDR format. Expected: x.x.x.x/y',
-      ),
+      z.string().regex(CIDR_REGEX, 'Invalid CIDR format. Expected: x.x.x.x/y'),
     )
     .min(1, 'At least one subnet is required'),
 });

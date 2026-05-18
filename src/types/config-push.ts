@@ -36,7 +36,13 @@ export interface ConfigApplierResult {
 /** Structured error with actionable recommendations */
 export interface StructuredPushError {
   /** Error category for pattern matching in UI */
-  type: 'connection_timeout' | 'auth_failure' | 'invalid_config' | 'service_error' | 'docker_error' | 'unknown';
+  type:
+    | 'connection_timeout'
+    | 'auth_failure'
+    | 'invalid_config'
+    | 'service_error'
+    | 'docker_error'
+    | 'unknown';
   /** Human-readable error message */
   message: string;
   /** Recommended action for the admin */

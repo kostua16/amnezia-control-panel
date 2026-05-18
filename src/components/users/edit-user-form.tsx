@@ -52,9 +52,7 @@ export function EditUserForm({
       : '',
   );
   const [speedLimitKbps, setSpeedLimitKbps] = useState(
-    initialData.speedLimitKbps > 0
-      ? String(initialData.speedLimitKbps)
-      : '',
+    initialData.speedLimitKbps > 0 ? String(initialData.speedLimitKbps) : '',
   );
   const [serviceAWG, setServiceAWG] = useState(
     initialData.assignedServices.includes(ServiceType.AWG),

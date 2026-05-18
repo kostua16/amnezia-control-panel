@@ -23,9 +23,7 @@ export async function getTemplates(
   return templates.map(mapTemplate);
 }
 
-export async function getTemplate(
-  id: number,
-): Promise<ConfigTemplate | null> {
+export async function getTemplate(id: number): Promise<ConfigTemplate | null> {
   const template = await prisma.configTemplate.findUnique({ where: { id } });
   return template ? mapTemplate(template) : null;
 }

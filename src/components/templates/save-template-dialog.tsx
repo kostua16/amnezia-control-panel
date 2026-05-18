@@ -80,7 +80,10 @@ export function SaveTemplateDialog({
     <Dialog open={open} onClose={onClose} title="Fork Template">
       <div className="space-y-4">
         <div>
-          <label htmlFor="template-name" className="block text-sm font-medium mb-1">
+          <label
+            htmlFor="template-name"
+            className="block text-sm font-medium mb-1"
+          >
             Template Name
           </label>
           <Input
@@ -93,13 +96,14 @@ export function SaveTemplateDialog({
             placeholder="Enter template name"
             disabled={saving}
           />
-          {error && (
-            <p className="mt-1 text-xs text-destructive">{error}</p>
-          )}
+          {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
         </div>
 
         <div>
-          <label htmlFor="template-description" className="block text-sm font-medium mb-1">
+          <label
+            htmlFor="template-description"
+            className="block text-sm font-medium mb-1"
+          >
             Description
           </label>
           <div className="relative">
@@ -120,11 +124,7 @@ export function SaveTemplateDialog({
         </div>
 
         <div className="flex justify-end gap-3 pt-2">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            disabled={saving}
-          >
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
           <Button

@@ -5,7 +5,10 @@ import { success, error } from '@/lib/api-response';
 
 const trafficStatsSchema = z.object({
   userId: z.coerce.number().int().min(1).optional(),
-  period: z.enum(['hourly', 'daily', 'weekly', 'monthly']).optional().default('daily'),
+  period: z
+    .enum(['hourly', 'daily', 'weekly', 'monthly'])
+    .optional()
+    .default('daily'),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 });

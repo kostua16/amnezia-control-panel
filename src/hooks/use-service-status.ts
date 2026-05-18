@@ -6,7 +6,9 @@ export interface ServiceStatusData {
   timestamp: string;
 }
 
-async function fetchServiceStatus(serviceKey: string): Promise<ServiceStatusData> {
+async function fetchServiceStatus(
+  serviceKey: string,
+): Promise<ServiceStatusData> {
   const response = await fetch(`/api/services/${serviceKey}/status`);
   if (!response.ok) {
     throw new Error(`Failed to fetch status for ${serviceKey}`);

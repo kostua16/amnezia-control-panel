@@ -1,10 +1,7 @@
 import { clsx } from 'clsx';
 import type { ServiceType } from '@/generated/prisma/enums';
 
-const serviceConfig: Record<
-  string,
-  { label: string; badgeClass: string }
-> = {
+const serviceConfig: Record<string, { label: string; badgeClass: string }> = {
   AWG: {
     label: 'AWG',
     badgeClass: 'bg-blue-500/15 text-blue-400',
@@ -21,9 +18,7 @@ interface UserServiceBadgeProps {
 
 export function UserServiceBadge({ assignedServices }: UserServiceBadgeProps) {
   if (assignedServices.length === 0) {
-    return (
-      <span className="text-sm text-muted-foreground">-</span>
-    );
+    return <span className="text-sm text-muted-foreground">-</span>;
   }
 
   return (

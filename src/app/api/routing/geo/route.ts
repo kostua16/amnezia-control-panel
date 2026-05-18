@@ -97,14 +97,16 @@ export async function POST(request: NextRequest) {
     const parsed = createGeoRuleSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
       );
     }
 
-    const { name, target, action, chainId, priority, isActive, source } = parsed.data;
+    const { name, target, action, chainId, priority, isActive, source } =
+      parsed.data;
     const matchType = deriveMatchType(target);
 
     const rule = await prisma.geoRoutingRule.create({

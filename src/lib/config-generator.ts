@@ -39,9 +39,7 @@ export async function generateConfig(
 
     // Find the matching protocol for the template's serviceType
     const protocol = user.protocols.find(
-      (p) =>
-        !template.serviceType ||
-        p.serviceType === template.serviceType,
+      (p) => !template.serviceType || p.serviceType === template.serviceType,
     );
 
     if (protocol) {

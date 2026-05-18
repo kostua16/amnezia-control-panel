@@ -37,7 +37,10 @@ export function Sidebar({ open, onClose, activeHref }: SidebarProps) {
           </span>
         </div>
 
-        <nav className="flex flex-col gap-1 p-2 overflow-y-auto" role="navigation">
+        <nav
+          className="flex flex-col gap-1 p-2 overflow-y-auto"
+          role="navigation"
+        >
           {NAV_ITEMS.map((item) => {
             const isActive = activeHref === item.href;
             const Icon = item.icon;

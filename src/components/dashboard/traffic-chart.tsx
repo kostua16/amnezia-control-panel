@@ -33,9 +33,10 @@ export function TrafficChart({
   }
 
   // Sample buckets to maxBars
-  const sampled = buckets.length > maxBars
-    ? buckets.filter((_, i) => i % Math.ceil(buckets.length / maxBars) === 0)
-    : buckets;
+  const sampled =
+    buckets.length > maxBars
+      ? buckets.filter((_, i) => i % Math.ceil(buckets.length / maxBars) === 0)
+      : buckets;
 
   // Find max value for scaling
   const maxValue = Math.max(
@@ -93,7 +94,10 @@ export function TrafficChart({
               </div>
 
               {/* Bars container */}
-              <div className="flex w-full items-end gap-px" style={{ height: 120 }}>
+              <div
+                className="flex w-full items-end gap-px"
+                style={{ height: 120 }}
+              >
                 <div
                   className="w-full rounded-t-sm bg-blue-500 transition-all duration-200"
                   style={{ height: `${inHeight}%` }}

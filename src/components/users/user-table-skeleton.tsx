@@ -1,8 +1,6 @@
 function SkeletonBar({ className }: { className?: string }) {
   return (
-    <div
-      className={`h-4 animate-pulse rounded bg-muted ${className ?? ''}`}
-    />
+    <div className={`h-4 animate-pulse rounded bg-muted ${className ?? ''}`} />
   );
 }
 

@@ -24,7 +24,8 @@ export async function POST(request: NextRequest) {
     const parsed = applyChainSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -93,7 +94,10 @@ export async function POST(request: NextRequest) {
     // Build panel credentials map using Tailscale transport resolution.
     // RemotePanel has no serverId FK, so we match panels to chain nodes by
     // hostname correlation and panelId lookup in the caller-provided panelApiKeys.
-    const panelCredentials = new Map<number, { panelUrl: string; apiKey: string }>();
+    const panelCredentials = new Map<
+      number,
+      { panelUrl: string; apiKey: string }
+    >();
 
     if (panelApiKeys && Object.keys(panelApiKeys).length > 0) {
       // Cache API keys for future auto-resync
@@ -110,7 +114,10 @@ export async function POST(request: NextRequest) {
         // Match RemotePanel to chain node by hostname correlation
         let matchedPanel = remotePanels.find((p) => {
           try {
-            return p.panelUrl.includes(node.hostname) || node.hostname.includes(new URL(p.panelUrl).hostname);
+            return (
+              p.panelUrl.includes(node.hostname) ||
+              node.hostname.includes(new URL(p.panelUrl).hostname)
+            );
           } catch {
             return false;
           }
@@ -126,7 +133,8 @@ export async function POST(request: NextRequest) {
         }
 
         // Get API key from caller-provided panelApiKeys, keyed by panelId or serverId
-        const apiKey = panelApiKeys?.[matchedPanel.id] ?? panelApiKeys?.[node.serverId];
+        const apiKey =
+          panelApiKeys?.[matchedPanel.id] ?? panelApiKeys?.[node.serverId];
         if (!apiKey) {
           continue;
         }
@@ -134,13 +142,20 @@ export async function POST(request: NextRequest) {
         // Resolve Tailscale transport address for the server behind this panel
         const server = await prisma.server.findFirst({
           where: { id: node.serverId },
-          select: { id: true, tailnetIP: true, tailnetHostname: true, hostname: true },
+          select: {
+            id: true,
+            tailnetIP: true,
+            tailnetHostname: true,
+            hostname: true,
+          },
         });
 
         let panelUrl = matchedPanel.panelUrl; // Default to registered panelUrl
 
         if (server) {
-          const transport = await resolvePanelTransport(server, { panelUrl: matchedPanel.panelUrl });
+          const transport = await resolvePanelTransport(server, {
+            panelUrl: matchedPanel.panelUrl,
+          });
           if (transport) {
             panelUrl = transport.panelUrl;
           }
@@ -151,7 +166,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Apply the chain configuration to all servers
-    const applyResult = await applyChainConfig(chainConfig, undefined, panelCredentials);
+    const applyResult = await applyChainConfig(
+      chainConfig,
+      undefined,
+      panelCredentials,
+    );
 
     return NextResponse.json({
       success: applyResult.success,
@@ -174,7 +193,9 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[api/chains/apply] Error:', err);
     const message =
-      err instanceof Error ? err.message : 'Failed to apply chain configuration';
+      err instanceof Error
+        ? err.message
+        : 'Failed to apply chain configuration';
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 },

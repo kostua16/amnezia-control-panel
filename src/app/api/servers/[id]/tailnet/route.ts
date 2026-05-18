@@ -71,7 +71,10 @@ export async function GET(_request: Request, context: RouteContext) {
     // All tiers failed
     if (!resolvedIP) {
       return NextResponse.json(
-        { success: false, error: 'Cannot resolve Tailscale IP for this server' },
+        {
+          success: false,
+          error: 'Cannot resolve Tailscale IP for this server',
+        },
         { status: 404 },
       );
     }
@@ -106,7 +109,10 @@ export async function GET(_request: Request, context: RouteContext) {
   } catch (err) {
     console.error('[api/servers/:id/tailnet] Error:', err);
     return NextResponse.json(
-      { success: false, error: 'Failed to resolve Tailscale transport address' },
+      {
+        success: false,
+        error: 'Failed to resolve Tailscale transport address',
+      },
       { status: 500 },
     );
   }

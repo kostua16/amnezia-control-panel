@@ -76,7 +76,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const parsed = updatePanelSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -85,7 +86,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const { name, panelUrl, apiKey, isActive } = parsed.data;
 
-    const existing = await prisma.remotePanel.findUnique({ where: { id: panelId } });
+    const existing = await prisma.remotePanel.findUnique({
+      where: { id: panelId },
+    });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Panel not found' },
@@ -142,7 +145,9 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       );
     }
 
-    const existing = await prisma.remotePanel.findUnique({ where: { id: panelId } });
+    const existing = await prisma.remotePanel.findUnique({
+      where: { id: panelId },
+    });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Panel not found' },

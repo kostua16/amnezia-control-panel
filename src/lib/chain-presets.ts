@@ -18,7 +18,8 @@ export const BUILTIN_CHAIN_PRESETS: ChainPresetDef[] = [
   {
     id: 'simple-relay',
     name: 'Simple Relay',
-    description: '2-node linear chain using VLESS-REALITY for high performance with minimal overhead. Best for general browsing.',
+    description:
+      '2-node linear chain using VLESS-REALITY for high performance with minimal overhead. Best for general browsing.',
     topology: 'linear',
     nodeCount: 2,
     chainTemplateId: '2hop-linear',
@@ -31,7 +32,8 @@ export const BUILTIN_CHAIN_PRESETS: ChainPresetDef[] = [
   {
     id: 'privacy-chain',
     name: 'Privacy Chain',
-    description: '3-node chain with dedicated entry, middle relay, and exit servers. Maximum anonymity with routing through privacy-friendly jurisdiction.',
+    description:
+      '3-node chain with dedicated entry, middle relay, and exit servers. Maximum anonymity with routing through privacy-friendly jurisdiction.',
     topology: 'linear',
     nodeCount: 3,
     chainTemplateId: '3hop-linear',
@@ -45,7 +47,8 @@ export const BUILTIN_CHAIN_PRESETS: ChainPresetDef[] = [
   {
     id: 'high-performance',
     name: 'High Performance',
-    description: 'Optimized 2-node chain with VLESS-REALITY and aggressive MTU tuning. Lowest latency for streaming and gaming.',
+    description:
+      'Optimized 2-node chain with VLESS-REALITY and aggressive MTU tuning. Lowest latency for streaming and gaming.',
     topology: 'linear',
     nodeCount: 2,
     chainTemplateId: '2hop-linear',
@@ -59,7 +62,10 @@ export const BUILTIN_CHAIN_PRESETS: ChainPresetDef[] = [
 
 // ─── Seed built-in presets to DB ────────────────────────
 
-export async function seedChainPresets(): Promise<{ seeded: number; skipped: number }> {
+export async function seedChainPresets(): Promise<{
+  seeded: number;
+  skipped: number;
+}> {
   let seeded = 0;
   let skipped = 0;
 
@@ -105,7 +111,9 @@ export async function getChainPreset(id: number): Promise<ChainPreset | null> {
   return preset ? mapPreset(preset) : null;
 }
 
-export async function createChainPreset(data: ChainPresetCreate): Promise<ChainPreset> {
+export async function createChainPreset(
+  data: ChainPresetCreate,
+): Promise<ChainPreset> {
   const preset = await prisma.chainPreset.create({
     data: {
       name: data.name,

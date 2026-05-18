@@ -102,7 +102,9 @@ export function UserQuotaModal({
         onSuccess();
         handleClose();
       } catch {
-        setApiError('Network error. Please check your connection and try again.');
+        setApiError(
+          'Network error. Please check your connection and try again.',
+        );
       } finally {
         setLoading(false);
       }

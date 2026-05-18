@@ -133,8 +133,9 @@ export function AddServerForm({ onServerAdded, onCancel }: AddServerFormProps) {
       } else {
         setErrors((prev) => ({
           ...prev,
-          hostname:
-            json.error?.includes('hostname') ? json.error : prev.hostname,
+          hostname: json.error?.includes('hostname')
+            ? json.error
+            : prev.hostname,
         }));
       }
     } catch {

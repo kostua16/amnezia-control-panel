@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import {
-  unblockAwgUser,
-  unblockThreeXuiUser,
-} from '@/lib/vpn-services';
+import { unblockAwgUser, unblockThreeXuiUser } from '@/lib/vpn-services';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-export async function POST(
-  _request: NextRequest,
-  context: RouteContext,
-) {
+export async function POST(_request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const userId = parseInt(id, 10);

@@ -1,7 +1,10 @@
 import { describe, it, mock, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { signPayload, verifySignature } from '../hmac';
-import { generatePerPanelConfig, pushConfigToPanel } from '../panel-sync-client';
+import {
+  generatePerPanelConfig,
+  pushConfigToPanel,
+} from '../panel-sync-client';
 import { __setDeps, __resetDeps } from '../transport-resolver';
 import type { ChainConfig } from '@/types/chain';
 import type { PanelSyncPayload } from '@/types/panel-sync';
@@ -24,19 +27,74 @@ function makeChainConfig(): ChainConfig {
   return {
     templateId: 'linear-3',
     nodes: [
-      { label: 'Entry Server', serverId: 1, role: 'entry', protocol: 'wireguard', hostname: 'entry.amnezia.ts.net', port: 51820 },
-      { label: 'Middle Server', serverId: 2, role: 'middle', protocol: 'xray', hostname: 'middle.amnezia.ts.net', port: 8443 },
-      { label: 'Exit Server', serverId: 3, role: 'exit', protocol: 'wireguard', hostname: 'exit.amnezia.ts.net', port: 51820 },
+      {
+        label: 'Entry Server',
+        serverId: 1,
+        role: 'entry',
+        protocol: 'wireguard',
+        hostname: 'entry.amnezia.ts.net',
+        port: 51820,
+      },
+      {
+        label: 'Middle Server',
+        serverId: 2,
+        role: 'middle',
+        protocol: 'xray',
+        hostname: 'middle.amnezia.ts.net',
+        port: 8443,
+      },
+      {
+        label: 'Exit Server',
+        serverId: 3,
+        role: 'exit',
+        protocol: 'wireguard',
+        hostname: 'exit.amnezia.ts.net',
+        port: 51820,
+      },
     ],
     wireguardPeers: [
-      { nodeId: 'Entry Server', publicKey: 'entry-pub-key', allowedIPs: '10.0.0.2/32', endpoint: 'entry.amnezia.ts.net:51820', persistentKeepalive: 25 },
-      { nodeId: 'Middle Server', publicKey: 'middle-pub-key', allowedIPs: '10.0.0.3/32', endpoint: 'middle.amnezia.ts.net:51820' },
-      { nodeId: 'Exit Server', publicKey: 'exit-pub-key', allowedIPs: '10.0.0.4/32', endpoint: 'exit.amnezia.ts.net:51820' },
+      {
+        nodeId: 'Entry Server',
+        publicKey: 'entry-pub-key',
+        allowedIPs: '10.0.0.2/32',
+        endpoint: 'entry.amnezia.ts.net:51820',
+        persistentKeepalive: 25,
+      },
+      {
+        nodeId: 'Middle Server',
+        publicKey: 'middle-pub-key',
+        allowedIPs: '10.0.0.3/32',
+        endpoint: 'middle.amnezia.ts.net:51820',
+      },
+      {
+        nodeId: 'Exit Server',
+        publicKey: 'exit-pub-key',
+        allowedIPs: '10.0.0.4/32',
+        endpoint: 'exit.amnezia.ts.net:51820',
+      },
     ],
     xrayRoutingRules: [
-      { nodeId: 'Entry Server', type: 'geoip', value: 'RU', outboundTag: 'domestic', priority: 1 },
-      { nodeId: 'Exit Server', type: 'domain', value: '.ru', outboundTag: 'domestic', priority: 2 },
-      { nodeId: 'Middle Server', type: 'ip', value: '192.168.0.0/16', outboundTag: 'direct', priority: 1 },
+      {
+        nodeId: 'Entry Server',
+        type: 'geoip',
+        value: 'RU',
+        outboundTag: 'domestic',
+        priority: 1,
+      },
+      {
+        nodeId: 'Exit Server',
+        type: 'domain',
+        value: '.ru',
+        outboundTag: 'domestic',
+        priority: 2,
+      },
+      {
+        nodeId: 'Middle Server',
+        type: 'ip',
+        value: '192.168.0.0/16',
+        outboundTag: 'direct',
+        priority: 1,
+      },
     ],
     generatedAt: '2026-04-30T00:00:00Z',
   };
@@ -68,7 +126,14 @@ describe('verifySignature', () => {
   it('returns false for wrong signature', () => {
     const payload = { configVersion: 1 };
     const secret = 'my-api-key';
-    assert.equal(verifySignature(payload, secret, '0000000000000000000000000000000000000000000000000000000000000000'), false);
+    assert.equal(
+      verifySignature(
+        payload,
+        secret,
+        '0000000000000000000000000000000000000000000000000000000000000000',
+      ),
+      false,
+    );
   });
 
   it('returns false for wrong secret', () => {
@@ -164,10 +229,18 @@ describe('pushConfigToPanel', () => {
 
   it('calls fetch with X-API-Key header and X-Signature header', async () => {
     let capturedRequest: RequestInit | undefined;
-    globalThis.fetch = mock.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      capturedRequest = init;
-      return new Response(JSON.stringify({ success: true, data: { applied: true, configVersion: 1 } }), { status: 200 });
-    });
+    globalThis.fetch = mock.fn(
+      async (url: string | URL | Request, init?: RequestInit) => {
+        capturedRequest = init;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { applied: true, configVersion: 1 },
+          }),
+          { status: 200 },
+        );
+      },
+    );
 
     await pushConfigToPanel(mockPanel, mockPayload);
 
@@ -181,7 +254,13 @@ describe('pushConfigToPanel', () => {
 
   it('returns { success: true, configVersion } on 200 response', async () => {
     globalThis.fetch = mock.fn(async () => {
-      return new Response(JSON.stringify({ success: true, data: { applied: true, configVersion: 5 } }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { applied: true, configVersion: 5 },
+        }),
+        { status: 200 },
+      );
     });
 
     const result = await pushConfigToPanel(mockPanel, mockPayload);
@@ -209,9 +288,18 @@ describe('pushConfigToPanel', () => {
     assert.equal(result.retries, 3);
     assert.ok(result.error);
     // Verify exponential backoff delays between calls
-    assert.ok(callTimestamps[1] - callTimestamps[0] >= 900, 'First retry delay should be ~1s');
-    assert.ok(callTimestamps[2] - callTimestamps[1] >= 1900, 'Second retry delay should be ~2s');
-    assert.ok(callTimestamps[3] - callTimestamps[2] >= 3900, 'Third retry delay should be ~4s');
+    assert.ok(
+      callTimestamps[1] - callTimestamps[0] >= 900,
+      'First retry delay should be ~1s',
+    );
+    assert.ok(
+      callTimestamps[2] - callTimestamps[1] >= 1900,
+      'Second retry delay should be ~2s',
+    );
+    assert.ok(
+      callTimestamps[3] - callTimestamps[2] >= 3900,
+      'Third retry delay should be ~4s',
+    );
   });
 
   it('returns { success: false, error } after 3 failed retries', async () => {
@@ -233,7 +321,13 @@ describe('pushConfigToPanel', () => {
       if (callCount === 1) {
         throw new Error('Temporary error');
       }
-      return new Response(JSON.stringify({ success: true, data: { applied: true, configVersion: 2 } }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { applied: true, configVersion: 2 },
+        }),
+        { status: 200 },
+      );
     });
 
     const result = await pushConfigToPanel(mockPanel, mockPayload);
@@ -258,7 +352,10 @@ describe('transport resolution integration', () => {
   it('uses Tailscale IP when resolvePanelTransport succeeds', async () => {
     // Override the global mock for this test to return a Tailscale IP
     const mockResolve = mock.fn(async () => '100.64.0.1');
-    __setDeps({ getNodeIP: mockResolve, isReachable: mock.fn(async () => true) });
+    __setDeps({
+      getNodeIP: mockResolve,
+      isReachable: mock.fn(async () => true),
+    });
 
     try {
       const { resolvePanelTransport } = await import('../transport-resolver');
@@ -268,7 +365,10 @@ describe('transport resolution integration', () => {
       );
       assert.ok(result, 'Expected transport resolution to succeed');
       assert.equal(result!.tailscaleIP, '100.64.0.1');
-      assert.ok(result!.panelUrl.includes('100.64.0.1'), `Expected Tailscale IP in panelUrl, got: ${result!.panelUrl}`);
+      assert.ok(
+        result!.panelUrl.includes('100.64.0.1'),
+        `Expected Tailscale IP in panelUrl, got: ${result!.panelUrl}`,
+      );
     } finally {
       __resetDeps();
     }

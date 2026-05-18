@@ -12,12 +12,16 @@ const execFileAsync = promisify(execFile);
 const syncApplyPayloadSchema = z.object({
   service: z.enum(['awg', 'three_xui']),
   config: z.string().optional(),
-  routingRules: z.array(z.object({
-    type: z.enum(['ip', 'domain', 'geoip']),
-    value: z.string(),
-    outboundTag: z.string(),
-    priority: z.number().int(),
-  })).optional(),
+  routingRules: z
+    .array(
+      z.object({
+        type: z.enum(['ip', 'domain', 'geoip']),
+        value: z.string(),
+        outboundTag: z.string(),
+        priority: z.number().int(),
+      }),
+    )
+    .optional(),
 });
 
 // ─── Helpers ───────────────────────────────────────────────
@@ -39,9 +43,10 @@ async function runCommand(
     const msg = stdout?.trim() || stderr?.trim() || 'OK';
     return { success: true, stdout: stdout ?? '', message: msg };
   } catch (err) {
-    const errMsg = err && typeof err === 'object' && 'message' in err
-      ? String((err as Error).message)
-      : String(err);
+    const errMsg =
+      err && typeof err === 'object' && 'message' in err
+        ? String((err as Error).message)
+        : String(err);
     return { success: false, stdout: '', message: errMsg };
   }
 }
@@ -56,7 +61,9 @@ async function runCommand(
  * In production, the exact CLI command depends on the server's Amnezia AWG
  * installation.
  */
-async function applyWireguardConfig(wgConfig: string): Promise<{ success: boolean; message: string }> {
+async function applyWireguardConfig(
+  wgConfig: string,
+): Promise<{ success: boolean; message: string }> {
   // Write config to a temporary file, then pass the path to the CLI
   // This avoids shell injection and follows the execFile pattern
   const fs = await import('fs/promises');
@@ -78,13 +85,14 @@ async function applyWireguardConfig(wgConfig: string): Promise<{ success: boolea
     return {
       success: result.success,
       message: result.success
-        ? (result.stdout?.trim() || `Config applied via ${wgBinary}`)
+        ? result.stdout?.trim() || `Config applied via ${wgBinary}`
         : `Failed to apply WireGuard config: ${result.message}`,
     };
   } catch (err) {
-    const errMsg = err && typeof err === 'object' && 'message' in err
-      ? String((err as Error).message)
-      : String(err);
+    const errMsg =
+      err && typeof err === 'object' && 'message' in err
+        ? String((err as Error).message)
+        : String(err);
     return {
       success: false,
       message: `Failed to apply WireGuard config: ${errMsg}`,
@@ -92,7 +100,11 @@ async function applyWireguardConfig(wgConfig: string): Promise<{ success: boolea
   } finally {
     // Clean up temp file
     if (tmpFile) {
-      try { await fs.unlink(tmpFile); } catch { /* ignore cleanup errors */ }
+      try {
+        await fs.unlink(tmpFile);
+      } catch {
+        /* ignore cleanup errors */
+      }
     }
   }
 }
@@ -104,7 +116,12 @@ async function applyWireguardConfig(wgConfig: string): Promise<{ success: boolea
  * safe argument-passing pattern as vpn-services.ts.
  */
 async function applyThreeXuiRules(
-  routingRules: Array<{ type: string; value: string; outboundTag: string; priority: number }>,
+  routingRules: Array<{
+    type: string;
+    value: string;
+    outboundTag: string;
+    priority: number;
+  }>,
 ): Promise<{ success: boolean; message: string }> {
   const fs = await import('fs/promises');
   const os = await import('os');
@@ -130,20 +147,26 @@ async function applyThreeXuiRules(
     return {
       success: result.success,
       message: result.success
-        ? (result.stdout?.trim() || `Applied ${routingRules.length} routing rules via 3x-ui`)
+        ? result.stdout?.trim() ||
+          `Applied ${routingRules.length} routing rules via 3x-ui`
         : `Failed to apply 3x-ui rules: ${result.message}`,
     };
   } catch (err) {
-    const errMsg = err && typeof err === 'object' && 'message' in err
-      ? String((err as Error).message)
-      : String(err);
+    const errMsg =
+      err && typeof err === 'object' && 'message' in err
+        ? String((err as Error).message)
+        : String(err);
     return {
       success: false,
       message: `Failed to apply 3x-ui rules: ${errMsg}`,
     };
   } finally {
     if (tmpFile) {
-      try { await fs.unlink(tmpFile); } catch { /* ignore cleanup errors */ }
+      try {
+        await fs.unlink(tmpFile);
+      } catch {
+        /* ignore cleanup errors */
+      }
     }
   }
 }
@@ -192,7 +215,8 @@ export async function POST(request: NextRequest) {
     // 4. Zod validation
     const parsed = syncApplyPayloadSchema.safeParse(body);
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid payload structure';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid payload structure';
       return NextResponse.json(
         { success: false, error: `Invalid payload: ${firstError}` },
         { status: 400 },
@@ -218,7 +242,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'No cached config found. Config must be received via /api/sync/receive before applying.',
+          error:
+            'No cached config found. Config must be received via /api/sync/receive before applying.',
         },
         { status: 400 },
       );
@@ -231,21 +256,24 @@ export async function POST(request: NextRequest) {
 
     if (service === 'awg') {
       // Use the config from the request body if provided, otherwise from cached config
-      const wgConfig = parsed.data.config
-        ?? (Array.isArray(configData.wireguardPeers)
-            ? configData.wireguardPeers
-                .map((peer: Record<string, unknown>) => {
-                  const lines = ['[Peer]'];
-                  lines.push(`PublicKey = ${peer.publicKey}`);
-                  lines.push(`AllowedIPs = ${peer.allowedIPs}`);
-                  lines.push(`Endpoint = ${peer.endpoint}`);
-                  if (peer.persistentKeepalive != null) {
-                    lines.push(`PersistentKeepalive = ${peer.persistentKeepalive}`);
-                  }
-                  return lines.join('\n');
-                })
-                .join('\n\n')
-            : null);
+      const wgConfig =
+        parsed.data.config ??
+        (Array.isArray(configData.wireguardPeers)
+          ? configData.wireguardPeers
+              .map((peer: Record<string, unknown>) => {
+                const lines = ['[Peer]'];
+                lines.push(`PublicKey = ${peer.publicKey}`);
+                lines.push(`AllowedIPs = ${peer.allowedIPs}`);
+                lines.push(`Endpoint = ${peer.endpoint}`);
+                if (peer.persistentKeepalive != null) {
+                  lines.push(
+                    `PersistentKeepalive = ${peer.persistentKeepalive}`,
+                  );
+                }
+                return lines.join('\n');
+              })
+              .join('\n\n')
+          : null);
 
       if (!wgConfig) {
         return NextResponse.json(
@@ -257,8 +285,11 @@ export async function POST(request: NextRequest) {
       applyResult = await applyWireguardConfig(wgConfig);
     } else {
       // service === 'three_xui'
-      const rules = parsed.data.routingRules
-        ?? (Array.isArray(configData.routingRules) ? configData.routingRules : null);
+      const rules =
+        parsed.data.routingRules ??
+        (Array.isArray(configData.routingRules)
+          ? configData.routingRules
+          : null);
 
       if (!rules || (Array.isArray(rules) && rules.length === 0)) {
         return NextResponse.json(

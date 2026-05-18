@@ -53,9 +53,7 @@ export function EditUserModal({
         if (cancelled) return;
 
         if (!response.ok) {
-          setApiError(
-            result.error || 'Failed to load user data.',
-          );
+          setApiError(result.error || 'Failed to load user data.');
           return;
         }
 
@@ -110,7 +108,9 @@ export function EditUserModal({
         onSuccess();
         handleClose();
       } catch {
-        setApiError('Network error. Please check your connection and try again.');
+        setApiError(
+          'Network error. Please check your connection and try again.',
+        );
       } finally {
         setLoading(false);
       }

@@ -28,10 +28,25 @@ import { UserQuotaModal } from '@/components/users/user-quota-modal';
 
 type SortOption = 'newest' | 'name-asc' | 'name-desc';
 
-const sortOptions: { value: SortOption; label: string; sortBy: string; sortOrder: string }[] = [
+const sortOptions: {
+  value: SortOption;
+  label: string;
+  sortBy: string;
+  sortOrder: string;
+}[] = [
   { value: 'newest', label: 'Newest', sortBy: 'createdAt', sortOrder: 'desc' },
-  { value: 'name-asc', label: 'Name A-Z', sortBy: 'username', sortOrder: 'asc' },
-  { value: 'name-desc', label: 'Name Z-A', sortBy: 'username', sortOrder: 'desc' },
+  {
+    value: 'name-asc',
+    label: 'Name A-Z',
+    sortBy: 'username',
+    sortOrder: 'asc',
+  },
+  {
+    value: 'name-desc',
+    label: 'Name Z-A',
+    sortBy: 'username',
+    sortOrder: 'desc',
+  },
 ];
 
 function formatQuota(bytes: number): string {
@@ -202,7 +217,10 @@ export function UserList() {
             <CardTitle>Users</CardTitle>
           </CardHeader>
           <CardContent>
-            <UserEmptyState hasSearch={!!debouncedSearch} onCreateClick={() => setCreateModalOpen(true)} />
+            <UserEmptyState
+              hasSearch={!!debouncedSearch}
+              onCreateClick={() => setCreateModalOpen(true)}
+            />
           </CardContent>
         </Card>
         <CreateUserModal
@@ -310,7 +328,9 @@ export function UserList() {
                     />
                   </td>
                   <td className="hidden px-4 py-3 sm:table-cell">
-                    <UserServiceBadge assignedServices={user.assignedServices} />
+                    <UserServiceBadge
+                      assignedServices={user.assignedServices}
+                    />
                   </td>
                   <td className="hidden px-4 py-3 md:table-cell">
                     <div className="flex items-center gap-2">

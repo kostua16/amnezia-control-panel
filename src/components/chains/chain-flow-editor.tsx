@@ -2,7 +2,17 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Plus, Save, GitBranch, Globe, Network, Loader2, Trash2, Eye, EyeOff } from 'lucide-react';
+import {
+  Plus,
+  Save,
+  GitBranch,
+  Globe,
+  Network,
+  Loader2,
+  Trash2,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import {
   ReactFlow,
   Controls,
@@ -63,10 +73,17 @@ const defaultEdgeOptions: Partial<Edge> = {
   style: { stroke: '#94a3b8', strokeWidth: 1.5 },
 };
 
-export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onApply }: ChainFlowEditorProps) {
+export function ChainFlowEditor({
+  servers,
+  panels,
+  serverPanelMap,
+  chainId,
+  onApply,
+}: ChainFlowEditorProps) {
   const [topology, setTopology] = useState<ChainTopology>('linear');
   const [localNodes, setLocalNodes] = useState<ChainBuilderNode[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<ChainTemplate | null>(null);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<ChainTemplate | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -77,10 +94,13 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
 
   // Routing drawer state
   const [routingDrawerOpen, setRoutingDrawerOpen] = useState(false);
-  const [selectedDrawerNode, setSelectedDrawerNode] = useState<ChainBuilderNode | null>(null);
+  const [selectedDrawerNode, setSelectedDrawerNode] =
+    useState<ChainBuilderNode | null>(null);
 
   // Delete confirmation state (replaces window.confirm)
-  const [deleteConfirmNodeId, setDeleteConfirmNodeId] = useState<string | null>(null);
+  const [deleteConfirmNodeId, setDeleteConfirmNodeId] = useState<string | null>(
+    null,
+  );
 
   // API key collection dialog state
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -89,23 +109,28 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Register custom node types (memoized)
-  const nodeTypes = useMemo(() => ({ chainNode: ChainFlowNode, panelGroup: PanelGroupNode }), []);
+  const nodeTypes = useMemo(
+    () => ({ chainNode: ChainFlowNode, panelGroup: PanelGroupNode }),
+    [],
+  );
 
   // Derive unique panels referenced by chain nodes for the save dialog
   const saveDialogPanels = useMemo(() => {
     if (!serverPanelMap) return [];
     const seen = new Set<number>();
     return localNodes
-      .filter(n => n.serverId !== null && serverPanelMap[n.serverId] !== undefined)
-      .filter(n => {
+      .filter(
+        (n) => n.serverId !== null && serverPanelMap[n.serverId] !== undefined,
+      )
+      .filter((n) => {
         const panelId = serverPanelMap[n.serverId!];
         if (seen.has(panelId)) return false;
         seen.add(panelId);
         return true;
       })
-      .map(n => {
+      .map((n) => {
         const panelId = serverPanelMap[n.serverId!];
-        const panel = panels?.find(p => p.id === panelId);
+        const panel = panels?.find((p) => p.id === panelId);
         return { panelId, panelName: panel?.name ?? `Panel ${panelId}` };
       });
   }, [localNodes, serverPanelMap, panels]);
@@ -122,7 +147,15 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
     }
 
     // Group nodes by panelId
-    const panelGroups = new Map<number, { panelId: number; panelName: string; isActive: boolean; nodeIds: string[] }>();
+    const panelGroups = new Map<
+      number,
+      {
+        panelId: number;
+        panelName: string;
+        isActive: boolean;
+        nodeIds: string[];
+      }
+    >();
     const unassignedNodeIds: string[] = [];
 
     for (const node of localNodes) {
@@ -157,10 +190,16 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
       return {
         id: builderNode.id,
         type: 'chainNode' as const,
-        position: mergedPositions[builderNode.id] ?? { x: CANVAS_PADDING, y: CANVAS_PADDING },
+        position: mergedPositions[builderNode.id] ?? {
+          x: CANVAS_PADDING,
+          y: CANVAS_PADDING,
+        },
         data: { ...builderNode },
         parentId: panelId !== undefined ? `panel-group-${panelId}` : undefined,
-        className: panelId === undefined ? 'ring-1 ring-dashed ring-yellow-500/30' : undefined,
+        className:
+          panelId === undefined
+            ? 'ring-1 ring-dashed ring-yellow-500/30'
+            : undefined,
       };
     });
 
@@ -175,7 +214,8 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
         isActive: group.isActive,
       },
       style: { padding: 16 },
-      className: 'bg-card/20 border-2 border-dashed border-muted-foreground/40 rounded-lg',
+      className:
+        'bg-card/20 border-2 border-dashed border-muted-foreground/40 rounded-lg',
     }));
 
     return [...groupNodes, ...chainNodes];
@@ -194,7 +234,11 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
       if (!sourceNode?.serverId || !targetNode?.serverId) return false;
       const sourcePanel = serverPanelMap[sourceNode.serverId];
       const targetPanel = serverPanelMap[targetNode.serverId];
-      return sourcePanel !== undefined && targetPanel !== undefined && sourcePanel !== targetPanel;
+      return (
+        sourcePanel !== undefined &&
+        targetPanel !== undefined &&
+        sourcePanel !== targetPanel
+      );
     };
 
     return toFlowEdges(
@@ -205,8 +249,10 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
   }, [localConnections, localNodes, serverPanelMap, panels]);
 
   // Use React Flow state hooks
-  const [reactFlowNodes, setReactFlowNodes, onNodesChange] = useNodesState<Node>(flowNodes);
-  const [reactFlowEdges, setReactFlowEdges, onEdgesChange] = useEdgesState(flowEdges);
+  const [reactFlowNodes, setReactFlowNodes, onNodesChange] =
+    useNodesState<Node>(flowNodes);
+  const [reactFlowEdges, setReactFlowEdges, onEdgesChange] =
+    useEdgesState(flowEdges);
 
   // Sync React Flow nodes to local nodes when positions change
   const prevNodesRef = useRef(reactFlowNodes);
@@ -224,7 +270,10 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
             ) {
               return prev;
             }
-            return { ...prev, [node.id]: { x: node.position.x, y: node.position.y } };
+            return {
+              ...prev,
+              [node.id]: { x: node.position.x, y: node.position.y },
+            };
           });
         }
       }
@@ -244,7 +293,10 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
   // Close add menu on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as HTMLElement)) {
+      if (
+        addMenuRef.current &&
+        !addMenuRef.current.contains(e.target as HTMLElement)
+      ) {
         setShowAddMenu(false);
       }
     }
@@ -260,8 +312,7 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
 
       // Check for duplicate connections
       const exists = localConnections.some(
-        (c) =>
-          c.source === connection.source && c.target === connection.target,
+        (c) => c.source === connection.source && c.target === connection.target,
       );
       if (exists) return;
 
@@ -272,26 +323,25 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
   );
 
   // Node deletion handler
-  const onNodesDelete = useCallback(
-    (deleted: Node[]) => {
-      const deletedIds = new Set(deleted.map((n) => n.id));
-      setLocalNodes((prev) => {
-        const remaining = prev.filter((n) => !deletedIds.has(n.id));
-        return reassignRoles(remaining);
-      });
-      setLocalConnections((prev) =>
-        prev.filter((c) => !deletedIds.has(c.source) && !deletedIds.has(c.target)),
-      );
-      setCustomPositions((prev) => {
-        const next = { ...prev };
-        for (const id of deletedIds) {
-          delete next[id];
-        }
-        return next;
-      });
-    },
-    [],
-  );
+  const onNodesDelete = useCallback((deleted: Node[]) => {
+    const deletedIds = new Set(deleted.map((n) => n.id));
+    setLocalNodes((prev) => {
+      const remaining = prev.filter((n) => !deletedIds.has(n.id));
+      return reassignRoles(remaining);
+    });
+    setLocalConnections((prev) =>
+      prev.filter(
+        (c) => !deletedIds.has(c.source) && !deletedIds.has(c.target),
+      ),
+    );
+    setCustomPositions((prev) => {
+      const next = { ...prev };
+      for (const id of deletedIds) {
+        delete next[id];
+      }
+      return next;
+    });
+  }, []);
 
   // Edge deletion handler
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
@@ -328,7 +378,12 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
         id: generateNodeId(),
         serverId,
         label: server.name,
-        role: localNodes.length === 0 ? 'entry' : localNodes.length === 1 ? 'exit' : 'middle',
+        role:
+          localNodes.length === 0
+            ? 'entry'
+            : localNodes.length === 1
+              ? 'exit'
+              : 'middle',
         protocol: 'wireguard',
       };
       setLocalNodes((prev) => {
@@ -346,7 +401,8 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
     setSaveError(null);
     try {
       const assignedNodes = localNodes.filter(
-        (n): n is ChainBuilderNode & { serverId: number } => n.serverId !== null,
+        (n): n is ChainBuilderNode & { serverId: number } =>
+          n.serverId !== null,
       );
       const serverMapping = Object.fromEntries(
         assignedNodes.map((n, i) => [i, n.serverId] as const),
@@ -371,7 +427,11 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
         setSaveError(result.error ?? 'Failed to apply chain configuration');
       }
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to apply chain configuration');
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to apply chain configuration',
+      );
     } finally {
       setSaving(false);
     }
@@ -394,7 +454,11 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT'
+        ) {
           return;
         }
         // Find the selected node and show Dialog confirmation
@@ -439,7 +503,9 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
       return reassignRoles(remaining);
     });
     setLocalConnections((prev) =>
-      prev.filter((c) => !deletedIds.has(c.source) && !deletedIds.has(c.target)),
+      prev.filter(
+        (c) => !deletedIds.has(c.source) && !deletedIds.has(c.target),
+      ),
     );
     setCustomPositions((prev) => {
       const next = { ...prev };
@@ -600,8 +666,8 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
                 No chain topology yet
               </h3>
               <p className="mb-3 max-w-xs text-xs text-muted-foreground">
-                Select a template or add nodes to build a chain. Drag from a node
-                handle to connect it to another node.
+                Select a template or add nodes to build a chain. Drag from a
+                node handle to connect it to another node.
               </p>
               <Button
                 variant="outline"
@@ -664,7 +730,8 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
         title="Provide API Keys"
       >
         <p className="text-sm text-muted-foreground mb-4">
-          Enter the shared secret for each panel to apply the chain configuration.
+          Enter the shared secret for each panel to apply the chain
+          configuration.
         </p>
         <div className="space-y-3">
           {saveDialogPanels.map(({ panelId, panelName }) => (
@@ -677,16 +744,32 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
                   type={visibleKeys[panelId] ? 'text' : 'password'}
                   placeholder={`Enter shared secret for ${panelName}`}
                   value={panelApiKeys[panelId] ?? ''}
-                  onChange={(e) => setPanelApiKeys(prev => ({ ...prev, [panelId]: e.target.value }))}
+                  onChange={(e) =>
+                    setPanelApiKeys((prev) => ({
+                      ...prev,
+                      [panelId]: e.target.value,
+                    }))
+                  }
                   className="pr-9 text-sm"
                 />
                 <button
                   type="button"
-                  onClick={() => setVisibleKeys(prev => ({ ...prev, [panelId]: !prev[panelId] }))}
+                  onClick={() =>
+                    setVisibleKeys((prev) => ({
+                      ...prev,
+                      [panelId]: !prev[panelId],
+                    }))
+                  }
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label={visibleKeys[panelId] ? 'Hide API key' : 'Show API key'}
+                  aria-label={
+                    visibleKeys[panelId] ? 'Hide API key' : 'Show API key'
+                  }
                 >
-                  {visibleKeys[panelId] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {visibleKeys[panelId] ? (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
                 </button>
               </div>
             </div>
@@ -707,7 +790,12 @@ export function ChainFlowEditor({ servers, panels, serverPanelMap, chainId, onAp
           <Button
             size="sm"
             onClick={handleSaveDirect}
-            disabled={saving || saveDialogPanels.some(p => !(panelApiKeys[p.panelId] ?? '').trim())}
+            disabled={
+              saving ||
+              saveDialogPanels.some(
+                (p) => !(panelApiKeys[p.panelId] ?? '').trim(),
+              )
+            }
           >
             {saving ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />

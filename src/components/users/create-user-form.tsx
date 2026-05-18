@@ -91,8 +91,7 @@ export function CreateUserForm({
     }
 
     if (trafficQuotaGB) {
-      payload.trafficQuotaBytes =
-        Number(trafficQuotaGB) * 1024 * 1024 * 1024;
+      payload.trafficQuotaBytes = Number(trafficQuotaGB) * 1024 * 1024 * 1024;
     }
 
     if (speedLimitKbps) {
@@ -131,7 +130,9 @@ export function CreateUserForm({
           onChange={(e) => setUsername(e.target.value)}
           onBlur={() => handleBlur('username')}
           disabled={loading}
-          className={clsx(showError('username', errors.username) && 'border-destructive')}
+          className={clsx(
+            showError('username', errors.username) && 'border-destructive',
+          )}
         />
         {showError('username', errors.username) && (
           <p className="text-xs text-destructive">{errors.username}</p>
@@ -154,7 +155,9 @@ export function CreateUserForm({
           onChange={(e) => setPassword(e.target.value)}
           onBlur={() => handleBlur('password')}
           disabled={loading}
-          className={clsx(showError('password', errors.password) && 'border-destructive')}
+          className={clsx(
+            showError('password', errors.password) && 'border-destructive',
+          )}
         />
         {showError('password', errors.password) && (
           <p className="text-xs text-destructive">{errors.password}</p>

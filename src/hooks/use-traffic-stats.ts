@@ -23,7 +23,9 @@ async function fetchTrafficStats(
 
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Failed to fetch traffic stats (status ${response.status})`);
+    throw new Error(
+      `Failed to fetch traffic stats (status ${response.status})`,
+    );
   }
   const json = await response.json();
   if (!json.success) {

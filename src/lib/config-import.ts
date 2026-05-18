@@ -86,7 +86,8 @@ async function importConfigurationList(
       if (existing) {
         // Compare content to see if it changed
         const existingContent = existing.content as Record<string, unknown>;
-        const contentChanged = JSON.stringify(existingContent) !== JSON.stringify(content);
+        const contentChanged =
+          JSON.stringify(existingContent) !== JSON.stringify(content);
 
         if (contentChanged) {
           await prisma.configuration.update({
@@ -183,7 +184,9 @@ async function importTemplateList(
                 protocol,
                 content: content as never,
                 description,
-                ...(serviceType && { serviceType: serviceType as 'AWG' | 'THREE_XUI' }),
+                ...(serviceType && {
+                  serviceType: serviceType as 'AWG' | 'THREE_XUI',
+                }),
               },
             });
             report.updated++;

@@ -81,7 +81,9 @@ export async function GET(
       );
     }
 
-    const rule = await prisma.geoRoutingRule.findUnique({ where: { id: ruleId } });
+    const rule = await prisma.geoRoutingRule.findUnique({
+      where: { id: ruleId },
+    });
 
     if (!rule) {
       return NextResponse.json(
@@ -90,7 +92,10 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ success: true, data: mapToGeoRoutingRule(rule) });
+    return NextResponse.json({
+      success: true,
+      data: mapToGeoRoutingRule(rule),
+    });
   } catch (err) {
     console.error('[api/routing/geo/[id]] Error:', err);
     return NextResponse.json(
@@ -114,7 +119,9 @@ export async function PUT(
       );
     }
 
-    const existing = await prisma.geoRoutingRule.findUnique({ where: { id: ruleId } });
+    const existing = await prisma.geoRoutingRule.findUnique({
+      where: { id: ruleId },
+    });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Rule not found' },
@@ -126,7 +133,8 @@ export async function PUT(
     const parsed = updateGeoRuleSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -156,7 +164,10 @@ export async function PUT(
       data: updateData,
     });
 
-    return NextResponse.json({ success: true, data: mapToGeoRoutingRule(rule) });
+    return NextResponse.json({
+      success: true,
+      data: mapToGeoRoutingRule(rule),
+    });
   } catch (err) {
     console.error('[api/routing/geo/[id]] Error:', err);
     return NextResponse.json(
@@ -180,7 +191,9 @@ export async function DELETE(
       );
     }
 
-    const existing = await prisma.geoRoutingRule.findUnique({ where: { id: ruleId } });
+    const existing = await prisma.geoRoutingRule.findUnique({
+      where: { id: ruleId },
+    });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Rule not found' },

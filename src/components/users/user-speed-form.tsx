@@ -44,7 +44,10 @@ export function UserSpeedForm({
   const validate = useCallback((): boolean => {
     const newErrors: { speedKbps?: string } = {};
 
-    if (speedKbps !== '' && (isNaN(Number(speedKbps)) || Number(speedKbps) < 0)) {
+    if (
+      speedKbps !== '' &&
+      (isNaN(Number(speedKbps)) || Number(speedKbps) < 0)
+    ) {
       newErrors.speedKbps = 'Must be a positive number';
     }
 
@@ -74,9 +77,7 @@ export function UserSpeedForm({
       <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Current limit:</span>
-          <span className="font-medium">
-            {formatSpeed(initialSpeedKbps)}
-          </span>
+          <span className="font-medium">{formatSpeed(initialSpeedKbps)}</span>
         </div>
       </div>
 
@@ -96,7 +97,8 @@ export function UserSpeedForm({
                 'rounded-md border px-3 py-1.5 text-xs font-medium transition-colors',
                 'hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 'disabled:pointer-events-none disabled:opacity-50',
-                speedKbps === String(preset.kbps) || (preset.kbps === 0 && speedKbps === '')
+                speedKbps === String(preset.kbps) ||
+                  (preset.kbps === 0 && speedKbps === '')
                   ? 'border-accent bg-accent/10 text-accent-foreground'
                   : 'border-border text-foreground',
               )}

@@ -5,12 +5,7 @@ import { clsx } from 'clsx';
 import { Plus, Trash2, Download, Upload, Edit2, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import type { WhitelistEntry, WhitelistType } from '@/types/whitelist';
 import type { Server } from '@/types/server';
 
@@ -268,7 +263,11 @@ export function WhitelistManager({ servers }: WhitelistManagerProps) {
               />
             </div>
 
-            <Button size="sm" onClick={handleAdd} disabled={adding || !addValue.trim()}>
+            <Button
+              size="sm"
+              onClick={handleAdd}
+              disabled={adding || !addValue.trim()}
+            >
               <Plus className="mr-1.5 h-3.5 w-3.5" />
               Add
             </Button>
@@ -329,14 +328,20 @@ export function WhitelistManager({ servers }: WhitelistManagerProps) {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={5}
+                  className="px-4 py-8 text-center text-muted-foreground"
+                >
                   Loading...
                 </td>
               </tr>
             )}
             {!loading && filteredEntries.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={5}
+                  className="px-4 py-8 text-center text-muted-foreground"
+                >
                   No whitelist entries found
                 </td>
               </tr>
@@ -377,7 +382,8 @@ export function WhitelistManager({ servers }: WhitelistManagerProps) {
                 </td>
                 <td className="px-4 py-2 text-xs text-muted-foreground">
                   {entry.serverId
-                    ? serverLookup.get(entry.serverId) ?? `Server #${entry.serverId}`
+                    ? (serverLookup.get(entry.serverId) ??
+                      `Server #${entry.serverId}`)
                     : 'Global'}
                 </td>
                 <td className="px-4 py-2 text-xs text-muted-foreground">

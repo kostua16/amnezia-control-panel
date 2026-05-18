@@ -13,7 +13,11 @@ export function signPayload(payload: unknown, secret: string): string {
  * Verify an HMAC-SHA256 signature using timing-safe comparison.
  * Returns true if the signature matches the payload+secret.
  */
-export function verifySignature(payload: unknown, secret: string, signature: string): boolean {
+export function verifySignature(
+  payload: unknown,
+  secret: string,
+  signature: string,
+): boolean {
   const expected = signPayload(payload, secret);
   try {
     return timingSafeEqual(

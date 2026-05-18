@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import {
-  getChainPreset,
-  deleteChainPreset,
-} from '@/lib/chain-presets';
+import { getChainPreset, deleteChainPreset } from '@/lib/chain-presets';
 
 const paramsSchema = z.object({
   id: z.coerce.number().int().positive(),
@@ -50,16 +47,12 @@ export async function DELETE(
 
     const message =
       err instanceof Error ? err.message : 'Failed to delete chain preset';
-    const status =
-      message.includes('not found')
-        ? 404
-        : message.includes('Cannot delete built-in')
-          ? 403
-          : 500;
+    const status = message.includes('not found')
+      ? 404
+      : message.includes('Cannot delete built-in')
+        ? 403
+        : 500;
 
-    return NextResponse.json(
-      { success: false, error: message },
-      { status },
-    );
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }

@@ -33,7 +33,7 @@ export interface UseChainStatusOptions {
 
 export function useChainStatus(
   chainId: number | null,
-  options: UseChainStatusOptions = {}
+  options: UseChainStatusOptions = {},
 ) {
   const { pollInterval = 5000, enabled = true } = options;
   const [status, setStatus] = useState<ChainStatus | null>(null);

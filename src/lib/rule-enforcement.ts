@@ -1,5 +1,8 @@
 import { prisma } from '@/lib/prisma';
-import { resolveGeoRoute, type GeoRoutingResult as GeoRoutingResultInternal } from '@/lib/geo-routing';
+import {
+  resolveGeoRoute,
+  type GeoRoutingResult as GeoRoutingResultInternal,
+} from '@/lib/geo-routing';
 import type { XrayRoutingRule } from '@/types/chain';
 
 // ─── Types ──────────────────────────────────────────────
@@ -83,12 +86,16 @@ export async function resolveGeoRoutingForDestination(
  */
 export async function evaluateGeoRoutingForRules(
   rules: XrayRoutingRule[],
-): Promise<Array<XrayRoutingRule & { geoDecision?: GeoRoutingResultInternal }>> {
+): Promise<
+  Array<XrayRoutingRule & { geoDecision?: GeoRoutingResultInternal }>
+> {
   const enriched = await Promise.all(
     rules.map(async (rule) => {
       // Extract IP from rule value if it's an IP rule
       if (rule.type === 'ip') {
-        const ipMatch = rule.value.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+        const ipMatch = rule.value.match(
+          /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/,
+        );
         if (ipMatch) {
           const geoResult = await resolveGeoRoute(ipMatch[1]);
           return { ...rule, geoDecision: geoResult };
@@ -96,7 +103,7 @@ export async function evaluateGeoRoutingForRules(
       }
 
       return rule;
-    })
+    }),
   );
 
   return enriched;
@@ -128,7 +135,9 @@ export interface ApplyRulesResult {
  * Apply routing rules for a specific user.
  * Generates the rules and returns the resulting config.
  */
-export async function applyRoutingRules(_userId: number): Promise<ApplyRulesResult> {
+export async function applyRoutingRules(
+  _userId: number,
+): Promise<ApplyRulesResult> {
   const rules = await generateXrayRulesFromDB();
   return {
     success: true,

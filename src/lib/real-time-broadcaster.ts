@@ -15,17 +15,23 @@ export function startBroadcaster(): void {
   // Dashboard stats — every 30s
   statsInterval = setInterval(async () => {
     try {
-      const [totalUsers, activeUsers, blockedUsers, trafficAgg, servicesOnline, servicesTotal] =
-        await Promise.all([
-          prisma.user.count(),
-          prisma.user.count({ where: { isActive: true } }),
-          prisma.user.count({ where: { isBlocked: true } }),
-          prisma.trafficLog.aggregate({
-            _sum: { bytesIn: true, bytesOut: true },
-          }),
-          prisma.service.count({ where: { status: 'RUNNING' } }),
-          prisma.service.count(),
-        ]);
+      const [
+        totalUsers,
+        activeUsers,
+        blockedUsers,
+        trafficAgg,
+        servicesOnline,
+        servicesTotal,
+      ] = await Promise.all([
+        prisma.user.count(),
+        prisma.user.count({ where: { isActive: true } }),
+        prisma.user.count({ where: { isBlocked: true } }),
+        prisma.trafficLog.aggregate({
+          _sum: { bytesIn: true, bytesOut: true },
+        }),
+        prisma.service.count({ where: { status: 'RUNNING' } }),
+        prisma.service.count(),
+      ]);
 
       broadcastEvent('stats:update', {
         totalUsers,

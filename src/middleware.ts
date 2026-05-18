@@ -57,10 +57,7 @@ export async function middleware(request: NextRequest) {
     const token = request.cookies.get('auth-token')?.value;
 
     if (!token) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 },
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     try {
@@ -68,10 +65,7 @@ export async function middleware(request: NextRequest) {
       await jwtVerify(token, secret);
       return NextResponse.next();
     } catch {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 },
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
   }
 

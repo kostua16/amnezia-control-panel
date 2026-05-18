@@ -55,7 +55,11 @@ export async function POST(
 
     const result = await applyTemplateRules(templateId);
 
-    if (result.errors.length > 0 && result.created === 0 && result.skipped === 0) {
+    if (
+      result.errors.length > 0 &&
+      result.created === 0 &&
+      result.skipped === 0
+    ) {
       return NextResponse.json(
         { success: false, error: result.errors[0] },
         { status: 400 },

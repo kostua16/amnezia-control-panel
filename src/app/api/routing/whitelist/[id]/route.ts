@@ -25,7 +25,11 @@ export async function GET(
 
     // In production: await prisma.whitelistEntry.findUnique({ where: { id: entryId } })
     return NextResponse.json(
-      { success: false, error: 'Entry not found (in-memory store, access via GET /api/routing/whitelist)' },
+      {
+        success: false,
+        error:
+          'Entry not found (in-memory store, access via GET /api/routing/whitelist)',
+      },
       { status: 404 },
     );
   } catch (err) {
@@ -55,7 +59,8 @@ export async function PUT(
     const parsed = updateWhitelistSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -64,7 +69,10 @@ export async function PUT(
 
     // In production: await prisma.whitelistEntry.update({ where: { id: entryId }, data: parsed.data })
     return NextResponse.json(
-      { success: false, error: 'In-memory store does not support PUT. Use database model.' },
+      {
+        success: false,
+        error: 'In-memory store does not support PUT. Use database model.',
+      },
       { status: 501 },
     );
   } catch (err) {
@@ -92,7 +100,10 @@ export async function DELETE(
 
     // In production: await prisma.whitelistEntry.delete({ where: { id: entryId } })
     return NextResponse.json(
-      { success: false, error: 'In-memory store does not support DELETE. Use database model.' },
+      {
+        success: false,
+        error: 'In-memory store does not support DELETE. Use database model.',
+      },
       { status: 501 },
     );
   } catch (err) {

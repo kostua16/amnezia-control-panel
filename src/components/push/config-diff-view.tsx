@@ -54,7 +54,9 @@ export function ConfigDiffView({ diffResults }: ConfigDiffViewProps) {
           </h3>
 
           {!activeDiff.hasChanges ? (
-            <p className="text-sm text-muted-foreground py-4">No changes for this panel</p>
+            <p className="text-sm text-muted-foreground py-4">
+              No changes for this panel
+            </p>
           ) : (
             <div className="space-y-4">
               {/* Sections with diff lines */}
@@ -75,13 +77,18 @@ export function ConfigDiffView({ diffResults }: ConfigDiffViewProps) {
                         <div
                           key={i}
                           className={clsx(
-                            line.type === 'added' && 'bg-green-500/10 text-green-400',
-                            line.type === 'removed' && 'bg-red-500/10 text-red-400',
+                            line.type === 'added' &&
+                              'bg-green-500/10 text-green-400',
+                            line.type === 'removed' &&
+                              'bg-red-500/10 text-red-400',
                           )}
                         >
                           <code>
-                            {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
-                            {' '}
+                            {line.type === 'added'
+                              ? '+'
+                              : line.type === 'removed'
+                                ? '-'
+                                : ' '}{' '}
                             {line.content}
                           </code>
                         </div>
@@ -94,7 +101,9 @@ export function ConfigDiffView({ diffResults }: ConfigDiffViewProps) {
               {/* Side-by-side formatted configs */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div>
-                  <h4 className="text-sm font-medium mb-2">Current Configuration</h4>
+                  <h4 className="text-sm font-medium mb-2">
+                    Current Configuration
+                  </h4>
                   <div className="rounded-md border border-border bg-background overflow-auto max-h-64">
                     <pre className="p-3 font-mono text-xs">
                       <code>
@@ -106,7 +115,9 @@ export function ConfigDiffView({ diffResults }: ConfigDiffViewProps) {
                   </div>
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium mb-2">New Configuration</h4>
+                  <h4 className="text-sm font-medium mb-2">
+                    New Configuration
+                  </h4>
                   <div className="rounded-md border border-border bg-background overflow-auto max-h-64">
                     <pre className="p-3 font-mono text-xs">
                       <code>{activeDiff.newConfigFormatted}</code>

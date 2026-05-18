@@ -28,7 +28,8 @@ export interface AlertsParams {
 async function fetchAlerts(params?: AlertsParams): Promise<AlertsResponse> {
   const searchParams = new URLSearchParams();
 
-  if (params?.isRead !== undefined) searchParams.set('isRead', String(params.isRead));
+  if (params?.isRead !== undefined)
+    searchParams.set('isRead', String(params.isRead));
   if (params?.severity) searchParams.set('severity', params.severity);
   if (params?.type) searchParams.set('type', params.type);
   if (params?.limit) searchParams.set('limit', String(params.limit));

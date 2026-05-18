@@ -27,7 +27,9 @@ export function GeoIPStatusBadge() {
     }
   }, []);
 
-  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -44,7 +46,9 @@ export function GeoIPStatusBadge() {
   if (!status) return null;
 
   const dotColor = status.loaded
-    ? status.stale ? 'bg-yellow-500' : 'bg-green-500'
+    ? status.stale
+      ? 'bg-yellow-500'
+      : 'bg-green-500'
     : 'bg-red-500';
 
   const label = status.loaded
@@ -65,7 +69,9 @@ export function GeoIPStatusBadge() {
         disabled={refreshing}
         aria-label="Update GeoIP database"
       >
-        <RefreshCw className={clsx('mr-1 h-3 w-3', refreshing && 'animate-spin')} />
+        <RefreshCw
+          className={clsx('mr-1 h-3 w-3', refreshing && 'animate-spin')}
+        />
         Update Now
       </Button>
     </div>

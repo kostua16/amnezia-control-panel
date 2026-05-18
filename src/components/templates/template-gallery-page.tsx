@@ -19,25 +19,31 @@ const TABS = [
   { value: 'chain', label: 'Chain' },
 ] as const;
 
-type PreviewItem = {
-  type: 'protocol';
-  data: ConfigTemplate;
-} | {
-  type: 'server';
-  data: ConfigPreset;
-} | {
-  type: 'routing';
-  data: RoutingRuleTemplate;
-} | {
-  type: 'chain';
-  data: ChainPreset;
-};
+type PreviewItem =
+  | {
+      type: 'protocol';
+      data: ConfigTemplate;
+    }
+  | {
+      type: 'server';
+      data: ConfigPreset;
+    }
+  | {
+      type: 'routing';
+      data: RoutingRuleTemplate;
+    }
+  | {
+      type: 'chain';
+      data: ChainPreset;
+    };
 
 export function TemplateGalleryPage() {
   const [activeTab, setActiveTab] = useState<string>('protocols');
   const [previewItem, setPreviewItem] = useState<PreviewItem | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  const [forkValues, setForkValues] = useState<{ name: string; description: string } | undefined>(undefined);
+  const [forkValues, setForkValues] = useState<
+    { name: string; description: string } | undefined
+  >(undefined);
 
   const handlePreview = useCallback((type: string, data: unknown) => {
     setPreviewItem({ type: type as PreviewItem['type'], data } as PreviewItem);
@@ -73,10 +79,17 @@ export function TemplateGalleryPage() {
       {/* Content area */}
       <div>
         {activeTab === 'protocols' && (
-          <ProtocolTemplatesGrid onPreview={handlePreview} onFork={handleFork} />
+          <ProtocolTemplatesGrid
+            onPreview={handlePreview}
+            onFork={handleFork}
+          />
         )}
-        {activeTab === 'server' && <ServerPresetsGrid onPreview={handlePreview} />}
-        {activeTab === 'routing' && <RoutingPresetsGrid onPreview={handlePreview} />}
+        {activeTab === 'server' && (
+          <ServerPresetsGrid onPreview={handlePreview} />
+        )}
+        {activeTab === 'routing' && (
+          <RoutingPresetsGrid onPreview={handlePreview} />
+        )}
         {activeTab === 'chain' && (
           <ChainPresetsGrid onPreview={handlePreview} onFork={handleFork} />
         )}

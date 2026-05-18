@@ -54,7 +54,8 @@ export async function PATCH(
     const parsed = updateTemplateSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -71,10 +72,7 @@ export async function PATCH(
       err instanceof Error ? err.message : 'Failed to update template';
     const status = message.includes('not found') ? 404 : 500;
 
-    return NextResponse.json(
-      { success: false, error: message },
-      { status },
-    );
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }
 
@@ -93,16 +91,12 @@ export async function DELETE(
 
     const message =
       err instanceof Error ? err.message : 'Failed to delete template';
-    const status =
-      message.includes('not found')
-        ? 404
-        : message.includes('Cannot delete')
-          ? 403
-          : 500;
+    const status = message.includes('not found')
+      ? 404
+      : message.includes('Cannot delete')
+        ? 403
+        : 500;
 
-    return NextResponse.json(
-      { success: false, error: message },
-      { status },
-    );
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }

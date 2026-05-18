@@ -185,7 +185,10 @@ class GeoIPManager {
     try {
       const stat = await fs.promises.stat(GEOIP_FILE);
       if (!stat.isFile()) {
-        this.setStatus({ loaded: false, error: 'GeoIP file is not a regular file' });
+        this.setStatus({
+          loaded: false,
+          error: 'GeoIP file is not a regular file',
+        });
         return;
       }
 
@@ -193,11 +196,13 @@ class GeoIPManager {
       this.status.loaded = true;
       this.status.fileSize = stat.size;
       this.status.lastRefreshed = stat.mtime.toISOString();
-      this.status.stale = Date.now() - stat.mtime.getTime() > DEFAULT_REFRESH_INTERVAL_MS;
+      this.status.stale =
+        Date.now() - stat.mtime.getTime() > DEFAULT_REFRESH_INTERVAL_MS;
       this.status.error = null;
     } catch (err) {
       this.status.loaded = false;
-      this.status.error = err instanceof Error ? err.message : 'Failed to load GeoIP file';
+      this.status.error =
+        err instanceof Error ? err.message : 'Failed to load GeoIP file';
     }
   }
 
@@ -216,7 +221,9 @@ class GeoIPManager {
     try {
       this.decodeGeoIPProtobufIntoCountries(buffer);
 
-      console.log(`[geoip] Loaded ${this.countries.size} countries from geoip.dat`);
+      console.log(
+        `[geoip] Loaded ${this.countries.size} countries from geoip.dat`,
+      );
     } catch (err) {
       this.status.loaded = false;
       this.status.error = `Failed to parse geoip.dat: ${err instanceof Error ? err.message : String(err)}`;
@@ -256,7 +263,9 @@ class GeoIPManager {
     }
   }
 
-  private decodeCountryMessage(buffer: Buffer): { countryCode: string; cidrs: string[] } | null {
+  private decodeCountryMessage(
+    buffer: Buffer,
+  ): { countryCode: string; cidrs: string[] } | null {
     let offset = 0;
     let countryCode = '';
     const cidrs: string[] = [];
@@ -270,7 +279,9 @@ class GeoIPManager {
       if (fieldNumber === 1 && wireType === 2) {
         const length = readVarint(buffer, offset);
         offset += varintSize(buffer, offset);
-        countryCode = buffer.subarray(offset, offset + length).toString('utf-8');
+        countryCode = buffer
+          .subarray(offset, offset + length)
+          .toString('utf-8');
         offset += length;
       } else if (fieldNumber === 2 && wireType === 2) {
         const length = readVarint(buffer, offset);
@@ -342,7 +353,8 @@ class GeoIPManager {
 
     try {
       const parts = ip.split('.').map(Number);
-      const ipNum = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+      const ipNum =
+        (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
 
       for (const [, country] of this.countries) {
         for (const cidr of country.cidrs) {
@@ -386,7 +398,8 @@ class GeoIPManager {
           if (!response.body) continue;
 
           const contentLength = response.headers.get('content-length');
-          const parsedLen = contentLength != null ? parseInt(contentLength, 10) : NaN;
+          const parsedLen =
+            contentLength != null ? parseInt(contentLength, 10) : NaN;
           const totalBytes =
             Number.isFinite(parsedLen) && parsedLen > 0 ? parsedLen : null;
 
@@ -395,7 +408,11 @@ class GeoIPManager {
           );
 
           try {
-            await streamWebResponseBodyToFile(response.body, tempPath, totalBytes);
+            await streamWebResponseBodyToFile(
+              response.body,
+              tempPath,
+              totalBytes,
+            );
           } catch (streamErr) {
             await fs.promises.rm(tempPath, { force: true }).catch(() => {});
             throw streamErr;
@@ -403,7 +420,9 @@ class GeoIPManager {
 
           const stat = await fs.promises.stat(tempPath);
           if (stat.size < 1000) {
-            console.warn(`[geoip] Downloaded file from ${url} is too small (${stat.size} bytes), skipping`);
+            console.warn(
+              `[geoip] Downloaded file from ${url} is too small (${stat.size} bytes), skipping`,
+            );
             await fs.promises.rm(tempPath, { force: true }).catch(() => {});
             continue;
           }
@@ -411,7 +430,9 @@ class GeoIPManager {
           await fs.promises.rename(tempPath, GEOIP_FILE);
 
           downloaded = true;
-          console.log(`[geoip] Downloaded geoip.dat from ${url} (${stat.size} bytes)`);
+          console.log(
+            `[geoip] Downloaded geoip.dat from ${url} (${stat.size} bytes)`,
+          );
           break;
         } catch (err) {
           await fs.promises.rm(tempPath, { force: true }).catch(() => {});
@@ -422,13 +443,19 @@ class GeoIPManager {
 
       if (!downloaded) {
         this.status.error = 'All download URLs failed';
-        return { success: false, message: 'Failed to download from all sources' };
+        return {
+          success: false,
+          message: 'Failed to download from all sources',
+        };
       }
 
       await this.loadFromFile();
 
       if (this.status.loaded) {
-        return { success: true, message: `GeoIP database updated (${this.countries.size} countries)` };
+        return {
+          success: true,
+          message: `GeoIP database updated (${this.countries.size} countries)`,
+        };
       }
       return { success: false, message: 'Downloaded but failed to parse' };
     } finally {
@@ -450,7 +477,9 @@ class GeoIPManager {
       this.refreshTimer.unref();
     }
 
-    console.log(`[geoip] Refresh scheduler started (interval: ${intervalMs / 3_600_000}h)`);
+    console.log(
+      `[geoip] Refresh scheduler started (interval: ${intervalMs / 3_600_000}h)`,
+    );
   }
 
   stopScheduler(): void {
@@ -474,7 +503,9 @@ export const geoIPManager = new GeoIPManager();
 // --- Convenience exports ---
 
 /** Lookup country code for an IPv4 address. Per D-04: fail open on any error. */
-export async function lookupGeoIP(ip: string): Promise<{ countryCode: string | null; region: string | null }> {
+export async function lookupGeoIP(
+  ip: string,
+): Promise<{ countryCode: string | null; region: string | null }> {
   const countryCode = geoIPManager.lookupCountry(ip);
   return { countryCode, region: null };
 }
@@ -485,6 +516,9 @@ export function getGeoIPStatus(): GeoIPStatus {
 }
 
 /** Trigger a manual refresh. */
-export async function refreshGeoIP(): Promise<{ success: boolean; message: string }> {
+export async function refreshGeoIP(): Promise<{
+  success: boolean;
+  message: string;
+}> {
   return geoIPManager.refresh();
 }

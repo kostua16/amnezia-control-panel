@@ -9,9 +9,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const serviceType = searchParams.get('serviceType');
 
-    const parsed = serviceTypeEnum.safeParse(
-      serviceType ?? undefined,
-    );
+    const parsed = serviceTypeEnum.safeParse(serviceType ?? undefined);
 
     if (!parsed.success) {
       return NextResponse.json(

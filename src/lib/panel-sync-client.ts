@@ -1,6 +1,12 @@
 import { signPayload } from './hmac';
 import type { ChainConfig } from '@/types/chain';
-import type { PanelSyncPayload, PanelChainNode, PanelRoutingRule, PushResult, PushAllResult } from '@/types/panel-sync.ts';
+import type {
+  PanelSyncPayload,
+  PanelChainNode,
+  PanelRoutingRule,
+  PushResult,
+  PushAllResult,
+} from '@/types/panel-sync.ts';
 import { broadcastEvent } from './websocket';
 import { enrichError } from './error-reporter';
 import { resolvePanelTransport } from './transport-resolver';
@@ -21,8 +27,13 @@ function sleep(ms: number): Promise<void> {
  * Generate a per-panel sync payload from a chain config.
  * Returns null if the panel has no role in this chain.
  */
-export function generatePerPanelConfig(chainConfig: ChainConfig, panelId: number): PanelSyncPayload | null {
-  const matchedNode = chainConfig.nodes.find((node) => node.serverId === panelId);
+export function generatePerPanelConfig(
+  chainConfig: ChainConfig,
+  panelId: number,
+): PanelSyncPayload | null {
+  const matchedNode = chainConfig.nodes.find(
+    (node) => node.serverId === panelId,
+  );
 
   if (!matchedNode) {
     return null;
@@ -217,17 +228,27 @@ export async function pushConfigToAllPanels(
             { tailnetIP: { equals: new URL(panel.panelUrl).hostname } },
           ],
         },
-        select: { id: true, tailnetIP: true, tailnetHostname: true, hostname: true },
+        select: {
+          id: true,
+          tailnetIP: true,
+          tailnetHostname: true,
+          hostname: true,
+        },
       });
 
       if (server) {
-        const transport = await resolvePanelTransport(server, { panelUrl: panel.panelUrl });
+        const transport = await resolvePanelTransport(server, {
+          panelUrl: panel.panelUrl,
+        });
         if (transport) {
           panelUrl = transport.panelUrl;
         }
       }
     } catch (err) {
-      console.warn(`[panel-sync] Transport resolution failed for panel ${panel.name}, using panelUrl directly:`, err);
+      console.warn(
+        `[panel-sync] Transport resolution failed for panel ${panel.name}, using panelUrl directly:`,
+        err,
+      );
     }
 
     const result = await pushConfigToPanel(

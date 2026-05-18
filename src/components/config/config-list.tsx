@@ -97,7 +97,9 @@ export function ConfigList() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [importReport, setImportReport] = useState<ConfigImportReport | null>(null);
+  const [importReport, setImportReport] = useState<ConfigImportReport | null>(
+    null,
+  );
   const [importLoading, setImportLoading] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<number | null>(null);
@@ -169,10 +171,11 @@ export function ConfigList() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = response.headers
-        .get('content-disposition')
-        ?.replace(/attachment; filename="/, '')
-        .replace(/"/, '') ?? 'amnezia-configs.json';
+      a.download =
+        response.headers
+          .get('content-disposition')
+          ?.replace(/attachment; filename="/, '')
+          .replace(/"/, '') ?? 'amnezia-configs.json';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -235,9 +238,12 @@ export function ConfigList() {
     setError(null);
 
     try {
-      const response = await fetch(`/api/configs/templates/${deleteConfirmId}`, {
-        method: 'DELETE',
-      });
+      const response = await fetch(
+        `/api/configs/templates/${deleteConfirmId}`,
+        {
+          method: 'DELETE',
+        },
+      );
 
       if (!response.ok) {
         const result = await response.json();
@@ -294,7 +300,9 @@ export function ConfigList() {
               ].map((option) => (
                 <Button
                   key={option.value}
-                  variant={selectedService === option.value ? 'default' : 'ghost'}
+                  variant={
+                    selectedService === option.value ? 'default' : 'ghost'
+                  }
                   size="sm"
                   className="h-7 px-3 text-xs"
                   onClick={() => setSelectedService(option.value)}
@@ -434,8 +442,8 @@ export function ConfigList() {
           {deleteConfirmId !== null && (
             <div className="rounded-md border border-destructive/50 bg-destructive/5 px-4 py-3">
               <p className="text-sm text-foreground">
-                Are you sure you want to delete this template? This action cannot
-                be undone.
+                Are you sure you want to delete this template? This action
+                cannot be undone.
               </p>
               <div className="mt-3 flex items-center justify-end gap-2">
                 <Button
@@ -508,9 +516,7 @@ export function ConfigList() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Skipped</span>
-                  <span className="font-medium">
-                    {importReport.skipped}
-                  </span>
+                  <span className="font-medium">{importReport.skipped}</span>
                 </div>
                 {importReport.errors.length > 0 && (
                   <div className="mt-2 space-y-1">

@@ -42,7 +42,8 @@ const topologyOptions: Array<{
 export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
   const [topology, setTopology] = useState<ChainTopology>('linear');
   const [nodes, setNodes] = useState<ChainBuilderNode[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<ChainTemplate | null>(null);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<ChainTemplate | null>(null);
   const [showTemplates, setShowTemplates] = useState(true);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,7 +60,10 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
   // Close add menu on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+      if (
+        addMenuRef.current &&
+        !addMenuRef.current.contains(e.target as Node)
+      ) {
         setShowAddMenu(false);
       }
     }
@@ -91,7 +95,8 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
         id: `node-${Date.now()}`,
         serverId,
         label: server.name,
-        role: nodes.length === 0 ? 'entry' : nodes.length === 1 ? 'exit' : 'middle',
+        role:
+          nodes.length === 0 ? 'entry' : nodes.length === 1 ? 'exit' : 'middle',
         protocol: 'wireguard',
       };
       setNodes((prev) => [...prev, newNode]);
@@ -123,9 +128,7 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
       if (!server) return;
       setNodes((prev) =>
         prev.map((n, i) =>
-          i === nodeIndex
-            ? { ...n, serverId, label: server.name }
-            : n,
+          i === nodeIndex ? { ...n, serverId, label: server.name } : n,
         ),
       );
     },
@@ -168,7 +171,10 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
     if (nodes.length === 0) return;
     setSaving(true);
     try {
-      const assignedNodes = nodes.filter((n): n is ChainBuilderNode & { serverId: number } => n.serverId !== null);
+      const assignedNodes = nodes.filter(
+        (n): n is ChainBuilderNode & { serverId: number } =>
+          n.serverId !== null,
+      );
       const serverMapping = Object.fromEntries(
         assignedNodes.map((n, i) => [i, n.serverId] as const),
       ) as Record<number, number>;
@@ -201,12 +207,14 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
   const posLookup = new Map(positions.map((p) => [p.id, p]));
 
   // Determine SVG canvas size
-  const maxX = positions.length > 0
-    ? Math.max(...positions.map((p) => p.x)) + NODE_WIDTH + 40
-    : 600;
-  const maxY = positions.length > 0
-    ? Math.max(...positions.map((p) => p.y)) + NODE_HEIGHT + 40
-    : 200;
+  const maxX =
+    positions.length > 0
+      ? Math.max(...positions.map((p) => p.x)) + NODE_WIDTH + 40
+      : 600;
+  const maxY =
+    positions.length > 0
+      ? Math.max(...positions.map((p) => p.y)) + NODE_HEIGHT + 40
+      : 200;
 
   return (
     <div className="space-y-4">
@@ -249,7 +257,11 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
 
       {/* Toolbar */}
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => setShowTemplates(!showTemplates)}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowTemplates(!showTemplates)}
+        >
           Templates
         </Button>
 
@@ -382,8 +394,8 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
                 key={`arrow-${i}`}
                 points={`
                   ${tipX},${tipY}
-                  ${tipX - ux * arrowSize - uy * arrowSize / 2},${tipY - uy * arrowSize + ux * arrowSize / 2}
-                  ${tipX - ux * arrowSize + uy * arrowSize / 2},${tipY - uy * arrowSize - ux * arrowSize / 2}
+                  ${tipX - ux * arrowSize - (uy * arrowSize) / 2},${tipY - uy * arrowSize + (ux * arrowSize) / 2}
+                  ${tipX - ux * arrowSize + (uy * arrowSize) / 2},${tipY - uy * arrowSize - (ux * arrowSize) / 2}
                 `}
                 className="fill-muted-foreground/50"
               />

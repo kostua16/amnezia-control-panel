@@ -26,7 +26,11 @@ function validateUrl(value: string): boolean {
   }
 }
 
-export function EditPanelForm({ panel, onPanelUpdated, onCancel }: EditPanelFormProps) {
+export function EditPanelForm({
+  panel,
+  onPanelUpdated,
+  onCancel,
+}: EditPanelFormProps) {
   const [name, setName] = useState(panel.name);
   const [panelUrl, setPanelUrl] = useState(panel.panelUrl);
   const [apiKey, setApiKey] = useState('');
@@ -77,8 +81,9 @@ export function EditPanelForm({ panel, onPanelUpdated, onCancel }: EditPanelForm
       } else {
         setErrors((prev) => ({
           ...prev,
-          panelUrl:
-            json.error?.includes('panelUrl') ? json.error : prev.panelUrl,
+          panelUrl: json.error?.includes('panelUrl')
+            ? json.error
+            : prev.panelUrl,
         }));
       }
     } catch {

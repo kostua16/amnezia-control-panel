@@ -5,9 +5,7 @@ import type { NodeProps, Node } from '@xyflow/react';
 import { clsx } from 'clsx';
 import type { PanelGroupData } from '@/types/chain-flow';
 
-function PanelGroupNodeRaw({
-  data,
-}: NodeProps<Node<PanelGroupData>>) {
+function PanelGroupNodeRaw({ data }: NodeProps<Node<PanelGroupData>>) {
   const { panelName, isActive } = data;
 
   return (

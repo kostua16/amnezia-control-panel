@@ -1,7 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import { getPanelStatus, isPanelInFallback } from '@/lib/panel-health-checker';
 import { success, error } from '@/lib/api-response';
-import type { FleetAggregatedStatus, PanelDashboardStatus } from '@/types/multi-panel-dashboard';
+import type {
+  FleetAggregatedStatus,
+  PanelDashboardStatus,
+} from '@/types/multi-panel-dashboard';
 
 export async function GET() {
   try {
@@ -54,7 +57,10 @@ export async function GET() {
 
     return success(result);
   } catch (err) {
-    console.error('[api/panels/status] Failed to aggregate panel statuses:', err);
+    console.error(
+      '[api/panels/status] Failed to aggregate panel statuses:',
+      err,
+    );
     return error('Failed to retrieve panel statuses', 500);
   }
 }

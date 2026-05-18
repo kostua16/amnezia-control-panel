@@ -15,7 +15,9 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       );
     }
 
-    const panel = await prisma.remotePanel.findUnique({ where: { id: panelId } });
+    const panel = await prisma.remotePanel.findUnique({
+      where: { id: panelId },
+    });
     if (!panel) {
       return NextResponse.json(
         { success: false, error: 'Panel not found' },

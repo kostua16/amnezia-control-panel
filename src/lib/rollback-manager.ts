@@ -40,9 +40,11 @@ export async function storePreviousConfig(panelId: number): Promise<void> {
  * One-level only: after rollback, previous fields are cleared (no deep history).
  * Use rollbackPanelConfigWithPush for the full rollback + remote push.
  */
-export async function rollbackPanelConfig(
-  panelId: number,
-): Promise<{ success: boolean; configVersion: number | null; error: StructuredPushError | null }> {
+export async function rollbackPanelConfig(panelId: number): Promise<{
+  success: boolean;
+  configVersion: number | null;
+  error: StructuredPushError | null;
+}> {
   // 1. Fetch cached config
   const cached = await prisma.cachedPanelConfig.findUnique({
     where: { panelId },
@@ -55,7 +57,8 @@ export async function rollbackPanelConfig(
       error: {
         type: 'unknown',
         message: `No cached config found for panel ${panelId}`,
-        recommendation: 'Push a config to this panel before attempting rollback',
+        recommendation:
+          'Push a config to this panel before attempting rollback',
         knownFix: null,
         rawError: null,
       },
@@ -69,7 +72,8 @@ export async function rollbackPanelConfig(
       error: {
         type: 'unknown',
         message: 'No previous config available for rollback',
-        recommendation: 'A rollback requires at least two configs to have been pushed to this panel',
+        recommendation:
+          'A rollback requires at least two configs to have been pushed to this panel',
         knownFix: null,
         rawError: null,
       },
@@ -108,7 +112,11 @@ export async function rollbackPanelConfig(
 export async function rollbackPanelConfigWithPush(
   panelId: number,
   apiKey: string,
-): Promise<{ success: boolean; configVersion: number | null; error: StructuredPushError | null }> {
+): Promise<{
+  success: boolean;
+  configVersion: number | null;
+  error: StructuredPushError | null;
+}> {
   // 1. Perform the DB swap
   const swapResult = await rollbackPanelConfig(panelId);
   if (!swapResult.success) {
@@ -169,7 +177,8 @@ export async function rollbackPanelConfigWithPush(
         error: {
           type: 'service_error',
           message: `Rollback succeeded locally but re-push failed: ${result.error}`,
-          recommendation: 'The config has been rolled back in the database. The remote panel still has the newer config. Try pushing again.',
+          recommendation:
+            'The config has been rolled back in the database. The remote panel still has the newer config. Try pushing again.',
           knownFix: null,
           rawError: result.error,
         },

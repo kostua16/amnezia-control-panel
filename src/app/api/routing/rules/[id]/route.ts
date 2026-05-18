@@ -28,10 +28,7 @@ interface RouteContext {
 
 // ─── GET: Fetch single routing rule ──────────────────────
 
-export async function GET(
-  _request: NextRequest,
-  context: RouteContext,
-) {
+export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const ruleId = parseInt(id, 10);
@@ -90,10 +87,7 @@ export async function GET(
 
 // ─── PUT: Update routing rule ────────────────────────────
 
-export async function PUT(
-  request: NextRequest,
-  context: RouteContext,
-) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const ruleId = parseInt(id, 10);
@@ -109,7 +103,8 @@ export async function PUT(
     const parsed = updateRuleSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -187,10 +182,7 @@ export async function PUT(
 
 // ─── DELETE: Remove routing rule ─────────────────────────
 
-export async function DELETE(
-  _request: NextRequest,
-  context: RouteContext,
-) {
+export async function DELETE(_request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const ruleId = parseInt(id, 10);

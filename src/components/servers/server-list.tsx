@@ -11,12 +11,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { AddServerForm } from './add-server-form';
 import type { ServerConnectionStatus } from '@/types/server';
@@ -106,7 +101,11 @@ export function ServerList() {
   };
 
   const handleDelete = async (serverId: number) => {
-    if (!confirm('Are you sure you want to delete this server? This cannot be undone.')) {
+    if (
+      !confirm(
+        'Are you sure you want to delete this server? This cannot be undone.',
+      )
+    ) {
       return;
     }
     setDeletingId(serverId);
@@ -161,7 +160,9 @@ export function ServerList() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Server className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground mb-4">No servers configured yet</p>
+            <p className="text-muted-foreground mb-4">
+              No servers configured yet
+            </p>
             <Button onClick={() => setShowAddModal(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add Your First Server
@@ -208,9 +209,7 @@ export function ServerList() {
                       </td>
                       <td className="py-3 pr-4">
                         <StatusIndicator
-                          status={
-                            connectionStatuses[server.id] ?? 'unknown'
-                          }
+                          status={connectionStatuses[server.id] ?? 'unknown'}
                         />
                       </td>
                       <td className="py-3 pr-4">

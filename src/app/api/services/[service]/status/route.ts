@@ -16,7 +16,10 @@ export async function GET(
 
   if (!VALID_SERVICES.includes(service as (typeof VALID_SERVICES)[number])) {
     return NextResponse.json(
-      { success: false, error: `Invalid service: ${service}. Must be 'awg' or '3x-ui'` },
+      {
+        success: false,
+        error: `Invalid service: ${service}. Must be 'awg' or '3x-ui'`,
+      },
       { status: 400 },
     );
   }

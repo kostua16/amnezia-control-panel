@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import {
-  createAwgUser,
-  createThreeXuiUser,
-} from '@/lib/vpn-services';
+import { createAwgUser, createThreeXuiUser } from '@/lib/vpn-services';
 import type { VpnServiceResult } from '@/lib/vpn-services';
 
 const listUsersSchema = z.object({
@@ -25,9 +22,7 @@ const createUserSchema = z.object({
     .string()
     .min(3, 'Username must be at least 3 characters')
     .max(64, 'Username must be at most 64 characters'),
-  password: z
-    .string()
-    .min(12, 'Password must be at least 12 characters'),
+  password: z.string().min(12, 'Password must be at least 12 characters'),
   displayName: z.string().optional(),
   trafficQuotaBytes: z.number().int().min(0).optional(),
   speedLimitKbps: z.number().int().min(0).optional(),
@@ -113,15 +108,22 @@ export async function POST(request: NextRequest) {
     const parsed = createUserSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
       );
     }
 
-    const { username, password, displayName, trafficQuotaBytes, speedLimitKbps, services } =
-      parsed.data;
+    const {
+      username,
+      password,
+      displayName,
+      trafficQuotaBytes,
+      speedLimitKbps,
+      services,
+    } = parsed.data;
 
     // Hash the password using a simple approach (bcrypt in production)
     const bcrypt = await import('bcryptjs');
@@ -197,7 +199,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const allVpnSuccess = vpnResults.length > 0 && vpnResults.every((r) => r.success);
+    const allVpnSuccess =
+      vpnResults.length > 0 && vpnResults.every((r) => r.success);
 
     return NextResponse.json(
       {

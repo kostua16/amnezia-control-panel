@@ -31,7 +31,8 @@ const statusGlow: Record<string, string> = {
 
 function formatBytesPerSec(bytesPerSec: number): string {
   if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`;
-  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+  if (bytesPerSec < 1024 * 1024)
+    return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
   return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
 }
 
@@ -40,10 +41,10 @@ export function ChainVisualization({
   pollInterval,
 }: ChainVisualizationProps) {
   const numericChainId = Number(chainId) || null;
-  const { status, isLoading, error, refetch } = useChainStatus(
-    numericChainId,
-    { pollInterval, enabled: true },
-  );
+  const { status, isLoading, error, refetch } = useChainStatus(numericChainId, {
+    pollInterval,
+    enabled: true,
+  });
   const animFrameRef = useRef<number | null>(null);
 
   // Animated traffic dots using SVG
@@ -182,8 +183,7 @@ export function ChainVisualization({
             const connKey = `${conn.from}-${conn.to}`;
             const reverseKey = `${conn.to}-${conn.from}`;
             const metrics =
-              connectionLookup.get(connKey) ??
-              connectionLookup.get(reverseKey);
+              connectionLookup.get(connKey) ?? connectionLookup.get(reverseKey);
 
             const midX = (fromX + toX) / 2;
 
@@ -296,8 +296,8 @@ export function ChainVisualization({
                     <polygon
                       points={`
                         ${tipX},${tipY}
-                        ${tipX - ux * arrowSize - uy * arrowSize / 2},${tipY - uy * arrowSize + ux * arrowSize / 2}
-                        ${tipX - ux * arrowSize + uy * arrowSize / 2},${tipY - uy * arrowSize - ux * arrowSize / 2}
+                        ${tipX - ux * arrowSize - (uy * arrowSize) / 2},${tipY - uy * arrowSize + (ux * arrowSize) / 2}
+                        ${tipX - ux * arrowSize + (uy * arrowSize) / 2},${tipY - uy * arrowSize - (ux * arrowSize) / 2}
                       `}
                       className="fill-muted-foreground/40"
                     />
@@ -319,7 +319,8 @@ export function ChainVisualization({
               className={clsx(
                 'absolute w-48 rounded-lg border bg-card p-3 shadow-md',
                 'transition-shadow',
-                statusColors[node.status]?.replace('bg-', 'border-') ?? 'border-border',
+                statusColors[node.status]?.replace('bg-', 'border-') ??
+                  'border-border',
                 statusGlow[node.status] ?? '',
               )}
               style={{ left: pos.x, top: pos.y }}
@@ -343,7 +344,9 @@ export function ChainVisualization({
               {/* Latency */}
               {node.latencyMs !== null && (
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="text-[10px] text-muted-foreground">Latency</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Latency
+                  </span>
                   <span
                     className={clsx(
                       'text-xs font-medium',
@@ -361,7 +364,9 @@ export function ChainVisualization({
 
               {/* Status indicator */}
               <div className="mt-1 flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground">Status</span>
+                <span className="text-[10px] text-muted-foreground">
+                  Status
+                </span>
                 <span
                   className={clsx(
                     'text-[10px] font-semibold uppercase',

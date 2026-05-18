@@ -39,15 +39,20 @@ const STEP_LABELS = [
 
 export function PushWizard({ panels }: PushWizardProps) {
   const [currentStep, setCurrentStep] = useState<WizardStep>(1);
-  const [selectedPanelIds, setSelectedPanelIds] = useState<Set<number>>(new Set());
+  const [selectedPanelIds, setSelectedPanelIds] = useState<Set<number>>(
+    new Set(),
+  );
   const [diffResults, setDiffResults] = useState<ConfigDiffResult[]>([]);
   const [pushResults, setPushResults] = useState<PushAllResult | null>(null);
-  const [pushProgress, setPushProgress] = useState<Map<number, PushProgressEvent>>(new Map());
+  const [pushProgress, setPushProgress] = useState<
+    Map<number, PushProgressEvent>
+  >(new Map());
   const [isPushing, setIsPushing] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [templates, setTemplates] = useState<ChainTemplate[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<ChainTemplate | null>(null);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<ChainTemplate | null>(null);
   const [panelMapping, setPanelMapping] = useState<Record<number, number>>({});
   const [chainConfigLoading, setChainConfigLoading] = useState(false);
   const [panelApiKeys, setPanelApiKeys] = useState<Record<number, string>>({});
@@ -56,14 +61,16 @@ export function PushWizard({ panels }: PushWizardProps) {
   const chainConfigRef = useRef<ChainConfig | null>(null);
 
   const handleApiKeyChange = useCallback((panelId: number, apiKey: string) => {
-    setPanelApiKeys(prev => ({ ...prev, [panelId]: apiKey }));
+    setPanelApiKeys((prev) => ({ ...prev, [panelId]: apiKey }));
   }, []);
 
   // Fetch chain templates on mount
   useEffect(() => {
     fetch('/api/chains/templates')
-      .then(res => res.json())
-      .then(json => { if (json.success) setTemplates(json.data); })
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success) setTemplates(json.data);
+      })
       .catch(() => {});
   }, []);
 
@@ -74,7 +81,9 @@ export function PushWizard({ panels }: PushWizardProps) {
 
   // Handle WebSocket push progress events
   useEffect(() => {
-    const progressEvent = lastEvent['panel:push-progress'] as PushProgressEvent | undefined;
+    const progressEvent = lastEvent['panel:push-progress'] as
+      | PushProgressEvent
+      | undefined;
     if (progressEvent) {
       setPushProgress((prev) => {
         const next = new Map(prev);
@@ -130,7 +139,14 @@ export function PushWizard({ panels }: PushWizardProps) {
 
       setCurrentStep(4);
     }
-  }, [currentStep, isPushing, pushProgress, selectedPanelIds, panels, pushResults]);
+  }, [
+    currentStep,
+    isPushing,
+    pushProgress,
+    selectedPanelIds,
+    panels,
+    pushResults,
+  ]);
 
   const handleNextToDiff = useCallback(async () => {
     if (selectedPanelIds.size === 0) return;
@@ -144,7 +160,10 @@ export function PushWizard({ panels }: PushWizardProps) {
       const configRes = await fetch('/api/panels/push/chain-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId: selectedTemplate!.id, panelMapping }),
+        body: JSON.stringify({
+          templateId: selectedTemplate!.id,
+          panelMapping,
+        }),
       });
       const configJson = await configRes.json();
       if (!configJson.success) {
@@ -169,7 +188,9 @@ export function PushWizard({ panels }: PushWizardProps) {
         setPushError(json.error ?? 'Failed to compute diff');
       }
     } catch (err) {
-      setPushError(err instanceof Error ? err.message : 'Failed to compute diff');
+      setPushError(
+        err instanceof Error ? err.message : 'Failed to compute diff',
+      );
     } finally {
       setDiffLoading(false);
       setChainConfigLoading(false);
@@ -214,33 +235,39 @@ export function PushWizard({ panels }: PushWizardProps) {
     }
   }, [selectedPanelIds, panelApiKeys]);
 
-  const handleRollback = useCallback(async (panelId: number) => {
-    try {
-      const res = await fetch('/api/panels/rollback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ panelId, apiKey: panelApiKeys[panelId] ?? '' }),
-      });
-      const json = await res.json();
-
-      if (json.success) {
-        setPushResults((prev: PushAllResult | null) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            results: prev.results.map((r: PushResult) =>
-              r.panelId === panelId
-                ? { ...r, error: 'Rolled back successfully' }
-                : r,
-            ),
-          };
+  const handleRollback = useCallback(
+    async (panelId: number) => {
+      try {
+        const res = await fetch('/api/panels/rollback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            panelId,
+            apiKey: panelApiKeys[panelId] ?? '',
+          }),
         });
+        const json = await res.json();
+
+        if (json.success) {
+          setPushResults((prev: PushAllResult | null) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              results: prev.results.map((r: PushResult) =>
+                r.panelId === panelId
+                  ? { ...r, error: 'Rolled back successfully' }
+                  : r,
+              ),
+            };
+          });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Rollback failed';
+        setPushError(`Rollback failed: ${message}`);
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Rollback failed';
-      setPushError(`Rollback failed: ${message}`);
-    }
-  }, [panelApiKeys]);
+    },
+    [panelApiKeys],
+  );
 
   const handleRetry = useCallback(() => {
     setPushResults(null);
@@ -322,8 +349,8 @@ export function PushWizard({ panels }: PushWizardProps) {
           <>
             {!isConnected && (
               <div className="mb-4 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-400">
-                Real-time push progress requires WebSocket connection. Push is disabled until
-                the connection is restored.
+                Real-time push progress requires WebSocket connection. Push is
+                disabled until the connection is restored.
               </div>
             )}
             <ConfigDiffView diffResults={diffResults} />
@@ -367,9 +394,14 @@ export function PushWizard({ panels }: PushWizardProps) {
                 disabled={
                   selectedPanelIds.size === 0 ||
                   !selectedTemplate ||
-                  Object.keys(panelMapping).length < selectedTemplate.nodes.length ||
-                  !Object.values(panelMapping).every(id => selectedPanelIds.has(id)) ||
-                  !Array.from(selectedPanelIds).every(id => (panelApiKeys[id] ?? '').trim().length > 0) ||
+                  Object.keys(panelMapping).length <
+                    selectedTemplate.nodes.length ||
+                  !Object.values(panelMapping).every((id) =>
+                    selectedPanelIds.has(id),
+                  ) ||
+                  !Array.from(selectedPanelIds).every(
+                    (id) => (panelApiKeys[id] ?? '').trim().length > 0,
+                  ) ||
                   diffLoading ||
                   chainConfigLoading
                 }
@@ -385,7 +417,11 @@ export function PushWizard({ panels }: PushWizardProps) {
               <Button
                 onClick={handlePush}
                 disabled={isPushing || !isConnected}
-                title={!isConnected ? 'Real-time progress requires WebSocket connection' : undefined}
+                title={
+                  !isConnected
+                    ? 'Real-time progress requires WebSocket connection'
+                    : undefined
+                }
               >
                 Push Configuration
               </Button>
@@ -400,7 +436,10 @@ export function PushWizard({ panels }: PushWizardProps) {
           <Button variant="outline" onClick={handleRetry}>
             Push Again
           </Button>
-          <a href="/panels" className="text-sm text-muted-foreground hover:text-foreground">
+          <a
+            href="/panels"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
             Back to Panels
           </a>
         </CardFooter>

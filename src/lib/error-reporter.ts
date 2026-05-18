@@ -19,37 +19,35 @@ const ERROR_PATTERNS: ErrorPattern[] = [
   {
     patterns: ['timeout', 'etimedout', 'abort_err'],
     type: 'connection_timeout',
-    message: (panelName) =>
-      `Connection to ${panelName} timed out`,
-    recommendation:
-      'Check Tailscale status on the remote panel',
+    message: (panelName) => `Connection to ${panelName} timed out`,
+    recommendation: 'Check Tailscale status on the remote panel',
     knownFix: 'Verify panel is reachable: `ping <panelUrl>`',
   },
   {
-    patterns: ['401', '403', 'unauthorized', 'invalid api key', 'invalid signature'],
+    patterns: [
+      '401',
+      '403',
+      'unauthorized',
+      'invalid api key',
+      'invalid signature',
+    ],
     type: 'auth_failure',
-    message: (panelName) =>
-      `Authentication failed for ${panelName}`,
-    recommendation:
-      'Verify API key is correct in panel settings',
+    message: (panelName) => `Authentication failed for ${panelName}`,
+    recommendation: 'Verify API key is correct in panel settings',
     knownFix: 'Re-enter API key on the panel edit page',
   },
   {
     patterns: ['invalid', 'malformed', 'validation failed', 'econnrefused'],
     type: 'invalid_config',
-    message: (panelName) =>
-      `Configuration validation failed for ${panelName}`,
-    recommendation:
-      'Check chain configuration for invalid values',
+    message: (panelName) => `Configuration validation failed for ${panelName}`,
+    recommendation: 'Check chain configuration for invalid values',
     knownFix: 'Review the config diff before pushing',
   },
   {
     patterns: ['docker', 'container not found', 'container is not running'],
     type: 'docker_error',
-    message: (panelName) =>
-      `Docker container issue on ${panelName}`,
-    recommendation:
-      'Check Docker container status on the remote server',
+    message: (panelName) => `Docker container issue on ${panelName}`,
+    recommendation: 'Check Docker container status on the remote server',
     knownFix:
       '`docker ps` to verify container is running, `docker restart <container>`',
   },
@@ -61,12 +59,9 @@ const ERROR_PATTERNS: ErrorPattern[] = [
       'wg: not found',
     ],
     type: 'service_error',
-    message: (panelName) =>
-      `VPN service not available on ${panelName}`,
-    recommendation:
-      'Verify VPN service is installed on the remote server',
-    knownFix:
-      'Install or restart the service on the remote panel',
+    message: (panelName) => `VPN service not available on ${panelName}`,
+    recommendation: 'Verify VPN service is installed on the remote server',
+    knownFix: 'Install or restart the service on the remote panel',
   },
 ];
 

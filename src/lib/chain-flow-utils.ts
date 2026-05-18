@@ -23,7 +23,10 @@ export function toFlowNodes(
   return builderNodes.map((builderNode) => ({
     id: builderNode.id,
     type: 'chainNode',
-    position: positions[builderNode.id] ?? { x: CANVAS_PADDING, y: CANVAS_PADDING },
+    position: positions[builderNode.id] ?? {
+      x: CANVAS_PADDING,
+      y: CANVAS_PADDING,
+    },
     data: { ...builderNode },
   }));
 }
@@ -67,14 +70,18 @@ export function toFlowEdges(
     if (cross && serverPanelMap && panels) {
       const sourceServerId = nodeServerMap.get(fromId);
       const targetServerId = nodeServerMap.get(toId);
-      const sourcePanelId = sourceServerId != null ? serverPanelMap[sourceServerId] : undefined;
-      const targetPanelId = targetServerId != null ? serverPanelMap[targetServerId] : undefined;
+      const sourcePanelId =
+        sourceServerId != null ? serverPanelMap[sourceServerId] : undefined;
+      const targetPanelId =
+        targetServerId != null ? serverPanelMap[targetServerId] : undefined;
 
       if (sourcePanelId !== undefined && targetPanelId !== undefined) {
         edgeData = {
           crossPanel: true,
-          sourcePanelName: panelNameMap.get(sourcePanelId) ?? `Panel ${sourcePanelId}`,
-          targetPanelName: panelNameMap.get(targetPanelId) ?? `Panel ${targetPanelId}`,
+          sourcePanelName:
+            panelNameMap.get(sourcePanelId) ?? `Panel ${sourcePanelId}`,
+          targetPanelName:
+            panelNameMap.get(targetPanelId) ?? `Panel ${targetPanelId}`,
         };
       }
     }

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import {
-  getChainPresets,
-  createChainPreset,
-} from '@/lib/chain-presets';
+import { getChainPresets, createChainPreset } from '@/lib/chain-presets';
 
 const createSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(128, 'Name must be at most 128 characters'),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .max(128, 'Name must be at most 128 characters'),
   description: z.string().max(500).optional(),
   topology: z.enum(['linear', 'split', 'mesh']).optional(),
   nodeCount: z.number().int().min(1).max(10).optional(),
@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
     const parsed = createSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },

@@ -11,7 +11,10 @@ interface ProtocolTemplatesGridProps {
   onFork?: (name: string, description: string) => void;
 }
 
-export function ProtocolTemplatesGrid({ onPreview, onFork }: ProtocolTemplatesGridProps) {
+export function ProtocolTemplatesGrid({
+  onPreview,
+  onFork,
+}: ProtocolTemplatesGridProps) {
   const [templates, setTemplates] = useState<ConfigTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +54,9 @@ export function ProtocolTemplatesGrid({ onPreview, onFork }: ProtocolTemplatesGr
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Loading templates...</span>
+        <span className="ml-2 text-sm text-muted-foreground">
+          Loading templates...
+        </span>
       </div>
     );
   }
@@ -69,12 +74,17 @@ export function ProtocolTemplatesGrid({ onPreview, onFork }: ProtocolTemplatesGr
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
             <Package className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h3 className="text-lg font-semibold text-foreground">No templates available</h3>
+          <h3 className="text-lg font-semibold text-foreground">
+            No templates available
+          </h3>
           <p className="mt-2 max-w-md mx-auto text-sm text-muted-foreground">
-            Built-in protocol templates will appear here. You can also save your current configuration as a custom template.
+            Built-in protocol templates will appear here. You can also save your
+            current configuration as a custom template.
           </p>
           <div className="mt-6">
-            <Button variant="outline" onClick={fetchTemplates}>Refresh Templates</Button>
+            <Button variant="outline" onClick={fetchTemplates}>
+              Refresh Templates
+            </Button>
           </div>
         </div>
       )}
@@ -82,7 +92,10 @@ export function ProtocolTemplatesGrid({ onPreview, onFork }: ProtocolTemplatesGr
       {templates.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {templates.map((template) => (
-            <Card key={template.id} className="hover:border-accent/50 transition-colors">
+            <Card
+              key={template.id}
+              className="hover:border-accent/50 transition-colors"
+            >
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <ProtocolIcon serviceType={template.serviceType} />
@@ -95,7 +108,9 @@ export function ProtocolTemplatesGrid({ onPreview, onFork }: ProtocolTemplatesGr
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">{template.description}</p>
+                <p className="text-sm text-muted-foreground">
+                  {template.description}
+                </p>
                 <div className="flex items-center justify-between">
                   <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full">
                     {template.serviceType === 'AWG' ? 'AWG' : '3x-ui'}
@@ -122,9 +137,7 @@ export function ProtocolTemplatesGrid({ onPreview, onFork }: ProtocolTemplatesGr
                     >
                       Preview
                     </Button>
-                    <Button size="sm">
-                      Use This
-                    </Button>
+                    <Button size="sm">Use This</Button>
                   </div>
                 </div>
               </CardContent>

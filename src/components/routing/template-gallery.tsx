@@ -16,7 +16,8 @@ export function TemplateGallery({ onApplied }: TemplateGalleryProps) {
   const [loading, setLoading] = useState(true);
   const [applyLoading, setApplyLoading] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [previewTemplate, setPreviewTemplate] = useState<RoutingRuleTemplate | null>(null);
+  const [previewTemplate, setPreviewTemplate] =
+    useState<RoutingRuleTemplate | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const fetchTemplates = useCallback(async () => {
@@ -44,29 +45,32 @@ export function TemplateGallery({ onApplied }: TemplateGalleryProps) {
     fetchTemplates();
   }, [fetchTemplates]);
 
-  const handleApply = useCallback(async (templateId: number) => {
-    setApplyLoading(templateId);
-    setError(null);
+  const handleApply = useCallback(
+    async (templateId: number) => {
+      setApplyLoading(templateId);
+      setError(null);
 
-    try {
-      const response = await fetch(`/api/routing/templates/${templateId}`, {
-        method: 'POST',
-      });
+      try {
+        const response = await fetch(`/api/routing/templates/${templateId}`, {
+          method: 'POST',
+        });
 
-      const result = await response.json();
+        const result = await response.json();
 
-      if (!response.ok) {
-        setError(result.error || 'Failed to apply template');
-        return;
+        if (!response.ok) {
+          setError(result.error || 'Failed to apply template');
+          return;
+        }
+
+        onApplied?.();
+      } catch {
+        setError('Network error. Please check your connection.');
+      } finally {
+        setApplyLoading(null);
       }
-
-      onApplied?.();
-    } catch {
-      setError('Network error. Please check your connection.');
-    } finally {
-      setApplyLoading(null);
-    }
-  }, [onApplied]);
+    },
+    [onApplied],
+  );
 
   const handlePreview = useCallback((template: RoutingRuleTemplate) => {
     setPreviewTemplate(template);
@@ -139,7 +143,10 @@ export function TemplateGallery({ onApplied }: TemplateGalleryProps) {
         {templates.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {templates.map((template) => (
-              <Card key={template.id} className="hover:border-accent/50 transition-colors">
+              <Card
+                key={template.id}
+                className="hover:border-accent/50 transition-colors"
+              >
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
                     <CardTitle className="text-base">{template.name}</CardTitle>
@@ -151,9 +158,13 @@ export function TemplateGallery({ onApplied }: TemplateGalleryProps) {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <p className="text-sm text-muted-foreground">{template.description}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {template.description}
+                  </p>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">{template.ruleCount} rules</span>
+                    <span className="text-xs text-muted-foreground">
+                      {template.ruleCount} rules
+                    </span>
                     <div className="flex gap-2">
                       <Button
                         variant="outline"

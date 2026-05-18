@@ -5,17 +5,23 @@ import type { DashboardStats } from '@/types/monitoring';
 
 export async function GET() {
   try {
-    const [totalUsers, activeUsers, blockedUsers, trafficAgg, servicesOnline, servicesTotal] =
-      await Promise.all([
-        prisma.user.count(),
-        prisma.user.count({ where: { isActive: true } }),
-        prisma.user.count({ where: { isBlocked: true } }),
-        prisma.trafficLog.aggregate({
-          _sum: { bytesIn: true, bytesOut: true },
-        }),
-        prisma.service.count({ where: { status: 'RUNNING' } }),
-        prisma.service.count(),
-      ]);
+    const [
+      totalUsers,
+      activeUsers,
+      blockedUsers,
+      trafficAgg,
+      servicesOnline,
+      servicesTotal,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { isActive: true } }),
+      prisma.user.count({ where: { isBlocked: true } }),
+      prisma.trafficLog.aggregate({
+        _sum: { bytesIn: true, bytesOut: true },
+      }),
+      prisma.service.count({ where: { status: 'RUNNING' } }),
+      prisma.service.count(),
+    ]);
 
     const data: DashboardStats = {
       totalUsers,

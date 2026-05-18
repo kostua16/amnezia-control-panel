@@ -58,7 +58,8 @@ export async function POST(request: NextRequest) {
     const parsed = createWhitelistSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -81,12 +82,16 @@ export async function POST(request: NextRequest) {
       const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,3}$/;
       if (!cidrRegex.test(value)) {
         return NextResponse.json(
-          { success: false, error: 'Invalid CIDR format (expected e.g. 10.0.0.0/24)' },
+          {
+            success: false,
+            error: 'Invalid CIDR format (expected e.g. 10.0.0.0/24)',
+          },
           { status: 422 },
         );
       }
     } else if (type === 'domain') {
-      const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\*?$/;
+      const domainRegex =
+        /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\*?$/;
       if (!domainRegex.test(value)) {
         return NextResponse.json(
           { success: false, error: 'Invalid domain format' },
@@ -105,10 +110,7 @@ export async function POST(request: NextRequest) {
 
     whitelistEntries.push(entry);
 
-    return NextResponse.json(
-      { success: true, data: entry },
-      { status: 201 },
-    );
+    return NextResponse.json({ success: true, data: entry }, { status: 201 });
   } catch (err) {
     console.error('[api/routing/whitelist] Error:', err);
     return NextResponse.json(

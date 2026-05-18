@@ -33,7 +33,10 @@ function extractHostname(url: string): string {
     return u.hostname;
   } catch {
     // Fallback: strip protocol and port manually
-    return url.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+    return url
+      .replace(/^https?:\/\//, '')
+      .split('/')[0]
+      .split(':')[0];
   }
 }
 

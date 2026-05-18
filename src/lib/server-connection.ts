@@ -1,6 +1,10 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import type { Server, ServerConnectionStatus, ServerTestResult } from '@/types/server';
+import type {
+  Server,
+  ServerConnectionStatus,
+  ServerTestResult,
+} from '@/types/server';
 
 const execFileAsync = promisify(execFile);
 
@@ -43,7 +47,9 @@ function setPoolEntry(
  * NOTE: Currently stubs the actual SSH test. In production this would
  * use the SSH2 library or a simple TCP probe to verify reachability.
  */
-export async function testConnection(server: Server): Promise<ServerTestResult> {
+export async function testConnection(
+  server: Server,
+): Promise<ServerTestResult> {
   // Check pool first
   const cached = getPoolEntry(server.id);
   if (cached) {
@@ -136,8 +142,7 @@ export async function executeOnServer(
       exitCode: 0,
     };
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? err.message : String(err);
     return {
       success: false,
       stdout: '',

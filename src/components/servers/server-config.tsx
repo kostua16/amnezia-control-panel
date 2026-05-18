@@ -2,15 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { clsx } from 'clsx';
-import {
-  RefreshCw,
-  Shield,
-  Pencil,
-  Save,
-  X,
-  Eye,
-  EyeOff,
-} from 'lucide-react';
+import { RefreshCw, Shield, Pencil, Save, X, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -134,7 +126,11 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
     }
   };
 
-  const handleToggleService = async (serviceId: number, serviceType: string, currentStatus: string) => {
+  const handleToggleService = async (
+    serviceId: number,
+    serviceType: string,
+    currentStatus: string,
+  ) => {
     // Toggle service active state via the service endpoint
     // The service status endpoint uses slug-based routing (awg, 3x-ui)
     const slug = getServiceSlug(serviceType);
@@ -368,9 +364,7 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Services</CardTitle>
-          <CardDescription>
-            VPN services running on this server
-          </CardDescription>
+          <CardDescription>VPN services running on this server</CardDescription>
         </CardHeader>
         <CardContent>
           {config.services.length === 0 ? (
@@ -420,7 +414,11 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
                     <button
                       type="button"
                       onClick={() =>
-                        handleToggleService(service.id, service.type, service.status)
+                        handleToggleService(
+                          service.id,
+                          service.type,
+                          service.status,
+                        )
                       }
                       className={clsx(
                         'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',

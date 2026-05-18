@@ -7,7 +7,12 @@ import type { ChainTemplate } from '@/types/chain';
 interface ChainTemplateSelectorProps {
   templates: ChainTemplate[];
   selectedTemplate: ChainTemplate | null;
-  panels: Array<{ id: number; name: string; panelUrl: string; isActive: boolean }>;
+  panels: Array<{
+    id: number;
+    name: string;
+    panelUrl: string;
+    isActive: boolean;
+  }>;
   panelMapping: Record<number, number>;
   onTemplateSelect: (template: ChainTemplate | null) => void;
   onPanelMappingChange: (mapping: Record<number, number>) => void;
@@ -31,7 +36,9 @@ export function ChainTemplateSelector({
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-8">
-          <p className="text-muted-foreground text-sm">No chain templates available</p>
+          <p className="text-muted-foreground text-sm">
+            No chain templates available
+          </p>
         </CardContent>
       </Card>
     );
@@ -68,11 +75,14 @@ export function ChainTemplateSelector({
                 )}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="font-bold text-sm text-foreground">{template.name}</span>
+                  <span className="font-bold text-sm text-foreground">
+                    {template.name}
+                  </span>
                   <span
                     className={clsx(
                       'text-xs px-1.5 py-0.5 rounded',
-                      TOPOLOGY_BADGES[template.topology] ?? 'bg-muted text-muted-foreground',
+                      TOPOLOGY_BADGES[template.topology] ??
+                        'bg-muted text-muted-foreground',
                     )}
                   >
                     {template.topology}
@@ -82,7 +92,8 @@ export function ChainTemplateSelector({
                   {template.description}
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  {template.requiredServers} server{template.requiredServers > 1 ? 's' : ''} required
+                  {template.requiredServers} server
+                  {template.requiredServers > 1 ? 's' : ''} required
                 </p>
               </button>
             );
@@ -130,7 +141,8 @@ export function ChainTemplateSelector({
                       .filter((p) => {
                         // Filter out panels already mapped to other nodes
                         return !Object.entries(panelMapping).some(
-                          ([idx, panelId]) => Number(idx) !== index && panelId === p.id,
+                          ([idx, panelId]) =>
+                            Number(idx) !== index && panelId === p.id,
                         );
                       })
                       .map((panel) => (

@@ -24,13 +24,19 @@ export async function ensureGeoRulesMigrated(): Promise<MigrationResult> {
   try {
     const existing = await prisma.geoRoutingRule.count();
     if (existing > 0) {
-      result.skipped.push(`Table already has ${existing} rules, skipping migration`);
+      result.skipped.push(
+        `Table already has ${existing} rules, skipping migration`,
+      );
       return result;
     }
 
     // No in-memory data to migrate (module-scoped arrays are lost on restart).
-    result.skipped.push('No in-memory geo rules found to migrate (expected on fresh install or post-restart)');
-    console.log('[geo-migration] Migration check complete: table is empty, no in-memory data available');
+    result.skipped.push(
+      'No in-memory geo rules found to migrate (expected on fresh install or post-restart)',
+    );
+    console.log(
+      '[geo-migration] Migration check complete: table is empty, no in-memory data available',
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     result.errors.push(message);

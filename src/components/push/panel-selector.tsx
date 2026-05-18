@@ -5,12 +5,7 @@ import { Monitor, CheckSquare, Search, Eye, EyeOff } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { PanelStatusBadge } from '@/components/panels/panel-status-badge';
 import type { PanelConnectionStatus } from '@/lib/panel-health-checker';
 
@@ -38,7 +33,9 @@ export function PanelSelector({
 }: PanelSelectorProps) {
   const [search, setSearch] = useState('');
   const [visibleKeys, setVisibleKeys] = useState<Record<number, boolean>>({});
-  const [panelStatuses, setPanelStatuses] = useState<Record<number, PanelConnectionStatus>>({});
+  const [panelStatuses, setPanelStatuses] = useState<
+    Record<number, PanelConnectionStatus>
+  >({});
 
   // Fetch panel connection statuses on mount and when panels change
   useEffect(() => {
@@ -57,7 +54,7 @@ export function PanelSelector({
           } catch {
             statuses[panel.id] = 'unknown';
           }
-        })
+        }),
       );
       setPanelStatuses(statuses);
     };
@@ -71,7 +68,7 @@ export function PanelSelector({
     return panels.filter(
       (p) =>
         p.name.toLowerCase().includes(lower) ||
-        p.panelUrl.toLowerCase().includes(lower)
+        p.panelUrl.toLowerCase().includes(lower),
     );
   }, [panels, search]);
 
@@ -89,7 +86,7 @@ export function PanelSelector({
 
   const handleSelectAll = () => {
     const available = filteredPanels.filter(
-      (p) => panelStatuses[p.id] !== 'offline' && p.isActive
+      (p) => panelStatuses[p.id] !== 'offline' && p.isActive,
     );
     const allSelected = available.every((p) => selectedPanelIds.has(p.id));
 
@@ -161,7 +158,9 @@ export function PanelSelector({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <Monitor className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      <span className="font-medium text-sm truncate">{panel.name}</span>
+                      <span className="font-medium text-sm truncate">
+                        {panel.name}
+                      </span>
                       <PanelStatusBadge status={status} />
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">
@@ -176,16 +175,31 @@ export function PanelSelector({
                         type={visibleKeys[panel.id] ? 'text' : 'password'}
                         placeholder={`Enter shared secret for ${panel.name}`}
                         value={panelApiKeys[panel.id] ?? ''}
-                        onChange={(e) => onApiKeyChange(panel.id, e.target.value)}
+                        onChange={(e) =>
+                          onApiKeyChange(panel.id, e.target.value)
+                        }
                         className="pr-9 text-sm"
                       />
                       <button
                         type="button"
-                        onClick={() => setVisibleKeys(prev => ({ ...prev, [panel.id]: !prev[panel.id] }))}
+                        onClick={() =>
+                          setVisibleKeys((prev) => ({
+                            ...prev,
+                            [panel.id]: !prev[panel.id],
+                          }))
+                        }
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        aria-label={visibleKeys[panel.id] ? 'Hide API key' : 'Show API key'}
+                        aria-label={
+                          visibleKeys[panel.id]
+                            ? 'Hide API key'
+                            : 'Show API key'
+                        }
                       >
-                        {visibleKeys[panel.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        {visibleKeys[panel.id] ? (
+                          <EyeOff className="h-3.5 w-3.5" />
+                        ) : (
+                          <Eye className="h-3.5 w-3.5" />
+                        )}
                       </button>
                     </div>
                   </div>

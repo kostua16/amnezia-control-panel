@@ -64,7 +64,7 @@ export async function generateChainConfig(
   }
 
   // Resolve transport for each server in the chain
-  let prisma: Awaited<typeof import('./prisma')['prisma']> | null = null;
+  let prisma: Awaited<(typeof import('./prisma'))['prisma']> | null = null;
   try {
     const mod = await import('./prisma');
     prisma = mod.prisma;
@@ -81,7 +81,9 @@ export async function generateChainConfig(
         }
         const server = serverLookup.get(serverId);
         if (!server) {
-          throw new Error(`Server ${serverId} not found for node "${node.label}"`);
+          throw new Error(
+            `Server ${serverId} not found for node "${node.label}"`,
+          );
         }
 
         // Resolve WireGuard service port from Service model
@@ -104,7 +106,9 @@ export async function generateChainConfig(
         // Resolve Tailscale transport address
         const transport = await resolvePanelTransport(
           server,
-          { panelUrl: `https://${server.tailnetIP ?? server.hostname}:${wireguardPort}` },
+          {
+            panelUrl: `https://${server.tailnetIP ?? server.hostname}:${wireguardPort}`,
+          },
           wireguardPort,
         );
 
@@ -173,7 +177,9 @@ export async function applyChainConfig(
       return {
         success: false,
         appliedTo: [],
-        errors: [`Geo-routing BLOCK for ${sourceIp}: matched rule "${geoResult.rule?.name ?? 'unknown'}"`],
+        errors: [
+          `Geo-routing BLOCK for ${sourceIp}: matched rule "${geoResult.rule?.name ?? 'unknown'}"`,
+        ],
         geoRouting: { sourceIp, result: geoResult },
       };
     }
@@ -184,7 +190,7 @@ export async function applyChainConfig(
         appliedTo: [],
         errors: [
           `Geo-routing redirect for ${sourceIp}: matched rule "${geoResult.rule?.name ?? 'unknown'}", ` +
-          `routing to chain ${geoResult.chainId} instead`,
+            `routing to chain ${geoResult.chainId} instead`,
         ],
         geoRouting: { sourceIp, result: geoResult },
       };
@@ -201,13 +207,20 @@ export async function applyChainConfig(
       // Look up panel credentials by serverId
       const creds = panelCredentials?.get(node.serverId);
       if (!creds) {
-        errors.push(`No panel credentials registered for server ${node.serverId} (node: ${node.label})`);
+        errors.push(
+          `No panel credentials registered for server ${node.serverId} (node: ${node.label})`,
+        );
         continue;
       }
 
       const panelLabel = `${node.label} (${node.hostname})`;
 
-      const results = await applyPanelConfig(creds.panelUrl, node.label, creds.apiKey, panelConfig);
+      const results = await applyPanelConfig(
+        creds.panelUrl,
+        node.label,
+        creds.apiKey,
+        panelConfig,
+      );
 
       for (const result of results) {
         if (result.success) {
@@ -217,8 +230,7 @@ export async function applyChainConfig(
         }
       }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       errors.push(`Failed to apply to ${node.label}: ${message}`);
     }
   }

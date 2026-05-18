@@ -12,7 +12,7 @@ const TABS = [
   { id: 'templates', label: 'Templates' },
 ] as const;
 
-type TabId = typeof TABS[number]['id'];
+type TabId = (typeof TABS)[number]['id'];
 
 export function RoutingRulesTabs() {
   const [activeTab, setActiveTab] = useState<TabId>('geo');
@@ -24,10 +24,7 @@ export function RoutingRulesTabs() {
   return (
     <div className="space-y-6">
       {/* Tab bar */}
-      <div
-        className="flex border-b border-border"
-        role="tablist"
-      >
+      <div className="flex border-b border-border" role="tablist">
         {TABS.map((tab) => (
           <button
             key={tab.id}

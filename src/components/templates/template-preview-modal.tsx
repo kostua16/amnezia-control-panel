@@ -52,10 +52,18 @@ function RulesTable({ rules }: { rules: RuleRow[] }) {
       <table className="w-full text-sm">
         <thead className="bg-muted/50">
           <tr>
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground">Name</th>
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground">Match</th>
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground">Action</th>
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground">Priority</th>
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+              Name
+            </th>
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+              Match
+            </th>
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+              Action
+            </th>
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+              Priority
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -76,7 +84,11 @@ function RulesTable({ rules }: { rules: RuleRow[] }) {
   );
 }
 
-export function TemplatePreviewModal({ open, onClose, item }: TemplatePreviewModalProps) {
+export function TemplatePreviewModal({
+  open,
+  onClose,
+  item,
+}: TemplatePreviewModalProps) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -109,7 +121,10 @@ export function TemplatePreviewModal({ open, onClose, item }: TemplatePreviewMod
       ];
       if (t.content && typeof t.content === 'object') {
         for (const [k, v] of Object.entries(t.content)) {
-          contentEntries.push([k, typeof v === 'object' ? JSON.stringify(v) : String(v)]);
+          contentEntries.push([
+            k,
+            typeof v === 'object' ? JSON.stringify(v) : String(v),
+          ]);
         }
       }
       content = (
@@ -154,7 +169,9 @@ export function TemplatePreviewModal({ open, onClose, item }: TemplatePreviewMod
           <div className="text-xs text-muted-foreground">
             {rules.length} rule{rules.length !== 1 ? 's' : ''} in this template
           </div>
-          {rules.length > 0 ? <RulesTable rules={rules} /> : (
+          {rules.length > 0 ? (
+            <RulesTable rules={rules} />
+          ) : (
             <p className="text-sm text-muted-foreground">No rules defined.</p>
           )}
         </div>
@@ -171,14 +188,20 @@ export function TemplatePreviewModal({ open, onClose, item }: TemplatePreviewMod
           <p className="text-sm text-muted-foreground">{c.description}</p>
           {nodeEntries.length > 0 && (
             <div>
-              <h3 className="text-xs font-medium text-muted-foreground mb-2">Nodes</h3>
+              <h3 className="text-xs font-medium text-muted-foreground mb-2">
+                Nodes
+              </h3>
               <div className="space-y-1">
                 {nodeEntries.map(([role, config]) => (
                   <div key={role} className="text-sm">
                     <span className="font-medium">{role}</span>
-                    {typeof config === 'object' && config !== null && 'protocol' in config && (
-                      <span className="ml-2 text-muted-foreground">({String((config as { protocol: string }).protocol)})</span>
-                    )}
+                    {typeof config === 'object' &&
+                      config !== null &&
+                      'protocol' in config && (
+                        <span className="ml-2 text-muted-foreground">
+                          ({String((config as { protocol: string }).protocol)})
+                        </span>
+                      )}
                   </div>
                 ))}
               </div>
@@ -226,7 +249,9 @@ export function TemplatePreviewModal({ open, onClose, item }: TemplatePreviewMod
               </span>
             )}
             {topology && (
-              <span className={`text-xs rounded-full px-2 py-0.5 ${topologyBadgeClasses[topology] ?? 'bg-muted text-muted-foreground'}`}>
+              <span
+                className={`text-xs rounded-full px-2 py-0.5 ${topologyBadgeClasses[topology] ?? 'bg-muted text-muted-foreground'}`}
+              >
                 {topology.charAt(0).toUpperCase() + topology.slice(1)}
               </span>
             )}
@@ -241,9 +266,7 @@ export function TemplatePreviewModal({ open, onClose, item }: TemplatePreviewMod
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {content}
-        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-4">{content}</div>
 
         {/* Footer */}
         <div className="border-t border-border px-6 py-4 flex justify-end">

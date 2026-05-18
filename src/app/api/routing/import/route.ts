@@ -12,7 +12,10 @@ export async function POST(request: NextRequest) {
     const parsed = importSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: parsed.error.issues[0]?.message || 'Invalid request' },
+        {
+          success: false,
+          error: parsed.error.issues[0]?.message || 'Invalid request',
+        },
         { status: 422 },
       );
     }

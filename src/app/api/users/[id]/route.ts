@@ -16,7 +16,10 @@ const updateUserSchema = z.object({
   trafficQuotaBytes: z.number().int().min(0).optional(),
   speedLimitKbps: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),
-  newPassword: z.string().min(12, 'Password must be at least 12 characters').optional(),
+  newPassword: z
+    .string()
+    .min(12, 'Password must be at least 12 characters')
+    .optional(),
   services: z.array(serviceTypeEnum).optional(),
 });
 
@@ -26,10 +29,7 @@ interface RouteContext {
 
 // ─── GET: Fetch single user ──────────────────────────────
 
-export async function GET(
-  _request: NextRequest,
-  context: RouteContext,
-) {
+export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const userId = parseInt(id, 10);
@@ -84,10 +84,7 @@ export async function GET(
 
 // ─── PUT: Update user ────────────────────────────────────
 
-export async function PUT(
-  request: NextRequest,
-  context: RouteContext,
-) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const userId = parseInt(id, 10);
@@ -103,15 +100,22 @@ export async function PUT(
     const parsed = updateUserSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
       );
     }
 
-    const { displayName, trafficQuotaBytes, speedLimitKbps, isActive, newPassword, services } =
-      parsed.data;
+    const {
+      displayName,
+      trafficQuotaBytes,
+      speedLimitKbps,
+      isActive,
+      newPassword,
+      services,
+    } = parsed.data;
 
     // Check user exists
     const existing = await prisma.user.findUnique({
@@ -131,8 +135,10 @@ export async function PUT(
     // Build update data
     const updateData: Record<string, unknown> = {};
     if (displayName !== undefined) updateData.displayName = displayName;
-    if (trafficQuotaBytes !== undefined) updateData.trafficQuotaBytes = trafficQuotaBytes;
-    if (speedLimitKbps !== undefined) updateData.speedLimitKbps = speedLimitKbps;
+    if (trafficQuotaBytes !== undefined)
+      updateData.trafficQuotaBytes = trafficQuotaBytes;
+    if (speedLimitKbps !== undefined)
+      updateData.speedLimitKbps = speedLimitKbps;
     if (isActive !== undefined) updateData.isActive = isActive;
 
     // Hash new password if provided
@@ -272,10 +278,7 @@ export async function PUT(
 
 // ─── DELETE: Remove user ─────────────────────────────────
 
-export async function DELETE(
-  _request: NextRequest,
-  context: RouteContext,
-) {
+export async function DELETE(_request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const userId = parseInt(id, 10);

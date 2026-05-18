@@ -1,6 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import type { PanelSyncPayload } from '@/types/panel-sync';
-import type { ConfigDiffResult, ConfigDiffSection, ConfigDiffLine } from '@/types/config-push';
+import type {
+  ConfigDiffResult,
+  ConfigDiffSection,
+  ConfigDiffLine,
+} from '@/types/config-push';
 
 // ─── computeConfigDiff ─────────────────────────────────
 
@@ -25,13 +29,25 @@ export async function computeConfigDiff(
   const sections: ConfigDiffSection[] = [];
 
   // Section 1: Chain Nodes — compare by label
-  sections.push(buildChainNodesDiff(currentConfig?.chainNodes ?? [], newConfig.chainNodes));
+  sections.push(
+    buildChainNodesDiff(currentConfig?.chainNodes ?? [], newConfig.chainNodes),
+  );
 
   // Section 2: WireGuard Peers — compare by publicKey
-  sections.push(buildWireGuardPeersDiff(currentConfig?.wireguardPeers ?? [], newConfig.wireguardPeers));
+  sections.push(
+    buildWireGuardPeersDiff(
+      currentConfig?.wireguardPeers ?? [],
+      newConfig.wireguardPeers,
+    ),
+  );
 
   // Section 3: Routing Rules — compare by composite key
-  sections.push(buildRoutingRulesDiff(currentConfig?.routingRules ?? [], newConfig.routingRules));
+  sections.push(
+    buildRoutingRulesDiff(
+      currentConfig?.routingRules ?? [],
+      newConfig.routingRules,
+    ),
+  );
 
   const hasChanges = sections.some(
     (s) => s.summary.added > 0 || s.summary.removed > 0,
@@ -42,7 +58,9 @@ export async function computeConfigDiff(
     panelName,
     hasChanges,
     sections,
-    currentConfigFormatted: currentConfig ? JSON.stringify(currentConfig, null, 2) : null,
+    currentConfigFormatted: currentConfig
+      ? JSON.stringify(currentConfig, null, 2)
+      : null,
     newConfigFormatted: JSON.stringify(newConfig, null, 2),
   };
 }
@@ -86,7 +104,11 @@ function buildChainNodesDiff(
     }
   }
 
-  return { label: 'Chain Nodes', lines, summary: { added, removed, unchanged } };
+  return {
+    label: 'Chain Nodes',
+    lines,
+    summary: { added, removed, unchanged },
+  };
 }
 
 function buildWireGuardPeersDiff(
@@ -123,7 +145,11 @@ function buildWireGuardPeersDiff(
     }
   }
 
-  return { label: 'WireGuard Peers', lines, summary: { added, removed, unchanged } };
+  return {
+    label: 'WireGuard Peers',
+    lines,
+    summary: { added, removed, unchanged },
+  };
 }
 
 function buildRoutingRulesDiff(
@@ -155,7 +181,11 @@ function buildRoutingRulesDiff(
     }
   }
 
-  return { label: 'Routing Rules', lines, summary: { added, removed, unchanged } };
+  return {
+    label: 'Routing Rules',
+    lines,
+    summary: { added, removed, unchanged },
+  };
 }
 
 // ─── Formatters ────────────────────────────────────────
@@ -165,7 +195,10 @@ function formatChainNode(n: PanelSyncPayload['chainNodes'][number]): string {
 }
 
 function formatPeer(p: PanelSyncPayload['wireguardPeers'][number]): string {
-  const shortKey = p.publicKey.length > 12 ? `${p.publicKey.substring(0, 12)}...` : p.publicKey;
+  const shortKey =
+    p.publicKey.length > 12
+      ? `${p.publicKey.substring(0, 12)}...`
+      : p.publicKey;
   return `Peer ${shortKey} -> ${p.endpoint} [${p.allowedIPs}]`;
 }
 
@@ -220,7 +253,8 @@ export function formatDiffForDisplay(sections: ConfigDiffSection[]): string {
     parts.push(header);
 
     for (const line of section.lines) {
-      const prefix = line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' ';
+      const prefix =
+        line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' ';
       parts.push(`  ${prefix} ${line.content}`);
     }
 

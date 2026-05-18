@@ -14,7 +14,10 @@ export async function POST(request: NextRequest) {
 
       if (!file || !(file instanceof File)) {
         return NextResponse.json(
-          { success: false, error: 'No file provided. Send a JSON file as "file" field.' },
+          {
+            success: false,
+            error: 'No file provided. Send a JSON file as "file" field.',
+          },
           { status: 422 },
         );
       }

@@ -81,7 +81,9 @@ export function ChainPresetsGrid({ onPreview, onFork }: ChainPresetsGridProps) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Loading templates...</span>
+        <span className="ml-2 text-sm text-muted-foreground">
+          Loading templates...
+        </span>
       </div>
     );
   }
@@ -99,12 +101,16 @@ export function ChainPresetsGrid({ onPreview, onFork }: ChainPresetsGridProps) {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
             <Package className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h3 className="text-lg font-semibold text-foreground">No templates available</h3>
+          <h3 className="text-lg font-semibold text-foreground">
+            No templates available
+          </h3>
           <p className="mt-2 max-w-md mx-auto text-sm text-muted-foreground">
             Built-in chain presets will appear here. Try refreshing the page.
           </p>
           <div className="mt-6">
-            <Button variant="outline" onClick={fetchPresets}>Refresh Templates</Button>
+            <Button variant="outline" onClick={fetchPresets}>
+              Refresh Templates
+            </Button>
           </div>
         </div>
       )}
@@ -112,7 +118,10 @@ export function ChainPresetsGrid({ onPreview, onFork }: ChainPresetsGridProps) {
       {presets.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {presets.map((preset) => (
-            <Card key={preset.id} className="hover:border-accent/50 transition-colors">
+            <Card
+              key={preset.id}
+              className="hover:border-accent/50 transition-colors"
+            >
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <Globe className="h-4 w-4 text-muted-foreground" />
@@ -125,13 +134,19 @@ export function ChainPresetsGrid({ onPreview, onFork }: ChainPresetsGridProps) {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">{preset.description}</p>
+                <p className="text-sm text-muted-foreground">
+                  {preset.description}
+                </p>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs rounded-full px-2 py-0.5 ${topologyBadgeClasses[preset.topology] ?? 'bg-muted text-muted-foreground'}`}>
+                    <span
+                      className={`text-xs rounded-full px-2 py-0.5 ${topologyBadgeClasses[preset.topology] ?? 'bg-muted text-muted-foreground'}`}
+                    >
                       {topologyLabels[preset.topology] ?? preset.topology}
                     </span>
-                    <span className="text-xs text-muted-foreground">{preset.nodeCount} nodes</span>
+                    <span className="text-xs text-muted-foreground">
+                      {preset.nodeCount} nodes
+                    </span>
                   </div>
                   <div className="flex gap-2">
                     {preset.isBuiltIn && onFork && (

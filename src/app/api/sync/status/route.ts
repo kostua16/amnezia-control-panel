@@ -45,7 +45,11 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     console.error('[api/sync/status] Failed to fetch sync status:', err);
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Failed to fetch sync status' },
+      {
+        success: false,
+        error:
+          err instanceof Error ? err.message : 'Failed to fetch sync status',
+      },
       { status: 500 },
     );
   }

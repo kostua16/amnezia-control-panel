@@ -52,7 +52,9 @@ export function ErrorRecommendation({
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
           <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Recommended action:</span>{' '}
+            <span className="font-medium text-foreground">
+              Recommended action:
+            </span>{' '}
             {error.recommendation}
           </p>
           {error.knownFix && (

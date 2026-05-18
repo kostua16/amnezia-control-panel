@@ -2,12 +2,19 @@ import { prisma } from '@/lib/prisma';
 import { broadcastEvent } from '@/lib/websocket';
 import { createAlert } from '@/lib/alert-service';
 import type { Alert } from '@/types/alert';
-import type { PanelTestResult, PanelConnectionRecord } from '@/types/remote-panel';
+import type {
+  PanelTestResult,
+  PanelConnectionRecord,
+} from '@/types/remote-panel';
 import type { PanelSyncPayload } from '@/types/panel-sync';
 
 // ─── Types ──────────────────────────────────────────────
 
-export type PanelConnectionStatus = 'connected' | 'degraded' | 'offline' | 'unknown';
+export type PanelConnectionStatus =
+  | 'connected'
+  | 'degraded'
+  | 'offline'
+  | 'unknown';
 type AlertSeverity = Alert['severity'];
 
 // ─── Fallback Detection State ───────────────────────────
@@ -56,7 +63,11 @@ export function removePanelApiKey(panelId: number): void {
 
 // ─── WebSocket Fallback Broadcast ───────────────────────
 
-async function broadcastFallbackStatusChange(panelId: number, panelName: string, isFallback: boolean): Promise<void> {
+async function broadcastFallbackStatusChange(
+  panelId: number,
+  panelName: string,
+  isFallback: boolean,
+): Promise<void> {
   const severity: AlertSeverity = isFallback ? 'WARNING' : 'INFO';
   const message = isFallback
     ? `Panel "${panelName}" is running on cached config (central unreachable)`
@@ -66,7 +77,10 @@ async function broadcastFallbackStatusChange(panelId: number, panelName: string,
   try {
     await createAlert(`panel:${panelName}`, severity, message);
   } catch (err) {
-    console.error('[panel-health] Failed to create alert for fallback change:', err);
+    console.error(
+      '[panel-health] Failed to create alert for fallback change:',
+      err,
+    );
   }
 
   broadcastEvent('panel:fallback-change', {
@@ -85,14 +99,19 @@ async function broadcastFallbackStatusChange(panelId: number, panelName: string,
  * Fetches the latest cached config, generates per-panel config, and pushes.
  * Runs asynchronously, errors are logged but do not propagate.
  */
-async function triggerAutoResync(panelId: number, _panelName: string): Promise<void> {
+async function triggerAutoResync(
+  panelId: number,
+  _panelName: string,
+): Promise<void> {
   try {
     // Import dynamically to avoid circular dependency at module load
     const { pushConfigToPanel } = await import('@/lib/panel-sync-client');
 
     const cachedApiKey = panelApiKeyCache.get(panelId);
     if (!cachedApiKey) {
-      console.warn(`[panel-health] Auto-resync skipped for panel ${panelId}: no cached API key. Admin must trigger manual push first.`);
+      console.warn(
+        `[panel-health] Auto-resync skipped for panel ${panelId}: no cached API key. Admin must trigger manual push first.`,
+      );
       return;
     }
 
@@ -102,26 +121,42 @@ async function triggerAutoResync(panelId: number, _panelName: string): Promise<v
     });
 
     if (!cachedConfig) {
-      console.warn(`[panel-health] Auto-resync skipped for panel ${panelId}: no cached config found`);
+      console.warn(
+        `[panel-health] Auto-resync skipped for panel ${panelId}: no cached config found`,
+      );
       return;
     }
 
-    const panel = await prisma.remotePanel.findUnique({ where: { id: panelId } });
+    const panel = await prisma.remotePanel.findUnique({
+      where: { id: panelId },
+    });
     if (!panel) return;
 
     const payload = cachedConfig.config as unknown as PanelSyncPayload;
     const result = await pushConfigToPanel(
-      { id: panel.id, name: panel.name, panelUrl: panel.panelUrl, apiKey: cachedApiKey },
+      {
+        id: panel.id,
+        name: panel.name,
+        panelUrl: panel.panelUrl,
+        apiKey: cachedApiKey,
+      },
       payload,
     );
 
     if (result.success) {
-      console.log(`[panel-health] Auto-resync succeeded for panel ${panelId}: configVersion=${result.configVersion}`);
+      console.log(
+        `[panel-health] Auto-resync succeeded for panel ${panelId}: configVersion=${result.configVersion}`,
+      );
     } else {
-      console.error(`[panel-health] Auto-resync failed for panel ${panelId}: ${result.error}`);
+      console.error(
+        `[panel-health] Auto-resync failed for panel ${panelId}: ${result.error}`,
+      );
     }
   } catch (err) {
-    console.error(`[panel-health] Auto-resync error for panel ${panelId}:`, err);
+    console.error(
+      `[panel-health] Auto-resync error for panel ${panelId}:`,
+      err,
+    );
   }
 }
 
@@ -191,7 +226,7 @@ export async function testAllPanels(): Promise<PanelTestResult[]> {
   });
 
   const results = await Promise.all(
-    panels.map((panel: { id: number }) => testPanel(panel.id))
+    panels.map((panel: { id: number }) => testPanel(panel.id)),
   );
 
   return results;
@@ -230,7 +265,9 @@ export function startPanelHealthChecks(): void {
 
             // Auto-resync: if panel was in fallback and is now reachable
             if (fallbackPanels.has(panel.id)) {
-              console.log(`[panel-health] Panel ${panel.id} (${panel.name}) reconnected -- triggering auto-resync`);
+              console.log(
+                `[panel-health] Panel ${panel.id} (${panel.name}) reconnected -- triggering auto-resync`,
+              );
               fallbackPanels.delete(panel.id);
               broadcastFallbackStatusChange(panel.id, panel.name, false);
               triggerAutoResync(panel.id, panel.name);
@@ -241,7 +278,9 @@ export function startPanelHealthChecks(): void {
 
             // Fallback detection: 3 consecutive failures per CONTEXT.md decision
             if (failures >= 3 && !fallbackPanels.has(panel.id)) {
-              console.warn(`[panel-health] Panel ${panel.id} (${panel.name}) unreachable x${failures} -- entering fallback mode`);
+              console.warn(
+                `[panel-health] Panel ${panel.id} (${panel.name}) unreachable x${failures} -- entering fallback mode`,
+              );
               fallbackPanels.add(panel.id);
               broadcastFallbackStatusChange(panel.id, panel.name, true);
             }
@@ -307,13 +346,15 @@ export async function getPanelStatus(panelId: number): Promise<{
  * Get connection status records for all active panels.
  * Maps test results to PanelConnectionRecord format.
  */
-export async function getPanelConnectionRecords(): Promise<PanelConnectionRecord[]> {
+export async function getPanelConnectionRecords(): Promise<
+  PanelConnectionRecord[]
+> {
   const panels = await prisma.remotePanel.findMany({
     where: { isActive: true },
   });
 
   const testResults = await Promise.all(
-    panels.map((panel: { id: number }) => testPanel(panel.id))
+    panels.map((panel: { id: number }) => testPanel(panel.id)),
   );
 
   const now = new Date().toISOString();

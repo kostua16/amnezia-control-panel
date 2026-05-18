@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { getTemplateById } from '@/lib/chain-templates';
 import { prisma } from '@/lib/prisma';
 import { resolvePanelTransport } from '@/lib/transport-resolver';
-import type { ChainConfig, WireGuardPeerConfig, XrayRoutingRule, ChainTemplate } from '@/types/chain';
+import type {
+  ChainConfig,
+  WireGuardPeerConfig,
+  XrayRoutingRule,
+  ChainTemplate,
+} from '@/types/chain';
 
 // ─── Request Validation ─────────────────────────────────
 
@@ -46,8 +51,12 @@ function generateWireGuardPeers(
       break;
     }
     case 'split': {
-      const domestic = nodes.find((n) => n.label.includes('Domestic') || n.label.includes('Direct'));
-      const foreign = nodes.find((n) => n.label.includes('VPN') || n.label.includes('Foreign'));
+      const domestic = nodes.find(
+        (n) => n.label.includes('Domestic') || n.label.includes('Direct'),
+      );
+      const foreign = nodes.find(
+        (n) => n.label.includes('VPN') || n.label.includes('Foreign'),
+      );
 
       if (foreign) {
         peers.push({
@@ -112,7 +121,7 @@ function generateXrayRoutingRules(
           type: 'ip',
           value: '10.0.0.0/8',
           outboundTag: 'direct',
-          priority: (i * 10) + 1,
+          priority: i * 10 + 1,
         });
       }
 
@@ -127,8 +136,12 @@ function generateXrayRoutingRules(
       break;
     }
     case 'split': {
-      const domestic = nodes.find((n) => n.label.includes('Domestic') || n.label.includes('Direct'));
-      const foreign = nodes.find((n) => n.label.includes('VPN') || n.label.includes('Foreign'));
+      const domestic = nodes.find(
+        (n) => n.label.includes('Domestic') || n.label.includes('Direct'),
+      );
+      const foreign = nodes.find(
+        (n) => n.label.includes('VPN') || n.label.includes('Foreign'),
+      );
 
       if (domestic && foreign) {
         rules.push({
@@ -206,7 +219,11 @@ export async function POST(request: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Invalid request body', details: parsed.error.flatten() },
+        {
+          success: false,
+          error: 'Invalid request body',
+          details: parsed.error.flatten(),
+        },
         { status: 422 },
       );
     }
@@ -226,7 +243,10 @@ export async function POST(request: NextRequest) {
     const MAX_NODES = 10;
     if (template.nodes.length > MAX_NODES) {
       return NextResponse.json(
-        { success: false, error: `Template requires ${template.nodes.length} nodes, maximum is ${MAX_NODES}` },
+        {
+          success: false,
+          error: `Template requires ${template.nodes.length} nodes, maximum is ${MAX_NODES}`,
+        },
         { status: 422 },
       );
     }
@@ -235,7 +255,10 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < template.nodes.length; i++) {
       if (panelMapping[i] === undefined) {
         return NextResponse.json(
-          { success: false, error: `No panel mapping for node "${template.nodes[i].label}" at index ${i}` },
+          {
+            success: false,
+            error: `No panel mapping for node "${template.nodes[i].label}" at index ${i}`,
+          },
           { status: 422 },
         );
       }
@@ -246,7 +269,10 @@ export async function POST(request: NextRequest) {
     const uniquePanelIds = new Set(panelIds);
     if (uniquePanelIds.size !== panelIds.length) {
       return NextResponse.json(
-        { success: false, error: 'Panel mapping contains duplicate panel assignments' },
+        {
+          success: false,
+          error: 'Panel mapping contains duplicate panel assignments',
+        },
         { status: 422 },
       );
     }
@@ -272,14 +298,17 @@ export async function POST(request: NextRequest) {
     for (const panel of panels) {
       if (!panel.isActive) {
         return NextResponse.json(
-          { success: false, error: `Panel "${panel.name}" (ID: ${panel.id}) is not active` },
+          {
+            success: false,
+            error: `Panel "${panel.name}" (ID: ${panel.id}) is not active`,
+          },
           { status: 422 },
         );
       }
     }
 
     // Build panel lookup
-    const panelLookup = new Map<number, typeof panels[0]>();
+    const panelLookup = new Map<number, (typeof panels)[0]>();
     for (const p of panels) {
       panelLookup.set(p.id, p);
     }
@@ -309,11 +338,20 @@ export async function POST(request: NextRequest) {
           where: {
             hostname: { contains: new URL(panel.panelUrl).hostname },
           },
-          select: { id: true, tailnetIP: true, tailnetHostname: true, hostname: true },
+          select: {
+            id: true,
+            tailnetIP: true,
+            tailnetHostname: true,
+            hostname: true,
+          },
         });
 
         const transport = server
-          ? await resolvePanelTransport(server, { panelUrl: panel.panelUrl }, wireguardPort)
+          ? await resolvePanelTransport(
+              server,
+              { panelUrl: panel.panelUrl },
+              wireguardPort,
+            )
           : null;
 
         if (transport) {
@@ -361,7 +399,13 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[api/panels/push/chain-config] Error:', err);
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Failed to generate chain config' },
+      {
+        success: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Failed to generate chain config',
+      },
       { status: 500 },
     );
   }

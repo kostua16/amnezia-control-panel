@@ -53,7 +53,9 @@ export function ChainTemplatesList({
               <div
                 className={clsx(
                   'flex h-8 w-8 items-center justify-center rounded-md',
-                  isSelected ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground',
+                  isSelected
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-muted-foreground',
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -72,10 +74,12 @@ export function ChainTemplatesList({
 
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="rounded-full bg-muted px-2 py-0.5">
-                {template.requiredServers} server{template.requiredServers > 1 ? 's' : ''}
+                {template.requiredServers} server
+                {template.requiredServers > 1 ? 's' : ''}
               </span>
               <span className="rounded-full bg-muted px-2 py-0.5">
-                {template.nodes.length} node{template.nodes.length > 1 ? 's' : ''}
+                {template.nodes.length} node
+                {template.nodes.length > 1 ? 's' : ''}
               </span>
             </div>
           </button>

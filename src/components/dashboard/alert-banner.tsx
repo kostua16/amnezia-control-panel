@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Bell, AlertTriangle, AlertCircle, Info, CheckCircle, X } from 'lucide-react';
+import {
+  Bell,
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  CheckCircle,
+  X,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   useAlerts,
@@ -12,7 +19,16 @@ import {
 } from '@/hooks/use-alerts';
 import type { AlertData } from '@/lib/alert-service';
 
-const severityConfig: Record<string, { icon: typeof Info; color: string; bgColor: string; borderColor: string; label: string }> = {
+const severityConfig: Record<
+  string,
+  {
+    icon: typeof Info;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+    label: string;
+  }
+> = {
   INFO: {
     icon: Info,
     color: 'text-blue-400',
@@ -81,7 +97,9 @@ function AlertItem({
             {formatTimeAgo(alert.createdAt)}
           </span>
         </div>
-        <p className="text-sm text-foreground mt-0.5 break-words">{alert.message}</p>
+        <p className="text-sm text-foreground mt-0.5 break-words">
+          {alert.message}
+        </p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         {!alert.isRead && (
@@ -123,7 +141,10 @@ export function AlertBanner() {
   // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+      if (
+        panelRef.current &&
+        !panelRef.current.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     }

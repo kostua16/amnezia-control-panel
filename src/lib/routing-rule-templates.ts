@@ -25,58 +25,126 @@ export const BUILTIN_GEO_TEMPLATES: TemplateDef[] = [
   {
     id: 'russia-direct',
     name: 'Russia Direct',
-    description: 'Route Russian traffic directly (bypass VPN). Block known Russian surveillance IPs.',
+    description:
+      'Route Russian traffic directly (bypass VPN). Block known Russian surveillance IPs.',
     category: 'geo',
     rules: [
-      { name: 'Allow Russia domestic', matchType: 'country', countryCode: 'RU', action: 'ALLOW', priority: 10 },
-      { name: 'Block RU surveillance', matchType: 'country', countryCode: 'RU', action: 'BLOCK', priority: 11 },
+      {
+        name: 'Allow Russia domestic',
+        matchType: 'country',
+        countryCode: 'RU',
+        action: 'ALLOW',
+        priority: 10,
+      },
+      {
+        name: 'Block RU surveillance',
+        matchType: 'country',
+        countryCode: 'RU',
+        action: 'BLOCK',
+        priority: 11,
+      },
     ],
   },
   {
     id: 'eu-privacy',
     name: 'EU Privacy',
-    description: 'Route EU traffic through VPN for GDPR-aligned privacy. Direct all other traffic.',
+    description:
+      'Route EU traffic through VPN for GDPR-aligned privacy. Direct all other traffic.',
     category: 'geo',
     rules: [
-      { name: 'Route EU via VPN', matchType: 'region', region: 'Europe', action: 'ROUTE', priority: 10 },
-      { name: 'Allow all other traffic', matchType: 'special', special: 'foreign', action: 'ALLOW', priority: 100 },
+      {
+        name: 'Route EU via VPN',
+        matchType: 'region',
+        region: 'Europe',
+        action: 'ROUTE',
+        priority: 10,
+      },
+      {
+        name: 'Allow all other traffic',
+        matchType: 'special',
+        special: 'foreign',
+        action: 'ALLOW',
+        priority: 100,
+      },
     ],
   },
   {
     id: 'full-tunnel',
     name: 'Full Tunnel',
-    description: 'Route all foreign traffic through VPN. Allow domestic traffic directly.',
+    description:
+      'Route all foreign traffic through VPN. Allow domestic traffic directly.',
     category: 'bundle',
     rules: [
-      { name: 'Allow domestic traffic', matchType: 'special', special: 'domestic', action: 'ALLOW', priority: 0 },
-      { name: 'Route foreign via VPN', matchType: 'special', special: 'foreign', action: 'ROUTE', priority: 100 },
+      {
+        name: 'Allow domestic traffic',
+        matchType: 'special',
+        special: 'domestic',
+        action: 'ALLOW',
+        priority: 0,
+      },
+      {
+        name: 'Route foreign via VPN',
+        matchType: 'special',
+        special: 'foreign',
+        action: 'ROUTE',
+        priority: 100,
+      },
     ],
   },
   {
     id: 'asia-pacific-vpn',
     name: 'Asia-Pacific VPN',
-    description: 'Route Asia-Pacific traffic through VPN for better connectivity. Direct everything else.',
+    description:
+      'Route Asia-Pacific traffic through VPN for better connectivity. Direct everything else.',
     category: 'geo',
     rules: [
-      { name: 'Route Asia-Pacific via VPN', matchType: 'region', region: 'Asia-Pacific', action: 'ROUTE', priority: 10 },
-      { name: 'Allow all other traffic', matchType: 'special', special: 'foreign', action: 'ALLOW', priority: 100 },
+      {
+        name: 'Route Asia-Pacific via VPN',
+        matchType: 'region',
+        region: 'Asia-Pacific',
+        action: 'ROUTE',
+        priority: 10,
+      },
+      {
+        name: 'Allow all other traffic',
+        matchType: 'special',
+        special: 'foreign',
+        action: 'ALLOW',
+        priority: 100,
+      },
     ],
   },
   {
     id: 'block-ads',
     name: 'Block Ad Networks',
-    description: 'Block traffic to known ad server countries. Allow everything else.',
+    description:
+      'Block traffic to known ad server countries. Allow everything else.',
     category: 'geo',
     rules: [
-      { name: 'Block ad traffic', matchType: 'country', countryCode: 'US', action: 'BLOCK', priority: 5 },
-      { name: 'Allow all traffic', matchType: 'special', special: 'foreign', action: 'ALLOW', priority: 100 },
+      {
+        name: 'Block ad traffic',
+        matchType: 'country',
+        countryCode: 'US',
+        action: 'BLOCK',
+        priority: 5,
+      },
+      {
+        name: 'Allow all traffic',
+        matchType: 'special',
+        special: 'foreign',
+        action: 'ALLOW',
+        priority: 100,
+      },
     ],
   },
 ];
 
 // ─── Seed built-in templates to DB ────────────────────
 
-export async function seedTemplates(): Promise<{ seeded: number; skipped: number }> {
+export async function seedTemplates(): Promise<{
+  seeded: number;
+  skipped: number;
+}> {
   let seeded = 0;
   let skipped = 0;
 
@@ -97,7 +165,8 @@ export async function seedTemplates(): Promise<{ seeded: number; skipped: number
         category: tmpl.category,
         ruleCount: tmpl.rules.length,
         isBuiltIn: true,
-        rules: tmpl.rules as unknown as import('@/generated/prisma/internal/prismaNamespace').InputJsonValue,
+        rules:
+          tmpl.rules as unknown as import('@/generated/prisma/internal/prismaNamespace').InputJsonValue,
       },
     });
     seeded++;
@@ -135,7 +204,10 @@ export async function applyTemplateRules(
 
   for (const ruleDef of rules) {
     try {
-      const where: Record<string, unknown> = { name: ruleDef.name, matchType: ruleDef.matchType };
+      const where: Record<string, unknown> = {
+        name: ruleDef.name,
+        matchType: ruleDef.matchType,
+      };
       if (ruleDef.countryCode) where.countryCode = ruleDef.countryCode;
       if (ruleDef.region) where.region = ruleDef.region;
       if (ruleDef.special) where.special = ruleDef.special;
@@ -162,7 +234,9 @@ export async function applyTemplateRules(
       });
       result.created++;
     } catch (err) {
-      result.errors.push(`Failed to create rule "${ruleDef.name}": ${err instanceof Error ? err.message : String(err)}`);
+      result.errors.push(
+        `Failed to create rule "${ruleDef.name}": ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -194,7 +268,12 @@ export interface ImportResult {
 export async function importFromGeoIPDat(
   overwriteCollisions: boolean = false,
 ): Promise<ImportResult> {
-  const result: ImportResult = { imported: 0, collisions: 0, skipped: [], errors: [] };
+  const result: ImportResult = {
+    imported: 0,
+    collisions: 0,
+    skipped: [],
+    errors: [],
+  };
 
   try {
     const fs = await import('fs');
@@ -261,11 +340,15 @@ export async function importFromGeoIPDat(
         });
         result.imported++;
       } catch (err) {
-        result.errors.push(`Failed to import ${countryCode}: ${err instanceof Error ? err.message : String(err)}`);
+        result.errors.push(
+          `Failed to import ${countryCode}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
   } catch (err) {
-    result.errors.push(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    result.errors.push(
+      `Import failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   return result;

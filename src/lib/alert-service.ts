@@ -76,10 +76,12 @@ export async function getAlerts(options: GetAlertsOptions = {}): Promise<{
  * Mark a single alert as read.
  */
 export async function markAlertRead(id: number): Promise<AlertData | null> {
-  const alert = await prisma.alert.update({
-    where: { id },
-    data: { isRead: true },
-  }).catch(() => null);
+  const alert = await prisma.alert
+    .update({
+      where: { id },
+      data: { isRead: true },
+    })
+    .catch(() => null);
 
   return alert ? toAlertData(alert) : null;
 }

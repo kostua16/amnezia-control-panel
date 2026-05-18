@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
     const parsed = lookupSchema.safeParse({ ip });
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: parsed.error.issues[0]?.message || 'Invalid IP' },
+        {
+          success: false,
+          error: parsed.error.issues[0]?.message || 'Invalid IP',
+        },
         { status: 422 },
       );
     }

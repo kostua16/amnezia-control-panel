@@ -51,12 +51,16 @@ export function ServerPresetsGrid({ onPreview }: ServerPresetsGridProps) {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
             <Package className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h3 className="text-lg font-semibold text-foreground">No templates available</h3>
+          <h3 className="text-lg font-semibold text-foreground">
+            No templates available
+          </h3>
           <p className="mt-2 max-w-md mx-auto text-sm text-muted-foreground">
             Server presets for popular VPS providers will appear here.
           </p>
           <div className="mt-6">
-            <Button variant="outline" onClick={handleRefresh}>Refresh Templates</Button>
+            <Button variant="outline" onClick={handleRefresh}>
+              Refresh Templates
+            </Button>
           </div>
         </div>
       )}
@@ -64,7 +68,10 @@ export function ServerPresetsGrid({ onPreview }: ServerPresetsGridProps) {
       {presets.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {presets.map((preset) => (
-            <Card key={preset.name} className="hover:border-accent/50 transition-colors">
+            <Card
+              key={preset.name}
+              className="hover:border-accent/50 transition-colors"
+            >
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                   <Server className="h-4 w-4 text-muted-foreground" />
@@ -72,14 +79,18 @@ export function ServerPresetsGrid({ onPreview }: ServerPresetsGridProps) {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">{preset.description}</p>
+                <p className="text-sm text-muted-foreground">
+                  {preset.description}
+                </p>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-xs rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
                       {extractProvider(preset.label)}
                     </span>
                     {getMtu(preset) && (
-                      <span className="text-xs text-muted-foreground">{getMtu(preset)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {getMtu(preset)}
+                      </span>
                     )}
                   </div>
                   <Button

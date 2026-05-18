@@ -28,7 +28,10 @@ const protocolBadge: Record<ChainNode['protocol'], string> = {
   xray: 'bg-sky-500/20 text-sky-300',
 };
 
-function ChainFlowNodeRaw({ data, selected }: NodeProps<Node<ChainBuilderNode>>) {
+function ChainFlowNodeRaw({
+  data,
+  selected,
+}: NodeProps<Node<ChainBuilderNode>>) {
   const node = data;
 
   return (

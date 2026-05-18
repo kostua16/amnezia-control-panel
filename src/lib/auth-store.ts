@@ -70,10 +70,20 @@ export const useAuthStore = create<AuthState>((set) => ({
         const { user } = await response.json();
         set({ user, token: 'cookie', isAuthenticated: true, isLoading: false });
       } else {
-        set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+        set({
+          user: null,
+          token: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
       }
     } catch {
-      set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+      set({
+        user: null,
+        token: null,
+        isAuthenticated: false,
+        isLoading: false,
+      });
     }
   },
 }));

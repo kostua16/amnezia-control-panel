@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
     const parsed = generateConfigSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -30,10 +31,7 @@ export async function POST(request: NextRequest) {
       overrides,
     });
 
-    return NextResponse.json(
-      { success: true, data: config },
-      { status: 201 },
-    );
+    return NextResponse.json({ success: true, data: config }, { status: 201 });
   } catch (err) {
     console.error('[api/configs/generate] POST error:', err);
 
@@ -42,9 +40,6 @@ export async function POST(request: NextRequest) {
 
     const status = message.includes('not found') ? 404 : 500;
 
-    return NextResponse.json(
-      { success: false, error: message },
-      { status },
-    );
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }

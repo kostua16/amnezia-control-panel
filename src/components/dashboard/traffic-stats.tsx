@@ -5,7 +5,10 @@ import { clsx } from 'clsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, Clock } from 'lucide-react';
-import { useTrafficStats, type TrafficStatsParams } from '@/hooks/use-traffic-stats';
+import {
+  useTrafficStats,
+  type TrafficStatsParams,
+} from '@/hooks/use-traffic-stats';
 import { useTopUserTraffic } from '@/hooks/use-top-user-traffic';
 import { TrafficChart } from './traffic-chart';
 
@@ -34,8 +37,10 @@ export function TrafficStats() {
     period,
   });
 
-  const { data: topUsers, isLoading: topUsersLoading } =
-    useTopUserTraffic(10, period);
+  const { data: topUsers, isLoading: topUsersLoading } = useTopUserTraffic(
+    10,
+    period,
+  );
 
   const buckets = trafficData?.buckets ?? [];
   const totalIn = trafficData?.totalIn ?? 0;
@@ -67,8 +72,8 @@ export function TrafficStats() {
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Clock className="h-3.5 w-3.5" />
               <span>
-                Total: {formatBytes(totalIn + totalOut)} ({formatBytes(totalIn)} down /{' '}
-                {formatBytes(totalOut)} up)
+                Total: {formatBytes(totalIn + totalOut)} ({formatBytes(totalIn)}{' '}
+                down / {formatBytes(totalOut)} up)
               </span>
             </div>
           </div>

@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
     const parsed = createAlertSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return error(firstError, 422);
     }
 

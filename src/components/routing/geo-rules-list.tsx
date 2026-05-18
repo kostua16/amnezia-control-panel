@@ -17,15 +17,26 @@ import { GeoRuleDrawer } from '@/components/routing/geo-rule-drawer';
 import { GeoIPStatusBadge } from '@/components/routing/geoip-status-badge';
 import { EmptyStateStarter } from '@/components/routing/empty-state-starter';
 import { GEO_STARTER_RULES } from '@/lib/geo-starter-rules';
-import type { GeoRoutingRule, GeoRuleCreate, GeoMatchType } from '@/types/geo-routing';
+import type {
+  GeoRoutingRule,
+  GeoRuleCreate,
+  GeoMatchType,
+} from '@/types/geo-routing';
 
 // ─── Helpers ─────────────────────────────────────────────
 
 function countryCodeToFlag(code: string): string {
-  return code.toUpperCase().split('').map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
+  return code
+    .toUpperCase()
+    .split('')
+    .map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
+    .join('');
 }
 
-function matchTypeLabel(matchType: GeoMatchType, target: GeoRoutingRule['target']): string {
+function matchTypeLabel(
+  matchType: GeoMatchType,
+  target: GeoRoutingRule['target'],
+): string {
   switch (matchType) {
     case 'country':
       return `${countryCodeToFlag(target.countryCode ?? '')} ${target.countryCode ?? ''}`;
@@ -92,42 +103,51 @@ export function GeoRulesList() {
     }
   }, []);
 
-  useEffect(() => { fetchRules(); }, [fetchRules]);
+  useEffect(() => {
+    fetchRules();
+  }, [fetchRules]);
 
   // ─── Handlers ───────────────────────────────────────
 
-  const handleSubmit = useCallback(async (data: GeoRuleCreate) => {
-    setSubmitting(true);
-    setApiError(null);
+  const handleSubmit = useCallback(
+    async (data: GeoRuleCreate) => {
+      setSubmitting(true);
+      setApiError(null);
 
-    const isEdit = editingRule !== null;
-    const url = isEdit ? `/api/routing/geo/${editingRule.id}` : '/api/routing/geo';
-    const method = isEdit ? 'PUT' : 'POST';
+      const isEdit = editingRule !== null;
+      const url = isEdit
+        ? `/api/routing/geo/${editingRule.id}`
+        : '/api/routing/geo';
+      const method = isEdit ? 'PUT' : 'POST';
 
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
 
-      const result = await response.json();
+        const result = await response.json();
 
-      if (!response.ok) {
-        setApiError(result.error || `Failed to ${isEdit ? 'update' : 'create'} rule`);
-        return;
+        if (!response.ok) {
+          setApiError(
+            result.error || `Failed to ${isEdit ? 'update' : 'create'} rule`,
+          );
+          return;
+        }
+
+        setDrawerOpen(false);
+        setEditingRule(null);
+        setLoading(true);
+        fetchRules();
+      } catch {
+        setApiError('Network error. Please check your connection.');
+      } finally {
+        setSubmitting(false);
       }
-
-      setDrawerOpen(false);
-      setEditingRule(null);
-      setLoading(true);
-      fetchRules();
-    } catch {
-      setApiError('Network error. Please check your connection.');
-    } finally {
-      setSubmitting(false);
-    }
-  }, [editingRule, fetchRules]);
+    },
+    [editingRule, fetchRules],
+  );
 
   const handleDelete = useCallback(async () => {
     if (deleteConfirmId === null) return;
@@ -156,60 +176,68 @@ export function GeoRulesList() {
     }
   }, [deleteConfirmId, fetchRules]);
 
-  const handleToggleActive = useCallback(async (rule: GeoRoutingRule) => {
-    setApiError(null);
+  const handleToggleActive = useCallback(
+    async (rule: GeoRoutingRule) => {
+      setApiError(null);
 
-    try {
-      const response = await fetch(`/api/routing/geo/${rule.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !rule.isActive }),
+      try {
+        const response = await fetch(`/api/routing/geo/${rule.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isActive: !rule.isActive }),
+        });
+
+        if (!response.ok) {
+          const result = await response.json();
+          setApiError(result.error || 'Failed to toggle rule');
+          return;
+        }
+
+        setLoading(true);
+        fetchRules();
+      } catch {
+        setApiError('Network error. Please check your connection.');
+      }
+    },
+    [fetchRules],
+  );
+
+  const handleMove = useCallback(
+    async (index: number, direction: 'up' | 'down') => {
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= rules.length) return;
+
+      const reorderPairs = rules.map((rule, i) => {
+        if (i === index)
+          return { id: rule.id, priority: rules[targetIndex].priority };
+        if (i === targetIndex)
+          return { id: rule.id, priority: rules[index].priority };
+        return { id: rule.id, priority: rule.priority };
       });
 
-      if (!response.ok) {
-        const result = await response.json();
-        setApiError(result.error || 'Failed to toggle rule');
-        return;
+      setApiError(null);
+
+      try {
+        const response = await fetch('/api/routing/geo/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rules: reorderPairs }),
+        });
+
+        if (!response.ok) {
+          const result = await response.json();
+          setApiError(result.error || 'Failed to reorder rules');
+          return;
+        }
+
+        setLoading(true);
+        fetchRules();
+      } catch {
+        setApiError('Network error. Please check your connection.');
       }
-
-      setLoading(true);
-      fetchRules();
-    } catch {
-      setApiError('Network error. Please check your connection.');
-    }
-  }, [fetchRules]);
-
-  const handleMove = useCallback(async (index: number, direction: 'up' | 'down') => {
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= rules.length) return;
-
-    const reorderPairs = rules.map((rule, i) => {
-      if (i === index) return { id: rule.id, priority: rules[targetIndex].priority };
-      if (i === targetIndex) return { id: rule.id, priority: rules[index].priority };
-      return { id: rule.id, priority: rule.priority };
-    });
-
-    setApiError(null);
-
-    try {
-      const response = await fetch('/api/routing/geo/reorder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rules: reorderPairs }),
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        setApiError(result.error || 'Failed to reorder rules');
-        return;
-      }
-
-      setLoading(true);
-      fetchRules();
-    } catch {
-      setApiError('Network error. Please check your connection.');
-    }
-  }, [rules, fetchRules]);
+    },
+    [rules, fetchRules],
+  );
 
   const handleLoadStarterRules = useCallback(async () => {
     setStarterLoading(true);
@@ -368,9 +396,12 @@ export function GeoRulesList() {
                       <span className="text-sm font-medium">{rule.name}</span>
                     </td>
                     <td className="px-3 py-3">
-                      {rule.matchType === 'country' && rule.target.countryCode ? (
+                      {rule.matchType === 'country' &&
+                      rule.target.countryCode ? (
                         <span className="inline-flex items-center gap-1.5 text-sm">
-                          <span>{countryCodeToFlag(rule.target.countryCode)}</span>
+                          <span>
+                            {countryCodeToFlag(rule.target.countryCode)}
+                          </span>
                           <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
                             {rule.target.countryCode}
                           </code>
@@ -383,7 +414,11 @@ export function GeoRulesList() {
                       ) : (
                         <span className="inline-flex items-center gap-1.5 text-sm">
                           <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>{rule.target.special === 'domestic' ? 'Domestic' : 'Foreign'}</span>
+                          <span>
+                            {rule.target.special === 'domestic'
+                              ? 'Domestic'
+                              : 'Foreign'}
+                          </span>
                         </span>
                       )}
                     </td>

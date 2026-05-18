@@ -496,7 +496,9 @@ export function RoutingRulesList() {
                     </div>
                   </td>
                   <td className="px-3 py-3">
-                    <span className="text-sm">{protocolLabel(rule.protocol)}</span>
+                    <span className="text-sm">
+                      {protocolLabel(rule.protocol)}
+                    </span>
                   </td>
                   <td className="px-3 py-3">
                     <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
@@ -525,7 +527,7 @@ export function RoutingRulesList() {
                   <td className="hidden px-3 py-3 sm:table-cell">
                     <span className="text-sm text-muted-foreground">
                       {rule.user
-                        ? rule.user.displayName ?? rule.user.username
+                        ? (rule.user.displayName ?? rule.user.username)
                         : 'Global'}
                     </span>
                   </td>

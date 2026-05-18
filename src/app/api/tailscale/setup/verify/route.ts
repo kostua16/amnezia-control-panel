@@ -42,9 +42,7 @@ function findOverlappingSubnets(subnets: string[]): string[] {
   for (let i = 0; i < subnets.length; i++) {
     for (let j = i + 1; j < subnets.length; j++) {
       if (cidrsOverlap(subnets[i], subnets[j])) {
-        warnings.push(
-          `"${subnets[i]}" and "${subnets[j]}" may overlap`,
-        );
+        warnings.push(`"${subnets[i]}" and "${subnets[j]}" may overlap`);
       }
     }
   }
@@ -64,9 +62,7 @@ function cidrsOverlap(a: string, b: string): boolean {
   return rangeA[0] <= rangeB[1] && rangeB[0] <= rangeA[1];
 }
 
-function cidrToRange(
-  cidr: string,
-): [number, number] | null {
+function cidrToRange(cidr: string): [number, number] | null {
   const match = cidr.match(CIDR_REGEX);
   if (!match) return null;
 
@@ -78,11 +74,11 @@ function cidrToRange(
   if (isNaN(prefix) || prefix < 0 || prefix > 32) return null;
 
   const ip =
-    ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
-  const mask =
-    prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+    ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>>
+    0;
+  const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
   const network = (ip & mask) >>> 0;
-  const broadcast = ((network | ~mask) >>> 0);
+  const broadcast = (network | ~mask) >>> 0;
 
   return [network, broadcast];
 }
@@ -200,9 +196,10 @@ async function verifyAuthStep() {
 
 async function verifyIpForwardingStep() {
   try {
-    const { stdout } = await execFileAsync('sysctl', [
-      'net.ipv4.ip_forward',
-    ], { timeout: 5_000, encoding: 'utf-8' });
+    const { stdout } = await execFileAsync('sysctl', ['net.ipv4.ip_forward'], {
+      timeout: 5_000,
+      encoding: 'utf-8',
+    });
 
     const enabled = stdout.includes('= 1');
 
@@ -249,9 +246,10 @@ async function verifySubnetConfigStep(subnets?: string[]) {
     passed: true,
     subnets: resolved,
     warnings: warnings.length > 0 ? warnings : undefined,
-    message: warnings.length > 0
-      ? `${resolved.length} subnet(s) configured with ${warnings.length} overlap warning(s)`
-      : `${resolved.length} subnet(s) configured`,
+    message:
+      warnings.length > 0
+        ? `${resolved.length} subnet(s) configured with ${warnings.length} overlap warning(s)`
+        : `${resolved.length} subnet(s) configured`,
   };
 }
 
@@ -278,8 +276,9 @@ async function verifyTailnetCheckStep() {
     nodeIP: selfIPs[0] ?? null,
     nodeHostname: status.Self?.HostName ?? null,
     peerCount: nodes.length - 1, // exclude self
-    message: selfIPs.length > 0
-      ? `Node is visible in tailnet with ${nodes.length - 1} peer(s)`
-      : 'Node is not visible in tailnet -- no Tailscale IP assigned',
+    message:
+      selfIPs.length > 0
+        ? `Node is visible in tailnet with ${nodes.length - 1} peer(s)`
+        : 'Node is not visible in tailnet -- no Tailscale IP assigned',
   };
 }

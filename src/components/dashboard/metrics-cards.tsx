@@ -15,7 +15,13 @@ interface MetricCardProps {
   isLoading?: boolean;
 }
 
-function MetricCard({ label, value, subtext, icon, isLoading }: MetricCardProps) {
+function MetricCard({
+  label,
+  value,
+  subtext,
+  icon,
+  isLoading,
+}: MetricCardProps) {
   return (
     <Card>
       <CardContent className="flex items-center gap-4 p-6">
@@ -32,7 +38,9 @@ function MetricCard({ label, value, subtext, icon, isLoading }: MetricCardProps)
             <>
               <p className="text-2xl font-bold tracking-tight">{value}</p>
               {subtext && (
-                <p className="mt-0.5 text-xs text-muted-foreground">{subtext}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {subtext}
+                </p>
               )}
             </>
           )}
@@ -54,14 +62,22 @@ export function MetricsCards() {
       <MetricCard
         label="Total Users"
         value={stats ? String(stats.totalUsers) : '--'}
-        subtext={stats ? `${stats.activeUsers} active, ${stats.blockedUsers} blocked` : undefined}
+        subtext={
+          stats
+            ? `${stats.activeUsers} active, ${stats.blockedUsers} blocked`
+            : undefined
+        }
         icon={<Users className="h-6 w-6 text-muted-foreground" />}
         isLoading={isLoading}
       />
       <MetricCard
         label="Active Users"
         value={stats ? String(stats.activeUsers) : '--'}
-        subtext={stats ? `${Math.round(stats.totalUsers > 0 ? (stats.activeUsers / stats.totalUsers) * 100 : 0)}% of total` : undefined}
+        subtext={
+          stats
+            ? `${Math.round(stats.totalUsers > 0 ? (stats.activeUsers / stats.totalUsers) * 100 : 0)}% of total`
+            : undefined
+        }
         icon={<Activity className="h-6 w-6 text-muted-foreground" />}
         isLoading={isLoading}
       />
@@ -79,7 +95,13 @@ export function MetricsCards() {
       <MetricCard
         label="Services Online"
         value={stats ? `${stats.servicesOnline}/${stats.servicesTotal}` : '--'}
-        subtext={stats ? (stats.servicesOnline === stats.servicesTotal ? 'All services running' : 'Some services down') : undefined}
+        subtext={
+          stats
+            ? stats.servicesOnline === stats.servicesTotal
+              ? 'All services running'
+              : 'Some services down'
+            : undefined
+        }
         icon={<Wifi className="h-6 w-6 text-muted-foreground" />}
         isLoading={isLoading}
       />

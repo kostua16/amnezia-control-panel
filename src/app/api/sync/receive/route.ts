@@ -7,26 +7,32 @@ import { storePreviousConfig } from '@/lib/rollback-manager';
 const panelSyncPayloadSchema = z.object({
   configVersion: z.number().int().positive(),
   panelRole: z.enum(['entry', 'middle', 'exit', 'domestic', 'foreign']),
-  chainNodes: z.array(z.object({
-    label: z.string(),
-    serverId: z.number().int(),
-    role: z.enum(['entry', 'middle', 'exit', 'domestic', 'foreign']),
-    protocol: z.enum(['wireguard', 'xray']),
-    hostname: z.string(),
-    port: z.number().int(),
-  })),
-  routingRules: z.array(z.object({
-    type: z.enum(['ip', 'domain', 'geoip']),
-    value: z.string(),
-    outboundTag: z.string(),
-    priority: z.number().int(),
-  })),
-  wireguardPeers: z.array(z.object({
-    publicKey: z.string(),
-    allowedIPs: z.string(),
-    endpoint: z.string(),
-    persistentKeepalive: z.number().int().optional(),
-  })),
+  chainNodes: z.array(
+    z.object({
+      label: z.string(),
+      serverId: z.number().int(),
+      role: z.enum(['entry', 'middle', 'exit', 'domestic', 'foreign']),
+      protocol: z.enum(['wireguard', 'xray']),
+      hostname: z.string(),
+      port: z.number().int(),
+    }),
+  ),
+  routingRules: z.array(
+    z.object({
+      type: z.enum(['ip', 'domain', 'geoip']),
+      value: z.string(),
+      outboundTag: z.string(),
+      priority: z.number().int(),
+    }),
+  ),
+  wireguardPeers: z.array(
+    z.object({
+      publicKey: z.string(),
+      allowedIPs: z.string(),
+      endpoint: z.string(),
+      persistentKeepalive: z.number().int().optional(),
+    }),
+  ),
   generatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
 });
 
@@ -72,7 +78,8 @@ export async function POST(request: NextRequest) {
     // 4. Zod validation
     const parsed = panelSyncPayloadSchema.safeParse(body);
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid payload structure';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid payload structure';
       return NextResponse.json(
         { success: false, error: `Invalid payload: ${firstError}` },
         { status: 400 },
@@ -94,7 +101,10 @@ export async function POST(request: NextRequest) {
       where: { panelId: matchedPanel.id },
     });
 
-    if (existingConfig && existingConfig.configVersion === configData.configVersion) {
+    if (
+      existingConfig &&
+      existingConfig.configVersion === configData.configVersion
+    ) {
       return NextResponse.json({
         success: true,
         data: {

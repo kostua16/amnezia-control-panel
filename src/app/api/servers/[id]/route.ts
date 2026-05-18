@@ -19,7 +19,12 @@ function serverResponse(server: {
   port: number;
   isActive: boolean;
   createdAt: Date;
-  services: Array<{ id: number; type: string; status: string; port: number | null }>;
+  services: Array<{
+    id: number;
+    type: string;
+    status: string;
+    port: number | null;
+  }>;
 }) {
   return {
     id: server.id,
@@ -94,7 +99,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const parsed = updateServerSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message ?? 'Invalid request body';
+      const firstError =
+        parsed.error.issues[0]?.message ?? 'Invalid request body';
       return NextResponse.json(
         { success: false, error: firstError },
         { status: 422 },
@@ -103,7 +109,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const { name, hostname, port, apiKey, isActive } = parsed.data;
 
-    const existing = await prisma.server.findUnique({ where: { id: serverId } });
+    const existing = await prisma.server.findUnique({
+      where: { id: serverId },
+    });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Server not found' },
@@ -171,7 +179,9 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       );
     }
 
-    const existing = await prisma.server.findUnique({ where: { id: serverId } });
+    const existing = await prisma.server.findUnique({
+      where: { id: serverId },
+    });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Server not found' },

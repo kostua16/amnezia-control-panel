@@ -17,9 +17,14 @@ export async function seedAdmin(): Promise<void> {
 
     if (!existing) {
       if (!process.env.ADMIN_PASSWORD) {
-        console.warn('[seed] WARNING: ADMIN_PASSWORD is not set. Using insecure default "admin". Set ADMIN_PASSWORD before deploying to production.');
+        console.warn(
+          '[seed] WARNING: ADMIN_PASSWORD is not set. Using insecure default "admin". Set ADMIN_PASSWORD before deploying to production.',
+        );
       }
-      const passwordHash = await hash(process.env.ADMIN_PASSWORD || 'admin', 10);
+      const passwordHash = await hash(
+        process.env.ADMIN_PASSWORD || 'admin',
+        10,
+      );
       await prisma.admin.create({
         data: {
           username: 'admin',

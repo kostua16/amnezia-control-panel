@@ -63,12 +63,14 @@ export function broadcastEvent(event: string, data: unknown): void {
  * Keep initWebSocket as a no-op for backward compatibility.
  * The Socket.IO server is now created in server.mjs.
  */
-export function initWebSocket(_httpServer: import('http').Server): SocketIOServer {
+export function initWebSocket(
+  _httpServer: import('http').Server,
+): SocketIOServer {
   const existing = getWebSocket();
   if (existing) return existing;
   throw new Error(
     '[ws] initWebSocket called but Socket.IO was not initialized by server.mjs. ' +
-    'Ensure the application is started via scripts/dev.cjs or scripts/start.cjs.',
+      'Ensure the application is started via scripts/dev.cjs or scripts/start.cjs.',
   );
 }
 

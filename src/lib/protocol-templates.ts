@@ -121,8 +121,7 @@ const PROTOCOL_TEMPLATES: ProtocolTemplate[] = [
       },
       sni: '',
     },
-    description:
-      'Trojan protocol over TCP with TLS. Mimics HTTPS traffic.',
+    description: 'Trojan protocol over TCP with TLS. Mimics HTTPS traffic.',
   },
   {
     name: 'Shadowsocks-2022',

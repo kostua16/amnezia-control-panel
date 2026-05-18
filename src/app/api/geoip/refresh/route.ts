@@ -7,7 +7,10 @@ export async function POST() {
     if (result.success) {
       return NextResponse.json({ success: true, data: result });
     }
-    return NextResponse.json({ success: false, error: result.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: result.message },
+      { status: 500 },
+    );
   } catch (err) {
     console.error('[api/geoip/refresh] Error:', err);
     return NextResponse.json(

@@ -58,12 +58,20 @@ export function CreateRoutingRuleForm({
   onCancel,
   loading = false,
 }: CreateRoutingRuleFormProps) {
-  const [protocol, setProtocol] = useState<RuleProtocol>(initialData?.protocol ?? 'ANY');
-  const [destination, setDestination] = useState(initialData?.destination ?? '');
-  const [action, setAction] = useState<RuleAction>(initialData?.action ?? 'ALLOW');
+  const [protocol, setProtocol] = useState<RuleProtocol>(
+    initialData?.protocol ?? 'ANY',
+  );
+  const [destination, setDestination] = useState(
+    initialData?.destination ?? '',
+  );
+  const [action, setAction] = useState<RuleAction>(
+    initialData?.action ?? 'ALLOW',
+  );
   const [priority, setPriority] = useState(String(initialData?.priority ?? 0));
   const [isActive, setIsActive] = useState(initialData?.isActive ?? true);
-  const [userId, setUserId] = useState<string>(initialData?.userId ? String(initialData.userId) : '');
+  const [userId, setUserId] = useState<string>(
+    initialData?.userId ? String(initialData.userId) : '',
+  );
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
@@ -145,7 +153,8 @@ export function CreateRoutingRuleForm({
           onBlur={() => setTouched((prev) => ({ ...prev, destination: true }))}
           disabled={loading}
           className={clsx(
-            showError('destination', errors.destination) && 'border-destructive',
+            showError('destination', errors.destination) &&
+              'border-destructive',
           )}
         />
         {showError('destination', errors.destination) && (
@@ -155,13 +164,12 @@ export function CreateRoutingRuleForm({
 
       {/* Action */}
       <div className="space-y-1">
-        <span className="block text-sm font-medium text-foreground">Action</span>
+        <span className="block text-sm font-medium text-foreground">
+          Action
+        </span>
         <div className="flex gap-3">
           {actionOptions.map((opt) => (
-            <label
-              key={opt.value}
-              className="flex items-center gap-2 text-sm"
-            >
+            <label key={opt.value} className="flex items-center gap-2 text-sm">
               <input
                 type="radio"
                 name="rule-action"

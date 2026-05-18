@@ -7,7 +7,10 @@ interface PanelStatusBadgeProps {
   status: PanelConnectionStatus;
 }
 
-const statusConfig: Record<PanelConnectionStatus, { dot: string; label: string; tint: string }> = {
+const statusConfig: Record<
+  PanelConnectionStatus,
+  { dot: string; label: string; tint: string }
+> = {
   connected: {
     dot: 'bg-green-500',
     label: 'Connected',

@@ -6,7 +6,10 @@ interface UserEmptyStateProps {
   onCreateClick?: () => void;
 }
 
-export function UserEmptyState({ hasSearch, onCreateClick }: UserEmptyStateProps) {
+export function UserEmptyState({
+  hasSearch,
+  onCreateClick,
+}: UserEmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
@@ -15,7 +18,9 @@ export function UserEmptyState({ hasSearch, onCreateClick }: UserEmptyStateProps
 
       {hasSearch ? (
         <>
-          <h3 className="mt-4 text-lg font-semibold">No users match your search</h3>
+          <h3 className="mt-4 text-lg font-semibold">
+            No users match your search
+          </h3>
           <p className="mt-1 text-sm text-muted-foreground">
             Try adjusting your search query.
           </p>

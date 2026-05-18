@@ -38,16 +38,15 @@ function ServiceCard({
         ? 'bg-red-500/10 border-red-500/20'
         : 'bg-muted border-border';
 
-  const statusLabel =
-    isLoading
-      ? 'Checking...'
-      : isError
-        ? 'Error'
-        : status === 'online'
-          ? 'Online'
-          : status === 'offline'
-            ? 'Offline'
-            : 'Unknown';
+  const statusLabel = isLoading
+    ? 'Checking...'
+    : isError
+      ? 'Error'
+      : status === 'online'
+        ? 'Online'
+        : status === 'offline'
+          ? 'Offline'
+          : 'Unknown';
 
   const dotColor =
     status === 'online'
@@ -70,9 +69,7 @@ function ServiceCard({
           onClick={onRefresh}
           disabled={isLoading}
         >
-          <RefreshCw
-            className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`}
-          />
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
         </Button>
       </CardHeader>
       <CardContent>
@@ -108,7 +105,9 @@ export function ServiceStatusDisplay() {
           onClick={handleRefresh}
           disabled={isLoading}
         >
-          <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          <RefreshCw
+            className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`}
+          />
           Refresh
         </Button>
       </div>

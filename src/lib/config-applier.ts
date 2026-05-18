@@ -106,7 +106,8 @@ export async function applyAwgConfig(
         error: {
           type: 'service_error',
           message: `Remote panel ${panelName} does not have /api/sync/apply. Config was NOT applied to AWG services.`,
-          recommendation: 'Update the remote panel to the latest version that supports the apply endpoint',
+          recommendation:
+            'Update the remote panel to the latest version that supports the apply endpoint',
           knownFix: 'Run git pull and restart the remote panel service',
           rawError: 'HTTP 404: /api/sync/apply not found',
         },
@@ -114,7 +115,9 @@ export async function applyAwgConfig(
     }
 
     // Other HTTP error
-    const errorText = await response.text().catch(() => `HTTP ${response.status}`);
+    const errorText = await response
+      .text()
+      .catch(() => `HTTP ${response.status}`);
     return {
       success: false,
       service: 'awg',
@@ -153,7 +156,10 @@ export async function applyThreeXuiConfig(
   // Rules are JSON-serialized (not string-interpolated) per T-11.4-02
 
   try {
-    const bodyPayload = { service: 'three_xui' as const, routingRules: xrayRules };
+    const bodyPayload = {
+      service: 'three_xui' as const,
+      routingRules: xrayRules,
+    };
     const body = JSON.stringify(bodyPayload);
     const signature = signPayload(bodyPayload, apiKey);
 
@@ -203,14 +209,17 @@ export async function applyThreeXuiConfig(
         error: {
           type: 'service_error',
           message: `Remote panel ${panelName} does not have /api/sync/apply. Config was NOT applied to 3x-ui services.`,
-          recommendation: 'Update the remote panel to the latest version that supports the apply endpoint',
+          recommendation:
+            'Update the remote panel to the latest version that supports the apply endpoint',
           knownFix: 'Run git pull and restart the remote panel service',
           rawError: 'HTTP 404: /api/sync/apply not found',
         },
       };
     }
 
-    const errorText = await response.text().catch(() => `HTTP ${response.status}`);
+    const errorText = await response
+      .text()
+      .catch(() => `HTTP ${response.status}`);
     return {
       success: false,
       service: 'three_xui',
@@ -247,16 +256,28 @@ export async function applyPanelConfig(
   const results: ConfigApplierResult[] = [];
 
   // Determine which services this panel uses
-  const hasWireguard = payload.chainNodes.some((node) => node.protocol === 'wireguard');
+  const hasWireguard = payload.chainNodes.some(
+    (node) => node.protocol === 'wireguard',
+  );
   const hasXray = payload.chainNodes.some((node) => node.protocol === 'xray');
 
   if (hasWireguard && payload.wireguardPeers.length > 0) {
-    const result = await applyAwgConfig(panelUrl, panelName, apiKey, payload.wireguardPeers);
+    const result = await applyAwgConfig(
+      panelUrl,
+      panelName,
+      apiKey,
+      payload.wireguardPeers,
+    );
     results.push(result);
   }
 
   if (hasXray && payload.routingRules.length > 0) {
-    const result = await applyThreeXuiConfig(panelUrl, panelName, apiKey, payload.routingRules);
+    const result = await applyThreeXuiConfig(
+      panelUrl,
+      panelName,
+      apiKey,
+      payload.routingRules,
+    );
     results.push(result);
   }
 
