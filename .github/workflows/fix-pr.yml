@@ -248,7 +248,7 @@ jobs:
         if: steps.changes.outputs.has_changes == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          commit-message: ${{ steps.prettier.outputs.prettier_only == 'true' && 'style: auto-fix prettier formatting' || 'fix(ci): auto-fix CI failures' }}
+          commit-message: "${{ steps.prettier.outputs.prettier_only == 'true' && 'style: auto-fix prettier formatting' || 'fix(ci): auto-fix CI failures' }}"
           token: ${{ secrets.GH_PAT }}
 
       - name: Find related failure issues
