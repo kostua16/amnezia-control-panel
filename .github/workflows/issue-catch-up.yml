@@ -342,9 +342,10 @@ jobs:
       - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
-          model: 'haiku'
-          max-turns: "50"
+          model: 'sonnet'
+          max-turns: "30"
           track-progress: "false"
+          claude-debug: "true"
           allowed-bots: "github-actions[bot]"
           allowed-tools: "Bash(gh:*),Read,Grep"
           additional-permissions: "issues: write"
