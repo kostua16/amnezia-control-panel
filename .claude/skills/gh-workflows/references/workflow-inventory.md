@@ -32,10 +32,11 @@
 | report-failure | Collect failure logs → create issue or comment | mode, issue-number, auto-fix-run-url |
 | prettier-auto-fix | Detect prettier-only lint failures → apply without AI | run-id, github-token |
 
-## Helper Scripts (2)
+## Helper Scripts (3)
 
 - **scripts/gh.sh** — safe gh wrapper (issue view/list, search issues, label list). Validates repo format, blocks `repo:`/`org:`/`user:` qualifiers.
 - **scripts/edit-issue-labels.sh** — label editor reading issue from `$GITHUB_EVENT_PATH`. Only `--add-label`/`--remove-label`, validates labels exist.
+- **scripts/analyze-claude-runs.sh** — bulk-analyze completed CI runs for Claude failure patterns. Categorizes 11 error types + uncategorized fallback. Options: `--limit N` (default 50), `--json` (structured output). Requires `gh` CLI + `jq`. Bash 3.2 compatible.
 
 ## Architecture Patterns
 

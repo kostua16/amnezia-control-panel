@@ -1,11 +1,11 @@
 ---
 name: ck:gh-workflows
-description: "Create, fix, update, and maintain GitHub Actions workflows. Handles CI/CD pipeline design, claude-code-action integration, workflow debugging, composite actions, and helper scripts."
+description: "Create, fix, update, and maintain GitHub Actions workflows. Handles CI/CD pipeline design, claude-code-action integration, workflow debugging, composite actions, and helper scripts. Also analyzes Claude CI run failures and categorizes error patterns."
 user-invocable: true
 when_to_use: "Invoke for any GitHub Actions workflow task — creating new workflows, fixing failed runs, updating existing workflows, adding triggers, optimizing pipeline performance."
 category: devops
-keywords: [github-actions, workflows, ci-cd, pipeline, claude-code-action, composite-actions]
-argument-hint: "[create|fix|update|audit] [workflow-name or description]"
+keywords: [github-actions, workflows, ci-cd, pipeline, claude-code-action, composite-actions, analyze-runs]
+argument-hint: "[create|fix|update|audit|analyze] [workflow-name or description]"
 metadata:
   author: claudekit
   version: "2.0.0"
@@ -55,6 +55,22 @@ You are a **GitHub Actions Engineer** for this project. You specialize in `.gith
   - Missing `MAX_TURNS` env var in Claude workflows
 - Generate findings report with file:line references
 
+### `analyze` — Analyze Claude CI Run Failures
+
+Run `.github/workflows/scripts/analyze-claude-runs.sh` and present formatted results.
+
+**Steps:**
+1. Determine flags from user input:
+   - Default: `--limit 50`
+   - User specifies number (e.g. "last 10"): `--limit N`
+   - User says "json" or "export": add `--json`
+2. Execute: `bash .github/workflows/scripts/analyze-claude-runs.sh [--limit N] [--json]`
+3. If human-readable output: present the table as-is, then add a summary paragraph
+4. If JSON output: parse and render as a markdown table with columns: Category | Runs | % | Severity | Sample Detail
+5. After showing results, suggest actionable next steps based on top findings
+
+**Categories detected:** permission_denials, git_push_403, graphql_pr_fail, turn_limit_hit, zero_turns, internal_error, disallowed_tools, action_not_found, graphql_user_err, rate_limited, uncategorized
+
 ## Key Rules
 
 ### Action Chain
@@ -85,6 +101,24 @@ run-claude-params handles 429 retry automatically (3 attempts, 2-min wait). Do n
 
 ### Prettier Shortcut
 fix-pr/fix-branch detect prettier-only failures via `prettier-auto-fix` action and apply mechanically — no AI cost.
+
+### actionlint — Static Analysis for Workflows/Actions
+
+Catches invalid `on:` syntax, wrong expression contexts, shellcheck issues in `run:` steps, undefined env vars, deprecated features.
+
+**Install:** `brew install actionlint` (macOS) or `go install github.com/rhysd/actionlint/cmd/actionlint@latest` (Linux/macOS)
+
+**Usage:** `actionlint` (all files) or `actionlint <file>` (specific). Add `-verbose` for check details. No config needed — auto-detects `.github/` structure.
+
+### Validation Guard (MANDATORY)
+
+After **every** edit to `.github/workflows/*.yml` or `.github/actions/*/action.yml`:
+
+1. **YAML formatting** — verify valid YAML (editor auto-check or `python3 -c "import yaml; yaml.safe_load(open('FILE'))"`)
+2. **actionlint** — run `actionlint <file>` and confirm **zero errors**
+3. If actionlint reports errors → fix them before proceeding to commit
+
+This guard applies to all action routes: `create`, `fix`, `update`, and any composite action edits.
 
 ## Output
 

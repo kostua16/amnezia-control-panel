@@ -51,7 +51,8 @@ User wants to...
 ```
 User wants to...
 ├── Deploy to Vercel, Netlify, Railway, Fly.io   → /ck:deploy
-└── Docker, Kubernetes, CI/CD pipelines, GitOps   → /ck:devops
+├── Docker, Kubernetes, CI/CD pipelines, GitOps   → /ck:devops
+└── Analyze/check Claude CI run failures          → /ck:gh-workflows analyze
 ```
 
 ## Security
