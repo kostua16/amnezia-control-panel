@@ -34,7 +34,7 @@ jobs:
 
       - id: claude_run
         continue-on-error: true
-        uses: ./.github/actions/run-claude
+        uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           max-turns: "${{ env.MAX_TURNS }}"

@@ -165,7 +165,7 @@ jobs:
         if: steps.fixability.outputs.fixable == 'true'
         run: npx tsc --noEmit 2>/dev/null || true
 
-      - uses: ./.github/actions/run-claude
+      - uses: ./.github/actions/run-zai
         if: steps.fixability.outputs.fixable == 'true'
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}

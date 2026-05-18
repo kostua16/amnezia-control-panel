@@ -79,7 +79,7 @@ jobs:
           install-gsd: "true"
           install-rtk: "true"
 
-      - uses: ./.github/actions/run-claude
+      - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           max-turns: ${{ env.MAX_TURNS }}

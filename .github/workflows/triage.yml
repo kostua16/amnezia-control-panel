@@ -67,10 +67,10 @@ jobs:
           install-gsd: "true"
           install-rtk: "true"
 
-      - uses: ./.github/actions/run-claude
+      - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
-          model: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
+          model: 'haiku'
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "${{ github.event_name != 'workflow_dispatch' }}"
           allowed-bots: "github-actions[bot]"

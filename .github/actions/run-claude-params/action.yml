@@ -1,0 +1,111 @@
+name: "Run Claude with parameters"
+description: "claude-code-action wrapper with shared settings, model pin, default tools"
+
+inputs:
+  api-key:
+    description: "API key"
+    required: true
+  api-url:
+    description: "Anthropic API URL"
+    default: "https://api.anthropic.com"
+  api-timeout:
+    description: "API timeout in milliseconds"
+    default: "300000"
+  prompt:
+    description: "Prompt for Claude"
+    required: true
+  max-turns:
+    description: "Maximum turns"
+    default: "70"
+  track-progress:
+    description: "Track progress"
+    default: "false"
+  allowed-bots:
+    description: "Allowed bots"
+    required: false
+  allowed-tools:
+    description: "Allowed tools"
+    default: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*)"
+  system-prompt:
+    description: "Custom system prompt. When empty, Claude uses its built-in default. Note: literal { and } must be escaped as {{ and }}."
+    required: false
+    default: ""
+  haiku-model:
+    description: "Anthropic default haiku model"
+    default: "claude-haiku-4-5-20251001"
+  sonnet-model:
+    description: "Anthropic default sonnet model"
+    default: "claude-sonnet-4-5-20250929"
+  opus-model:
+    description: "Anthropic default opus model"
+    default: "claude-opus-4-5-20251101"
+  model:
+    description: "Anthropic model"
+    default: "claude-sonnet-4-5-sonnet"
+  subagent-model:
+    description: "Claude code subagent model"
+    default: "claude-haiku-4-5-20251001"
+  claude-debug:
+    description: "Claude debug"
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - id: turn_budget
+      shell: bash
+      run: |
+        max="${{ inputs.max-turns }}"
+        if ! [[ "$max" =~ ^[0-9]+$ ]]; then
+          echo "::error::max-turns must be a non-negative integer, got: $max"
+          exit 1
+        fi
+        budget=$(( max * 80 / 100 ))
+        investigate=$(( budget * 20 / 100 ))
+        verify=$(( budget * 20 / 100 ))
+        main=$(( budget - investigate - verify ))
+        echo "budget=$budget" >> "$GITHUB_OUTPUT"
+        echo "investigate=$investigate" >> "$GITHUB_OUTPUT"
+        echo "main=$main" >> "$GITHUB_OUTPUT"
+        echo "verify=$verify" >> "$GITHUB_OUTPUT"
+
+    - name: Run Claude Code
+      uses: anthropics/claude-code-action@v1
+      env:
+        DISABLE_TELEMETRY: '1'
+        API_TIMEOUT_MS: ${{ inputs.api-timeout }}
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.haiku-model }}
+        ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.sonnet-model }}
+        ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.opus-model }}
+        CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.subagent-model }}
+        ANTHROPIC_BASE_URL: ${{ inputs.api-url }}
+        ANTHROPIC_API_KEY: ${{ inputs.api-key }}
+        ANTHROPIC_AUTH_TOKEN: ${{ inputs.api-key }}
+      with:
+        anthropic_api_key: ${{ inputs.api-key }}
+        allowed_bots: ${{ inputs.allowed-bots }}
+        track_progress: ${{ inputs.track-progress }}
+        show_full_output: ${{ inputs.claude-debug || false }}
+        claude_args: |-
+          --model ${{ inputs.model }}
+          --max-turns ${{ inputs.max-turns }}
+          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}
+        prompt: |-
+          ${{ inputs.prompt }}.
+
+          AGENT TURN LIMIT — maximum ${{ steps.turn_budget.outputs.budget }} turns (do not exceed):
+            - You have at most ${{ steps.turn_budget.outputs.budget }} turns total.
+            - Phase allocation (do not exceed):
+              • ≤${{ steps.turn_budget.outputs.investigate }} turns — investigate only (read logs, reproduce, search codebase).
+              • ≤${{ steps.turn_budget.outputs.main }} turns — implement (edit files, run fixes, commit).
+              • ≤${{ steps.turn_budget.outputs.verify }} turns — verify only (run tests, lint, confirm the fix).
+            - Once a phase budget is used up, move to the next phase; do not keep exploring after investigate is done.
+            - Prefer fewer tool calls per turn; avoid re-reading the same files.
+            - If you cannot finish in time, STOP and report: what you did, what remains, and your best partial result.
+        settings: |
+          {
+            "env": {
+              "ANTHROPIC_API_KEY": "${{ inputs.api-key }}",
+              "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
+            }
+          }

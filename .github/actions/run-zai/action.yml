@@ -1,4 +1,4 @@
-name: "Run Claude"
+name: "Run ZAI"
 description: "claude-code-action wrapper with shared settings, model pin, default tools"
 
 inputs:
@@ -6,7 +6,7 @@ inputs:
     description: "API key"
     required: true
   prompt:
-    description: "Prompt for Claude"
+    description: "Prompt for ZAI"
     required: true
   max-turns:
     description: "Maximum turns"
@@ -25,11 +25,11 @@ inputs:
     required: false
     default: ""
   model:
-    description: "Override default model (claude-sonnet-4-5-sonnet)"
+    description: "Override default model (glm-5)"
     required: false
     default: "sonnet"
   agent-model:
-    description: "Override default agent model (claude-haiku-4-5-20251001)"
+    description: "Override default agent model (glm-5)"
     required: false
     default: "haiku"
   claude-debug:
@@ -39,20 +39,20 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Run Claude
+    - name: Run ZAI
       uses: ./.github/actions/run-claude-params
       with:
         api-key: ${{ inputs.api-key }}
-        api-url: 'https://api.anthropic.com'
-        haiku-model: 'claude-haiku-4-5-20251001'
-        sonnet-model: 'claude-sonnet-4-5-20250929'
-        opus-model: 'claude-opus-4-5-20251101'
-        model: ${{ inputs.model }}
-        subagent-model: ${{ inputs.agent-model }}
+        api-url: 'https://api.z.ai/api/anthropic'
         prompt: ${{ inputs.prompt }}
         max-turns: ${{ inputs.max-turns }}
         track-progress: ${{ inputs.track-progress }}
         allowed-bots: ${{ inputs.allowed-bots }}
         allowed-tools: ${{ inputs.allowed-tools }}
         system-prompt: ${{ inputs.system-prompt }}
+        haiku-model: 'glm-4.7'
+        sonnet-model: 'glm-5'
+        opus-model: 'glm-5.1'
+        model: ${{ inputs.model }}
+        subagent-model: ${{ inputs.agent-model }}
         claude-debug: ${{ inputs.claude-debug }}

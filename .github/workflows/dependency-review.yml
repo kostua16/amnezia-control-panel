@@ -37,10 +37,10 @@ jobs:
           git diff origin/main -- package.json package-lock.json > /tmp/dep-diff.txt
           { echo "diff<<EOF"; head -200 /tmp/dep-diff.txt; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
-      - uses: ./.github/actions/run-claude
+      - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
-          model: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
+          model: 'haiku'
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "true"
           allowed-tools: "Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(gh pr comment:*)"

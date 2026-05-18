@@ -12,14 +12,6 @@ concurrency:
 env:
   MAX_TURNS: 25
   NODE_VERSION: "22.x"
-  DISABLE_TELEMETRY: "1"
-  API_TIMEOUT_MS: "${{ vars.API_TIMEOUT_MS }}"
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "${{ vars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC }}"
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: "${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}"
-  ANTHROPIC_DEFAULT_SONNET_MODEL: "${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}"
-  ANTHROPIC_DEFAULT_OPUS_MODEL: "${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}"
-  CLAUDE_CODE_SUBAGENT_MODEL: "${{ vars.CLAUDE_CODE_SUBAGENT_MODEL }}"
-  ANTHROPIC_BASE_URL: "${{ vars.ANTHROPIC_BASE_URL }}"
 
 permissions:
   contents: write
@@ -175,7 +167,7 @@ jobs:
           install-gsd: "true"
           install-rtk: "true"
 
-      - uses: ./.github/actions/run-claude
+      - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           max-turns: "${{ env.MAX_TURNS }}"
