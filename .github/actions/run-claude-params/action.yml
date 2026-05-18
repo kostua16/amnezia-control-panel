@@ -48,6 +48,9 @@ inputs:
   claude-debug:
     description: "Claude debug"
     default: "false"
+  additional-permissions:
+    description: "Additional GitHub permissions for the App token (e.g. 'issues: write')"
+    default: ""
 runs:
   using: composite
   steps:
@@ -100,6 +103,7 @@ runs:
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
         show_full_output: ${{ inputs.claude-debug || false }}
+        additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}

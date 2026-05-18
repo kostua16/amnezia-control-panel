@@ -75,6 +75,7 @@ jobs:
           track-progress: "${{ github.event_name != 'workflow_dispatch' }}"
           allowed-bots: "github-actions[bot]"
           allowed-tools: "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh label:*),Bash(./.github/workflows/scripts/gh.sh:*),Bash(./.github/workflows/scripts/edit-issue-labels.sh:*),Bash(gh issue close:*)"
+          additional-permissions: "issues: write"
           prompt: |
             /gsd-inbox
             REPO: '${{ github.repository }}'
@@ -120,3 +121,18 @@ jobs:
 
             IMPORTANT: Only list labels YOU added. If a label was already on the issue, do NOT claim you applied it.
             This provides feedback since automated progress tracking is not available for workflow_dispatch triggers.
+
+      - name: Close duplicate issues
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          ISSUE_NUM: ${{ steps.resolve.outputs.number }}
+        run: |
+          LABELS=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name')
+          if echo "$LABELS" | grep -qx "duplicate"; then
+            STATE=$(gh issue view "$ISSUE_NUM" --json state --jq '.state')
+            if [ "$STATE" = "open" ]; then
+              gh issue close "$ISSUE_NUM" --reason "not planned" \
+                --comment "Closed as duplicate — confirmed by post-triage label check."
+            fi
+          fi

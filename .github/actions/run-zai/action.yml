@@ -36,6 +36,10 @@ inputs:
     description: "Claude debug"
     required: false
     default: "false"
+  additional-permissions:
+    description: "Additional GitHub permissions for the App token"
+    required: false
+    default: ""
   haiku-model:
     description: "Override default haiku model (glm-4.7)"
     required: false
@@ -69,3 +73,4 @@ runs:
         model: ${{ inputs.model }}
         subagent-model: ${{ inputs.subagent-model }}
         claude-debug: ${{ inputs.claude-debug }}
+        additional-permissions: ${{ inputs.additional-permissions }}

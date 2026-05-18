@@ -36,6 +36,10 @@ inputs:
     description: "Claude debug"
     required: false
     default: "false"
+  additional-permissions:
+    description: "Additional GitHub permissions for the App token"
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -56,3 +60,4 @@ runs:
         allowed-tools: ${{ inputs.allowed-tools }}
         system-prompt: ${{ inputs.system-prompt }}
         claude-debug: ${{ inputs.claude-debug }}
+        additional-permissions: ${{ inputs.additional-permissions }}
