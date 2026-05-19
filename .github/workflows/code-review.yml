@@ -103,7 +103,7 @@ jobs:
   claude-security-review:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [check-paths]
+    needs: [check-paths, claude-main-review]
     if: |
       !failure() && !cancelled() &&
       (needs.check-paths.result == 'skipped' || needs.check-paths.outputs.has-code-changes == 'true') &&
