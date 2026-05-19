@@ -134,7 +134,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(" --json-schema '{0}'", inputs.json-schema) || '' }}
+          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
 
@@ -211,7 +211,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(" --json-schema '{0}'", inputs.json-schema) || '' }}
+          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
 
@@ -286,7 +286,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(" --json-schema '{0}'", inputs.json-schema) || '' }}
+          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
 

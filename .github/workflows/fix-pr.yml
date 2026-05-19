@@ -308,6 +308,8 @@ jobs:
     if: failure()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
       - uses: ./.github/actions/report-failure
         with:
           mode: "issue"

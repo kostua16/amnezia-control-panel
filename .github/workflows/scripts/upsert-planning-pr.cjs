@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -350,7 +351,7 @@ if (commitCreated) {
 let existingPr = '';
 try {
   existingPr = run('gh', ['pr', 'list', '--head', branchName, '--state', 'open', '--json', 'number,url']);
-} catch (error) {
+} catch {
   existingPr = '[]';
 }
 
