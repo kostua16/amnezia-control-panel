@@ -6,7 +6,7 @@ on:
   pull_request_review_comment:
     types: [created]
   issues:
-    types: [opened, assigned]
+    types: [opened]
   pull_request_review:
     types: [submitted]
 
@@ -19,12 +19,52 @@ env:
   NODE_VERSION: "22.x"
 
 jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    outputs:
+      triggered: ${{ steps.gate.outputs.triggered }}
+      trusted: ${{ steps.gate.outputs.trusted }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Evaluate trigger trust
+        id: gate
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const policy = JSON.parse(fs.readFileSync('.github/workflows/policy.json', 'utf8'));
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+          const eventName = process.env.GITHUB_EVENT_NAME;
+
+          const commentBody = event.comment?.body ?? '';
+          const reviewBody = event.review?.body ?? '';
+          const issueTitle = event.issue?.title ?? '';
+          const issueBody = event.issue?.body ?? '';
+
+          const triggered =
+            (eventName === 'issue_comment' && commentBody.includes('@claude')) ||
+            (eventName === 'pull_request_review_comment' && commentBody.includes('@claude')) ||
+            (eventName === 'pull_request_review' && reviewBody.includes('@claude')) ||
+            (eventName === 'issues' && (issueTitle.includes('@claude') || issueBody.includes('@claude')));
+
+          const association =
+            event.comment?.author_association ??
+            event.review?.author_association ??
+            event.issue?.author_association ??
+            '';
+
+          const trusted = triggered && policy.maintainerAssociations.includes(association);
+          fs.appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `triggered=${triggered}\ntrusted=${trusted}\nauthor_association=${association}\n`
+          );
+          NODE
+
   claude:
-    if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    needs: [authorize]
+    if: needs.authorize.outputs.triggered == 'true' && needs.authorize.outputs.trusted == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

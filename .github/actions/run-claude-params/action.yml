@@ -1,6 +1,23 @@
 name: "Run Claude with parameters"
 description: "claude-code-action wrapper with shared settings, model pin, default tools"
 
+outputs:
+  session_id:
+    description: "Session id from the successful Claude Code attempt"
+    value: ${{ steps.select-outputs.outputs.session_id }}
+  branch_name:
+    description: "Branch name created by the successful Claude Code attempt"
+    value: ${{ steps.select-outputs.outputs.branch_name }}
+  execution_file:
+    description: "Execution file path from the successful Claude Code attempt"
+    value: ${{ steps.select-outputs.outputs.execution_file }}
+  structured_output:
+    description: "Structured JSON output from the successful Claude Code attempt"
+    value: ${{ steps.select-outputs.outputs.structured_output }}
+  used_attempt:
+    description: "Successful Claude Code retry attempt number"
+    value: ${{ steps.select-outputs.outputs.used_attempt }}
+
 inputs:
   api-key:
     description: "API key"
@@ -28,6 +45,10 @@ inputs:
     default: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*)"
   system-prompt:
     description: "Custom system prompt. When empty, Claude uses its built-in default. Note: literal { and } must be escaped as {{ and }}."
+    required: false
+    default: ""
+  json-schema:
+    description: "Optional JSON schema passed to Claude Code via --json-schema for structured output"
     required: false
     default: ""
   haiku-model:
@@ -113,7 +134,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}
+          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(" --json-schema '{0}'", inputs.json-schema) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
 
@@ -190,7 +211,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}
+          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(" --json-schema '{0}'", inputs.json-schema) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
 
@@ -265,7 +286,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}
+          --allowedTools '${{ inputs.allowed-tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(" --json-schema '{0}'", inputs.json-schema) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
 
@@ -285,6 +306,56 @@ runs:
               "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
             }
           }
+
+    - name: Select successful Claude outputs
+      id: select-outputs
+      if: always()
+      shell: bash
+      env:
+        RUN1_SESSION_ID: ${{ steps.claude-run-1.outputs.session_id || '' }}
+        RUN1_BRANCH_NAME: ${{ steps.claude-run-1.outputs.branch_name || '' }}
+        RUN1_EXECUTION_FILE: ${{ steps.claude-run-1.outputs.execution_file || '' }}
+        RUN1_STRUCTURED_OUTPUT: ${{ steps.claude-run-1.outputs.structured_output || '' }}
+        RUN2_SESSION_ID: ${{ steps.claude-run-2.outputs.session_id || '' }}
+        RUN2_BRANCH_NAME: ${{ steps.claude-run-2.outputs.branch_name || '' }}
+        RUN2_EXECUTION_FILE: ${{ steps.claude-run-2.outputs.execution_file || '' }}
+        RUN2_STRUCTURED_OUTPUT: ${{ steps.claude-run-2.outputs.structured_output || '' }}
+        RUN3_SESSION_ID: ${{ steps.claude-run-3.outputs.session_id || '' }}
+        RUN3_BRANCH_NAME: ${{ steps.claude-run-3.outputs.branch_name || '' }}
+        RUN3_EXECUTION_FILE: ${{ steps.claude-run-3.outputs.execution_file || '' }}
+        RUN3_STRUCTURED_OUTPUT: ${{ steps.claude-run-3.outputs.structured_output || '' }}
+      run: |
+        if [[ "${{ steps.claude-run-3.outcome }}" == "success" ]]; then
+          prefix="RUN3"
+          attempt="3"
+        elif [[ "${{ steps.claude-run-2.outcome }}" == "success" ]]; then
+          prefix="RUN2"
+          attempt="2"
+        elif [[ "${{ steps.claude-run-1.outcome }}" == "success" ]]; then
+          prefix="RUN1"
+          attempt="1"
+        else
+          prefix=""
+          attempt=""
+        fi
+
+        {
+          if [[ -n "$prefix" ]]; then
+            eval "echo session_id=\${${prefix}_SESSION_ID}"
+            eval "echo branch_name=\${${prefix}_BRANCH_NAME}"
+            eval "echo execution_file=\${${prefix}_EXECUTION_FILE}"
+            eval "echo structured_output<<EOF"
+            eval "printf '%s\n' \"\${${prefix}_STRUCTURED_OUTPUT}\""
+            echo "EOF"
+            echo "used_attempt=$attempt"
+          else
+            echo "session_id="
+            echo "branch_name="
+            echo "execution_file="
+            echo "structured_output="
+            echo "used_attempt="
+          fi
+        } >> "$GITHUB_OUTPUT"
 
     # --- Scan Claude logs for known error patterns ---
     - name: scan-claude-logs

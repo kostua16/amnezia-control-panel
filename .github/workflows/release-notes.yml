@@ -39,33 +39,43 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: ./.github/actions/run-zai
+      - name: Generate structured release notes
+        id: notes
+        uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           model: 'haiku'
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "false"
           allowed-tools: "Bash(cat *),Bash(git log *),Bash(git diff *)"
+          json-schema: '{"type":"object","properties":{"notes":{"type":"string"}},"required":["notes"],"additionalProperties":false}'
           prompt: |
             Generate release notes for ${{ github.ref_name }}.
 
             Commits since ${{ steps.prev-tag.outputs.tag }}:
             ${{ steps.commits.outputs.log }}
 
-            Format as GitHub Release markdown with these sections:
+            Format the release notes as GitHub Release markdown with these sections:
             ## What's New (feat: commits)
             ## Bug Fixes (fix: commits)
             ## Other Changes (refactor, docs, chore)
             ## Breaking Changes (commits with BREAKING CHANGE or !)
 
-            Omit empty sections. Write output to /tmp/release-notes.md
+            Omit empty sections. Return the markdown in the `notes` field only.
+
+      - name: Write notes file
+        if: steps.notes.outputs.structured_output != ''
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.notes.outputs.structured_output }}
+        run: |
+          printf '%s' "$STRUCTURED_OUTPUT" | jq -r '.notes' > /tmp/release-notes.md
 
       - name: Create GitHub Release (draft)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          if [ -f /tmp/release-notes.md ]; then
+          if [ -f /tmp/release-notes.md ] && [ -s /tmp/release-notes.md ]; then
             gh release create "$TAG" \
               --title "$TAG" \
               --notes-file /tmp/release-notes.md \

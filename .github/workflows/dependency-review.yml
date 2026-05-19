@@ -3,6 +3,12 @@ name: Dependency Review
 on:
   pull_request:
     paths: ['package.json', 'package-lock.json']
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Dependabot PR number to review"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,20 +16,52 @@ permissions:
   id-token: write
 
 concurrency:
-  group: dep-review-${{ github.event.pull_request.number }}
+  group: dep-review-${{ github.event.pull_request.number || github.event.inputs.pr_number || github.sha }}
   cancel-in-progress: true
 
 env:
   MAX_TURNS: 80
 
 jobs:
+  resolve-pr:
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.resolve.outputs.should_run }}
+      pr-number: ${{ steps.resolve.outputs.pr_number }}
+      base-ref: ${{ steps.resolve.outputs.base_ref }}
+    steps:
+      - name: Resolve Dependabot PR context
+        id: resolve
+        uses: actions/github-script@v8
+        with:
+          script: |
+            let pr = null;
+
+            if (context.eventName === 'pull_request') {
+              pr = context.payload.pull_request;
+            } else {
+              const response = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: Number(context.payload.inputs.pr_number)
+              });
+              pr = response.data;
+            }
+
+            const shouldRun = pr.user.login === 'dependabot[bot]';
+            core.setOutput('should_run', String(shouldRun));
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('base_ref', pr.base.ref);
+
   ai-dependency-review:
-    if: github.actor == 'dependabot[bot]'
+    needs: [resolve-pr]
+    if: needs.resolve-pr.outputs.should-run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-environment
@@ -31,32 +69,145 @@ jobs:
           install-deps: "true"
           install-rtk: "true"
 
+      - name: Ensure dependency review labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .github/workflows/scripts/ensure-workflow-labels.cjs \
+            --policy-file .github/workflows/policy.json \
+            --names deps-review-passed,deps-review-manual,deps-review-blocked
+
       - name: Get dependency diff
         id: diff
+        env:
+          BASE_REF: ${{ needs.resolve-pr.outputs.base-ref }}
         run: |
-          git diff origin/main -- package.json package-lock.json > /tmp/dep-diff.txt
-          { echo "diff<<EOF"; head -200 /tmp/dep-diff.txt; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          git fetch origin "$BASE_REF" --depth=1
+          git diff "origin/$BASE_REF" -- package.json package-lock.json > /tmp/dep-diff.txt
+          {
+            echo "diff<<EOF"
+            head -200 /tmp/dep-diff.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
-      - uses: ./.github/actions/run-zai
+      - name: Review dependency update
+        id: review
+        uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           model: 'haiku'
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "true"
-          allowed-tools: "Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(gh pr comment:*)"
+          json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","manual","blocked"]},"summary":{"type":"string"},"update_type":{"type":"string","enum":["patch","minor","major","unknown"]},"risk_notes":{"type":"string"}},"required":["verdict","summary","update_type","risk_notes"],"additionalProperties":false}'
+          allowed-tools: "Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(grep *),Bash(head *),Bash(node *)"
           prompt: |
-            Review this Dependabot dependency update PR for:
-            1. Breaking changes (check changelogs for major version bumps)
-            2. Security advisories resolved
+            Review this Dependabot dependency update PR using only local repository context.
+
+            Review criteria:
+            1. Breaking-change risk from the manifest and lockfile diff
+            2. Security advisories resolved or introduced according to `npm audit`
             3. Potential compatibility issues with Node 22 / Next.js 16 / React 19
-            4. Bundle size impact
+            4. Whether the update should stay auto-merge eligible or require manual review
 
             Dependency diff:
             ${{ steps.diff.outputs.diff }}
 
-            Run `npm audit` to check current vulnerability status.
+            Use local evidence only:
+            - package.json / package-lock.json diff
+            - `npm audit`
+            - `npm ls`
+            - lockfile and manifest metadata
 
-            Post a PR comment with verdict:
-            - APPROVE: safe patch/minor with no breaking changes
-            - REVIEW NEEDED: major bump or breaking changes detected
-            - BLOCK: new security vulnerability introduced
+            Do NOT browse the web or claim you checked changelogs.
+
+            Return JSON only:
+            - verdict: passed | manual | blocked
+            - summary: one short sentence
+            - update_type: patch | minor | major | unknown
+            - risk_notes: short justification
+
+            Do NOT approve the PR or edit labels yourself. The workflow handles dependency review signals and comments.
+
+      - name: Apply dependency review signal
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
+          STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
+        with:
+          script: |
+            const review = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
+            const issueNumber = Number(process.env.PR_NUMBER);
+            const labelMap = {
+              passed: 'deps-review-passed',
+              manual: 'deps-review-manual',
+              blocked: 'deps-review-blocked'
+            };
+            const addLabel = labelMap[review.verdict] || 'deps-review-manual';
+            const removeLabels = Object.values(labelMap).filter((name) => name !== addLabel);
+
+            for (const label of removeLabels) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  name: label
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: [addLabel]
+            });
+
+      - name: Upsert dependency review comment
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
+          STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
+        with:
+          script: |
+            const issueNumber = Number(process.env.PR_NUMBER);
+            const review = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
+            const marker = '<!-- dependency-review-signal -->';
+            const body = [
+              marker,
+              '## Dependency Review Signal',
+              '',
+              `- Verdict: **${review.verdict || 'manual'}**`,
+              `- Update type: **${review.update_type || 'unknown'}**`,
+              `- Summary: ${review.summary || 'No summary returned.'}`,
+              `- Notes: ${review.risk_notes || 'No additional notes returned.'}`
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100
+            });
+
+            const existing = comments.find((comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body
+              });
+            }

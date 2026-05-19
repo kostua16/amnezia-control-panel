@@ -436,7 +436,7 @@ jobs:
                gh issue close NUM --reason "not planned"
                ```
 
-            ### Phase 6: Trigger Fixes & Handle Dead Letters (turns 46-50)
+            ### Phase 6: Route Manual Fix Triage & Handle Dead Letters (turns 46-50)
 
             For each `fix_dead_letter` issue:
             ```
@@ -448,9 +448,10 @@ jobs:
             - First check: `gh issue view NUM --json body,comments` — skip if body/comments contain PR URL or "Fixes #"
             - If safe to proceed:
             ```
-            gh issue comment NUM --body "/fix"
+            gh issue edit NUM --add-label "needs-review"
+            gh issue comment NUM --body "Manual fix triage needed. This issue is triaged but still has no linked fix PR. A maintainer should decide whether to apply \`auto-fix-approved\` or handle it manually."
             ```
-            Stop after 5 fix triggers, even if more candidates remain.
+            Stop after 5 manual-fix notices, even if more candidates remain.
 
   report-failure:
     needs: [collect-issues, analyze-and-act]

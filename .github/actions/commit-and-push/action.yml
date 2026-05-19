@@ -26,12 +26,18 @@ runs:
         git commit -m "$MSG" || true
         git config --local "http.https://github.com/.extraheader" \
           "AUTHORIZATION: basic $(printf '%s' "x-access-token:${TOKEN}" | base64 -w 0)"
+        push_succeeded=false
         for i in 1 2 3; do
           if git push origin "$BRANCH"; then
             echo "Push succeeded on attempt $i"
+            push_succeeded=true
             break
           else
             echo "Push failed on attempt $i, retrying in 5s..."
             sleep 5
           fi
         done
+        if [ "$push_succeeded" != "true" ]; then
+          echo "::error::git push failed after 3 attempts"
+          exit 1
+        fi

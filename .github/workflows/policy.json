@@ -1,0 +1,97 @@
+{
+  "maintainerAssociations": [
+    "OWNER",
+    "MEMBER",
+    "COLLABORATOR"
+  ],
+  "trustedAutomationBranchPrefixes": [
+    "claude-auto-fix-ci-",
+    "claude-fix-issue-"
+  ],
+  "manualOnlyBranchPrefixes": [
+    "claude-workflow-optimize-",
+    "claude-planning-pr-"
+  ],
+  "planningBranchPrefix": "claude-planning-pr-",
+  "fixApprovalLabel": "auto-fix-approved",
+  "blockingLabels": [
+    "do-not-merge",
+    "ai-review-concerns",
+    "security-review-concerns",
+    "deps-review-blocked",
+    "deps-review-manual",
+    "needs-review"
+  ],
+  "improveSkipLabels": [
+    "skip-improve"
+  ],
+  "manualOnlyPathGlobs": [
+    ".github/**",
+    ".planning/**"
+  ],
+  "improveQualifyingGlobs": [
+    "src/**",
+    "prisma/**",
+    "scripts/**",
+    ".github/**",
+    "package.json",
+    "package-lock.json",
+    "next.config.*"
+  ],
+  "dependabot": {
+    "allowedEcosystems": [
+      "npm",
+      "npm_and_yarn"
+    ],
+    "manualOnlyBranchPrefixes": [
+      "dependabot/github_actions/",
+      "dependabot/github-actions/"
+    ]
+  },
+  "labels": {
+    "ai-review-passed": {
+      "color": "0e8a16",
+      "description": "AI code review found no blocking issues"
+    },
+    "ai-review-concerns": {
+      "color": "b60205",
+      "description": "AI code review found blocking concerns"
+    },
+    "security-review-passed": {
+      "color": "0e8a16",
+      "description": "Security review found no significant concerns"
+    },
+    "security-review-concerns": {
+      "color": "b60205",
+      "description": "Security review found significant concerns"
+    },
+    "deps-review-passed": {
+      "color": "0e8a16",
+      "description": "Dependency review passed for auto-merge policy"
+    },
+    "deps-review-manual": {
+      "color": "fbca04",
+      "description": "Dependency update needs manual review"
+    },
+    "deps-review-blocked": {
+      "color": "b60205",
+      "description": "Dependency update is blocked from auto-merge"
+    },
+    "skip-improve": {
+      "color": "5319e7",
+      "description": "Skip Claude+GSD improvement analysis for this PR"
+    },
+    "planning-draft-open": {
+      "color": "1d76db",
+      "description": "A draft planning PR exists for follow-up roadmap work"
+    },
+    "do-not-merge": {
+      "color": "b60205",
+      "description": "Explicitly block auto-merge for this PR"
+    },
+    "auto-fix-approved": {
+      "color": "5319e7",
+      "description": "Maintainer explicitly approved issue auto-fix execution"
+    }
+  }
+}

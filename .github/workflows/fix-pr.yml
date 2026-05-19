@@ -289,14 +289,14 @@ jobs:
           if [ -n "$ISSUE_NUMBERS" ]; then
             CLOSES_TEXT=$(printf '\n\n%s' "$(echo "$ISSUE_NUMBERS" | tr ',' '\n' | grep -v '^$' | sed 's/^/Closes #/')")
           fi
-          BODY=$(printf 'Automated fix for failed CI run: %s\n\n**Review required before merge.** This PR was created by the CI auto-fix workflow.\n\nRelated PR: #%s%s' \
+          BODY=$(printf 'Automated fix for failed CI run: %s\n\nThis PR was created by the CI auto-fix workflow. Workflow and planning changes remain manual-only under repository policy.\n\nRelated PR: #%s%s' \
             "$RUN_URL" "$PR_NUMBER" "$CLOSES_TEXT")
           gh pr create \
             --base "$BASE_BRANCH" \
             --head "$BRANCH_NAME" \
             --title "fix(ci): auto-fix failures from #${PR_NUMBER}" \
             --body "$BODY" \
-            --label "auto-fix" --label "needs-review" 2>/dev/null || \
+            --label "auto-fix" 2>/dev/null || \
           gh pr create \
             --base "$BASE_BRANCH" \
             --head "$BRANCH_NAME" \

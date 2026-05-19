@@ -30,6 +30,7 @@ jobs:
       - name: Build and measure PR
         id: pr-build
         run: |
+          set -euo pipefail
           START=$(date +%s)
           npm run build 2>&1 | tail -20 > /tmp/build-output.txt
           END=$(date +%s)
@@ -48,6 +49,7 @@ jobs:
       - name: Build and measure main
         id: main-build
         run: |
+          set -euo pipefail
           npm ci
           npx prisma generate
           START=$(date +%s)
