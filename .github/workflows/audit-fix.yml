@@ -1,8 +1,8 @@
 name: Autonomous Audit-Fix
 
 on:
-  schedule:
-    - cron: "0 2 * * 0" # Weekly on Sundays at 02:00
+  # schedule:
+  #   - cron: "0 2 * * 0" # Weekly on Sundays at 02:00
   workflow_dispatch:
 
 concurrency:
