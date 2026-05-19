@@ -21,6 +21,7 @@ function escapeRegex(value) {
 }
 
 function globToRegExp(glob) {
+  // Keep workflow policy matching intentionally small: only `*` and `**` are supported.
   let regex = '^';
   for (let index = 0; index < glob.length; index += 1) {
     const char = glob[index];

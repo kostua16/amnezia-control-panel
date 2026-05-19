@@ -65,6 +65,7 @@ jobs:
           gh pr checks "$PR_NUMBER" --required --json name,state,bucket,link,workflow 2>/dev/null > /tmp/pr-checks.json || echo "[]" > /tmp/pr-checks.json
           {
             echo "head_ref=$(jq -r '.head_ref_name' /tmp/policy-eval.json)"
+            echo "same_repo=$(jq -r '.same_repo' /tmp/policy-eval.json)"
             echo "decision_ready=true"
           } >> "$GITHUB_OUTPUT"
 
@@ -134,7 +135,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Approve and enable auto-merge
-        if: steps.decision.outputs.decision == 'approve_and_enable_automerge' && steps.decision.outputs.dry_run != 'true'
+        if: steps.decision.outputs.decision == 'approve_and_enable_automerge' && steps.decision.outputs.dry_run != 'true' && steps.metadata.outputs.same_repo == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}

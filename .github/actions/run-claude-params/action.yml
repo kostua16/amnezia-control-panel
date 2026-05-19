@@ -344,11 +344,16 @@ runs:
 
         {
           if [[ -n "$prefix" ]]; then
-            eval "echo session_id=\${${prefix}_SESSION_ID}"
-            eval "echo branch_name=\${${prefix}_BRANCH_NAME}"
-            eval "echo execution_file=\${${prefix}_EXECUTION_FILE}"
-            eval "echo structured_output<<EOF"
-            eval "printf '%s\n' \"\${${prefix}_STRUCTURED_OUTPUT}\""
+            session_id_var="${prefix}_SESSION_ID"
+            branch_name_var="${prefix}_BRANCH_NAME"
+            execution_file_var="${prefix}_EXECUTION_FILE"
+            structured_output_var="${prefix}_STRUCTURED_OUTPUT"
+
+            echo "session_id=${!session_id_var}"
+            echo "branch_name=${!branch_name_var}"
+            echo "execution_file=${!execution_file_var}"
+            echo "structured_output<<EOF"
+            printf '%s\n' "${!structured_output_var}"
             echo "EOF"
             echo "used_attempt=$attempt"
           else
