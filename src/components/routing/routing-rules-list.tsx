@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import {
   Plus,
   Pencil,
@@ -13,7 +13,6 @@ import {
 import { clsx } from 'clsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Dialog } from '@/components/ui/dialog';
 import { CreateRoutingRuleForm } from '@/components/routing/create-routing-rule-form';
 import type {
@@ -129,12 +128,11 @@ export function RoutingRulesList() {
   }, []);
 
   useEffect(() => {
-    setLoading(true);
-    fetchRules();
+    startTransition(() => { setLoading(true); fetchRules(); });
   }, [fetchRules]);
 
   useEffect(() => {
-    fetchUsers();
+    startTransition(() => { fetchUsers(); });
   }, [fetchUsers]);
 
   // ─── Handlers ───────────────────────────────────────

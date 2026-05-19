@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Package, Shield, Globe, GitBranch } from 'lucide-react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
+import { Loader2, Package, Globe, GitBranch } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import type { ChainPreset } from '@/types/chain-preset';
@@ -49,8 +49,10 @@ export function ChainPresetsGrid({ onPreview, onFork }: ChainPresetsGridProps) {
   }, []);
 
   useEffect(() => {
-    fetch('/api/chain-presets/seed', { method: 'POST' }).catch(() => {});
-    fetchPresets();
+    startTransition(() => {
+      fetch('/api/chain-presets/seed', { method: 'POST' }).catch(() => {});
+      fetchPresets();
+    });
   }, [fetchPresets]);
 
   const handleApply = useCallback(async (presetId: number) => {

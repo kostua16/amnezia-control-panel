@@ -51,9 +51,6 @@ function generateWireGuardPeers(
       break;
     }
     case 'split': {
-      const domestic = nodes.find(
-        (n) => n.label.includes('Domestic') || n.label.includes('Direct'),
-      );
       const foreign = nodes.find(
         (n) => n.label.includes('VPN') || n.label.includes('Foreign'),
       );

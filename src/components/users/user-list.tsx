@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import {
   Search,
   Pencil,
@@ -13,7 +13,6 @@ import {
   Loader2,
   Gauge,
 } from 'lucide-react';
-import { clsx } from 'clsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,7 +90,7 @@ export function UserList() {
 
   // Reset to page 1 when search or sort changes
   useEffect(() => {
-    setPage(1);
+    startTransition(() => { setPage(1); });
   }, [debouncedSearch, sortOption]);
 
   // Dismiss action errors after 5 seconds

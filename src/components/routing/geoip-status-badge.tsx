@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,7 @@ export function GeoIPStatusBadge() {
   }, []);
 
   useEffect(() => {
-    fetchStatus();
+    startTransition(() => { fetchStatus(); });
   }, [fetchStatus]);
 
   const handleRefresh = async () => {

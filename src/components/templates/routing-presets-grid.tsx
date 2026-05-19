@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { Loader2, Package, Globe } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,8 +36,10 @@ export function RoutingPresetsGrid({ onPreview }: RoutingPresetsGridProps) {
   }, []);
 
   useEffect(() => {
-    fetch('/api/routing/templates/seed', { method: 'POST' }).catch(() => {});
-    fetchTemplates();
+    startTransition(() => {
+      fetch('/api/routing/templates/seed', { method: 'POST' }).catch(() => {});
+      fetchTemplates();
+    });
   }, [fetchTemplates]);
 
   const handleApply = useCallback(async (templateId: number) => {

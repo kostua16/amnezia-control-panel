@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { clsx } from 'clsx';
 import { Plus, Trash2, Download, Upload, Edit2, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -64,7 +64,7 @@ export function WhitelistManager({ servers }: WhitelistManagerProps) {
   }, [filterServer]);
 
   useEffect(() => {
-    fetchEntries();
+    startTransition(() => { fetchEntries(); });
   }, [fetchEntries]);
 
   const handleAdd = async () => {

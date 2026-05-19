@@ -1,6 +1,5 @@
 'use client';
 
-import { clsx } from 'clsx';
 import { Loader2 } from 'lucide-react';
 import type { TrafficBucket } from '@/types/monitoring';
 import { formatBytes } from '@/lib/format';

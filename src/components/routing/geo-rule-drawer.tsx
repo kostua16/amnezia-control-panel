@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
@@ -81,29 +81,31 @@ export function GeoRuleDrawer({
 
   // Populate form from rule on edit
   useEffect(() => {
-    if (rule) {
-      setName(rule.name);
-      setMatchType(rule.matchType);
-      setCountryCode(rule.target.countryCode ?? '');
-      setRegion(rule.target.region ?? '');
-      setSpecial(rule.target.special ?? 'domestic');
-      setAction(rule.action);
-      setChainId(rule.chainId != null ? String(rule.chainId) : '');
-      setPriority(String(rule.priority));
-      setIsActive(rule.isActive);
-    } else {
-      setName('');
-      setMatchType('country');
-      setCountryCode('');
-      setRegion('');
-      setSpecial('domestic');
-      setAction('ALLOW');
-      setChainId('');
-      setPriority('0');
-      setIsActive(true);
-    }
-    setErrors({});
-    setTouched({});
+    startTransition(() => {
+      if (rule) {
+        setName(rule.name);
+        setMatchType(rule.matchType);
+        setCountryCode(rule.target.countryCode ?? '');
+        setRegion(rule.target.region ?? '');
+        setSpecial(rule.target.special ?? 'domestic');
+        setAction(rule.action);
+        setChainId(rule.chainId != null ? String(rule.chainId) : '');
+        setPriority(String(rule.priority));
+        setIsActive(rule.isActive);
+      } else {
+        setName('');
+        setMatchType('country');
+        setCountryCode('');
+        setRegion('');
+        setSpecial('domestic');
+        setAction('ALLOW');
+        setChainId('');
+        setPriority('0');
+        setIsActive(true);
+      }
+      setErrors({});
+      setTouched({});
+    });
   }, [rule, open]);
 
   // Lock body scroll when open

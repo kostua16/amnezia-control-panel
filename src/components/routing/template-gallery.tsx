@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { Loader2, Package } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,9 +40,11 @@ export function TemplateGallery({ onApplied }: TemplateGalleryProps) {
   }, []);
 
   useEffect(() => {
-    // Seed built-in templates on mount (fire-and-forget)
-    fetch('/api/routing/templates/seed', { method: 'POST' }).catch(() => {});
-    fetchTemplates();
+    startTransition(() => {
+      // Seed built-in templates on mount (fire-and-forget)
+      fetch('/api/routing/templates/seed', { method: 'POST' }).catch(() => {});
+      fetchTemplates();
+    });
   }, [fetchTemplates]);
 
   const handleApply = useCallback(

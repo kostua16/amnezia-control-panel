@@ -29,6 +29,14 @@ const eslintConfig = defineConfig([
       'react-hooks': reactHooks,
     },
     rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+        },
+      ],
       'react-hooks/set-state-in-effect': 'warn',
       'react-hooks/refs': 'warn',
     },

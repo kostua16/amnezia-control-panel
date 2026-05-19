@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+
 import { prisma } from '@/lib/prisma';
 import { success, error } from '@/lib/api-response';
 import type { DashboardStats } from '@/types/monitoring';
