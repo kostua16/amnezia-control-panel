@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, startTransition } from 'react';
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  startTransition,
+} from 'react';
 
 interface ChainStatusNode {
   id: string;
@@ -64,7 +70,9 @@ export function useChainStatus(
 
   // Initial fetch
   useEffect(() => {
-    startTransition(() => { void fetchStatus(); });
+    startTransition(() => {
+      void fetchStatus();
+    });
   }, [chainId, enabled, fetchStatus]); // Re-run when chainId, enabled, or fetchStatus changes
 
   // Polling
