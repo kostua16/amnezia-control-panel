@@ -12,10 +12,16 @@ inputs:
     description: "GitHub token for push auth"
     required: true
 
+outputs:
+  pushed:
+    description: "'true' if a commit was created and pushed"
+    value: ${{ steps.push.outputs.pushed }}
+
 runs:
   using: composite
   steps:
     - name: Commit and push with retry
+      id: push
       shell: bash
       env:
         BRANCH: ${{ inputs.branch-name }}
@@ -23,15 +29,28 @@ runs:
         TOKEN: ${{ inputs.token }}
       run: |
         git add -A
-        git commit -m "$MSG" || true
+        if git diff --cached --quiet; then
+          echo "No staged changes to commit — skipping push"
+          echo "pushed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        git commit -m "$MSG"
         git config --local "http.https://github.com/.extraheader" \
           "AUTHORIZATION: basic $(printf '%s' "x-access-token:${TOKEN}" | base64 -w 0)"
+        PUSHED=false
         for i in 1 2 3; do
           if git push origin "$BRANCH"; then
             echo "Push succeeded on attempt $i"
+            PUSHED=true
             break
           else
             echo "Push failed on attempt $i, retrying in 5s..."
             sleep 5
           fi
         done
+        if [ "$PUSHED" = false ]; then
+          echo "::error::Push failed after 3 attempts"
+          echo "pushed=false" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+        echo "pushed=true" >> "$GITHUB_OUTPUT"
