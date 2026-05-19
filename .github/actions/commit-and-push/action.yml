@@ -9,8 +9,8 @@ inputs:
     description: "Commit message"
     default: "fix(ci): auto-fix CI failures"
   token:
-    description: "GitHub token for push auth"
-    required: true
+    description: "GitHub token for push auth (unused — relies on checkout's retained auth)"
+    required: false
 
 outputs:
   pushed:
@@ -26,7 +26,6 @@ runs:
       env:
         BRANCH: ${{ inputs.branch-name }}
         MSG: ${{ inputs.commit-message }}
-        TOKEN: ${{ inputs.token }}
       run: |
         git add -A
         if git diff --cached --quiet; then
@@ -35,8 +34,6 @@ runs:
           exit 0
         fi
         git commit -m "$MSG"
-        git config --local "http.https://github.com/.extraheader" \
-          "AUTHORIZATION: basic $(printf '%s' "x-access-token:${TOKEN}" | base64 -w 0)"
         PUSHED=false
         for i in 1 2 3; do
           if git push origin "$BRANCH"; then
