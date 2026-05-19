@@ -163,7 +163,3 @@ jobs:
             After completing your security review, submit a formal verdict:
             - If severity is NONE or LOW only: `gh pr review ${{ github.event.pull_request.number }} --approve --body "Security Review: PASSED. No significant security concerns."`
             - If MEDIUM+ severity found: `gh pr review ${{ github.event.pull_request.number }} --request-changes --body "Security Review: CONCERNS FOUND. See inline comments for remediation steps."`
-
-            Also update the PR label to reflect the verdict:
-            - Pass: `gh pr edit ${{ github.event.pull_request.number }} --add-label "ai-security-passed" --remove-label "ai-security-concerns"`
-            - Fail: `gh pr edit ${{ github.event.pull_request.number }} --add-label "ai-security-concerns" --remove-label "ai-security-passed"`
