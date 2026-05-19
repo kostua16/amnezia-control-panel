@@ -1,0 +1,56 @@
+name: Suggest Improvements
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Daily at midnight
+  workflow_dispatch:
+
+concurrency:
+  group: suggest-improvements-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  MAX_TURNS: 100
+  NODE_VERSION: "22.x"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  suggest-improvements:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup git identity
+        run: |
+          git config --global user.email "claude[bot]@users.noreply.github.com"
+          git config --global user.name "claude[bot]"
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: "true"
+          install-gsd: "true"
+          install-rtk: "true"
+
+      - uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          max-turns: "${{ env.MAX_TURNS }}"
+          track-progress: "true"
+          allowed-bots: "claude[bot],github-actions[bot]"
+          allowed-tools: "Bash(rtk:*),Bash(gh:*),Bash(git:*),Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*)"
+          prompt: |
+            /gsd-explore
+            Perform a deep architectural review of the repository.
+            1. Identify technical debt, missing abstractions, or performance bottlenecks.
+            2. Propose 2-3 new implementation phases to resolve these issues.
+            3. Use `/gsd-phase add` to append these proposals to `ROADMAP.md` as "Proposed" phases.
+            4. Create a GitHub issue using `gh issue create` summarizing your findings and asking for maintainer approval.

@@ -1,0 +1,55 @@
+name: Documentation Drift Checker
+
+on:
+  schedule:
+    - cron: "0 3 * * 0" # Weekly on Sundays at 03:00
+  workflow_dispatch:
+
+concurrency:
+  group: docs-drift-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  MAX_TURNS: 100
+  NODE_VERSION: "22.x"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  docs-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup git identity
+        run: |
+          git config --global user.email "claude[bot]@users.noreply.github.com"
+          git config --global user.name "claude[bot]"
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: "true"
+          install-gsd: "true"
+          install-rtk: "true"
+
+      - uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          max-turns: "${{ env.MAX_TURNS }}"
+          track-progress: "true"
+          allowed-bots: "claude[bot],github-actions[bot]"
+          allowed-tools: "Bash(rtk:*),Bash(gh:*),Bash(git:*),Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*)"
+          prompt: |
+            /gsd-docs-update
+            Review the codebase against `.planning/` artifacts and standard documentation files.
+            Identify any drift between implementation and documentation.
+            Update the documentation files to reflect reality.
+            Create a PR with any documentation updates.
