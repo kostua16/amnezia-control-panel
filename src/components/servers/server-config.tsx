@@ -63,7 +63,9 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
   }, [serverId]);
 
   useEffect(() => {
-    startTransition(() => { fetchConfig(); });
+    startTransition(() => {
+      fetchConfig();
+    });
   }, [fetchConfig]);
 
   const handleEdit = () => {

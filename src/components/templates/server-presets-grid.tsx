@@ -26,7 +26,6 @@ export function ServerPresetsGrid({ onPreview }: ServerPresetsGridProps) {
     setRefreshKey((k) => k + 1);
   }, []);
 
-
   function extractProvider(label: string): string {
     const provider = label.split(' ')[0];
     return provider || label;

@@ -80,7 +80,9 @@ export function PanelList() {
   }, []);
 
   useEffect(() => {
-    startTransition(() => { fetchPanels(); });
+    startTransition(() => {
+      fetchPanels();
+    });
   }, [fetchPanels]);
 
   // 30-second polling for statuses

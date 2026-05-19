@@ -74,7 +74,9 @@ export function ServerList() {
   }, []);
 
   useEffect(() => {
-    startTransition(() => { fetchServers(); });
+    startTransition(() => {
+      fetchServers();
+    });
   }, [fetchServers]);
 
   const handleTestConnection = async (serverId: number) => {

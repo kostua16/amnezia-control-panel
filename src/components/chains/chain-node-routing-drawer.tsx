@@ -1,6 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo, startTransition } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  startTransition,
+} from 'react';
 import {
   X,
   Plus,
@@ -324,7 +331,10 @@ export function ChainNodeRoutingDrawer({
 
   useEffect(() => {
     if (!open) return;
-    startTransition(() => { fetchGeoRules(); fetchRoutingRules(); });
+    startTransition(() => {
+      fetchGeoRules();
+      fetchRoutingRules();
+    });
   }, [open, fetchGeoRules, fetchRoutingRules]);
 
   // ─── Body scroll lock ───────────────────────────────

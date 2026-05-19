@@ -67,7 +67,9 @@ interface PanelCardExpandedProps {
   panelId: number;
 }
 
-export function PanelCardExpanded({ panelId: _panelId }: PanelCardExpandedProps) {
+export function PanelCardExpanded({
+  panelId: _panelId,
+}: PanelCardExpandedProps) {
   return (
     <div className="mt-4 space-y-6 border-t border-border pt-4">
       <div>
