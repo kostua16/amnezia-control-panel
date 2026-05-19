@@ -104,7 +104,6 @@ export function ChainVisualization({
   const connections = calculateConnections(positions, status.topology);
 
   // Build lookup maps
-  const nodeLookup = new Map(status.nodes.map((n) => [n.id, n]));
   const posLookup = new Map(positions.map((p) => [p.id, p]));
   const connectionLookup = new Map(
     status.connections.map((c) => [`${c.fromNode}-${c.toNode}`, c]),

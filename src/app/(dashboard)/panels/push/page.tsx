@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, startTransition } from 'react';
 import { RefreshCw, Layers, GitBranch, Eye } from 'lucide-react';
 import { clsx } from 'clsx';
 import { PushWizard } from '@/components/push/push-wizard';
@@ -44,7 +44,7 @@ export default function PushConfigurationPage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    startTransition(() => { fetchData(); });
   }, [fetchData]);
 
   // Build server-to-panel mapping for ChainFlowEditor panel boundaries

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { Loader2, Package, Shield, Zap, GitBranch } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,8 +39,10 @@ export function ProtocolTemplatesGrid({
   }, []);
 
   useEffect(() => {
-    fetch('/api/configs/templates/seed', { method: 'POST' }).catch(() => {});
-    fetchTemplates();
+    startTransition(() => {
+      fetch('/api/configs/templates/seed', { method: 'POST' }).catch(() => {});
+      fetchTemplates();
+    });
   }, [fetchTemplates]);
 
   function ProtocolIcon({ serviceType }: { serviceType: string | null }) {

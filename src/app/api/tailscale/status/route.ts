@@ -21,7 +21,6 @@ export async function GET() {
 
     // getNodes() already normalizes to TailscaleNodeInfo (strips PublicKey per T-11.1-02)
     const nodes = await getNodes();
-    const selfNode = nodes.find((n) => n.isSelf);
     const peers = nodes.filter((n) => !n.isSelf);
 
     const nodeIP = await getNodeIP();

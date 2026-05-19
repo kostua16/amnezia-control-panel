@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, startTransition } from 'react';
 import {
   X,
   Plus,
@@ -324,8 +324,7 @@ export function ChainNodeRoutingDrawer({
 
   useEffect(() => {
     if (!open) return;
-    fetchGeoRules();
-    fetchRoutingRules();
+    startTransition(() => { fetchGeoRules(); fetchRoutingRules(); });
   }, [open, fetchGeoRules, fetchRoutingRules]);
 
   // ─── Body scroll lock ───────────────────────────────
@@ -367,22 +366,24 @@ export function ChainNodeRoutingDrawer({
 
   useEffect(() => {
     if (!open) {
-      setActiveTab('geo');
-      setGeoShowForm(false);
-      setGeoEditingRule(null);
-      setGeoDeleteConfirmId(null);
-      setGeoApiError(null);
-      resetGeoForm();
-      setGeoAutoSaveStatus('idle');
-      setRoutingShowForm(false);
-      setRoutingEditingRule(null);
-      setRoutingDeleteConfirmId(null);
-      setRoutingApiError(null);
-      resetRoutingForm();
-      setRoutingAutoSaveStatus('idle');
-      setApplyLoading(false);
-      setApplySuccess(false);
-      setApplyError(null);
+      startTransition(() => {
+        setActiveTab('geo');
+        setGeoShowForm(false);
+        setGeoEditingRule(null);
+        setGeoDeleteConfirmId(null);
+        setGeoApiError(null);
+        resetGeoForm();
+        setGeoAutoSaveStatus('idle');
+        setRoutingShowForm(false);
+        setRoutingEditingRule(null);
+        setRoutingDeleteConfirmId(null);
+        setRoutingApiError(null);
+        resetRoutingForm();
+        setRoutingAutoSaveStatus('idle');
+        setApplyLoading(false);
+        setApplySuccess(false);
+        setApplyError(null);
+      });
     }
   }, [open]);
 

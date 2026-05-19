@@ -268,7 +268,6 @@ async function verifyTailnetCheckStep() {
 
   const selfIPs = status.Self?.TailscaleIPs ?? [];
   const nodes = await getNodes();
-  const selfNode = nodes.find((n) => n.isSelf);
 
   return {
     step: 'tailnet-check',

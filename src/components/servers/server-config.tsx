@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { clsx } from 'clsx';
 import { RefreshCw, Shield, Pencil, Save, X, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -63,7 +63,7 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
   }, [serverId]);
 
   useEffect(() => {
-    fetchConfig();
+    startTransition(() => { fetchConfig(); });
   }, [fetchConfig]);
 
   const handleEdit = () => {
@@ -129,7 +129,7 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
   const handleToggleService = async (
     serviceId: number,
     serviceType: string,
-    currentStatus: string,
+    _currentStatus: string,
   ) => {
     // Toggle service active state via the service endpoint
     // The service status endpoint uses slug-based routing (awg, 3x-ui)

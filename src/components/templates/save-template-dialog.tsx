@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, startTransition } from 'react';
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,15 +26,17 @@ export function SaveTemplateDialog({
 
   useEffect(() => {
     if (open) {
-      if (initialValues) {
-        setName(initialValues.name);
-        setDescription(initialValues.description);
-      } else {
-        setName('');
-        setDescription('');
-      }
-      setError('');
-      setSaving(false);
+      startTransition(() => {
+        if (initialValues) {
+          setName(initialValues.name);
+          setDescription(initialValues.description);
+        } else {
+          setName('');
+          setDescription('');
+        }
+        setError('');
+        setSaving(false);
+      });
     }
   }, [open, initialValues]);
 

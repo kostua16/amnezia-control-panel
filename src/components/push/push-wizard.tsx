@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, startTransition } from 'react';
 import { Check, ArrowLeft, RotateCcw } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
@@ -66,12 +66,14 @@ export function PushWizard({ panels }: PushWizardProps) {
 
   // Fetch chain templates on mount
   useEffect(() => {
-    fetch('/api/chains/templates')
-      .then((res) => res.json())
-      .then((json) => {
-        if (json.success) setTemplates(json.data);
-      })
-      .catch(() => {});
+    startTransition(() => {
+      fetch('/api/chains/templates')
+        .then((res) => res.json())
+        .then((json) => {
+          if (json.success) setTemplates(json.data);
+        })
+        .catch(() => {});
+    });
   }, []);
 
   const { isConnected, lastEvent } = useWebSocket({
@@ -85,10 +87,12 @@ export function PushWizard({ panels }: PushWizardProps) {
       | PushProgressEvent
       | undefined;
     if (progressEvent) {
-      setPushProgress((prev) => {
-        const next = new Map(prev);
-        next.set(progressEvent.panelId, progressEvent);
-        return next;
+      startTransition(() => {
+        setPushProgress((prev) => {
+          const next = new Map(prev);
+          next.set(progressEvent.panelId, progressEvent);
+          return next;
+        });
       });
     }
   }, [lastEvent]);
@@ -106,38 +110,40 @@ export function PushWizard({ panels }: PushWizardProps) {
     });
 
     if (allDone) {
-      setIsPushing(false);
+      startTransition(() => {
+        setIsPushing(false);
 
-      // Only build from WS events if no API result was stored
-      if (!pushResults) {
-        const results: PushResult[] = selectedIds.map((id) => {
-          const event = pushProgress.get(id);
-          const panel = panels.find((p) => p.id === id);
-          return {
-            panelId: id,
-            panelName: panel?.name ?? `Panel ${id}`,
-            success: event?.status === 'success',
-            configVersion: null,
-            latencyMs: event?.latencyMs ?? null,
-            error: event?.error?.message ?? null,
-            retries: 0,
-          };
-        });
+        // Only build from WS events if no API result was stored
+        if (!pushResults) {
+          const results: PushResult[] = selectedIds.map((id) => {
+            const event = pushProgress.get(id);
+            const panel = panels.find((p) => p.id === id);
+            return {
+              panelId: id,
+              panelName: panel?.name ?? `Panel ${id}`,
+              success: event?.status === 'success',
+              configVersion: null,
+              latencyMs: event?.latencyMs ?? null,
+              error: event?.error?.message ?? null,
+              retries: 0,
+            };
+          });
 
-        const succeeded = results.filter((r) => r.success).length;
-        const failed = results.filter((r) => !r.success).length;
+          const succeeded = results.filter((r) => r.success).length;
+          const failed = results.filter((r) => !r.success).length;
 
-        setPushResults({
-          totalPanels: selectedIds.length,
-          succeeded,
-          failed,
-          results,
-          configVersion: 0,
-          pushedAt: new Date().toISOString(),
-        });
-      }
+          setPushResults({
+            totalPanels: selectedIds.length,
+            succeeded,
+            failed,
+            results,
+            configVersion: 0,
+            pushedAt: new Date().toISOString(),
+          });
+        }
 
-      setCurrentStep(4);
+        setCurrentStep(4);
+      });
     }
   }, [
     currentStep,
@@ -205,8 +211,6 @@ export function PushWizard({ panels }: PushWizardProps) {
     setPushProgress(new Map());
 
     try {
-      const panelIds = Array.from(selectedPanelIds);
-
       const res = await fetch('/api/panels/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -233,7 +237,7 @@ export function PushWizard({ panels }: PushWizardProps) {
       setIsPushing(false);
       setPushError(err instanceof Error ? err.message : 'Push failed');
     }
-  }, [selectedPanelIds, panelApiKeys]);
+  }, [panelApiKeys]);
 
   const handleRollback = useCallback(
     async (panelId: number) => {
