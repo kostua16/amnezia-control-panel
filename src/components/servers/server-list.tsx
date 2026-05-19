@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { clsx } from 'clsx';
 import {
   Server,
@@ -74,7 +74,7 @@ export function ServerList() {
   }, []);
 
   useEffect(() => {
-    fetchServers();
+    startTransition(() => { fetchServers(); });
   }, [fetchServers]);
 
   const handleTestConnection = async (serverId: number) => {

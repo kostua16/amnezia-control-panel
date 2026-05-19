@@ -148,7 +148,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
 
     // Update user in DB
-    const user = await prisma.user.update({
+    await prisma.user.update({
       where: { id: userId },
       data: updateData,
       include: {

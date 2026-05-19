@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generatePerPanelConfig } from '@/lib/panel-sync-client';
 import { computeConfigDiff } from '@/lib/config-diff';
-import type { ChainConfig } from '@/types/chain';
 
 // ─── Request Validation ─────────────────────────────────
 

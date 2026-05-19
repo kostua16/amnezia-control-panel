@@ -22,7 +22,7 @@ const ERROR_TYPE_COLORS: Record<StructuredPushError['type'], string> = {
 
 export function ErrorRecommendation({
   error,
-  panelName,
+  panelName: _panelName,
   defaultExpanded = false,
 }: ErrorRecommendationProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);

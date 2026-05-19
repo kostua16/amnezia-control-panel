@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo, startTransition } from 'react';
 import { clsx } from 'clsx';
 import {
   Plus,
@@ -21,8 +21,6 @@ import {
   BackgroundVariant,
   useNodesState,
   useEdgesState,
-  addEdge,
-  useReactFlow,
   type Connection,
   type Edge,
   type Node,
@@ -259,24 +257,26 @@ export function ChainFlowEditor({
   useEffect(() => {
     const prev = prevNodesRef.current;
     if (prev !== reactFlowNodes) {
-      // Detect position changes from React Flow DnD and store them
-      for (const node of reactFlowNodes) {
-        if (node.position) {
-          setCustomPositions((prev) => {
-            if (
-              prev[node.id] &&
-              prev[node.id].x === node.position.x &&
-              prev[node.id].y === node.position.y
-            ) {
-              return prev;
-            }
-            return {
-              ...prev,
-              [node.id]: { x: node.position.x, y: node.position.y },
-            };
-          });
+      startTransition(() => {
+        // Detect position changes from React Flow DnD and store them
+        for (const node of reactFlowNodes) {
+          if (node.position) {
+            setCustomPositions((prev) => {
+              if (
+                prev[node.id] &&
+                prev[node.id].x === node.position.x &&
+                prev[node.id].y === node.position.y
+              ) {
+                return prev;
+              }
+              return {
+                ...prev,
+                [node.id]: { x: node.position.x, y: node.position.y },
+              };
+            });
+          }
         }
-      }
+      });
       prevNodesRef.current = reactFlowNodes;
     }
   }, [reactFlowNodes]);

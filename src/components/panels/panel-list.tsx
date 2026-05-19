@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { clsx } from 'clsx';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import {
   Monitor,
   Plus,
@@ -81,7 +80,7 @@ export function PanelList() {
   }, []);
 
   useEffect(() => {
-    fetchPanels();
+    startTransition(() => { fetchPanels(); });
   }, [fetchPanels]);
 
   // 30-second polling for statuses

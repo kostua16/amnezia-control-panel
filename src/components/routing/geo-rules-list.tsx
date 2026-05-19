@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import {
   Plus,
   Pencil,
@@ -20,7 +20,6 @@ import { GEO_STARTER_RULES } from '@/lib/geo-starter-rules';
 import type {
   GeoRoutingRule,
   GeoRuleCreate,
-  GeoMatchType,
 } from '@/types/geo-routing';
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -31,20 +30,6 @@ function countryCodeToFlag(code: string): string {
     .split('')
     .map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
     .join('');
-}
-
-function matchTypeLabel(
-  matchType: GeoMatchType,
-  target: GeoRoutingRule['target'],
-): string {
-  switch (matchType) {
-    case 'country':
-      return `${countryCodeToFlag(target.countryCode ?? '')} ${target.countryCode ?? ''}`;
-    case 'region':
-      return target.region ?? 'Unknown region';
-    case 'special':
-      return target.special === 'domestic' ? 'Domestic' : 'Foreign';
-  }
 }
 
 function actionLabel(action: string): string {
@@ -104,7 +89,7 @@ export function GeoRulesList() {
   }, []);
 
   useEffect(() => {
-    fetchRules();
+    startTransition(() => { fetchRules(); });
   }, [fetchRules]);
 
   // ─── Handlers ───────────────────────────────────────

@@ -1,14 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { clsx } from 'clsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, Clock } from 'lucide-react';
-import {
-  useTrafficStats,
-  type TrafficStatsParams,
-} from '@/hooks/use-traffic-stats';
+import { useTrafficStats } from '@/hooks/use-traffic-stats';
 import { useTopUserTraffic } from '@/hooks/use-top-user-traffic';
 import { TrafficChart } from './traffic-chart';
 

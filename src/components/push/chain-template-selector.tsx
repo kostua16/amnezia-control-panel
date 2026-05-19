@@ -1,7 +1,7 @@
 'use client';
 
 import { clsx } from 'clsx';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import type { ChainTemplate } from '@/types/chain';
 
 interface ChainTemplateSelectorProps {

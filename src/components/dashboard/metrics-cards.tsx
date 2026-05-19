@@ -1,7 +1,6 @@
 'use client';
 
 import { Users, Activity, HardDrive, Wifi } from 'lucide-react';
-import { clsx } from 'clsx';
 import { Card, CardContent } from '@/components/ui/card';
 import { useDashboardStats } from '@/hooks/use-dashboard-stats';
 import { Loader2 } from 'lucide-react';

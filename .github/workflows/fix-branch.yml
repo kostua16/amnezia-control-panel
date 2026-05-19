@@ -223,6 +223,7 @@ jobs:
           fi
 
       - uses: ./.github/actions/commit-and-push
+        id: push
         if: steps.changes.outputs.has_changes == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
@@ -231,7 +232,7 @@ jobs:
 
       - name: Find related failure issues
         id: failure_issues
-        if: steps.changes.outputs.has_changes == 'true'
+        if: steps.push.outputs.pushed == 'true'
         uses: actions/github-script@v8
         env:
           BRANCH: ${{ github.event.workflow_run.head_branch }}
@@ -254,7 +255,7 @@ jobs:
             }
 
       - name: Create fix PR
-        if: steps.changes.outputs.has_changes == 'true'
+        if: steps.push.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}

@@ -14,7 +14,7 @@ interface ServerPresetsGridProps {
 }
 
 export function ServerPresetsGrid({ onPreview }: ServerPresetsGridProps) {
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [_refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const presets = getPresets().filter((p) =>
@@ -26,7 +26,6 @@ export function ServerPresetsGrid({ onPreview }: ServerPresetsGridProps) {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  const _ = refreshKey; // silence unused warning -- used to trigger re-render
 
   function extractProvider(label: string): string {
     const provider = label.split(' ')[0];

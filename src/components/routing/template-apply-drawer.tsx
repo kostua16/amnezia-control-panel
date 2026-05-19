@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
@@ -83,8 +83,7 @@ export function TemplateApplyDrawer({
 
   // Reset state when template changes
   useEffect(() => {
-    setLoading(false);
-    setError(null);
+    startTransition(() => { setLoading(false); setError(null); });
   }, [template]);
 
   const handleApply = useCallback(async () => {

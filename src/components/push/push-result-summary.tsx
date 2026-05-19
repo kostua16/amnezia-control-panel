@@ -29,7 +29,7 @@ export function PushResultSummary({
   results,
   progressMap,
   onRollback,
-  onRetry,
+  onRetry: _onRetry,
 }: PushResultSummaryProps) {
   const [rolledBackPanels, setRolledBackPanels] = useState<Set<number>>(
     new Set(),
