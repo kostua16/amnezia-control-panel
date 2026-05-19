@@ -2,7 +2,7 @@ name: Issue Catch-Up
 
 on:
   schedule:
-    - cron: "30 * * * *" # Every hour at :30 (offset from workflow-health-optimize at :00)
+    - cron: "37 * * * *" # Every hour at :37 (offset from workflow-health-optimize at :07)
   workflow_dispatch:
     inputs:
       dry_run:

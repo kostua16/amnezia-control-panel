@@ -1,7 +1,7 @@
 name: Daily Maintenance
 on:
   schedule:
-    - cron: "0 6,18 * * *" # Twice daily at 06:00 and 18:00 UTC
+    - cron: "41 6,18 * * *" # Twice daily at 06:41 and 18:41 UTC
   workflow_dispatch: # Manual trigger option
 
 concurrency:

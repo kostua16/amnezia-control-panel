@@ -2,7 +2,7 @@ name: Suggest Improvements
 
 on:
   schedule:
-    - cron: "0 0 * * *" # Daily at midnight
+    - cron: "11 0 * * *" # Daily at 00:11 UTC
   workflow_dispatch:
 
 concurrency:

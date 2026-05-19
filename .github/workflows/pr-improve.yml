@@ -4,7 +4,7 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   schedule:
-    - cron: "17 2 * * *"
+    - cron: "17 2 * * *" # Daily at 02:17 UTC
   workflow_dispatch:
     inputs:
       pr_number:

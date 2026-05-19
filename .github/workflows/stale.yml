@@ -2,7 +2,7 @@ name: Stale Issues
 
 on:
   schedule:
-    - cron: "0 0 * * 0"  # Weekly Sunday midnight
+    - cron: "23 1 * * 0"  # Weekly Sunday at 01:23 UTC
   workflow_dispatch:
 
 permissions:

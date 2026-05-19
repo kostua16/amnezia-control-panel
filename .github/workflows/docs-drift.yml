@@ -2,7 +2,7 @@ name: Documentation Drift Checker
 
 on:
   schedule:
-    - cron: "0 3 * * 0" # Weekly on Sundays at 03:00
+    - cron: "29 3 * * 0" # Weekly on Sundays at 03:29 UTC
   workflow_dispatch:
 
 concurrency:
