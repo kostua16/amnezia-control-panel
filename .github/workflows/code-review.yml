@@ -174,8 +174,8 @@ jobs:
             });
 
   claude-security-review:
-    needs: [resolve-pr]
-    if: needs.resolve-pr.outputs.should-run == 'true'
+    needs: [resolve-pr, claude-main-review]
+    if: ${{ always() && needs.resolve-pr.outputs.should-run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
