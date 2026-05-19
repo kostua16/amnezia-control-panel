@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: audit-fix-${{ github.sha }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -27,19 +27,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
 
-      - name: Setup git identity
-        run: |
-          git config --global user.email "claude[bot]@users.noreply.github.com"
-          git config --global user.name "claude[bot]"
-
-      - name: Create audit branch
+      - name: Prepare audit branch
         id: branch
-        env:
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          BRANCH_NAME="claude-workflow-optimize-audit-fix-${RUN_ID}"
-          git checkout -b "$BRANCH_NAME"
-          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-workflow-optimize-audit-fix-${{ github.run_id }}
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -68,38 +60,26 @@ jobs:
             - Keep changes reviewable; avoid broad refactors unless they are directly required by the audit finding.
             - If no worthwhile fixes are identified, make no file changes.
 
-      - name: Check for audit changes
-        id: changes
-        run: |
-          if git diff --quiet HEAD; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.changes.outputs.has_changes == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: "fix(audit): address autonomous audit findings"
           token: ${{ secrets.GH_PAT }}
 
+      - name: Log no-changes result
+        if: steps.push.outputs.pushed != 'true'
+        run: echo "No reviewable audit fixes identified."
+
       - name: Create audit fix PR
         if: steps.push.outputs.pushed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-          BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
-        run: |
-          BODY=$(cat <<'EOF'
-          Automated audit-fix output from the manual `audit-fix` workflow.
+        uses: ./.github/actions/create-draft-pr
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: "fix(audit): address autonomous audit findings"
+          body: |
+            Automated audit-fix output from the `audit-fix` workflow.
 
-          This PR is intentionally manual-only under repository policy and should be reviewed before merge.
-          EOF
-          )
-          gh pr create \
-            --base main \
-            --head "$BRANCH_NAME" \
-            --title "fix(audit): address autonomous audit findings" \
-            --body "$BODY" \
-            --draft
+            This PR is intentionally manual-only under repository policy and should be reviewed before merge.

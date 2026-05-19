@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: docs-drift-${{ github.sha }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -27,19 +27,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
 
-      - name: Setup git identity
-        run: |
-          git config --global user.email "claude[bot]@users.noreply.github.com"
-          git config --global user.name "claude[bot]"
-
-      - name: Create docs drift branch
+      - name: Prepare docs drift branch
         id: branch
-        env:
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          BRANCH_NAME="claude-workflow-optimize-docs-drift-${RUN_ID}"
-          git checkout -b "$BRANCH_NAME"
-          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-workflow-optimize-docs-drift-${{ github.run_id }}
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -72,38 +64,26 @@ jobs:
             - Do NOT commit, push, merge, or open a PR. The workflow handles that.
             - If there is no meaningful drift, make no file changes.
 
-      - name: Check for documentation changes
-        id: changes
-        run: |
-          if git diff --quiet HEAD; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.changes.outputs.has_changes == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: "docs: reconcile documentation drift"
           token: ${{ secrets.GH_PAT }}
 
+      - name: Log no-changes result
+        if: steps.push.outputs.pushed != 'true'
+        run: echo "No documentation drift updates were needed."
+
       - name: Create docs drift PR
         if: steps.push.outputs.pushed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-          BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
-        run: |
-          BODY=$(cat <<'EOF'
-          Automated documentation drift reconciliation.
+        uses: ./.github/actions/create-draft-pr
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: "docs: reconcile documentation drift"
+          body: |
+            Automated documentation drift reconciliation.
 
-          This PR was created by the docs-drift workflow and is intentionally manual-only under repository policy.
-          EOF
-          )
-          gh pr create \
-            --base main \
-            --head "$BRANCH_NAME" \
-            --title "docs: reconcile documentation drift" \
-            --body "$BODY" \
-            --draft
+            This PR was created by the docs-drift workflow and is intentionally manual-only under repository policy.

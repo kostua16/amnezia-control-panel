@@ -1,0 +1,41 @@
+name: "Prepare Automation Branch"
+description: "Configure automation git identity and create or reset a branch for generated changes"
+
+inputs:
+  branch-name:
+    description: "Branch name to create or reset"
+    required: true
+  user-name:
+    description: "Git user.name for automation commits"
+    required: false
+    default: "claude[bot]"
+  user-email:
+    description: "Git user.email for automation commits"
+    required: false
+    default: "claude[bot]@users.noreply.github.com"
+
+outputs:
+  branch_name:
+    description: "Prepared branch name"
+    value: ${{ steps.branch.outputs.branch_name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup git identity
+      shell: bash
+      env:
+        USER_NAME: ${{ inputs.user-name }}
+        USER_EMAIL: ${{ inputs.user-email }}
+      run: |
+        git config --global user.email "$USER_EMAIL"
+        git config --global user.name "$USER_NAME"
+
+    - name: Create or reset automation branch
+      id: branch
+      shell: bash
+      env:
+        BRANCH_NAME: ${{ inputs.branch-name }}
+      run: |
+        git checkout -B "$BRANCH_NAME"
+        echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
