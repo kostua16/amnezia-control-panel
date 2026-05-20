@@ -1,0 +1,144 @@
+name: 'Upsert Pull Request'
+description: 'Create or update a pull request for an automation branch'
+
+inputs:
+  github-token:
+    description: 'GitHub token for PR operations'
+    required: true
+  base:
+    description: 'Base branch for the pull request'
+    required: false
+    default: 'main'
+  branch-name:
+    description: 'Head branch for the pull request'
+    required: true
+  title:
+    description: 'Pull request title'
+    required: true
+  body:
+    description: 'Pull request body'
+    required: true
+  labels:
+    description: 'Optional comma-separated labels'
+    required: false
+    default: ''
+  draft:
+    description: 'Whether to create the pull request as draft'
+    required: false
+    default: 'true'
+  allow-update:
+    description: 'Whether to update an existing open pull request on the same head branch'
+    required: false
+    default: 'true'
+
+outputs:
+  pr_number:
+    description: 'Pull request number'
+    value: ${{ steps.pr.outputs.pr_number }}
+  pr_url:
+    description: 'Pull request URL'
+    value: ${{ steps.pr.outputs.pr_url }}
+  created:
+    description: "'true' when a new pull request was created"
+    value: ${{ steps.pr.outputs.created }}
+  updated:
+    description: "'true' when an existing pull request was updated"
+    value: ${{ steps.pr.outputs.updated }}
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure PR labels exist
+      if: ${{ inputs.labels != '' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        LABELS: ${{ inputs.labels }}
+      run: |
+        node .github/workflows/scripts/ensure-workflow-labels.cjs \
+          --policy-file .github/workflows/policy.json \
+          --names "$LABELS"
+
+    - name: Create or update pull request
+      id: pr
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        BASE_BRANCH: ${{ inputs.base }}
+        HEAD_BRANCH: ${{ inputs.branch-name }}
+        PR_TITLE: ${{ inputs.title }}
+        PR_BODY: ${{ inputs.body }}
+        PR_LABELS: ${{ inputs.labels }}
+        PR_DRAFT: ${{ inputs.draft }}
+        ALLOW_UPDATE: ${{ inputs.allow-update }}
+      run: |
+        set -euo pipefail
+
+        label_args=()
+        if [[ -n "$PR_LABELS" ]]; then
+          while IFS= read -r label; do
+            [[ -z "$label" ]] && continue
+            label_args+=(--label "$label")
+          done < <(printf '%s\n' "$PR_LABELS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        fi
+
+        existing_json=$(gh pr list \
+          --state open \
+          --base "$BASE_BRANCH" \
+          --head "$HEAD_BRANCH" \
+          --json number,url,isDraft \
+          --limit 1)
+
+        if [[ "$(jq 'length' <<<"$existing_json")" -gt 0 ]]; then
+          pr_number=$(jq -r '.[0].number' <<<"$existing_json")
+          pr_url=$(jq -r '.[0].url' <<<"$existing_json")
+          is_draft=$(jq -r '.[0].isDraft' <<<"$existing_json")
+
+          if [[ "$ALLOW_UPDATE" == "true" ]]; then
+            gh pr edit "$pr_number" --title "$PR_TITLE" --body "$PR_BODY" >/dev/null
+            if [[ "${#label_args[@]}" -gt 0 ]]; then
+              gh pr edit "$pr_number" "${label_args[@]}" >/dev/null 2>&1 || true
+            fi
+            if [[ "$PR_DRAFT" == "false" && "$is_draft" == "true" ]]; then
+              gh pr ready "$pr_number" >/dev/null 2>&1 || true
+            fi
+            updated="true"
+          else
+            updated="false"
+          fi
+
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "pr_url=$pr_url" >> "$GITHUB_OUTPUT"
+          echo "created=false" >> "$GITHUB_OUTPUT"
+          echo "updated=$updated" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        create_args=(pr create --base "$BASE_BRANCH" --head "$HEAD_BRANCH" --title "$PR_TITLE" --body "$PR_BODY")
+        if [[ "$PR_DRAFT" == "true" ]]; then
+          create_args+=(--draft)
+        fi
+
+        if [[ "${#label_args[@]}" -gt 0 ]]; then
+          if ! gh "${create_args[@]}" "${label_args[@]}" >/dev/null 2>/tmp/upsert-pr.err; then
+            echo "::warning::Pull request creation with labels failed, retrying without labels"
+            gh "${create_args[@]}" >/dev/null
+          fi
+        else
+          gh "${create_args[@]}" >/dev/null
+        fi
+
+        created_json=$(gh pr list \
+          --state open \
+          --base "$BASE_BRANCH" \
+          --head "$HEAD_BRANCH" \
+          --json number,url \
+          --limit 1)
+
+        pr_number=$(jq -r '.[0].number' <<<"$created_json")
+        pr_url=$(jq -r '.[0].url' <<<"$created_json")
+
+        echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+        echo "pr_url=$pr_url" >> "$GITHUB_OUTPUT"
+        echo "created=true" >> "$GITHUB_OUTPUT"
+        echo "updated=false" >> "$GITHUB_OUTPUT"

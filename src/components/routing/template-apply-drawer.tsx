@@ -83,7 +83,10 @@ export function TemplateApplyDrawer({
 
   // Reset state when template changes
   useEffect(() => {
-    startTransition(() => { setLoading(false); setError(null); });
+    startTransition(() => {
+      setLoading(false);
+      setError(null);
+    });
   }, [template]);
 
   const handleApply = useCallback(async () => {

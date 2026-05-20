@@ -90,7 +90,9 @@ export function UserList() {
 
   // Reset to page 1 when search or sort changes
   useEffect(() => {
-    startTransition(() => { setPage(1); });
+    startTransition(() => {
+      setPage(1);
+    });
   }, [debouncedSearch, sortOption]);
 
   // Dismiss action errors after 5 seconds

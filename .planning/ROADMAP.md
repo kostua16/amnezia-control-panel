@@ -5,6 +5,7 @@
 - **v1.0** -- Phases 1.1-10.4 (shipped 2026-04-29)
 - **v1.1 Multi-Panel Chain Routing** -- Phases 11.1-11.8 (shipped 2026-05-01) [archive](.planning/milestones/v1.1-ROADMAP.md)
 - **Post-v1.1 audit remediation** -- Phases 12.1-12.12 (in progress; closure audit: `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md`)
+- **Developer automation governance** -- Phases 13.1-13.4 (planned)
 
 ## Phases
 
@@ -127,6 +128,41 @@ Plans:
 **Requirements:** GAPL-01, CHAIN-01 (traceability fix); PROJ-AUTH-01 (verification closure)
 **Gap closure:** Closes WARNING-1 (middleware matcher), FLOW-6 (verification closure), and REQUIREMENTS.md checkbox debt
 **Plans:** TBD (`/gsd-plan-phase 12.15`)
+
+### Next Milestone: Developer automation governance (Phases 13.1-13.4)
+
+- [ ] **Phase 13.1: Workflow governance hardening** -- central policy, maintainer-only triggers, explicit manual-only workflow/planning paths
+- [ ] **Phase 13.2: CI and supply-chain correctness** -- deterministic release notes, pinned bootstrap tooling, hard failures for push/build regressions
+- [ ] **Phase 13.3: PR finalizer and approval policy** -- signal-only reviews, trusted auto-approval, and controlled auto-merge
+- [ ] **Phase 13.4: Claude+GSD planning automation** -- trusted improvement analysis, draft planning PRs, and roadmap intake artifacts
+
+**Improvement intake from PR automation**
+<!-- AUTO-13X-INTAKE-START -->
+<!-- AUTO-13X-INTAKE-END -->
+
+### Phase 13.1: Workflow governance hardening
+**Goal:** Centralize workflow trust policy, maintainer-only triggers, and manual-only file/path rules so write-capable automation has one authoritative policy surface.
+**Depends on:** Phase 12.15
+**Requirements:** Internal workflow governance and trust-boundary hardening
+**Plans:** Seeded in `.planning/phases/13.1-workflow-governance-hardening/13.1-PLAN.md`
+
+### Phase 13.2: CI and supply-chain correctness
+**Goal:** Remove ambiguous workflow behavior, pin mutable automation bootstrap sources, and make CI helper workflows fail loudly when their underlying work fails.
+**Depends on:** Phase 13.1
+**Requirements:** Internal CI determinism and supply-chain hardening
+**Plans:** Seeded in `.planning/phases/13.2-ci-supply-chain-correctness/13.2-PLAN.md`
+
+### Phase 13.3: PR finalizer and approval policy
+**Goal:** Normalize AI review outputs into policy labels and let a single finalizer decide whether a trusted PR can be approved and auto-merged.
+**Depends on:** Phase 13.1, Phase 13.2
+**Requirements:** Trusted automation approval path with manual-only exceptions
+**Plans:** Seeded in `.planning/phases/13.3-pr-finalizer-approval-policy/13.3-PLAN.md`
+
+### Phase 13.4: Claude+GSD planning automation
+**Goal:** Turn qualifying PRs into planning intake artifacts and draft roadmap follow-up PRs without executing untrusted PR code in a write-capable context.
+**Depends on:** Phase 13.1, Phase 13.3
+**Requirements:** Trusted planning automation and roadmap intake capture
+**Plans:** Seeded in `.planning/phases/13.4-claude-gsd-planning-automation/13.4-PLAN.md`
 
 ## Phase Details
 

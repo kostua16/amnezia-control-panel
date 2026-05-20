@@ -12,11 +12,17 @@ inputs:
     description: "Run npx prisma generate"
     default: "false"
   install-gsd:
-    description: "Install GSD framework with cache"
+    description: "Install or verify the checked-in ClaudeKit/GSD framework"
     default: "false"
   install-rtk:
     description: "Install RTK (Rust Token Killer) with cache and init hooks"
     default: "false"
+  gsd-version:
+    description: "Pinned get-shit-done-cc version used when the local .claude bundle is missing"
+    default: "2.19.0"
+  rtk-version:
+    description: "Pinned RTK version used for workflow bootstrap"
+    default: "0.35.0"
 
 runs:
   using: "composite"
@@ -45,19 +51,12 @@ runs:
       shell: bash
 
     - if: inputs.install-gsd == 'true'
-      id: gsd-cache
-      uses: actions/cache@v5
-      with:
-        path: |
-          .claude/skills/gsd-*
-          .claude/commands/gsd/*
-          .claude/get-shit-done/*
-          .claude/hooks/*
-        key: gsd-v3-${{ hashFiles('.claude/package.json') }}
-        restore-keys: gsd-v3-
-
-    - if: inputs.install-gsd == 'true' && steps.gsd-cache.outputs.cache-hit != 'true'
-      run: npx get-shit-done-cc@latest --claude --local
+      run: |
+        if [ -f .claude/metadata.json ]; then
+          echo "Using checked-in ClaudeKit bundle from .claude/metadata.json"
+        else
+          npx get-shit-done-cc@${{ inputs.gsd-version }} --claude --local
+        fi
       shell: bash
 
     - if: inputs.install-rtk == 'true'
@@ -65,10 +64,10 @@ runs:
       uses: actions/cache@v5
       with:
         path: ~/.local/bin/rtk
-        key: rtk-${{ runner.os }}-latest
+        key: rtk-${{ runner.os }}-${{ inputs.rtk-version }}
 
     - if: inputs.install-rtk == 'true' && steps.rtk-cache.outputs.cache-hit != 'true'
-      run: curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+      run: curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/tags/v${{ inputs.rtk-version }}/install.sh | sh
       shell: bash
 
     - if: inputs.install-rtk == 'true'

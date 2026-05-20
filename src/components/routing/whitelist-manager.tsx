@@ -64,7 +64,9 @@ export function WhitelistManager({ servers }: WhitelistManagerProps) {
   }, [filterServer]);
 
   useEffect(() => {
-    startTransition(() => { fetchEntries(); });
+    startTransition(() => {
+      fetchEntries();
+    });
   }, [fetchEntries]);
 
   const handleAdd = async () => {

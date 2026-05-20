@@ -1,0 +1,245 @@
+name: PR Improve
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  schedule:
+    - cron: '17 2 * * *' # Daily at 02:17 UTC
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to analyze'
+        required: true
+        type: string
+      dry_run:
+        description: 'Analyze without creating or updating planning branches/PRs'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  collect-targets:
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.collect.outputs.targets }}
+      count: ${{ steps.collect.outputs.count }}
+    steps:
+      - name: Collect PR targets
+        id: collect
+        uses: actions/github-script@v8
+        with:
+          script: |
+            let targets = [];
+
+            if (context.eventName === 'pull_request_target') {
+              targets = [context.payload.pull_request.number];
+            } else if (context.eventName === 'workflow_dispatch') {
+              targets = [Number(context.payload.inputs.pr_number)];
+            } else {
+              const pulls = await github.paginate(github.rest.pulls.list, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                per_page: 100
+              });
+              targets = pulls.map((pull) => pull.number);
+            }
+
+            core.setOutput('targets', JSON.stringify(targets));
+            core.setOutput('count', String(targets.length));
+
+  improve:
+    needs: [collect-targets]
+    if: needs.collect-targets.outputs.count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pr-number: ${{ fromJSON(needs.collect-targets.outputs.targets) }}
+    env:
+      NODE_VERSION: '22.x'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Ensure planning labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .github/workflows/scripts/ensure-workflow-labels.cjs \
+            --policy-file .github/workflows/policy.json \
+            --names skip-improve,planning-draft-open
+
+      - name: Fetch PR metadata and evaluate policy
+        id: metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ matrix.pr-number }}
+        run: |
+          gh pr view "$PR_NUMBER" \
+            --json number,title,url,isDraft,headRefName,baseRefName,author,labels,files,isCrossRepository \
+            > /tmp/pr.json
+          node .github/workflows/scripts/evaluate-pr-policy.cjs \
+            --policy-file .github/workflows/policy.json \
+            --pr-file /tmp/pr.json \
+            > /tmp/policy-eval.json
+          {
+            echo "should_analyze=$(jq -r '.should_analyze' /tmp/policy-eval.json)"
+            echo "base_ref=$(jq -r '.base_ref_name' /tmp/policy-eval.json)"
+            echo "pr_title=$(jq -r '.title' /tmp/pr.json)"
+            echo "pr_url=$(jq -r '.url' /tmp/pr.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-environment
+        if: steps.metadata.outputs.should_analyze == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          install-gsd: 'true'
+          install-rtk: 'true'
+
+      - name: Prepare trusted planning context
+        if: steps.metadata.outputs.should_analyze == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ matrix.pr-number }}
+          BASE_REF: ${{ steps.metadata.outputs.base_ref }}
+        run: |
+          git fetch origin "$BASE_REF" --depth=1
+          git checkout -B "$BASE_REF" "origin/$BASE_REF"
+          gh pr diff "$PR_NUMBER" > /tmp/pr.diff
+
+      - name: Setup git identity
+        if: steps.metadata.outputs.should_analyze == 'true'
+        uses: ./.github/actions/setup-bot-git
+
+      - name: Analyze follow-up improvements
+        if: steps.metadata.outputs.should_analyze == 'true'
+        id: analyze
+        uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          model: 'sonnet'
+          max-turns: '40'
+          track-progress: 'false'
+          json-schema: '{"type":"object","properties":{"summary":{"type":"string"},"quick_tasks":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"},"artifact_type":{"type":"string","enum":["quick-task","workflow-improvement"]}},"required":["title","rationale","owner","artifact_type"],"additionalProperties":false}},"phase_suggestions":{"type":"array","items":{"type":"object","properties":{"phase":{"type":"string","enum":["13.1","13.2","13.3","13.4"]},"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"}},"required":["phase","title","rationale","owner"],"additionalProperties":false}}},"required":["summary","quick_tasks","phase_suggestions"],"additionalProperties":false}'
+          allowed-tools: 'Read,Glob,Grep,LS,Bash(cat *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(node *),Bash(ls *),Bash(find *),Bash(gh pr diff:*),Bash(gh pr view:*)'
+          prompt: |
+            /gsd-quick
+            Analyze this pull request for follow-up improvements and roadmap-worthy automation work.
+
+            SOURCE PR NUMBER: ${{ matrix.pr-number }}
+            SOURCE PR TITLE: ${{ steps.metadata.outputs.pr_title }}
+            SOURCE PR URL: ${{ steps.metadata.outputs.pr_url }}
+
+            Safety rules:
+            - This is planning-only work.
+            - Do NOT edit repository files.
+            - Do NOT push commits.
+            - Do NOT comment on the PR directly.
+            - Analyze only the trusted base branch checkout and the PR diff from `/tmp/pr.diff`.
+
+            Classification buckets:
+            - quick_tasks: narrow, tactical follow-ups
+            - phase_suggestions: milestone-scale additions mapped to these phases only:
+              - 13.1 trust gates, central workflow policy, maintainer-only triggers, manual-only path rules
+              - 13.2 CI correctness, release-note generation, pinned bootstrap tooling, perf/build accuracy
+              - 13.3 review signals, approval policy, finalizer behavior, auto-merge governance
+              - 13.4 Claude+GSD planning automation, planning PRs, milestone/phase intake
+
+            Return JSON only with concrete, repo-specific suggestions.
+
+      - name: Persist structured suggestions
+        if: steps.metadata.outputs.should_analyze == 'true'
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.analyze.outputs.structured_output }}
+        run: |
+          printf '%s\n' "$STRUCTURED_OUTPUT" > /tmp/pr-improve.json
+
+      - name: Upsert planning branch and draft PR
+        if: steps.metadata.outputs.should_analyze == 'true'
+        id: planning
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          PR_NUMBER: ${{ matrix.pr-number }}
+          PR_TITLE: ${{ steps.metadata.outputs.pr_title }}
+          PR_URL: ${{ steps.metadata.outputs.pr_url }}
+          BASE_REF: ${{ steps.metadata.outputs.base_ref }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          node .github/workflows/scripts/upsert-planning-pr.cjs \
+            --suggestions-file /tmp/pr-improve.json \
+            --source-pr-number "$PR_NUMBER" \
+            --source-pr-title "$PR_TITLE" \
+            --source-pr-url "$PR_URL" \
+            --base-ref "$BASE_REF" \
+            --dry-run "$DRY_RUN" \
+            > /tmp/planning-output.json
+          echo "planning_pr_url=$(jq -r '.pr_url // empty' /tmp/planning-output.json)" >> "$GITHUB_OUTPUT"
+          echo "quick_artifact_path=$(jq -r '.quick_artifact_path // empty' /tmp/planning-output.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upsert source PR improvement comment
+        if: steps.metadata.outputs.should_analyze == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ matrix.pr-number }}
+          STRUCTURED_OUTPUT: ${{ steps.analyze.outputs.structured_output }}
+          PLANNING_PR_URL: ${{ steps.planning.outputs.planning_pr_url }}
+          QUICK_ARTIFACT_PATH: ${{ steps.planning.outputs.quick_artifact_path }}
+        with:
+          script: |
+            const issueNumber = Number(process.env.PR_NUMBER);
+            const analysis = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
+            const marker = '<!-- pr-improve -->';
+            const body = [
+              marker,
+              '## Claude+GSD Improvement Intake',
+              '',
+              `- Summary: ${analysis.summary || 'No summary returned.'}`,
+              `- Quick tasks: ${(analysis.quick_tasks || []).length}`,
+              `- Phase suggestions: ${(analysis.phase_suggestions || []).length}`,
+              `- Quick artifact: \`${process.env.QUICK_ARTIFACT_PATH || ''}\``,
+              process.env.PLANNING_PR_URL
+                ? `- Draft planning PR: ${process.env.PLANNING_PR_URL}`
+                : '- Draft planning PR: not created'
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100
+            });
+
+            const existing = comments.find((comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: ['planning-draft-open']
+            });

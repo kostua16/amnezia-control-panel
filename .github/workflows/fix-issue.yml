@@ -11,48 +11,74 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: "22.x"
-  MAX_TURNS: "100"
+  NODE_VERSION: '22.x'
+  MAX_TURNS: '100'
+
 permissions:
   contents: write
   pull-requests: write
   issues: write
-  id-token: write
+  actions: read
 
 jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.gate.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Evaluate fix trigger
+        id: gate
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const policy = JSON.parse(fs.readFileSync('.github/workflows/policy.json', 'utf8'));
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+          const eventName = process.env.GITHUB_EVENT_NAME;
+
+          const isOpenIssue = event.issue?.state !== 'closed' && !event.issue?.pull_request;
+          const commentAssociation = event.comment?.author_association ?? '';
+          const commentBody = event.comment?.body ?? '';
+          const labelName = event.label?.name ?? '';
+
+          const maintainerTriggeredFix =
+            eventName === 'issue_comment' &&
+            isOpenIssue &&
+            commentBody.includes('/fix') &&
+            policy.maintainerAssociations.includes(commentAssociation);
+
+          const labelTriggeredFix =
+            eventName === 'issues' &&
+            isOpenIssue &&
+            labelName === policy.fixApprovalLabel;
+
+          fs.appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `should_run=${maintainerTriggeredFix || labelTriggeredFix}\n`
+          );
+          NODE
+
   fix:
+    needs: [authorize]
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: |
-      github.event.issue.state != 'closed' &&
-      (
-        (
-          github.event_name == 'issue_comment' &&
-          !github.event.issue.pull_request &&
-          contains(github.event.comment.body, '/fix')
-        ) || (
-          github.event_name == 'issues' &&
-          github.event.label.name == 'triaged'
-        )
-      )
+    if: needs.authorize.outputs.should-run == 'true'
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
           token: ${{ secrets.GH_PAT }}
 
-      - name: Setup git identity
-        run: |
-          git config --global user.email "claude[bot]@users.noreply.github.com"
-          git config --global user.name "claude[bot]"
-
       - name: Ensure labels exist
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          for label in fixed canceled; do
-            gh label create "$label" --color 0e8a16 --description "Issue resolved by auto-fix" --force 2>/dev/null || true
-          done
+          node .github/workflows/scripts/ensure-workflow-labels.cjs \
+            --policy-file .github/workflows/policy.json \
+            --names auto-fix-approved,auto-fix,fixed,canceled
 
       - name: Extract fix message
         id: extract
@@ -62,30 +88,27 @@ jobs:
           FIX_MSG=$(printf '%s' "$COMMENT_BODY" | sed -n 's|.*/fix[[:space:]]*||p' | head -1)
           echo "message=$FIX_MSG" >> "$GITHUB_OUTPUT"
 
-      - name: Create fix branch
+      - name: Prepare fix branch
         id: branch
-        env:
-          ISSUE_NUM: ${{ github.event.issue.number }}
-        run: |
-          BRANCH_NAME="claude-fix-issue-${ISSUE_NUM}-$(date +%s)"
-          git checkout -b "$BRANCH_NAME"
-          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-fix-issue-${{ github.event.issue.number }}-${{ github.run_id }}
 
       - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
-          install-deps: "true"
-          generate-prisma: "true"
-          install-gsd: "true"
-          install-rtk: "true"
+          install-deps: 'true'
+          generate-prisma: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
 
       - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           max-turns: ${{ env.MAX_TURNS }}
-          track-progress: "true"
-          allowed-bots: "claude[bot],github-actions[bot]"
-          allowed-tools: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(gh issue view:*),Bash(gh issue list:*)"
+          track-progress: 'true'
+          allowed-bots: 'claude[bot],github-actions[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(gh issue view:*),Bash(gh issue list:*)'
           prompt: |
             /gsd-debug
             Fix the following GitHub issue.
@@ -114,48 +137,45 @@ jobs:
             - Post a comment on the issue listing any remaining/unresolved issues from the original report
             - Format: "## Fixed\n- [what was fixed]\n## Remaining\n- [unresolved items from the issue]"
 
-      - name: Check for changes
-        id: changes
-        run: |
-          if git diff --quiet HEAD; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.changes.outputs.has_changes == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          commit-message: "fix: resolve #${{ github.event.issue.number }}"
+          commit-message: 'fix: resolve #${{ github.event.issue.number }}'
           token: ${{ secrets.GH_PAT }}
 
-      - name: Create fix PR
+      - name: Build fix PR body
         if: steps.push.outputs.pushed == 'true'
-        id: create_pr
+        id: pr-body
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-          BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
           ISSUE_NUM: ${{ github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           FIX_MSG: ${{ steps.extract.outputs.message }}
         run: |
-          # shellcheck disable=SC2016
-          BODY=$(printf 'Fixes #%s\n\n**Issue:** %s\n**Fix instruction:** %s\n\n---\n*Auto-generated by fix-issue workflow from `/fix` command.*' \
-            "$ISSUE_NUM" "$ISSUE_TITLE" "$FIX_MSG")
-          PR_URL=$(gh pr create \
-            --base main \
-            --head "$BRANCH_NAME" \
-            --title "fix: resolve #${ISSUE_NUM} - ${ISSUE_TITLE}" \
-            --body "$BODY" \
-            --label "auto-fix" 2>/dev/null || \
-          gh pr create \
-            --base main \
-            --head "$BRANCH_NAME" \
-            --title "fix: resolve #${ISSUE_NUM} - ${ISSUE_TITLE}" \
-            --body "$BODY")
-          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          {
+            echo "body<<'EOF'"
+            printf 'Fixes #%s\n\n**Issue:** %s\n**Fix instruction:** %s\n\n---\n*Auto-generated by fix-issue workflow from a maintainer-approved fix trigger.*\n' \
+              "$ISSUE_NUM" "$ISSUE_TITLE" "$FIX_MSG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create fix PR
+        if: steps.push.outputs.pushed == 'true'
+        id: create_pr
+        uses: ./.github/actions/upsert-pull-request
+        env:
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'fix: resolve #${{ github.event.issue.number }} - ${{ github.event.issue.title }}'
+          body: ${{ steps.pr-body.outputs.body }}
+          labels: auto-fix
+          draft: 'false'
+          allow-update: 'true'
 
       - name: Label issue as fixed
         if: steps.push.outputs.pushed == 'true'
@@ -165,11 +185,10 @@ jobs:
           PR_URL: ${{ steps.create_pr.outputs.pr_url }}
         run: |
           gh issue edit "$ISSUE_NUM" --add-label "fixed"
-          gh issue comment "$ISSUE_NUM" \
-            --body "Fix PR created: ${PR_URL}"
+          gh issue comment "$ISSUE_NUM" --body "Fix PR created: ${PR_URL}"
 
       - name: Comment on issue if no changes
-        if: steps.changes.outputs.has_changes == 'false'
+        if: steps.push.outputs.pushed != 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ github.event.issue.number }}
@@ -183,8 +202,10 @@ jobs:
     if: failure()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
       - uses: ./.github/actions/report-failure
         with:
-          mode: "comment"
+          mode: 'comment'
           issue-number: ${{ github.event.issue.number }}
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

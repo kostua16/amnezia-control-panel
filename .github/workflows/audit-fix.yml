@@ -1,23 +1,21 @@
 name: Autonomous Audit-Fix
 
 on:
-  # schedule:
-  #   - cron: "0 2 * * 0" # Weekly on Sundays at 02:00
+  schedule:
+    - cron: '53 9,21 * * *' # Twice daily at 09:53 and 21:53 UTC
   workflow_dispatch:
 
 concurrency:
-  group: audit-fix-${{ github.sha }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   MAX_TURNS: 100
-  NODE_VERSION: "22.x"
+  NODE_VERSION: '22.x'
 
 permissions:
   contents: write
   pull-requests: write
-  issues: write
-  id-token: write
 
 jobs:
   audit-fix:
@@ -27,28 +25,62 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
 
-      - name: Setup git identity
-        run: |
-          git config --global user.email "claude[bot]@users.noreply.github.com"
-          git config --global user.name "claude[bot]"
+      - name: Prepare audit branch
+        id: branch
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-workflow-optimize-audit-fix-${{ github.run_id }}
 
       - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
-          install-deps: "true"
-          generate-prisma: "true"
-          install-gsd: "true"
-          install-rtk: "true"
+          install-deps: 'true'
+          generate-prisma: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
 
-      - uses: ./.github/actions/run-zai
+      - name: Audit repository and apply targeted fixes
+        uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
-          max-turns: "${{ env.MAX_TURNS }}"
-          track-progress: "true"
-          allowed-bots: "claude[bot],github-actions[bot]"
-          allowed-tools: "Bash(rtk:*),Bash(gh:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*)"
+          max-turns: '${{ env.MAX_TURNS }}'
+          track-progress: 'true'
+          allowed-bots: 'claude[bot],github-actions[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
           prompt: |
             /gsd-audit-fix
             Run a full repository audit for technical debt, code smells, and missing tests.
-            Fix the issues, run tests to verify, and create a PR with the fixes.
+            Implement targeted fixes, run the most relevant verification you can, and stop once the audit findings are addressed.
+
+            Hard rules:
+            - Do NOT run `git` or `gh`.
+            - Do NOT commit, push, merge, or open a PR. The workflow handles that.
+            - Keep changes reviewable; avoid broad refactors unless they are directly required by the audit finding.
+            - If no worthwhile fixes are identified, make no file changes.
+
+      - uses: ./.github/actions/commit-and-push
+        id: push
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'fix(audit): address autonomous audit findings'
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Log no-changes result
+        if: steps.push.outputs.pushed != 'true'
+        run: echo "No reviewable audit fixes identified."
+
+      - name: Create audit fix PR
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/upsert-pull-request
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'fix(audit): address autonomous audit findings'
+          body: |
+            Automated audit-fix output from the `audit-fix` workflow.
+
+            This PR is intentionally manual-only under repository policy and should be reviewed before merge.
+          draft: 'true'

@@ -2,22 +2,20 @@ name: Documentation Drift Checker
 
 on:
   schedule:
-    - cron: "0 3 * * 0" # Weekly on Sundays at 03:00
+    - cron: '29 3 * * 0' # Weekly on Sundays at 03:29 UTC
   workflow_dispatch:
 
 concurrency:
-  group: docs-drift-${{ github.sha }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   MAX_TURNS: 100
-  NODE_VERSION: "22.x"
+  NODE_VERSION: '22.x'
 
 permissions:
   contents: write
   pull-requests: write
-  issues: write
-  id-token: write
 
 jobs:
   docs-drift:
@@ -27,29 +25,66 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
 
-      - name: Setup git identity
-        run: |
-          git config --global user.email "claude[bot]@users.noreply.github.com"
-          git config --global user.name "claude[bot]"
+      - name: Prepare docs drift branch
+        id: branch
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-workflow-optimize-docs-drift-${{ github.run_id }}
 
       - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
-          install-deps: "true"
-          install-gsd: "true"
-          install-rtk: "true"
+          install-gsd: 'true'
+          install-rtk: 'true'
 
-      - uses: ./.github/actions/run-zai
+      - name: Update docs to match implementation
+        uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
-          max-turns: "${{ env.MAX_TURNS }}"
-          track-progress: "true"
-          allowed-bots: "claude[bot],github-actions[bot]"
-          allowed-tools: "Bash(rtk:*),Bash(gh:*),Bash(git:*),Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*)"
+          max-turns: '${{ env.MAX_TURNS }}'
+          track-progress: 'true'
+          allowed-bots: 'claude[bot],github-actions[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
           prompt: |
             /gsd-docs-update
             Review the codebase against `.planning/` artifacts and standard documentation files.
-            Identify any drift between implementation and documentation.
-            Update the documentation files to reflect reality.
-            Create a PR with any documentation updates.
+            Identify any documentation drift between implementation and docs, then update only documentation files to reflect reality.
+
+            Allowed edit scope:
+            - `README.md`
+            - `docs/**`
+            - `.planning/**`
+            - `.github/workflows/documentation.md`
+
+            Hard rules:
+            - Do NOT edit application source code, tests, package manifests, or workflow logic files other than `.github/workflows/documentation.md`.
+            - Do NOT run `git` or `gh`.
+            - Do NOT commit, push, merge, or open a PR. The workflow handles that.
+            - If there is no meaningful drift, make no file changes.
+
+      - uses: ./.github/actions/commit-and-push
+        id: push
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'docs: reconcile documentation drift'
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Log no-changes result
+        if: steps.push.outputs.pushed != 'true'
+        run: echo "No documentation drift updates were needed."
+
+      - name: Create docs drift PR
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/upsert-pull-request
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'docs: reconcile documentation drift'
+          body: |
+            Automated documentation drift reconciliation.
+
+            This PR was created by the docs-drift workflow and is intentionally manual-only under repository policy.
+          draft: 'true'

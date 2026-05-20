@@ -28,7 +28,9 @@ export function GeoIPStatusBadge() {
   }, []);
 
   useEffect(() => {
-    startTransition(() => { fetchStatus(); });
+    startTransition(() => {
+      fetchStatus();
+    });
   }, [fetchStatus]);
 
   const handleRefresh = async () => {

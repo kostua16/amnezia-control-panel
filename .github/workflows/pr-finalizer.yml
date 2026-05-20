@@ -1,0 +1,197 @@
+name: PR Finalizer
+
+on:
+  workflow_run:
+    workflows: ["CI", "Code Review", "Dependency Review"]
+    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to evaluate"
+        required: true
+        type: string
+      dry_run:
+        description: "Evaluate without approving, merging, or commenting"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-finalizer-${{ github.event.workflow_run.id || github.event.pull_request.number || github.event.inputs.pr_number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ensure workflow labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/workflows/scripts/ensure-workflow-labels.cjs --policy-file .github/workflows/policy.json
+
+      - name: Resolve PR context
+        id: resolve
+        run: |
+          node .github/workflows/scripts/resolve-pr-context.cjs \
+            --event-name "${GITHUB_EVENT_NAME}" \
+            --event-path "${GITHUB_EVENT_PATH}" \
+            --pr-number "${{ github.event.inputs.pr_number || '' }}" \
+            > /tmp/pr-context.json
+          echo "pr_number=$(jq -r '.pullRequests[0].number // empty' /tmp/pr-context.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch PR metadata
+        if: steps.resolve.outputs.pr_number != ''
+        id: metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        run: |
+          gh pr view "$PR_NUMBER" \
+            --json number,title,url,isDraft,headRefName,baseRefName,author,labels,files,isCrossRepository \
+            > /tmp/pr.json
+          node .github/workflows/scripts/evaluate-pr-policy.cjs \
+            --policy-file .github/workflows/policy.json \
+            --pr-file /tmp/pr.json \
+            > /tmp/policy-eval.json
+          gh pr checks "$PR_NUMBER" --required --json name,state,bucket,link,workflow 2>/dev/null > /tmp/pr-checks.json || echo "[]" > /tmp/pr-checks.json
+          {
+            echo "head_ref=$(jq -r '.head_ref_name' /tmp/policy-eval.json)"
+            echo "same_repo=$(jq -r '.same_repo' /tmp/policy-eval.json)"
+            echo "decision_ready=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate finalizer decision
+        if: steps.resolve.outputs.pr_number != ''
+        id: decision
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          policy_eligible=$(jq -r '.eligible' /tmp/policy-eval.json)
+          manual_only=$(jq -r '.manual_only' /tmp/policy-eval.json)
+          blocked_reason=$(jq -r '.blocked_reason // ""' /tmp/policy-eval.json)
+          same_repo=$(jq -r '.same_repo' /tmp/policy-eval.json)
+          is_draft=$(jq -r '.is_draft' /tmp/policy-eval.json)
+          required_labels=$(jq -r '.required_pass_labels[]?' /tmp/policy-eval.json)
+          present_labels=$(jq -r '.labels[]?' /tmp/policy-eval.json)
+          blocking_labels=$(jq -r '.blocking_labels_present[]?' /tmp/policy-eval.json)
+
+          missing_labels=""
+          for required_label in $required_labels; do
+            if ! printf '%s\n' "$present_labels" | grep -qx "$required_label"; then
+              missing_labels="${missing_labels}${required_label} "
+            fi
+          done
+          missing_labels=$(printf '%s' "$missing_labels" | xargs || true)
+
+          failing_required=$(jq '[.[] | select(((.bucket // "") | ascii_downcase) == "fail" or ((.bucket // "") | ascii_downcase) == "cancel")] | length' /tmp/pr-checks.json)
+          pending_required=$(jq '[.[] | select(((.bucket // "") | ascii_downcase) == "pending")] | length' /tmp/pr-checks.json)
+          total_checks=$(jq 'length' /tmp/pr-checks.json)
+
+          decision="manual_only"
+          summary="PR does not match the trusted auto-finalization policy."
+
+          if [ "$is_draft" = "true" ]; then
+            decision="awaiting_checks"
+            summary="PR is still draft."
+          elif [ -n "$blocking_labels" ]; then
+            decision="blocked"
+            summary="Blocking labels are present: $(printf '%s' "$blocking_labels" | xargs)"
+          elif [ "$manual_only" = "true" ]; then
+            decision="manual_only"
+            summary="${blocked_reason:-PR is manual-only by policy.}"
+          elif [ "$same_repo" != "true" ] || [ "$policy_eligible" != "true" ]; then
+            decision="manual_only"
+            summary="${blocked_reason:-PR is outside the same-repo trusted scope.}"
+          elif [ -n "$missing_labels" ]; then
+            decision="awaiting_checks"
+            summary="Waiting on review signals: $missing_labels"
+          elif [ "$failing_required" -gt 0 ]; then
+            decision="blocked"
+            summary="Required checks are failing."
+          elif [ "$pending_required" -gt 0 ] || [ "$total_checks" -eq 0 ]; then
+            decision="awaiting_checks"
+            summary="Waiting for required checks to finish."
+          else
+            decision="approve_and_enable_automerge"
+            summary="Trusted PR passed required checks and review signals."
+          fi
+
+          {
+            echo "decision=$decision"
+            echo "summary<<EOF"
+            printf '%s\n' "$summary"
+            echo "EOF"
+            echo "dry_run=${DRY_RUN}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Approve and enable auto-merge
+        if: steps.decision.outputs.decision == 'approve_and_enable_automerge' && steps.decision.outputs.dry_run != 'true' && steps.metadata.outputs.same_repo == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        run: |
+          gh pr review "$PR_NUMBER" --approve --body "PR finalizer: required validation and review signals passed." || true
+          gh pr merge "$PR_NUMBER" --auto --squash || true
+
+      - name: Upsert finalizer status comment
+        if: steps.resolve.outputs.pr_number != '' && steps.decision.outputs.dry_run != 'true'
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          DECISION: ${{ steps.decision.outputs.decision }}
+          SUMMARY: ${{ steps.decision.outputs.summary }}
+        with:
+          script: |
+            const issueNumber = Number(process.env.PR_NUMBER);
+            const decision = process.env.DECISION;
+            const summary = process.env.SUMMARY;
+            const marker = '<!-- pr-finalizer -->';
+            const body = [
+              marker,
+              '## PR Finalizer',
+              '',
+              `- Status: **${decision}**`,
+              `- Summary: ${summary}`
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100
+            });
+
+            const existing = comments.find((comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
+            );
+
+            if (existing?.body === body) {
+              core.info('Finalizer comment already up to date.');
+              return;
+            }
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body
+              });
+            }

@@ -17,10 +17,7 @@ import { GeoRuleDrawer } from '@/components/routing/geo-rule-drawer';
 import { GeoIPStatusBadge } from '@/components/routing/geoip-status-badge';
 import { EmptyStateStarter } from '@/components/routing/empty-state-starter';
 import { GEO_STARTER_RULES } from '@/lib/geo-starter-rules';
-import type {
-  GeoRoutingRule,
-  GeoRuleCreate,
-} from '@/types/geo-routing';
+import type { GeoRoutingRule, GeoRuleCreate } from '@/types/geo-routing';
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -89,7 +86,9 @@ export function GeoRulesList() {
   }, []);
 
   useEffect(() => {
-    startTransition(() => { fetchRules(); });
+    startTransition(() => {
+      fetchRules();
+    });
   }, [fetchRules]);
 
   // ─── Handlers ───────────────────────────────────────

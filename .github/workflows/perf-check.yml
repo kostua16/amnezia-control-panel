@@ -30,6 +30,7 @@ jobs:
       - name: Build and measure PR
         id: pr-build
         run: |
+          set -euo pipefail
           START=$(date +%s)
           npm run build 2>&1 | tail -20 > /tmp/build-output.txt
           END=$(date +%s)
@@ -40,14 +41,16 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
-      - name: Checkout main for baseline
+      - name: Prepare main baseline worktree
         run: |
-          git stash || true
-          git checkout origin/main
+          rm -rf /tmp/perf-main
+          git worktree add /tmp/perf-main origin/main
 
       - name: Build and measure main
         id: main-build
+        working-directory: /tmp/perf-main
         run: |
+          set -euo pipefail
           npm ci
           npx prisma generate
           START=$(date +%s)
@@ -59,6 +62,10 @@ jobs:
           echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Cleanup main baseline worktree
+        if: always()
+        run: git worktree remove --force /tmp/perf-main || true
 
       - name: Compare and comment
         env:

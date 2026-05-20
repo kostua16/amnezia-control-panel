@@ -1,0 +1,24 @@
+name: 'Setup Bot Git'
+description: 'Configure automation git identity for bot-authored commits'
+
+inputs:
+  user-name:
+    description: 'Git user.name for automation commits'
+    required: false
+    default: 'claude[bot]'
+  user-email:
+    description: 'Git user.email for automation commits'
+    required: false
+    default: 'claude[bot]@users.noreply.github.com'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup git identity
+      shell: bash
+      env:
+        USER_NAME: ${{ inputs.user-name }}
+        USER_EMAIL: ${{ inputs.user-email }}
+      run: |
+        git config --global user.email "$USER_EMAIL"
+        git config --global user.name "$USER_NAME"

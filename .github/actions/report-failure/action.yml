@@ -1,29 +1,70 @@
-name: "Report Failure"
-description: "Collect failure logs and create issue or comment with details"
+name: 'Report Failure'
+description: 'Collect failure logs and create issue or comment with details'
 
 inputs:
   mode:
     description: '"issue" creates a new issue, "comment" comments on existing issue'
-    default: "issue"
+    default: 'issue'
   issue-number:
-    description: "Issue number to comment on (mode=comment only)"
+    description: 'Issue number to comment on (mode=comment only)'
     required: false
   auto-fix-run-url:
-    description: "URL of the auto-fix workflow run"
+    description: 'URL of the auto-fix workflow run'
     required: true
   triggering-run-url:
-    description: "URL of the CI run that triggered auto-fix (mode=issue only)"
+    description: 'URL of the CI run that triggered auto-fix (mode=issue only)'
     required: false
   branch:
-    description: "Branch name (mode=issue only)"
+    description: 'Branch name (mode=issue only)'
     required: false
   pr-number:
-    description: "Associated PR number (optional, for title)"
+    description: 'Associated PR number (optional, for title)'
     required: false
+  issue-title:
+    description: 'Custom title for issue mode'
+    required: false
+  issue-body:
+    description: 'Custom introductory body for issue or comment mode'
+    required: false
+  labels:
+    description: 'Comma-separated labels to apply'
+    required: false
+  ensure-labels:
+    description: 'Comma-separated policy-backed labels to ensure before reporting'
+    required: false
+  dispatch-triage:
+    description: 'Whether to dispatch triage after creating an issue'
+    default: 'true'
+  retry-command:
+    description: 'Retry command hint for comment mode'
+    default: '/fix'
 
 runs:
   using: composite
   steps:
+    - name: Ensure labels exist
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        MODE: ${{ inputs.mode }}
+        LABEL_NAMES: ${{ inputs.ensure-labels }}
+        LABELS: ${{ inputs.labels }}
+      run: |
+        EFFECTIVE_LABELS="$LABEL_NAMES"
+        if [ -z "$EFFECTIVE_LABELS" ]; then
+          if [ -n "$LABELS" ]; then
+            EFFECTIVE_LABELS="$LABELS"
+          elif [ "$MODE" = "comment" ]; then
+            EFFECTIVE_LABELS="auto-fix-failed"
+          else
+            EFFECTIVE_LABELS="auto-fix,ci-failure,auto-fix-failed"
+          fi
+        fi
+
+        node .github/workflows/scripts/ensure-workflow-labels.cjs \
+          --policy-file .github/workflows/policy.json \
+          --names "$EFFECTIVE_LABELS"
+
     - name: Collect failure details
       id: collect
       uses: actions/github-script@v8
@@ -66,6 +107,11 @@ runs:
         CI_RUN_URL: ${{ inputs.triggering-run-url }}
         BRANCH: ${{ inputs.branch }}
         PR_NUMBER: ${{ inputs.pr-number }}
+        ISSUE_TITLE: ${{ inputs.issue-title }}
+        ISSUE_BODY: ${{ inputs.issue-body }}
+        LABELS: ${{ inputs.labels }}
+        DISPATCH_TRIAGE: ${{ inputs.dispatch-triage }}
+        RETRY_COMMAND: ${{ inputs.retry-command }}
         FAILED_STEPS: ${{ steps.collect.outputs.failed_steps }}
         LOG_SNIPPETS: ${{ steps.collect.outputs.log_snippets }}
       with:
@@ -75,8 +121,21 @@ runs:
           const ciRunUrl = process.env.CI_RUN_URL || '';
           const branch = process.env.BRANCH || '';
           const prNumber = process.env.PR_NUMBER || '';
+          const customTitle = process.env.ISSUE_TITLE || '';
+          const customBody = process.env.ISSUE_BODY || '';
+          const labelList = (process.env.LABELS || '')
+            .split(',')
+            .map(value => value.trim())
+            .filter(Boolean);
+          const dispatchTriage = process.env.DISPATCH_TRIAGE !== 'false';
+          const retryCommand = process.env.RETRY_COMMAND || '/fix';
           const failedSteps = JSON.parse(process.env.FAILED_STEPS || '[]');
           const logSnippets = JSON.parse(process.env.LOG_SNIPPETS || '[]');
+          const labels = labelList.length > 0
+            ? labelList
+            : mode === 'comment'
+              ? ['auto-fix-failed']
+              : ['auto-fix', 'ci-failure', 'auto-fix-failed'];
 
           const stepsSection = failedSteps.length > 0
             ? failedSteps.map(s => `- ${s}`).join('\n')
@@ -90,12 +149,15 @@ runs:
 
           if (mode === 'comment') {
             const issueNumber = Number(process.env.ISSUE_NUMBER);
-            const body = [
+            const intro = customBody || [
               '## Auto-fix Workflow Failed',
               '',
-              `The \`/fix\` workflow run failed and could not produce a fix PR.`,
+              'The `/fix` workflow run failed and could not produce a fix PR.',
               '',
               `**Run:** ${autoFixRunUrl}`,
+            ].join('\n');
+            const body = [
+              intro,
               '',
               '### Failed Steps',
               stepsSection,
@@ -104,25 +166,12 @@ runs:
               logsSection,
               '',
               '---',
-              `To retry, comment \`/fix\` on this issue.`
+              `To retry, comment \`${retryCommand}\` on this issue.`
             ].join('\n');
-
-            try {
-              await github.rest.issues.getLabel({
-                owner: context.repo.owner, repo: context.repo.repo, name: 'auto-fix-failed'
-              });
-            } catch (e) {
-              if (e.status === 404) {
-                await github.rest.issues.createLabel({
-                  owner: context.repo.owner, repo: context.repo.repo,
-                  name: 'auto-fix-failed', color: 'd93f0b'
-                });
-              }
-            }
 
             await github.rest.issues.addLabels({
               owner: context.repo.owner, repo: context.repo.repo,
-              issue_number: issueNumber, labels: ['auto-fix-failed']
+              issue_number: issueNumber, labels
             });
 
             await github.rest.issues.createComment({
@@ -130,25 +179,30 @@ runs:
               issue_number: issueNumber, body
             });
           } else {
-            const title = prNumber
-              ? `[auto-fix] Failed for #${prNumber} on ${branch}`
-              : `[auto-fix] Failed on ${branch}`;
+            const title = customTitle || (
+              prNumber
+                ? `[auto-fix] Failed for #${prNumber} on ${branch}`
+                : `[auto-fix] Failed on ${branch}`
+            );
 
-            const tableRows = [
-              `| **Auto-fix run** | ${autoFixRunUrl} |`,
-            ];
-            if (ciRunUrl) tableRows.push(`| **Triggering CI run** | ${ciRunUrl} |`);
-            if (branch) tableRows.push(`| **Branch** | \`${branch}\` |`);
-            if (prNumber) tableRows.push(`| **PR** | #${prNumber} |`);
+            const intro = customBody || (() => {
+              const tableRows = [`| **Auto-fix run** | ${autoFixRunUrl} |`];
+              if (ciRunUrl) tableRows.push(`| **Triggering CI run** | ${ciRunUrl} |`);
+              if (branch) tableRows.push(`| **Branch** | \`${branch}\` |`);
+              if (prNumber) tableRows.push(`| **PR** | #${prNumber} |`);
+              return [
+                '## Auto-fix Workflow Failure',
+                '',
+                'The auto-fix workflow itself failed and could not create a fix PR.',
+                '',
+                '| | |',
+                '|---|---|',
+                ...tableRows,
+              ].join('\n');
+            })();
 
             const body = [
-              '## Auto-fix Workflow Failure',
-              '',
-              'The auto-fix workflow itself failed and could not create a fix PR.',
-              '',
-              '| | |',
-              '|---|---|',
-              ...tableRows,
+              intro,
               '',
               '### Failed Steps',
               stepsSection,
@@ -158,30 +212,22 @@ runs:
               logsSection,
             ].join('\n');
 
-            for (const [name, color] of [['auto-fix', 'e4e669'], ['ci-failure', 'd73a4a'], ['auto-fix-failed', 'd93f0b']]) {
-              try {
-                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
-              } catch (e) {
-                if (e.status === 404) {
-                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color });
-                }
-              }
-            }
-
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner, repo: context.repo.repo,
-              title, body, labels: ['auto-fix', 'ci-failure', 'auto-fix-failed']
+              title, body, labels
             });
 
             // Trigger triage workflow since issues opened by GITHUB_TOKEN
             // don't fire the issues:opened event
-            try {
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner, repo: context.repo.repo,
-                workflow_id: 'triage.yml', ref: 'main',
-                inputs: { issue_number: String(issue.number) }
-              });
-            } catch (e) {
-              core.warning(`Failed to dispatch triage: ${e.message}`);
+            if (dispatchTriage) {
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  workflow_id: 'triage.yml', ref: 'main',
+                  inputs: { issue_number: String(issue.number) }
+                });
+              } catch (e) {
+                core.warning(`Failed to dispatch triage: ${e.message}`);
+              }
             }
           }

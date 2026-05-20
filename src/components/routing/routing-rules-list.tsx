@@ -128,11 +128,16 @@ export function RoutingRulesList() {
   }, []);
 
   useEffect(() => {
-    startTransition(() => { setLoading(true); fetchRules(); });
+    startTransition(() => {
+      setLoading(true);
+      fetchRules();
+    });
   }, [fetchRules]);
 
   useEffect(() => {
-    startTransition(() => { fetchUsers(); });
+    startTransition(() => {
+      fetchUsers();
+    });
   }, [fetchUsers]);
 
   // ─── Handlers ───────────────────────────────────────

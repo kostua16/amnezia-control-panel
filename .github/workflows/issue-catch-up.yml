@@ -2,11 +2,11 @@ name: Issue Catch-Up
 
 on:
   schedule:
-    - cron: "30 * * * *" # Every hour at :30 (offset from workflow-health-optimize at :00)
+    - cron: '37 * * * *' # Every hour at :37 (offset from workflow-health-optimize at :07)
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Report what would happen without taking action"
+        description: 'Report what would happen without taking action'
         type: boolean
         default: false
 
@@ -18,11 +18,10 @@ permissions:
   contents: read
   issues: write
   pull-requests: read
-  actions: read
-  id-token: write
+  actions: write
 
 env:
-  NODE_VERSION: "22.x"
+  NODE_VERSION: '22.x'
 
 jobs:
   collect-issues:
@@ -336,18 +335,18 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
-          install-gsd: "true"
-          install-rtk: "true"
+          install-gsd: 'true'
+          install-rtk: 'true'
 
       - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           model: 'sonnet'
-          max-turns: "30"
-          track-progress: "false"
-          allowed-bots: "github-actions[bot]"
-          allowed-tools: "Bash(rtk:*),Bash(gh:*),Read,Grep"
-          additional-permissions: "issues: write"
+          max-turns: '30'
+          track-progress: 'false'
+          allowed-bots: 'github-actions[bot]'
+          allowed-tools: 'Bash(rtk:*),Bash(gh:*),Read,Grep'
+          additional-permissions: 'issues: write'
           prompt: |
             ## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues
 
@@ -436,7 +435,7 @@ jobs:
                gh issue close NUM --reason "not planned"
                ```
 
-            ### Phase 6: Trigger Fixes & Handle Dead Letters (turns 46-50)
+            ### Phase 6: Route Manual Fix Triage & Handle Dead Letters (turns 46-50)
 
             For each `fix_dead_letter` issue:
             ```
@@ -448,49 +447,30 @@ jobs:
             - First check: `gh issue view NUM --json body,comments` — skip if body/comments contain PR URL or "Fixes #"
             - If safe to proceed:
             ```
-            gh issue comment NUM --body "/fix"
+            gh issue edit NUM --add-label "needs-review"
+            gh issue comment NUM --body "Manual fix triage needed. This issue is triaged but still has no linked fix PR. A maintainer should decide whether to apply \`auto-fix-approved\` or handle it manually."
             ```
-            Stop after 5 fix triggers, even if more candidates remain.
+            Stop after 5 manual-fix notices, even if more candidates remain.
 
   report-failure:
     needs: [collect-issues, analyze-and-act]
     if: failure()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
       - name: Report catch-up workflow failure
-        uses: actions/github-script@v8
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        uses: ./.github/actions/report-failure
         with:
-          script: |
-            const runUrl = process.env.RUN_URL;
+          mode: 'issue'
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: '[issue-catch-up] Hourly catch-up workflow failed'
+          issue-body: |
+            ## Issue Catch-Up Failure
 
-            for (const [name, color] of [['auto-fix', 'e4e669'], ['ci-failure', 'd73a4a']]) {
-              try {
-                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
-              } catch (e) {
-                if (e.status === 404) {
-                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color });
-                }
-              }
-            }
+            **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-            const { data: issue } = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '[issue-catch-up] Hourly catch-up workflow failed',
-              body: `## Issue Catch-Up Failure\n\n**Run:** ${runUrl}\n\nThe hourly issue catch-up workflow failed. Manual investigation needed.`,
-              labels: ['auto-fix', 'ci-failure']
-            });
-
-            try {
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'triage.yml',
-                ref: 'main',
-                inputs: { issue_number: String(issue.number) }
-              });
-            } catch (e) {
-              core.warning(`Failed to dispatch triage: ${e.message}`);
-            }
+            The hourly issue catch-up workflow failed. Manual investigation needed.
+          labels: auto-fix,ci-failure
+          ensure-labels: auto-fix,ci-failure
+          dispatch-triage: 'true'

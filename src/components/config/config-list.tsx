@@ -1,6 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, startTransition } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  startTransition,
+} from 'react';
 import {
   Download,
   Upload,
@@ -147,7 +153,10 @@ export function ConfigList() {
   }, []);
 
   useEffect(() => {
-    startTransition(() => { fetchTemplates(); fetchPresets(); });
+    startTransition(() => {
+      fetchTemplates();
+      fetchPresets();
+    });
   }, [fetchTemplates, fetchPresets]);
 
   // Handle export
