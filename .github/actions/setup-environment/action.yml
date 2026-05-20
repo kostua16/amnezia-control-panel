@@ -1,31 +1,34 @@
-name: "Setup Environment"
-description: "Setup Node.js, optionally install deps and GSD"
+name: 'Setup Environment'
+description: 'Setup Node.js, optionally install deps and GSD'
 
 inputs:
   node-version:
-    description: "Node.js version"
-    default: "22.x"
+    description: 'Node.js version'
+    default: '22.x'
   install-deps:
-    description: "Run npm ci with cache"
-    default: "false"
+    description: 'Run npm ci with cache'
+    default: 'false'
   generate-prisma:
-    description: "Run npx prisma generate"
-    default: "false"
+    description: 'Run npx prisma generate'
+    default: 'false'
   install-gsd:
-    description: "Install or verify the checked-in ClaudeKit/GSD framework"
-    default: "false"
+    description: 'Install or verify the checked-in ClaudeKit/GSD framework'
+    default: 'false'
   install-rtk:
-    description: "Install RTK (Rust Token Killer) with cache and init hooks"
-    default: "false"
+    description: 'Install RTK (Rust Token Killer) with cache and init hooks'
+    default: 'false'
   gsd-version:
-    description: "Pinned get-shit-done-cc version used when the local .claude bundle is missing"
-    default: "2.19.0"
+    description: 'Pinned get-shit-done-cc version used when the local .claude bundle is missing'
+    default: '2.19.0'
   rtk-version:
-    description: "Pinned RTK version used for workflow bootstrap"
-    default: "0.35.0"
+    description: 'Pinned RTK version used for workflow bootstrap'
+    default: '0.35.0'
+  rtk-install-sha256:
+    description: 'SHA-256 for the pinned RTK install script'
+    default: '9989e60e33a353e9e6802fab1fd410b96d1dd228b34e52402c32f3c8c2dd8c66'
 
 runs:
-  using: "composite"
+  using: 'composite'
   steps:
     - uses: actions/setup-node@v5
       with:
@@ -64,10 +67,14 @@ runs:
       uses: actions/cache@v5
       with:
         path: ~/.local/bin/rtk
-        key: rtk-${{ runner.os }}-${{ inputs.rtk-version }}
+        key: rtk-${{ runner.os }}-${{ inputs.rtk-version }}-${{ inputs.rtk-install-sha256 }}
 
     - if: inputs.install-rtk == 'true' && steps.rtk-cache.outputs.cache-hit != 'true'
-      run: curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/tags/v${{ inputs.rtk-version }}/install.sh | sh
+      run: |
+        curl -fsSL -o /tmp/rtk-install.sh \
+          "https://raw.githubusercontent.com/rtk-ai/rtk/refs/tags/v${{ inputs.rtk-version }}/install.sh"
+        echo "${{ inputs.rtk-install-sha256 }}  /tmp/rtk-install.sh" | sha256sum -c -
+        sh /tmp/rtk-install.sh
       shell: bash
 
     - if: inputs.install-rtk == 'true'

@@ -31,10 +31,7 @@
   ],
   "dependabot": {
     "allowedEcosystems": ["npm", "npm_and_yarn"],
-    "manualOnlyBranchPrefixes": [
-      "dependabot/github_actions/",
-      "dependabot/github-actions/"
-    ]
+    "manualOnlyBranchPrefixes": ["dependabot/github_actions/"]
   },
   "labels": {
     "auto-fix": {

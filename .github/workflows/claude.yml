@@ -31,36 +31,17 @@ jobs:
         id: gate
         shell: bash
         run: |
-          node <<'NODE'
-          const fs = require('fs');
-
-          const policy = JSON.parse(fs.readFileSync('.github/workflows/policy.json', 'utf8'));
-          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-          const eventName = process.env.GITHUB_EVENT_NAME;
-
-          const commentBody = event.comment?.body ?? '';
-          const reviewBody = event.review?.body ?? '';
-          const issueTitle = event.issue?.title ?? '';
-          const issueBody = event.issue?.body ?? '';
-
-          const triggered =
-            (eventName === 'issue_comment' && commentBody.includes('@claude')) ||
-            (eventName === 'pull_request_review_comment' && commentBody.includes('@claude')) ||
-            (eventName === 'pull_request_review' && reviewBody.includes('@claude')) ||
-            (eventName === 'issues' && (issueTitle.includes('@claude') || issueBody.includes('@claude')));
-
-          const association =
-            event.comment?.author_association ??
-            event.review?.author_association ??
-            event.issue?.author_association ??
-            '';
-
-          const trusted = triggered && policy.maintainerAssociations.includes(association);
-          fs.appendFileSync(
-            process.env.GITHUB_OUTPUT,
-            `triggered=${triggered}\ntrusted=${trusted}\nauthor_association=${association}\n`
-          );
-          NODE
+          node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode claude \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            > /tmp/trigger-policy.json
+          {
+            echo "triggered=$(jq -r '.triggered' /tmp/trigger-policy.json)"
+            echo "trusted=$(jq -r '.trusted' /tmp/trigger-policy.json)"
+            echo "author_association=$(jq -r '.author_association' /tmp/trigger-policy.json)"
+          } >> "$GITHUB_OUTPUT"
 
   claude:
     needs: [authorize]

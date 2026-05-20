@@ -10,26 +10,26 @@ const PHASE_INTAKE_START = '<!-- AUTO-PR-IMPROVE-START -->';
 const PHASE_INTAKE_END = '<!-- AUTO-PR-IMPROVE-END -->';
 
 const PHASE_METADATA = {
-  '13.1': {
+  13.1: {
     dir: '.planning/phases/13.1-workflow-governance-hardening',
     plan: '13.1-PLAN.md',
-    title: 'Workflow governance hardening'
+    title: 'Workflow governance hardening',
   },
-  '13.2': {
+  13.2: {
     dir: '.planning/phases/13.2-ci-supply-chain-correctness',
     plan: '13.2-PLAN.md',
-    title: 'CI and supply-chain correctness'
+    title: 'CI and supply-chain correctness',
   },
-  '13.3': {
+  13.3: {
     dir: '.planning/phases/13.3-pr-finalizer-approval-policy',
     plan: '13.3-PLAN.md',
-    title: 'PR finalizer and approval policy'
+    title: 'PR finalizer and approval policy',
   },
-  '13.4': {
+  13.4: {
     dir: '.planning/phases/13.4-claude-gsd-planning-automation',
     plan: '13.4-PLAN.md',
-    title: 'Claude+GSD planning automation'
-  }
+    title: 'Claude+GSD planning automation',
+  },
 };
 
 function getArg(name, fallback = null) {
@@ -42,7 +42,7 @@ function run(command, args, options = {}) {
   return execFileSync(command, args, {
     encoding: 'utf8',
     env: process.env,
-    stdio: options.capture === false ? 'inherit' : ['ignore', 'pipe', 'pipe']
+    stdio: options.capture === false ? 'inherit' : ['ignore', 'pipe', 'pipe'],
   }).trim();
 }
 
@@ -81,16 +81,22 @@ function upsertSingleLineEntry(content, startMarker, endMarker, entryId, line) {
 function upsertNamedBlock(content, entryId, renderedBlock) {
   const startMarker = `<!-- ${entryId} START -->`;
   const endMarker = `<!-- ${entryId} END -->`;
-  const blockRegex = new RegExp(`${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}\\n?`, 'g');
+  const blockRegex = new RegExp(
+    `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}\\n?`,
+    'g',
+  );
   const cleaned = content.replace(blockRegex, '').replace(/\n{3,}/g, '\n\n');
 
-  if (!cleaned.includes(PHASE_INTAKE_START) || !cleaned.includes(PHASE_INTAKE_END)) {
+  if (
+    !cleaned.includes(PHASE_INTAKE_START) ||
+    !cleaned.includes(PHASE_INTAKE_END)
+  ) {
     throw new Error(`Missing phase intake markers in phase plan file`);
   }
 
   return cleaned.replace(
     PHASE_INTAKE_END,
-    `${renderedBlock}\n${PHASE_INTAKE_END}`
+    `${renderedBlock}\n${PHASE_INTAKE_END}`,
   );
 }
 
@@ -117,7 +123,6 @@ function summarizePhaseSuggestions(phaseSuggestions) {
 function escapeInline(value) {
   return String(value ?? '')
     .replace(/\s+/g, ' ')
-    .replace(/`/g, "'")
     .trim();
 }
 
@@ -127,7 +132,7 @@ function renderQuickPlan({
   sourcePrUrl,
   summary,
   quickTasks,
-  phaseSuggestions
+  phaseSuggestions,
 }) {
   const lines = [
     `# Quick Plan: PR #${sourcePrNumber} workflow improvement intake`,
@@ -139,7 +144,7 @@ function renderQuickPlan({
     '## Summary',
     summary,
     '',
-    '## Quick Wins'
+    '## Quick Wins',
   ];
 
   if (quickTasks.length === 0) {
@@ -147,7 +152,7 @@ function renderQuickPlan({
   } else {
     for (const task of quickTasks) {
       lines.push(
-        `- ${task.title} -- ${task.rationale} (owner: ${task.owner || 'maintainer'}, type: ${task.artifact_type || 'quick task'})`
+        `- ${task.title} -- ${task.rationale} (owner: ${task.owner || 'maintainer'}, type: ${task.artifact_type || 'quick task'})`,
       );
     }
   }
@@ -159,7 +164,7 @@ function renderQuickPlan({
   } else {
     for (const suggestion of phaseSuggestions) {
       lines.push(
-        `- ${suggestion.phase}: ${suggestion.title} -- ${suggestion.rationale} (owner: ${suggestion.owner || 'maintainer'})`
+        `- ${suggestion.phase}: ${suggestion.title} -- ${suggestion.rationale} (owner: ${suggestion.owner || 'maintainer'})`,
       );
     }
   }
@@ -172,29 +177,38 @@ function renderQuickSummary({
   sourcePrUrl,
   summary,
   quickTasks,
-  phaseSuggestions
+  phaseSuggestions,
 }) {
-  return [
-    `# Summary: PR #${sourcePrNumber} workflow improvement intake`,
-    '',
-    `- Source PR: ${sourcePrUrl}`,
-    `- Summary: ${summary}`,
-    `- Quick tasks: ${quickTasks.length}`,
-    `- Phase suggestions: ${phaseSuggestions.length}`,
-    `- 13.x mapping: ${summarizePhaseSuggestions(phaseSuggestions)}`
-  ].join('\n') + '\n';
+  return (
+    [
+      `# Summary: PR #${sourcePrNumber} workflow improvement intake`,
+      '',
+      `- Source PR: ${sourcePrUrl}`,
+      `- Summary: ${summary}`,
+      `- Quick tasks: ${quickTasks.length}`,
+      `- Phase suggestions: ${phaseSuggestions.length}`,
+      `- 13.x mapping: ${summarizePhaseSuggestions(phaseSuggestions)}`,
+    ].join('\n') + '\n'
+  );
 }
 
-function buildPhaseBlock(sourcePrNumber, sourcePrTitle, sourcePrUrl, suggestions) {
+function buildPhaseBlock(
+  sourcePrNumber,
+  sourcePrTitle,
+  sourcePrUrl,
+  suggestions,
+) {
   const entryId = `PR-IMPROVE:${sourcePrNumber}`;
   const body = [
     `<!-- ${entryId} START -->`,
     `### Intake from PR #${sourcePrNumber}: ${sourcePrTitle}`,
-    `- Source: ${sourcePrUrl}`
+    `- Source: ${sourcePrUrl}`,
   ];
 
   for (const suggestion of suggestions) {
-    body.push(`- ${suggestion.title} -- ${suggestion.rationale} (owner: ${suggestion.owner || 'maintainer'})`);
+    body.push(
+      `- ${suggestion.title} -- ${suggestion.rationale} (owner: ${suggestion.owner || 'maintainer'})`,
+    );
   }
 
   body.push(`<!-- ${entryId} END -->`, '');
@@ -226,8 +240,12 @@ if (!Number.isFinite(sourcePrNumber)) {
 }
 
 const suggestions = readJson(suggestionsFile);
-const summary = escapeInline(suggestions.summary || 'Claude+GSD generated no summary.');
-const quickTasks = Array.isArray(suggestions.quick_tasks) ? suggestions.quick_tasks : [];
+const summary = escapeInline(
+  suggestions.summary || 'Claude+GSD generated no summary.',
+);
+const quickTasks = Array.isArray(suggestions.quick_tasks)
+  ? suggestions.quick_tasks
+  : [];
 const phaseSuggestions = Array.isArray(suggestions.phase_suggestions)
   ? suggestions.phase_suggestions.filter((item) => PHASE_METADATA[item.phase])
   : [];
@@ -235,14 +253,47 @@ const phaseSuggestions = Array.isArray(suggestions.phase_suggestions)
 const dateStamp = new Date().toISOString().slice(2, 10).replace(/-/g, '');
 const quickSlug = `${dateStamp}-pr${sourcePrNumber}-workflow-improve`;
 const quickDir = path.join('.planning', 'quick', quickSlug);
-const quickPlanPath = path.join(quickDir, `${dateStamp}-pr${sourcePrNumber}-PLAN.md`);
-const quickSummaryPath = path.join(quickDir, `${dateStamp}-pr${sourcePrNumber}-SUMMARY.md`);
+const quickPlanPath = path.join(
+  quickDir,
+  `${dateStamp}-pr${sourcePrNumber}-PLAN.md`,
+);
+const quickSummaryPath = path.join(
+  quickDir,
+  `${dateStamp}-pr${sourcePrNumber}-SUMMARY.md`,
+);
 const quickArtifactPath = quickPlanPath;
 const branchName = `claude-planning-pr-${sourcePrNumber}`;
 
+const trackedPaths = collectTrackedPaths(
+  quickDir,
+  quickPlanPath,
+  quickSummaryPath,
+);
+
+if (dryRun) {
+  process.stdout.write(
+    JSON.stringify(
+      {
+        dry_run: true,
+        branch_name: branchName,
+        quick_artifact_path: quickArtifactPath,
+        tracked_paths: trackedPaths,
+        summary,
+        quick_task_count: quickTasks.length,
+        phase_suggestion_count: phaseSuggestions.length,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 if (!dryRun) {
   run('git', ['fetch', 'origin', baseRef, '--depth=1'], { capture: false });
-  run('git', ['checkout', '-B', branchName, `origin/${baseRef}`], { capture: false });
+  run('git', ['checkout', '-B', branchName, `origin/${baseRef}`], {
+    capture: false,
+  });
 }
 
 writeFile(
@@ -253,8 +304,8 @@ writeFile(
     sourcePrUrl,
     summary,
     quickTasks,
-    phaseSuggestions
-  })
+    phaseSuggestions,
+  }),
 );
 
 writeFile(
@@ -264,8 +315,8 @@ writeFile(
     sourcePrUrl,
     summary,
     quickTasks,
-    phaseSuggestions
-  })
+    phaseSuggestions,
+  }),
 );
 
 let roadmap = fs.readFileSync(ROADMAP_PATH, 'utf8');
@@ -275,7 +326,7 @@ roadmap = upsertSingleLineEntry(
   ROADMAP_INTAKE_START,
   ROADMAP_INTAKE_END,
   `PR-IMPROVE:${sourcePrNumber}`,
-  roadmapLine
+  roadmapLine,
 );
 fs.writeFileSync(ROADMAP_PATH, roadmap);
 
@@ -295,36 +346,21 @@ for (const [phaseNumber, metadata] of Object.entries(PHASE_METADATA)) {
 
   const startMarker = `<!-- ${entryId} START -->`;
   const endMarker = `<!-- ${entryId} END -->`;
-  const blockRegex = new RegExp(`${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}\\n?`, 'g');
+  const blockRegex = new RegExp(
+    `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}\\n?`,
+    'g',
+  );
   content = content.replace(blockRegex, '');
 
   if (phaseBlocks.length > 0) {
     content = upsertNamedBlock(
       content,
       entryId,
-      buildPhaseBlock(sourcePrNumber, sourcePrTitle, sourcePrUrl, phaseBlocks)
+      buildPhaseBlock(sourcePrNumber, sourcePrTitle, sourcePrUrl, phaseBlocks),
     );
   }
 
   fs.writeFileSync(planPath, content.replace(/\n{3,}/g, '\n\n'));
-}
-
-const trackedPaths = collectTrackedPaths(quickDir, quickPlanPath, quickSummaryPath);
-
-if (dryRun) {
-  process.stdout.write(
-    JSON.stringify(
-      {
-        dry_run: true,
-        branch_name: branchName,
-        quick_artifact_path: quickArtifactPath,
-        tracked_paths: trackedPaths
-      },
-      null,
-      2
-    )
-  );
-  process.exit(0);
 }
 
 run('git', ['add', ...trackedPaths], { capture: false });
@@ -333,8 +369,12 @@ let commitCreated = false;
 try {
   run(
     'git',
-    ['commit', '-m', `docs(planning): intake workflow improvements from PR #${sourcePrNumber}`],
-    { capture: false }
+    [
+      'commit',
+      '-m',
+      `docs(planning): intake workflow improvements from PR #${sourcePrNumber}`,
+    ],
+    { capture: false },
   );
   commitCreated = true;
 } catch (error) {
@@ -344,18 +384,56 @@ try {
   }
 }
 
+function findExistingPlanningPr() {
+  try {
+    return (
+      JSON.parse(
+        run('gh', [
+          'pr',
+          'list',
+          '--head',
+          branchName,
+          '--state',
+          'open',
+          '--json',
+          'number,url',
+        ]) || '[]',
+      )[0] ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
 if (commitCreated) {
-  run('git', ['push', '--force-with-lease', 'origin', branchName], { capture: false });
+  try {
+    run('git', ['push', '--force-with-lease', 'origin', branchName], {
+      capture: false,
+    });
+  } catch (error) {
+    console.warn(
+      `::warning::Concurrent push detected for ${branchName}; skipping stale planning PR update.`,
+    );
+    const existingOnConflict = findExistingPlanningPr();
+    process.stdout.write(
+      JSON.stringify(
+        {
+          dry_run: false,
+          branch_name: branchName,
+          pr_url: existingOnConflict?.url ?? null,
+          quick_artifact_path: quickArtifactPath,
+          commit_created: commitCreated,
+          skipped_due_to_push_conflict: true,
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(0);
+  }
 }
 
-let existingPr = '';
-try {
-  existingPr = run('gh', ['pr', 'list', '--head', branchName, '--state', 'open', '--json', 'number,url']);
-} catch {
-  existingPr = '[]';
-}
-
-const existing = JSON.parse(existingPr || '[]')[0] ?? null;
+const existing = findExistingPlanningPr();
 const bodyFile = path.join('.git', `planning-pr-${sourcePrNumber}.md`);
 writeFile(
   bodyFile,
@@ -370,8 +448,8 @@ writeFile(
     '',
     `13.x mapping: ${summarizePhaseSuggestions(phaseSuggestions)}`,
     '',
-    'This draft PR is intentionally manual-only and should never be auto-approved or auto-merged.'
-  ].join('\n') + '\n'
+    'This draft PR is intentionally manual-only and should never be auto-approved or auto-merged.',
+  ].join('\n') + '\n',
 );
 
 let prUrl = existing?.url ?? null;
@@ -388,29 +466,26 @@ if (existing) {
       '--body-file',
       bodyFile,
       '--add-label',
-      'planning-draft-open'
+      'planning-draft-open',
     ],
-    { capture: false }
+    { capture: false },
   );
 } else {
-  prUrl = run(
-    'gh',
-    [
-      'pr',
-      'create',
-      '--base',
-      baseRef,
-      '--head',
-      branchName,
-      '--title',
-      `planning: workflow improvement follow-ups for PR #${sourcePrNumber}`,
-      '--body-file',
-      bodyFile,
-      '--draft',
-      '--label',
-      'planning-draft-open'
-    ]
-  );
+  prUrl = run('gh', [
+    'pr',
+    'create',
+    '--base',
+    baseRef,
+    '--head',
+    branchName,
+    '--title',
+    `planning: workflow improvement follow-ups for PR #${sourcePrNumber}`,
+    '--body-file',
+    bodyFile,
+    '--draft',
+    '--label',
+    'planning-draft-open',
+  ]);
 }
 
 process.stdout.write(
@@ -420,9 +495,9 @@ process.stdout.write(
       branch_name: branchName,
       pr_url: prUrl,
       quick_artifact_path: quickArtifactPath,
-      commit_created: commitCreated
+      commit_created: commitCreated,
     },
     null,
-    2
-  )
+    2,
+  ),
 );
