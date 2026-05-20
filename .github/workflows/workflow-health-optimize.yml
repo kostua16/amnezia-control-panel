@@ -2,23 +2,22 @@ name: Workflow Health Check & Optimize
 
 on:
   schedule:
-    - cron: "7 * * * *" # Every hour at :07
+    - cron: '7 * * * *' # Every hour at :07
   workflow_dispatch:
 
 concurrency:
-  group: workflow-health-optimize
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   MAX_TURNS: 25
-  NODE_VERSION: "22.x"
+  NODE_VERSION: '22.x'
 
 permissions:
   contents: write
   pull-requests: write
   actions: write
   issues: write
-  id-token: write
 
 jobs:
   collect-runs:
@@ -157,15 +156,15 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
-          install-deps: "true"
-          install-gsd: "true"
-          install-rtk: "true"
+          install-deps: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
 
       - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
-          max-turns: "${{ env.MAX_TURNS }}"
-          allowed-tools: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(echo:*)"
+          max-turns: '${{ env.MAX_TURNS }}'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(echo:*)'
           prompt: |
             REPO: ${{ github.repository }}
 
@@ -205,7 +204,7 @@ jobs:
         id: push
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          commit-message: "ci(workflows): hourly optimization pass"
+          commit-message: 'ci(workflows): hourly optimization pass'
           token: ${{ secrets.GH_PAT }}
 
       - name: Build optimization PR body
@@ -221,14 +220,15 @@ jobs:
 
       - name: Create optimization PR
         if: steps.push.outputs.pushed == 'true'
-        uses: ./.github/actions/create-draft-pr
+        uses: ./.github/actions/upsert-pull-request
         with:
           github-token: ${{ secrets.GH_PAT }}
           base: main
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          title: "ci(workflows): hourly optimization - ${{ github.run_id }}"
+          title: 'ci(workflows): hourly optimization - ${{ github.run_id }}'
           body: ${{ steps.pr-body.outputs.body }}
           labels: auto-fix,needs-review
+          draft: 'true'
 
       - name: Log no-changes result
         if: steps.push.outputs.pushed != 'true'
@@ -239,42 +239,20 @@ jobs:
     if: failure()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
       - name: Report workflow health check failure
-        uses: actions/github-script@v8
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        uses: ./.github/actions/report-failure
         with:
-          script: |
-            const runUrl = process.env.RUN_URL;
+          mode: 'issue'
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: '[workflow-health] Hourly optimization workflow failed'
+          issue-body: |
+            ## Workflow Health Check Failure
 
-            for (const [name, color] of [['auto-fix', 'e4e669'], ['ci-failure', 'd73a4a']]) {
-              try {
-                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
-              } catch (e) {
-                if (e.status === 404) {
-                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color });
-                }
-              }
-            }
+            **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-            const { data: issue } = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '[workflow-health] Hourly optimization workflow failed',
-              body: `## Workflow Health Check Failure\n\n**Run:** ${runUrl}\n\nThe hourly workflow health check and optimization workflow itself failed. Manual investigation needed.`,
-              labels: ['auto-fix', 'ci-failure']
-            });
-
-            // Trigger triage workflow since issues opened by GITHUB_TOKEN
-            // don't fire the issues:opened event
-            try {
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'triage.yml',
-                ref: 'main',
-                inputs: { issue_number: String(issue.number) }
-              });
-            } catch (e) {
-              core.warning(`Failed to dispatch triage: ${e.message}`);
-            }
+            The hourly workflow health check and optimization workflow itself failed. Manual investigation needed.
+          labels: auto-fix,ci-failure
+          ensure-labels: auto-fix,ci-failure
+          dispatch-triage: 'true'

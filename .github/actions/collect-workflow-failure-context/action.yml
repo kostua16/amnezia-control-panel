@@ -1,0 +1,152 @@
+name: 'Collect Workflow Failure Context'
+description: 'Collect failed job context, error logs, affected files, and fixability heuristics for a workflow run'
+
+inputs:
+  run-id:
+    description: 'Workflow run id to inspect'
+    required: true
+  head-branch:
+    description: 'Head branch associated with the workflow run'
+    required: false
+    default: ''
+  file-cap:
+    description: 'Maximum number of affected files to emit'
+    required: false
+    default: '6'
+
+outputs:
+  run_url:
+    description: 'Workflow run URL'
+    value: ${{ steps.collect.outputs.run_url }}
+  failed_jobs_json:
+    description: 'JSON array of failed job names'
+    value: ${{ steps.collect.outputs.failed_jobs_json }}
+  error_logs_json:
+    description: 'JSON array of failed job log snippets'
+    value: ${{ steps.collect.outputs.error_logs_json }}
+  affected_files_csv:
+    description: 'Comma-separated affected source files extracted from error logs'
+    value: ${{ steps.analyze.outputs.affected_files_csv }}
+  fixable:
+    description: "'true' when the workflow failure looks safe for auto-fix attempts"
+    value: ${{ steps.analyze.outputs.fixable }}
+  reason:
+    description: 'Reason the failure is not fixable'
+    value: ${{ steps.analyze.outputs.reason }}
+  is_transient:
+    description: "'true' when the workflow failure matches transient patterns"
+    value: ${{ steps.analyze.outputs.is_transient }}
+
+runs:
+  using: composite
+  steps:
+    - name: Collect workflow failure details
+      id: collect
+      uses: actions/github-script@v8
+      with:
+        script: |
+          const run = await github.rest.actions.getWorkflowRun({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            run_id: Number('${{ inputs.run-id }}')
+          });
+
+          const jobs = await github.rest.actions.listJobsForWorkflowRun({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            run_id: Number('${{ inputs.run-id }}')
+          });
+
+          const failedJobs = jobs.data.jobs.filter((job) => job.conclusion === 'failure');
+          const errorLogs = [];
+
+          for (const job of failedJobs) {
+            try {
+              const logs = await github.rest.actions.downloadJobLogsForWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                job_id: job.id
+              });
+              const raw = typeof logs.data === 'string' ? logs.data : String(logs.data);
+              const errorLines = raw
+                .split('\n')
+                .filter((line) => line.includes('##[error]') || line.includes('error TS'))
+                .join('\n');
+
+              errorLogs.push({
+                jobName: job.name,
+                logs: errorLines.slice(-3000)
+              });
+            } catch (error) {
+              errorLogs.push({
+                jobName: job.name,
+                logs: `(log unavailable: ${error.message})`
+              });
+            }
+          }
+
+          core.setOutput('run_url', run.data.html_url);
+          core.setOutput('failed_jobs_json', JSON.stringify(failedJobs.map((job) => job.name)));
+          core.setOutput('error_logs_json', JSON.stringify(errorLogs));
+
+    - name: Analyze failure fixability
+      id: analyze
+      shell: bash
+      env:
+        HEAD_BRANCH: ${{ inputs.head-branch }}
+        FILE_CAP: ${{ inputs.file-cap }}
+        ERROR_LOGS_JSON: ${{ steps.collect.outputs.error_logs_json }}
+      run: |
+        node <<'NODE'
+        const logs = JSON.parse(process.env.ERROR_LOGS_JSON || '[]');
+        const fileCap = Number(process.env.FILE_CAP || '6');
+        const allLogs = logs.map((entry) => entry.logs || '').join('\n');
+
+        const transientPatterns = [
+          /ETIMEDOUT/i,
+          /ECONNRESET/i,
+          /ENOTFOUND/i,
+          /Failed sending HTTP request/i,
+          /rate limit/i,
+          /throttle/i,
+          /Runner cancelled/i,
+          /shutdown signal/i,
+          /out of memory/i,
+          /\bOOM\b/i
+        ];
+
+        const isTransient = transientPatterns.some((pattern) => pattern.test(allLogs));
+        const reasons = [];
+
+        if (isTransient) {
+          reasons.push('Transient failure detected (network/rate-limit/OOM/runner)');
+        }
+
+        const errorFiles = new Set(
+          [...allLogs.matchAll(/[A-Za-z0-9_./-]+\.(ts|tsx|js|jsx)/g)].map((match) => match[0])
+        );
+
+        if (/Property '\w+' does not exist on type 'PrismaClient'/.test(allLogs)) {
+          reasons.push('Missing Prisma model — requires schema migration');
+        }
+
+        if (errorFiles.size > fileCap) {
+          reasons.push(`${errorFiles.size} files with errors (exceeds ${fileCap}-file cap)`);
+        }
+
+        if (!allLogs.includes('##[error]') && !allLogs.includes('error TS')) {
+          reasons.push('No actual errors found (warnings only)');
+        }
+
+        const fixable = reasons.length === 0;
+        const affectedFiles = [...errorFiles].slice(0, fileCap).join(',');
+
+        const outputs = [
+          `fixable=${fixable}`,
+          `is_transient=${isTransient}`,
+          `affected_files_csv=${affectedFiles}`,
+          `reason=${fixable ? '' : reasons.join('; ')}`
+        ].join('\n');
+
+        require('fs').appendFileSync(process.env.GITHUB_OUTPUT, `${outputs}\n`);
+        NODE

@@ -2,7 +2,7 @@ name: Autonomous Audit-Fix
 
 on:
   schedule:
-    - cron: "53 9,21 * * *" # Twice daily at 09:53 and 21:53 UTC
+    - cron: '53 9,21 * * *' # Twice daily at 09:53 and 21:53 UTC
   workflow_dispatch:
 
 concurrency:
@@ -11,7 +11,7 @@ concurrency:
 
 env:
   MAX_TURNS: 100
-  NODE_VERSION: "22.x"
+  NODE_VERSION: '22.x'
 
 permissions:
   contents: write
@@ -36,19 +36,19 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
-          install-deps: "true"
-          generate-prisma: "true"
-          install-gsd: "true"
-          install-rtk: "true"
+          install-deps: 'true'
+          generate-prisma: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
 
       - name: Audit repository and apply targeted fixes
         uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
-          max-turns: "${{ env.MAX_TURNS }}"
-          track-progress: "true"
-          allowed-bots: "claude[bot],github-actions[bot]"
-          allowed-tools: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)"
+          max-turns: '${{ env.MAX_TURNS }}'
+          track-progress: 'true'
+          allowed-bots: 'claude[bot],github-actions[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
           prompt: |
             /gsd-audit-fix
             Run a full repository audit for technical debt, code smells, and missing tests.
@@ -64,7 +64,7 @@ jobs:
         id: push
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          commit-message: "fix(audit): address autonomous audit findings"
+          commit-message: 'fix(audit): address autonomous audit findings'
           token: ${{ secrets.GH_PAT }}
 
       - name: Log no-changes result
@@ -73,13 +73,14 @@ jobs:
 
       - name: Create audit fix PR
         if: steps.push.outputs.pushed == 'true'
-        uses: ./.github/actions/create-draft-pr
+        uses: ./.github/actions/upsert-pull-request
         with:
           github-token: ${{ secrets.GH_PAT }}
           base: main
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          title: "fix(audit): address autonomous audit findings"
+          title: 'fix(audit): address autonomous audit findings'
           body: |
             Automated audit-fix output from the `audit-fix` workflow.
 
             This PR is intentionally manual-only under repository policy and should be reviewed before merge.
+          draft: 'true'

@@ -2,7 +2,7 @@ name: Documentation Drift Checker
 
 on:
   schedule:
-    - cron: "29 3 * * 0" # Weekly on Sundays at 03:29 UTC
+    - cron: '29 3 * * 0' # Weekly on Sundays at 03:29 UTC
   workflow_dispatch:
 
 concurrency:
@@ -11,7 +11,7 @@ concurrency:
 
 env:
   MAX_TURNS: 100
-  NODE_VERSION: "22.x"
+  NODE_VERSION: '22.x'
 
 permissions:
   contents: write
@@ -36,17 +36,17 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           node-version: ${{ env.NODE_VERSION }}
-          install-gsd: "true"
-          install-rtk: "true"
+          install-gsd: 'true'
+          install-rtk: 'true'
 
       - name: Update docs to match implementation
         uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
-          max-turns: "${{ env.MAX_TURNS }}"
-          track-progress: "true"
-          allowed-bots: "claude[bot],github-actions[bot]"
-          allowed-tools: "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)"
+          max-turns: '${{ env.MAX_TURNS }}'
+          track-progress: 'true'
+          allowed-bots: 'claude[bot],github-actions[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
           prompt: |
             /gsd-docs-update
             Review the codebase against `.planning/` artifacts and standard documentation files.
@@ -68,7 +68,7 @@ jobs:
         id: push
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          commit-message: "docs: reconcile documentation drift"
+          commit-message: 'docs: reconcile documentation drift'
           token: ${{ secrets.GH_PAT }}
 
       - name: Log no-changes result
@@ -77,13 +77,14 @@ jobs:
 
       - name: Create docs drift PR
         if: steps.push.outputs.pushed == 'true'
-        uses: ./.github/actions/create-draft-pr
+        uses: ./.github/actions/upsert-pull-request
         with:
           github-token: ${{ secrets.GH_PAT }}
           base: main
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          title: "docs: reconcile documentation drift"
+          title: 'docs: reconcile documentation drift'
           body: |
             Automated documentation drift reconciliation.
 
             This PR was created by the docs-drift workflow and is intentionally manual-only under repository policy.
+          draft: 'true'

@@ -6,14 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Dependabot PR number to review"
+        description: 'Dependabot PR number to review'
         required: true
         type: string
 
 permissions:
   contents: read
   pull-requests: write
-  id-token: write
 
 concurrency:
   group: dep-review-${{ github.event.pull_request.number || github.event.inputs.pr_number || github.sha }}
@@ -66,8 +65,8 @@ jobs:
 
       - uses: ./.github/actions/setup-environment
         with:
-          install-deps: "true"
-          install-rtk: "true"
+          install-deps: 'true'
+          install-rtk: 'true'
 
       - name: Ensure dependency review labels exist
         env:
@@ -96,10 +95,10 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           model: 'haiku'
-          max-turns: "${{ env.MAX_TURNS }}"
-          track-progress: "true"
+          max-turns: '${{ env.MAX_TURNS }}'
+          track-progress: 'true'
           json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","manual","blocked"]},"summary":{"type":"string"},"update_type":{"type":"string","enum":["patch","minor","major","unknown"]},"risk_notes":{"type":"string"}},"required":["verdict","summary","update_type","risk_notes"],"additionalProperties":false}'
-          allowed-tools: "Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(grep *),Bash(head *),Bash(node *)"
+          allowed-tools: 'Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(grep *),Bash(head *),Bash(node *)'
           prompt: |
             Review this Dependabot dependency update PR using only local repository context.
 

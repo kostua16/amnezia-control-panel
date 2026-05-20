@@ -4,15 +4,15 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   schedule:
-    - cron: "17 2 * * *" # Daily at 02:17 UTC
+    - cron: '17 2 * * *' # Daily at 02:17 UTC
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Pull request number to analyze"
+        description: 'Pull request number to analyze'
         required: true
         type: string
       dry_run:
-        description: "Analyze without creating or updating planning branches/PRs"
+        description: 'Analyze without creating or updating planning branches/PRs'
         required: false
         default: true
         type: boolean
@@ -62,7 +62,7 @@ jobs:
       matrix:
         pr-number: ${{ fromJSON(needs.collect-targets.outputs.targets) }}
     env:
-      NODE_VERSION: "22.x"
+      NODE_VERSION: '22.x'
     steps:
       - uses: actions/checkout@v5
         with:
@@ -101,8 +101,8 @@ jobs:
         if: steps.metadata.outputs.should_analyze == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
-          install-gsd: "true"
-          install-rtk: "true"
+          install-gsd: 'true'
+          install-rtk: 'true'
 
       - name: Prepare trusted planning context
         if: steps.metadata.outputs.should_analyze == 'true'
@@ -117,9 +117,7 @@ jobs:
 
       - name: Setup git identity
         if: steps.metadata.outputs.should_analyze == 'true'
-        run: |
-          git config --global user.email "claude[bot]@users.noreply.github.com"
-          git config --global user.name "claude[bot]"
+        uses: ./.github/actions/setup-bot-git
 
       - name: Analyze follow-up improvements
         if: steps.metadata.outputs.should_analyze == 'true'
@@ -128,10 +126,10 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           model: 'sonnet'
-          max-turns: "40"
-          track-progress: "false"
+          max-turns: '40'
+          track-progress: 'false'
           json-schema: '{"type":"object","properties":{"summary":{"type":"string"},"quick_tasks":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"},"artifact_type":{"type":"string","enum":["quick-task","workflow-improvement"]}},"required":["title","rationale","owner","artifact_type"],"additionalProperties":false}},"phase_suggestions":{"type":"array","items":{"type":"object","properties":{"phase":{"type":"string","enum":["13.1","13.2","13.3","13.4"]},"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"}},"required":["phase","title","rationale","owner"],"additionalProperties":false}}},"required":["summary","quick_tasks","phase_suggestions"],"additionalProperties":false}'
-          allowed-tools: "Read,Glob,Grep,LS,Bash(cat *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(node *),Bash(ls *),Bash(find *),Bash(gh pr diff:*),Bash(gh pr view:*)"
+          allowed-tools: 'Read,Glob,Grep,LS,Bash(cat *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(node *),Bash(ls *),Bash(find *),Bash(gh pr diff:*),Bash(gh pr view:*)'
           prompt: |
             /gsd-quick
             Analyze this pull request for follow-up improvements and roadmap-worthy automation work.

@@ -1,9 +1,5 @@
 {
-  "maintainerAssociations": [
-    "OWNER",
-    "MEMBER",
-    "COLLABORATOR"
-  ],
+  "maintainerAssociations": ["OWNER", "MEMBER", "COLLABORATOR"],
   "trustedAutomationBranchPrefixes": [
     "claude-auto-fix-ci-",
     "claude-fix-issue-"
@@ -22,13 +18,8 @@
     "deps-review-manual",
     "needs-review"
   ],
-  "improveSkipLabels": [
-    "skip-improve"
-  ],
-  "manualOnlyPathGlobs": [
-    ".github/**",
-    ".planning/**"
-  ],
+  "improveSkipLabels": ["skip-improve"],
+  "manualOnlyPathGlobs": [".github/**", ".planning/**"],
   "improveQualifyingGlobs": [
     "src/**",
     "prisma/**",
@@ -39,16 +30,25 @@
     "next.config.*"
   ],
   "dependabot": {
-    "allowedEcosystems": [
-      "npm",
-      "npm_and_yarn"
-    ],
+    "allowedEcosystems": ["npm", "npm_and_yarn"],
     "manualOnlyBranchPrefixes": [
       "dependabot/github_actions/",
       "dependabot/github-actions/"
     ]
   },
   "labels": {
+    "auto-fix": {
+      "color": "e4e669",
+      "description": "Automation-authored fix or maintenance follow-up"
+    },
+    "ci-failure": {
+      "color": "d73a4a",
+      "description": "CI or automation workflow failure requiring attention"
+    },
+    "auto-fix-failed": {
+      "color": "d93f0b",
+      "description": "An auto-fix automation failed before producing a valid PR"
+    },
     "ai-review-passed": {
       "color": "0e8a16",
       "description": "AI code review found no blocking issues"
@@ -85,9 +85,49 @@
       "color": "1d76db",
       "description": "A draft planning PR exists for follow-up roadmap work"
     },
+    "needs-review": {
+      "color": "fbca04",
+      "description": "Manual review is required before merge or follow-up automation"
+    },
     "do-not-merge": {
       "color": "b60205",
       "description": "Explicitly block auto-merge for this PR"
+    },
+    "triaged": {
+      "color": "1d76db",
+      "description": "Issue was triaged and routed by automation or a maintainer"
+    },
+    "duplicate": {
+      "color": "cfd3d7",
+      "description": "Issue was identified as a duplicate"
+    },
+    "fixed": {
+      "color": "0e8a16",
+      "description": "Issue has an automation-authored or confirmed fix path"
+    },
+    "canceled": {
+      "color": "6e7781",
+      "description": "Automation attempted the task but could not safely produce a change"
+    },
+    "maintenance": {
+      "color": "0075ca",
+      "description": "Repository maintenance work item"
+    },
+    "security": {
+      "color": "d93f0b",
+      "description": "Security finding or security-focused maintenance work"
+    },
+    "transient-failure": {
+      "color": "fbca04",
+      "description": "Failure appears transient and should be retried manually or later"
+    },
+    "claude-health": {
+      "color": "0e8a16",
+      "description": "Tracker for Claude automation health signals"
+    },
+    "claude-health-critical": {
+      "color": "b60205",
+      "description": "Claude automation health tracker contains critical findings"
     },
     "auto-fix-approved": {
       "color": "5319e7",
