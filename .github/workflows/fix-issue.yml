@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   authorize:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
     steps:
@@ -42,7 +42,7 @@ jobs:
 
   fix:
     needs: [authorize]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     if: needs.authorize.outputs.should-run == 'true'
     steps:
@@ -179,7 +179,7 @@ jobs:
   report-failure:
     needs: [fix]
     if: failure()
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
 

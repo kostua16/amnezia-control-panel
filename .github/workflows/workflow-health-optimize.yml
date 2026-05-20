@@ -22,7 +22,7 @@ permissions:
 jobs:
   collect-runs:
     name: Collect Workflow Runs
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     outputs:
       has-runs: ${{ steps.collect.outputs.has_runs }}
@@ -136,7 +136,7 @@ jobs:
 
   optimize:
     name: Analyze & Optimize Workflows
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     needs: [collect-runs]
     if: needs.collect-runs.outputs.has-problems == 'true'
@@ -237,7 +237,7 @@ jobs:
   report-failure:
     needs: [collect-runs, optimize]
     if: failure()
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
 

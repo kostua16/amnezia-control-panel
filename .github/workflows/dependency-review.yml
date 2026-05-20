@@ -23,7 +23,7 @@ env:
 
 jobs:
   resolve-pr:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       should-run: ${{ steps.resolve.outputs.should_run }}
       pr-number: ${{ steps.resolve.outputs.pr_number }}
@@ -55,7 +55,7 @@ jobs:
   ai-dependency-review:
     needs: [resolve-pr]
     if: needs.resolve-pr.outputs.should-run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5

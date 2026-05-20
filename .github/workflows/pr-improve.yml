@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   collect-targets:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       targets: ${{ steps.collect.outputs.targets }}
       count: ${{ steps.collect.outputs.count }}
@@ -58,7 +58,7 @@ jobs:
   improve:
     needs: [collect-targets]
     if: needs.collect-targets.outputs.count != '0'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     concurrency:
       group: pr-improve-${{ matrix.pr-number }}
       cancel-in-progress: false
