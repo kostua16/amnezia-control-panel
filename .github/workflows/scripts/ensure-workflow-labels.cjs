@@ -9,10 +9,17 @@ function getArg(name) {
 }
 
 function runGh(args) {
-  execFileSync('gh', args, {
-    stdio: 'inherit',
-    env: process.env
-  });
+  try {
+    execFileSync('gh', args, {
+      stdio: 'inherit',
+      env: process.env,
+    });
+  } catch (error) {
+    console.error(
+      `Failed to run "gh ${args.join(' ')}" — check gh CLI availability and GH_TOKEN label permissions.`,
+    );
+    throw error;
+  }
 }
 
 const policyFile = getArg('--policy-file') ?? '.github/workflows/policy.json';
@@ -39,6 +46,6 @@ for (const name of names) {
     label.color,
     '--description',
     label.description,
-    '--force'
+    '--force',
   ]);
 }

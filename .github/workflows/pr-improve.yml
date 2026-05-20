@@ -18,13 +18,13 @@ on:
         type: boolean
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
   issues: write
 
 jobs:
   collect-targets:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       targets: ${{ steps.collect.outputs.targets }}
       count: ${{ steps.collect.outputs.count }}
@@ -47,7 +47,9 @@ jobs:
                 state: 'open',
                 per_page: 100
               });
-              targets = pulls.map((pull) => pull.number);
+              targets = pulls
+                .filter((pull) => !(pull.labels || []).some((label) => label.name === 'skip-improve'))
+                .map((pull) => pull.number);
             }
 
             core.setOutput('targets', JSON.stringify(targets));
@@ -56,7 +58,10 @@ jobs:
   improve:
     needs: [collect-targets]
     if: needs.collect-targets.outputs.count != '0'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    concurrency:
+      group: pr-improve-${{ matrix.pr-number }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -166,7 +171,7 @@ jobs:
         if: steps.metadata.outputs.should_analyze == 'true'
         id: planning
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ matrix.pr-number }}
           PR_TITLE: ${{ steps.metadata.outputs.pr_title }}
           PR_URL: ${{ steps.metadata.outputs.pr_url }}

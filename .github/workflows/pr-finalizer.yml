@@ -2,18 +2,18 @@ name: PR Finalizer
 
 on:
   workflow_run:
-    workflows: ["CI", "Code Review", "Dependency Review"]
+    workflows: ['CI', 'Code Review', 'Dependency Review']
     types: [completed]
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Pull request number to evaluate"
+        description: 'Pull request number to evaluate'
         required: true
         type: string
       dry_run:
-        description: "Evaluate without approving, merging, or commenting"
+        description: 'Evaluate without approving, merging, or commenting'
         required: false
         default: true
         type: boolean
@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   finalize:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
 
@@ -80,18 +80,30 @@ jobs:
           manual_only=$(jq -r '.manual_only' /tmp/policy-eval.json)
           blocked_reason=$(jq -r '.blocked_reason // ""' /tmp/policy-eval.json)
           same_repo=$(jq -r '.same_repo' /tmp/policy-eval.json)
+          head_ref=$(jq -r '.head_ref_name // ""' /tmp/policy-eval.json)
           is_draft=$(jq -r '.is_draft' /tmp/policy-eval.json)
-          required_labels=$(jq -r '.required_pass_labels[]?' /tmp/policy-eval.json)
-          present_labels=$(jq -r '.labels[]?' /tmp/policy-eval.json)
-          blocking_labels=$(jq -r '.blocking_labels_present[]?' /tmp/policy-eval.json)
+          mapfile -t required_labels_arr < <(jq -r '.required_pass_labels[]?' /tmp/policy-eval.json)
+          mapfile -t present_labels_arr < <(jq -r '.labels[]?' /tmp/policy-eval.json)
+          mapfile -t blocking_labels_arr < <(jq -r '.blocking_labels_present[]?' /tmp/policy-eval.json)
 
-          missing_labels=""
-          for required_label in $required_labels; do
-            if ! printf '%s\n' "$present_labels" | grep -qx "$required_label"; then
-              missing_labels="${missing_labels}${required_label} "
+          join_labels() {
+            local IFS=', '
+            printf '%s' "$*"
+          }
+
+          missing_labels_arr=()
+          for required_label in "${required_labels_arr[@]}"; do
+            label_present="false"
+            for present_label in "${present_labels_arr[@]}"; do
+              if [ "$present_label" = "$required_label" ]; then
+                label_present="true"
+                break
+              fi
+            done
+            if [ "$label_present" != "true" ]; then
+              missing_labels_arr+=("$required_label")
             fi
           done
-          missing_labels=$(printf '%s' "$missing_labels" | xargs || true)
 
           failing_required=$(jq '[.[] | select(((.bucket // "") | ascii_downcase) == "fail" or ((.bucket // "") | ascii_downcase) == "cancel")] | length' /tmp/pr-checks.json)
           pending_required=$(jq '[.[] | select(((.bucket // "") | ascii_downcase) == "pending")] | length' /tmp/pr-checks.json)
@@ -103,18 +115,21 @@ jobs:
           if [ "$is_draft" = "true" ]; then
             decision="awaiting_checks"
             summary="PR is still draft."
-          elif [ -n "$blocking_labels" ]; then
+          elif [ "${#blocking_labels_arr[@]}" -gt 0 ]; then
             decision="blocked"
-            summary="Blocking labels are present: $(printf '%s' "$blocking_labels" | xargs)"
+            summary="Blocking labels are present: $(join_labels "${blocking_labels_arr[@]}")"
+          elif [ -z "$head_ref" ]; then
+            decision="blocked"
+            summary="PR metadata is incomplete; skipping auto-finalization."
           elif [ "$manual_only" = "true" ]; then
             decision="manual_only"
             summary="${blocked_reason:-PR is manual-only by policy.}"
           elif [ "$same_repo" != "true" ] || [ "$policy_eligible" != "true" ]; then
             decision="manual_only"
             summary="${blocked_reason:-PR is outside the same-repo trusted scope.}"
-          elif [ -n "$missing_labels" ]; then
+          elif [ "${#missing_labels_arr[@]}" -gt 0 ]; then
             decision="awaiting_checks"
-            summary="Waiting on review signals: $missing_labels"
+            summary="Waiting on review signals: $(join_labels "${missing_labels_arr[@]}")"
           elif [ "$failing_required" -gt 0 ]; then
             decision="blocked"
             summary="Required checks are failing."
@@ -135,13 +150,42 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Approve and enable auto-merge
-        if: steps.decision.outputs.decision == 'approve_and_enable_automerge' && steps.decision.outputs.dry_run != 'true' && steps.metadata.outputs.same_repo == 'true'
+        id: apply
+        if: steps.decision.outputs.decision == 'approve_and_enable_automerge' && steps.decision.outputs.dry_run != 'true' && steps.metadata.outputs.same_repo == 'true' && steps.metadata.outputs.head_ref != '' && steps.metadata.outputs.decision_ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
         run: |
-          gh pr review "$PR_NUMBER" --approve --body "PR finalizer: required validation and review signals passed." || true
-          gh pr merge "$PR_NUMBER" --auto --squash || true
+          set +e
+
+          approve_output=$(gh pr review "$PR_NUMBER" --approve --body "PR finalizer: required validation and review signals passed." 2>&1)
+          approve_exit=$?
+
+          merge_output=$(gh pr merge "$PR_NUMBER" --auto --squash 2>&1)
+          merge_exit=$?
+
+          status="success"
+          details="Approval submitted and auto-merge enabled."
+
+          if [ "$approve_exit" -ne 0 ] || [ "$merge_exit" -ne 0 ]; then
+            status="failed"
+            details_parts=()
+            if [ "$approve_exit" -ne 0 ]; then
+              details_parts+=("approve failed: $(printf '%s' "$approve_output" | tail -1)")
+            fi
+            if [ "$merge_exit" -ne 0 ]; then
+              details_parts+=("auto-merge failed: $(printf '%s' "$merge_output" | tail -1)")
+            fi
+            details=$(printf '%s; ' "${details_parts[@]}")
+            details=${details%; }
+          fi
+
+          {
+            echo "status=$status"
+            echo "details<<EOF"
+            printf '%s\n' "$details"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upsert finalizer status comment
         if: steps.resolve.outputs.pr_number != '' && steps.decision.outputs.dry_run != 'true'
@@ -150,19 +194,32 @@ jobs:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           DECISION: ${{ steps.decision.outputs.decision }}
           SUMMARY: ${{ steps.decision.outputs.summary }}
+          APPLY_STATUS: ${{ steps.apply.outputs.status }}
+          APPLY_DETAILS: ${{ steps.apply.outputs.details }}
         with:
           script: |
             const issueNumber = Number(process.env.PR_NUMBER);
             const decision = process.env.DECISION;
             const summary = process.env.SUMMARY;
+            const applyStatus = process.env.APPLY_STATUS || 'not_requested';
+            const applyDetails = process.env.APPLY_DETAILS || '';
             const marker = '<!-- pr-finalizer -->';
-            const body = [
+            const lines = [
               marker,
               '## PR Finalizer',
               '',
               `- Status: **${decision}**`,
               `- Summary: ${summary}`
-            ].join('\n');
+            ];
+
+            if (decision === 'approve_and_enable_automerge') {
+              lines.push(`- Apply result: **${applyStatus}**`);
+              if (applyDetails) {
+                lines.push(`- Apply details: ${applyDetails}`);
+              }
+            }
+
+            const body = lines.join('\n');
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
@@ -195,3 +252,9 @@ jobs:
                 body
               });
             }
+
+      - name: Fail on finalizer apply error
+        if: steps.apply.outputs.status == 'failed'
+        run: |
+          echo "::error::PR finalizer could not complete approval or auto-merge. See finalizer status comment for details."
+          exit 1

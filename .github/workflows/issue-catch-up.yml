@@ -26,7 +26,7 @@ env:
 jobs:
   collect-issues:
     name: Collect Issues
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     outputs:
       has-actionable: ${{ steps.categorize.outputs.has_actionable }}
@@ -321,7 +321,7 @@ jobs:
 
   analyze-and-act:
     name: Analyze & Act
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [collect-issues]
     if: needs.collect-issues.outputs.has-actionable == 'true'
@@ -455,7 +455,7 @@ jobs:
   report-failure:
     needs: [collect-issues, analyze-and-act]
     if: failure()
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
 

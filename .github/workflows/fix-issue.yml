@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   authorize:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
     steps:
@@ -32,38 +32,17 @@ jobs:
         id: gate
         shell: bash
         run: |
-          node <<'NODE'
-          const fs = require('fs');
-
-          const policy = JSON.parse(fs.readFileSync('.github/workflows/policy.json', 'utf8'));
-          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-          const eventName = process.env.GITHUB_EVENT_NAME;
-
-          const isOpenIssue = event.issue?.state !== 'closed' && !event.issue?.pull_request;
-          const commentAssociation = event.comment?.author_association ?? '';
-          const commentBody = event.comment?.body ?? '';
-          const labelName = event.label?.name ?? '';
-
-          const maintainerTriggeredFix =
-            eventName === 'issue_comment' &&
-            isOpenIssue &&
-            commentBody.includes('/fix') &&
-            policy.maintainerAssociations.includes(commentAssociation);
-
-          const labelTriggeredFix =
-            eventName === 'issues' &&
-            isOpenIssue &&
-            labelName === policy.fixApprovalLabel;
-
-          fs.appendFileSync(
-            process.env.GITHUB_OUTPUT,
-            `should_run=${maintainerTriggeredFix || labelTriggeredFix}\n`
-          );
-          NODE
+          node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode fix-issue \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            > /tmp/fix-trigger-policy.json
+          echo "should_run=$(jq -r '.should_run' /tmp/fix-trigger-policy.json)" >> "$GITHUB_OUTPUT"
 
   fix:
     needs: [authorize]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     if: needs.authorize.outputs.should-run == 'true'
     steps:
@@ -200,7 +179,7 @@ jobs:
   report-failure:
     needs: [fix]
     if: failure()
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
 

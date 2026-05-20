@@ -20,6 +20,21 @@ function escapeRegex(value) {
   return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
 }
 
+function validateSupportedGlobs(name, globs) {
+  for (const glob of globs) {
+    if (
+      glob.startsWith('!') ||
+      glob.includes('?') ||
+      glob.includes('[') ||
+      glob.includes(']')
+    ) {
+      throw new Error(
+        `${name} contains unsupported glob "${glob}". Only literal paths plus * and ** are supported.`,
+      );
+    }
+  }
+}
+
 function globToRegExp(glob) {
   // Keep workflow policy matching intentionally small: only `*` and `**` are supported.
   let regex = '^';
@@ -50,17 +65,13 @@ function matchesAny(pathValue, globs) {
 }
 
 function normalizeLabels(pr) {
-  const raw =
-    pr.labels?.nodes ??
-    pr.labels ??
-    pr.labelNames ??
-    [];
+  const raw = pr.labels?.nodes ?? pr.labels ?? pr.labelNames ?? [];
 
   return unique(
     raw.map((label) => {
       if (typeof label === 'string') return label;
       return label.name;
-    })
+    }),
   );
 }
 
@@ -70,17 +81,12 @@ function normalizeFiles(pr, filesPayload) {
     raw.map((file) => {
       if (typeof file === 'string') return file;
       return file.path ?? file.filename;
-    })
+    }),
   );
 }
 
 function normalizeAuthorLogin(pr) {
-  return (
-    pr.author?.login ??
-    pr.user?.login ??
-    pr.author_login ??
-    null
-  );
+  return pr.author?.login ?? pr.user?.login ?? pr.author_login ?? null;
 }
 
 function normalizeIsCrossRepository(pr) {
@@ -110,6 +116,10 @@ function normalizeBaseRef(pr) {
   return pr.baseRefName ?? pr.base?.ref ?? '';
 }
 
+function normalizeEcosystemName(value) {
+  return String(value ?? 'unknown').replace(/-/g, '_');
+}
+
 function parseDependabotUpdate(pr, headRefName) {
   const authorLogin = normalizeAuthorLogin(pr);
   const isDependabot =
@@ -119,16 +129,24 @@ function parseDependabotUpdate(pr, headRefName) {
     return null;
   }
 
-  const [, ecosystem = 'unknown'] = headRefName.split('/');
+  const [, rawEcosystem = 'unknown'] = headRefName.split('/');
+  const ecosystem = normalizeEcosystemName(rawEcosystem);
   const title = pr.title ?? '';
-  const semverMatch = title.match(/ from (\d+\.\d+\.\d+(?:[-+][^\s]+)?) to (\d+\.\d+\.\d+(?:[-+][^\s]+)?)/i);
+  const semverMatch = title.match(
+    / from (\d+\.\d+\.\d+(?:[-+][^\s]+)?) to (\d+\.\d+\.\d+(?:[-+][^\s]+)?)/i,
+  );
   let updateType = 'unknown';
 
   if (semverMatch) {
     const from = semverMatch[1].split(/[+-]/)[0].split('.').map(Number);
     const to = semverMatch[2].split(/[+-]/)[0].split('.').map(Number);
 
-    if (from.length === 3 && to.length === 3 && from.every(Number.isFinite) && to.every(Number.isFinite)) {
+    if (
+      from.length === 3 &&
+      to.length === 3 &&
+      from.every(Number.isFinite) &&
+      to.every(Number.isFinite)
+    ) {
       if (to[0] !== from[0]) {
         updateType = 'major';
       } else if (to[1] !== from[1]) {
@@ -144,7 +162,7 @@ function parseDependabotUpdate(pr, headRefName) {
   return {
     ecosystem,
     updateType,
-    supported: ['patch', 'minor'].includes(updateType)
+    supported: ['patch', 'minor'].includes(updateType),
   };
 }
 
@@ -160,20 +178,38 @@ const policy = readJson(policyFile);
 const pr = readJson(prFile);
 const filesPayload = filesFile ? readJson(filesFile) : null;
 
+validateSupportedGlobs('manualOnlyPathGlobs', policy.manualOnlyPathGlobs ?? []);
+validateSupportedGlobs(
+  'improveQualifyingGlobs',
+  policy.improveQualifyingGlobs ?? [],
+);
+
 const labels = normalizeLabels(pr);
 const files = normalizeFiles(pr, filesPayload);
 const headRefName = normalizeHeadRef(pr);
 const baseRefName = normalizeBaseRef(pr);
 const isDraft = Boolean(pr.isDraft ?? pr.draft);
 const isCrossRepository = normalizeIsCrossRepository(pr);
-const blockedLabels = labels.filter((label) => policy.blockingLabels.includes(label));
-const matchedManualPaths = files.filter((file) => matchesAny(file, policy.manualOnlyPathGlobs));
-const matchedImprovePaths = files.filter((file) => matchesAny(file, policy.improveQualifyingGlobs));
+const blockedLabels = labels.filter((label) =>
+  policy.blockingLabels.includes(label),
+);
+const matchedManualPaths = files.filter((file) =>
+  matchesAny(file, policy.manualOnlyPathGlobs),
+);
+const matchedImprovePaths = files.filter((file) =>
+  matchesAny(file, policy.improveQualifyingGlobs),
+);
 const dependabotUpdate = parseDependabotUpdate(pr, headRefName);
 const isPlanningBranch = headRefName.startsWith(policy.planningBranchPrefix);
-const isTrustedAutomation = policy.trustedAutomationBranchPrefixes.some((prefix) => headRefName.startsWith(prefix));
-const isManualBranch = policy.manualOnlyBranchPrefixes.some((prefix) => headRefName.startsWith(prefix));
-const skipImprove = labels.some((label) => policy.improveSkipLabels.includes(label));
+const isTrustedAutomation = policy.trustedAutomationBranchPrefixes.some(
+  (prefix) => headRefName.startsWith(prefix),
+);
+const isManualBranch = policy.manualOnlyBranchPrefixes.some((prefix) =>
+  headRefName.startsWith(prefix),
+);
+const skipImprove = labels.some((label) =>
+  policy.improveSkipLabels.includes(label),
+);
 
 let prClass = 'other';
 let manualOnly = false;
@@ -192,10 +228,12 @@ if (isPlanningBranch) {
   prClass = 'automation-fix';
   requiredPassLabels = ['ai-review-passed', 'security-review-passed'];
 } else if (dependabotUpdate) {
-  const disallowedPrefix = policy.dependabot.manualOnlyBranchPrefixes.some((prefix) =>
-    headRefName.startsWith(prefix)
+  const disallowedPrefix = policy.dependabot.manualOnlyBranchPrefixes.some(
+    (prefix) => headRefName.startsWith(prefix),
   );
-  const allowedEcosystem = policy.dependabot.allowedEcosystems.includes(dependabotUpdate.ecosystem);
+  const allowedEcosystem = (policy.dependabot.allowedEcosystems ?? [])
+    .map(normalizeEcosystemName)
+    .includes(dependabotUpdate.ecosystem);
 
   prClass = 'dependabot';
   requiredPassLabels = ['deps-review-passed'];
@@ -217,7 +255,8 @@ if (isPlanningBranch) {
 
 if (!manualOnly && matchedManualPaths.length > 0) {
   manualOnly = true;
-  blockedReason = 'changed files include manual-only workflow or planning paths';
+  blockedReason =
+    'changed files include manual-only workflow or planning paths';
 }
 
 if (!manualOnly && blockedLabels.length > 0) {
@@ -254,9 +293,9 @@ process.stdout.write(
       blocking_labels_present: blockedLabels,
       matched_manual_paths: matchedManualPaths,
       matched_improve_paths: matchedImprovePaths,
-      dependabot: dependabotUpdate
+      dependabot: dependabotUpdate,
     },
     null,
-    2
-  )
+    2,
+  ),
 );
