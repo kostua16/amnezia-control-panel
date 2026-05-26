@@ -29,7 +29,7 @@ runs:
       with:
         node-version: ${{ inputs.node-version }}
 
-    - uses: actions4gh/setup-gh@v1
+    - uses: actions4gh/setup-gh@44a12005484c53be5bf51bebe8c985b4be8ba8de # v1.0.2
       with:
         gh-version: ${{ inputs.gh-version }}
         token: ${{ inputs.github-token }}
