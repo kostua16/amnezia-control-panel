@@ -5,9 +5,15 @@ inputs:
   node-version:
     description: 'Node.js version'
     default: '22.x'
+  gh-version:
+    description: 'GitHub CLI version'
+    default: 'latest'
   install-deps:
     description: 'Run npm ci with cache'
     default: 'false'
+  install-gh:
+    description: 'Install the GitHub CLI'
+    default: 'true'
   generate-prisma:
     description: 'Run npx prisma generate'
     default: 'false'
@@ -35,6 +41,12 @@ runs:
         node-version: ${{ inputs.node-version }}
         cache: ${{ inputs.install-deps == 'true' && 'npm' || '' }}
         package-manager-cache: false
+
+    - if: inputs.install-gh == 'true'
+      uses: actions4gh/setup-gh@v1
+      with:
+        gh-version: ${{ inputs.gh-version }}
+        token: ${{ github.token }}
 
     - if: inputs.install-deps == 'true'
       id: npm-deps-cache
