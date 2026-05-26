@@ -101,12 +101,12 @@ jobs:
           install-rtk: 'true'
 
       - name: Ensure review labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/workflows/scripts/ensure-workflow-labels.cjs \
-            --policy-file .github/workflows/policy.json \
-            --names ai-review-passed,ai-review-concerns
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+          policy-file: .github/workflows/policy.json
+          names: ai-review-passed,ai-review-concerns
 
       - name: Main Claude review
         id: review
@@ -191,12 +191,12 @@ jobs:
           install-rtk: 'true'
 
       - name: Ensure security labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/workflows/scripts/ensure-workflow-labels.cjs \
-            --policy-file .github/workflows/policy.json \
-            --names security-review-passed,security-review-concerns
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+          policy-file: .github/workflows/policy.json
+          names: security-review-passed,security-review-concerns
 
       - name: Security review
         id: review

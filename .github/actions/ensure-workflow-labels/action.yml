@@ -1,0 +1,41 @@
+name: 'Ensure Workflow Labels'
+description: 'Bootstrap Node.js and ensure policy-backed GitHub labels exist'
+
+inputs:
+  github-token:
+    description: 'GitHub token for gh label operations'
+    required: true
+  policy-file:
+    description: 'Path to the workflow policy file'
+    required: false
+    default: '.github/workflows/policy.json'
+  names:
+    description: 'Optional comma-separated labels to ensure'
+    required: false
+    default: ''
+  node-version:
+    description: 'Node.js version used to run the label script'
+    required: false
+    default: '22.x'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        POLICY_FILE: ${{ inputs.policy-file }}
+        LABEL_NAMES: ${{ inputs.names }}
+      run: |
+        set -euo pipefail
+
+        args=(node .github/workflows/scripts/ensure-workflow-labels.cjs --policy-file "$POLICY_FILE")
+        if [[ -n "$LABEL_NAMES" ]]; then
+          args+=(--names "$LABEL_NAMES")
+        fi
+
+        "${args[@]}"

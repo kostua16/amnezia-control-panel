@@ -42,14 +42,16 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Ensure labels exist
+    - name: Resolve labels
+      id: labels
       shell: bash
       env:
-        GH_TOKEN: ${{ github.token }}
         MODE: ${{ inputs.mode }}
         LABEL_NAMES: ${{ inputs.ensure-labels }}
         LABELS: ${{ inputs.labels }}
       run: |
+        set -euo pipefail
+
         EFFECTIVE_LABELS="$LABEL_NAMES"
         if [ -z "$EFFECTIVE_LABELS" ]; then
           if [ -n "$LABELS" ]; then
@@ -61,9 +63,14 @@ runs:
           fi
         fi
 
-        node .github/workflows/scripts/ensure-workflow-labels.cjs \
-          --policy-file .github/workflows/policy.json \
-          --names "$EFFECTIVE_LABELS"
+        echo "effective_labels=$EFFECTIVE_LABELS" >> "$GITHUB_OUTPUT"
+
+    - name: Ensure labels exist
+      uses: ./.github/actions/ensure-workflow-labels
+      with:
+        github-token: ${{ github.token }}
+        policy-file: .github/workflows/policy.json
+        names: ${{ steps.labels.outputs.effective_labels }}
 
     - name: Collect failure details
       id: collect

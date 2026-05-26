@@ -52,12 +52,12 @@ jobs:
           token: ${{ secrets.GH_PAT }}
 
       - name: Ensure labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          node .github/workflows/scripts/ensure-workflow-labels.cjs \
-            --policy-file .github/workflows/policy.json \
-            --names auto-fix-approved,auto-fix,fixed,canceled
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          policy-file: .github/workflows/policy.json
+          names: auto-fix-approved,auto-fix,fixed,canceled
 
       - name: Extract fix message
         id: extract

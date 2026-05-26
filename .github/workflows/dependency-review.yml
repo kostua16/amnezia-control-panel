@@ -69,12 +69,11 @@ jobs:
           install-rtk: 'true'
 
       - name: Ensure dependency review labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/workflows/scripts/ensure-workflow-labels.cjs \
-            --policy-file .github/workflows/policy.json \
-            --names deps-review-passed,deps-review-manual,deps-review-blocked
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+          names: deps-review-passed,deps-review-manual,deps-review-blocked
 
       - name: Get dependency diff
         id: diff

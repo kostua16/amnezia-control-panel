@@ -34,9 +34,10 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Ensure workflow labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node .github/workflows/scripts/ensure-workflow-labels.cjs --policy-file .github/workflows/policy.json
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
 
       - name: Resolve PR context
         id: resolve

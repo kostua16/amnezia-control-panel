@@ -556,13 +556,11 @@ runs:
     # --- Report findings to rolling GitHub issue ---
     - name: ensure-claude-health-labels
       if: always() && steps.scan-logs.outputs.has_findings == 'true'
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.github-token }}
-      run: |
-        node .github/workflows/scripts/ensure-workflow-labels.cjs \
-          --policy-file .github/workflows/policy.json \
-          --names ci-failure,claude-health,claude-health-critical
+      uses: ./.github/actions/ensure-workflow-labels
+      with:
+        github-token: ${{ inputs.github-token }}
+        policy-file: .github/workflows/policy.json
+        names: ci-failure,claude-health,claude-health-critical
 
     - name: report-claude-issues
       if: always() && steps.scan-logs.outputs.has_findings == 'true'
