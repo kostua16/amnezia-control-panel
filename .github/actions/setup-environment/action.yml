@@ -49,6 +49,13 @@ runs:
       with:
         bun-version: ${{ inputs.bun-version }}
 
+    - name: Debug PATH before setup-gh
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "PATH(before setup-gh)=$PATH"
+        command -v gh >/dev/null 2>&1 && echo "gh(before setup-gh)=$(command -v gh)" || echo "gh(before setup-gh)=<not found>"
+
     - id: setup_gh
       continue-on-error: true
       uses: actions4gh/setup-gh@44a12005484c53be5bf51bebe8c985b4be8ba8de # v1.0.2
@@ -56,6 +63,13 @@ runs:
         gh-version: ${{ inputs.gh-version }}
         cli-token: ${{ inputs.github-token }}
         token: ''
+
+    - name: Debug PATH after setup-gh
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "PATH(after setup-gh)=$PATH"
+        command -v gh >/dev/null 2>&1 && echo "gh(after setup-gh)=$(command -v gh)" || echo "gh(after setup-gh)=<not found>"
 
     - name: Ensure gh authenticated
       shell: bash
