@@ -34,6 +34,13 @@ jobs:
       head-sha: ${{ steps.resolve.outputs.head_sha }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
     steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Resolve PR context
         id: resolve
         uses: actions/github-script@v8
@@ -95,6 +102,7 @@ jobs:
 
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           node-version: ${{ env.NODE_VERSION }}
           install-deps: 'true'
           install-gsd: 'true'
@@ -185,6 +193,7 @@ jobs:
 
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           node-version: ${{ env.NODE_VERSION }}
           install-deps: 'true'
           install-gsd: 'true'

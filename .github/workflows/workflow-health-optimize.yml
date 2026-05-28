@@ -29,6 +29,13 @@ jobs:
       has-problems: ${{ steps.collect.outputs.has_problems }}
       runs-data: ${{ steps.collect.outputs.runs_data }}
     steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Collect workflow runs from past hour
         id: collect
         uses: actions/github-script@v8
@@ -147,18 +154,19 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
 
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
+
       - name: Prepare optimization branch
         id: branch
         uses: ./.github/actions/prepare-automation-branch
         with:
           branch-name: claude-workflow-optimize-${{ github.run_id }}
-
-      - uses: ./.github/actions/setup-environment
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          install-deps: 'true'
-          install-gsd: 'true'
-          install-rtk: 'true'
 
       - uses: ./.github/actions/run-zai
         with:
@@ -240,6 +248,11 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Report workflow health check failure
         uses: ./.github/actions/report-failure

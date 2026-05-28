@@ -27,17 +27,18 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
 
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-gsd: 'true'
+          install-rtk: 'true'
+
       - name: Prepare docs drift branch
         id: branch
         uses: ./.github/actions/prepare-automation-branch
         with:
           branch-name: claude-workflow-optimize-docs-drift-${{ github.run_id }}
-
-      - uses: ./.github/actions/setup-environment
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          install-gsd: 'true'
-          install-rtk: 'true'
 
       - name: Update docs to match implementation
         uses: ./.github/actions/run-zai

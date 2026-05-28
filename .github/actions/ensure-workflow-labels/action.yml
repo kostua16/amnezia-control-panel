@@ -1,5 +1,5 @@
 name: 'Ensure Workflow Labels'
-description: 'Bootstrap Node.js and ensure policy-backed GitHub labels exist'
+description: 'Ensure policy-backed GitHub labels exist'
 
 inputs:
   github-token:
@@ -17,23 +17,10 @@ inputs:
     description: 'Node.js version used to run the label script'
     required: false
     default: '22.x'
-  gh-version:
-    description: 'GitHub CLI version used to run the label script'
-    required: false
-    default: 'latest'
 
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@v5
-      with:
-        node-version: ${{ inputs.node-version }}
-
-    - uses: actions4gh/setup-gh@44a12005484c53be5bf51bebe8c985b4be8ba8de # v1.0.2
-      with:
-        gh-version: ${{ inputs.gh-version }}
-        token: ${{ inputs.github-token }}
-
     - shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}

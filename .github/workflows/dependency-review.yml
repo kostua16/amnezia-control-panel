@@ -29,6 +29,12 @@ jobs:
       pr-number: ${{ steps.resolve.outputs.pr_number }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
     steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Resolve Dependabot PR context
         id: resolve
         uses: actions/github-script@v8
@@ -65,6 +71,7 @@ jobs:
 
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: 'true'
           install-rtk: 'true'
 

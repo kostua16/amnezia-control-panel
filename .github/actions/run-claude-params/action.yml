@@ -109,11 +109,10 @@ runs:
         echo "model=$(resolve '${{ inputs.model }}')" >> "$GITHUB_OUTPUT"
         echo "subagent_model=$(resolve '${{ inputs.subagent-model }}')" >> "$GITHUB_OUTPUT"
 
-    - name: Install pinned Bun
-      id: setup_bun
-      uses: oven-sh/setup-bun@v2
-      with:
-        bun-version: '1.3.14'
+    - name: Resolve Bun executable
+      id: resolve_bun
+      shell: bash
+      run: echo "bun-path=$(command -v bun)" >> "$GITHUB_OUTPUT"
 
     # --- Attempt 1 ---
     - name: Run Claude Code (attempt 1)
@@ -134,7 +133,7 @@ runs:
       with:
         anthropic_api_key: ${{ inputs.api-key }}
         github_token: ${{ inputs.github-token }}
-        path_to_bun_executable: ${{ steps.setup_bun.outputs.bun-path }}
+        path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
         show_full_output: ${{ inputs.claude-debug || false }}
@@ -213,7 +212,7 @@ runs:
       with:
         anthropic_api_key: ${{ inputs.api-key }}
         github_token: ${{ inputs.github-token }}
-        path_to_bun_executable: ${{ steps.setup_bun.outputs.bun-path }}
+        path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
         show_full_output: ${{ inputs.claude-debug || false }}
@@ -290,7 +289,7 @@ runs:
       with:
         anthropic_api_key: ${{ inputs.api-key }}
         github_token: ${{ inputs.github-token }}
-        path_to_bun_executable: ${{ steps.setup_bun.outputs.bun-path }}
+        path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
         show_full_output: ${{ inputs.claude-debug || false }}

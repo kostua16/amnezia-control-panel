@@ -26,6 +26,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - id: setup_env
+        uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-gsd: 'true'
+          install-rtk: 'true'
+
       - id: ensure_labels
         name: Ensure maintenance labels exist
         uses: ./.github/actions/ensure-workflow-labels
@@ -34,13 +42,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           policy-file: .github/workflows/policy.json
           names: maintenance,security,ci-failure
-
-      - id: setup_env
-        uses: ./.github/actions/setup-environment
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          install-gsd: 'true'
-          install-rtk: 'true'
 
       - id: claude_run
         continue-on-error: true

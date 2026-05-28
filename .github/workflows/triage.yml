@@ -33,6 +33,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-gsd: 'true'
+          install-rtk: 'true'
+
       - name: Resolve issue number
         id: resolve
         run: |
@@ -58,12 +65,6 @@ jobs:
             echo "GHEOF"
             echo "author=$(jq -r .author /tmp/issue.json)"
           } >> "$GITHUB_OUTPUT"
-
-      - uses: ./.github/actions/setup-environment
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          install-gsd: 'true'
-          install-rtk: 'true'
 
       - uses: ./.github/actions/run-zai
         with:

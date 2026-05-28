@@ -33,6 +33,13 @@ jobs:
       categorized: ${{ steps.categorize.outputs.categorized }}
       rate-limited: ${{ steps.categorize.outputs.rate_limited }}
     steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Fetch and categorize open issues
         id: categorize
         uses: actions/github-script@v8
@@ -334,6 +341,7 @@ jobs:
 
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
           install-gsd: 'true'
           install-rtk: 'true'
@@ -458,6 +466,11 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Report catch-up workflow failure
         uses: ./.github/actions/report-failure
