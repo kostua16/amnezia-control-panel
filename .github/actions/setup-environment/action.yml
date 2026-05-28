@@ -10,7 +10,7 @@ inputs:
     default: '22.x'
   gh-version:
     description: 'GitHub CLI version'
-    default: 'latest'
+    default: '2.93.0'
   bun-version:
     description: 'Bun version'
     default: '1.3.14'
