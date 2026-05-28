@@ -55,14 +55,7 @@ runs:
       with:
         gh-version: ${{ inputs.gh-version }}
         cli-token: ${{ inputs.github-token }}
-        token: ${{ inputs.github-token }}
-
-    - if: steps.setup_gh.outcome == 'failure'
-      uses: actions4gh/setup-gh@44a12005484c53be5bf51bebe8c985b4be8ba8de # v1.0.2
-      with:
-        gh-version: ${{ inputs.gh-version }}
-        cli-token: ${{ inputs.github-token }}
-        token: ${{ inputs.github-token }}
+        token: ''
 
     - name: Ensure gh authenticated
       shell: bash
