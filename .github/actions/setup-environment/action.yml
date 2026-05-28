@@ -49,11 +49,39 @@ runs:
       with:
         bun-version: ${{ inputs.bun-version }}
 
-    - uses: actions4gh/setup-gh@44a12005484c53be5bf51bebe8c985b4be8ba8de # v1.0.2
+    - id: setup_gh
+      continue-on-error: true
+      uses: actions4gh/setup-gh@44a12005484c53be5bf51bebe8c985b4be8ba8de # v1.0.2
       with:
         gh-version: ${{ inputs.gh-version }}
         cli-token: ${{ inputs.github-token }}
         token: ${{ inputs.github-token }}
+
+    - if: steps.setup_gh.outcome == 'failure'
+      uses: actions4gh/setup-gh@44a12005484c53be5bf51bebe8c985b4be8ba8de # v1.0.2
+      with:
+        gh-version: ${{ inputs.gh-version }}
+        cli-token: ${{ inputs.github-token }}
+        token: ${{ inputs.github-token }}
+
+    - name: Ensure gh authenticated
+      shell: bash
+      env:
+        GH_LOGIN_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        if ! command -v gh >/dev/null 2>&1; then
+          echo "gh is not on PATH after setup-gh. Aborting." >&2
+          exit 1
+        fi
+
+        gh --version
+
+        host="${GITHUB_SERVER_URL#https://}"
+        if ! gh auth status -h "$host" >/dev/null 2>&1; then
+          printf '%s' "$GH_LOGIN_TOKEN" | gh auth login -h "$host" --with-token
+        fi
 
     - if: inputs.install-deps == 'true'
       id: npm-deps-cache
