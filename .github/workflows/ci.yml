@@ -19,8 +19,8 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: "true"
-          install-rtk: "true"
       - run: npm run lint
       - run: npm run format:check
 
@@ -32,9 +32,9 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: "true"
           generate-prisma: "true"
-          install-rtk: "true"
       - run: npx tsc --noEmit
 
   test:
@@ -46,9 +46,9 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: "true"
           generate-prisma: "true"
-          install-rtk: "true"
       - run: npm test
 
   build:
@@ -60,16 +60,10 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: "true"
           generate-prisma: "true"
-          install-rtk: "true"
-      - name: Cache Next.js
-        uses: actions/cache@v5
-        with:
-          path: ${{ github.workspace }}/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+          cache-nextjs: "true"
       - run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"

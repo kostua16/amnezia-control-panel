@@ -50,14 +50,11 @@ runs:
   steps:
     - name: Ensure PR labels exist
       if: ${{ inputs.labels != '' }}
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.github-token }}
-        LABELS: ${{ inputs.labels }}
-      run: |
-        node .github/workflows/scripts/ensure-workflow-labels.cjs \
-          --policy-file .github/workflows/policy.json \
-          --names "$LABELS"
+      uses: ./.github/actions/ensure-workflow-labels
+      with:
+        github-token: ${{ inputs.github-token }}
+        policy-file: .github/workflows/policy.json
+        names: ${{ inputs.labels }}
 
     - name: Create or update pull request
       id: pr

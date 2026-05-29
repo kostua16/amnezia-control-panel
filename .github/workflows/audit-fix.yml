@@ -27,19 +27,20 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
 
-      - name: Prepare audit branch
-        id: branch
-        uses: ./.github/actions/prepare-automation-branch
-        with:
-          branch-name: claude-workflow-optimize-audit-fix-${{ github.run_id }}
-
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
           install-deps: 'true'
           generate-prisma: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
+
+      - name: Prepare audit branch
+        id: branch
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-workflow-optimize-audit-fix-${{ github.run_id }}
 
       - name: Audit repository and apply targeted fixes
         uses: ./.github/actions/run-zai

@@ -21,23 +21,26 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v5
+      - id: checkout
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Ensure maintenance labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/workflows/scripts/ensure-workflow-labels.cjs \
-            --policy-file .github/workflows/policy.json \
-            --names maintenance,security,ci-failure
-
-      - uses: ./.github/actions/setup-environment
+      - id: setup_env
+        uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           node-version: ${{ env.NODE_VERSION }}
           install-gsd: 'true'
           install-rtk: 'true'
+
+      - id: ensure_labels
+        name: Ensure maintenance labels exist
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+          names: maintenance,security,ci-failure
 
       - id: claude_run
         continue-on-error: true
@@ -75,25 +78,39 @@ jobs:
           script: |
             const fs = require('fs');
             const stepOutcome = '${{ steps.claude_run.outcome }}';
+            const executionFile = '${{ steps.claude_run.outputs.execution_file || '' }}';
+            const failedPreClaudeStep = [
+              ['ensure-workflow-labels', '${{ steps.ensure_labels.outcome }}'],
+              ['setup-environment', '${{ steps.setup_env.outcome }}'],
+            ].find(([, outcome]) => outcome === 'failure')?.[0] ?? null;
 
             let numTurns = null;
             let isError = null;
             let parseError = null;
 
-            try {
-              const raw = fs.readFileSync('/home/runner/work/_temp/claude-execution-output.json', 'utf8');
-              const data = JSON.parse(raw);
-              numTurns = data.num_turns ?? null;
-              isError = data.is_error ?? null;
-            } catch (e) {
-              parseError = e.message;
+            if (stepOutcome === 'success') {
+              if (!executionFile) {
+                parseError = 'missing execution_file output';
+              } else {
+                try {
+                  const raw = fs.readFileSync(executionFile, 'utf8');
+                  const data = JSON.parse(raw);
+                  numTurns = data.num_turns ?? null;
+                  isError = data.is_error ?? null;
+                } catch (e) {
+                  parseError = e.message;
+                }
+              }
             }
 
             const failed =
               stepOutcome === 'failure' ||
-              isError === true ||
-              numTurns === 0 ||
-              parseError !== null;
+              stepOutcome === 'skipped' ||
+              (stepOutcome === 'success' && (
+                isError === true ||
+                numTurns === 0 ||
+                parseError !== null
+              ));
 
             core.setOutput('failed', String(failed));
 
@@ -104,6 +121,8 @@ jobs:
 
             const reason = stepOutcome === 'failure'
               ? 'claude-code-action step failed'
+              : stepOutcome === 'skipped'
+              ? `${failedPreClaudeStep ?? 'pre-Claude workflow step'} failed before Claude run`
               : isError
               ? 'claude reported is_error=true'
               : numTurns === 0

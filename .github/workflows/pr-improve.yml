@@ -29,6 +29,12 @@ jobs:
       targets: ${{ steps.collect.outputs.targets }}
       count: ${{ steps.collect.outputs.count }}
     steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Collect PR targets
         id: collect
         uses: actions/github-script@v8
@@ -74,13 +80,19 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
 
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-gsd: 'true'
+          install-rtk: 'true'
+
       - name: Ensure planning labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/workflows/scripts/ensure-workflow-labels.cjs \
-            --policy-file .github/workflows/policy.json \
-            --names skip-improve,planning-draft-open
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+          names: skip-improve,planning-draft-open
 
       - name: Fetch PR metadata and evaluate policy
         id: metadata
@@ -101,13 +113,6 @@ jobs:
             echo "pr_title=$(jq -r '.title' /tmp/pr.json)"
             echo "pr_url=$(jq -r '.url' /tmp/pr.json)"
           } >> "$GITHUB_OUTPUT"
-
-      - uses: ./.github/actions/setup-environment
-        if: steps.metadata.outputs.should_analyze == 'true'
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          install-gsd: 'true'
-          install-rtk: 'true'
 
       - name: Prepare trusted planning context
         if: steps.metadata.outputs.should_analyze == 'true'

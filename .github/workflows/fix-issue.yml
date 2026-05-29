@@ -28,6 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Evaluate fix trigger
         id: gate
         shell: bash
@@ -51,13 +56,21 @@ jobs:
           fetch-depth: 1
           token: ${{ secrets.GH_PAT }}
 
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'true'
+          generate-prisma: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
+
       - name: Ensure labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          node .github/workflows/scripts/ensure-workflow-labels.cjs \
-            --policy-file .github/workflows/policy.json \
-            --names auto-fix-approved,auto-fix,fixed,canceled
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          policy-file: .github/workflows/policy.json
+          names: auto-fix-approved,auto-fix,fixed,canceled
 
       - name: Extract fix message
         id: extract
@@ -72,14 +85,6 @@ jobs:
         uses: ./.github/actions/prepare-automation-branch
         with:
           branch-name: claude-fix-issue-${{ github.event.issue.number }}-${{ github.run_id }}
-
-      - uses: ./.github/actions/setup-environment
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          install-deps: 'true'
-          generate-prisma: 'true'
-          install-gsd: 'true'
-          install-rtk: 'true'
 
       - uses: ./.github/actions/run-zai
         with:
@@ -182,6 +187,11 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
 
       - uses: ./.github/actions/report-failure
         with:

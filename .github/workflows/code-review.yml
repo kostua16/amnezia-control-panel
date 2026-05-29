@@ -34,6 +34,13 @@ jobs:
       head-sha: ${{ steps.resolve.outputs.head_sha }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
     steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Resolve PR context
         id: resolve
         uses: actions/github-script@v8
@@ -95,18 +102,18 @@ jobs:
 
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           node-version: ${{ env.NODE_VERSION }}
           install-deps: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
 
       - name: Ensure review labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/workflows/scripts/ensure-workflow-labels.cjs \
-            --policy-file .github/workflows/policy.json \
-            --names ai-review-passed,ai-review-concerns
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+          names: ai-review-passed,ai-review-concerns
 
       - name: Main Claude review
         id: review
@@ -185,18 +192,18 @@ jobs:
 
       - uses: ./.github/actions/setup-environment
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           node-version: ${{ env.NODE_VERSION }}
           install-deps: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
 
       - name: Ensure security labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/workflows/scripts/ensure-workflow-labels.cjs \
-            --policy-file .github/workflows/policy.json \
-            --names security-review-passed,security-review-concerns
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+          names: security-review-passed,security-review-concerns
 
       - name: Security review
         id: review

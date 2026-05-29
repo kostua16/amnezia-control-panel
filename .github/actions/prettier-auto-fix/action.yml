@@ -58,12 +58,6 @@ runs:
           echo "::notice::Lint failed but not Prettier-only"
         fi
 
-    - uses: actions/setup-node@v5
-      if: steps.detect.outputs.prettier_only == 'true'
-      with:
-        node-version: ${{ inputs.node-version }}
-        cache: npm
-
     - name: Install dependencies
       if: steps.detect.outputs.prettier_only == 'true'
       shell: bash

@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: verifying
 stopped_at: context exhaustion at 77% (2026-05-03)
-last_updated: "2026-05-03T10:04:26.502Z"
-last_activity: 2026-05-03 -- 12.14 complete (12.6-VERIFICATION.md + 12.7-VERIFICATION.md + audit reconciliation)
+last_updated: "2026-05-29T22:17:31.609Z"
+last_activity: 2026-05-29 -- Self-host Geist fonts for dev6 CI (next/font/local, run #26663122321)
 progress:
   total_phases: 23
   completed_phases: 20
@@ -29,7 +29,7 @@ progress:
 Phase: 12.15 of 12.15 (Requirements reconciliation & middleware hardening) -- PLANNED
 Plan: 0 of 0 in current phase (planned)
 Status: 12.14 complete (GEO-03/04 + TSCL-01-03 verified, audit 19/20)
-Last activity: 2026-05-03 -- 12.14 complete (12.6-VERIFICATION.md + 12.7-VERIFICATION.md + audit reconciliation)
+Last activity: 2026-05-29 -- Self-host Geist fonts for dev6 CI (next/font/local, run #26663122321)
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -88,6 +88,7 @@ Recent decisions affecting current work:
 - 12.5-01: buildServerPanelMap uses Tailscale address matching -- no FK between Server and RemotePanel in schema
 - 12.9-01: alert:new removed from WS_TO_QUERY_KEYS -- use-alerts.ts self-invalidates (single source of truth)
 - 12.9-01: panel:push-progress and chain:status-update removed from bridge -- no RQ consumers, consumed via lastEvent/direct socket
+- 260529-geist: Self-host Geist v1.7.1 via `next/font/local` + committed woff2 under `src/app/fonts/` -- dev6 cannot reach `fonts.gstatic.com` at build time (CI run #26663122321)
 
 ### Pending Todos
 
@@ -119,7 +120,8 @@ Resume file: None
 | ---------- | ---------------- | -------------------------------------------- |
 | 2026-04-30 | 260430-q7v       | Dev default port 3333; override via CLI/PORT |
 | 2026-04-30 | 260430-r2n       | npm `--port` shorthand support + Next lock behavior |
+| 2026-05-29 | 260529-geist     | Self-host Geist fonts (dev6 gstatic block, CI #26663122321) |
 
 ---
 *State initialized: 2026-04-27*
-*Last updated: 2026-05-03 - 12.13 complete (12.1 + 12.4 VERIFICATION.md created)*
+*Last updated: 2026-05-29 - Self-host Geist fonts for dev6 CI (quick 260529-geist)*

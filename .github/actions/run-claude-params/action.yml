@@ -109,6 +109,17 @@ runs:
         echo "model=$(resolve '${{ inputs.model }}')" >> "$GITHUB_OUTPUT"
         echo "subagent_model=$(resolve '${{ inputs.subagent-model }}')" >> "$GITHUB_OUTPUT"
 
+    - name: Resolve Bun executable
+      id: resolve_bun
+      shell: bash
+      run: |
+        bun_path="$(command -v bun)"
+        if [[ -z "$bun_path" ]]; then
+          echo "::error::Bun executable not found on PATH. Is oven-sh/setup-bun installed?"
+          exit 1
+        fi
+        echo "bun-path=$bun_path" >> "$GITHUB_OUTPUT"
+
     # --- Attempt 1 ---
     - name: Run Claude Code (attempt 1)
       id: claude-run-1
@@ -128,6 +139,7 @@ runs:
       with:
         anthropic_api_key: ${{ inputs.api-key }}
         github_token: ${{ inputs.github-token }}
+        path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
         show_full_output: ${{ inputs.claude-debug || false }}
@@ -206,6 +218,7 @@ runs:
       with:
         anthropic_api_key: ${{ inputs.api-key }}
         github_token: ${{ inputs.github-token }}
+        path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
         show_full_output: ${{ inputs.claude-debug || false }}
@@ -282,6 +295,7 @@ runs:
       with:
         anthropic_api_key: ${{ inputs.api-key }}
         github_token: ${{ inputs.github-token }}
+        path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
         show_full_output: ${{ inputs.claude-debug || false }}
@@ -402,7 +416,7 @@ runs:
         fi
 
         # Read claude-execution-output.json if it exists
-        EXEC_JSON_PATH="/home/runner/work/_temp/claude-execution-output.json"
+        EXEC_JSON_PATH="${RUNNER_TEMP}/claude-execution-output.json"
         NUM_TURNS="null"
         IS_ERROR="null"
         PERM_DENIALS="0"
@@ -556,13 +570,11 @@ runs:
     # --- Report findings to rolling GitHub issue ---
     - name: ensure-claude-health-labels
       if: always() && steps.scan-logs.outputs.has_findings == 'true'
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.github-token }}
-      run: |
-        node .github/workflows/scripts/ensure-workflow-labels.cjs \
-          --policy-file .github/workflows/policy.json \
-          --names ci-failure,claude-health,claude-health-critical
+      uses: ./.github/actions/ensure-workflow-labels
+      with:
+        github-token: ${{ inputs.github-token }}
+        policy-file: .github/workflows/policy.json
+        names: ci-failure,claude-health,claude-health-critical
 
     - name: report-claude-issues
       if: always() && steps.scan-logs.outputs.has_findings == 'true'
