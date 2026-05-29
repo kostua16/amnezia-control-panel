@@ -20,15 +20,18 @@ inputs:
   generate-prisma:
     description: 'Run npx prisma generate'
     default: 'false'
+  cache-nextjs:
+    description: 'Restore and save the Next.js build cache'
+    default: 'false'
   install-gsd:
-    description: 'Install or verify the checked-in ClaudeKit/GSD framework'
+    description: 'Install or verify GSD (@opengsd/get-shit-done-redux) in .claude'
     default: 'false'
   install-rtk:
     description: 'Install RTK (Rust Token Killer) with cache and init hooks'
     default: 'false'
   gsd-version:
-    description: 'Pinned get-shit-done-cc version used when the local .claude bundle is missing'
-    default: '2.19.0'
+    description: 'Pinned @opengsd/get-shit-done-redux version used when .claude/gsd-install-state.json is missing'
+    default: '1.1.0'
   rtk-version:
     description: 'Pinned RTK version used for workflow bootstrap'
     default: '0.35.0'
@@ -42,7 +45,11 @@ runs:
     - uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
-        cache: ${{ inputs.install-deps == 'true' && 'npm' || '' }}
+        # Disabled because GitHub/Azure npm cache restores from self-hosted
+        # runners were slow and unreliable (4 GB restores in runs 26592710713
+        # and 26592710847). Keep setup-node caching off until FalconDev cache
+        # server is deployed.
+        # cache: ${{ inputs.install-deps == 'true' && 'npm' || '' }}
         package-manager-cache: false
 
     - uses: oven-sh/setup-bun@v2
@@ -89,9 +96,19 @@ runs:
           printf '%s' "$GH_LOGIN_TOKEN" | gh auth login -h "$host" --with-token
         fi
 
+    # Previous GitHub-hosted cache retained for audit only. It restored from
+    # remote GitHub/Azure storage too slowly on self-hosted runners.
+    # - if: inputs.install-deps == 'true'
+    #   id: npm-deps-cache
+    #   uses: actions/cache@v5
+    #   with:
+    #     path: node_modules
+    #     key: node-modules-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('package-lock.json') }}
+    #     restore-keys: |
+    #       node-modules-${{ runner.os }}-node${{ inputs.node-version }}-
     - if: inputs.install-deps == 'true'
       id: npm-deps-cache
-      uses: actions/cache@v5
+      uses: maxnowack/local-cache@v3
       with:
         path: node_modules
         key: node-modules-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('package-lock.json') }}
@@ -106,18 +123,44 @@ runs:
       run: npx prisma generate
       shell: bash
 
+    # Previous GitHub-hosted cache retained for audit only. It restored from
+    # remote GitHub/Azure storage too slowly on self-hosted runners.
+    # - name: Cache Next.js
+    #   uses: actions/cache@v5
+    #   with:
+    #     path: ${{ github.workspace }}/.next/cache
+    #     key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+    #     restore-keys: |
+    #       ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+    - if: inputs.cache-nextjs == 'true'
+      name: Cache Next.js
+      uses: maxnowack/local-cache@v3
+      with:
+        path: ${{ github.workspace }}/.next/cache
+        key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+        restore-keys: |
+          ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+
     - if: inputs.install-gsd == 'true'
       run: |
-        if [ -f .claude/metadata.json ]; then
-          echo "Using checked-in ClaudeKit bundle from .claude/metadata.json"
+        if [ -f .claude/gsd-install-state.json ]; then
+          echo "Using existing GSD install (.claude/gsd-install-state.json)"
         else
-          npx get-shit-done-cc@${{ inputs.gsd-version }} --claude --local
+          npx @opengsd/get-shit-done-redux@${{ inputs.gsd-version }} --claude --local
         fi
       shell: bash
 
+    # Previous GitHub-hosted cache retained for audit only. It restored from
+    # remote GitHub/Azure storage too slowly on self-hosted runners.
+    # - if: inputs.install-rtk == 'true'
+    #   id: rtk-cache
+    #   uses: actions/cache@v5
+    #   with:
+    #     path: ~/.local/bin
+    #     key: rtk-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rtk-version }}-${{ inputs.rtk-install-sha256 }}
     - if: inputs.install-rtk == 'true'
       id: rtk-cache
-      uses: actions/cache@v5
+      uses: maxnowack/local-cache@v3
       with:
         path: ~/.local/bin
         key: rtk-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rtk-version }}-${{ inputs.rtk-install-sha256 }}

@@ -100,8 +100,8 @@ Always manual-only:
 ## Composite Action Notes
 
 `setup-environment`:
-- uses the checked-in `.claude` bundle when present
-- falls back to pinned `get-shit-done-cc` version `2.19.0` only if the bundle is missing
+- skips GSD install when `.claude/gsd-install-state.json` is present
+- falls back to pinned `@opengsd/get-shit-done-redux` version `1.1.0` only if that file is missing
 - installs pinned RTK version `0.35.0`
 
 ## Dry-Run Entry Points
