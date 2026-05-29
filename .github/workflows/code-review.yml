@@ -112,7 +112,6 @@ jobs:
         uses: ./.github/actions/ensure-workflow-labels
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          node-version: ${{ env.NODE_VERSION }}
           policy-file: .github/workflows/policy.json
           names: ai-review-passed,ai-review-concerns
 
@@ -203,7 +202,6 @@ jobs:
         uses: ./.github/actions/ensure-workflow-labels
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          node-version: ${{ env.NODE_VERSION }}
           policy-file: .github/workflows/policy.json
           names: security-review-passed,security-review-concerns
 

@@ -69,7 +69,6 @@ jobs:
         uses: ./.github/actions/ensure-workflow-labels
         with:
           github-token: ${{ secrets.GH_PAT }}
-          node-version: ${{ env.NODE_VERSION }}
           policy-file: .github/workflows/policy.json
           names: auto-fix-approved,auto-fix,fixed,canceled
 

@@ -13,11 +13,6 @@ inputs:
     description: 'Optional comma-separated labels to ensure'
     required: false
     default: ''
-  node-version:
-    description: 'Node.js version used to run the label script'
-    required: false
-    default: '22.x'
-
 runs:
   using: composite
   steps:

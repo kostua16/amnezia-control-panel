@@ -35,6 +35,8 @@ inputs:
   rtk-version:
     description: 'Pinned RTK version used for workflow bootstrap'
     default: '0.35.0'
+  # IMPORTANT: rtk-install-sha256 must match the install script at the pinned rtk-version.
+  # Bump both together — changing version without updating the SHA will break install verification.
   rtk-install-sha256:
     description: 'SHA-256 for the pinned RTK install script'
     default: '9989e60e33a353e9e6802fab1fd410b96d1dd228b34e52402c32f3c8c2dd8c66'
@@ -57,6 +59,7 @@ runs:
         bun-version: ${{ inputs.bun-version }}
 
     - name: Debug PATH before setup-gh
+      if: runner.debug == '1'
       shell: bash
       run: |
         set -euo pipefail
@@ -71,6 +74,7 @@ runs:
         token: ${{ inputs.github-token }}
 
     - name: Debug PATH after setup-gh
+      if: runner.debug == '1'
       shell: bash
       run: |
         set -euo pipefail

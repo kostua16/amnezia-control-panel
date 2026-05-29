@@ -21,7 +21,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: "true"
-          install-rtk: "true"
       - run: npm run lint
       - run: npm run format:check
 
@@ -36,7 +35,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: "true"
           generate-prisma: "true"
-          install-rtk: "true"
       - run: npx tsc --noEmit
 
   test:
@@ -51,7 +49,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: "true"
           generate-prisma: "true"
-          install-rtk: "true"
       - run: npm test
 
   build:
@@ -67,7 +64,6 @@ jobs:
           install-deps: "true"
           generate-prisma: "true"
           cache-nextjs: "true"
-          install-rtk: "true"
       - run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"

@@ -39,7 +39,6 @@ jobs:
         uses: ./.github/actions/ensure-workflow-labels
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          node-version: ${{ env.NODE_VERSION }}
           policy-file: .github/workflows/policy.json
           names: maintenance,security,ci-failure
 

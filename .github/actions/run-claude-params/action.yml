@@ -112,7 +112,13 @@ runs:
     - name: Resolve Bun executable
       id: resolve_bun
       shell: bash
-      run: echo "bun-path=$(command -v bun)" >> "$GITHUB_OUTPUT"
+      run: |
+        bun_path="$(command -v bun)"
+        if [[ -z "$bun_path" ]]; then
+          echo "::error::Bun executable not found on PATH. Is oven-sh/setup-bun installed?"
+          exit 1
+        fi
+        echo "bun-path=$bun_path" >> "$GITHUB_OUTPUT"
 
     # --- Attempt 1 ---
     - name: Run Claude Code (attempt 1)
@@ -410,7 +416,7 @@ runs:
         fi
 
         # Read claude-execution-output.json if it exists
-        EXEC_JSON_PATH="/home/runner/work/_temp/claude-execution-output.json"
+        EXEC_JSON_PATH="${RUNNER_TEMP}/claude-execution-output.json"
         NUM_TURNS="null"
         IS_ERROR="null"
         PERM_DENIALS="0"
