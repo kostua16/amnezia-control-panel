@@ -24,7 +24,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: pr-finalizer-${{ github.event.workflow_run.id || github.event.pull_request.number || github.event.inputs.pr_number || github.sha }}
+  group: pr-finalizer-${{ github.event.pull_request.number || github.event.inputs.pr_number || github.run_id }}
   cancel-in-progress: true
 
 jobs:

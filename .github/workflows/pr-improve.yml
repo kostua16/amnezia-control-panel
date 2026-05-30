@@ -23,6 +23,10 @@ permissions:
   issues: write
   actions: write
 
+concurrency:
+  group: pr-improve-workflow-${{ github.event.pull_request.number || github.event.inputs.pr_number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   collect-targets:
     runs-on: self-hosted
@@ -66,9 +70,6 @@ jobs:
     needs: [collect-targets]
     if: needs.collect-targets.outputs.count != '0'
     runs-on: self-hosted
-    concurrency:
-      group: pr-improve-${{ matrix.pr-number }}
-      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
