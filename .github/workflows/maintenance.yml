@@ -29,7 +29,7 @@ jobs:
       - id: setup_env
         uses: ./.github/actions/setup-environment
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
           install-gsd: 'true'
           install-rtk: 'true'
