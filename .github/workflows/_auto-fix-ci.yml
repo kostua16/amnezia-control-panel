@@ -137,7 +137,7 @@ jobs:
           )
 
           {
-            echo "content<<'EOF'"
+            echo "content<<EOF"
             echo "/gsd-debug"
             echo "Failed CI Run: $RUN_URL"
             echo "Failed Jobs: $FAILED_JOBS"
@@ -241,7 +241,7 @@ jobs:
           fi
 
           {
-            echo "body<<'EOF'"
+            echo "body<<EOF"
             if [ "$MODE" = "pr" ] && [ -n "$PR_NUMBER" ]; then
               printf "Automated fix for failed CI run: %s\n\nThis PR was created by the CI auto-fix workflow. Workflow and planning changes remain manual-only under repository policy.\n\nRelated PR: #%s%s\n" \
                 "$RUN_URL" "$PR_NUMBER" "$CLOSES_TEXT"
