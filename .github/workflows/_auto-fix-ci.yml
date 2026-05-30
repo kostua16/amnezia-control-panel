@@ -137,7 +137,8 @@ jobs:
           )
 
           {
-            echo "content<<EOF"
+            DELIM="EOF-$(openssl rand -hex 8)"
+            echo "content<<$DELIM"
             echo "/gsd-debug"
             echo "Failed CI Run: $RUN_URL"
             echo "Failed Jobs: $FAILED_JOBS"
@@ -175,7 +176,7 @@ jobs:
             echo "If build is needed: run \`npm run build\`. If it passes → STOP."
             echo
             echo "DO NOT commit or push — the workflow handles that."
-            echo "EOF"
+            echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/run-zai
@@ -241,7 +242,8 @@ jobs:
           fi
 
           {
-            echo "body<<EOF"
+            DELIM="EOF-$(openssl rand -hex 8)"
+            echo "body<<$DELIM"
             if [ "$MODE" = "pr" ] && [ -n "$PR_NUMBER" ]; then
               printf "Automated fix for failed CI run: %s\n\nThis PR was created by the CI auto-fix workflow. Workflow and planning changes remain manual-only under repository policy.\n\nRelated PR: #%s%s\n" \
                 "$RUN_URL" "$PR_NUMBER" "$CLOSES_TEXT"
@@ -249,7 +251,7 @@ jobs:
               printf "Automated fix for failed CI run on \`%s\`: %s\n\nThis PR was created by the CI auto-fix workflow (direct push path). Workflow and planning changes remain manual-only under repository policy.%s\n" \
                 "$BASE_BRANCH" "$RUN_URL" "$CLOSES_TEXT"
             fi
-            echo "EOF"
+            echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
       - name: Upsert fix PR

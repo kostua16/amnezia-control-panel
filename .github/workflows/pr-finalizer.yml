@@ -148,9 +148,10 @@ jobs:
 
           {
             echo "decision=$decision"
-            echo "summary<<EOF"
+            DELIM="EOF-$(openssl rand -hex 8)"
+            echo "summary<<$DELIM"
             printf '%s\n' "$summary"
-            echo "EOF"
+            echo "$DELIM"
             echo "dry_run=${DRY_RUN}"
           } >> "$GITHUB_OUTPUT"
 
@@ -187,9 +188,10 @@ jobs:
 
           {
             echo "status=$status"
-            echo "details<<EOF"
+            DELIM="EOF-$(openssl rand -hex 8)"
+            echo "details<<$DELIM"
             printf '%s\n' "$details"
-            echo "EOF"
+            echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
       - name: Upsert finalizer status comment

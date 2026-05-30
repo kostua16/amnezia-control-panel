@@ -90,9 +90,10 @@ jobs:
           git fetch origin "$BASE_REF" --depth=1
           git diff "origin/$BASE_REF" -- package.json package-lock.json > /tmp/dep-diff.txt
           {
-            echo "diff<<EOF"
+            DELIM="EOF-$(openssl rand -hex 8)"
+            echo "diff<<$DELIM"
             head -200 /tmp/dep-diff.txt
-            echo "EOF"
+            echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
       - name: Review dependency update

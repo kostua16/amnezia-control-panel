@@ -59,10 +59,11 @@ jobs:
           gh api "repos/${{ github.repository }}/issues/$ISSUE_NUM" \
             --jq '{title: .title, body: .body, author: .user.login}' > /tmp/issue.json
           {
+            DELIM="GHEOF-$(openssl rand -hex 8)"
             echo "title=$(jq -r .title /tmp/issue.json)"
-            echo "body<<GHEOF"
+            echo "body<<$DELIM"
             jq -r .body /tmp/issue.json
-            echo "GHEOF"
+            echo "$DELIM"
             echo "author=$(jq -r .author /tmp/issue.json)"
           } >> "$GITHUB_OUTPUT"
 

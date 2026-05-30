@@ -36,10 +36,11 @@ jobs:
           CURRENT_TAG: ${{ github.ref_name }}
         run: |
           {
-            echo "log<<EOF"
+            DELIM="EOF-$(openssl rand -hex 8)"
+            echo "log<<$DELIM"
             git log "${PREV_TAG}..${CURRENT_TAG}" --pretty=format:"- %s (%h)" --no-merges | head -100
             echo ""
-            echo "EOF"
+            echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
       - name: Generate structured release notes

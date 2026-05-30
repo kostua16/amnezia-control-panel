@@ -384,9 +384,10 @@ runs:
             echo "session_id=${!session_id_var}"
             echo "branch_name=${!branch_name_var}"
             echo "execution_file=${!execution_file_var}"
-            echo "structured_output<<EOF"
+            DELIM="EOF-$(openssl rand -hex 8)"
+            echo "structured_output<<$DELIM"
             printf '%s\n' "${!structured_output_var}"
-            echo "EOF"
+            echo "$DELIM"
             echo "used_attempt=$attempt"
           else
             echo "session_id="
