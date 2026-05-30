@@ -38,6 +38,25 @@ inputs:
   retry-command:
     description: 'Retry command hint for comment mode'
     default: '/fix'
+  github-token:
+    description: 'GitHub token for label, log, issue/comment, and workflow-dispatch operations'
+    required: false
+    default: '${{ github.token }}'
+  claude-step-outcome:
+    description: 'Outcome of the Claude step (success/failure/cancelled/skipped)'
+    required: false
+  claude-turns:
+    description: 'Number of turns Claude completed'
+    required: false
+  claude-is-error:
+    description: 'Whether Claude reported is_error=true'
+    required: false
+  claude-used-attempt:
+    description: 'Claude attempt number selected by the runner'
+    required: false
+  claude-failure-reason:
+    description: 'Pre-computed human-readable Claude failure reason'
+    required: false
 
 runs:
   using: composite
@@ -68,7 +87,7 @@ runs:
     - name: Ensure labels exist
       uses: ./.github/actions/ensure-workflow-labels
       with:
-        github-token: ${{ github.token }}
+        github-token: ${{ inputs.github-token }}
         policy-file: .github/workflows/policy.json
         names: ${{ steps.labels.outputs.effective_labels }}
 
@@ -76,6 +95,7 @@ runs:
       id: collect
       uses: actions/github-script@v8
       with:
+        github-token: ${{ inputs.github-token }}
         script: |
           const jobs = await github.rest.actions.listJobsForWorkflowRun({
             owner: context.repo.owner,
@@ -117,11 +137,18 @@ runs:
         ISSUE_TITLE: ${{ inputs.issue-title }}
         ISSUE_BODY: ${{ inputs.issue-body }}
         LABELS: ${{ inputs.labels }}
+        EFFECTIVE_LABELS: ${{ steps.labels.outputs.effective_labels }}
         DISPATCH_TRIAGE: ${{ inputs.dispatch-triage }}
         RETRY_COMMAND: ${{ inputs.retry-command }}
         FAILED_STEPS: ${{ steps.collect.outputs.failed_steps }}
         LOG_SNIPPETS: ${{ steps.collect.outputs.log_snippets }}
+        CLAUDE_STEP_OUTCOME: ${{ inputs.claude-step-outcome }}
+        CLAUDE_TURNS: ${{ inputs.claude-turns }}
+        CLAUDE_IS_ERROR: ${{ inputs.claude-is-error }}
+        CLAUDE_USED_ATTEMPT: ${{ inputs.claude-used-attempt }}
+        CLAUDE_FAILURE_REASON: ${{ inputs.claude-failure-reason }}
       with:
+        github-token: ${{ inputs.github-token }}
         script: |
           const mode = process.env.MODE;
           const autoFixRunUrl = process.env.AUTO_FIX_RUN_URL;
@@ -138,11 +165,7 @@ runs:
           const retryCommand = process.env.RETRY_COMMAND || '/fix';
           const failedSteps = JSON.parse(process.env.FAILED_STEPS || '[]');
           const logSnippets = JSON.parse(process.env.LOG_SNIPPETS || '[]');
-          const labels = labelList.length > 0
-            ? labelList
-            : mode === 'comment'
-              ? ['auto-fix-failed']
-              : ['auto-fix', 'ci-failure', 'auto-fix-failed'];
+          const labels = (process.env.EFFECTIVE_LABELS || '').split(',').map(l => l.trim()).filter(Boolean);
 
           const stepsSection = failedSteps.length > 0
             ? failedSteps.map(s => `- ${s}`).join('\n')
@@ -153,6 +176,24 @@ runs:
                 `<details><summary>${name}</summary>\n\n\`\`\`\n${log}\n\`\`\`\n</details>`
               ).join('\n\n')
             : '_No logs available_';
+
+          // Build Claude Execution section if any Claude metadata is provided
+          const claudeOutcome = process.env.CLAUDE_STEP_OUTCOME || '';
+          const claudeTurns = process.env.CLAUDE_TURNS || '';
+          const claudeIsError = process.env.CLAUDE_IS_ERROR || '';
+          const claudeAttempt = process.env.CLAUDE_USED_ATTEMPT || '';
+          const claudeReason = process.env.CLAUDE_FAILURE_REASON || '';
+          const hasClaudeInfo = claudeOutcome || claudeTurns || claudeIsError || claudeAttempt || claudeReason;
+          const claudeSection = hasClaudeInfo ? [
+            '',
+            '### Claude Execution',
+            `- **Outcome:** ${claudeOutcome || 'N/A'}`,
+            `- **Attempt:** ${claudeAttempt || 'N/A'}`,
+            `- **Turns:** ${claudeTurns || 'N/A'}`,
+            `- **Error:** ${claudeIsError || 'N/A'}`,
+            `- **Reason:** ${claudeReason || 'N/A'}`,
+            '',
+          ].join('\n') : '';
 
           if (mode === 'comment') {
             const issueNumber = Number(process.env.ISSUE_NUMBER);
@@ -165,7 +206,7 @@ runs:
             ].join('\n');
             const body = [
               intro,
-              '',
+              claudeSection,
               '### Failed Steps',
               stepsSection,
               '',
@@ -210,7 +251,7 @@ runs:
 
             const body = [
               intro,
-              '',
+              claudeSection,
               '### Failed Steps',
               stepsSection,
               '',

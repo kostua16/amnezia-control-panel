@@ -17,6 +17,24 @@ outputs:
   used_attempt:
     description: 'Successful Claude Code retry attempt number'
     value: ${{ steps.select-outputs.outputs.used_attempt }}
+  claude_failed:
+    description: 'true when Claude failed hard or produced a soft-failure execution result'
+    value: ${{ steps.claude-health.outputs.failed }}
+  claude_failure_reason:
+    description: 'Human-readable Claude failure reason'
+    value: ${{ steps.claude-health.outputs.reason }}
+  claude_num_turns:
+    description: 'Claude num_turns from execution output, when available'
+    value: ${{ steps.claude-health.outputs.num_turns }}
+  claude_is_error:
+    description: 'Claude is_error from execution output, when available'
+    value: ${{ steps.claude-health.outputs.is_error }}
+  claude_used_attempt:
+    description: 'Claude attempt number selected by the runner'
+    value: ${{ steps.claude-health.outputs.used_attempt }}
+  claude_has_findings:
+    description: 'true when the Claude log scanner found any known issue pattern'
+    value: ${{ steps.scan-logs.outputs.has_findings }}
 
 inputs:
   api-key:
@@ -565,6 +583,21 @@ runs:
           echo "Scanned Claude logs — no issues found."
         fi
 
+        # Emit error-level finding summary for downstream health normalization
+        ERROR_FINDINGS=$(echo "$FINDINGS" | jq '[.[] | select(.severity == "error")]')
+        ERROR_COUNT=$(echo "$ERROR_FINDINGS" | jq 'length')
+        if [[ "$ERROR_COUNT" -gt 0 ]]; then
+          echo "has_error_findings=true" >> "$GITHUB_OUTPUT"
+          echo "findings_summary=$(echo "$ERROR_FINDINGS" | jq -r '.[].category' | tr '\n' ',' | sed 's/,$//')" >> "$GITHUB_OUTPUT"
+        else
+          echo "has_error_findings=false" >> "$GITHUB_OUTPUT"
+          echo "findings_summary=" >> "$GITHUB_OUTPUT"
+        fi
+
+        # Expose execution metrics for health normalization
+        echo "num_turns=$NUM_TURNS" >> "$GITHUB_OUTPUT"
+        echo "is_error=$IS_ERROR" >> "$GITHUB_OUTPUT"
+
         rm -f "$LOG_FILE"
 
     # --- Report findings to rolling GitHub issue ---
@@ -680,6 +713,84 @@ runs:
 
           // Clean up temp file
           try { fs.unlinkSync(issuesFile); } catch (_) {}
+
+    # --- Normalize Claude health for downstream consumers ---
+    - name: Normalize Claude health
+      id: claude-health
+      if: always()
+      shell: bash
+      env:
+        USED_ATTEMPT: ${{ steps.select-outputs.outputs.used_attempt }}
+        ATTEMPT1_OUTCOME: ${{ steps.claude-run-1.outcome }}
+        ATTEMPT2_OUTCOME: ${{ steps.claude-run-2.outcome || '' }}
+        ATTEMPT3_OUTCOME: ${{ steps.claude-run-3.outcome || '' }}
+        SCAN_NUM_TURNS: ${{ steps.scan-logs.outputs.num_turns }}
+        SCAN_IS_ERROR: ${{ steps.scan-logs.outputs.is_error }}
+        SCAN_HAS_ERROR_FINDINGS: ${{ steps.scan-logs.outputs.has_error_findings }}
+        SCAN_FINDINGS_SUMMARY: ${{ steps.scan-logs.outputs.findings_summary }}
+        MAX_TURNS_INPUT: ${{ inputs.max-turns }}
+      run: |
+        # Rule 1: No Claude attempt ran
+        if [[ -z "$USED_ATTEMPT" || "$USED_ATTEMPT" == "" ]]; then
+          echo "failed=true" >> "$GITHUB_OUTPUT"
+          echo "reason=claude step did not run" >> "$GITHUB_OUTPUT"
+          echo "num_turns=null" >> "$GITHUB_OUTPUT"
+          echo "is_error=null" >> "$GITHUB_OUTPUT"
+          echo "used_attempt=0" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        OUTCOME_VAR="ATTEMPT${USED_ATTEMPT}_OUTCOME"
+        OUTCOME="${!OUTCOME_VAR}"
+
+        echo "num_turns=$SCAN_NUM_TURNS" >> "$GITHUB_OUTPUT"
+        echo "is_error=$SCAN_IS_ERROR" >> "$GITHUB_OUTPUT"
+        echo "used_attempt=$USED_ATTEMPT" >> "$GITHUB_OUTPUT"
+
+        # Rule 2: Final attempt outcome is failure
+        if [[ "$OUTCOME" == "failure" ]]; then
+          echo "failed=true" >> "$GITHUB_OUTPUT"
+          echo "reason=claude-code-action step failed" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Rule 3: Execution output missing or unreadable after success
+        if [[ "$SCAN_NUM_TURNS" == "null" && "$SCAN_IS_ERROR" == "null" ]]; then
+          echo "failed=true" >> "$GITHUB_OUTPUT"
+          echo "reason=execution output unreadable: missing or empty" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Rule 4: is_error + turn limit
+        if [[ "$SCAN_IS_ERROR" == "true" && "$SCAN_NUM_TURNS" != "null" && "$SCAN_NUM_TURNS" -ge "$MAX_TURNS_INPUT" ]]; then
+          echo "failed=true" >> "$GITHUB_OUTPUT"
+          echo "reason=turn limit hit with error (turns: $SCAN_NUM_TURNS/$MAX_TURNS_INPUT)" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Rule 5: is_error
+        if [[ "$SCAN_IS_ERROR" == "true" ]]; then
+          echo "failed=true" >> "$GITHUB_OUTPUT"
+          echo "reason=claude reported is_error=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Rule 6: zero turns
+        if [[ "$SCAN_NUM_TURNS" == "0" ]]; then
+          echo "failed=true" >> "$GITHUB_OUTPUT"
+          echo "reason=claude completed 0 turns" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Rule 7: scan found error-severity findings
+        if [[ "$SCAN_HAS_ERROR_FINDINGS" == "true" ]]; then
+          echo "failed=true" >> "$GITHUB_OUTPUT"
+          echo "reason=claude log scanner found: $SCAN_FINDINGS_SUMMARY" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "failed=false" >> "$GITHUB_OUTPUT"
+        echo "reason=" >> "$GITHUB_OUTPUT"
 
     # Belt-and-suspenders: fail job if attempt 1 failed but was non-429
     # (attempts 2/3 are skipped so no step naturally fails the job)

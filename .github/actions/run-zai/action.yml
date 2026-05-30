@@ -17,6 +17,24 @@ outputs:
   used_attempt:
     description: "Successful Claude Code retry attempt number"
     value: ${{ steps.run.outputs.used_attempt }}
+  claude_failed:
+    description: "true when Claude failed hard or produced a soft-failure execution result"
+    value: ${{ steps.run.outputs.claude_failed }}
+  claude_failure_reason:
+    description: "Human-readable Claude failure reason"
+    value: ${{ steps.run.outputs.claude_failure_reason }}
+  claude_num_turns:
+    description: "Claude num_turns from execution output"
+    value: ${{ steps.run.outputs.claude_num_turns }}
+  claude_is_error:
+    description: "Claude is_error from execution output"
+    value: ${{ steps.run.outputs.claude_is_error }}
+  claude_used_attempt:
+    description: "Claude attempt number selected by the runner"
+    value: ${{ steps.run.outputs.claude_used_attempt }}
+  claude_has_findings:
+    description: "true when the Claude log scanner found any known issue pattern"
+    value: ${{ steps.run.outputs.claude_has_findings }}
 
 inputs:
   api-key:
@@ -73,6 +91,10 @@ inputs:
     description: "Override default opus model (glm-5.1)"
     required: false
     default: "glm-5.1"
+  github-token:
+    description: "GitHub token for Claude GitHub operations, log scanning, and issue reporting"
+    required: false
+    default: '${{ github.token }}'
 runs:
   using: composite
   steps:
@@ -97,4 +119,4 @@ runs:
         subagent-model: ${{ inputs.subagent-model }}
         claude-debug: ${{ inputs.claude-debug }}
         additional-permissions: ${{ inputs.additional-permissions }}
-        github-token: ${{ github.token }}
+        github-token: ${{ inputs.github-token }}
