@@ -21,6 +21,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  actions: write
 
 jobs:
   collect-targets:
@@ -135,6 +136,7 @@ jobs:
         uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
           model: 'sonnet'
           max-turns: '40'
           track-progress: 'false'
@@ -165,6 +167,12 @@ jobs:
 
             Return JSON only with concrete, repo-specific suggestions.
 
+      - name: Fail on Claude soft failure
+        if: always() && steps.metadata.outputs.should_analyze == 'true' && steps.analyze.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::Claude soft failure: ${{ steps.analyze.outputs.claude_failure_reason }}"
+          exit 1
+
       - name: Persist structured suggestions
         if: steps.metadata.outputs.should_analyze == 'true'
         env:
@@ -176,7 +184,7 @@ jobs:
         if: steps.metadata.outputs.should_analyze == 'true'
         id: planning
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
           PR_NUMBER: ${{ matrix.pr-number }}
           PR_TITLE: ${{ steps.metadata.outputs.pr_title }}
           PR_URL: ${{ steps.metadata.outputs.pr_url }}
@@ -253,3 +261,29 @@ jobs:
               issue_number: issueNumber,
               labels: ['planning-draft-open']
             });
+
+  report-failure:
+    needs: [collect-targets, improve]
+    if: failure()
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: ./.github/actions/report-failure
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: issue
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: "[pr-improve] PR improvement workflow failed"
+          labels: auto-fix,ci-failure
+          ensure-labels: auto-fix,ci-failure
+          dispatch-triage: "true"

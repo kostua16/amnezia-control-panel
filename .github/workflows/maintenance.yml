@@ -12,14 +12,22 @@ env:
   MAX_TURNS: 100
   NODE_VERSION: '22.x'
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+
 jobs:
   maintenance:
     runs-on: self-hosted
     timeout-minutes: 30
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+    outputs:
+      claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
+      claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
+      claude_num_turns: ${{ steps.claude_run.outputs.claude_num_turns }}
+      claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
+      claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
     steps:
       - id: checkout
         uses: actions/checkout@v5
@@ -38,7 +46,7 @@ jobs:
         name: Ensure maintenance labels exist
         uses: ./.github/actions/ensure-workflow-labels
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GH_PAT }}
           policy-file: .github/workflows/policy.json
           names: maintenance,security,ci-failure
 
@@ -47,6 +55,7 @@ jobs:
         uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'false'
           allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm *),Bash(gh issue:*),Bash(git *)'
@@ -70,88 +79,39 @@ jobs:
             Do NOT create issues if no findings exist in that category.
             If critical security issues (HIGH/CRITICAL severity) are found, also comment on all open PRs.
 
-      - id: detect_failure
-        name: Detect claude execution failure
-        if: always()
-        uses: actions/github-script@v8
+      - name: Fail workflow on Claude failure
+        if: steps.claude_run.outcome == 'failure' || steps.claude_run.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::Claude failure: ${{ steps.claude_run.outputs.claude_failure_reason || 'claude-code-action step failed' }}"
+          exit 1
+
+  report-failure:
+    needs: [maintenance]
+    if: failure()
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
         with:
-          script: |
-            const fs = require('fs');
-            const stepOutcome = '${{ steps.claude_run.outcome }}';
-            const executionFile = '${{ steps.claude_run.outputs.execution_file || '' }}';
-            const failedPreClaudeStep = [
-              ['ensure-workflow-labels', '${{ steps.ensure_labels.outcome }}'],
-              ['setup-environment', '${{ steps.setup_env.outcome }}'],
-            ].find(([, outcome]) => outcome === 'failure')?.[0] ?? null;
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
 
-            let numTurns = null;
-            let isError = null;
-            let parseError = null;
-
-            if (stepOutcome === 'success') {
-              if (!executionFile) {
-                parseError = 'missing execution_file output';
-              } else {
-                try {
-                  const raw = fs.readFileSync(executionFile, 'utf8');
-                  const data = JSON.parse(raw);
-                  numTurns = data.num_turns ?? null;
-                  isError = data.is_error ?? null;
-                } catch (e) {
-                  parseError = e.message;
-                }
-              }
-            }
-
-            const failed =
-              stepOutcome === 'failure' ||
-              stepOutcome === 'skipped' ||
-              (stepOutcome === 'success' && (
-                isError === true ||
-                numTurns === 0 ||
-                parseError !== null
-              ));
-
-            core.setOutput('failed', String(failed));
-
-            if (!failed) {
-              core.info(`Maintenance succeeded: ${numTurns} turns`);
-              return;
-            }
-
-            const reason = stepOutcome === 'failure'
-              ? 'claude-code-action step failed'
-              : stepOutcome === 'skipped'
-              ? `${failedPreClaudeStep ?? 'pre-Claude workflow step'} failed before Claude run`
-              : isError
-              ? 'claude reported is_error=true'
-              : numTurns === 0
-              ? 'claude completed 0 turns (model returned nothing)'
-              : `execution output unreadable: ${parseError}`;
-
-            const runUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
-            const model = 'sonnet';
-
-            const body = [
-              `## Daily Maintenance Failure`,
-              ``,
-              `**Run:** ${runUrl}`,
-              `**Reason:** ${reason}`,
-              `**Model:** ${model}`,
-              `**Turns:** ${numTurns ?? 'unknown'}`,
-              `**Step outcome:** ${stepOutcome}`,
-            ].join('\n');
-
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '[maintenance] Daily maintenance failed',
-              body,
-              labels: ['maintenance', 'ci-failure'],
-            });
-
-            core.warning(`Issue created: ${reason}`);
-
-      - name: Fail workflow on claude failure
-        if: steps.claude_run.outcome == 'failure' || steps.detect_failure.outputs.failed == 'true'
-        run: exit 1
+      - uses: ./.github/actions/report-failure
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: issue
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: "[maintenance] Daily maintenance failed"
+          labels: maintenance,ci-failure
+          ensure-labels: maintenance,ci-failure
+          dispatch-triage: "true"
+          claude-step-outcome: ${{ needs.maintenance.result }}
+          claude-turns: ${{ needs.maintenance.outputs.claude_num_turns }}
+          claude-is-error: ${{ needs.maintenance.outputs.claude_is_error }}
+          claude-used-attempt: ${{ needs.maintenance.outputs.claude_used_attempt }}
+          claude-failure-reason: ${{ needs.maintenance.outputs.claude_failure_reason }}

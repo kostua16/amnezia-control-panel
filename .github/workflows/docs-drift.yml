@@ -16,11 +16,19 @@ env:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
+  actions: write
 
 jobs:
   docs-drift:
     runs-on: self-hosted
     timeout-minutes: 30
+    outputs:
+      claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
+      claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
+      claude_num_turns: ${{ steps.claude_run.outputs.claude_num_turns }}
+      claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
+      claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -41,9 +49,11 @@ jobs:
           branch-name: claude-workflow-optimize-docs-drift-${{ github.run_id }}
 
       - name: Update docs to match implementation
+        id: claude_run
         uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           allowed-bots: 'claude[bot],github-actions[bot]'
@@ -65,12 +75,17 @@ jobs:
             - Do NOT commit, push, merge, or open a PR. The workflow handles that.
             - If there is no meaningful drift, make no file changes.
 
+      - name: Fail on Claude soft failure
+        if: always() && steps.claude_run.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::Claude soft failure: ${{ steps.claude_run.outputs.claude_failure_reason }}"
+          exit 1
+
       - uses: ./.github/actions/commit-and-push
         id: push
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'docs: reconcile documentation drift'
-          token: ${{ secrets.GH_PAT }}
 
       - name: Log no-changes result
         if: steps.push.outputs.pushed != 'true'
@@ -89,3 +104,34 @@ jobs:
 
             This PR was created by the docs-drift workflow and is intentionally manual-only under repository policy.
           draft: 'true'
+
+  report-failure:
+    needs: [docs-drift]
+    if: failure()
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: ./.github/actions/report-failure
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: issue
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: "[docs-drift] Documentation drift checker failed"
+          labels: auto-fix,ci-failure
+          ensure-labels: auto-fix,ci-failure
+          dispatch-triage: "true"
+          claude-step-outcome: ${{ needs.docs-drift.result }}
+          claude-turns: ${{ needs.docs-drift.outputs.claude_num_turns }}
+          claude-is-error: ${{ needs.docs-drift.outputs.claude_is_error }}
+          claude-used-attempt: ${{ needs.docs-drift.outputs.claude_used_attempt }}
+          claude-failure-reason: ${{ needs.docs-drift.outputs.claude_failure_reason }}

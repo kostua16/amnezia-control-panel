@@ -16,11 +16,19 @@ env:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
+  actions: write
 
 jobs:
   audit-fix:
     runs-on: self-hosted
     timeout-minutes: 60
+    outputs:
+      claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
+      claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
+      claude_num_turns: ${{ steps.claude_run.outputs.claude_num_turns }}
+      claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
+      claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -43,9 +51,11 @@ jobs:
           branch-name: claude-workflow-optimize-audit-fix-${{ github.run_id }}
 
       - name: Audit repository and apply targeted fixes
+        id: claude_run
         uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           allowed-bots: 'claude[bot],github-actions[bot]'
@@ -61,12 +71,17 @@ jobs:
             - Keep changes reviewable; avoid broad refactors unless they are directly required by the audit finding.
             - If no worthwhile fixes are identified, make no file changes.
 
+      - name: Fail on Claude soft failure
+        if: always() && steps.claude_run.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::Claude soft failure: ${{ steps.claude_run.outputs.claude_failure_reason }}"
+          exit 1
+
       - uses: ./.github/actions/commit-and-push
         id: push
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix(audit): address autonomous audit findings'
-          token: ${{ secrets.GH_PAT }}
 
       - name: Log no-changes result
         if: steps.push.outputs.pushed != 'true'
@@ -85,3 +100,34 @@ jobs:
 
             This PR is intentionally manual-only under repository policy and should be reviewed before merge.
           draft: 'true'
+
+  report-failure:
+    needs: [audit-fix]
+    if: failure()
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: ./.github/actions/report-failure
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: issue
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: "[audit-fix] Autonomous audit-fix workflow failed"
+          labels: auto-fix,ci-failure
+          ensure-labels: auto-fix,ci-failure
+          dispatch-triage: "true"
+          claude-step-outcome: ${{ needs.audit-fix.result }}
+          claude-turns: ${{ needs.audit-fix.outputs.claude_num_turns }}
+          claude-is-error: ${{ needs.audit-fix.outputs.claude_is_error }}
+          claude-used-attempt: ${{ needs.audit-fix.outputs.claude_used_attempt }}
+          claude-failure-reason: ${{ needs.audit-fix.outputs.claude_failure_reason }}
