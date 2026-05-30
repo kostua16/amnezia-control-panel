@@ -44,6 +44,26 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Ensure minimum disk space
+      shell: bash
+      run: |
+        set -euo pipefail
+        REQUIRED_MB=1024
+        available_kb=$(df --output=avail / | tail -1 | tr -d ' ')
+        available_mb=$((available_kb / 1024))
+        echo "Available disk space: ${available_mb} MB"
+
+        if [ "$available_mb" -lt "$REQUIRED_MB" ]; then
+          echo "Low disk space (${available_mb} MB < ${REQUIRED_MB} MB). Cleaning..."
+          npm cache clean --force 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP"/* 2>/dev/null || true
+          docker system prune -af --volumes 2>/dev/null || true
+
+          available_kb=$(df --output=avail / | tail -1 | tr -d ' ')
+          available_mb=$((available_kb / 1024))
+          echo "Available disk space after cleanup: ${available_mb} MB"
+        fi
+
     - uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
