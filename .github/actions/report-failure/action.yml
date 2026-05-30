@@ -57,6 +57,75 @@ inputs:
   claude-failure-reason:
     description: 'Pre-computed human-readable Claude failure reason'
     required: false
+  claude-duration-ms:
+    description: 'Claude execution duration in milliseconds'
+    required: false
+  claude-duration-sec:
+    description: 'Claude execution duration in seconds'
+    required: false
+  claude-total-cost:
+    description: 'Claude total cost in USD'
+    required: false
+  claude-model:
+    description: 'Claude model used by the run'
+    required: false
+  claude-turns-budget-pct:
+    description: 'Percent of max turns used'
+    required: false
+  claude-cost-per-turn:
+    description: 'Claude cost per turn'
+    required: false
+  claude-duration-per-turn-ms:
+    description: 'Claude duration per turn in milliseconds'
+    required: false
+  claude-num-tool-calls:
+    description: 'Total Claude tool calls'
+    required: false
+  claude-tool-breakdown:
+    description: 'Tool invocation counts as JSON'
+    required: false
+  claude-num-failed-tool-calls:
+    description: 'Failed Claude tool result count'
+    required: false
+  claude-num-rejected-tool-calls:
+    description: 'Rejected Claude tool call count'
+    required: false
+  claude-rejected-tools-list:
+    description: 'Rejected/disallowed Claude tools as JSON array'
+    required: false
+  claude-denial-rate:
+    description: 'Rejected tool call percentage'
+    required: false
+  claude-read-files-count:
+    description: 'Unique files read by Claude Read tool'
+    required: false
+  claude-read-files-list:
+    description: 'Unique files read by Claude Read tool as JSON array'
+    required: false
+  claude-edit-files-count:
+    description: 'Unique files edited by Claude edit/write tools'
+    required: false
+  claude-edit-files-list:
+    description: 'Unique files edited by Claude edit/write tools as JSON array'
+    required: false
+  claude-changed-files-count:
+    description: 'Git changed file count after Claude run'
+    required: false
+  claude-changed-files-list:
+    description: 'Git changed files after Claude run as JSON array'
+    required: false
+  claude-action-error:
+    description: 'Action-level Claude failure error when available'
+    required: false
+  claude-error-messages:
+    description: 'Sanitized Claude error messages as JSON array'
+    required: false
+  claude-last-output:
+    description: 'Sanitized capped Claude SDK output excerpt'
+    required: false
+  claude-metrics-json:
+    description: 'All parsed Claude metrics as compact JSON'
+    required: false
 
 runs:
   using: composite
@@ -97,6 +166,7 @@ runs:
       with:
         github-token: ${{ inputs.github-token }}
         script: |
+          const { parseClaudeExecution } = require('./.github/workflows/scripts/parse-claude-execution.cjs');
           const jobs = await github.rest.actions.listJobsForWorkflowRun({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -105,6 +175,7 @@ runs:
           const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure');
           const failedSteps = [];
           const logSnippets = [];
+          let detectedClaudeMetrics = null;
           for (const job of failedJobs) {
             const steps = (job.steps || []).filter(s => s.conclusion === 'failure');
             for (const step of steps) {
@@ -118,12 +189,25 @@ runs:
               });
               const raw = typeof logsResp.data === 'string' ? logsResp.data : String(logsResp.data);
               logSnippets.push({ name: job.name, log: raw.slice(-3000) });
+              const parsed = parseClaudeExecution({
+                logText: raw,
+                outcome: job.conclusion || 'failure',
+              });
+              const hasClaudeSignal = parsed.actionError ||
+                parsed.errorMessages.length > 0 ||
+                parsed.numTurns !== null ||
+                parsed.modelUsed ||
+                parsed.lastOutput;
+              if (!detectedClaudeMetrics && hasClaudeSignal) {
+                detectedClaudeMetrics = parsed;
+              }
             } catch (e) {
               logSnippets.push({ name: job.name, log: `(log unavailable: ${e.message})` });
             }
           }
           core.setOutput('failed_steps', JSON.stringify(failedSteps));
           core.setOutput('log_snippets', JSON.stringify(logSnippets));
+          core.setOutput('detected_claude_metrics', JSON.stringify(detectedClaudeMetrics || {}));
 
     - name: Create issue or comment
       uses: actions/github-script@v8
@@ -142,14 +226,39 @@ runs:
         RETRY_COMMAND: ${{ inputs.retry-command }}
         FAILED_STEPS: ${{ steps.collect.outputs.failed_steps }}
         LOG_SNIPPETS: ${{ steps.collect.outputs.log_snippets }}
+        DETECTED_CLAUDE_METRICS: ${{ steps.collect.outputs.detected_claude_metrics }}
         CLAUDE_STEP_OUTCOME: ${{ inputs.claude-step-outcome }}
         CLAUDE_TURNS: ${{ inputs.claude-turns }}
         CLAUDE_IS_ERROR: ${{ inputs.claude-is-error }}
         CLAUDE_USED_ATTEMPT: ${{ inputs.claude-used-attempt }}
         CLAUDE_FAILURE_REASON: ${{ inputs.claude-failure-reason }}
+        CLAUDE_DURATION_MS: ${{ inputs.claude-duration-ms }}
+        CLAUDE_DURATION_SEC: ${{ inputs.claude-duration-sec }}
+        CLAUDE_TOTAL_COST: ${{ inputs.claude-total-cost }}
+        CLAUDE_MODEL: ${{ inputs.claude-model }}
+        CLAUDE_TURNS_BUDGET_PCT: ${{ inputs.claude-turns-budget-pct }}
+        CLAUDE_COST_PER_TURN: ${{ inputs.claude-cost-per-turn }}
+        CLAUDE_DURATION_PER_TURN_MS: ${{ inputs.claude-duration-per-turn-ms }}
+        CLAUDE_NUM_TOOL_CALLS: ${{ inputs.claude-num-tool-calls }}
+        CLAUDE_TOOL_BREAKDOWN: ${{ inputs.claude-tool-breakdown }}
+        CLAUDE_NUM_FAILED_TOOL_CALLS: ${{ inputs.claude-num-failed-tool-calls }}
+        CLAUDE_NUM_REJECTED_TOOL_CALLS: ${{ inputs.claude-num-rejected-tool-calls }}
+        CLAUDE_REJECTED_TOOLS_LIST: ${{ inputs.claude-rejected-tools-list }}
+        CLAUDE_DENIAL_RATE: ${{ inputs.claude-denial-rate }}
+        CLAUDE_READ_FILES_COUNT: ${{ inputs.claude-read-files-count }}
+        CLAUDE_READ_FILES_LIST: ${{ inputs.claude-read-files-list }}
+        CLAUDE_EDIT_FILES_COUNT: ${{ inputs.claude-edit-files-count }}
+        CLAUDE_EDIT_FILES_LIST: ${{ inputs.claude-edit-files-list }}
+        CLAUDE_CHANGED_FILES_COUNT: ${{ inputs.claude-changed-files-count }}
+        CLAUDE_CHANGED_FILES_LIST: ${{ inputs.claude-changed-files-list }}
+        CLAUDE_ACTION_ERROR: ${{ inputs.claude-action-error }}
+        CLAUDE_ERROR_MESSAGES: ${{ inputs.claude-error-messages }}
+        CLAUDE_LAST_OUTPUT: ${{ inputs.claude-last-output }}
+        CLAUDE_METRICS_JSON: ${{ inputs.claude-metrics-json }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
+          const { renderClaudeExecutionSection } = require('./.github/workflows/scripts/render-claude-report.cjs');
           const mode = process.env.MODE;
           const autoFixRunUrl = process.env.AUTO_FIX_RUN_URL;
           const ciRunUrl = process.env.CI_RUN_URL || '';
@@ -177,23 +286,42 @@ runs:
               ).join('\n\n')
             : '_No logs available_';
 
-          // Build Claude Execution section if any Claude metadata is provided
-          const claudeOutcome = process.env.CLAUDE_STEP_OUTCOME || '';
-          const claudeTurns = process.env.CLAUDE_TURNS || '';
-          const claudeIsError = process.env.CLAUDE_IS_ERROR || '';
-          const claudeAttempt = process.env.CLAUDE_USED_ATTEMPT || '';
-          const claudeReason = process.env.CLAUDE_FAILURE_REASON || '';
-          const hasClaudeInfo = claudeOutcome || claudeTurns || claudeIsError || claudeAttempt || claudeReason;
-          const claudeSection = hasClaudeInfo ? [
-            '',
-            '### Claude Execution',
-            `- **Outcome:** ${claudeOutcome || 'N/A'}`,
-            `- **Attempt:** ${claudeAttempt || 'N/A'}`,
-            `- **Turns:** ${claudeTurns || 'N/A'}`,
-            `- **Error:** ${claudeIsError || 'N/A'}`,
-            `- **Reason:** ${claudeReason || 'N/A'}`,
-            '',
-          ].join('\n') : '';
+          const claudeInput = {
+            claudeMetricsJson: process.env.CLAUDE_METRICS_JSON || process.env.DETECTED_CLAUDE_METRICS || '',
+          };
+          const envToMetric = {
+            CLAUDE_STEP_OUTCOME: 'claudeStepOutcome',
+            CLAUDE_TURNS: 'claudeTurns',
+            CLAUDE_IS_ERROR: 'claudeIsError',
+            CLAUDE_USED_ATTEMPT: 'claudeUsedAttempt',
+            CLAUDE_FAILURE_REASON: 'claudeFailureReason',
+            CLAUDE_DURATION_MS: 'claudeDurationMs',
+            CLAUDE_DURATION_SEC: 'claudeDurationSec',
+            CLAUDE_TOTAL_COST: 'claudeTotalCostUsd',
+            CLAUDE_MODEL: 'claudeModelUsed',
+            CLAUDE_TURNS_BUDGET_PCT: 'claudeTurnsBudgetPct',
+            CLAUDE_COST_PER_TURN: 'claudeCostPerTurn',
+            CLAUDE_DURATION_PER_TURN_MS: 'claudeDurationPerTurnMs',
+            CLAUDE_NUM_TOOL_CALLS: 'claudeNumToolCalls',
+            CLAUDE_TOOL_BREAKDOWN: 'claudeToolBreakdown',
+            CLAUDE_NUM_FAILED_TOOL_CALLS: 'claudeNumFailedToolCalls',
+            CLAUDE_NUM_REJECTED_TOOL_CALLS: 'claudeNumRejectedToolCalls',
+            CLAUDE_REJECTED_TOOLS_LIST: 'claudeRejectedToolsList',
+            CLAUDE_DENIAL_RATE: 'claudeDenialRate',
+            CLAUDE_READ_FILES_COUNT: 'claudeReadFilesCount',
+            CLAUDE_READ_FILES_LIST: 'claudeReadFilesList',
+            CLAUDE_EDIT_FILES_COUNT: 'claudeEditFilesCount',
+            CLAUDE_EDIT_FILES_LIST: 'claudeEditFilesList',
+            CLAUDE_CHANGED_FILES_COUNT: 'claudeChangedFilesCount',
+            CLAUDE_CHANGED_FILES_LIST: 'claudeChangedFilesList',
+            CLAUDE_ACTION_ERROR: 'claudeActionError',
+            CLAUDE_ERROR_MESSAGES: 'claudeErrorMessages',
+            CLAUDE_LAST_OUTPUT: 'claudeLastOutput',
+          };
+          for (const [envName, metricName] of Object.entries(envToMetric)) {
+            if (process.env[envName]) claudeInput[metricName] = process.env[envName];
+          }
+          const claudeSection = renderClaudeExecutionSection(claudeInput);
 
           if (mode === 'comment') {
             const issueNumber = Number(process.env.ISSUE_NUMBER);

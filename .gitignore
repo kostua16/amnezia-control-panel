@@ -91,3 +91,7 @@ data/geoip/geoip.dat.tmp
 .claude/gsd-install-state.json
 .claude/gsd-migration-journal/
 .claude/agents/gsd-*
+
+
+# Temporary files
+agent-reports/

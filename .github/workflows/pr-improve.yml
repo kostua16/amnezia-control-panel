@@ -288,3 +288,4 @@ jobs:
           labels: auto-fix,ci-failure
           ensure-labels: auto-fix,ci-failure
           dispatch-triage: "true"
+          claude-step-outcome: ${{ needs.improve.result }}

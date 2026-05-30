@@ -332,6 +332,13 @@ jobs:
     timeout-minutes: 30
     needs: [collect-issues]
     if: needs.collect-issues.outputs.has-actionable == 'true'
+    outputs:
+      claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
+      claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
+      claude_num_turns: ${{ steps.claude_run.outputs.claude_num_turns }}
+      claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
+      claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
+      claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     env:
       GH_TOKEN: ${{ secrets.GH_PAT }}
     steps:
@@ -346,7 +353,8 @@ jobs:
           install-gsd: 'true'
           install-rtk: 'true'
 
-      - uses: ./.github/actions/run-zai
+      - id: claude_run
+        uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           model: 'sonnet'
@@ -487,3 +495,9 @@ jobs:
           labels: auto-fix,ci-failure
           ensure-labels: auto-fix,ci-failure
           dispatch-triage: 'true'
+          claude-step-outcome: ${{ needs.analyze-and-act.result }}
+          claude-turns: ${{ needs.analyze-and-act.outputs.claude_num_turns }}
+          claude-is-error: ${{ needs.analyze-and-act.outputs.claude_is_error }}
+          claude-used-attempt: ${{ needs.analyze-and-act.outputs.claude_used_attempt }}
+          claude-failure-reason: ${{ needs.analyze-and-act.outputs.claude_failure_reason }}
+          claude-metrics-json: ${{ needs.analyze-and-act.outputs.claude_metrics_json }}

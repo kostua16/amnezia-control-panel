@@ -17,6 +17,108 @@ outputs:
   used_attempt:
     description: "Successful Claude Code retry attempt number"
     value: ${{ steps.run.outputs.used_attempt }}
+  last_attempt:
+    description: "Last Claude Code attempt that actually ran"
+    value: ${{ steps.run.outputs.last_attempt }}
+  last_attempt_outcome:
+    description: "Outcome of the last Claude Code attempt that actually ran"
+    value: ${{ steps.run.outputs.last_attempt_outcome }}
+  last_execution_file:
+    description: "Execution file from the last Claude Code attempt that actually ran"
+    value: ${{ steps.run.outputs.last_execution_file }}
+  last_session_id:
+    description: "Session id from the last Claude Code attempt that actually ran"
+    value: ${{ steps.run.outputs.last_session_id }}
+  last_structured_output:
+    description: "Structured output from the last Claude Code attempt that actually ran"
+    value: ${{ steps.run.outputs.last_structured_output }}
+  claude_failed:
+    description: "true when Claude failed hard or produced a soft-failure execution result"
+    value: ${{ steps.run.outputs.claude_failed }}
+  claude_failure_reason:
+    description: "Human-readable Claude failure reason"
+    value: ${{ steps.run.outputs.claude_failure_reason }}
+  claude_num_turns:
+    description: "Claude num_turns from execution output"
+    value: ${{ steps.run.outputs.claude_num_turns }}
+  claude_is_error:
+    description: "Claude is_error from execution output"
+    value: ${{ steps.run.outputs.claude_is_error }}
+  claude_used_attempt:
+    description: "Claude attempt number selected by the runner"
+    value: ${{ steps.run.outputs.claude_used_attempt }}
+  claude_has_findings:
+    description: "true when the Claude log scanner found any known issue pattern"
+    value: ${{ steps.run.outputs.claude_has_findings }}
+  claude_duration_ms:
+    description: "Claude execution duration in milliseconds"
+    value: ${{ steps.run.outputs.claude_duration_ms }}
+  claude_duration_sec:
+    description: "Claude execution duration in seconds"
+    value: ${{ steps.run.outputs.claude_duration_sec }}
+  claude_total_cost_usd:
+    description: "Claude total cost in USD"
+    value: ${{ steps.run.outputs.claude_total_cost_usd }}
+  claude_model_used:
+    description: "Claude model used by the run"
+    value: ${{ steps.run.outputs.claude_model_used }}
+  claude_turns_budget_pct:
+    description: "Percent of max turns used"
+    value: ${{ steps.run.outputs.claude_turns_budget_pct }}
+  claude_cost_per_turn:
+    description: "Claude cost per turn"
+    value: ${{ steps.run.outputs.claude_cost_per_turn }}
+  claude_duration_per_turn_ms:
+    description: "Claude duration per turn in milliseconds"
+    value: ${{ steps.run.outputs.claude_duration_per_turn_ms }}
+  claude_num_tool_calls:
+    description: "Total Claude tool calls"
+    value: ${{ steps.run.outputs.claude_num_tool_calls }}
+  claude_tool_breakdown:
+    description: "Tool invocation counts as JSON"
+    value: ${{ steps.run.outputs.claude_tool_breakdown }}
+  claude_num_failed_tool_calls:
+    description: "Failed Claude tool result count"
+    value: ${{ steps.run.outputs.claude_num_failed_tool_calls }}
+  claude_num_rejected_tool_calls:
+    description: "Rejected Claude tool call count"
+    value: ${{ steps.run.outputs.claude_num_rejected_tool_calls }}
+  claude_rejected_tools_list:
+    description: "Rejected/disallowed Claude tools as JSON array"
+    value: ${{ steps.run.outputs.claude_rejected_tools_list }}
+  claude_denial_rate:
+    description: "Rejected tool call percentage"
+    value: ${{ steps.run.outputs.claude_denial_rate }}
+  claude_read_files_count:
+    description: "Unique files read by Claude Read tool"
+    value: ${{ steps.run.outputs.claude_read_files_count }}
+  claude_read_files_list:
+    description: "Unique files read by Claude Read tool as JSON array"
+    value: ${{ steps.run.outputs.claude_read_files_list }}
+  claude_edit_files_count:
+    description: "Unique files edited by Claude edit/write tools"
+    value: ${{ steps.run.outputs.claude_edit_files_count }}
+  claude_edit_files_list:
+    description: "Unique files edited by Claude edit/write tools as JSON array"
+    value: ${{ steps.run.outputs.claude_edit_files_list }}
+  claude_changed_files_count:
+    description: "Git changed file count after Claude run"
+    value: ${{ steps.run.outputs.claude_changed_files_count }}
+  claude_changed_files_list:
+    description: "Git changed files after Claude run as JSON array"
+    value: ${{ steps.run.outputs.claude_changed_files_list }}
+  claude_action_error:
+    description: "Action-level Claude failure error when available"
+    value: ${{ steps.run.outputs.claude_action_error }}
+  claude_error_messages:
+    description: "Sanitized Claude error messages as JSON array"
+    value: ${{ steps.run.outputs.claude_error_messages }}
+  claude_last_output:
+    description: "Sanitized capped Claude SDK output excerpt"
+    value: ${{ steps.run.outputs.claude_last_output }}
+  claude_metrics_json:
+    description: "All parsed Claude metrics as compact JSON"
+    value: ${{ steps.run.outputs.claude_metrics_json }}
 
 inputs:
   api-key:
@@ -57,6 +159,10 @@ inputs:
     description: "Claude debug"
     required: false
     default: "false"
+  claude-full-output:
+    description: "Show full Claude SDK output"
+    required: false
+    default: "true"
   additional-permissions:
     description: "Additional GitHub permissions for the App token"
     required: false
@@ -83,4 +189,5 @@ runs:
         system-prompt: ${{ inputs.system-prompt }}
         json-schema: ${{ inputs.json-schema }}
         claude-debug: ${{ inputs.claude-debug }}
+        claude-full-output: ${{ inputs.claude-full-output }}
         additional-permissions: ${{ inputs.additional-permissions }}
