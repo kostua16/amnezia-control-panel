@@ -2,6 +2,16 @@
 
 This document records the safer implementation shape for richer Claude/ZAI workflow reporting.
 
+## Status
+
+- **Done:** Structured-first parser and sanitized log fallback.
+- **Done:** Shared Claude report renderer.
+- **Done:** Last-attempt tracking and improved issue #128 failure context.
+- **Done:** `claude-full-output` control with current private-repo default `true`.
+- **Done:** Metrics outputs and `claude_metrics_json` propagation through shared actions and workflow report paths.
+- **Done:** Parser/report tests, `actionlint`, `npm test`, `npm run lint`, and `git diff --check`.
+- **Not done:** Live manual dispatch verification for `pr-improve`, `maintenance`, or `audit-fix`.
+
 ## Source Order
 
 Metrics are structured-first:

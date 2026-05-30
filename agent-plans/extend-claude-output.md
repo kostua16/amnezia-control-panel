@@ -12,11 +12,15 @@ Claude Code CI runs currently expose only 4 metrics (`num_turns`, `is_error`, `f
 
 ### Step 1: Enable `show_full_output` in `run-claude-params/action.yml`
 
+**Status: Done.** Implemented as configurable `claude-full-output` with private-repo default `true`, plus `claude-debug` override.
+
 Change `show_full_output: ${{ inputs.claude-debug || false }}` to `show_full_output: true` in all 3 attempt blocks. This makes all Claude SDK output (tool calls, results, errors) visible in the job log.
 
 **Files:** `.github/actions/run-claude-params/action.yml` (lines 163, 242, 321)
 
 ### Step 2: Extend `scan-claude-logs` step — extract all metrics + error context
+
+**Status: Done.** Implemented through structured-first parser `.github/workflows/scripts/parse-claude-execution.cjs`; logs are fallback/enrichment.
 
 Current: reads `num_turns`, `is_error`, `permission_denials_count` from execution JSON.
 
@@ -52,6 +56,8 @@ All written to `GITHUB_OUTPUT` and included in the `RESULT` JSON.
 
 ### Step 3: Improve `claude-health` failure reason
 
+**Status: Done.** Health normalization now uses last-attempt state plus action errors and execution context.
+
 Current failure reasons are generic ("claude-code-action step failed", "claude step did not run"). Improve to:
 
 1. If `claude_action_error` is non-empty, use it as the reason
@@ -63,6 +69,8 @@ This directly addresses issue #128 — the failure reason will now contain the a
 
 ### Step 4: Add `collect-file-stats` step
 
+**Status: Done.** Added `collect-file-stats`, including tracked diffs and untracked files.
+
 New step after `select-outputs`, runs with `if: always()`:
 ```
 git diff --name-only HEAD → changed_files_list
@@ -71,9 +79,13 @@ git diff --stat HEAD → num_changed_files
 
 ### Step 5: Extend `claude-health` step pass-through
 
+**Status: Done.** New metrics are exposed from `scan-logs`; health passes normalized attempt, turn, error, and reason data.
+
 Pass through all new outputs from `scan-logs` and `collect-file-stats` steps.
 
 ### Step 6: Add new action outputs
+
+**Status: Done.** Added runtime, tool, file, error-context, last-attempt, and compact `claude_metrics_json` outputs; forwarded through wrappers.
 
 Add to `run-claude-params/action.yml` outputs:
 | Output | Source |
@@ -102,6 +114,8 @@ Forward these through `run-claude/action.yml` and `run-zai/action.yml`.
 
 ### Step 7: Update issue tracker comment in `scan-claude-logs`
 
+**Status: Done.** Rolling health issue comments now use shared Claude execution report rendering.
+
 Replace current 2-line metadata (`_Attempt: X/3 | Turns: Y/Z | timestamp_`) with a detailed stats section:
 
 ```
@@ -122,6 +136,8 @@ Replace current 2-line metadata (`_Attempt: X/3 | Turns: Y/Z | timestamp_`) with
 ```
 
 ### Step 8: Overhaul `report-failure/action.yml`
+
+**Status: Done.** Added metric inputs, shared rendering, and failed-job log fallback for matrix jobs.
 
 Add new inputs for ALL metrics + error context. Replace the current 5-line Claude Execution section with a comprehensive report that mirrors (and extends) the Step 7 tracker comment:
 
@@ -180,6 +196,8 @@ This makes every failure issue self-contained — no need to click through to th
 
 ### Step 9: Update consumer workflows
 
+**Status: Done.** Updated all `run-zai`/`report-failure` consumers, not only the original five workflows.
+
 Update 5 workflows to:
 - Add new outputs to job `outputs:` blocks
 - Pass new metrics to `report-failure` action calls
@@ -192,6 +210,8 @@ Update 5 workflows to:
 - `.github/workflows/suggest-improvements.yml`
 
 ### Step 10: Write metrics plan document
+
+**Status: Done.** Created `agent-plans/extend_claude_metrics_plan.md` instead of `docs/extend_claude_metrics_plan.md`.
 
 Create `docs/extend_claude_metrics_plan.md` documenting:
 - All metrics collected and their sources
@@ -217,16 +237,18 @@ Create `docs/extend_claude_metrics_plan.md` documenting:
 
 ## Verification
 
-1. Run `audit-fix` or `maintenance` workflow manually
-2. Check action outputs: `gh run view <id>` — verify new outputs present
-3. Verify issue tracker comment shows the full stats table
-4. Verify `report-failure` renders detailed metrics + error context (not generic "non-rate-limit error")
-5. Run end-to-end and confirm new outputs propagate through all layers
-6. Check that `show_full_output` doesn't leak secrets (API keys are masked by GitHub, but review log output)
+- [ ] Run `audit-fix` or `maintenance` workflow manually.
+- [ ] Check action outputs: `gh run view <id>` — verify new outputs present.
+- [ ] Verify issue tracker comment shows the full stats table in a live run.
+- [x] Verify `report-failure` renders detailed metrics + error context via automated test coverage.
+- [x] Confirm new outputs propagate through YAML/action wiring with `actionlint`.
+- [x] Check that full output is configurable and sanitized report excerpts are capped/redacted.
 
 ---
 
 ## Extension Addendum: Safer Structured-First Implementation
+
+**Status: Done.** Implemented in commit `a373942`.
 
 The implementation should keep the richer metrics goal above, but use a safer source order:
 
