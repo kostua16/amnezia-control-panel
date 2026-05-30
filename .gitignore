@@ -84,3 +84,10 @@ _cacache/
 # app data
 data/geoip/geoip.dat
 data/geoip/geoip.dat.tmp
+
+
+# GSD
+.claude/.gsd-profile
+.claude/gsd-install-state.json
+.claude/gsd-migration-journal/
+.claude/agents/gsd-*

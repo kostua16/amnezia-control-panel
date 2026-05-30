@@ -1,0 +1,43 @@
+name: Cleanup Self-Hosted Runner
+on:
+  workflow_dispatch:
+    inputs:
+      clear_npm_cache:
+        description: 'Clear npm cache (~/.npm)'
+        required: true
+        type: boolean
+        default: true
+      clear_next_cache:
+        description: 'Clear Next.js cache (.next/cache)'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  cleanup:
+    runs-on: self-hosted
+    steps:
+      - name: Disk Space Before Cleanup
+        run: df -h
+
+      - name: Clear npm cache
+        if: ${{ inputs.clear_npm_cache == true }}
+        run: |
+          echo "Cleaning npm cache..."
+          rm -rf ~/.npm/_cacache
+          npm cache clean --force || true
+
+      - name: Clear Next.js cache
+        if: ${{ inputs.clear_next_cache == true }}
+        run: |
+          echo "Cleaning Next.js cache..."
+          rm -rf ${{ github.workspace }}/.next/cache || true
+
+      - name: Docker system prune
+        run: |
+          echo "Running docker system prune..."
+          docker system prune -af --volumes || true
+        continue-on-error: true
+
+      - name: Disk Space After Cleanup
+        run: df -h

@@ -61,3 +61,9 @@ AGENTS.md
 CLAUDE.md
 docs
 scripts/dev.cjs
+
+# GSD
+.claude/.gsd-profile
+.claude/gsd-install-state.json
+.claude/gsd-migration-journal/
+.claude/agents/gsd-*
