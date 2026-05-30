@@ -182,6 +182,7 @@ jobs:
         if: steps.failure.outputs.fixable == 'true' && steps.prettier.outputs.prettier_only != 'true'
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
           allowed-bots: 'claude[bot],github-actions[bot]'
           max-turns: ${{ env.MAX_TURNS }}
           prompt: ${{ steps.prompt.outputs.content }}

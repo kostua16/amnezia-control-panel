@@ -117,12 +117,19 @@ runs:
         fi
 
         if [[ "${#label_args[@]}" -gt 0 ]]; then
-          if ! gh "${create_args[@]}" "${label_args[@]}" >/dev/null 2>/tmp/upsert-pr.err; then
-            echo "::warning::Pull request creation with labels failed, retrying without labels"
-            gh "${create_args[@]}" >/dev/null
+          label_err=$(gh "${create_args[@]}" "${label_args[@]}" 2>&1) && create_rc=0 || create_rc=$?
+          if [[ "$create_rc" -ne 0 ]]; then
+            echo "::warning::PR creation with labels failed: ${label_err%%$'\n'*}. Retrying without labels."
+            if ! gh "${create_args[@]}" >/dev/null 2>&1; then
+              echo "::error::Pull request creation failed (with and without labels)"
+              exit 1
+            fi
           fi
         else
-          gh "${create_args[@]}" >/dev/null
+          if ! gh "${create_args[@]}" >/dev/null 2>&1; then
+            echo "::error::Pull request creation failed"
+            exit 1
+          fi
         fi
 
         created_json=$(gh pr list \
@@ -131,6 +138,11 @@ runs:
           --head "$HEAD_BRANCH" \
           --json number,url \
           --limit 1)
+
+        if [[ "$(jq 'length' <<<"$created_json")" -eq 0 ]]; then
+          echo "::error::Post-create PR query returned no results for ${HEAD_BRANCH} -> ${BASE_BRANCH}"
+          exit 1
+        fi
 
         pr_number=$(jq -r '.[0].number' <<<"$created_json")
         pr_url=$(jq -r '.[0].url' <<<"$created_json")

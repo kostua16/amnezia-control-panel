@@ -171,6 +171,7 @@ jobs:
       - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
           max-turns: '${{ env.MAX_TURNS }}'
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(echo:*)'
           prompt: |
@@ -213,8 +214,6 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): hourly optimization pass'
-          token: ${{ secrets.GH_PAT }}
-
       - name: Build optimization PR body
         id: pr-body
         if: steps.push.outputs.pushed == 'true'

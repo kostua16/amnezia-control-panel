@@ -89,6 +89,7 @@ jobs:
       - uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
           max-turns: ${{ env.MAX_TURNS }}
           track-progress: 'true'
           allowed-bots: 'claude[bot],github-actions[bot]'
@@ -126,7 +127,6 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix: resolve #${{ github.event.issue.number }}'
-          token: ${{ secrets.GH_PAT }}
 
       - name: Build fix PR body
         if: steps.push.outputs.pushed == 'true'

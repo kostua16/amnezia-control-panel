@@ -8,9 +8,6 @@ inputs:
   commit-message:
     description: "Commit message"
     default: "fix(ci): auto-fix CI failures"
-  token:
-    description: "GitHub token for push auth (unused — relies on checkout's retained auth)"
-    required: false
 
 outputs:
   pushed:
