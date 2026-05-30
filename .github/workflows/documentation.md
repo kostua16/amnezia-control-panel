@@ -9,7 +9,7 @@ Settings -> Secrets and variables -> Actions -> **New repository secret**
 | Secret | Used by | Description |
 |--------|---------|-------------|
 | `ZAI_API_KEY` | `claude`, `triage`, `code-review`, `dependency-review`, `release-notes`, `maintenance`, `fix-pr`, `fix-branch`, `pr-improve`, `workflow-health-optimize` | API key for the Claude-compatible coding workflows |
-| `GH_PAT` | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
+| `GH_PAT` | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve`, `audit-fix`, `suggest-improvements`, `docs-drift`, `maintenance`, `_auto-fix-ci` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
 
 `GITHUB_TOKEN` is automatic and is sufficient for read/comment/approve operations that do not need recursive workflow triggering.
 
@@ -103,6 +103,29 @@ Always manual-only:
 - skips GSD install when `.claude/gsd-install-state.json` is present
 - falls back to pinned `@opengsd/get-shit-done-redux` version `1.1.0` only if that file is missing
 - installs pinned RTK version `0.35.0`
+
+`run-zai`:
+- accepts `github-token` (default `GITHUB_TOKEN`) and passes it to `run-claude-params`
+- exposes Claude health outputs: `claude_failed`, `claude_failure_reason`, `claude_num_turns`, `claude_is_error`, `claude_used_attempt`, `claude_has_findings`
+- modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
+
+`run-claude-params`:
+- single source of truth for Claude health normalization
+- emits normalized outputs based on execution file parsing and log scanner findings
+- 7-priority decision chain: no attempt → hard failure → missing output → turn limit + error → is_error → 0 turns → error-severity log findings
+
+`report-failure`:
+- accepts `github-token` (default `GITHUB_TOKEN`) for label, issue/comment, and triage dispatch operations
+- accepts optional Claude metadata inputs (`claude-step-outcome`, `claude-turns`, `claude-is-error`, `claude-used-attempt`, `claude-failure-reason`) rendered in a `### Claude Execution` section
+- uses resolved labels from the internal `Resolve labels` step to prevent drift
+
+`upsert-pull-request`:
+- captures stderr on labeled creation attempts, retries without labels on failure
+- exits non-zero with `::error::` if PR creation fails with and without labels
+- null-checks post-create query to prevent silent `null` outputs
+
+`commit-and-push`:
+- relies on checkout's retained auth for push; no `token` input needed
 
 ## Dry-Run Entry Points
 
