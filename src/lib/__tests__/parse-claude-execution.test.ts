@@ -43,8 +43,15 @@ describe('parseClaudeExecution', () => {
     assert.equal(metrics.durationMs, 18);
     assert.equal(metrics.durationSec, 0);
     assert.equal(metrics.totalCostUsd, 0);
-    assert.equal(metrics.actionError, 'Action failed with error: --json-schema was provided but Claude did not return structured_output. Result subtype: success');
-    assert.ok(metrics.errorMessages.some((message: string) => message.includes('--json-schema was provided')));
+    assert.equal(
+      metrics.actionError,
+      'Action failed with error: --json-schema was provided but Claude did not return structured_output. Result subtype: success',
+    );
+    assert.ok(
+      metrics.errorMessages.some((message: string) =>
+        message.includes('--json-schema was provided'),
+      ),
+    );
   });
 
   it('parses execution JSON without requiring logs', () => {
@@ -77,15 +84,32 @@ describe('parseClaudeExecution', () => {
         type: 'assistant',
         message: {
           content: [
-            { type: 'tool_use', name: 'Read', input: { file_path: 'src/a.ts' } },
-            { type: 'tool_use', name: 'Read', input: { file_path: 'src/a.ts' } },
-            { type: 'tool_use', name: 'Edit', input: { file_path: 'src/b.ts' } },
+            {
+              type: 'tool_use',
+              name: 'Read',
+              input: { file_path: 'src/a.ts' },
+            },
+            {
+              type: 'tool_use',
+              name: 'Read',
+              input: { file_path: 'src/a.ts' },
+            },
+            {
+              type: 'tool_use',
+              name: 'Edit',
+              input: { file_path: 'src/b.ts' },
+            },
             { type: 'tool_use', name: 'Bash', input: { command: 'npm test' } },
             { type: 'tool_result', is_error: true, content: 'Error: failed' },
           ],
         },
       }),
-      JSON.stringify({ type: 'result', duration_ms: 1000, num_turns: 2, total_cost_usd: 0.1 }),
+      JSON.stringify({
+        type: 'result',
+        duration_ms: 1000,
+        num_turns: 2,
+        total_cost_usd: 0.1,
+      }),
     ].join('\n');
 
     const metrics = parseClaudeExecution({
@@ -147,7 +171,10 @@ describe('parseClaudeExecution', () => {
   });
 
   it('redacts common secret-like values from log-derived text', () => {
-    assert.equal(redactSecrets('ANTHROPIC_API_KEY=sk-secret Bearer abc.def'), 'ANTHROPIC_API_KEY=[REDACTED] Bearer [REDACTED]');
+    assert.equal(
+      redactSecrets('ANTHROPIC_API_KEY=sk-secret Bearer abc.def'),
+      'ANTHROPIC_API_KEY=[REDACTED] Bearer [REDACTED]',
+    );
   });
 });
 
@@ -160,13 +187,17 @@ describe('renderClaudeExecutionSection', () => {
       claudeDurationMs: '18',
       claudeTotalCostUsd: '0',
       claudeToolBreakdown: JSON.stringify({ Read: 2, Bash: 1 }),
-      claudeActionError: 'Action failed with error: --json-schema was provided but Claude did not return structured_output. Result subtype: success',
+      claudeActionError:
+        'Action failed with error: --json-schema was provided but Claude did not return structured_output. Result subtype: success',
       claudeLastOutput: 'Running Claude Code via SDK\n"type": "result"',
     });
 
     assert.match(section, /### Claude Execution/);
     assert.match(section, /Read: 2, Bash: 1|Bash: 1, Read: 2/);
-    assert.match(section, /--json-schema was provided but Claude did not return structured_output/);
+    assert.match(
+      section,
+      /--json-schema was provided but Claude did not return structured_output/,
+    );
     assert.match(section, /Last Claude SDK output/);
   });
 });
