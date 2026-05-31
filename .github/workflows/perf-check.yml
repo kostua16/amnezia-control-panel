@@ -44,11 +44,13 @@ jobs:
 
       - name: Prepare main baseline worktree
         run: |
+          git worktree remove --force /tmp/perf-main 2>/dev/null || true
           rm -rf /tmp/perf-main
           git worktree add /tmp/perf-main origin/main
 
       - name: Build and measure main
         id: main-build
+        continue-on-error: true
         working-directory: /tmp/perf-main
         run: |
           set -euo pipefail
@@ -69,6 +71,7 @@ jobs:
         run: git worktree remove --force /tmp/perf-main || true
 
       - name: Compare and comment
+        if: always() && steps.pr-build.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_SIZE: ${{ steps.pr-build.outputs.size }}
@@ -77,6 +80,21 @@ jobs:
           MAIN_DURATION: ${{ steps.main-build.outputs.duration }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          PR_SIZE_MB=$(echo "scale=2; $PR_SIZE / 1048576" | bc)
+
+          if [ -z "$MAIN_SIZE" ] || [ -z "$MAIN_DURATION" ]; then
+            BODY="## :warning: Build Performance
+
+          | Metric | PR |
+          |--------|-----|
+          | Bundle size | ${PR_SIZE_MB}MB |
+          | Build time | ${PR_DURATION}s |
+
+          > **Note:** Main baseline build did not complete. Comparison unavailable."
+            gh pr comment "$PR_NUMBER" --body "$BODY"
+            exit 0
+          fi
+
           if [ "$MAIN_SIZE" -eq 0 ]; then MAIN_SIZE=1; fi
 
           SIZE_DIFF=$(( (PR_SIZE - MAIN_SIZE) * 100 / MAIN_SIZE ))
