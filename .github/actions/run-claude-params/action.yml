@@ -225,6 +225,10 @@ runs:
         fi
         echo "bun-path=$bun_path" >> "$GITHUB_OUTPUT"
 
+    - name: Clear Claude execution output (attempt 1)
+      shell: bash
+      run: rm -f "${RUNNER_TEMP}/claude-execution-output.json"
+
     # --- Attempt 1 ---
     - name: Run Claude Code (attempt 1)
       id: claude-run-1
@@ -273,14 +277,15 @@ runs:
             }
           }
 
-    # Check if failure is 429 rate-limit before deciding to retry
-    - name: Check for rate limit (attempt 1)
+    # Check whether a failed attempt is safe to retry.
+    - name: Check retry condition (attempt 1)
       id: check-429-1
       if: ${{ steps.claude-run-1.outcome == 'failure' }}
       shell: bash
       env:
         API_URL: ${{ inputs.api-url }}
         API_KEY: ${{ inputs.api-key }}
+        JSON_SCHEMA_ENABLED: ${{ inputs.json-schema != '' && 'true' || 'false' }}
       run: |
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
@@ -289,24 +294,44 @@ runs:
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30)
-        echo "http_code=${http_code}" >> "$GITHUB_OUTPUT"
+        is_rate_limited=false
+        should_retry=false
+        retry_reason=non_retryable
+
         if [[ "$http_code" == "429" ]]; then
-          echo "is_rate_limited=true" >> "$GITHUB_OUTPUT"
+          is_rate_limited=true
+          should_retry=true
+          retry_reason=rate_limited
           echo "::warning::Attempt 1 failed and API returned 429 (rate limited). Will retry after 2 min wait."
+        elif [[ "$JSON_SCHEMA_ENABLED" == "true" ]] && [[ -f "${RUNNER_TEMP}/claude-execution-output.json" ]] && jq -e '.. | objects | select(.type == "result" and ((.is_error // false) == false))' "${RUNNER_TEMP}/claude-execution-output.json" >/dev/null 2>&1; then
+          should_retry=true
+          retry_reason=missing_structured_output
+          echo "::warning::Attempt 1 produced a successful execution result but no structured output. Retrying once because --json-schema was requested."
         else
-          echo "is_rate_limited=false" >> "$GITHUB_OUTPUT"
-          echo "::error::Attempt 1 failed with non-rate-limit error (API probe returned HTTP ${http_code}). Skipping retries."
+          echo "::error::Attempt 1 failed with non-retryable error (API probe returned HTTP ${http_code}). Skipping retries."
         fi
+
+        {
+          echo "http_code=${http_code}"
+          echo "is_rate_limited=${is_rate_limited}"
+          echo "should_retry=${should_retry}"
+          echo "retry_reason=${retry_reason}"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Rate limit wait (attempt 1 → 2)
       if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' }}
       shell: bash
       run: sleep 120
 
+    - name: Clear Claude execution output (attempt 2)
+      if: ${{ steps.check-429-1.outputs.should_retry == 'true' }}
+      shell: bash
+      run: rm -f "${RUNNER_TEMP}/claude-execution-output.json"
+
     # --- Attempt 2 ---
     - name: Run Claude Code (attempt 2)
       id: claude-run-2
-      if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' }}
+      if: ${{ steps.check-429-1.outputs.should_retry == 'true' }}
       continue-on-error: true
       uses: anthropics/claude-code-action@v1
       env:
@@ -352,13 +377,14 @@ runs:
             }
           }
 
-    - name: Check for rate limit (attempt 2)
+    - name: Check retry condition (attempt 2)
       id: check-429-2
       if: ${{ steps.claude-run-2.outcome == 'failure' }}
       shell: bash
       env:
         API_URL: ${{ inputs.api-url }}
         API_KEY: ${{ inputs.api-key }}
+        JSON_SCHEMA_ENABLED: ${{ inputs.json-schema != '' && 'true' || 'false' }}
       run: |
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
@@ -367,24 +393,44 @@ runs:
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30)
-        echo "http_code=${http_code}" >> "$GITHUB_OUTPUT"
+        is_rate_limited=false
+        should_retry=false
+        retry_reason=non_retryable
+
         if [[ "$http_code" == "429" ]]; then
-          echo "is_rate_limited=true" >> "$GITHUB_OUTPUT"
+          is_rate_limited=true
+          should_retry=true
+          retry_reason=rate_limited
           echo "::warning::Attempt 2 failed and API returned 429 (rate limited). Final retry after 2 min wait."
+        elif [[ "$JSON_SCHEMA_ENABLED" == "true" ]] && [[ -f "${RUNNER_TEMP}/claude-execution-output.json" ]] && jq -e '.. | objects | select(.type == "result" and ((.is_error // false) == false))' "${RUNNER_TEMP}/claude-execution-output.json" >/dev/null 2>&1; then
+          should_retry=true
+          retry_reason=missing_structured_output
+          echo "::warning::Attempt 2 produced a successful execution result but no structured output. Retrying final attempt because --json-schema was requested."
         else
-          echo "is_rate_limited=false" >> "$GITHUB_OUTPUT"
-          echo "::error::Attempt 2 failed with non-rate-limit error (API probe returned HTTP ${http_code}). Skipping final retry."
+          echo "::error::Attempt 2 failed with non-retryable error (API probe returned HTTP ${http_code}). Skipping final retry."
         fi
+
+        {
+          echo "http_code=${http_code}"
+          echo "is_rate_limited=${is_rate_limited}"
+          echo "should_retry=${should_retry}"
+          echo "retry_reason=${retry_reason}"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Rate limit wait (attempt 2 → 3)
       if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' }}
       shell: bash
       run: sleep 120
 
+    - name: Clear Claude execution output (attempt 3)
+      if: ${{ steps.check-429-2.outputs.should_retry == 'true' }}
+      shell: bash
+      run: rm -f "${RUNNER_TEMP}/claude-execution-output.json"
+
     # --- Attempt 3 (final) ---
     - name: Run Claude Code (attempt 3)
       id: claude-run-3
-      if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' }}
+      if: ${{ steps.check-429-2.outputs.should_retry == 'true' }}
       uses: anthropics/claude-code-action@v1
       env:
         DISABLE_TELEMETRY: '1'
@@ -677,7 +723,7 @@ runs:
             '. + [{category:"rate_limited",severity:"error",message:"All 3 attempts rate limited",detail:"All attempts hit 429"}]')
         fi
 
-        EXTRA_ERRORS=$(echo "$ERROR_MESSAGES_JSON" | jq -c --arg action "$ACTION_ERROR" '[.[] | select(. != $action and (test("Claude Code failed with a non-rate-limit error") | not))] | .[0:3]')
+        EXTRA_ERRORS=$(echo "$ERROR_MESSAGES_JSON" | jq -c --arg action "$ACTION_ERROR" '[.[] | select(. != $action and (test("Claude Code failed with a non-(rate-limit|retryable) error") | not))] | .[0:3]')
         EXTRA_ERROR_COUNT=$(echo "$EXTRA_ERRORS" | jq 'length')
         if [[ "$EXTRA_ERROR_COUNT" -gt 0 ]]; then
           DETAIL=$(echo "$EXTRA_ERRORS" | jq -r 'join("\n")' | head -c 300 | jq -Rs .)
@@ -987,11 +1033,11 @@ runs:
         echo "failed=false" >> "$GITHUB_OUTPUT"
         echo "reason=" >> "$GITHUB_OUTPUT"
 
-    # Belt-and-suspenders: fail job if attempt 1 failed but was non-429
-    # (attempts 2/3 are skipped so no step naturally fails the job)
-    - name: Fail on non-rate-limit error
-      if: ${{ steps.claude-run-1.outcome == 'failure' && steps.check-429-1.outputs.is_rate_limited == 'false' }}
+    # Belt-and-suspenders: fail job if an early attempt failed and was not retryable
+    # (later attempts are skipped, so no Claude step naturally fails the job).
+    - name: Fail on non-retryable error
+      if: ${{ (steps.claude-run-1.outcome == 'failure' && steps.check-429-1.outputs.should_retry != 'true') || (steps.claude-run-2.outcome == 'failure' && steps.check-429-2.outputs.should_retry != 'true') }}
       shell: bash
       run: |
-        echo "::error::Claude Code failed with a non-rate-limit error. Not retrying."
+        echo "::error::Claude Code failed with a non-retryable error. Not retrying."
         exit 1
