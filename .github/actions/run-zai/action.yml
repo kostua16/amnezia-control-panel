@@ -80,6 +80,9 @@ outputs:
   claude_num_failed_tool_calls:
     description: "Failed Claude tool result count"
     value: ${{ steps.run.outputs.claude_num_failed_tool_calls }}
+  claude_failed_tool_samples:
+    description: "Capped failed Claude tool samples as JSON array"
+    value: ${{ steps.run.outputs.claude_failed_tool_samples }}
   claude_num_rejected_tool_calls:
     description: "Rejected Claude tool call count"
     value: ${{ steps.run.outputs.claude_num_rejected_tool_calls }}

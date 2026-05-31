@@ -87,6 +87,9 @@ inputs:
   claude-num-failed-tool-calls:
     description: 'Failed Claude tool result count'
     required: false
+  claude-failed-tool-samples:
+    description: 'Capped failed Claude tool samples as JSON array'
+    required: false
   claude-num-rejected-tool-calls:
     description: 'Rejected Claude tool call count'
     required: false
@@ -242,6 +245,7 @@ runs:
         CLAUDE_NUM_TOOL_CALLS: ${{ inputs.claude-num-tool-calls }}
         CLAUDE_TOOL_BREAKDOWN: ${{ inputs.claude-tool-breakdown }}
         CLAUDE_NUM_FAILED_TOOL_CALLS: ${{ inputs.claude-num-failed-tool-calls }}
+        CLAUDE_FAILED_TOOL_SAMPLES: ${{ inputs.claude-failed-tool-samples }}
         CLAUDE_NUM_REJECTED_TOOL_CALLS: ${{ inputs.claude-num-rejected-tool-calls }}
         CLAUDE_REJECTED_TOOLS_LIST: ${{ inputs.claude-rejected-tools-list }}
         CLAUDE_DENIAL_RATE: ${{ inputs.claude-denial-rate }}
@@ -312,6 +316,7 @@ runs:
             CLAUDE_NUM_TOOL_CALLS: 'claudeNumToolCalls',
             CLAUDE_TOOL_BREAKDOWN: 'claudeToolBreakdown',
             CLAUDE_NUM_FAILED_TOOL_CALLS: 'claudeNumFailedToolCalls',
+            CLAUDE_FAILED_TOOL_SAMPLES: 'claudeFailedToolSamples',
             CLAUDE_NUM_REJECTED_TOOL_CALLS: 'claudeNumRejectedToolCalls',
             CLAUDE_REJECTED_TOOLS_LIST: 'claudeRejectedToolsList',
             CLAUDE_DENIAL_RATE: 'claudeDenialRate',

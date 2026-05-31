@@ -106,19 +106,20 @@ Always manual-only:
 
 `run-zai`:
 - accepts `github-token` (default `GITHUB_TOKEN`) and passes it to `run-claude-params`
-- exposes Claude health and metrics outputs, including `claude_failed`, `claude_failure_reason`, `claude_num_turns`, `claude_is_error`, `claude_used_attempt`, `claude_has_findings`, and `claude_metrics_json`
+- exposes Claude health and metrics outputs, including `claude_failed`, `claude_failure_reason`, `claude_num_turns`, `claude_is_error`, `claude_used_attempt`, `claude_has_findings`, `claude_failed_tool_samples`, and `claude_metrics_json`
 - accepts `claude-full-output`; it defaults to `true` in this private repo but should default to `false` before public reusable workflow extraction
 - modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
 
 `run-claude-params`:
 - single source of truth for Claude health normalization
 - emits normalized outputs based on structured execution-file parsing first, then sanitized log fallback
+- includes capped failed-tool samples in `claude_metrics_json` so issues show the concrete denied or failing commands behind failed-tool counts
 - tracks the last attempted Claude run separately from the last successful run so failed attempts still produce useful diagnostics
 - decision chain: no attempt → hard failure with action error → missing output → turn limit + error → is_error → 0 turns → error-severity log findings
 
 `report-failure`:
 - accepts `github-token` (default `GITHUB_TOKEN`) for label, issue/comment, and triage dispatch operations
-- accepts optional Claude metadata and `claude_metrics_json` inputs rendered in a compact `### Claude Execution` section
+- accepts optional Claude metadata, failed-tool samples, and `claude_metrics_json` inputs rendered in a compact `### Claude Execution` section
 - parses failed job logs as a fallback so matrix jobs can still surface Claude action errors and sanitized SDK context
 - uses resolved labels from the internal `Resolve labels` step to prevent drift
 

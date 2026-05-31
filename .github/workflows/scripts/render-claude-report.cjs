@@ -55,6 +55,24 @@ function valueOrFallback(value, fallback = 'N/A') {
     : String(value);
 }
 
+function redactSecrets(value) {
+  return String(value || '')
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[REDACTED]')
+    .replace(/(Basic\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[REDACTED]')
+    .replace(
+      /((?:api[_-]?key|auth[_-]?token|access[_-]?token|github[_-]?token|password|secret)\s*[:=]\s*["']?)[^"'\s,}]+/gi,
+      '$1[REDACTED]',
+    );
+}
+
+function formatSampleText(value, fallback = 'N/A') {
+  const text = redactSecrets(valueOrFallback(value, fallback))
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text.length <= 240) return text;
+  return `${text.slice(0, 237)}...`;
+}
+
 function formatDuration(metrics) {
   if (
     metrics.durationSec !== null &&
@@ -101,6 +119,30 @@ function codeBlock(value) {
   return ['```', text.replace(/```/g, "'''"), '```'].join('\n');
 }
 
+function formatFailedToolSamples(value) {
+  const samples = asArray(value);
+  if (samples.length === 0) return '';
+
+  return samples
+    .slice(0, 5)
+    .map((sample) => {
+      if (!sample || typeof sample !== 'object') {
+        return `- ${formatSampleText(sample)}`;
+      }
+
+      const target = formatSampleText(
+        sample.command || sample.filePath || '',
+        '',
+      );
+      const targetText = target ? `: ${target}` : '';
+      const error = sample.error
+        ? `\n  Error: ${formatSampleText(sample.error)}`
+        : '';
+      return `- ${formatSampleText(sample.tool, 'unknown')} (${formatSampleText(sample.category, 'unknown')})${targetText}${error}`;
+    })
+    .join('\n');
+}
+
 function escapeTable(value) {
   return valueOrFallback(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
@@ -139,6 +181,8 @@ function normalizeMetrics(input = {}) {
     actionError: merged.claudeActionError || merged.actionError,
     errorMessages: merged.claudeErrorMessages || merged.errorMessages,
     lastOutput: merged.claudeLastOutput || merged.lastOutput,
+    failedToolSamples:
+      merged.claudeFailedToolSamples || merged.failedToolSamples,
     changedFilesList: merged.claudeChangedFilesList || merged.changedFilesList,
     rejectedToolsList:
       merged.claudeRejectedToolsList || merged.rejectedToolsList,
@@ -158,6 +202,7 @@ function hasClaudeInfo(metrics) {
     metrics.actionError,
     metrics.errorMessages,
     metrics.lastOutput,
+    metrics.failedToolSamples,
   ].some((value) => value !== null && value !== undefined && value !== '');
 }
 
@@ -225,6 +270,18 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
       '<details><summary>Rejected tools</summary>',
       '',
       codeBlock(rejectedTools.join('\n')),
+      '',
+      '</details>',
+    );
+  }
+
+  const failedToolSamples = formatFailedToolSamples(metrics.failedToolSamples);
+  if (failedToolSamples) {
+    lines.push(
+      '',
+      '<details><summary>Failed tool samples</summary>',
+      '',
+      codeBlock(failedToolSamples),
       '',
       '</details>',
     );

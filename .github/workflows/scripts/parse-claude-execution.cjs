@@ -5,6 +5,8 @@ const fs = require('fs');
 
 const MAX_LAST_OUTPUT_BYTES = 6000;
 const MAX_LAST_OUTPUT_LINES = 80;
+const MAX_FAILED_TOOL_SAMPLES = 5;
+const MAX_SAMPLE_FIELD_LENGTH = 240;
 
 function stripAnsi(value) {
   return String(value || '').replace(/\u001b\[[0-9;]*m/g, '');
@@ -97,6 +99,12 @@ function percent(numerator, denominator) {
   return Math.round((numerator / denominator) * 1000) / 10;
 }
 
+function truncateText(value, limit = MAX_SAMPLE_FIELD_LENGTH) {
+  const text = sanitizeText(value).replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit - 3)}...`;
+}
+
 function addToolCall(metrics, name, input = {}) {
   if (!name) return;
   metrics.numToolCalls += 1;
@@ -106,6 +114,65 @@ function addToolCall(metrics, name, input = {}) {
   if (name === 'Read' && filePath) metrics.readFiles.add(filePath);
   if (['Edit', 'Write', 'MultiEdit'].includes(name) && filePath)
     metrics.editFiles.add(filePath);
+}
+
+function summarizeToolInput(input = {}) {
+  const command = input.command || input.cmd;
+  const filePath = input.file_path || input.path || input.notebook_path;
+  return {
+    command: command ? truncateText(command) : undefined,
+    filePath: filePath ? truncateText(filePath) : undefined,
+  };
+}
+
+function textFromToolResultContent(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item.text === 'string') return item.text;
+        if (item && typeof item.content === 'string') return item.content;
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (content && typeof content === 'object') return JSON.stringify(content);
+  return '';
+}
+
+function categorizeToolFailure(errorText) {
+  const text = String(errorText || '');
+  if (/multiple operations/i.test(text)) {
+    return 'multi_operation_rejected';
+  }
+  if (/requires approval|permission denied|not approved/i.test(text)) {
+    return 'approval_required';
+  }
+  if (/exit code\s+\d+|process completed with exit code/i.test(text)) {
+    return 'command_exit';
+  }
+  return 'unknown_tool_error';
+}
+
+function addFailedToolSample(metrics, toolInfo = {}, errorText = '') {
+  if (metrics.failedToolSamples.length >= MAX_FAILED_TOOL_SAMPLES) return;
+
+  const error = truncateText(errorText);
+  if (!error) return;
+
+  const sample = {
+    tool: truncateText(toolInfo.tool || toolInfo.name || 'unknown', 80),
+    ...summarizeToolInput(toolInfo.input || {}),
+    category: categorizeToolFailure(error),
+    error,
+  };
+
+  const key = JSON.stringify(sample);
+  if (metrics.failedToolSampleKeys.has(key)) return;
+  metrics.failedToolSampleKeys.add(key);
+  metrics.failedToolSamples.push(sample);
 }
 
 function parseEvents(executionText) {
@@ -122,7 +189,11 @@ function parseEvents(executionText) {
     numFailedToolCalls: 0,
     readFiles: new Set(),
     editFiles: new Set(),
+    failedToolSamples: [],
+    failedToolSampleKeys: new Set(),
   };
+  const toolsById = new Map();
+  const toolStack = [];
 
   for (const event of events) {
     walk(event, (node) => {
@@ -150,9 +221,16 @@ function parseEvents(executionText) {
       }
 
       if (node.type === 'tool_use') {
-        addToolCall(metrics, node.name || node.tool_name, node.input || {});
+        const tool = node.name || node.tool_name;
+        const input = node.input || {};
+        addToolCall(metrics, tool, input);
+        const toolInfo = { tool, input };
+        if (node.id) toolsById.set(node.id, toolInfo);
+        toolStack.push(toolInfo);
       } else if (typeof node.tool_name === 'string') {
-        addToolCall(metrics, node.tool_name, node.input || {});
+        const toolInfo = { tool: node.tool_name, input: node.input || {} };
+        addToolCall(metrics, toolInfo.tool, toolInfo.input);
+        toolStack.push(toolInfo);
       }
 
       if (
@@ -162,6 +240,13 @@ function parseEvents(executionText) {
           /(^|\b)error\b/i.test(String(node.content || '')))
       ) {
         metrics.numFailedToolCalls += 1;
+        const toolInfo =
+          toolsById.get(node.tool_use_id) || toolStack[toolStack.length - 1];
+        addFailedToolSample(
+          metrics,
+          toolInfo,
+          textFromToolResultContent(node.content),
+        );
       }
     });
   }
@@ -176,6 +261,8 @@ function emptyToolMetrics() {
     numFailedToolCalls: 0,
     readFiles: new Set(),
     editFiles: new Set(),
+    failedToolSamples: [],
+    failedToolSampleKeys: new Set(),
   };
 }
 
@@ -184,6 +271,8 @@ function parseLogToolMetrics(logText) {
   const lines = String(logText || '')
     .split('\n')
     .map((line) => stripGitHubLogPrefix(sanitizeText(line)));
+  const toolsById = new Map();
+  let lastTool = null;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     if (
@@ -192,15 +281,34 @@ function parseLogToolMetrics(logText) {
     ) {
       const block = lines.slice(index, index + 40).join('\n');
       const name = block.match(/"(?:name|tool_name)"\s*:\s*"([^"]+)"/)?.[1];
+      const id = block.match(/"id"\s*:\s*"([^"]+)"/)?.[1];
       const filePath = block.match(
         /"(?:file_path|path|notebook_path)"\s*:\s*"([^"]+)"/,
       )?.[1];
-      addToolCall(metrics, name, filePath ? { file_path: filePath } : {});
+      const command = block.match(/"command"\s*:\s*"([^"]+)"/)?.[1];
+      const input = {
+        ...(filePath ? { file_path: filePath } : {}),
+        ...(command ? { command } : {}),
+      };
+      addToolCall(metrics, name, input);
+      lastTool = { tool: name, input };
+      if (id) toolsById.set(id, lastTool);
     }
     if (/"type"\s*:\s*"tool_result"/.test(line)) {
       const block = lines.slice(index, index + 20).join('\n');
       if (/"is_error"\s*:\s*true/.test(block) || /\bError:/.test(block)) {
         metrics.numFailedToolCalls += 1;
+        const toolUseId = block.match(/"tool_use_id"\s*:\s*"([^"]+)"/)?.[1];
+        const content =
+          block.match(/"content"\s*:\s*"([^"]+)"/)?.[1] ||
+          block.match(/"tool_use_result"\s*:\s*"([^"]+)"/)?.[1] ||
+          block.match(/(Error:[^\n]+)/)?.[1] ||
+          'Tool call failed';
+        addFailedToolSample(
+          metrics,
+          toolsById.get(toolUseId) || lastTool || {},
+          content,
+        );
       }
     }
   }
@@ -357,6 +465,10 @@ function parseClaudeExecution(options = {}) {
       : logToolMetrics.toolBreakdown;
   const numFailedToolCalls =
     eventMetrics.numFailedToolCalls || logToolMetrics.numFailedToolCalls;
+  const failedToolSamples = [
+    ...eventMetrics.failedToolSamples,
+    ...logToolMetrics.failedToolSamples,
+  ].slice(0, MAX_FAILED_TOOL_SAMPLES);
   const readFiles = new Set([
     ...eventMetrics.readFiles,
     ...logToolMetrics.readFiles,
@@ -390,6 +502,7 @@ function parseClaudeExecution(options = {}) {
     numToolCalls,
     toolBreakdown,
     numFailedToolCalls,
+    failedToolSamples,
     numRejectedToolCalls,
     rejectedToolsList,
     denialRate: percent(numRejectedToolCalls, numToolCalls),
