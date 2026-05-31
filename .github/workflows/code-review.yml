@@ -138,6 +138,16 @@ jobs:
             - Documentation for new features
             - Breaking changes
 
+            ## Diff Hygiene
+            - Lines prefixed `-` are REMOVED, lines prefixed `+` are ADDED.
+            - Only flag issues on `+` lines. Never treat a `-` line as current code.
+            - If uncertain, read the file at HEAD (`git show HEAD:<path>`) before posting.
+
+            ## Cross-Module Accuracy
+            - Before claiming code violates a contract from another module, trace the
+              actual call path. Only flag if the code actually participates in that contract.
+            - A top-level CLI exit handler is not subject to an in-process router's no-throw rule.
+
             Post actionable findings as inline review comments.
             If the PR touches UI components, also check layout, accessibility, and responsiveness.
 
@@ -220,6 +230,11 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: '${{ needs.resolve-pr.outputs.pr-number }}'
 
+            ## Diff Hygiene
+            - Lines prefixed `-` are REMOVED, lines prefixed `+` are ADDED.
+            - Only flag issues on `+` lines. Never treat a `-` line as current code.
+            - If uncertain, read the file at HEAD (`git show HEAD:<path>`) before posting.
+
             Perform a STRIDE + OWASP security review of changed files:
 
             ## STRIDE Analysis
@@ -241,6 +256,20 @@ jobs:
             - Hardcoded secrets or credentials
             - Insecure cryptographic practices
             - Race conditions or TOCTOU issues
+
+            ## Cross-Module Accuracy
+            - Before claiming code violates a contract from another module, trace the
+              actual call path. Only flag if the code actually participates in that contract.
+            - A top-level CLI exit handler is not subject to an in-process router's no-throw rule.
+
+            ## Threat Model Awareness
+            - Standard CLI patterns (env var config overrides, Date.now() temp files,
+              process.exit() in error handlers) are NOT security findings without a concrete
+              exploit path viable in this deployment model.
+            - Crypto hashes used for non-security purposes (directory naming, cache keys)
+              are NOT insecure-crypto findings. Only flag crypto used for auth/integrity.
+            - If you cannot describe a realistic attack scenario given project architecture, 
+              do not post the finding.
 
             Rate severity as none, low, medium, high, or critical.
             Post actionable inline comments with remediation steps.
