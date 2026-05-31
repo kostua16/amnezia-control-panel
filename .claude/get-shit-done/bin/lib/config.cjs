@@ -208,6 +208,10 @@ function buildNewProjectConfig(userChoices) {
     phase_naming: 'sequential',
     agent_skills: {},
     claude_md_path: './CLAUDE.md',
+    plan_review: {
+      source_grounding: true,
+      source_grounding_authority: 'grep',
+    },
   };
 
   // Three-level deep merge: hardcoded <- userDefaults <- choices
@@ -239,6 +243,11 @@ function buildNewProjectConfig(userChoices) {
       ...hardcoded.agent_skills,
       ...(userDefaults.agent_skills || {}),
       ...(choices.agent_skills || {}),
+    },
+    plan_review: {
+      ...hardcoded.plan_review,
+      ...(userDefaults.plan_review || {}),
+      ...(choices.plan_review || {}),
     },
   };
 
@@ -476,6 +485,19 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
     error(`Invalid code_quality.fallow.profile '${value}'. Valid values: ${VALID_FALLOW_PROFILES.join(', ')}`);
   }
 
+  // plan_review.source_grounding (#22) — boolean only
+  if (keyPath === 'plan_review.source_grounding') {
+    if (typeof parsedValue !== 'boolean') {
+      error(`Invalid plan_review.source_grounding '${value}'. Must be a boolean (true or false).`);
+    }
+  }
+
+  // plan_review.source_grounding_authority (#22) — enum
+  const VALID_SOURCE_GROUNDING_AUTHORITIES = ['grep', 'intel', 'treesitter', 'lsp', 'scip'];
+  if (keyPath === 'plan_review.source_grounding_authority' && !VALID_SOURCE_GROUNDING_AUTHORITIES.includes(String(parsedValue))) {
+    error(`Invalid plan_review.source_grounding_authority '${value}'. Valid values: ${VALID_SOURCE_GROUNDING_AUTHORITIES.join(', ')}`);
+  }
+
   if (keyPath === 'review.default_reviewers') {
     const normalized = normalizeConfiguredDefaultReviewers(parsedValue);
     if (normalized.errors.length > 0) {
@@ -651,10 +673,12 @@ function getCmdConfigSetModelProfileResultMessage(
  * Print the resolved config.json path (workstream-aware). Used by settings.md
  * so the workflow writes/reads the correct file when a workstream is active (#2282).
  */
-function cmdConfigPath(cwd) {
+function cmdConfigPath(cwd, _raw, workstreamContext = null) {
   // Always emit as plain text — a file path is used via shell substitution,
   // never consumed as JSON. Passing raw=true forces plain-text output.
-  const configPath = path.join(planningDir(cwd), 'config.json');
+  const configPath = workstreamContext && workstreamContext.configPath
+    ? workstreamContext.configPath
+    : path.join(planningDir(cwd), 'config.json');
   output(configPath, true, configPath);
 }
 
@@ -671,7 +695,7 @@ function cmdConfigPath(cwd) {
  * summary when --raw is set. Exits 0 in all cases (including no-op).
  */
 async function cmdMigrateConfig(cwd, raw) {
-  const { migrateOnDisk } = require('./configuration.generated.cjs');
+  const { migrateOnDisk } = require('./configuration.cjs');
   const ws = process.env.GSD_WORKSTREAM || null;
   const report = await migrateOnDisk(cwd, ws || undefined);
 

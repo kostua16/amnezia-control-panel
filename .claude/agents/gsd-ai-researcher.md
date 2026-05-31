@@ -9,6 +9,7 @@ color: "#34D399"
 #       hooks:
 #         - type: command
 #           command: "echo 'AI-SPEC written' 2>/dev/null || true"
+effort: high
 ---
 
 <role>

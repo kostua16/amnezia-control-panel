@@ -1,11 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * @deprecated The supported programmatic surface is `gsd-sdk query` (SDK query registry)
- * and the `@opengsd/gsd-sdk` package. This Node CLI remains the compatibility implementation
- * for shell scripts and older workflows; prefer calling the SDK from agents and automation.
- *
- * GSD Tools — CLI utility for GSD workflow operations
+ * GSD Tools — CLI utility for GSD workflow operations.
  *
  * Replaces repetitive inline bash patterns across ~50 GSD command/workflow/agent files.
  * Centralizes: config parsing, model resolution, phase lookup, git commits, summary verification.
@@ -87,6 +83,7 @@
  *   intel patch-meta <file>        Update _meta.updated_at in an intel file
  *   intel validate                 Validate intel file structure
  *   intel extract-exports <file>   Extract exported symbols from a source file
+ *   intel api-surface               Render api-map.json into API-SURFACE.md
  *
  * Scaffolding:
  *   scaffold context --phase <N>       Create CONTEXT.md template
@@ -198,129 +195,45 @@ const { routePhaseCommand } = require('./lib/phase-command-router.cjs');
 const { routePhasesCommand } = require('./lib/phases-command-router.cjs');
 const { routeValidateCommand } = require('./lib/validate-command-router.cjs');
 const { routeRoadmapCommand } = require('./lib/roadmap-command-router.cjs');
+const { routeAgentCommand } = require('./lib/agent-command-router.cjs');
+const { routeCheckCommand } = require('./lib/check-command-router.cjs');
+const { routeTaskCommand } = require('./lib/task-command-router.cjs');
+const { parseNamedArgs, parseMultiwordArg } = require('./lib/command-arg-projection.cjs');
 
-// ─── SDK bridge (Phase 6 inline family / non-family delegation) ───────────────
-// For inline case blocks that have SDK counterparts (frontmatter, config, and
-// non-family commands), we attempt to dispatch via executeForCjs (the sync
-// bridge). CJS handlers are retained as fallback when SDK is unavailable.
-//
-// NOTE: migrate-config, detect-custom-files, config-path, and find-phase
-// are CJS-native special cases; see comments inline.
-
-// Shared loader for the synchronous SDK runtime bridge; see
-// `bin/lib/cjs-sdk-bridge.cjs`. All canonical-command CJS dispatchers (the
-// per-family routers and the non-family helper below) consume the same loader
-// so a change to the SDK-load contract lands in one place.
-const { tryLoadSdk: _tryLoadSdkBridge, getExecuteForCjs } = require('./lib/cjs-sdk-bridge.cjs');
+// ─── Bridge collapsed (Phase 4) ────────────────────────────────────────────────
+// Non-family commands now run through their CJS handlers directly. Keep the
+// helper contract so existing call sites remain unchanged during the phase
+// sequence; it always returns false so callers fall through to CJS.
 
 /**
- * Attempt SDK dispatch for a non-family command.
+ * Retired bridge-era shim for non-family dispatch.
  *
- * Returns true when the SDK was available and handled the command (success or
- * typed error). Returns false when the SDK is unavailable, signalling the
- * caller to fall through to the CJS handler.
+ * Always returns false so command handlers continue down the CJS path.
+ * Kept only to avoid churn while legacy call sites are being deleted.
  *
  * @param {object} opts
- * @param {string} opts.registryCommand - canonical command name in the SDK registry
- * @param {string[]} opts.registryArgs - args to pass to the SDK handler
- * @param {string} opts.legacyCommand - original gsd-tools command name (for error messages)
- * @param {string[]} opts.legacyArgs - original args (for error messages)
+ * @param {string} opts.registryCommand - legacy bridge placeholder
+ * @param {string[]} opts.registryArgs - legacy bridge placeholder
+ * @param {string} opts.legacyCommand - original gsd-tools command name
+ * @param {string[]} opts.legacyArgs - original args
  * @param {string} opts.cwd - project dir
  * @param {boolean} opts.raw - raw output mode
  * @param {Function} opts.error - error reporter
  * @param {Function} opts.output - output emitter (core.output)
  */
 function _dispatchNonFamily({ registryCommand, registryArgs, legacyCommand, legacyArgs, cwd, raw, error, output }) {
-  if (!_tryLoadSdkBridge()) return false;
-  let result;
-  try {
-    result = getExecuteForCjs()({
-      registryCommand,
-      registryArgs,
-      legacyCommand,
-      legacyArgs,
-      // Always request typed JSON from the bridge; CJS `output(data, raw)` handles
-      // user-facing rendering. Passing `mode: 'raw'` would make the bridge
-      // pre-render result.data to a JSON string that the CJS output path then
-      // double-stringifies (returning a JSON string of a JSON string).
-      mode: 'json',
-      projectDir: cwd,
-      workstream: process.env.GSD_WORKSTREAM || undefined,
-    });
-  } catch {
-    // Bridge threw (e.g. synckit worker crash, Atomics failure on Windows).
-    // Return false so the caller falls through to the CJS handler.
-    return false;
-  }
-  if (!result.ok) {
-    const message = (result.errorDetails && result.errorDetails.message)
-      || `${legacyCommand} (${registryCommand}) failed (${result.errorKind})`;
-    // Propagate the structured reason code through to CJS `error()` so the
-    // `--json-errors` JSON-shaped stderr carries the typed reason (e.g.
-    // 'config_key_not_found') instead of the generic 'unknown'.  Handlers
-    // tag the GSDError with `.reason` and the worker forwards it via
-    // errorDetails.reason. (Bugs #2943, #3086.)
-    const reason = result.errorDetails && result.errorDetails.reason;
-    if (reason) {
-      error(message, reason);
-    } else {
-      error(message);
-    }
-    return true; // handled (error reported)
-  }
-  // CJS parity for --raw output (config.cjs:525 `output(value, raw, String(value))`):
-  // when the caller asked for --raw and the SDK returned a scalar, pass that
-  // scalar through as `rawValue` so core.output() emits the bare string
-  // representation instead of JSON-stringifying it.  Non-scalar shapes fall
-  // through to the structured JSON path, matching `output(obj, raw)`.
-  const data = result.data;
-  if (raw && (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean')) {
-    output(data, raw, String(data));
-  } else {
-    output(data, raw);
-  }
-  return true;
+  void registryCommand;
+  void registryArgs;
+  void legacyCommand;
+  void legacyArgs;
+  void cwd;
+  void raw;
+  void error;
+  void output;
+  return false;
 }
 
 // ─── Arg parsing helpers ──────────────────────────────────────────────────────
-
-/**
- * Extract named --flag <value> pairs from an args array.
- * Returns an object mapping flag names to their values (null if absent).
- * Flags listed in `booleanFlags` are treated as boolean (no value consumed).
- *
- * parseNamedArgs(args, 'phase', 'plan')        → { phase: '3', plan: '1' }
- * parseNamedArgs(args, [], ['amend', 'force'])  → { amend: true, force: false }
- */
-function parseNamedArgs(args, valueFlags = [], booleanFlags = []) {
-  const result = {};
-  for (const flag of valueFlags) {
-    const idx = args.indexOf(`--${flag}`);
-    result[flag] = idx !== -1 && args[idx + 1] !== undefined && !args[idx + 1].startsWith('--')
-      ? args[idx + 1]
-      : null;
-  }
-  for (const flag of booleanFlags) {
-    result[flag] = args.includes(`--${flag}`);
-  }
-  return result;
-}
-
-/**
- * Collect all tokens after --flag until the next --flag or end of args.
- * Handles multi-word values like --name Foo Bar Version 1.
- * Returns null if the flag is absent.
- */
-function parseMultiwordArg(args, flag) {
-  const idx = args.indexOf(`--${flag}`);
-  if (idx === -1) return null;
-  const tokens = [];
-  for (let i = idx + 1; i < args.length; i++) {
-    if (args[i].startsWith('--')) break;
-    tokens.push(args[i]);
-  }
-  return tokens.length > 0 ? tokens.join(' ') : null;
-}
 
 // ─── CLI Router ───────────────────────────────────────────────────────────────
 
@@ -379,14 +292,15 @@ async function main() {
   // Optional workstream override for parallel milestone work.
   // Priority: --ws flag > GSD_WORKSTREAM env var > session/shared pointer > null.
   let ws = null;
+  let workstreamContext = null;
   try {
-    const wsResolution = resolveActiveWorkstream(cwd, args, process.env, {
+    workstreamContext = resolveActiveWorkstream(cwd, args, process.env, {
       getStored: getActiveWorkstream,
     });
-    ws = wsResolution.ws;
-    args = wsResolution.args;
+    ws = workstreamContext.ws;
+    args = workstreamContext.args;
     // Set env var so all modules (planningDir, planningPaths) auto-resolve workstream paths.
-    applyResolvedWorkstreamEnv(wsResolution, process.env);
+    applyResolvedWorkstreamEnv(workstreamContext, process.env);
   } catch (err) {
     error(err.message || String(err));
   }
@@ -419,16 +333,19 @@ async function main() {
 
   let command = args[0];
 
+  // Accept `query` as a meta-prefix for canonical dotted/spaced commands.
+  // Workflows may call `node gsd-tools.cjs query <command>` directly.
+  if (command === 'query') {
+    args.shift();
+    command = args[0];
+  }
+
   // #3243: accept dotted canonical form (e.g. `state.update`) as well as the
-  // spaced form (`state update`). Workflow files and stale SDK binaries pass
-  // the dotted canonical form directly; any caller that bypasses the SDK
-  // client-side split hit "Unknown command" before this shim.
+  // spaced form (`state update`). Some workflow callers pass the dotted
+  // canonical form directly; this normalization keeps both forms valid.
   //
   // Split on the FIRST dot only — `check.decision-coverage-plan` becomes
   // command='check', args=['check','decision-coverage-plan',...rest].
-  // Parallel to dottedCommandToCjsArgv in sdk/src/query/query-fallback-bridge-adapter.ts;
-  // kept separate here to avoid SDK coupling (see TODO: extract to shared helper).
-  //
   // Guard: head and rest must both be non-empty (rejects leading-dot args like
   // ".hidden" and bare-dot ".").
   const originalCommand = command; // preserved for "Unknown command" suggestion
@@ -449,14 +366,14 @@ async function main() {
   // discovery; previously it was a partial subset that didn't include
   // phase / roadmap / milestone / progress / etc.
   const TOP_LEVEL_USAGE = 'Usage: gsd-tools <command> [args] [--raw] [--pick <field>] [--cwd <path>] [--ws <name>] [--json-errors]\n' +
-    'Commands: agent-skills, audit-open, audit-uat, check-commit, commit, commit-to-subrepo, ' +
+    'Commands: agent, agent-skills, audit-open, audit-uat, check, check-commit, commit, commit-to-subrepo, ' +
     'config-ensure-section, config-get, config-new-project, config-path, config-set, migrate-config, ' +
     'current-timestamp, detect-custom-files, docs-init, extract-messages, find-phase, ' +
     'from-gsd2, frontmatter, gap-analysis, generate-claude-md, generate-claude-profile, ' +
     'generate-dev-preferences, generate-slug, graphify, history-digest, init, intel, ' +
     'learnings, list-todos, milestone, phase, phase-plan-index, phases, profile-questionnaire, ' +
     'profile-sample, progress, prompt-budget, requirements, resolve-model, roadmap, scaffold, state, ' +
-    'template, validate, verify, verify-path-exists, verify-summary, workstream, worktree\n\n' +
+    'task, template, validate, verify, verify-path-exists, verify-summary, workstream, worktree\n\n' +
     'Global flags:\n' +
     '  --raw              Emit raw output without post-processing\n' +
     '  --pick <field>     Extract a single field from JSON output (dot/bracket notation)\n' +
@@ -474,11 +391,8 @@ async function main() {
   // and exit 0 — not error out with "Unknown flag". The previous shape
   // erred on agent-hallucinated flags, but it also blocked humans from
   // discovering the command surface via subcommand help requests routed
-  // here from the SDK CLI's query dispatcher (after the cli.ts fix that
-  // stops harvesting --help as a global flag). Rendering top-level usage
-  // on --help is strictly better UX than the old short-circuit, which
-  // printed the SDK-level usage that doesn't mention any of these
-  // subcommands.
+  // through this dispatcher. Rendering top-level usage on --help is strictly
+  // better UX than the old short-circuit that printed unrelated usage text.
   const HELP_FLAGS = new Set(['-h', '--help', '-?', '--h', '--usage']);
   if (args.some((a) => HELP_FLAGS.has(a))) {
     process.stdout.write(TOP_LEVEL_USAGE + '\n');
@@ -507,38 +421,19 @@ async function main() {
     cwd = findProjectRoot(cwd);
   }
 
-  // When --pick is active, intercept stdout to extract the requested field.
+  // When --pick is active, capture stdout and extract the requested field.
   if (pickField) {
-    const origWriteSync = fs.writeSync;
-    let captured = '';
-    fs.writeSync = function (fd, data, ...rest) {
-      if (fd === 1) {
-        captured += String(data);
-        return;
-      }
-      return origWriteSync.call(fs, fd, data, ...rest);
-    };
-    const cleanup = () => {
-      fs.writeSync = origWriteSync;
-      let jsonStr = captured;
-      if (jsonStr.startsWith('@file:')) {
-        jsonStr = fs.readFileSync(jsonStr.slice(6), 'utf-8');
-      }
-      try {
-        const obj = JSON.parse(jsonStr);
-        const value = extractField(obj, pickField);
-        const result = value === null || value === undefined ? '' : String(value);
-        origWriteSync.call(fs, 1, result);
-      } catch {
-        origWriteSync.call(fs, 1, captured);
-      }
-    };
+    const captured = await captureStdoutSyncWrites(async () => {
+      await runCommand(command, args, cwd, raw, defaultValue, originalCommand, workstreamContext);
+    });
+    const resolved = resolveAtFileOutput(captured);
     try {
-      await runCommand(command, args, cwd, raw, defaultValue, originalCommand);
-      cleanup();
-    } catch (e) {
-      fs.writeSync = origWriteSync;
-      throw e;
+      const obj = JSON.parse(resolved);
+      const value = extractField(obj, pickField);
+      const result = value === null || value === undefined ? '' : String(value);
+      fs.writeSync(1, result);
+    } catch {
+      fs.writeSync(1, captured);
     }
     return;
   }
@@ -548,24 +443,49 @@ async function main() {
   // already resolves this, but the normal path wrote @file: to stdout, forcing
   // every workflow to have a bash-specific `if [[ "$INIT" == @file:* ]]` check
   // that breaks on PowerShell and other non-bash shells.
-  const origWriteSync2 = fs.writeSync;
+  const captured = await captureStdoutSyncWrites(async () => {
+    await runCommand(command, args, cwd, raw, defaultValue, originalCommand, workstreamContext);
+  });
+  fs.writeSync(1, resolveAtFileOutput(captured));
+}
+
+function captureStdoutSyncWrites(run) {
+  const originalWriteSync = fs.writeSync;
   let captured = '';
-  fs.writeSync = function (fd, data, ...rest) {
+
+  fs.writeSync = function patchedWriteSync(fd, data, ...rest) {
     if (fd === 1) {
-      captured += String(data);
-      return;
+      if (Buffer.isBuffer(data)) {
+        captured += data.toString('utf-8');
+        return data.length;
+      }
+      const text = String(data);
+      captured += text;
+      let encoding = 'utf-8';
+      if (typeof rest[1] === 'string') encoding = rest[1];
+      return Buffer.byteLength(text, encoding);
     }
-    return origWriteSync2.call(fs, fd, data, ...rest);
+    return originalWriteSync.call(fs, fd, data, ...rest);
   };
-  try {
-    await runCommand(command, args, cwd, raw, defaultValue, originalCommand);
-  } finally {
-    fs.writeSync = origWriteSync2;
-  }
-  if (captured.startsWith('@file:')) {
-    captured = fs.readFileSync(captured.slice(6), 'utf-8');
-  }
-  origWriteSync2.call(fs, 1, captured);
+
+  const restore = () => {
+    fs.writeSync = originalWriteSync;
+  };
+
+  return Promise.resolve()
+    .then(() => run())
+    .then(() => {
+      restore();
+      return captured;
+    }, (err) => {
+      restore();
+      throw err;
+    });
+}
+
+function resolveAtFileOutput(captured) {
+  if (!captured.startsWith('@file:')) return captured;
+  return fs.readFileSync(captured.slice(6), 'utf-8');
 }
 
 /**
@@ -591,15 +511,24 @@ function extractField(obj, fieldPath) {
   return current;
 }
 
-async function runCommand(command, args, cwd, raw, defaultValue, originalCommand) {
+async function runCommand(command, args, cwd, raw, defaultValue, originalCommand, workstreamContext = null) {
   switch (command) {
+    case 'agent': {
+      routeAgentCommand({ args, raw });
+      break;
+    }
+
+    case 'check': {
+      routeCheckCommand({ args, cwd, raw });
+      break;
+    }
+
     case 'state': {
       routeStateCommand({
         state,
         args,
         cwd,
         raw,
-        parseNamedArgs,
         error,
       });
       break;
@@ -607,6 +536,81 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
 
     case 'resolve-model': {
       commands.cmdResolveModel(cwd, args[1], raw);
+      break;
+    }
+
+    case 'resolve-execution': {
+      // Deterministic flag parsing: consume --flag <value> pairs first,
+      // then the AGENT is the single remaining positional.
+      // Supports both orderings: <agent> --flag val  AND  --flag val <agent>.
+      // Also supports --flag=value form (same convention as --cwd= above).
+      const execArgs = args.slice(1);
+      let effortOverride;
+      let fastModeOverride;
+      let attempt;
+      const positionals = [];
+      for (let i = 0; i < execArgs.length; i++) {
+        const a = execArgs[i];
+        // --effort=<val> form
+        if (a.startsWith('--effort=')) {
+          effortOverride = a.slice('--effort='.length);
+          continue;
+        }
+        // --fast-mode=<val> form
+        if (a.startsWith('--fast-mode=')) {
+          const v = a.slice('--fast-mode='.length);
+          fastModeOverride = v === 'true' ? true : v === 'false' ? false : undefined;
+          continue;
+        }
+        // --attempt=<val> form
+        if (a.startsWith('--attempt=')) {
+          const v = a.slice('--attempt='.length);
+          const n = parseInt(v, 10);
+          if (!Number.isInteger(n) || n < 0) error('--attempt requires a non-negative integer', ERROR_REASON.USAGE);
+          attempt = n;
+          continue;
+        }
+        // --effort <val>
+        if (a === '--effort') {
+          const val = execArgs[i + 1];
+          if (val === undefined || val.startsWith('--')) error('Missing value for --effort', ERROR_REASON.USAGE);
+          effortOverride = val;
+          i++;
+          continue;
+        }
+        // --fast-mode <val>
+        if (a === '--fast-mode') {
+          const val = execArgs[i + 1];
+          if (val === undefined || val.startsWith('--')) error('Missing value for --fast-mode', ERROR_REASON.USAGE);
+          fastModeOverride = val === 'true' ? true : val === 'false' ? false : undefined;
+          i++;
+          continue;
+        }
+        // --attempt <val>
+        if (a === '--attempt') {
+          const val = execArgs[i + 1];
+          if (val === undefined || val.startsWith('--')) error('Missing value for --attempt', ERROR_REASON.USAGE);
+          const n = parseInt(val, 10);
+          if (!Number.isInteger(n) || n < 0) error('--attempt requires a non-negative integer', ERROR_REASON.USAGE);
+          attempt = n;
+          i++;
+          continue;
+        }
+        // --raw is handled by top-level arg processing; skip it here
+        if (a === '--raw') continue;
+        // Unknown flag
+        if (a.startsWith('-')) error(`Unknown flag for resolve-execution: ${a}`, ERROR_REASON.USAGE);
+        // Positional
+        positionals.push(a);
+      }
+      if (positionals.length === 0) error('agent-type required', ERROR_REASON.USAGE);
+      if (positionals.length > 1) error(`resolve-execution requires exactly one agent-type argument; got: ${positionals.join(', ')}`, ERROR_REASON.USAGE);
+      const agentTypeArg = positionals[0];
+      commands.cmdResolveExecution(cwd, agentTypeArg, raw, {
+        effortOverride,
+        fastModeOverride,
+        attempt,
+      });
       break;
     }
 
@@ -688,6 +692,11 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
       break;
     }
 
+    case 'task': {
+      routeTaskCommand({ args, cwd, raw });
+      break;
+    }
+
     case 'frontmatter': {
       // Phase 6 (#3575): dispatch via SDK executeForCjs when available.
       // SDK handler: sdk/src/query/frontmatter.ts + frontmatter-mutation.ts.
@@ -758,19 +767,11 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
     }
 
     case 'current-timestamp': {
-      // Phase 6 (#3575): dispatch via SDK executeForCjs when available.
-      // SDK handler: currentTimestamp in sdk/src/query/utils.ts.
-      const handled = _dispatchNonFamily({
-        registryCommand: 'current-timestamp',
-        registryArgs: args.slice(1),
-        legacyCommand: 'current-timestamp',
-        legacyArgs: args.slice(1),
-        cwd,
-        raw,
-        error,
-        output: core.output,
-      });
-      if (!handled) commands.cmdCurrentTimestamp(args[1] || 'full', raw);
+      // Keep this command on the CJS fast path.
+      // Rationale: it is a pure local formatter and avoids SDK bridge startup
+      // in tight subprocess loops where Windows CI has shown intermittent
+      // native crashes (0xC0000005 / 3221225477).
+      commands.cmdCurrentTimestamp(args[1] || 'full', raw);
       break;
     }
 
@@ -883,7 +884,7 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
       // The SDK handler (configPath) also exists but requires a projectDir that
       // is already resolved. Both produce identical output; keeping CJS here is
       // simpler and avoids sync-bridge overhead for a trivial path lookup.
-      config.cmdConfigPath(cwd, raw);
+      config.cmdConfigPath(cwd, raw, workstreamContext);
       break;
     }
 
@@ -896,7 +897,12 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
     }
 
     case 'agent-skills': {
-      init.cmdAgentSkills(cwd, args[1], raw);
+      // --json emits typed IR { agent_type, block, skills_count } for test assertions
+      // (#455). Default (no flag) outputs raw XML so workflow shell expansions work.
+      const jsonIdx = args.indexOf('--json');
+      const agentSkillsJsonMode = jsonIdx !== -1;
+      if (agentSkillsJsonMode) args.splice(jsonIdx, 1);
+      init.cmdAgentSkills(cwd, args[1], raw, agentSkillsJsonMode);
       break;
     }
 
@@ -979,7 +985,6 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
         args,
         cwd,
         raw,
-        parseNamedArgs,
         output: core.output,
         error,
       });
@@ -1059,7 +1064,6 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
         args,
         cwd,
         raw,
-        parseNamedArgs,
         error,
       });
       break;
@@ -1263,8 +1267,11 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
       } else if (subcommand === 'update') {
         const planningDir = path.join(cwd, '.planning');
         core.output(intel.intelUpdate(planningDir), raw);
+      } else if (subcommand === 'api-surface') {
+        const planningDir = path.join(cwd, '.planning');
+        core.output(intel.intelApiSurface(planningDir), raw);
       } else {
-        error('Unknown intel subcommand. Available: query, status, update, diff, snapshot, patch-meta, validate, extract-exports', ERROR_REASON.SDK_UNKNOWN_COMMAND);
+        error('Unknown intel subcommand. Available: query, status, update, diff, snapshot, patch-meta, validate, extract-exports, api-surface', ERROR_REASON.SDK_UNKNOWN_COMMAND);
       }
       break;
     }
@@ -1609,6 +1616,38 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
       if (metadata.hardFailed) {
         process.exit(2);
       }
+      break;
+    }
+
+    case 'update-context': {
+      // #498: resolve the installed GSD version, scope, runtime, and config dir
+      // for /gsd:update. Replaces ~280 lines of inline bash in update.md with a
+      // tested projection. Emits the contract as JSON: { installedVersion,
+      // scope, runtime, gsdDir }. Optional --config-dir / --runtime carry the
+      // workflow's execution_context hints (the one thing only it can know).
+      const { loadUpdateContext } = require('./lib/update-context.cjs');
+      const ucArgs = args.slice(1);
+      let preferredConfigDir = '';
+      let preferredRuntime = '';
+      for (let i = 0; i < ucArgs.length; i++) {
+        const a = ucArgs[i];
+        if (a.startsWith('--config-dir=')) { preferredConfigDir = a.slice('--config-dir='.length); continue; }
+        if (a.startsWith('--runtime=')) { preferredRuntime = a.slice('--runtime='.length); continue; }
+        if (a === '--config-dir') {
+          const v = ucArgs[i + 1];
+          if (v === undefined || v.startsWith('--')) error('Missing value for --config-dir', ERROR_REASON.USAGE);
+          preferredConfigDir = v; i++; continue;
+        }
+        if (a === '--runtime') {
+          const v = ucArgs[i + 1];
+          if (v === undefined || v.startsWith('--')) error('Missing value for --runtime', ERROR_REASON.USAGE);
+          preferredRuntime = v; i++; continue;
+        }
+        if (a === '--json') continue; // JSON is the only output; accepted for symmetry
+        if (a.startsWith('-')) error(`Unknown flag for update-context: ${a}`, ERROR_REASON.USAGE);
+      }
+      const ctx = loadUpdateContext({ preferredConfigDir, preferredRuntime });
+      process.stdout.write(JSON.stringify(ctx) + '\n');
       break;
     }
 

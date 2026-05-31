@@ -9,6 +9,7 @@ color: "#F59E0B"
 #       hooks:
 #         - type: command
 #           command: "echo 'AI-SPEC eval sections written' 2>/dev/null || true"
+effort: xhigh
 ---
 
 <role>

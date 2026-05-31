@@ -9,6 +9,7 @@ color: "#A78BFA"
 #       hooks:
 #         - type: command
 #           command: "echo 'AI-SPEC domain section written' 2>/dev/null || true"
+effort: high
 ---
 
 <role>

@@ -20,18 +20,8 @@ Read all files referenced by the invoking prompt's execution_context before star
 Ensure config exists and resolve the workstream-aware config path (mirrors `settings.md`):
 
 ```bash
-# SDK resolution: prefer local gsd-tools.cjs, fall back to global gsd-sdk (#3668)
-GSD_TOOLS="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/get-shit-done/bin/gsd-tools.cjs"
-if [ -f "$GSD_TOOLS" ]; then
-  GSD_SDK="node $GSD_TOOLS"
-elif command -v gsd-sdk >/dev/null 2>&1; then
-  GSD_SDK="gsd-sdk"
-else
-  echo "ERROR: gsd-sdk not found on PATH and $GSD_TOOLS does not exist." >&2
-  echo "Run: npx get-shit-done-cc@latest --claude --local" >&2
-  exit 1
-fi
-$GSD_SDK query config-ensure-section
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/get-shit-done/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
+gsd_run query config-ensure-section
 if [[ -z "${GSD_CONFIG_PATH:-}" ]]; then
   if [[ -f .planning/active-workstream ]]; then
     WS=$(tr -d '\n\r' < .planning/active-workstream)
@@ -354,13 +344,13 @@ Built-in tier defaults by runtime:
 
 | Runtime    | `opus`                        | `sonnet`                        | `haiku`                       |
 |------------|-------------------------------|---------------------------------|-------------------------------|
-| `claude`   | `claude-opus-4-7`             | `claude-sonnet-4-6`             | `claude-haiku-4-5`            |
-| `codex`    | `gpt-5.4`                     | `gpt-5.3-codex`                 | `gpt-5.4-mini`                |
+| `claude`   | `claude-opus-4-8`             | `claude-sonnet-4-6`             | `claude-haiku-4-5`            |
+| `codex`    | `gpt-5.5`                     | `gpt-5.3-codex`                 | `gpt-5.4-mini`                |
 | `gemini`   | `gemini-3-pro`                | `gemini-3-flash`                | `gemini-2.5-flash-lite`       |
 | `qwen`     | `qwen3-max-2026-01-23`        | `qwen3-coder-plus`              | `qwen3-coder-next`            |
-| `opencode` | `anthropic/claude-opus-4-7`   | `anthropic/claude-sonnet-4-6`   | `anthropic/claude-haiku-4-5`  |
-| `copilot`  | `claude-opus-4-7`             | `claude-sonnet-4-6`             | `claude-haiku-4-5`            |
-| `hermes`   | `anthropic/claude-opus-4-7`   | `anthropic/claude-sonnet-4-6`   | `anthropic/claude-haiku-4-5`  |
+| `opencode` | `anthropic/claude-opus-4-8`   | `anthropic/claude-sonnet-4-6`   | `anthropic/claude-haiku-4-5`  |
+| `copilot`  | `claude-opus-4-8`             | `claude-sonnet-4-6`             | `claude-haiku-4-5`            |
+| `hermes`   | `anthropic/claude-opus-4-8`   | `anthropic/claude-sonnet-4-6`   | `anthropic/claude-haiku-4-5`  |
 | Group B (`kilo`, `cline`, `cursor`, `windsurf`, `augment`, `trae`, `codebuddy`, `antigravity`) | (no built-in default — your runtime handles model selection) | | |
 
 Display a table to the user showing the effective configuration:
@@ -382,27 +372,57 @@ For Group B runtimes (those without a built-in default), show `(no built-in defa
 ```text
 AskUserQuestion([
   {
-    question: "Which runtime do you want to configure tier overrides for? (current: <runtime or 'claude'>)",
-    header: "Runtime Selection",
+    question: "Which runtime group do you want to configure tier overrides for? (current: <runtime or 'claude'>)",
+    header: "Runtime Group",
     multiSelect: false,
     options: [
       { label: "Keep current (<runtime>)", description: "Configure overrides for the current runtime." },
-      { label: "claude", description: "Claude Code / Anthropic CLI." },
-      { label: "codex", description: "OpenAI Codex CLI." },
-      { label: "gemini", description: "Gemini CLI." },
-      { label: "qwen", description: "Qwen CLI." },
-      { label: "opencode", description: "OpenCode (uses anthropic/ prefix)." },
-      { label: "copilot", description: "GitHub Copilot." },
-      { label: "hermes", description: "Hermes (uses anthropic/ prefix)." },
-      { label: "Other (Group B or custom)", description: "kilo, cline, cursor, windsurf, augment, trae, codebuddy, antigravity, or a custom runtime string. Overrides are honored even though no built-in map exists." }
+      { label: "Common runtimes", description: "claude, codex, gemini, qwen" },
+      { label: "Additional runtimes", description: "opencode, copilot, hermes" },
+      { label: "Other (Group B or custom)", description: "kilo, cline, cursor, windsurf, augment, trae, codebuddy, antigravity, or a custom runtime string." }
     ]
   }
 ])
 ```
 
-If "Other" is selected, prompt the user to enter the runtime name as a free-text string.
+If "Common runtimes" is selected, ask:
+
+```text
+AskUserQuestion([
+  {
+    question: "Choose the runtime:",
+    header: "Common",
+    multiSelect: false,
+    options: [
+      { label: "claude", description: "Claude Code / Anthropic CLI." },
+      { label: "codex", description: "OpenAI Codex CLI." },
+      { label: "gemini", description: "Gemini CLI." },
+      { label: "qwen", description: "Qwen CLI." }
+    ]
+  }
+])
+```
+
+If "Additional runtimes" is selected, ask:
+
+```text
+AskUserQuestion([
+  {
+    question: "Choose the runtime:",
+    header: "Additional",
+    multiSelect: false,
+    options: [
+      { label: "opencode", description: "OpenCode (uses anthropic/ prefix)." },
+      { label: "copilot", description: "GitHub Copilot." },
+      { label: "hermes", description: "Hermes (uses anthropic/ prefix)." }
+    ]
+  }
+])
+```
+
+If "Other (Group B or custom)" is selected, prompt the user to enter the runtime name as a free-text string.
 If the selected runtime differs from the stored `runtime` key, update `runtime` via
-`gsd-sdk query config-set runtime <value>` before proceeding to Step C.
+`gsd-tools.cjs query config-set runtime <value>` before proceeding to Step C.
 
 **Step C — Configure tier overrides for the selected runtime:**
 
@@ -445,12 +465,12 @@ AskUserQuestion([
 
 For each tier where the user chose "Enter model ID":
 ```bash
-$GSD_SDK query config-set model_profile_overrides.<runtime>.<tier> "<model-id>"
+gsd_run query config-set model_profile_overrides.<runtime>.<tier> "<model-id>"
 ```
 
 For each tier where the user chose "Clear override", remove the key by setting it to null:
 ```bash
-$GSD_SDK query config-set model_profile_overrides.<runtime>.<tier> null
+gsd_run query config-set model_profile_overrides.<runtime>.<tier> null
 ```
 
 "Keep current" selections are skipped entirely. Never write a key the user did not explicitly
@@ -462,20 +482,20 @@ change.
 Merge the new settings into the existing config at `$GSD_CONFIG_PATH`. This merge is the
 core correctness invariant: **preserve every unrelated key** — do not clobber siblings.
 
-Apply each selected value via `gsd-sdk query config-set <key> <value>` so the central
+Apply each selected value via `gsd-tools.cjs query config-set <key> <value>` so the central
 validator (`isValidConfigKey`) accepts the write and the deep-merge preserves unrelated
 keys and sibling sub-objects.
 
 ```bash
 # Example — only write keys the user changed. "Keep current" selections are skipped.
-$GSD_SDK query config-set workflow.plan_bounce_passes 5
-$GSD_SDK query config-set workflow.subagent_timeout 900
-$GSD_SDK query config-set git.base_branch main
-$GSD_SDK query config-set context_window 1000000
+gsd_run query config-set workflow.plan_bounce_passes 5
+gsd_run query config-set workflow.subagent_timeout 900
+gsd_run query config-set git.base_branch main
+gsd_run query config-set context_window 1000000
 # Runtime model tier examples:
-$GSD_SDK query config-set runtime gemini
-$GSD_SDK query config-set model_profile_overrides.gemini.opus gemini-3-ultra
-$GSD_SDK query config-set model_profile_overrides.gemini.haiku null
+gsd_run query config-set runtime gemini
+gsd_run query config-set model_profile_overrides.gemini.opus gemini-3-ultra
+gsd_run query config-set model_profile_overrides.gemini.haiku null
 ```
 
 Conceptual shape after merge (unchanged top-level keys like `model_profile`,
@@ -527,7 +547,7 @@ anything not listed in Sections 1–7 MUST survive the update):
 ```
 
 Never emit a full overwrite of the file that omits keys the user did not touch. Always
-route each write through `gsd-sdk query config-set` so sibling preservation is handled by
+route each write through `gsd-tools.cjs query config-set` so sibling preservation is handled by
 the central setter.
 </step>
 
@@ -564,6 +584,16 @@ Display:
 | model_profile_overrides.<runtime>.opus     | {model/built-in/null} |
 | model_profile_overrides.<runtime>.sonnet   | {model/built-in/null} |
 | model_profile_overrides.<runtime>.haiku    | {model/built-in/null} |
+| effort.default                             | {low/medium/high/xhigh/max} |
+| effort.routing_tier_defaults.light         | {low/medium/high/xhigh/max} |
+| effort.routing_tier_defaults.standard      | {low/medium/high/xhigh/max} |
+| effort.routing_tier_defaults.heavy         | {low/medium/high/xhigh/max} |
+| effort.agent_overrides.<agent-id>          | {low/medium/high/xhigh/max} |
+| fast_mode.enabled                          | {true/false} |
+| fast_mode.routing_tier_defaults.light      | {true/false} |
+| fast_mode.routing_tier_defaults.standard   | {true/false} |
+| fast_mode.routing_tier_defaults.heavy      | {true/false} |
+| fast_mode.agent_overrides.<agent-id>       | {true/false} |
 
 These settings apply to future /gsd-plan-phase, /gsd-execute-phase, /gsd-discuss-phase,
 and /gsd-ship runs.
@@ -582,7 +612,7 @@ UI/AI phase gates), use /gsd-settings.
 - [ ] Numeric inputs validated — non-numeric rejected and re-prompted
 - [ ] Branch-template inputs validated — non-default must contain a placeholder
 - [ ] Null-allowed fields accept an empty input as a clear
-- [ ] Writes routed through `gsd-sdk query config-set` so unrelated keys are preserved
+- [ ] Writes routed through `gsd-tools.cjs query config-set` so unrelated keys are preserved
 - [ ] Section 7 shows current runtime and built-in tier table
 - [ ] Group B runtimes display "(no built-in default — your runtime handles model selection)"
 - [ ] Override set/clear/keep paths all work correctly for each tier

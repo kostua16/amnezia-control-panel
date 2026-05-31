@@ -4,7 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const { execGit, platformWriteSync, platformReadSync, platformEnsureDir } = require('./shell-command-projection.cjs');
-const { loadConfig, isGitIgnored, normalizePhaseName, comparePhaseNum, getArchivedPhaseDirs, generateSlugInternal, getMilestoneInfo, getMilestonePhaseFilter, resolveModelInternal, resolveReasoningEffortInternal, stripShippedMilestones, extractCurrentMilestone, toPosixPath, output, error, findPhaseInternal, extractOneLinerFromBody, getRoadmapPhaseInternal } = require('./core.cjs');
+const { loadConfig, isGitIgnored, normalizePhaseName, comparePhaseNum, getArchivedPhaseDirs, generateSlugInternal, getMilestoneInfo, getMilestonePhaseFilter, resolveModelInternal, resolveEffortInternal, resolveFastModeInternal, resolveEffortForTier, stripShippedMilestones, extractCurrentMilestone, toPosixPath, output, error, findPhaseInternal, extractOneLinerFromBody, getRoadmapPhaseInternal } = require('./core.cjs');
+const { renderEffortForRuntime, RUNTIMES_WITH_FAST_MODE } = require('./model-catalog.cjs');
 const { planningDir, planningPaths } = require('./planning-workspace.cjs');
 const { extractFrontmatter } = require('./frontmatter.cjs');
 const { MODEL_PROFILES } = require('./model-profiles.cjs');
@@ -241,14 +242,69 @@ function cmdResolveModel(cwd, agentType, raw) {
   const config = loadConfig(cwd);
   const profile = config.model_profile || 'balanced';
   const model = resolveModelInternal(cwd, agentType);
-  const reasoningEffort = resolveReasoningEffortInternal(cwd, agentType);
+  const effort = resolveEffortInternal(cwd, agentType);
 
   const agentModels = MODEL_PROFILES[agentType];
   const result = agentModels
-    ? { model, profile }
-    : { model, profile, unknown_agent: true };
-  if (reasoningEffort) result.reasoning_effort = reasoningEffort;
+    ? { model, profile, effort }
+    : { model, profile, effort, unknown_agent: true };
   output(result, raw, model);
+}
+
+/**
+ * #443 — Superset execution query: model + unified effort + fast_mode.
+ *
+ * Emits JSON:
+ *   { model, profile, effort, effort_rendered, effort_param, effort_propagation,
+ *     fast_mode, fast_mode_supported, [unknown_agent] }
+ *
+ * Flags: --effort <level>, --fast-mode <true|false>, --attempt <n>
+ *
+ * @param {string} cwd
+ * @param {string} agentType
+ * @param {boolean} raw
+ * @param {{ effortOverride?: string, fastModeOverride?: boolean, attempt?: number }} [opts]
+ */
+function cmdResolveExecution(cwd, agentType, raw, opts) {
+  if (!agentType) {
+    error('agent-type required');
+  }
+
+  opts = opts || {};
+  const config = loadConfig(cwd);
+  const profile = config.model_profile || 'balanced';
+  const model = resolveModelInternal(cwd, agentType);
+
+  const effortOpts = {};
+  if (typeof opts.effortOverride === 'string') effortOpts.override = opts.effortOverride;
+
+  const fastModeOpts = {};
+  if (typeof opts.fastModeOverride === 'boolean') fastModeOpts.override = opts.fastModeOverride;
+
+  const effort = (opts.attempt !== undefined && opts.attempt !== null)
+    ? resolveEffortForTier(cwd, agentType, opts.attempt)
+    : resolveEffortInternal(cwd, agentType, effortOpts);
+
+  const fastMode = resolveFastModeInternal(cwd, agentType, fastModeOpts);
+
+  const runtime = config.runtime || 'claude';
+  const rendered = renderEffortForRuntime(runtime, effort);
+
+  const fastModeSupported = RUNTIMES_WITH_FAST_MODE.has(runtime);
+
+  const agentModels = MODEL_PROFILES[agentType];
+  const result = {
+    model,
+    profile,
+    effort,
+    effort_rendered: rendered.value,
+    effort_param: rendered.param,
+    effort_propagation: rendered.channel,
+    fast_mode: fastMode,
+    fast_mode_supported: fastModeSupported,
+  };
+  if (!agentModels) result.unknown_agent = true;
+  output(result, raw, effort);
 }
 
 function cmdCommit(cwd, message, files, raw, amend, noVerify) {
@@ -366,6 +422,43 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
   output(result, raw, hash || 'committed');
 }
 
+/**
+ * Route a list of changed files to their sub-repo prefixes.
+ *
+ * Bucket sub-repos by their first path segment. Any file that matches a
+ * sub-repo prefix must share that sub-repo's first segment, so we only scan
+ * the (small) bucket for the file's first segment instead of all sub-repos
+ * — O(F + R) expected vs the prior O(F*R) find-in-loop. Candidates stay in
+ * sub-repo array order, preserving the original first-match semantics
+ * (incl. multi-segment sub-repos like "vendor/pkg", which resolve via the
+ * inner startsWith). (#311)
+ *
+ * @param {string[]} files    - changed file paths (relative to project root)
+ * @param {string[]} subRepos - sub-repo path prefixes from config.sub_repos
+ * @returns {{ grouped: Object<string,string[]>, unmatched: string[] }}
+ */
+function groupFilesBySubrepo(files, subRepos) {
+  const reposByFirstSeg = new Map();
+  for (const repo of subRepos) {
+    const firstSeg = String(repo).split('/')[0];
+    let bucket = reposByFirstSeg.get(firstSeg);
+    if (!bucket) { bucket = []; reposByFirstSeg.set(firstSeg, bucket); }
+    bucket.push(repo);
+  }
+  const grouped = {};
+  const unmatched = [];
+  for (const file of files) {
+    const candidates = reposByFirstSeg.get(file.split('/')[0]);
+    const match = candidates ? candidates.find(repo => file.startsWith(repo + '/')) : undefined;
+    if (match) {
+      (grouped[match] ||= []).push(file);
+    } else {
+      unmatched.push(file);
+    }
+  }
+  return { grouped, unmatched };
+}
+
 function cmdCommitToSubrepo(cwd, message, files, raw) {
   if (!message) {
     error('commit message required');
@@ -383,17 +476,7 @@ function cmdCommitToSubrepo(cwd, message, files, raw) {
   }
 
   // Group files by sub-repo prefix
-  const grouped = {};
-  const unmatched = [];
-  for (const file of files) {
-    const match = subRepos.find(repo => file.startsWith(repo + '/'));
-    if (match) {
-      if (!grouped[match]) grouped[match] = [];
-      grouped[match].push(file);
-    } else {
-      unmatched.push(file);
-    }
-  }
+  const { grouped, unmatched } = groupFilesBySubrepo(files, subRepos);
 
   if (unmatched.length > 0) {
     process.stderr.write(`Warning: ${unmatched.length} file(s) did not match any sub-repo prefix: ${unmatched.join(', ')}\n`);
@@ -490,6 +573,30 @@ function cmdSummaryExtract(cwd, summaryPath, fields, raw) {
   output(fullResult, raw);
 }
 
+function _wsSleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function _wsParseRetryAfter(header) {
+  if (!header) return null;
+  const trimmed = header.trim();
+  if (/^\d+$/.test(trimmed)) {
+    return Math.min(Math.max(parseInt(trimmed, 10) * 1000, 0), 60000);
+  }
+  const asDate = Date.parse(trimmed);
+  if (!isNaN(asDate)) {
+    return Math.min(Math.max(asDate - Date.now(), 0), 60000);
+  }
+  return null;
+}
+
+function _wsRetryDelayMs(attempt) {
+  const base = 250;
+  const cap = 2000;
+  const exp = Math.min(base * Math.pow(2, attempt), cap);
+  return exp + Math.floor(Math.random() * 100);
+}
+
 async function cmdWebsearch(query, options, raw) {
   const apiKey = process.env.BRAVE_API_KEY;
 
@@ -516,39 +623,82 @@ async function cmdWebsearch(query, options, raw) {
     params.set('freshness', options.freshness);
   }
 
-  try {
-    const response = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?${params}`,
-      {
-        headers: {
-          'Accept': 'application/json',
-          'X-Subscription-Token': apiKey
-        }
+  const rawTimeout = parseInt(process.env.GSD_WEBSEARCH_TIMEOUT_MS, 10);
+  const timeoutMs = (Number.isInteger(rawTimeout) && rawTimeout > 0) ? rawTimeout : 10000;
+
+  const MAX_RETRIES = 2;
+  let attempt = 0;
+
+  while (true) {
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(new Error('timeout')), timeoutMs);
+      let response;
+      try {
+        response = await fetch(
+          `https://api.search.brave.com/res/v1/web/search?${params}`,
+          {
+            headers: {
+              'Accept': 'application/json',
+              'X-Subscription-Token': apiKey
+            },
+            signal: ac.signal
+          }
+        );
+      } finally {
+        clearTimeout(timer);
       }
-    );
 
-    if (!response.ok) {
-      output({ available: false, error: `API error: ${response.status}` }, raw, '');
-      return;
+      if (response.ok) {
+        const data = await response.json();
+        const results = (data.web?.results || []).map(r => ({
+          title: r.title,
+          url: r.url,
+          description: r.description,
+          age: r.age || null
+        }));
+        output({
+          available: true,
+          query,
+          count: results.length,
+          results
+        }, raw, results.map(r => `${r.title}\n${r.url}\n${r.description}`).join('\n\n'));
+        return;
+      }
+
+      const status = response.status;
+      const isRetryable = status === 429 || status >= 500;
+
+      if (!isRetryable) {
+        // Non-retryable 4xx — fail immediately, no attempts field
+        output({ available: false, error: `API error: ${status}` }, raw, '');
+        return;
+      }
+
+      // Retryable HTTP error
+      attempt++;
+      if (attempt > MAX_RETRIES) {
+        output({ available: false, error: `API error: ${status}`, attempts: attempt }, raw, '');
+        return;
+      }
+
+      let delay;
+      if (status === 429) {
+        const retryAfter = _wsParseRetryAfter(response.headers.get('retry-after'));
+        delay = retryAfter !== null ? retryAfter : _wsRetryDelayMs(attempt - 1);
+      } else {
+        delay = _wsRetryDelayMs(attempt - 1);
+      }
+      await _wsSleep(delay);
+
+    } catch (err) {
+      attempt++;
+      if (attempt > MAX_RETRIES) {
+        output({ available: false, error: err.message, attempts: attempt }, raw, '');
+        return;
+      }
+      await _wsSleep(_wsRetryDelayMs(attempt - 1));
     }
-
-    const data = await response.json();
-
-    const results = (data.web?.results || []).map(r => ({
-      title: r.title,
-      url: r.url,
-      description: r.description,
-      age: r.age || null
-    }));
-
-    output({
-      available: true,
-      query,
-      count: results.length,
-      results
-    }, raw, results.map(r => `${r.title}\n${r.url}\n${r.description}`).join('\n\n'));
-  } catch (err) {
-    output({ available: false, error: err.message }, raw, '');
   }
 }
 
@@ -1015,6 +1165,7 @@ function cmdCheckCommit(cwd, raw) {
 }
 
 module.exports = {
+  groupFilesBySubrepo,
   determinePhaseStatus,
   cmdGenerateSlug,
   cmdCurrentTimestamp,
@@ -1022,6 +1173,7 @@ module.exports = {
   cmdVerifyPathExists,
   cmdHistoryDigest,
   cmdResolveModel,
+  cmdResolveExecution,
   cmdCommit,
   cmdCommitToSubrepo,
   cmdSummaryExtract,
@@ -1032,4 +1184,5 @@ module.exports = {
   cmdScaffold,
   cmdStats,
   cmdCheckCommit,
+  _wsParseRetryAfter,
 };

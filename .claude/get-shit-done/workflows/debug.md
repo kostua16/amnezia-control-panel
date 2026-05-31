@@ -16,29 +16,19 @@ Valid GSD subagent types (use exact names — do not fall back to 'general-purpo
 ## 0. Initialize Context
 
 ```bash
-# SDK resolution: prefer local gsd-tools.cjs, fall back to global gsd-sdk (#3668)
-GSD_TOOLS="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/get-shit-done/bin/gsd-tools.cjs"
-if [ -f "$GSD_TOOLS" ]; then
-  GSD_SDK="node $GSD_TOOLS"
-elif command -v gsd-sdk >/dev/null 2>&1; then
-  GSD_SDK="gsd-sdk"
-else
-  echo "ERROR: gsd-sdk not found on PATH and $GSD_TOOLS does not exist." >&2
-  echo "Run: npx get-shit-done-cc@latest --claude --local" >&2
-  exit 1
-fi
-INIT=$($GSD_SDK query state.load)
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/get-shit-done/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
+INIT=$(gsd_run query state.load)
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
 Extract `commit_docs` from init JSON. Resolve debugger model:
 ```bash
-debugger_model=$($GSD_SDK query resolve-model gsd-debugger 2>/dev/null | jq -r '.model' 2>/dev/null || true)
+debugger_model=$(gsd_run query resolve-model gsd-debugger 2>/dev/null | jq -r '.model' 2>/dev/null || true)
 ```
 
 Read TDD mode from config:
 ```bash
-TDD_MODE=$($GSD_SDK query config-get workflow.tdd_mode 2>/dev/null | jq -r 'if type == "boolean" then tostring else . end' 2>/dev/null || echo "false")
+TDD_MODE=$(gsd_run query config-get workflow.tdd_mode 2>/dev/null | jq -r 'if type == "boolean" then tostring else . end' 2>/dev/null || echo "false")
 ```
 
 ## 1a. LIST subcommand

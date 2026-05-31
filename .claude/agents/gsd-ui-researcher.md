@@ -9,6 +9,7 @@ color: "#E879F9"
 #       hooks:
 #         - type: command
 #           command: "npx eslint --fix $FILE 2>/dev/null || true"
+effort: high
 ---
 
 <role>
@@ -292,7 +293,7 @@ Fill all sections. Write to `$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md`.
 ## Step 6: Commit (optional)
 
 ```bash
-gsd-sdk query commit "docs($PHASE): UI design contract" --files "$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md"
+gsd-tools query commit "docs($PHASE): UI design contract" --files "$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md"
 ```
 
 ## Step 7: Return Structured Result

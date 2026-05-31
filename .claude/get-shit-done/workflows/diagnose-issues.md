@@ -58,18 +58,8 @@ gaps = [
 **Read worktree config:**
 
 ```bash
-# SDK resolution: prefer local gsd-tools.cjs, fall back to global gsd-sdk (#3668)
-GSD_TOOLS="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/get-shit-done/bin/gsd-tools.cjs"
-if [ -f "$GSD_TOOLS" ]; then
-  GSD_SDK="node $GSD_TOOLS"
-elif command -v gsd-sdk >/dev/null 2>&1; then
-  GSD_SDK="gsd-sdk"
-else
-  echo "ERROR: gsd-sdk not found on PATH and $GSD_TOOLS does not exist." >&2
-  echo "Run: npx get-shit-done-cc@latest --claude --local" >&2
-  exit 1
-fi
-USE_WORKTREES=$($GSD_SDK query config-get workflow.use_worktrees 2>/dev/null || echo "true")
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/get-shit-done/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
+USE_WORKTREES=$(gsd_run query config-get workflow.use_worktrees 2>/dev/null || echo "true")
 ```
 
 **Report diagnosis plan to user:**
@@ -98,7 +88,7 @@ This runs in parallel - all gaps investigated simultaneously.
 **Load agent skills:**
 
 ```bash
-AGENT_SKILLS_DEBUGGER=$($GSD_SDK query agent-skills gsd-debugger)
+AGENT_SKILLS_DEBUGGER=$(gsd_run query agent-skills gsd-debugger)
 EXPECTED_BASE=$(git rev-parse HEAD)
 ```
 
@@ -190,7 +180,7 @@ Update status in frontmatter to "diagnosed".
 
 Commit the updated UAT.md:
 ```bash
-$GSD_SDK query commit "docs({phase_num}): add root causes from diagnosis" --files ".planning/phases/XX-name/{phase_num}-UAT.md"
+gsd_run query commit "docs({phase_num}): add root causes from diagnosis" --files ".planning/phases/XX-name/{phase_num}-UAT.md"
 ```
 </step>
 

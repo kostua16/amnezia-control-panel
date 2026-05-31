@@ -9,6 +9,7 @@ color: purple
 #       hooks:
 #         - type: command
 #           command: "npx eslint --fix $FILE 2>/dev/null || true"
+effort: xhigh
 ---
 
 <role>
@@ -560,7 +561,7 @@ When files are written and returning to orchestrator:
 
 ### Files Ready for Review
 
-User can review actual files in the editor or via SDK queries (e.g. `gsd-sdk query roadmap.analyze` and `gsd-sdk query state.load`) instead of ad-hoc shell `cat`.
+User can review actual files in the editor or via SDK queries (e.g. `gsd-tools query roadmap.analyze` and `gsd-tools query state.load`) instead of ad-hoc shell `cat`.
 
 {If gaps found during creation:}
 

@@ -2,7 +2,7 @@
 Interactive configuration of third-party integrations for GSD — search API keys
 (Brave / Firecrawl / Exa), code-review CLI routing (`review.models.<cli>`), and
 agent-skill injection (`agent_skills.<agent-type>`). Writes to
-`.planning/config.json` via `gsd-sdk`/`gsd-tools` so unrelated keys are
+`.planning/config.json` via `gsd-tools` so unrelated keys are
 preserved, never clobbered.
 
 This command is deliberately separate from `/gsd-settings` (workflow toggles)
@@ -42,18 +42,8 @@ Read all files referenced by the invoking prompt's execution_context before star
 Ensure config exists and resolve the active config path (flat vs workstream, #2282):
 
 ```bash
-# SDK resolution: prefer local gsd-tools.cjs, fall back to global gsd-sdk (#3668)
-GSD_TOOLS="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/get-shit-done/bin/gsd-tools.cjs"
-if [ -f "$GSD_TOOLS" ]; then
-  GSD_SDK="node $GSD_TOOLS"
-elif command -v gsd-sdk >/dev/null 2>&1; then
-  GSD_SDK="gsd-sdk"
-else
-  echo "ERROR: gsd-sdk not found on PATH and $GSD_TOOLS does not exist." >&2
-  echo "Run: npx get-shit-done-cc@latest --claude --local" >&2
-  exit 1
-fi
-$GSD_SDK query config-ensure-section
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/get-shit-done/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
+gsd_run query config-ensure-section
 if [[ -z "${GSD_CONFIG_PATH:-}" ]]; then
   if [[ -f .planning/active-workstream ]]; then
     WS=$(tr -d '\n\r' < .planning/active-workstream)
@@ -76,10 +66,10 @@ integration field, compute one of:
 - `<value>` — non-secret routing/skill string, shown as-is
 
 ```bash
-BRAVE=$($GSD_SDK query config-get brave_search --default null)
-FIRECRAWL=$($GSD_SDK query config-get firecrawl --default null)
-EXA=$($GSD_SDK query config-get exa_search --default null)
-SEARCH_GITIGNORED=$($GSD_SDK query config-get search_gitignored --default false)
+BRAVE=$(gsd_run query config-get brave_search --default null)
+FIRECRAWL=$(gsd_run query config-get firecrawl --default null)
+EXA=$(gsd_run query config-get exa_search --default null)
+SEARCH_GITIGNORED=$(gsd_run query config-get search_gitignored --default false)
 ```
 
 For each secret key (`brave_search`, `firecrawl`, `exa_search`) the displayed
@@ -108,9 +98,7 @@ AskUserQuestion([
       { label: "Leave (**** already set)", description: "Keep current value" },
       { label: "Replace", description: "Enter a new API key" },
       { label: "Clear", description: "Remove the stored key" }
-      // When unset:
-      // { label: "Skip", description: "Leave unset" },
-      // { label: "Set", description: "Enter an API key" }
+      // When unset, use the two-option shape: Skip / Set.
     ]
   },
   {
@@ -142,16 +130,16 @@ key value. **The answer must not be echoed back** in subsequent question
 descriptions or confirmation text. Write the value via:
 
 ```bash
-$GSD_SDK query config-set brave_search "<value>"     # masked in output
-$GSD_SDK query config-set firecrawl "<value>"        # masked in output
-$GSD_SDK query config-set exa_search "<value>"       # masked in output
-$GSD_SDK query config-set search_gitignored true|false
+gsd_run query config-set brave_search "<value>"     # masked in output
+gsd_run query config-set firecrawl "<value>"        # masked in output
+gsd_run query config-set exa_search "<value>"       # masked in output
+gsd_run query config-set search_gitignored true|false
 ```
 
 For "Clear", write `null`:
 
 ```bash
-$GSD_SDK query config-set brave_search null
+gsd_run query config-set brave_search null
 ```
 </step>
 
@@ -164,6 +152,22 @@ shell command to invoke for a given reviewer flavor. Supported flavors:
 ```text
 AskUserQuestion([
   {
+    question: "Review model CLI mapping — what next?",
+    header: "Review",
+    multiSelect: false,
+    options: [
+      { label: "Configure CLI", description: "Pick a reviewer flavor and set/clear its command" },
+      { label: "Done", description: "Finish this section" }
+    ]
+  }
+])
+```
+
+If "Configure CLI" is selected, ask:
+
+```text
+AskUserQuestion([
+  {
     question: "Which reviewer CLI do you want to configure?",
     header: "CLI",
     multiSelect: false,
@@ -171,8 +175,7 @@ AskUserQuestion([
       { label: "Claude", description: "review.models.claude — defaults to session model when unset" },
       { label: "Codex", description: "review.models.codex — e.g. 'codex exec --model gpt-5'" },
       { label: "Gemini", description: "review.models.gemini — e.g. 'gemini -m gemini-2.5-pro'" },
-      { label: "OpenCode", description: "review.models.opencode — e.g. 'opencode run --model claude-sonnet-4'" },
-      { label: "Done", description: "Skip — finish this section" }
+      { label: "OpenCode", description: "review.models.opencode — e.g. 'opencode run --model claude-sonnet-4'" }
     ]
   }
 ])
@@ -183,9 +186,10 @@ Leave / Replace / Clear, followed by a text-input prompt for the new command
 string. Write via:
 
 ```bash
-$GSD_SDK query config-set review.models.<cli> "<command string>"
+gsd_run query config-set review.models.<cli> "<command string>"
 ```
 
+After each update, return to the "Review model CLI mapping — what next?" question.
 Loop until the user selects "Done".
 
 The `review.models.<cli>` key is validated by the dynamic pattern
@@ -203,6 +207,22 @@ metacharacters are rejected.
 ```text
 AskUserQuestion([
   {
+    question: "Agent skills mapping — what next?",
+    header: "Agent Skills",
+    multiSelect: false,
+    options: [
+      { label: "Configure agent", description: "Pick an agent type and set/clear skills" },
+      { label: "Done", description: "Finish this section" }
+    ]
+  }
+])
+```
+
+If "Configure agent" is selected, ask:
+
+```text
+AskUserQuestion([
+  {
     question: "Configure agent_skills for which agent type?",
     header: "Agent Type",
     multiSelect: false,
@@ -210,8 +230,7 @@ AskUserQuestion([
       { label: "gsd-executor", description: "Skills injected when spawning executor agents" },
       { label: "gsd-planner", description: "Skills injected when spawning planner agents" },
       { label: "gsd-verifier", description: "Skills injected when spawning verifier agents" },
-      { label: "Custom…", description: "Enter a custom agent-type slug" },
-      { label: "Done", description: "Skip — finish this section" }
+      { label: "Custom…", description: "Enter a custom agent-type slug" }
     ]
   }
 ])
@@ -231,9 +250,10 @@ For a selected slug, prompt for the comma-separated skill list (text input).
 Show the current value if any, offer Leave / Replace / Clear. Write via:
 
 ```bash
-$GSD_SDK query config-set agent_skills.<slug> "<skill-a,skill-b,skill-c>"
+gsd_run query config-set agent_skills.<slug> "<skill-a,skill-b,skill-c>"
 ```
 
+After each update, return to the "Agent skills mapping — what next?" question.
 Loop until "Done".
 </step>
 

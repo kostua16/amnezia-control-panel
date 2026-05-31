@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { execGit, platformWriteSync, platformReadSync, platformEnsureDir } = require('./shell-command-projection.cjs');
 const { MODEL_PROFILES, AGENT_TO_PHASE_TYPE, VALID_PHASE_TYPES, AGENT_DEFAULT_TIERS, VALID_AGENT_TIERS, nextTier } = require('./model-profiles.cjs');
-const { MODEL_ALIAS_MAP, RUNTIME_PROFILE_MAP, KNOWN_RUNTIMES, RUNTIMES_WITH_REASONING_EFFORT } = require('./model-catalog.cjs');
+const { MODEL_ALIAS_MAP, RUNTIME_PROFILE_MAP, KNOWN_RUNTIMES, RUNTIMES_WITH_REASONING_EFFORT, renderEffortForRuntime, RUNTIMES_WITH_FAST_MODE } = require('./model-catalog.cjs');
 const {
   resolveWorktreeContext,
   parseWorktreePorcelain: parseWorktreePorcelainPolicy,
@@ -25,7 +25,7 @@ const {
   setActiveWorkstream,
   findContextMdIn,
 } = require('./planning-workspace.cjs');
-const { findProjectRoot } = require('./project-root.generated.cjs');
+const { findProjectRoot } = require('./project-root.cjs');
 
 // ─── Configuration Module (generated CJS mirror) ────────────────────────────
 // Cycle 4: import canonical defaults + normalization primitives from the
@@ -36,7 +36,7 @@ const { findProjectRoot } = require('./project-root.generated.cjs');
 const {
   CONFIG_DEFAULTS: CANONICAL_CONFIG_DEFAULTS,
   normalizeLegacyKeys,
-} = require('./configuration.generated.cjs');
+} = require('./configuration.cjs');
 
 // ─── Path helpers ────────────────────────────────────────────────────────────
 
@@ -280,11 +280,24 @@ function _deepMergeConfig(base, overlay) {
 function loadConfig(cwd, options = {}) {
   const activeWorkstream = Object.prototype.hasOwnProperty.call(options, 'workstream')
     ? options.workstream
+    : (options.workstreamContext && Object.prototype.hasOwnProperty.call(options.workstreamContext, 'ws'))
+      ? options.workstreamContext.ws
     : (process.env.GSD_WORKSTREAM || null);
   // When GSD_WORKSTREAM is set, load root config first so workstream config
   // can inherit from it. This prevents users from duplicating model_overrides,
   // workflow.*, etc. across every workstream config (#2714).
   const ws = activeWorkstream;
+  // #315 — per-call lazy memo: all three detection sites inside this loadConfig
+  // call operate on the same cwd and the subrepo set cannot change mid-call, so
+  // a single scan is sufficient. The memo is scoped to THIS call (not module-level)
+  // so separate loadConfig invocations each get a fresh scan.
+  let cachedSubRepos;
+  const getDetectedSubRepos = () => {
+    if (cachedSubRepos === undefined) cachedSubRepos = detectSubRepos(cwd);
+    // Return a copy: original detectSubRepos returned a fresh array per call,
+    // so each site must keep an independent array (avoid cross-site aliasing).
+    return cachedSubRepos.slice();
+  };
   let rootParsed = null;
   if (ws) {
     const rootConfigPath = path.join(planningRoot(cwd), 'config.json');
@@ -300,7 +313,7 @@ function loadConfig(cwd, options = {}) {
         // Resolve filesystem-dependent normalizations (multiRepo → planning.sub_repos)
         for (const norm of rootNorms) {
           if (norm.requiresFilesystem && !rootNormalized.planning?.sub_repos) {
-            const detected = detectSubRepos(cwd);
+            const detected = getDetectedSubRepos();
             if (detected.length > 0) {
               if (!rootNormalized.planning) rootNormalized.planning = {};
               rootNormalized.planning.sub_repos = detected;
@@ -348,7 +361,7 @@ function loadConfig(cwd, options = {}) {
         // AND the original file didn't have sub_repos already (preserve existing intent).
         for (const norm of normalizations) {
           if (norm.requiresFilesystem && !fileData.planning?.sub_repos) {
-            const detected = detectSubRepos(cwd);
+            const detected = getDetectedSubRepos();
             if (detected.length > 0) {
               if (!fileData.planning) fileData.planning = {};
               fileData.planning.sub_repos = detected;
@@ -362,7 +375,7 @@ function loadConfig(cwd, options = {}) {
     // Keep planning.sub_repos in sync with actual filesystem
     const currentSubRepos = fileData.planning?.sub_repos || [];
     if (Array.isArray(currentSubRepos) && currentSubRepos.length > 0) {
-      const detected = detectSubRepos(cwd);
+      const detected = getDetectedSubRepos();
       if (detected.length > 0) {
         const sorted = [...currentSubRepos].sort();
         if (JSON.stringify(sorted) !== JSON.stringify(detected)) {
@@ -397,7 +410,7 @@ function loadConfig(cwd, options = {}) {
       // Dynamic-pattern top-level containers (e.g. review, model_profile_overrides)
       ...DYNAMIC_KEY_PATTERNS.map(p => p.topLevel),
       // Internal keys loadConfig reads but config-set doesn't expose
-      'model_overrides', 'context_window', 'resolve_model_ids', 'claude_md_path',
+      'model_overrides', 'context_window', 'resolve_model_ids', 'claude_md_path', 'effort', 'fast_mode',
       // Deprecated keys (still accepted for migration, not in config-set)
       // 'branching_strategy' is kept here as a safety net: it is migrated to
       // git.branching_strategy above (#3523), but on the first read of a root
@@ -501,6 +514,10 @@ function loadConfig(cwd, options = {}) {
       // unknown runtime/tier names at load time, not silently (review finding #10).
       runtime: parsed.runtime || null,
       model_profile_overrides: parsed.model_profile_overrides || null,
+      // #443 — effort/fast_mode: pass through from config.json; resolvers handle
+      // defaults + tier lookups internally.
+      effort: parsed.effort || null,
+      fast_mode: parsed.fast_mode || null,
       agent_skills: parsed.agent_skills || {},
       manager: parsed.manager || {},
       response_language: get('response_language') || null,
@@ -545,6 +562,8 @@ function loadConfig(cwd, options = {}) {
         model_overrides: globalDefaults.model_overrides || null,
         models: globalDefaults.models || null,
         dynamic_routing: globalDefaults.dynamic_routing || null,
+        effort: globalDefaults.effort || null,
+        fast_mode: globalDefaults.fast_mode || null,
         agent_skills: globalDefaults.agent_skills || {},
         response_language: globalDefaults.response_language || null,
       };
@@ -967,19 +986,28 @@ function extractCurrentMilestone(content, cwd) {
   // Match headings like: ## Roadmap v3.0: Name, ## v3.0 Name, etc.
   const escapedVersion = escapeRegex(version);
   const sectionPattern = new RegExp(
-    `(^#{1,3}\\s+.*${escapedVersion}[^\\n]*)`,
-    'mi'
+    `(^#{1,3}\\s+.*${escapedVersion}\\b[^\\n]*)`,
+    'gmi'
   );
-  const sectionMatch = content.match(sectionPattern);
+  const allMatches = [...content.matchAll(sectionPattern)];
 
-  if (!sectionMatch) return stripShippedMilestones(content);
+  if (allMatches.length === 0) return stripShippedMilestones(content);
 
-  const sectionStart = sectionMatch.index;
+  // Select the first non-closed heading; fall back to first match if all are closed.
+  // A heading is "closed" only if it carries a closed marker AND no active marker.
+  const closedMarkerPattern = /\b(?:CLOSED|ARCHIVED|ABANDONED|SHIPPED|FAILED)\b|✅|🗄/i;
+  const activeMarkerPattern = /\b(?:STARTED|ACTIVE|WIP)\b|in\s+progress|🚧/i;
+  const isClosed = (h) => closedMarkerPattern.test(h) && !activeMarkerPattern.test(h);
+  const firstMatch = allMatches[0];
+  const selected = allMatches.find((m) => !isClosed(m[1])) || firstMatch;
+
+  const sectionStart = selected.index;
 
   // Find the end: next milestone heading at same or higher level, or EOF.
   // Milestone headings look like: ## v2.0, ## Roadmap v2.0, ## ✅ v1.0, etc.
   // Scan line-by-line so that heading-like lines inside fenced code blocks
   // (``` or ~~~) are not mistaken for milestone boundaries. See #2787.
+  const sectionMatch = selected;
   const headingLevel = sectionMatch[1].match(/^(#{1,3})\s/)[1].length;
   const restContent = content.slice(sectionStart + sectionMatch[0].length);
   // Exclude phase headings (e.g. "### Phase 12: v1.0 Tech-Debt Closure") from
@@ -1015,13 +1043,31 @@ function extractCurrentMilestone(content, cwd) {
   }
 
   // Return everything before the current milestone section (non-milestone content
-  // like title, overview) plus the current milestone section
-  const beforeMilestones = content.slice(0, sectionStart);
+  // like title, overview) plus the current milestone section.
+  // Anchor the preamble at the first *any-version* milestone heading so that
+  // unmatched sibling sections (e.g. v2.0-Beta when STATE=v2.0-B) do not leak
+  // in as preamble content.
+  const anyMilestonePattern = /^#{1,3}\s+(?!Phase\s+\S)(?:.*v\d+\.\d+|✅|📋|🚧)/im;
+  const firstMilestoneMatch = content.match(anyMilestonePattern);
+  const preambleCutoff = firstMilestoneMatch
+    ? firstMilestoneMatch.index
+    : firstMatch.index;
+  const beforeMilestones = content.slice(0, preambleCutoff);
   const currentSection = content.slice(sectionStart, sectionEnd);
 
   // Also include any content before the first milestone heading (title, overview, etc.)
-  // but strip any <details> blocks in it (these are definitely shipped)
-  const preamble = beforeMilestones.replace(/<details>[\s\S]*?<\/details>/gi, '');
+  // but strip any <details> blocks in it (these are definitely shipped) and any
+  // flat phase-detail blocks. A "## Phase Details"-style section before the first
+  // milestone heading lists `### Phase N:` entries spanning ALL milestones; left
+  // in the preamble they leak into the active-milestone scope and over-count
+  // total_phases / total_plans (#501). The active milestone's own phase content
+  // lives in currentSection, so stripping phase blocks from the preamble is safe.
+  const preamble = beforeMilestones
+    .replace(/<details>[\s\S]*?<\/details>/gi, '')
+    // Drop each `### Phase N:` heading and its body up to the next heading.
+    .replace(/^#{2,4}\s*Phase\s+[\w][\w.-]*\s*:[^\n]*(?:\n(?!#{1,6}\s)[^\n]*)*\n?/gim, '')
+    // Drop a now-empty flat phase-details section heading, if present.
+    .replace(/^#{1,4}\s*Phase Details\b[^\n]*\n?/gim, '');
 
   return preamble + currentSection;
 }
@@ -1130,10 +1176,14 @@ function checkAgentsInstalled() {
   }
 
   for (const agent of expectedAgents) {
-    // Check both .md (standard) and .agent.md (Copilot) file formats.
+    // Check all runtime agent file formats:
+    // - .md        (Claude/OpenCode/Gemini/etc.)
+    // - .agent.md  (Copilot)
+    // - .toml      (Codex)
     const agentFile = path.join(agentsDir, `${agent}.md`);
     const agentFileCopilot = path.join(agentsDir, `${agent}.agent.md`);
-    if (fs.existsSync(agentFile) || fs.existsSync(agentFileCopilot)) {
+    const agentFileCodex = path.join(agentsDir, `${agent}.toml`);
+    if (fs.existsSync(agentFile) || fs.existsSync(agentFileCopilot) || fs.existsSync(agentFileCodex)) {
       installed.push(agent);
     } else {
       missing.push(agent);
@@ -1214,9 +1264,9 @@ function _resetRuntimeWarningCacheForTests() {
 /**
  * #2517 — Resolve the runtime-aware tier entry for (runtime, tier).
  *
- * Single source of truth shared by core.cjs (resolveModelInternal /
- * resolveReasoningEffortInternal) and bin/install.js (Codex/OpenCode TOML emit
- * paths). Always merges built-in defaults with user overrides at the field
+ * Single source of truth shared by core.cjs (resolveModelInternal)
+ * and bin/install.js (Codex/OpenCode TOML emit paths). Always merges
+ * built-in defaults with user overrides at the field
  * level so partial overrides keep the unspecified fields:
  *
  *   `{ codex: { opus: "gpt-5-pro" } }`           keeps reasoning_effort: 'xhigh'
@@ -1253,7 +1303,7 @@ function resolveTierEntry({ runtime, tier, overrides }) {
 }
 
 /**
- * Convenience wrapper used by resolveModelInternal / resolveReasoningEffortInternal.
+ * Convenience wrapper used by resolveModelInternal.
  * Pulls runtime + overrides out of a loaded config and delegates to resolveTierEntry.
  */
 function _resolveRuntimeTier(config, tier) {
@@ -1441,66 +1491,209 @@ function resolveModelForTier(cwd, agentType, attempt) {
   return alias;
 }
 
+// ─── #443 — Unified effort + fast_mode resolvers ─────────────────────────────
+//
+// Universal effort ladder (ordered):
+const VALID_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const EFFORT_SET = new Set(VALID_EFFORTS);
+
 /**
- * #2517 — Resolve runtime-specific reasoning_effort for an agent.
- * Returns null unless:
- *   - `runtime` is explicitly set in config,
- *   - the runtime supports reasoning_effort (currently: codex),
- *   - profile is not 'inherit',
- *   - the resolved tier entry has a `reasoning_effort` value.
- *
- * Never returns a value for Claude — keeps reasoning_effort out of Claude spawn paths.
+ * Walk one step up the effort ladder from `e`. Returns the next level, or
+ * the same level if already at the top.
  */
-function resolveReasoningEffortInternal(cwd, agentType) {
+function nextEffort(e) {
+  const i = VALID_EFFORTS.indexOf(e);
+  if (i < 0) return null;
+  return VALID_EFFORTS[Math.min(i + 1, VALID_EFFORTS.length - 1)];
+}
+
+/**
+ * #443 — Resolve a universal effort string for (cwd, agentType).
+ *
+ * Precedence (first valid wins; invalid/wrong-type values are IGNORED and fall
+ * through — mirrors the VALID_TIERS gate pattern in resolveModelInternal):
+ *   1. opts.override (if in EFFORT_SET)
+ *   2. config.effort.agent_overrides[agentType] (if valid)
+ *   3. config.effort.routing_tier_defaults[ AGENT_DEFAULT_TIERS[agentType] ] (agent known + valid)
+ *   4. config.effort.default (if valid)
+ *   5. 'high' (Anthropic Opus 4.8 universal default)
+ *
+ * Handles: config.effort missing; effort.* non-object/malformed; unknown
+ * agentType skips step 3; numeric/boolean garbage ignored.
+ *
+ * @param {string} cwd - Project directory.
+ * @param {string} agentType - Agent name.
+ * @param {{ override?: string }} [opts]
+ * @returns {string} A valid effort string.
+ */
+function resolveEffortInternal(cwd, agentType, opts) {
+  // Step 1: invocation override
+  if (opts && typeof opts.override === 'string' && EFFORT_SET.has(opts.override)) {
+    return opts.override;
+  }
+
   const config = loadConfig(cwd);
-  if (!config.runtime) return null;
-  // Strict allowlist: reasoning_effort only propagates for runtimes whose
-  // install path actually accepts it. Adding a new runtime here is the only
-  // way to enable effort propagation — overrides cannot bypass the gate.
-  // Without this, a typo in `runtime` (e.g. `"codx"`) plus a user override
-  // for that typo would leak `xhigh` into a Claude or unknown install
-  // (review finding #3).
-  if (!RUNTIMES_WITH_REASONING_EFFORT.has(config.runtime)) return null;
-  // Per-agent override means user supplied a fully-qualified ID; reasoning_effort
-  // for that case must be set via per-agent mechanism, not tier inference.
-  if (config.model_overrides?.[agentType]) return null;
+  const effortCfg = (config.effort && typeof config.effort === 'object' && !Array.isArray(config.effort))
+    ? config.effort
+    : null;
 
-  const profile = String(config.model_profile || 'balanced').toLowerCase();
-  const agentModels = MODEL_PROFILES[agentType];
-  if (!agentModels) return null;
+  // Step 2: agent_overrides
+  if (effortCfg) {
+    const ao = effortCfg.agent_overrides;
+    if (ao && typeof ao === 'object' && !Array.isArray(ao)) {
+      const v = ao[agentType];
+      if (typeof v === 'string' && EFFORT_SET.has(v)) return v;
+    }
+  }
 
-  // #3023 (CR Major): mirror the phase-type tier lookup from
-  // resolveModelInternal. Without this, `model` and `reasoning_effort`
-  // derive from different tier sources on Codex when models.<phase_type>
-  // overrides the profile.
-  //
-  // #3030 CR follow-up: do NOT short-circuit on profile === 'inherit'
-  // before reading the phase-type tier. A config like
-  //   { model_profile: 'inherit', models: { execution: 'opus' } }
-  // must produce the opus runtime effort, not null. Compute tier from
-  // phase-type first; only fall back to profile when there's no valid
-  // phase-type override; only return null when the resolved tier is
-  // 'inherit' or unknown.
-  const phaseType = AGENT_TO_PHASE_TYPE[agentType];
-  const phaseTypeTier = (phaseType && config.models && typeof config.models === 'object')
-    ? config.models[phaseType]
-    : undefined;
-  // Explicit phase-type 'inherit' is the user opting out of tier-based
-  // effort for this phase — return null instead of falling through to
-  // profile (which would silently emit the profile's effort and
-  // contradict the user's choice).
-  if (phaseTypeTier === 'inherit') return null;
-  const VALID_TIERS = new Set(['opus', 'sonnet', 'haiku']);
-  const tier = (phaseTypeTier && VALID_TIERS.has(phaseTypeTier))
-    ? phaseTypeTier
-    : (profile === 'inherit'
-      ? 'inherit'
-      : (agentModels[profile] || agentModels['balanced']));
-  // 'inherit' (from profile fallback) yields no runtime effort.
-  if (!tier || tier === 'inherit') return null;
+  // Step 3: routing_tier_defaults by agent's default tier.
+  // Manifest tier defaults are only used when there is NO effort config block at all
+  // (effortCfg === null). When the user explicitly sets an effort block, we respect
+  // their explicit routing_tier_defaults (if set) and fall through to effort.default
+  // if they didn't set them. This prevents the manifest tier defaults from silently
+  // overriding a user's `effort: { default: "medium" }`.
+  const agentTier = AGENT_DEFAULT_TIERS[agentType];
+  if (agentTier) {
+    if (effortCfg && effortCfg.routing_tier_defaults &&
+        typeof effortCfg.routing_tier_defaults === 'object' &&
+        !Array.isArray(effortCfg.routing_tier_defaults)) {
+      // User provided routing_tier_defaults — honor them
+      const v = effortCfg.routing_tier_defaults[agentTier];
+      if (typeof v === 'string' && EFFORT_SET.has(v)) return v;
+    } else if (!effortCfg) {
+      // No effort config at all — use manifest tier defaults
+      const manifestDefaults = CANONICAL_CONFIG_DEFAULTS.effort?.routing_tier_defaults;
+      if (manifestDefaults && typeof manifestDefaults === 'object') {
+        const v = manifestDefaults[agentTier];
+        if (typeof v === 'string' && EFFORT_SET.has(v)) return v;
+      }
+    }
+    // else: effortCfg exists but no routing_tier_defaults — fall through to effort.default
+  }
 
-  const entry = _resolveRuntimeTier(config, tier);
-  return entry?.reasoning_effort || null;
+  // Step 4: effort.default
+  if (effortCfg) {
+    const d = effortCfg.default;
+    if (typeof d === 'string' && EFFORT_SET.has(d)) return d;
+  }
+
+  // Step 5: hardcoded default
+  return 'high';
+}
+
+/**
+ * #443 — Resolve fast_mode boolean for (cwd, agentType).
+ *
+ * Accepts ONLY real booleans at each level. Strings like "true" are NOT accepted
+ * and fall through.
+ *
+ * Precedence:
+ *   1. opts.override (typeof boolean)
+ *   2. config.fast_mode.agent_overrides[agentType] (boolean)
+ *   3. config.fast_mode.routing_tier_defaults[ AGENT_DEFAULT_TIERS[agentType] ] (agent known + boolean)
+ *   4. config.fast_mode.enabled (boolean)
+ *   5. false
+ *
+ * @param {string} cwd
+ * @param {string} agentType
+ * @param {{ override?: boolean }} [opts]
+ * @returns {boolean}
+ */
+function resolveFastModeInternal(cwd, agentType, opts) {
+  // Step 1: invocation override
+  if (opts && typeof opts.override === 'boolean') {
+    return opts.override;
+  }
+
+  const config = loadConfig(cwd);
+  const fmCfg = (config.fast_mode && typeof config.fast_mode === 'object' && !Array.isArray(config.fast_mode))
+    ? config.fast_mode
+    : null;
+
+  // Step 2: agent_overrides
+  if (fmCfg) {
+    const ao = fmCfg.agent_overrides;
+    if (ao && typeof ao === 'object' && !Array.isArray(ao)) {
+      const v = ao[agentType];
+      if (typeof v === 'boolean') return v;
+    }
+  }
+
+  // Step 3: routing_tier_defaults by agent's default tier.
+  // Manifest tier defaults are only used when there is no fast_mode config block at all
+  // (fmCfg === null). When the user explicitly set a fast_mode block (even with just
+  // `enabled`), manifest routing_tier_defaults do not fire — we fall through to enabled (step 4).
+  // This ensures `fast_mode: { enabled: true }` works intuitively without the user having
+  // to also spell out all three tier defaults.
+  const agentTier = AGENT_DEFAULT_TIERS[agentType];
+  if (agentTier) {
+    if (fmCfg && fmCfg.routing_tier_defaults &&
+        typeof fmCfg.routing_tier_defaults === 'object' &&
+        !Array.isArray(fmCfg.routing_tier_defaults)) {
+      // User provided routing_tier_defaults — honor them
+      const v = fmCfg.routing_tier_defaults[agentTier];
+      if (typeof v === 'boolean') return v;
+    } else if (!fmCfg) {
+      // No fast_mode config at all — use manifest defaults for tier
+      const manifestDefaults = CANONICAL_CONFIG_DEFAULTS.fast_mode?.routing_tier_defaults;
+      if (manifestDefaults && typeof manifestDefaults === 'object') {
+        const v = manifestDefaults[agentTier];
+        if (typeof v === 'boolean') return v;
+      }
+    }
+    // else: fmCfg exists but no routing_tier_defaults — fall through to enabled
+  }
+
+  // Step 4: fast_mode.enabled
+  if (fmCfg && typeof fmCfg.enabled === 'boolean') {
+    return fmCfg.enabled;
+  }
+
+  // Step 5: hardcoded default
+  return false;
+}
+
+/**
+ * #443 — Resolve effort for a dynamic-routing attempt (with escalation).
+ *
+ * MUST NOT modify resolveModelForTier behavior.
+ * base = resolveEffortInternal(cwd, agentType).
+ * If config.dynamic_routing missing/enabled!==true OR escalate_on_failure===false
+ * -> return base (attempt ignored).
+ * Else: effectiveAttempt = min(max(0, attempt), max_escalations).
+ * Walk nextEffort effectiveAttempt times from base, clamp at 'max'.
+ *
+ * @param {string} cwd
+ * @param {string} agentType
+ * @param {number} [attempt=0]
+ * @returns {string}
+ */
+function resolveEffortForTier(cwd, agentType, attempt) {
+  const base = resolveEffortInternal(cwd, agentType);
+
+  const config = loadConfig(cwd);
+  const dr = config.dynamic_routing;
+  if (!dr || typeof dr !== 'object' || dr.enabled !== true) {
+    return base;
+  }
+  if (dr.escalate_on_failure === false) {
+    return base;
+  }
+
+  const maxEscalations = Number.isInteger(dr.max_escalations) && dr.max_escalations >= 0
+    ? dr.max_escalations
+    : 1;
+
+  const attemptN = Number.isInteger(attempt) && attempt > 0 ? attempt : 0;
+  const effectiveAttempt = Math.min(attemptN, maxEscalations);
+
+  let current = base;
+  for (let i = 0; i < effectiveAttempt; i++) {
+    const next = nextEffort(current);
+    if (!next || next === current) break; // already at max
+    current = next;
+  }
+  return current;
 }
 
 // ─── Summary body helpers ─────────────────────────────────────────────────
@@ -1879,9 +2072,15 @@ module.exports = {
   getRoadmapPhaseInternal,
   resolveModelInternal,
   resolveModelForTier,
-  resolveReasoningEffortInternal,
+  resolveEffortInternal,
+  resolveFastModeInternal,
+  resolveEffortForTier,
+  VALID_EFFORTS,
+  EFFORT_SET,
+  nextEffort,
   RUNTIME_PROFILE_MAP,
   RUNTIMES_WITH_REASONING_EFFORT,
+  RUNTIMES_WITH_FAST_MODE,
   KNOWN_RUNTIMES,
   RUNTIME_OVERRIDE_TIERS,
   resolveTierEntry,

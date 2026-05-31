@@ -9,6 +9,7 @@ color: "#EF4444"
 #       hooks:
 #         - type: command
 #           command: "echo 'EVAL-REVIEW written' 2>/dev/null || true"
+effort: high
 ---
 
 <role>

@@ -5,6 +5,7 @@ tools: Read, Write, Bash, Grep, Glob
 color: "#F59E0B"
 # hooks:
 #   - before_write
+effort: high
 ---
 
 <role>

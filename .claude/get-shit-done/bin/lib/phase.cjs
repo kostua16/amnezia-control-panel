@@ -2,8 +2,8 @@
  * Phase — Phase CRUD, query, and lifecycle operations
  *
  * Re-export shim note (issue #4 / ADR-3524):
- *   The phase lifecycle pure-computation helpers live in phase-lifecycle.generated.cjs
- *   (generated from sdk/src/query/phase-lifecycle.ts). cmdPhaseComplete uses
+ *   The phase lifecycle pure-computation helpers live in phase-lifecycle.cjs.
+ *   cmdPhaseComplete uses
  *   deriveProgressFromRoadmap + clampPercent from that module to fix the
  *   non-idempotent Completed Phases blind-increment bug.
  *
@@ -18,11 +18,10 @@ const { escapeRegex, loadConfig, normalizePhaseName, phaseMarkdownRegexSource, c
 const { platformWriteSync, platformReadSync, platformEnsureDir } = require('./shell-command-projection.cjs');
 const { planningDir, withPlanningLock } = require('./planning-workspace.cjs');
 const { extractFrontmatter } = require('./frontmatter.cjs');
-const { writeStateMd, readModifyWriteStateMd, stateExtractField, stateReplaceField, stateReplaceFieldWithFallback, updatePerformanceMetricsSection } = require('./state.cjs');
+const { readModifyWriteStateMd, stateExtractField, stateReplaceField, stateReplaceFieldWithFallback, syncStateFrontmatter, withStateLock, updatePerformanceMetricsSection } = require('./state.cjs');
 const { formatGsdSlash, resolveRuntime } = require('./runtime-slash.cjs');
-// Generated pure-computation helpers for cmdPhaseComplete (issue #4 fix).
-// Source: sdk/src/query/phase-lifecycle.ts. Regenerate: node sdk/scripts/gen-phase-lifecycle.mjs
-const { deriveProgressFromRoadmap, clampPercent } = require('./phase-lifecycle.generated.cjs');
+// Pure-computation helpers for cmdPhaseComplete (issue #4 fix).
+const { deriveProgressFromRoadmap, clampPercent } = require('./phase-lifecycle.cjs');
 
 // #2893 — strict canonical filter: `{padded_phase}-{NN}-PLAN.md` or `PLAN.md`.
 // Documented in agents/gsd-planner.md (write_phase_prompt step). The wider
@@ -353,6 +352,64 @@ function extractObjective(content) {
   return m ? m[1].trim() : null;
 }
 
+// O(V + E). Assigns each in-phase plan its longest-path topological level over the
+// in-phase dependsOn DAG (Kahn's algorithm). Returns { level: Map<id,number>, visited: number }.
+// visited < rawPlans.length signals a dependency cycle.
+function computeDependencyLevels(rawPlans, planMap, canonicalToId) {
+  // Kahn's algorithm — compute in-degree and adjacency for in-phase deps only.
+  const level = new Map();
+  const inDeg = new Map();
+  const adj = new Map();
+
+  for (const p of rawPlans) {
+    if (!inDeg.has(p.id)) inDeg.set(p.id, 0);
+    if (!adj.has(p.id)) adj.set(p.id, []);
+    for (const dep of p.dependsOn) {
+      // Accept both full-stem ('03-01-auth-hardening') and canonical-prefix ('03-01') forms.
+      // All lookups are lowercased so mixed-case depends_on refs resolve correctly (#3785).
+      const depLower = dep.toLowerCase();
+      const resolvedDep = planMap.has(depLower) ? planMap.get(depLower).id : canonicalToId.get(depLower);
+      if (!resolvedDep) continue; // external dep — ignore
+      if (!adj.has(resolvedDep)) adj.set(resolvedDep, []);
+      adj.get(resolvedDep).push(p.id);
+      inDeg.set(p.id, (inDeg.get(p.id) ?? 0) + 1);
+    }
+  }
+
+  // Start with nodes that have no in-phase dependencies.
+  const queue = [];
+  for (const p of rawPlans) {
+    if ((inDeg.get(p.id) ?? 0) === 0) {
+      queue.push(p.id);
+      level.set(p.id, 0);
+    }
+  }
+
+  // Dequeue by head index (queue[head++]), NOT Array.shift(): shift() is O(n) per
+  // call in V8 (it re-indexes the backing store), which would make this Kahn's BFS
+  // O(V^2) on deep queues (e.g. wide fan-in graphs). Head-index dequeue is O(1)
+  // amortized -> O(V+E) overall. Do not "simplify" this back to queue.shift(). (#307)
+  let head = 0;
+  let visited = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    visited++;
+    const curLevel = level.get(cur);
+    for (const dep of (adj.get(cur) ?? [])) {
+      const newLevel = curLevel + 1;
+      if (newLevel > (level.get(dep) ?? -1)) {
+        level.set(dep, newLevel);
+      }
+      inDeg.set(dep, inDeg.get(dep) - 1);
+      if (inDeg.get(dep) === 0) {
+        queue.push(dep);
+      }
+    }
+  }
+
+  return { level, visited };
+}
+
 function cmdPhasePlanIndex(cwd, phase, raw) {
   if (!phase) {
     error('phase required for phase-plan-index');
@@ -496,51 +553,7 @@ function cmdPhasePlanIndex(cwd, phase, raw) {
   // like '01' or '01A'. Adding the third tier here is tracked as a parity
   // gap and is out of scope for #3785 / PR #3798.
 
-  // Kahn's algorithm — compute in-degree and adjacency for in-phase deps only.
-  const level = new Map();
-  const inDeg = new Map();
-  const adj = new Map();
-
-  for (const p of rawPlans) {
-    if (!inDeg.has(p.id)) inDeg.set(p.id, 0);
-    if (!adj.has(p.id)) adj.set(p.id, []);
-    for (const dep of p.dependsOn) {
-      // Accept both full-stem ('03-01-auth-hardening') and canonical-prefix ('03-01') forms.
-      // All lookups are lowercased so mixed-case depends_on refs resolve correctly (#3785).
-      const depLower = dep.toLowerCase();
-      const resolvedDep = planMap.has(depLower) ? planMap.get(depLower).id : canonicalToId.get(depLower);
-      if (!resolvedDep) continue; // external dep — ignore
-      if (!adj.has(resolvedDep)) adj.set(resolvedDep, []);
-      adj.get(resolvedDep).push(p.id);
-      inDeg.set(p.id, (inDeg.get(p.id) ?? 0) + 1);
-    }
-  }
-
-  // Start with nodes that have no in-phase dependencies.
-  const queue = [];
-  for (const p of rawPlans) {
-    if ((inDeg.get(p.id) ?? 0) === 0) {
-      queue.push(p.id);
-      level.set(p.id, 0);
-    }
-  }
-
-  let visited = 0;
-  while (queue.length > 0) {
-    const cur = queue.shift();
-    visited++;
-    const curLevel = level.get(cur);
-    for (const dep of (adj.get(cur) ?? [])) {
-      const newLevel = curLevel + 1;
-      if (newLevel > (level.get(dep) ?? -1)) {
-        level.set(dep, newLevel);
-      }
-      inDeg.set(dep, inDeg.get(dep) - 1);
-      if (inDeg.get(dep) === 0) {
-        queue.push(dep);
-      }
-    }
-  }
+  const { level, visited } = computeDependencyLevels(rawPlans, planMap, canonicalToId);
 
   // Cycle detection — any node not visited has a cycle.
   if (visited < rawPlans.length) {
@@ -1011,7 +1024,7 @@ function renameIntegerPhases(phasesDir, removedInt) {
       const m = dir.match(/^(\d+)([A-Z])?(?:\.(\d+))?-(.+)$/i);
       if (!m) return null;
       const dirInt = parseInt(m[1], 10);
-      return (dirInt > removedInt && dirInt < 999) ? { dir, oldInt: dirInt, letter: m[2] ? m[2].toUpperCase() : '', decimal: m[3] ? parseInt(m[3], 10) : null, slug: m[4] } : null;
+      return (dirInt > removedInt && dirInt !== 999) ? { dir, oldInt: dirInt, letter: m[2] ? m[2].toUpperCase() : '', decimal: m[3] ? parseInt(m[3], 10) : null, slug: m[4] } : null;
     })
     .filter(Boolean)
     .sort((a, b) => a.oldInt !== b.oldInt ? b.oldInt - a.oldInt : (b.decimal || 0) - (a.decimal || 0));
@@ -1040,7 +1053,7 @@ function renameIntegerPhases(phasesDir, removedInt) {
 
 function decrementRoadmapPhaseNumber(raw, removedInt) {
   const num = parseInt(raw, 10);
-  if (!Number.isInteger(num) || num <= removedInt || num >= 999) return raw;
+  if (!Number.isInteger(num) || num <= removedInt || num === 999) return raw;
   return String(num - 1);
 }
 
@@ -1048,13 +1061,13 @@ function decrementRoadmapPhaseToken(raw, removedInt) {
   const match = String(raw).match(/^(\d+)(\.\d+)?$/);
   if (!match) return raw;
   const num = parseInt(match[1], 10);
-  if (!Number.isInteger(num) || num <= removedInt || num >= 999) return raw;
+  if (!Number.isInteger(num) || num <= removedInt || num === 999) return raw;
   return `${num - 1}${match[2] || ''}`;
 }
 
 function decrementRoadmapPaddedPhaseNumber(raw, removedInt) {
   const num = parseInt(raw, 10);
-  if (!Number.isInteger(num) || num <= removedInt || num >= 999) return raw;
+  if (!Number.isInteger(num) || num <= removedInt || num === 999) return raw;
   return String(num - 1).padStart(raw.length, '0');
 }
 
@@ -1194,6 +1207,31 @@ function cmdPhaseRemove(cwd, targetPhase, options, raw) {
   }, raw);
 }
 
+function writePlanningFileSet(writes) {
+  const applied = [];
+  try {
+    for (const write of writes) {
+      if (write.before === write.after) continue;
+      platformWriteSync(write.filePath, write.after);
+      applied.push(write);
+    }
+  } catch (err) {
+    for (const write of applied.reverse()) {
+      try {
+        platformWriteSync(write.filePath, write.before);
+      } catch (rollbackErr) {
+        err.rollbackError = rollbackErr;
+        err.message += `\nWARNING: rollback failed while restoring ${write.filePath} ` +
+          `(${rollbackErr.message}). Planning files under .planning/ may be left in an ` +
+          `inconsistent, partially rolled back state. Inspect ROADMAP.md / REQUIREMENTS.md / ` +
+          `STATE.md before re-running phase complete.`;
+        break;
+      }
+    }
+    throw err;
+  }
+}
+
 function cmdPhaseComplete(cwd, phaseNum, raw) {
   if (!phaseNum) {
     error('phase number required for phase complete');
@@ -1236,279 +1274,289 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
     }
   } catch {}
 
-  // Update ROADMAP.md and REQUIREMENTS.md atomically under lock
-  if (fs.existsSync(roadmapPath)) {
-    withPlanningLock(cwd, () => {
-      let roadmapContent = fs.readFileSync(roadmapPath, 'utf-8');
-
-      // Checkbox: - [ ] Phase N: → - [x] Phase N: (...completed DATE)
-      // #3537: padding-tolerant fragment so the caller-resolved padded id
-      // matches un-padded ROADMAP prose.
-      const phaseEscaped = phaseMarkdownRegexSource(phaseNum);
-      const checkboxPattern = new RegExp(
-        `(-\\s*\\[)[ ](\\]\\s*.*Phase\\s+${phaseEscaped}[:\\s][^\\n]*)`,
-        'i'
-      );
-      roadmapContent = roadmapContent.replace(checkboxPattern, `$1x$2 (completed ${today})`);
-
-      // Progress table: update Status to Complete, add date (handles 4 or 5 column tables)
-      const tableRowPattern = new RegExp(
-        `^(\\|\\s*${phaseEscaped}\\.?\\s[^|]*(?:\\|[^\\n]*))$`,
-        'im'
-      );
-      roadmapContent = roadmapContent.replace(tableRowPattern, (fullRow) => {
-        const cells = fullRow.split('|').slice(1, -1);
-        if (cells.length === 5) {
-          // 5-col: Phase | Milestone | Plans | Status | Completed
-          cells[2] = ` ${summaryCount}/${planCount} `;
-          cells[3] = ' Complete    ';
-          cells[4] = ` ${today} `;
-        } else if (cells.length === 4) {
-          // 4-col: Phase | Plans | Status | Completed
-          cells[1] = ` ${summaryCount}/${planCount} `;
-          cells[2] = ' Complete    ';
-          cells[3] = ` ${today} `;
-        }
-        return '|' + cells.join('|') + '|';
-      });
-
-      // Update plan count in phase section.
-      // Use direct .replace() rather than replaceInCurrentMilestone() so this
-      // works when the current milestone section is itself inside a <details>
-      // block (the standard /gsd:new-project layout). replaceInCurrentMilestone
-      // scopes to content after the last </details>, which misses content inside
-      // the current milestone's own <details> wrapper (#2005).
-      // The phase-scoped heading pattern is specific enough to avoid matching
-      // archived phases (which belong to different milestones).
-      const planCountPattern = new RegExp(
-        `(#{2,4}\\s*Phase\\s+${phaseEscaped}[\\s\\S]*?\\*\\*Plans:\\*\\*\\s*)[^\\n]+`,
-        'i'
-      );
-      roadmapContent = roadmapContent.replace(
-        planCountPattern,
-        `$1${summaryCount}/${planCount} plans complete`
-      );
-
-      // Mark completed plan checkboxes (safety net for missed per-plan updates)
-      // Handles both plain IDs ("- [ ] 01-01-PLAN.md") and bold-wrapped IDs ("- [ ] **01-01**")
-      for (const summaryFile of phaseInfo.summaries) {
-        const planId = summaryFile.replace('-SUMMARY.md', '').replace('SUMMARY.md', '');
-        if (!planId) continue;
-        const planEscaped = escapeRegex(planId);
-        const planCheckboxPattern = new RegExp(
-          `(-\\s*\\[) (\\]\\s*(?:\\*\\*)?${planEscaped}(?:\\*\\*)?)`,
-          'i'
-        );
-        roadmapContent = roadmapContent.replace(planCheckboxPattern, '$1x$2');
-      }
-
-      platformWriteSync(roadmapPath, roadmapContent);
-
-      // Update REQUIREMENTS.md traceability for this phase's requirements
-      const reqPath = path.join(planningDir(cwd), 'REQUIREMENTS.md');
-      if (fs.existsSync(reqPath)) {
-        // Extract the current phase section from roadmap (scoped to avoid cross-phase matching).
-        // #3537: padding-tolerant fragment so an un-padded `Phase 2.7:` heading
-        // is found when caller resolved to padded `02.7`.
-        const phaseEsc = phaseMarkdownRegexSource(phaseNum);
-        const currentMilestoneRoadmap = extractCurrentMilestone(roadmapContent, cwd);
-        const phaseSectionMatch = currentMilestoneRoadmap.match(
-          new RegExp(`(#{2,4}\\s*Phase\\s+${phaseEsc}[:\\s][\\s\\S]*?)(?=#{2,4}\\s*Phase\\s+|$)`, 'i')
-        );
-
-        const sectionText = phaseSectionMatch ? phaseSectionMatch[1] : '';
-        // Accept all bold/colon variants (#2769) — the previous pattern only
-        // matched **Requirements:** (colon inside bold) and silently skipped
-        // **Requirements**: (colon outside), preventing the matching REQ-IDs
-        // from being ticked off in REQUIREMENTS.md on phase completion.
-        const reqMatch = sectionText.match(/\*\*Requirements:?\*\*[^\S\n]*:?[^\S\n]*([^\n]+)/i);
-
-        let reqContent = fs.readFileSync(reqPath, 'utf-8');
-
-        if (reqMatch) {
-          const reqIds = reqMatch[1].replace(/[\[\]]/g, '').split(/[,\s]+/).map(r => r.trim()).filter(Boolean);
-
-          for (const reqId of reqIds) {
-            const reqEscaped = escapeRegex(reqId);
-            // Update checkbox: - [ ] **REQ-ID** → - [x] **REQ-ID**
-            reqContent = reqContent.replace(
-              new RegExp(`(-\\s*\\[)[ ](\\]\\s*\\*\\*${reqEscaped}\\*\\*)`, 'gi'),
-              '$1x$2'
-            );
-            // Update traceability table: | REQ-ID | Phase N | Pending/In Progress | → | REQ-ID | Phase N | Complete |
-            reqContent = reqContent.replace(
-              new RegExp(`(\\|\\s*${reqEscaped}\\s*\\|[^|]+\\|)\\s*(?:Pending|In Progress)\\s*(\\|)`, 'gi'),
-              '$1 Complete $2'
-            );
-          }
-        }
-
-        // Scan body for all **REQ-ID** patterns, warn about any missing from the Traceability table.
-        // Always runs regardless of whether the roadmap has a Requirements: line.
-        const bodyReqIds = [];
-        const bodyReqPattern = /\*\*([A-Z][A-Z0-9]*-\d+)\*\*/g;
-        let bodyMatch;
-        while ((bodyMatch = bodyReqPattern.exec(reqContent)) !== null) {
-          const id = bodyMatch[1];
-          if (!bodyReqIds.includes(id)) bodyReqIds.push(id);
-        }
-
-        // Collect REQ-IDs present in the Traceability section only, to avoid
-        // picking up IDs from other tables in the document.
-        const traceabilityHeadingMatch = reqContent.match(/^#{1,6}\s+Traceability\b/im);
-        const traceabilitySection = traceabilityHeadingMatch
-          ? reqContent.slice(traceabilityHeadingMatch.index)
-          : '';
-        const tableReqIds = new Set();
-        const tableRowPattern = /^\|\s*([A-Z][A-Z0-9]*-\d+)\s*\|/gm;
-        let tableMatch;
-        while ((tableMatch = tableRowPattern.exec(traceabilitySection)) !== null) {
-          tableReqIds.add(tableMatch[1]);
-        }
-
-        const unregistered = bodyReqIds.filter(id => !tableReqIds.has(id));
-        if (unregistered.length > 0) {
-          warnings.push(
-            `REQUIREMENTS.md: ${unregistered.length} REQ-ID(s) found in body but missing from Traceability table: ${unregistered.join(', ')} — add them manually to keep traceability in sync`
-          );
-        }
-
-        platformWriteSync(reqPath, reqContent);
-        requirementsUpdated = true;
-      }
-    });
-  }
-
-  // Find next phase — check both filesystem AND roadmap
-  // Phases may be defined in ROADMAP.md but not yet scaffolded to disk,
-  // so a filesystem-only scan would incorrectly report is_last_phase:true
   let nextPhaseNum = null;
   let nextPhaseName = null;
   let isLastPhase = true;
 
-  try {
-    const isDirInMilestone = getMilestonePhaseFilter(cwd);
-    const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
-    const dirs = entries.filter(e => e.isDirectory()).map(e => e.name)
-      .filter(isDirInMilestone)
-      .sort((a, b) => comparePhaseNum(a, b));
+  // Update ROADMAP.md, REQUIREMENTS.md, and STATE.md from one locked snapshot.
+  // A previous split-lock sequence could publish ROADMAP/REQUIREMENTS and then
+  // fail before STATE advanced, leaving planning files disagreeing about the
+  // current phase.
+  withPlanningLock(cwd, () => {
+    const runPhaseCompleteTransaction = () => {
+      const writes = [];
+      let roadmapContent = null;
 
-    // Find the next phase directory after current
-    // Skip backlog phases (999.x) — they are parked ideas, not sequential work (#2129)
-    for (const dir of dirs) {
-      const dm = dir.match(/^(\d+[A-Z]?(?:\.\d+)*)-?(.*)/i);
-      if (dm) {
-        if (/^999(?:\.|$)/.test(dm[1])) continue;
-        if (comparePhaseNum(dm[1], phaseNum) > 0) {
-          nextPhaseNum = dm[1];
-          nextPhaseName = dm[2] || null;
-          isLastPhase = false;
-          break;
+      if (fs.existsSync(roadmapPath)) {
+        const originalRoadmapContent = fs.readFileSync(roadmapPath, 'utf-8');
+        roadmapContent = originalRoadmapContent;
+
+        // Checkbox: - [ ] Phase N: → - [x] Phase N: (...completed DATE)
+        // #3537: padding-tolerant fragment so the caller-resolved padded id
+        // matches un-padded ROADMAP prose.
+        const phaseEscaped = phaseMarkdownRegexSource(phaseNum);
+        const checkboxPattern = new RegExp(
+          `(-\\s*\\[)[ ](\\]\\s*.*Phase\\s+${phaseEscaped}[:\\s][^\\n]*)`,
+          'i'
+        );
+        roadmapContent = roadmapContent.replace(checkboxPattern, `$1x$2 (completed ${today})`);
+
+        // Progress table: update Status to Complete, add date (handles 4 or 5 column tables)
+        const tableRowPattern = new RegExp(
+          `^(\\|\\s*${phaseEscaped}\\.?\\s[^|]*(?:\\|[^\\n]*))$`,
+          'im'
+        );
+        roadmapContent = roadmapContent.replace(tableRowPattern, (fullRow) => {
+          const cells = fullRow.split('|').slice(1, -1);
+          if (cells.length === 5) {
+            // 5-col: Phase | Milestone | Plans | Status | Completed
+            cells[2] = ` ${summaryCount}/${planCount} `;
+            cells[3] = ' Complete    ';
+            cells[4] = ` ${today} `;
+          } else if (cells.length === 4) {
+            // 4-col: Phase | Plans | Status | Completed
+            cells[1] = ` ${summaryCount}/${planCount} `;
+            cells[2] = ' Complete    ';
+            cells[3] = ` ${today} `;
+          }
+          return '|' + cells.join('|') + '|';
+        });
+
+        // Update plan count in phase section.
+        // Use direct .replace() rather than replaceInCurrentMilestone() so this
+        // works when the current milestone section is itself inside a <details>
+        // block (the standard /gsd:new-project layout). replaceInCurrentMilestone
+        // scopes to content after the last </details>, which misses content inside
+        // the current milestone's own <details> wrapper (#2005).
+        // The phase-scoped heading pattern is specific enough to avoid matching
+        // archived phases (which belong to different milestones).
+        const planCountPattern = new RegExp(
+          `(#{2,4}\\s*Phase\\s+${phaseEscaped}[\\s\\S]*?\\*\\*Plans:\\*\\*\\s*)[^\\n]+`,
+          'i'
+        );
+        roadmapContent = roadmapContent.replace(
+          planCountPattern,
+          `$1${summaryCount}/${planCount} plans complete`
+        );
+
+        // Mark completed plan checkboxes (safety net for missed per-plan updates)
+        // Handles both plain IDs ("- [ ] 01-01-PLAN.md") and bold-wrapped IDs ("- [ ] **01-01**")
+        for (const summaryFile of phaseInfo.summaries) {
+          const planId = summaryFile.replace('-SUMMARY.md', '').replace('SUMMARY.md', '');
+          if (!planId) continue;
+          const planEscaped = escapeRegex(planId);
+          const planCheckboxPattern = new RegExp(
+            `(-\\s*\\[) (\\]\\s*(?:\\*\\*)?${planEscaped}(?:\\*\\*)?)`,
+            'i'
+          );
+          roadmapContent = roadmapContent.replace(planCheckboxPattern, '$1x$2');
+        }
+
+        writes.push({ filePath: roadmapPath, before: originalRoadmapContent, after: roadmapContent });
+
+        // Update REQUIREMENTS.md traceability for this phase's requirements
+        const reqPath = path.join(planningDir(cwd), 'REQUIREMENTS.md');
+        if (fs.existsSync(reqPath)) {
+          // Extract the current phase section from roadmap (scoped to avoid cross-phase matching).
+          // #3537: padding-tolerant fragment so an un-padded `Phase 2.7:` heading
+          // is found when caller resolved to padded `02.7`.
+          const phaseEsc = phaseMarkdownRegexSource(phaseNum);
+          const currentMilestoneRoadmap = extractCurrentMilestone(roadmapContent, cwd);
+          const phaseSectionMatch = currentMilestoneRoadmap.match(
+            new RegExp(`(#{2,4}\\s*Phase\\s+${phaseEsc}[:\\s][\\s\\S]*?)(?=#{2,4}\\s*Phase\\s+|$)`, 'i')
+          );
+
+          const sectionText = phaseSectionMatch ? phaseSectionMatch[1] : '';
+          // Accept all bold/colon variants (#2769) — the previous pattern only
+          // matched **Requirements:** (colon inside bold) and silently skipped
+          // **Requirements**: (colon outside), preventing the matching REQ-IDs
+          // from being ticked off in REQUIREMENTS.md on phase completion.
+          const reqMatch = sectionText.match(/\*\*Requirements:?\*\*[^\S\n]*:?[^\S\n]*([^\n]+)/i);
+
+          const originalReqContent = fs.readFileSync(reqPath, 'utf-8');
+          let reqContent = originalReqContent;
+
+          if (reqMatch) {
+            const reqIds = reqMatch[1].replace(/[\[\]]/g, '').split(/[,\s]+/).map(r => r.trim()).filter(Boolean);
+
+            for (const reqId of reqIds) {
+              const reqEscaped = escapeRegex(reqId);
+              // Update checkbox: - [ ] **REQ-ID** → - [x] **REQ-ID**
+              reqContent = reqContent.replace(
+                new RegExp(`(-\\s*\\[)[ ](\\]\\s*\\*\\*${reqEscaped}\\*\\*)`, 'gi'),
+                '$1x$2'
+              );
+              // Update traceability table: | REQ-ID | Phase N | Pending/In Progress | → | REQ-ID | Phase N | Complete |
+              reqContent = reqContent.replace(
+                new RegExp(`(\\|\\s*${reqEscaped}\\s*\\|[^|]+\\|)\\s*(?:Pending|In Progress)\\s*(\\|)`, 'gi'),
+                '$1 Complete $2'
+              );
+            }
+          }
+
+          // Scan body for all **REQ-ID** patterns, warn about any missing from the Traceability table.
+          // Always runs regardless of whether the roadmap has a Requirements: line.
+          const bodyReqIds = [];
+          const bodyReqPattern = /\*\*([A-Z][A-Z0-9]*-\d+)\*\*/g;
+          let bodyMatch;
+          while ((bodyMatch = bodyReqPattern.exec(reqContent)) !== null) {
+            const id = bodyMatch[1];
+            if (!bodyReqIds.includes(id)) bodyReqIds.push(id);
+          }
+
+          // Collect REQ-IDs present in the Traceability section only, to avoid
+          // picking up IDs from other tables in the document.
+          const traceabilityHeadingMatch = reqContent.match(/^#{1,6}\s+Traceability\b/im);
+          const traceabilitySection = traceabilityHeadingMatch
+            ? reqContent.slice(traceabilityHeadingMatch.index)
+            : '';
+          const tableReqIds = new Set();
+          const tableRowPattern = /^\|\s*([A-Z][A-Z0-9]*-\d+)\s*\|/gm;
+          let tableMatch;
+          while ((tableMatch = tableRowPattern.exec(traceabilitySection)) !== null) {
+            tableReqIds.add(tableMatch[1]);
+          }
+
+          const unregistered = bodyReqIds.filter(id => !tableReqIds.has(id));
+          if (unregistered.length > 0) {
+            warnings.push(
+              `REQUIREMENTS.md: ${unregistered.length} REQ-ID(s) found in body but missing from Traceability table: ${unregistered.join(', ')} — add them manually to keep traceability in sync`
+            );
+          }
+
+          writes.push({ filePath: reqPath, before: originalReqContent, after: reqContent });
+          requirementsUpdated = true;
         }
       }
-    }
-  } catch { /* intentionally empty */ }
 
-  // Fallback: if filesystem found no next phase, check ROADMAP.md
-  // for phases that are defined but not yet planned (no directory on disk)
-  if (isLastPhase && fs.existsSync(roadmapPath)) {
-    try {
-      const roadmapForPhases = extractCurrentMilestone(fs.readFileSync(roadmapPath, 'utf-8'), cwd);
-      const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:\s*([^\n]+)/gi;
-      let pm;
-      while ((pm = phasePattern.exec(roadmapForPhases)) !== null) {
-        if (comparePhaseNum(pm[1], phaseNum) > 0) {
-          nextPhaseNum = pm[1];
-          nextPhaseName = pm[2].replace(/\(INSERTED\)/i, '').trim().toLowerCase().replace(/\s+/g, '-');
-          isLastPhase = false;
-          break;
+      // Find next phase — check both filesystem AND roadmap
+      // Phases may be defined in ROADMAP.md but not yet scaffolded to disk,
+      // so a filesystem-only scan would incorrectly report is_last_phase:true
+      try {
+        const isDirInMilestone = getMilestonePhaseFilter(cwd);
+        const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
+        const dirs = entries.filter(e => e.isDirectory()).map(e => e.name)
+          .filter(isDirInMilestone)
+          .sort((a, b) => comparePhaseNum(a, b));
+
+        // Find the next phase directory after current
+        // Skip backlog phases (999.x) — they are parked ideas, not sequential work (#2129)
+        for (const dir of dirs) {
+          const dm = dir.match(/^(\d+[A-Z]?(?:\.\d+)*)-?(.*)/i);
+          if (dm) {
+            if (/^999(?:\.|$)/.test(dm[1])) continue;
+            if (comparePhaseNum(dm[1], phaseNum) > 0) {
+              nextPhaseNum = dm[1];
+              nextPhaseName = dm[2] || null;
+              isLastPhase = false;
+              break;
+            }
+          }
         }
-      }
-    } catch { /* intentionally empty */ }
-  }
+      } catch { /* intentionally empty */ }
 
-  // Update STATE.md atomically — hold lock across read-modify-write (#P4.4).
-  // Previously read outside the lock; a crash between the ROADMAP update
-  // (locked above) and this write left ROADMAP/STATE inconsistent.
-  if (fs.existsSync(statePath)) {
-    readModifyWriteStateMd(statePath, (stateContent) => {
-      // Update Current Phase — preserve "X of Y (Name)" compound format
-      const phaseValue = nextPhaseNum || phaseNum;
-      const existingPhaseField = stateExtractField(stateContent, 'Current Phase')
-        || stateExtractField(stateContent, 'Phase');
-      let newPhaseValue = String(phaseValue);
-      if (existingPhaseField) {
-        const totalMatch = existingPhaseField.match(/of\s+(\d+)/);
-        const nameMatch = existingPhaseField.match(/\(([^)]+)\)/);
-        if (totalMatch) {
-          const total = totalMatch[1];
-          const nameStr = nextPhaseName ? ` (${nextPhaseName.replace(/-/g, ' ')})` : (nameMatch ? ` (${nameMatch[1]})` : '');
-          newPhaseValue = `${phaseValue} of ${total}${nameStr}`;
+      // Fallback: if filesystem found no next phase, check ROADMAP.md
+      // for phases that are defined but not yet planned (no directory on disk)
+      if (isLastPhase && roadmapContent !== null) {
+        try {
+          const roadmapForPhases = extractCurrentMilestone(roadmapContent, cwd);
+          const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:\s*([^\n]+)/gi;
+          let pm;
+          while ((pm = phasePattern.exec(roadmapForPhases)) !== null) {
+            if (comparePhaseNum(pm[1], phaseNum) > 0) {
+              nextPhaseNum = pm[1];
+              nextPhaseName = pm[2].replace(/\(INSERTED\)/i, '').trim().toLowerCase().replace(/\s+/g, '-');
+              isLastPhase = false;
+              break;
+            }
+          }
+        } catch { /* intentionally empty */ }
+      }
+
+      // Update STATE.md while the planning lock is still held.
+      if (fs.existsSync(statePath)) {
+        const originalStateContent = platformReadSync(statePath) || '';
+        let stateContent = originalStateContent;
+
+        // Update Current Phase — preserve "X of Y (Name)" compound format
+        const phaseValue = nextPhaseNum || phaseNum;
+        const existingPhaseField = stateExtractField(stateContent, 'Current Phase')
+          || stateExtractField(stateContent, 'Phase');
+        let newPhaseValue = String(phaseValue);
+        if (existingPhaseField) {
+          const totalMatch = existingPhaseField.match(/of\s+(\d+)/);
+          const nameMatch = existingPhaseField.match(/\(([^)]+)\)/);
+          if (totalMatch) {
+            const total = totalMatch[1];
+            const nameStr = nextPhaseName ? ` (${nextPhaseName.replace(/-/g, ' ')})` : (nameMatch ? ` (${nameMatch[1]})` : '');
+            newPhaseValue = `${phaseValue} of ${total}${nameStr}`;
+          }
         }
-      }
-      stateContent = stateReplaceFieldWithFallback(stateContent, 'Current Phase', 'Phase', newPhaseValue);
+        stateContent = stateReplaceFieldWithFallback(stateContent, 'Current Phase', 'Phase', newPhaseValue);
 
-      // Update Current Phase Name
-      if (nextPhaseName) {
-        stateContent = stateReplaceFieldWithFallback(stateContent, 'Current Phase Name', null, nextPhaseName.replace(/-/g, ' '));
-      }
+        // Update Current Phase Name
+        if (nextPhaseName) {
+          stateContent = stateReplaceFieldWithFallback(stateContent, 'Current Phase Name', null, nextPhaseName.replace(/-/g, ' '));
+        }
 
-      // Update Status
-      stateContent = stateReplaceFieldWithFallback(stateContent, 'Status', null,
-        isLastPhase ? 'Milestone complete' : 'Ready to plan');
+        // Update Status
+        stateContent = stateReplaceFieldWithFallback(stateContent, 'Status', null,
+          isLastPhase ? 'Milestone complete' : 'Ready to plan');
 
-      // Update Current Plan
-      stateContent = stateReplaceFieldWithFallback(stateContent, 'Current Plan', 'Plan', 'Not started');
+        // Update Current Plan
+        stateContent = stateReplaceFieldWithFallback(stateContent, 'Current Plan', 'Plan', 'Not started');
 
-      // Update Last Activity
-      stateContent = stateReplaceFieldWithFallback(stateContent, 'Last Activity', 'Last activity', today);
+        // Update Last Activity
+        stateContent = stateReplaceFieldWithFallback(stateContent, 'Last Activity', 'Last activity', today);
 
-      // Update Last Activity Description
-      stateContent = stateReplaceFieldWithFallback(stateContent, 'Last Activity Description', null,
-        `Phase ${phaseNum} complete${nextPhaseNum ? `, transitioned to Phase ${nextPhaseNum}` : ''}`);
+        // Update Last Activity Description
+        stateContent = stateReplaceFieldWithFallback(stateContent, 'Last Activity Description', null,
+          `Phase ${phaseNum} complete${nextPhaseNum ? `, transitioned to Phase ${nextPhaseNum}` : ''}`);
 
-      // Update Completed Phases counter — derive from ROADMAP instead of blind +1.
-      // Fix for issue #4: the original code did parseInt(completedRaw, 10) + 1 on every
-      // call, making phase complete non-idempotent (double-call = double-increment).
-      // Now we read the freshly-updated ROADMAP to count Complete rows, then use
-      // deriveProgressFromRoadmap() from phase-lifecycle.generated.cjs (generated from
-      // sdk/src/query/phase-lifecycle.ts "Root cause 1 fix" block).
-      // References: issue #4, ADR-3524, gen-phase-lifecycle.mjs.
-      const completedRaw = stateExtractField(stateContent, 'Completed Phases');
-      if (completedRaw !== null) {
-        // Derive from ROADMAP if available (idempotent); fall back to existing value.
-        let newCompleted = parseInt(completedRaw, 10);
-        let derivedTotalPhases = null;
-        if (fs.existsSync(roadmapPath)) {
-          try {
-            const freshRoadmap = fs.readFileSync(roadmapPath, 'utf-8');
-            const derived = deriveProgressFromRoadmap(freshRoadmap);
+        // Update Completed Phases counter — derive from the same ROADMAP snapshot
+        // that will be published in this transaction, not a separately-read file.
+        const completedRaw = stateExtractField(stateContent, 'Completed Phases');
+        if (completedRaw !== null) {
+          // Derive from ROADMAP if available (idempotent); fall back to existing value.
+          let newCompleted = parseInt(completedRaw, 10);
+          let derivedTotalPhases = null;
+          if (roadmapContent !== null) {
+            const derived = deriveProgressFromRoadmap(roadmapContent);
             if (derived.completedPhases !== null) newCompleted = derived.completedPhases;
             if (derived.totalPhases !== null) derivedTotalPhases = derived.totalPhases;
-          } catch { /* fall through to existing value */ }
-        }
-        stateContent = stateReplaceField(stateContent, 'Completed Phases', String(newCompleted)) || stateContent;
+          }
+          stateContent = stateReplaceField(stateContent, 'Completed Phases', String(newCompleted)) || stateContent;
 
-        // Recalculate percent — use clampPercent to prevent >100% (#4 unclamped bug).
-        const totalRaw = stateExtractField(stateContent, 'Total Phases');
-        const totalPhases = derivedTotalPhases
-          || (totalRaw ? parseInt(totalRaw, 10) : null);
-        if (totalPhases && totalPhases > 0) {
-          const newPercent = clampPercent(newCompleted, totalPhases);
-          stateContent = stateReplaceField(stateContent, 'Progress', `${newPercent}%`) || stateContent;
-          stateContent = stateContent.replace(
-            /(percent:\s*)\d+/,
-            `$1${newPercent}`
-          );
+          // Recalculate percent — use clampPercent to prevent >100% (#4 unclamped bug).
+          const totalRaw = stateExtractField(stateContent, 'Total Phases');
+          const totalPhases = derivedTotalPhases
+            || (totalRaw ? parseInt(totalRaw, 10) : null);
+          if (totalPhases && totalPhases > 0) {
+            const newPercent = clampPercent(newCompleted, totalPhases);
+            stateContent = stateReplaceField(stateContent, 'Progress', `${newPercent}%`) || stateContent;
+            stateContent = stateContent.replace(
+              /(percent:\s*)\d+/,
+              `$1${newPercent}`
+            );
+          }
         }
+
+        // Gate 4: Update Performance Metrics section (#1627)
+        stateContent = updatePerformanceMetricsSection(stateContent, cwd, phaseNum, planCount, summaryCount);
+        stateContent = syncStateFrontmatter(stateContent, cwd);
+
+        writes.push({ filePath: statePath, before: originalStateContent, after: stateContent });
       }
 
-      // Gate 4: Update Performance Metrics section (#1627)
-      stateContent = updatePerformanceMetricsSection(stateContent, cwd, phaseNum, planCount, summaryCount);
+      writePlanningFileSet(writes);
+    };
 
-      return stateContent;
-    }, cwd);
-  }
+    if (fs.existsSync(statePath)) {
+      withStateLock(statePath, runPhaseCompleteTransaction);
+    } else {
+      runPhaseCompleteTransaction();
+    }
+  });
 
   // Auto-prune STATE.md on phase boundary when configured (#2087)
   let autoPruned = false;
@@ -1555,4 +1603,5 @@ module.exports = {
   cmdPhaseInsert,
   cmdPhaseRemove,
   cmdPhaseComplete,
+  computeDependencyLevels,
 };

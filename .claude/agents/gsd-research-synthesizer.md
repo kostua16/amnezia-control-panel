@@ -9,6 +9,7 @@ color: purple
 #       hooks:
 #         - type: command
 #           command: "npx eslint --fix $FILE 2>/dev/null || true"
+effort: low
 ---
 
 <role>
@@ -58,7 +59,7 @@ cat .planning/research/FEATURES.md
 cat .planning/research/ARCHITECTURE.md
 cat .planning/research/PITFALLS.md
 
-# Planning config loaded via gsd-sdk query (or gsd-tools.cjs) in commit step
+# Planning config loaded via gsd-tools query (or gsd-tools.cjs) in commit step
 ```
 
 Parse each file to extract:
@@ -128,18 +129,26 @@ Identify gaps that couldn't be resolved and need attention during planning.
 
 ## Step 6: Write SUMMARY.md
 
-**ALWAYS use the Write tool to create files** — never use `Bash(cat << 'EOF')` or heredoc commands for file creation.
+**This is the canonical output of this agent. The orchestrator depends on `.planning/research/SUMMARY.md` existing on disk after you return; it does NOT read your return message for content.**
+
+**Hard rules (must follow):**
+
+1. **Use the `Write` tool** to write the file. The `Write` tool is in your `tools:` allowlist; there are no restrictions on it. Do not assume restrictions that the frontmatter does not impose.
+2. **Do NOT return the SUMMARY.md content in your response.** Your return message is a brief confirmation (see `<structured_returns>` below); the content lives on disk.
+3. **Do NOT ask permission to write.** Writing `.planning/research/SUMMARY.md` is the explicit purpose of this agent. Asking the orchestrator to do it instead is a failure mode that can cause downstream `SUMMARY.md not found` failures.
+4. **Do NOT use `Bash(cat << 'EOF')` or heredoc** for file creation. Use the `Write` tool. In short: **never use `Bash(cat << 'EOF')` or heredoc**.
+5. **If the Write tool errors,** surface the actual error in your return message. Do not silently fall back to returning content; that hides the failure from the orchestrator.
 
 Use template: ./.claude/get-shit-done/templates/research-project/SUMMARY.md
 
-Write to `.planning/research/SUMMARY.md`
+Write to `.planning/research/SUMMARY.md`.
 
 ## Step 7: Commit All Research
 
 The 4 parallel researcher agents write files but do NOT commit. You commit everything together.
 
 ```bash
-gsd-sdk query commit "docs: complete project research" --files .planning/research/
+gsd-tools query commit "docs: complete project research" --files .planning/research/
 ```
 
 ## Step 8: Return Summary

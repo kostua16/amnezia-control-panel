@@ -17,19 +17,9 @@ Read all files referenced by the invoking prompt's execution_context before star
 Parse arguments and load project state:
 
 ```bash
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/get-shit-done/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.claude/get-shit-done/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
 PHASE_ARG="${1}"
-# SDK resolution: prefer local gsd-tools.cjs, fall back to global gsd-sdk (#3668)
-GSD_TOOLS="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/get-shit-done/bin/gsd-tools.cjs"
-if [ -f "$GSD_TOOLS" ]; then
-  GSD_SDK="node $GSD_TOOLS"
-elif command -v gsd-sdk >/dev/null 2>&1; then
-  GSD_SDK="gsd-sdk"
-else
-  echo "ERROR: gsd-sdk not found on PATH and $GSD_TOOLS does not exist." >&2
-  echo "Run: npx get-shit-done-cc@latest --claude --local" >&2
-  exit 1
-fi
-INIT=$($GSD_SDK query init.phase-op "${PHASE_ARG}")
+INIT=$(gsd_run query init.phase-op "${PHASE_ARG}")
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
@@ -85,7 +75,7 @@ fi
 Check if code review is enabled via config:
 
 ```bash
-CODE_REVIEW_ENABLED=$($GSD_SDK query config-get workflow.code_review 2>/dev/null || echo "true")
+CODE_REVIEW_ENABLED=$(gsd_run query config-get workflow.code_review 2>/dev/null || echo "true")
 ```
 
 If CODE_REVIEW_ENABLED is "false":
@@ -101,14 +91,14 @@ Default is true — only skip on explicit false. This check runs AFTER phase val
 Determine review depth with priority order:
 
 1. DEPTH_OVERRIDE from --depth flag (highest priority)
-2. Config value: `gsd-sdk query config-get workflow.code_review_depth 2>/dev/null`
+2. Config value: `gsd-tools.cjs query config-get workflow.code_review_depth 2>/dev/null`
 3. Default: "standard"
 
 ```bash
 if [ -n "$DEPTH_OVERRIDE" ]; then
   REVIEW_DEPTH="$DEPTH_OVERRIDE"
 else
-  CONFIG_DEPTH=$($GSD_SDK query config-get workflow.code_review_depth 2>/dev/null || echo "")
+  CONFIG_DEPTH=$(gsd_run query config-get workflow.code_review_depth 2>/dev/null || echo "")
   REVIEW_DEPTH="${CONFIG_DEPTH:-standard}"
 fi
 ```
@@ -137,7 +127,7 @@ If FILES_OVERRIDE is set (from --files flag):
 if [ -n "$FILES_OVERRIDE" ]; then
   REVIEW_FILES=()
   REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-
+  
   for file_path in "${FILES_ARRAY[@]}"; do
     # Security: validate path is within repository (prevent path traversal)
     ABS_PATH=$(realpath -m "${file_path}" 2>/dev/null || echo "${file_path}")
@@ -145,7 +135,7 @@ if [ -n "$FILES_OVERRIDE" ]; then
       echo "Error: File path outside repository, skipping: ${file_path}"
       continue
     fi
-
+    
     # Validate path exists (relative to repo root)
     if [ -f "${REPO_ROOT}/${file_path}" ] || [ -f "${file_path}" ]; then
       REVIEW_FILES+=("$file_path")
@@ -153,7 +143,7 @@ if [ -n "$FILES_OVERRIDE" ]; then
       echo "Warning: File not found, skipping: ${file_path}"
     fi
   done
-
+  
   echo "File scope: ${#REVIEW_FILES[@]} files from --files override"
 fi
 ```
@@ -167,7 +157,7 @@ If --files NOT provided:
 if [ -z "$FILES_OVERRIDE" ]; then
   SUMMARIES=$(ls "${PHASE_DIR}"/*-SUMMARY.md 2>/dev/null)
   REVIEW_FILES=()
-
+  
   if [ -n "$SUMMARIES" ]; then
     for summary in $SUMMARIES; do
       # Extract key_files.created and key_files.modified using node for reliable YAML parsing
@@ -196,7 +186,7 @@ if [ -z "$FILES_OVERRIDE" ]; then
         }
         if (files.length) console.log(files.join('\n'));
       " 2>/dev/null)
-
+      
       # Add extracted files to REVIEW_FILES array
       if [ -n "$EXTRACTED" ]; then
         while IFS= read -r file; do
@@ -206,7 +196,7 @@ if [ -z "$FILES_OVERRIDE" ]; then
         done <<< "$EXTRACTED"
       fi
     done
-
+    
     if [ ${#REVIEW_FILES[@]} -eq 0 ]; then
       echo "Warning: SUMMARY artifacts found but contained no file paths. Falling back to git diff."
     fi
@@ -221,25 +211,25 @@ If no SUMMARY.md files found OR no files extracted from them:
 if [ ${#REVIEW_FILES[@]} -eq 0 ]; then
   # Compute diff base from phase commits — fail closed if no reliable base found
   PHASE_COMMITS=$(git log --oneline --all --grep="${PADDED_PHASE}" --format="%H" 2>/dev/null)
-
+  
   if [ -n "$PHASE_COMMITS" ]; then
     DIFF_BASE=$(echo "$PHASE_COMMITS" | tail -1)^
-
+    
     # Verify the parent commit exists (first commit in repo has no parent)
     if ! git rev-parse "${DIFF_BASE}" >/dev/null 2>&1; then
       DIFF_BASE=$(echo "$PHASE_COMMITS" | tail -1)
     fi
-
+    
     # Run git diff with specific exclusions (per D-03)
     DIFF_FILES=$(git diff --name-only "${DIFF_BASE}..HEAD" -- . \
       ':!.planning/' ':!ROADMAP.md' ':!STATE.md' \
       ':!*-SUMMARY.md' ':!*-VERIFICATION.md' ':!*-PLAN.md' \
       ':!package-lock.json' ':!yarn.lock' ':!Gemfile.lock' ':!poetry.lock' 2>/dev/null)
-
+    
     while IFS= read -r file; do
       [ -n "$file" ] && REVIEW_FILES+=("$file")
     done <<< "$DIFF_FILES"
-
+    
     echo "File scope: ${#REVIEW_FILES[@]} files from git diff (base: ${DIFF_BASE})"
   else
     # Fail closed — no reliable diff base found. Do not use arbitrary HEAD~N.
@@ -334,10 +324,10 @@ Optional structural cross-module pass powered by fallow.
 
 Read fallow config gates:
 ```bash
-FALLOW_ENABLED=$($GSD_SDK query config-get code_quality.fallow.enabled 2>/dev/null || echo "false")
-FALLOW_SCOPE=$($GSD_SDK query config-get code_quality.fallow.scope 2>/dev/null || echo "phase")
-FALLOW_PROFILE=$($GSD_SDK query config-get code_quality.fallow.profile 2>/dev/null || echo "standard")
-FALLOW_MCP=$($GSD_SDK query config-get code_quality.fallow.mcp 2>/dev/null || echo "false")
+FALLOW_ENABLED=$(gsd_run query config-get code_quality.fallow.enabled 2>/dev/null || echo "false")
+FALLOW_SCOPE=$(gsd_run query config-get code_quality.fallow.scope 2>/dev/null || echo "phase")
+FALLOW_PROFILE=$(gsd_run query config-get code_quality.fallow.profile 2>/dev/null || echo "standard")
+FALLOW_MCP=$(gsd_run query config-get code_quality.fallow.mcp 2>/dev/null || echo "false")
 ```
 
 Defaults are fail-closed and opt-in:
@@ -499,12 +489,12 @@ if [ -f "${REVIEW_PATH}" ]; then
     const match = content.match(/^---\n([\s\S]*?)\n---/);
     if (match && /status:/.test(match[1])) { console.log('valid'); } else { console.log('invalid'); }
   " 2>/dev/null)
-
+  
   if [ "$HAS_STATUS" = "valid" ]; then
     echo "REVIEW.md created at ${REVIEW_PATH}"
-
+    
     if [ "$COMMIT_DOCS" = "true" ]; then
-      $GSD_SDK query commit \
+      gsd_run query commit \
         "docs(${PADDED_PHASE}): add code review report" \
         --files "${REVIEW_PATH}"
     fi
@@ -593,7 +583,7 @@ Display inline summary to user:
 
   Depth:           ${REVIEW_DEPTH}
   Files Reviewed:  ${FILES_REVIEWED}
-
+  
   Findings:
     Critical:  ${CRITICAL}
     Warning:   ${WARNING}
