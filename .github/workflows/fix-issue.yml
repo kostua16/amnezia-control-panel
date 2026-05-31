@@ -103,7 +103,7 @@ jobs:
           allowed-bots: 'claude[bot],github-actions[bot]'
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(gh issue view:*),Bash(gh issue list:*)'
           prompt: |
-            /gsd-debug
+            /gsd:debug
             Fix the following GitHub issue.
 
             ISSUE NUMBER: #${{ github.event.issue.number }}

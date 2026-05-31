@@ -60,7 +60,7 @@ jobs:
           allowed-bots: 'claude[bot],github-actions[bot]'
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
           prompt: |
-            /gsd-docs-update
+            /gsd:docs-update
             Review the codebase against `.planning/` artifacts and standard documentation files.
             Identify any documentation drift between implementation and docs, then update only documentation files to reflect reality.
 
