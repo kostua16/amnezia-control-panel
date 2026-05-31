@@ -63,7 +63,10 @@ test('document skills stay under multimedia', () => {
 });
 
 test('block frontmatter descriptions are flattened', () => {
-  assert(!guideYaml.includes('description: ">-"'), 'guide catalog should not emit raw block markers');
+  assert(
+    !guideYaml.includes('description: ">-"'),
+    'guide catalog should not emit raw block markers',
+  );
   assertMatch(
     guideYaml,
     /name: "context-engineering"[\s\S]*?description: "Check context usage limits,/,

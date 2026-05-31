@@ -14,7 +14,9 @@ function toNumber(value) {
 
 function normalizePullRequest(pr, source) {
   if (!pr) return null;
-  const number = toNumber(pr.number ?? pr.issue_number ?? pr.pull_request?.number ?? pr);
+  const number = toNumber(
+    pr.number ?? pr.issue_number ?? pr.pull_request?.number ?? pr,
+  );
   if (!number) return null;
 
   return {
@@ -24,7 +26,7 @@ function normalizePullRequest(pr, source) {
     title: pr.title ?? null,
     headRefName: pr.head?.ref ?? pr.headRefName ?? null,
     baseRefName: pr.base?.ref ?? pr.baseRefName ?? null,
-    isDraft: Boolean(pr.draft ?? pr.isDraft)
+    isDraft: Boolean(pr.draft ?? pr.isDraft),
   };
 }
 
@@ -58,7 +60,10 @@ switch (eventName) {
     break;
   case 'issue_comment':
     if (event.issue?.pull_request) {
-      append({ number: event.issue.number, url: event.issue.pull_request.html_url }, eventName);
+      append(
+        { number: event.issue.number, url: event.issue.pull_request.html_url },
+        eventName,
+      );
     }
     break;
   case 'workflow_run':
@@ -88,9 +93,9 @@ process.stdout.write(
     {
       eventName,
       pullRequests: deduped,
-      count: deduped.length
+      count: deduped.length,
     },
     null,
-    2
-  )
+    2,
+  ),
 );

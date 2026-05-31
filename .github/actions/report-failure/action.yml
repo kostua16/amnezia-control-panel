@@ -87,6 +87,9 @@ inputs:
   claude-num-failed-tool-calls:
     description: 'Failed Claude tool result count'
     required: false
+  claude-failed-tool-samples:
+    description: 'Capped failed Claude tool samples as JSON array'
+    required: false
   claude-num-rejected-tool-calls:
     description: 'Rejected Claude tool call count'
     required: false
@@ -242,6 +245,7 @@ runs:
         CLAUDE_NUM_TOOL_CALLS: ${{ inputs.claude-num-tool-calls }}
         CLAUDE_TOOL_BREAKDOWN: ${{ inputs.claude-tool-breakdown }}
         CLAUDE_NUM_FAILED_TOOL_CALLS: ${{ inputs.claude-num-failed-tool-calls }}
+        CLAUDE_FAILED_TOOL_SAMPLES: ${{ inputs.claude-failed-tool-samples }}
         CLAUDE_NUM_REJECTED_TOOL_CALLS: ${{ inputs.claude-num-rejected-tool-calls }}
         CLAUDE_REJECTED_TOOLS_LIST: ${{ inputs.claude-rejected-tools-list }}
         CLAUDE_DENIAL_RATE: ${{ inputs.claude-denial-rate }}
@@ -258,7 +262,10 @@ runs:
       with:
         github-token: ${{ inputs.github-token }}
         script: |
-          const { renderClaudeExecutionSection } = require('./.github/workflows/scripts/render-claude-report.cjs');
+          const {
+            mergeClaudeMetrics,
+            renderClaudeExecutionSection,
+          } = require('./.github/workflows/scripts/render-claude-report.cjs');
           const mode = process.env.MODE;
           const autoFixRunUrl = process.env.AUTO_FIX_RUN_URL;
           const ciRunUrl = process.env.CI_RUN_URL || '';
@@ -286,8 +293,12 @@ runs:
               ).join('\n\n')
             : '_No logs available_';
 
+          const mergedClaudeMetrics = mergeClaudeMetrics(
+            process.env.CLAUDE_METRICS_JSON,
+            process.env.DETECTED_CLAUDE_METRICS,
+          );
           const claudeInput = {
-            claudeMetricsJson: process.env.CLAUDE_METRICS_JSON || process.env.DETECTED_CLAUDE_METRICS || '',
+            claudeMetricsJson: JSON.stringify(mergedClaudeMetrics),
           };
           const envToMetric = {
             CLAUDE_STEP_OUTCOME: 'claudeStepOutcome',
@@ -305,6 +316,7 @@ runs:
             CLAUDE_NUM_TOOL_CALLS: 'claudeNumToolCalls',
             CLAUDE_TOOL_BREAKDOWN: 'claudeToolBreakdown',
             CLAUDE_NUM_FAILED_TOOL_CALLS: 'claudeNumFailedToolCalls',
+            CLAUDE_FAILED_TOOL_SAMPLES: 'claudeFailedToolSamples',
             CLAUDE_NUM_REJECTED_TOOL_CALLS: 'claudeNumRejectedToolCalls',
             CLAUDE_REJECTED_TOOLS_LIST: 'claudeRejectedToolsList',
             CLAUDE_DENIAL_RATE: 'claudeDenialRate',

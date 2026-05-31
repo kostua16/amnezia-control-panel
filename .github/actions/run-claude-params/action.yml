@@ -80,6 +80,9 @@ outputs:
   claude_num_failed_tool_calls:
     description: 'Failed Claude tool result count'
     value: ${{ steps.scan-logs.outputs.num_failed_tool_calls }}
+  claude_failed_tool_samples:
+    description: 'Capped failed Claude tool samples as JSON array'
+    value: ${{ steps.scan-logs.outputs.failed_tool_samples }}
   claude_num_rejected_tool_calls:
     description: 'Rejected Claude tool call count'
     value: ${{ steps.scan-logs.outputs.num_rejected_tool_calls }}
@@ -214,6 +217,28 @@ runs:
         echo "model=$(resolve '${{ inputs.model }}')" >> "$GITHUB_OUTPUT"
         echo "subagent_model=$(resolve '${{ inputs.subagent-model }}')" >> "$GITHUB_OUTPUT"
 
+    - id: resolve-track-progress
+      shell: bash
+      env:
+        REQUESTED_TRACK_PROGRESS: ${{ inputs.track-progress }}
+        EVENT_NAME: ${{ github.event_name }}
+      run: |
+        supported=false
+        case "$EVENT_NAME" in
+          pull_request|issues|issue_comment|pull_request_review_comment|pull_request_review)
+            supported=true
+            ;;
+        esac
+
+        value=false
+        if [[ "$REQUESTED_TRACK_PROGRESS" == "true" && "$supported" == "true" ]]; then
+          value=true
+        elif [[ "$REQUESTED_TRACK_PROGRESS" == "true" ]]; then
+          echo "track_progress requested but disabled for unsupported event: $EVENT_NAME"
+        fi
+
+        echo "value=$value" >> "$GITHUB_OUTPUT"
+
     - name: Resolve Bun executable
       id: resolve_bun
       shell: bash
@@ -250,7 +275,7 @@ runs:
         github_token: ${{ inputs.github-token }}
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
-        track_progress: ${{ inputs.track-progress }}
+        track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-
@@ -350,7 +375,7 @@ runs:
         github_token: ${{ inputs.github-token }}
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
-        track_progress: ${{ inputs.track-progress }}
+        track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-
@@ -448,7 +473,7 @@ runs:
         github_token: ${{ inputs.github-token }}
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
-        track_progress: ${{ inputs.track-progress }}
+        track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-
@@ -606,16 +631,6 @@ runs:
         LAST_EXECUTION_FILE: ${{ steps.select-outputs.outputs.last_execution_file }}
         CHANGED_FILES_LIST: ${{ steps.collect-file-stats.outputs.changed_files_list }}
       run: |
-        emit_output() {
-          local key="$1"
-          local value="$2"
-          local delim
-          delim="EOF-$(openssl rand -hex 8)"
-          echo "$key<<$delim"
-          printf '%s\n' "$value"
-          echo "$delim"
-        }
-
         ATTEMPT="${LAST_ATTEMPT:-0}"
         CONCLUSION="${LAST_ATTEMPT_OUTCOME:-skipped}"
         EXEC_JSON_PATH="${LAST_EXECUTION_FILE:-}"
@@ -624,7 +639,7 @@ runs:
         fi
 
         # Download current job logs
-        LOG_FILE=$(mktemp)
+        LOG_FILE=$(mktemp "${RUNNER_TEMP:-/tmp}/claude-job-XXXXXX.log")
         JOB_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" \
           --jq '.jobs[] | select(.name == env.GITHUB_JOB_NAME or (.name | startswith(env.GITHUB_JOB_NAME + " ("))) | .id' \
           2>/dev/null | head -1 || true)
@@ -636,169 +651,22 @@ runs:
           echo "Could not download job logs — continuing with execution JSON only."
         fi
 
-        CHANGED_FILES_FILE=$(mktemp)
+        CHANGED_FILES_FILE=$(mktemp "${RUNNER_TEMP:-/tmp}/claude-changed-files-XXXXXX.txt")
         printf '%s\n' "$CHANGED_FILES_LIST" > "$CHANGED_FILES_FILE"
-        METRICS_FILE=$(mktemp /tmp/claude-metrics-XXXXXX.json)
-        node .github/workflows/scripts/parse-claude-execution.cjs \
+
+        node .github/workflows/scripts/scan-claude-logs.cjs \
           --execution-file "$EXEC_JSON_PATH" \
           --log-file "$LOG_FILE" \
           --changed-files-file "$CHANGED_FILES_FILE" \
           --max-turns "$MAX_TURNS_INPUT" \
           --attempt "$ATTEMPT" \
           --outcome "$CONCLUSION" \
-          --metrics-file "$METRICS_FILE"
+          --run-id "$GITHUB_RUN_ID" \
+          --workflow "$GITHUB_JOB_NAME" \
+          --github-output "$GITHUB_OUTPUT" \
+          --issues-dir "${RUNNER_TEMP:-/tmp}"
 
-        NUM_TURNS=$(jq -r 'if .numTurns == null then "null" else (.numTurns|tostring) end' "$METRICS_FILE")
-        IS_ERROR=$(jq -r 'if .isError == null then "null" else (.isError|tostring) end' "$METRICS_FILE")
-        PERM_DENIALS=$(jq -r '.numRejectedToolCalls // 0' "$METRICS_FILE")
-        ACTION_ERROR=$(jq -r '.actionError // ""' "$METRICS_FILE")
-        ERROR_MESSAGES_JSON=$(jq -c '.errorMessages // []' "$METRICS_FILE")
-        METRICS_JSON=$(jq -c '.' "$METRICS_FILE")
-
-        FINDINGS="[]"
-
-        if [[ -n "$ACTION_ERROR" ]]; then
-          FINDINGS=$(echo "$FINDINGS" | jq --arg det "$ACTION_ERROR" \
-            '. + [{category:"action_error",severity:"error",message:"Claude action failed",detail:$det}]')
-        fi
-
-        if [[ "$PERM_DENIALS" -gt 0 ]]; then
-          if [[ "$PERM_DENIALS" -gt 5 ]]; then SEV="error"; else SEV="warning"; fi
-          DISALLOWED=$(jq -r '(.rejectedToolsList // []) | join(", ")' "$METRICS_FILE")
-          DETAIL="${PERM_DENIALS} rejected tool call(s)"
-          [[ -n "$DISALLOWED" ]] && DETAIL="DISALLOWED_TOOLS: $DISALLOWED"
-          FINDINGS=$(echo "$FINDINGS" | jq --arg sev "$SEV" --arg msg "${PERM_DENIALS} tool permission denials" --arg det "$DETAIL" \
-            '. + [{category:"permission_denials",severity:$sev,message:$msg,detail:$det}]')
-        fi
-
-        if [[ -s "$LOG_FILE" ]] && grep -qP 'fatal: unable to access.*returned error: 403' "$LOG_FILE"; then
-          LINE=$(grep -m1 'fatal: unable to access.*returned error: 403' "$LOG_FILE" | head -c 200)
-          FINDINGS=$(echo "$FINDINGS" | jq --arg det "$LINE" \
-            '. + [{category:"git_push_403",severity:"error",message:"Git push failed with HTTP 403",detail:$det}]')
-        fi
-
-        if [[ -s "$LOG_FILE" ]] && grep -qP 'pull request create failed: GraphQL:' "$LOG_FILE"; then
-          FINDINGS=$(echo "$FINDINGS" | jq \
-            '. + [{category:"graphql_pr_fail",severity:"error",message:"GraphQL PR creation failed",detail:"pull request create failed: GraphQL:"}]')
-        fi
-
-        if [[ "$NUM_TURNS" != "null" && "$NUM_TURNS" -gt 0 ]]; then
-          MAX_T="$MAX_TURNS_INPUT"
-          if [[ "$NUM_TURNS" -ge "$MAX_T" && "$IS_ERROR" == "true" ]]; then
-            FINDINGS=$(echo "$FINDINGS" | jq --arg t "$NUM_TURNS" --arg m "$MAX_T" \
-              '. + [{category:"turn_limit_hit",severity:"error",message:"Turn limit hit with error",detail:"Turns: \($t)/\($m)"}]')
-          fi
-        fi
-
-        if [[ "$NUM_TURNS" == "0" ]]; then
-          FINDINGS=$(echo "$FINDINGS" | jq \
-            '. + [{category:"zero_turns",severity:"error",message:"Claude used zero turns",detail:"num_turns: 0"}]')
-        fi
-
-        if [[ -s "$LOG_FILE" ]] && grep -qP 'Internal error: directory mismatch' "$LOG_FILE"; then
-          FINDINGS=$(echo "$FINDINGS" | jq \
-            '. + [{category:"internal_error",severity:"warning",message:"Internal directory mismatch",detail:"Internal error: directory mismatch"}]')
-        fi
-
-        DISALLOWED_LOG=$(jq -r '(.rejectedToolsList // []) | join(", ")' "$METRICS_FILE")
-        if [[ -n "$DISALLOWED_LOG" && "$PERM_DENIALS" -eq 0 ]]; then
-          FINDINGS=$(echo "$FINDINGS" | jq --arg det "$DISALLOWED_LOG" \
-            '. + [{category:"disallowed_tools",severity:"info",message:"Disallowed tools detected",detail:$det}]')
-        fi
-
-        if [[ -s "$LOG_FILE" ]] && grep -qP "Can't find 'action\.yml'" "$LOG_FILE"; then
-          FINDINGS=$(echo "$FINDINGS" | jq \
-            '. + [{category:"action_not_found",severity:"error",message:"Missing action.yml",detail:"action.yml not found"}]')
-        fi
-
-        if [[ -s "$LOG_FILE" ]] && grep -qP 'Failed to fetch user display name.*GraphqlResponseError' "$LOG_FILE"; then
-          FINDINGS=$(echo "$FINDINGS" | jq \
-            '. + [{category:"graphql_user_err",severity:"warning",message:"GraphQL user fetch failed",detail:"GraphqlResponseError"}]')
-        fi
-
-        CHECKS=0
-        [[ -s "$LOG_FILE" ]] && CHECKS=$(grep -c 'is_rate_limited=true' "$LOG_FILE" || true)
-        if [[ "$CHECKS" -ge 3 ]]; then
-          FINDINGS=$(echo "$FINDINGS" | jq \
-            '. + [{category:"rate_limited",severity:"error",message:"All 3 attempts rate limited",detail:"All attempts hit 429"}]')
-        fi
-
-        EXTRA_ERRORS=$(echo "$ERROR_MESSAGES_JSON" | jq -c --arg action "$ACTION_ERROR" '[.[] | select(. != $action and (test("Claude Code failed with a non-(rate-limit|retryable) error") | not))] | .[0:3]')
-        EXTRA_ERROR_COUNT=$(echo "$EXTRA_ERRORS" | jq 'length')
-        if [[ "$EXTRA_ERROR_COUNT" -gt 0 ]]; then
-          DETAIL=$(echo "$EXTRA_ERRORS" | jq -r 'join("\n")' | head -c 300 | jq -Rs .)
-          FINDINGS=$(echo "$FINDINGS" | jq --argjson count "$EXTRA_ERROR_COUNT" --argjson det "$DETAIL" \
-            '. + [{category:"uncategorized",severity:"error",message:"\($count) unrecognized error(s) from Claude run",detail:$det}]')
-        fi
-
-        RESULT=$(jq -n \
-          --arg run_id "$GITHUB_RUN_ID" \
-          --arg workflow "$GITHUB_JOB_NAME" \
-          --arg conclusion "$CONCLUSION" \
-          --argjson attempt "$ATTEMPT" \
-          --argjson num_turns "$NUM_TURNS" \
-          --arg max_turns "$MAX_TURNS_INPUT" \
-          --argjson perm_denials "$PERM_DENIALS" \
-          --argjson is_error "$IS_ERROR" \
-          --argjson findings "$FINDINGS" \
-          --argjson metrics "$METRICS_JSON" \
-          '{run_id:($run_id|tonumber),workflow:$workflow,conclusion:$conclusion,attempt:$attempt,num_turns:$num_turns,max_turns:($max_turns|tonumber),permission_denials_count:$perm_denials,is_error:$is_error,metrics:$metrics,findings:$findings}')
-
-        # Only set output if there are findings
-        FINDING_COUNT=$(echo "$FINDINGS" | jq 'length')
-        if [[ "$FINDING_COUNT" -gt 0 ]]; then
-          # Write to file to avoid GITHUB_OUTPUT line-length limits
-          RESULT_FILE=$(mktemp /tmp/claude-issues-XXXXXX.json)
-          echo "$RESULT" > "$RESULT_FILE"
-          echo "claude_issues_file=$RESULT_FILE" >> "$GITHUB_OUTPUT"
-          echo "has_findings=true" >> "$GITHUB_OUTPUT"
-          echo "Scanned Claude logs — $FINDING_COUNT finding(s): $(echo "$FINDINGS" | jq -r '.[].category' | tr '\n' ',' | sed 's/,$//')"
-        else
-          echo "claude_issues_file=" >> "$GITHUB_OUTPUT"
-          echo "has_findings=false" >> "$GITHUB_OUTPUT"
-          echo "Scanned Claude logs — no issues found."
-        fi
-
-        # Emit error-level finding summary for downstream health normalization
-        ERROR_FINDINGS=$(echo "$FINDINGS" | jq '[.[] | select(.severity == "error")]')
-        ERROR_COUNT=$(echo "$ERROR_FINDINGS" | jq 'length')
-        if [[ "$ERROR_COUNT" -gt 0 ]]; then
-          echo "has_error_findings=true" >> "$GITHUB_OUTPUT"
-          echo "findings_summary=$(echo "$ERROR_FINDINGS" | jq -r '.[].category' | tr '\n' ',' | sed 's/,$//')" >> "$GITHUB_OUTPUT"
-        else
-          echo "has_error_findings=false" >> "$GITHUB_OUTPUT"
-          echo "findings_summary=" >> "$GITHUB_OUTPUT"
-        fi
-
-        {
-          echo "num_turns=$NUM_TURNS"
-          echo "is_error=$IS_ERROR"
-          echo "duration_ms=$(jq -r '.durationMs // ""' "$METRICS_FILE")"
-          echo "duration_sec=$(jq -r '.durationSec // ""' "$METRICS_FILE")"
-          echo "total_cost_usd=$(jq -r '.totalCostUsd // ""' "$METRICS_FILE")"
-          echo "model_used=$(jq -r '.modelUsed // ""' "$METRICS_FILE")"
-          echo "turns_budget_pct=$(jq -r '.turnsBudgetPct // ""' "$METRICS_FILE")"
-          echo "cost_per_turn=$(jq -r '.costPerTurn // ""' "$METRICS_FILE")"
-          echo "duration_per_turn_ms=$(jq -r '.durationPerTurnMs // ""' "$METRICS_FILE")"
-          echo "num_tool_calls=$(jq -r '.numToolCalls // 0' "$METRICS_FILE")"
-          echo "num_failed_tool_calls=$(jq -r '.numFailedToolCalls // 0' "$METRICS_FILE")"
-          echo "num_rejected_tool_calls=$(jq -r '.numRejectedToolCalls // 0' "$METRICS_FILE")"
-          echo "denial_rate=$(jq -r '.denialRate // ""' "$METRICS_FILE")"
-          echo "read_files_count=$(jq -r '.readFilesCount // 0' "$METRICS_FILE")"
-          echo "edit_files_count=$(jq -r '.editFilesCount // 0' "$METRICS_FILE")"
-          echo "changed_files_count=$(jq -r '.changedFilesCount // 0' "$METRICS_FILE")"
-          emit_output "tool_breakdown" "$(jq -c '.toolBreakdown // {}' "$METRICS_FILE")"
-          emit_output "rejected_tools_list" "$(jq -c '.rejectedToolsList // []' "$METRICS_FILE")"
-          emit_output "read_files_list" "$(jq -c '.readFilesList // []' "$METRICS_FILE")"
-          emit_output "edit_files_list" "$(jq -c '.editFilesList // []' "$METRICS_FILE")"
-          emit_output "changed_files_list" "$(jq -c '.changedFilesList // []' "$METRICS_FILE")"
-          emit_output "action_error" "$ACTION_ERROR"
-          emit_output "error_messages" "$ERROR_MESSAGES_JSON"
-          emit_output "last_output" "$(jq -r '.lastOutput // ""' "$METRICS_FILE")"
-          emit_output "metrics_json" "$METRICS_JSON"
-        } >> "$GITHUB_OUTPUT"
-
-        rm -f "$LOG_FILE" "$CHANGED_FILES_FILE" "$METRICS_FILE"
+        rm -f "$LOG_FILE" "$CHANGED_FILES_FILE"
 
     # --- Report findings to rolling GitHub issue ---
     - name: ensure-claude-health-labels

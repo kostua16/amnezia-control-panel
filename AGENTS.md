@@ -1,1 +1,1 @@
-D:/Projects/claude/amnezia-control-panel/CLAUDE.md
+CLAUDE.md

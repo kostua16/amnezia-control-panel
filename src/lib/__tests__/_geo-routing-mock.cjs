@@ -7,5 +7,8 @@ module.exports = {
   evaluateGeoRules: (_dest, _rules) => ({ matched: false, action: 'ALLOW' }),
   lookupGeoIP: async (_ip) => ({ countryCode: null, region: null }),
   classifyDomesticForeign: (_cc, _domestic) => 'foreign',
-  evaluateGeoRulesFromDB: async (_dest) => ({ matched: false, action: 'ALLOW' }),
+  evaluateGeoRulesFromDB: async (_dest) => ({
+    matched: false,
+    action: 'ALLOW',
+  }),
 };

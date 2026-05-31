@@ -5,6 +5,8 @@ const fs = require('fs');
 
 const MAX_LAST_OUTPUT_BYTES = 6000;
 const MAX_LAST_OUTPUT_LINES = 80;
+const MAX_FAILED_TOOL_SAMPLES = 5;
+const MAX_SAMPLE_FIELD_LENGTH = 240;
 
 function stripAnsi(value) {
   return String(value || '').replace(/\u001b\[[0-9;]*m/g, '');
@@ -22,7 +24,7 @@ function redactSecrets(value) {
     .replace(/(Basic\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[REDACTED]')
     .replace(
       /((?:api[_-]?key|auth[_-]?token|access[_-]?token|github[_-]?token|password|secret)\s*[:=]\s*["']?)[^"'\s,}]+/gi,
-      '$1[REDACTED]'
+      '$1[REDACTED]',
     );
 }
 
@@ -88,8 +90,19 @@ function asBoolean(value) {
 }
 
 function percent(numerator, denominator) {
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return null;
+  if (
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    denominator <= 0
+  )
+    return null;
   return Math.round((numerator / denominator) * 1000) / 10;
+}
+
+function truncateText(value, limit = MAX_SAMPLE_FIELD_LENGTH) {
+  const text = sanitizeText(value).replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit - 3)}...`;
 }
 
 function addToolCall(metrics, name, input = {}) {
@@ -99,7 +112,67 @@ function addToolCall(metrics, name, input = {}) {
 
   const filePath = input.file_path || input.path || input.notebook_path;
   if (name === 'Read' && filePath) metrics.readFiles.add(filePath);
-  if (['Edit', 'Write', 'MultiEdit'].includes(name) && filePath) metrics.editFiles.add(filePath);
+  if (['Edit', 'Write', 'MultiEdit'].includes(name) && filePath)
+    metrics.editFiles.add(filePath);
+}
+
+function summarizeToolInput(input = {}) {
+  const command = input.command || input.cmd;
+  const filePath = input.file_path || input.path || input.notebook_path;
+  return {
+    command: command ? truncateText(command) : undefined,
+    filePath: filePath ? truncateText(filePath) : undefined,
+  };
+}
+
+function textFromToolResultContent(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item.text === 'string') return item.text;
+        if (item && typeof item.content === 'string') return item.content;
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (content && typeof content === 'object') return JSON.stringify(content);
+  return '';
+}
+
+function categorizeToolFailure(errorText) {
+  const text = String(errorText || '');
+  if (/multiple operations/i.test(text)) {
+    return 'multi_operation_rejected';
+  }
+  if (/requires approval|permission denied|not approved/i.test(text)) {
+    return 'approval_required';
+  }
+  if (/exit code\s+\d+|process completed with exit code/i.test(text)) {
+    return 'command_exit';
+  }
+  return 'unknown_tool_error';
+}
+
+function addFailedToolSample(metrics, toolInfo = {}, errorText = '') {
+  if (metrics.failedToolSamples.length >= MAX_FAILED_TOOL_SAMPLES) return;
+
+  const error = truncateText(errorText);
+  if (!error) return;
+
+  const sample = {
+    tool: truncateText(toolInfo.tool || toolInfo.name || 'unknown', 80),
+    ...summarizeToolInput(toolInfo.input || {}),
+    category: categorizeToolFailure(error),
+    error,
+  };
+
+  const key = JSON.stringify(sample);
+  if (metrics.failedToolSampleKeys.has(key)) return;
+  metrics.failedToolSampleKeys.add(key);
+  metrics.failedToolSamples.push(sample);
 }
 
 function parseEvents(executionText) {
@@ -116,7 +189,11 @@ function parseEvents(executionText) {
     numFailedToolCalls: 0,
     readFiles: new Set(),
     editFiles: new Set(),
+    failedToolSamples: [],
+    failedToolSampleKeys: new Set(),
   };
+  const toolsById = new Map();
+  const toolStack = [];
 
   for (const event of events) {
     walk(event, (node) => {
@@ -124,29 +201,52 @@ function parseEvents(executionText) {
         metrics.modelUsed = node.model;
       }
 
-      if (node.type === 'result' || node.num_turns !== undefined || node.duration_ms !== undefined) {
+      if (
+        node.type === 'result' ||
+        node.num_turns !== undefined ||
+        node.duration_ms !== undefined
+      ) {
         metrics.durationMs = asNumber(node.duration_ms, metrics.durationMs);
-        metrics.totalCostUsd = asNumber(node.total_cost_usd, metrics.totalCostUsd);
+        metrics.totalCostUsd = asNumber(
+          node.total_cost_usd,
+          metrics.totalCostUsd,
+        );
         metrics.numTurns = asNumber(node.num_turns, metrics.numTurns);
         metrics.permissionDenialsCount = asNumber(
           node.permission_denials_count,
-          metrics.permissionDenialsCount
+          metrics.permissionDenialsCount,
         );
         const parsedError = asBoolean(node.is_error);
         if (parsedError !== null) metrics.isError = parsedError;
       }
 
       if (node.type === 'tool_use') {
-        addToolCall(metrics, node.name || node.tool_name, node.input || {});
+        const tool = node.name || node.tool_name;
+        const input = node.input || {};
+        addToolCall(metrics, tool, input);
+        const toolInfo = { tool, input };
+        if (node.id) toolsById.set(node.id, toolInfo);
+        toolStack.push(toolInfo);
       } else if (typeof node.tool_name === 'string') {
-        addToolCall(metrics, node.tool_name, node.input || {});
+        const toolInfo = { tool: node.tool_name, input: node.input || {} };
+        addToolCall(metrics, toolInfo.tool, toolInfo.input);
+        toolStack.push(toolInfo);
       }
 
       if (
         node.type === 'tool_result' &&
-        (node.is_error === true || node.isError === true || /(^|\b)error\b/i.test(String(node.content || '')))
+        (node.is_error === true ||
+          node.isError === true ||
+          /(^|\b)error\b/i.test(String(node.content || '')))
       ) {
         metrics.numFailedToolCalls += 1;
+        const toolInfo =
+          toolsById.get(node.tool_use_id) || toolStack[toolStack.length - 1];
+        addFailedToolSample(
+          metrics,
+          toolInfo,
+          textFromToolResultContent(node.content),
+        );
       }
     });
   }
@@ -161,24 +261,54 @@ function emptyToolMetrics() {
     numFailedToolCalls: 0,
     readFiles: new Set(),
     editFiles: new Set(),
+    failedToolSamples: [],
+    failedToolSampleKeys: new Set(),
   };
 }
 
 function parseLogToolMetrics(logText) {
   const metrics = emptyToolMetrics();
-  const lines = String(logText || '').split('\n').map((line) => stripGitHubLogPrefix(sanitizeText(line)));
+  const lines = String(logText || '')
+    .split('\n')
+    .map((line) => stripGitHubLogPrefix(sanitizeText(line)));
+  const toolsById = new Map();
+  let lastTool = null;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (/"type"\s*:\s*"tool_use"/.test(line) || /"tool_name"\s*:\s*"[^"]+"/.test(line)) {
+    if (
+      /"type"\s*:\s*"tool_use"/.test(line) ||
+      /"tool_name"\s*:\s*"[^"]+"/.test(line)
+    ) {
       const block = lines.slice(index, index + 40).join('\n');
       const name = block.match(/"(?:name|tool_name)"\s*:\s*"([^"]+)"/)?.[1];
-      const filePath = block.match(/"(?:file_path|path|notebook_path)"\s*:\s*"([^"]+)"/)?.[1];
-      addToolCall(metrics, name, filePath ? { file_path: filePath } : {});
+      const id = block.match(/"id"\s*:\s*"([^"]+)"/)?.[1];
+      const filePath = block.match(
+        /"(?:file_path|path|notebook_path)"\s*:\s*"([^"]+)"/,
+      )?.[1];
+      const command = block.match(/"command"\s*:\s*"([^"]+)"/)?.[1];
+      const input = {
+        ...(filePath ? { file_path: filePath } : {}),
+        ...(command ? { command } : {}),
+      };
+      addToolCall(metrics, name, input);
+      lastTool = { tool: name, input };
+      if (id) toolsById.set(id, lastTool);
     }
     if (/"type"\s*:\s*"tool_result"/.test(line)) {
       const block = lines.slice(index, index + 20).join('\n');
       if (/"is_error"\s*:\s*true/.test(block) || /\bError:/.test(block)) {
         metrics.numFailedToolCalls += 1;
+        const toolUseId = block.match(/"tool_use_id"\s*:\s*"([^"]+)"/)?.[1];
+        const content =
+          block.match(/"content"\s*:\s*"([^"]+)"/)?.[1] ||
+          block.match(/"tool_use_result"\s*:\s*"([^"]+)"/)?.[1] ||
+          block.match(/(Error:[^\n]+)/)?.[1] ||
+          'Tool call failed';
+        addFailedToolSample(
+          metrics,
+          toolsById.get(toolUseId) || lastTool || {},
+          content,
+        );
       }
     }
   }
@@ -193,6 +323,7 @@ function extractRejectedTools(logText) {
     if (!match) continue;
     for (const item of match[1].split(/[,;]/)) {
       const value = item.trim();
+      if (/^\$[{A-Za-z_]/.test(value)) continue;
       if (value) rejected.add(value);
     }
   }
@@ -200,7 +331,9 @@ function extractRejectedTools(logText) {
 }
 
 function extractJsonFieldFromLog(logText, field) {
-  const pattern = new RegExp(`"${field}"\\s*:\\s*("[^"]*"|-?[0-9]+(?:\\.[0-9]+)?|true|false|null)`);
+  const pattern = new RegExp(
+    `"${field}"\\s*:\\s*("[^"]*"|-?[0-9]+(?:\\.[0-9]+)?|true|false|null)`,
+  );
   for (const rawLine of String(logText || '').split('\n')) {
     const line = stripGitHubLogPrefix(sanitizeText(rawLine));
     const match = line.match(pattern);
@@ -221,7 +354,11 @@ function extractErrorMessages(logText) {
     const line = stripGitHubLogPrefix(sanitizeText(rawLine)).trim();
     const errorMatch = line.match(/##\[error\](.+)$/);
     const actionMatch = line.match(/Action failed with error:\s*(.+)$/);
-    const value = (actionMatch ? `Action failed with error: ${actionMatch[1]}` : errorMatch?.[1] || '').trim();
+    const value = (
+      actionMatch
+        ? `Action failed with error: ${actionMatch[1]}`
+        : errorMatch?.[1] || ''
+    ).trim();
     if (!value || seen.has(value)) continue;
     seen.add(value);
     messages.push(value.slice(0, 500));
@@ -237,14 +374,19 @@ function extractActionError(logText, errorMessages) {
   for (const rawLine of String(logText || '').split('\n')) {
     const line = stripGitHubLogPrefix(sanitizeText(rawLine));
     const match = line.match(/Action failed with error:\s*(.+)$/);
-    if (match) return `Action failed with error: ${match[1].trim()}`.slice(0, 500);
+    if (match)
+      return `Action failed with error: ${match[1].trim()}`.slice(0, 500);
   }
   return '';
 }
 
 function extractLastOutput(logText) {
-  const rawLines = String(logText || '').split('\n').map((line) => stripGitHubLogPrefix(sanitizeText(line)));
-  const start = rawLines.findIndex((line) => line.includes('Running Claude Code via SDK'));
+  const rawLines = String(logText || '')
+    .split('\n')
+    .map((line) => stripGitHubLogPrefix(sanitizeText(line)));
+  const start = rawLines.findIndex((line) =>
+    line.includes('Running Claude Code via SDK'),
+  );
   const scoped = start >= 0 ? rawLines.slice(start) : rawLines;
   const relevant = scoped.filter((line) => {
     const trimmed = line.trim();
@@ -256,8 +398,10 @@ function extractLastOutput(logText) {
       trimmed.includes('Action failed with error:') ||
       trimmed.includes('DISALLOWED_TOOLS:') ||
       trimmed.includes('##[error]') ||
-      /^["{}[\],:\sA-Za-z0-9._-]+$/.test(trimmed) &&
-        /"(type|subtype|model|is_error|duration_ms|num_turns|total_cost_usd|permission_denials_count)"\s*:/.test(trimmed)
+      (/^["{}[\],:\sA-Za-z0-9._-]+$/.test(trimmed) &&
+        /"(type|subtype|model|is_error|duration_ms|num_turns|total_cost_usd|permission_denials_count)"\s*:/.test(
+          trimmed,
+        ))
     );
   });
 
@@ -265,7 +409,9 @@ function extractLastOutput(logText) {
   let output = tail.join('\n').trim();
   if (Buffer.byteLength(output, 'utf8') > MAX_LAST_OUTPUT_BYTES) {
     const buffer = Buffer.from(output, 'utf8');
-    output = buffer.subarray(buffer.length - MAX_LAST_OUTPUT_BYTES).toString('utf8');
+    output = buffer
+      .subarray(buffer.length - MAX_LAST_OUTPUT_BYTES)
+      .toString('utf8');
     const firstNewline = output.indexOf('\n');
     if (firstNewline >= 0) output = output.slice(firstNewline + 1);
   }
@@ -273,7 +419,14 @@ function extractLastOutput(logText) {
 }
 
 function parseChangedFiles(value) {
-  return [...new Set(String(value || '').split('\n').map((line) => line.trim()).filter(Boolean))].sort();
+  return [
+    ...new Set(
+      String(value || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean),
+    ),
+  ].sort();
 }
 
 function parseClaudeExecution(options = {}) {
@@ -286,36 +439,62 @@ function parseClaudeExecution(options = {}) {
   const actionError = extractActionError(logText, errorMessages);
   const changedFilesList = parseChangedFiles(options.changedFiles || '');
   const maxTurns = asNumber(options.maxTurns, null);
-  const numTurns = eventMetrics.numTurns ?? asNumber(extractJsonFieldFromLog(logText, 'num_turns'), null);
-  const durationMs = eventMetrics.durationMs ?? asNumber(extractJsonFieldFromLog(logText, 'duration_ms'), null);
-  const totalCostUsd = eventMetrics.totalCostUsd ?? asNumber(extractJsonFieldFromLog(logText, 'total_cost_usd'), null);
-  const isError = eventMetrics.isError ?? asBoolean(extractJsonFieldFromLog(logText, 'is_error'));
+  const numTurns =
+    eventMetrics.numTurns ??
+    asNumber(extractJsonFieldFromLog(logText, 'num_turns'), null);
+  const durationMs =
+    eventMetrics.durationMs ??
+    asNumber(extractJsonFieldFromLog(logText, 'duration_ms'), null);
+  const totalCostUsd =
+    eventMetrics.totalCostUsd ??
+    asNumber(extractJsonFieldFromLog(logText, 'total_cost_usd'), null);
+  const isError =
+    eventMetrics.isError ??
+    asBoolean(extractJsonFieldFromLog(logText, 'is_error'));
   const permissionDenialsCount =
-    eventMetrics.permissionDenialsCount || asNumber(extractJsonFieldFromLog(logText, 'permission_denials_count'), 0);
-  const modelUsed = eventMetrics.modelUsed || extractJsonFieldFromLog(logText, 'model') || '';
-  const numRejectedToolCalls = permissionDenialsCount || rejectedToolsList.length;
+    eventMetrics.permissionDenialsCount ||
+    asNumber(extractJsonFieldFromLog(logText, 'permission_denials_count'), 0);
+  const modelUsed =
+    eventMetrics.modelUsed || extractJsonFieldFromLog(logText, 'model') || '';
+  const numRejectedToolCalls =
+    permissionDenialsCount || rejectedToolsList.length;
   const numToolCalls = eventMetrics.numToolCalls || logToolMetrics.numToolCalls;
   const toolBreakdown =
-    eventMetrics.numToolCalls > 0 ? eventMetrics.toolBreakdown : logToolMetrics.toolBreakdown;
+    eventMetrics.numToolCalls > 0
+      ? eventMetrics.toolBreakdown
+      : logToolMetrics.toolBreakdown;
   const numFailedToolCalls =
     eventMetrics.numFailedToolCalls || logToolMetrics.numFailedToolCalls;
-  const readFiles = new Set([...eventMetrics.readFiles, ...logToolMetrics.readFiles]);
-  const editFiles = new Set([...eventMetrics.editFiles, ...logToolMetrics.editFiles]);
+  const failedToolSamples = [
+    ...eventMetrics.failedToolSamples,
+    ...logToolMetrics.failedToolSamples,
+  ].slice(0, MAX_FAILED_TOOL_SAMPLES);
+  const readFiles = new Set([
+    ...eventMetrics.readFiles,
+    ...logToolMetrics.readFiles,
+  ]);
+  const editFiles = new Set([
+    ...eventMetrics.editFiles,
+    ...logToolMetrics.editFiles,
+  ]);
 
   return {
     attempt: asNumber(options.attempt, null),
     outcome: options.outcome || '',
     maxTurns,
     durationMs,
-    durationSec: Number.isFinite(durationMs) ? Math.round((durationMs / 1000) * 10) / 10 : null,
+    durationSec: Number.isFinite(durationMs)
+      ? Math.round((durationMs / 1000) * 10) / 10
+      : null,
     totalCostUsd,
     modelUsed,
     numTurns,
     isError,
     turnsBudgetPct: percent(numTurns, maxTurns),
-    costPerTurn: percent(totalCostUsd, numTurns) === null
-      ? null
-      : Math.round((totalCostUsd / numTurns) * 10000) / 10000,
+    costPerTurn:
+      percent(totalCostUsd, numTurns) === null
+        ? null
+        : Math.round((totalCostUsd / numTurns) * 10000) / 10000,
     durationPerTurnMs:
       Number.isFinite(durationMs) && Number.isFinite(numTurns) && numTurns > 0
         ? Math.round(durationMs / numTurns)
@@ -323,6 +502,7 @@ function parseClaudeExecution(options = {}) {
     numToolCalls,
     toolBreakdown,
     numFailedToolCalls,
+    failedToolSamples,
     numRejectedToolCalls,
     rejectedToolsList,
     denialRate: percent(numRejectedToolCalls, numToolCalls),
@@ -348,8 +528,13 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (!arg.startsWith('--')) continue;
-    const key = arg.slice(2).replace(/-([a-z])/g, (_, char) => char.toUpperCase());
-    args[key] = argv[index + 1] && !argv[index + 1].startsWith('--') ? argv[++index] : 'true';
+    const key = arg
+      .slice(2)
+      .replace(/-([a-z])/g, (_, char) => char.toUpperCase());
+    args[key] =
+      argv[index + 1] && !argv[index + 1].startsWith('--')
+        ? argv[++index]
+        : 'true';
   }
   return args;
 }

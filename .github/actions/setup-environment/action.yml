@@ -27,10 +27,10 @@ inputs:
     description: 'Install or verify GSD (@opengsd/get-shit-done-redux) in .claude'
     default: 'false'
   install-rtk:
-    description: 'Install RTK (Rust Token Killer) with cache and init hooks'
+    description: 'Install RTK (Rust Token Killer) binary with cache; project hooks are committed'
     default: 'false'
   gsd-version:
-    description: 'Pinned @opengsd/get-shit-done-redux version used when .claude/gsd-install-state.json is missing'
+    description: 'Pinned @opengsd/get-shit-done-redux version used when project-local GSD assets are missing'
     default: '1.1.0'
   rtk-version:
     description: 'Pinned RTK version used for workflow bootstrap'
@@ -87,11 +87,13 @@ runs:
         command -v gh >/dev/null 2>&1 && echo "gh(before setup-gh)=$(command -v gh)" || echo "gh(before setup-gh)=<not found>"
 
     - id: setup_gh
-      uses: kostua16/setup-gh@v1
+      uses: kostua16/setup-gh@v1.0.2
       with:
         gh-version: ${{ inputs.gh-version }}
         cli-token: ${{ inputs.github-token }}
         token: ${{ inputs.github-token }}
+        switch-account: 'true'
+        skip-matching-version: 'false'
 
     - name: Debug PATH after setup-gh
       if: runner.debug == '1'
@@ -101,10 +103,8 @@ runs:
         echo "PATH(after setup-gh)=$PATH"
         command -v gh >/dev/null 2>&1 && echo "gh(after setup-gh)=$(command -v gh)" || echo "gh(after setup-gh)=<not found>"
 
-    - name: Ensure gh authenticated
+    - name: Verify gh authenticated
       shell: bash
-      env:
-        GH_LOGIN_TOKEN: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
 
@@ -116,9 +116,7 @@ runs:
         gh --version
 
         host="${GITHUB_SERVER_URL#https://}"
-        if ! gh auth status -h "$host" >/dev/null 2>&1; then
-          printf '%s' "$GH_LOGIN_TOKEN" | gh auth login -h "$host" --with-token
-        fi
+        gh auth status -h "$host"
 
     # Previous GitHub-hosted cache retained for audit only. It restored from
     # remote GitHub/Azure storage too slowly on self-hosted runners.
@@ -167,8 +165,8 @@ runs:
 
     - if: inputs.install-gsd == 'true'
       run: |
-        if [ -f .claude/gsd-install-state.json ]; then
-          echo "Using existing GSD install (.claude/gsd-install-state.json)"
+        if [ -f .claude/commands/gsd/quick.md ] && [ -f .claude/get-shit-done/bin/gsd-tools.cjs ]; then
+          echo "Using project-local GSD install from committed .claude assets"
         else
           npx @opengsd/get-shit-done-redux@${{ inputs.gsd-version }} --claude --local
         fi
@@ -221,5 +219,10 @@ runs:
       shell: bash
 
     - if: inputs.install-rtk == 'true'
-      run: mkdir -p "$HOME/.claude" && "$HOME/.local/bin/rtk" init -g --auto-patch
+      run: |
+        # RTK configuration is committed in project mode (CLAUDE.md +
+        # .claude/settings.json). Do not patch the runner's global Claude
+        # profile; claude-code-action restores project .claude from the trusted
+        # base branch before Claude starts.
+        "$HOME/.local/bin/rtk" init --show
       shell: bash

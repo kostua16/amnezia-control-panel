@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: verifying
 stopped_at: context exhaustion at 77% (2026-05-03)
-last_updated: "2026-05-29T22:17:31.609Z"
-last_activity: 2026-05-29 -- Self-host Geist fonts for dev6 CI (next/font/local, run #26663122321)
+last_updated: "2026-05-31T14:31:35Z"
+last_activity: 2026-05-31 -- Refactor scan-claude-logs into tested CJS scanner
 progress:
   total_phases: 23
   completed_phases: 20
@@ -29,7 +29,7 @@ progress:
 Phase: 12.15 of 12.15 (Requirements reconciliation & middleware hardening) -- PLANNED
 Plan: 0 of 0 in current phase (planned)
 Status: 12.14 complete (GEO-03/04 + TSCL-01-03 verified, audit 19/20)
-Last activity: 2026-05-29 -- Self-host Geist fonts for dev6 CI (next/font/local, run #26663122321)
+Last activity: 2026-05-31 -- Refactor scan-claude-logs into tested CJS scanner
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -121,7 +121,9 @@ Resume file: None
 | 2026-04-30 | 260430-q7v       | Dev default port 3333; override via CLI/PORT |
 | 2026-04-30 | 260430-r2n       | npm `--port` shorthand support + Next lock behavior |
 | 2026-05-29 | 260529-geist     | Self-host Geist fonts (dev6 gstatic block, CI #26663122321) |
+| 2026-05-31 | 260531-pol       | Issue #152 turn budgets + Claude failed-tool reporting |
+| 2026-05-31 | 260531-qyb       | Refactor `scan-claude-logs` into tested CJS scanner |
 
 ---
 *State initialized: 2026-04-27*
-*Last updated: 2026-05-29 - Self-host Geist fonts for dev6 CI (quick 260529-geist)*
+*Last updated: 2026-05-31 - Refactor scan-claude-logs into tested CJS scanner (quick 260531-qyb)*

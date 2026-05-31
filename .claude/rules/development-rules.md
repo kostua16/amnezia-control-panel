@@ -23,12 +23,14 @@
 - Read and follow codebase structure and code standards in `./docs`
 - Don't be too harsh on code linting, but **make sure there are no syntax errors and code are compilable**
 - Prioritize functionality and readability over strict style enforcement and code formatting
+- For any change to `.js`, `.cjs`, `.ts`, or `.tsx` files, including workflow helper scripts under `.github`, verify both lint and Prettier pass before finishing. If the repo scripts do not cover changed workflow files, run a targeted Prettier check on the changed JS/CJS/TS files.
 - Use reasonable code quality standards that enhance developer productivity
 - Use try catch error handling & cover security standards
 - Use `code-reviewer` agent to review code after every implementation
 
 ## Pre-commit/Push Rules
 - Run linting before commit
+- Run Prettier before commit whenever `.js`, `.cjs`, `.ts`, or `.tsx` files changed, including workflow scripts.
 - Run tests before push (DO NOT ignore failed tests just to pass the build or github actions)
 - Keep commits focused on the actual code changes
 - **DO NOT** commit and push any confidential information (such as dotenv files, API keys, database credentials, etc.) to git repository!

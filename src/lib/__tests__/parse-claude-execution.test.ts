@@ -8,6 +8,7 @@ const {
   redactSecrets,
 } = require('../../../.github/workflows/scripts/parse-claude-execution.cjs');
 const {
+  mergeClaudeMetrics,
   renderClaudeExecutionSection,
 } = require('../../../.github/workflows/scripts/render-claude-report.cjs');
 
@@ -170,15 +171,205 @@ describe('parseClaudeExecution', () => {
     assert.deepEqual(metrics.editFilesList, ['src/new-file.ts']);
   });
 
+  it('extracts capped failed tool samples from issue #152-style denied commands', () => {
+    const deniedCommands = [
+      [
+        'call_gh',
+        'gh run view 26711225846 --log | grep -i ANTHROPIC_API_KEY=sk-secret',
+        'This Bash command contains multiple operations. The following part requires approval: rtk gh run view 26711225846 --log',
+      ],
+      [
+        'call_git',
+        'git diff .github/workflows/triage.yml',
+        'This command requires approval',
+      ],
+      ['call_exit', 'npm test', 'Error: Process completed with exit code 1'],
+      [
+        'call_unknown',
+        'node scripts/check.js',
+        'Tool call failed unexpectedly',
+      ],
+      ['call_gh_retry', 'gh issue view 152', 'This command requires approval'],
+      [
+        'call_git_retry',
+        'git status --short',
+        'This command requires approval',
+      ],
+    ] as const;
+
+    const events = [
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'call_edit',
+              name: 'Edit',
+              input: { file_path: 'src/success.ts' },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'call_edit',
+              content: 'Edit applied successfully',
+            },
+          ],
+        },
+      }),
+    ];
+
+    for (const [id, command, content] of deniedCommands) {
+      events.push(
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            content: [
+              {
+                type: 'tool_use',
+                id,
+                name: 'Bash',
+                input: { command },
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: 'user',
+          message: {
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: id,
+                is_error: true,
+                content,
+              },
+            ],
+          },
+        }),
+      );
+    }
+
+    events.push(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'error_max_turns',
+        is_error: true,
+        duration_ms: 309394,
+        num_turns: 26,
+      }),
+    );
+
+    const executionText = events.join('\n');
+
+    const metrics = parseClaudeExecution({
+      executionText,
+      maxTurns: '25',
+      outcome: 'failure',
+    });
+
+    assert.equal(metrics.numFailedToolCalls, 6);
+    assert.equal(metrics.failedToolSamples.length, 5);
+    assert.deepEqual(metrics.editFilesList, ['src/success.ts']);
+    assert.equal(
+      metrics.failedToolSamples[0].category,
+      'multi_operation_rejected',
+    );
+    assert.match(metrics.failedToolSamples[0].command, /gh run view/);
+    assert.doesNotMatch(metrics.failedToolSamples[0].command, /sk-secret/);
+    assert.equal(metrics.failedToolSamples[1].category, 'approval_required');
+    assert.match(metrics.failedToolSamples[1].command, /git diff/);
+    assert.equal(metrics.failedToolSamples[2].category, 'command_exit');
+    assert.equal(metrics.failedToolSamples[3].category, 'unknown_tool_error');
+    assert.doesNotMatch(
+      JSON.stringify(metrics.failedToolSamples),
+      /git status --short/,
+    );
+  });
+
   it('redacts common secret-like values from log-derived text', () => {
     assert.equal(
       redactSecrets('ANTHROPIC_API_KEY=sk-secret Bearer abc.def'),
       'ANTHROPIC_API_KEY=[REDACTED] Bearer [REDACTED]',
     );
   });
+
+  it('extracts scheduled track_progress action errors without counting shell-source DISALLOWED_TOOLS', () => {
+    const logText = [
+      'audit-fix\tAudit repository and apply targeted fixes\t2026-05-31T11:23:39.3995994Z ##[error]Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+      'audit-fix\tAudit repository and apply targeted fixes\t2026-05-31T11:23:43.8026503Z \u001b[36;1m  if [[ "$PERM_DENIALS" -gt 5 ]]; then SEV="error"; else SEV="warning"; fi\u001b[0m',
+      'audit-fix\tAudit repository and apply targeted fixes\t2026-05-31T11:23:43.8028498Z \u001b[36;1m  [[ -n "$DISALLOWED" ]] && DETAIL="DISALLOWED_TOOLS: $DISALLOWED"\u001b[0m',
+      'audit-fix\tAudit repository and apply targeted fixes\t2026-05-31T11:23:43.7322921Z ##[error]Attempt 1 failed with non-retryable error (API probe returned HTTP 200). Skipping retries.',
+    ].join('\n');
+
+    const metrics = parseClaudeExecution({
+      logText,
+      maxTurns: '100',
+      attempt: '1',
+      outcome: 'failure',
+    });
+
+    assert.equal(metrics.attempt, 1);
+    assert.equal(metrics.outcome, 'failure');
+    assert.equal(
+      metrics.actionError,
+      'Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+    );
+    assert.equal(metrics.numRejectedToolCalls, 0);
+    assert.deepEqual(metrics.rejectedToolsList, []);
+  });
 });
 
 describe('renderClaudeExecutionSection', () => {
+  it('fills blank sparse metrics from detected failure metrics', () => {
+    const sparseMetrics = {
+      attempt: 1,
+      outcome: 'failure',
+      maxTurns: 100,
+      modelUsed: '',
+      numTurns: null,
+      actionError: '',
+      errorMessages: [],
+      lastOutput: '',
+      toolBreakdown: {},
+      numToolCalls: 0,
+    };
+    const detectedMetrics = {
+      modelUsed: 'glm-5',
+      actionError:
+        'Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+      errorMessages: [
+        'Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+      ],
+      lastOutput:
+        '##[error]Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+      toolBreakdown: { Read: 1 },
+      numToolCalls: 1,
+    };
+
+    const merged = mergeClaudeMetrics(
+      JSON.stringify(sparseMetrics),
+      JSON.stringify(detectedMetrics),
+    );
+
+    assert.equal(merged.attempt, 1);
+    assert.equal(merged.outcome, 'failure');
+    assert.equal(merged.maxTurns, 100);
+    assert.equal(merged.modelUsed, 'glm-5');
+    assert.equal(merged.numTurns, null);
+    assert.equal(merged.numToolCalls, 0);
+    assert.deepEqual(merged.toolBreakdown, { Read: 1 });
+    assert.match(merged.actionError, /track_progress is only supported/);
+    assert.deepEqual(merged.errorMessages, detectedMetrics.errorMessages);
+    assert.equal(merged.lastOutput, detectedMetrics.lastOutput);
+  });
+
   it('renders a compact report section with the real action error', () => {
     const section = renderClaudeExecutionSection({
       claudeStepOutcome: 'failure',
@@ -187,6 +378,14 @@ describe('renderClaudeExecutionSection', () => {
       claudeDurationMs: '18',
       claudeTotalCostUsd: '0',
       claudeToolBreakdown: JSON.stringify({ Read: 2, Bash: 1 }),
+      claudeFailedToolSamples: JSON.stringify([
+        {
+          tool: 'Bash',
+          command: 'gh run view 26711696742 --log',
+          category: 'approval_required',
+          error: 'This command requires approval',
+        },
+      ]),
       claudeActionError:
         'Action failed with error: --json-schema was provided but Claude did not return structured_output. Result subtype: success',
       claudeLastOutput: 'Running Claude Code via SDK\n"type": "result"',
@@ -198,6 +397,58 @@ describe('renderClaudeExecutionSection', () => {
       section,
       /--json-schema was provided but Claude did not return structured_output/,
     );
+    assert.match(section, /Failed tool samples/);
+    assert.match(section, /gh run view 26711696742 --log/);
     assert.match(section, /Last Claude SDK output/);
+  });
+
+  it('renders failed tool samples capped and redacted', () => {
+    const section = renderClaudeExecutionSection({
+      claudeStepOutcome: 'failure',
+      claudeFailedToolSamples: JSON.stringify([
+        {
+          tool: 'Bash',
+          command: `gh run view 26711696742 --log ANTHROPIC_API_KEY=sk-secret ${'x'.repeat(260)}UNIQUE_TAIL`,
+          category: 'approval_required',
+          error: 'This command requires approval',
+        },
+        {
+          tool: 'Bash',
+          command: 'git diff .github/workflows/triage.yml',
+          category: 'approval_required',
+          error: 'This command requires approval',
+        },
+        {
+          tool: 'Bash',
+          command: 'npm test',
+          category: 'command_exit',
+          error: 'Process completed with exit code 1',
+        },
+        {
+          tool: 'Read',
+          filePath: 'src/a.ts',
+          category: 'unknown_tool_error',
+          error: 'Read failed',
+        },
+        {
+          tool: 'Bash',
+          command: 'node scripts/check.js',
+          category: 'unknown_tool_error',
+          error: 'Tool failed',
+        },
+        {
+          tool: 'Bash',
+          command: 'sixth-command-should-not-render',
+          category: 'approval_required',
+          error: 'This command requires approval',
+        },
+      ]),
+    });
+
+    assert.match(section, /Failed tool samples/);
+    assert.match(section, /ANTHROPIC_API_KEY=\[REDACTED\]/);
+    assert.doesNotMatch(section, /sk-secret/);
+    assert.doesNotMatch(section, /UNIQUE_TAIL/);
+    assert.doesNotMatch(section, /sixth-command-should-not-render/);
   });
 });
