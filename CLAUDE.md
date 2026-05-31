@@ -69,6 +69,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Prefer `npm run dev --port <n>` and production `npm start` port forms without requiring `--` before forwarded args; this repo normalizes npm `npm_config_port` in `scripts/dev.cjs` and `scripts/start.cjs`.
 - Prefer small, scoped git commits; do not commit large unintended trees (e.g. nested `.claude/worktrees` copies) without explicit approval.
 - When documenting Servers/Panels for admins, state that API keys are operator-chosen shared secrets (e.g. `openssl rand -hex 32`), not `JWT_SECRET`, and plaintext is not recoverable from the DB after save.
+- For any change to `.js`, `.cjs`, `.ts`, or `.tsx` files, including workflow helper scripts under `.github`, verify both lint and Prettier pass before finishing. If the repo scripts do not cover the changed workflow files, run a targeted Prettier check on the changed JS/CJS/TS files.
 
 ## Learned Workspace Facts
 

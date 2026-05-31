@@ -8,6 +8,7 @@ const {
   redactSecrets,
 } = require('../../../.github/workflows/scripts/parse-claude-execution.cjs');
 const {
+  mergeClaudeMetrics,
   renderClaudeExecutionSection,
 } = require('../../../.github/workflows/scripts/render-claude-report.cjs');
 
@@ -176,9 +177,77 @@ describe('parseClaudeExecution', () => {
       'ANTHROPIC_API_KEY=[REDACTED] Bearer [REDACTED]',
     );
   });
+
+  it('extracts scheduled track_progress action errors without counting shell-source DISALLOWED_TOOLS', () => {
+    const logText = [
+      'audit-fix\tAudit repository and apply targeted fixes\t2026-05-31T11:23:39.3995994Z ##[error]Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+      'audit-fix\tAudit repository and apply targeted fixes\t2026-05-31T11:23:43.8026503Z \u001b[36;1m  if [[ "$PERM_DENIALS" -gt 5 ]]; then SEV="error"; else SEV="warning"; fi\u001b[0m',
+      'audit-fix\tAudit repository and apply targeted fixes\t2026-05-31T11:23:43.8028498Z \u001b[36;1m  [[ -n "$DISALLOWED" ]] && DETAIL="DISALLOWED_TOOLS: $DISALLOWED"\u001b[0m',
+      'audit-fix\tAudit repository and apply targeted fixes\t2026-05-31T11:23:43.7322921Z ##[error]Attempt 1 failed with non-retryable error (API probe returned HTTP 200). Skipping retries.',
+    ].join('\n');
+
+    const metrics = parseClaudeExecution({
+      logText,
+      maxTurns: '100',
+      attempt: '1',
+      outcome: 'failure',
+    });
+
+    assert.equal(metrics.attempt, 1);
+    assert.equal(metrics.outcome, 'failure');
+    assert.equal(
+      metrics.actionError,
+      'Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+    );
+    assert.equal(metrics.numRejectedToolCalls, 0);
+    assert.deepEqual(metrics.rejectedToolsList, []);
+  });
 });
 
 describe('renderClaudeExecutionSection', () => {
+  it('fills blank sparse metrics from detected failure metrics', () => {
+    const sparseMetrics = {
+      attempt: 1,
+      outcome: 'failure',
+      maxTurns: 100,
+      modelUsed: '',
+      numTurns: null,
+      actionError: '',
+      errorMessages: [],
+      lastOutput: '',
+      toolBreakdown: {},
+      numToolCalls: 0,
+    };
+    const detectedMetrics = {
+      modelUsed: 'glm-5',
+      actionError:
+        'Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+      errorMessages: [
+        'Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+      ],
+      lastOutput:
+        '##[error]Action failed with error: track_progress is only supported for events: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review. Current event: schedule',
+      toolBreakdown: { Read: 1 },
+      numToolCalls: 1,
+    };
+
+    const merged = mergeClaudeMetrics(
+      JSON.stringify(sparseMetrics),
+      JSON.stringify(detectedMetrics),
+    );
+
+    assert.equal(merged.attempt, 1);
+    assert.equal(merged.outcome, 'failure');
+    assert.equal(merged.maxTurns, 100);
+    assert.equal(merged.modelUsed, 'glm-5');
+    assert.equal(merged.numTurns, null);
+    assert.equal(merged.numToolCalls, 0);
+    assert.deepEqual(merged.toolBreakdown, { Read: 1 });
+    assert.match(merged.actionError, /track_progress is only supported/);
+    assert.deepEqual(merged.errorMessages, detectedMetrics.errorMessages);
+    assert.equal(merged.lastOutput, detectedMetrics.lastOutput);
+  });
+
   it('renders a compact report section with the real action error', () => {
     const section = renderClaudeExecutionSection({
       claudeStepOutcome: 'failure',

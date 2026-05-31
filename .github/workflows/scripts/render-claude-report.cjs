@@ -16,25 +16,58 @@ function asArray(value) {
   if (typeof value === 'string') {
     const parsed = parseJson(value, null);
     if (Array.isArray(parsed)) return parsed;
-    return value.split('\n').map((line) => line.trim()).filter(Boolean);
+    return value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
   }
   return [];
 }
 
 function asObject(value) {
   const parsed = parseJson(value, null);
-  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed
+    : {};
+}
+
+function isBlankMetricValue(value) {
+  if (value === null || value === undefined || value === '') return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.keys(value).length === 0;
+  return false;
+}
+
+function mergeClaudeMetrics(primary, fallback) {
+  const merged = { ...asObject(fallback), ...asObject(primary) };
+  const fallbackMetrics = asObject(fallback);
+  for (const [key, value] of Object.entries(fallbackMetrics)) {
+    if (isBlankMetricValue(merged[key]) && !isBlankMetricValue(value)) {
+      merged[key] = value;
+    }
+  }
+  return merged;
 }
 
 function valueOrFallback(value, fallback = 'N/A') {
-  return value === null || value === undefined || value === '' ? fallback : String(value);
+  return value === null || value === undefined || value === ''
+    ? fallback
+    : String(value);
 }
 
 function formatDuration(metrics) {
-  if (metrics.durationSec !== null && metrics.durationSec !== undefined && metrics.durationSec !== '') {
+  if (
+    metrics.durationSec !== null &&
+    metrics.durationSec !== undefined &&
+    metrics.durationSec !== ''
+  ) {
     return `${metrics.durationSec}s`;
   }
-  if (metrics.durationMs !== null && metrics.durationMs !== undefined && metrics.durationMs !== '') {
+  if (
+    metrics.durationMs !== null &&
+    metrics.durationMs !== undefined &&
+    metrics.durationMs !== ''
+  ) {
     return `${Math.round(Number(metrics.durationMs) / 100) / 10}s`;
   }
   return 'N/A';
@@ -56,7 +89,9 @@ function formatRate(value) {
 
 function formatToolBreakdown(value) {
   const breakdown = asObject(value);
-  const entries = Object.entries(breakdown).sort(([left], [right]) => left.localeCompare(right));
+  const entries = Object.entries(breakdown).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
   if (entries.length === 0) return '_none_';
   return entries.map(([name, count]) => `${name}: ${count}`).join(', ');
 }
@@ -71,7 +106,9 @@ function escapeTable(value) {
 }
 
 function normalizeMetrics(input = {}) {
-  const metricsJson = asObject(input.claudeMetricsJson || input.metricsJson || input.metrics_json);
+  const metricsJson = asObject(
+    input.claudeMetricsJson || input.metricsJson || input.metrics_json,
+  );
   const merged = { ...metricsJson, ...input };
   return {
     outcome: merged.claudeStepOutcome || merged.outcome,
@@ -84,14 +121,18 @@ function normalizeMetrics(input = {}) {
     durationSec: merged.claudeDurationSec || merged.durationSec,
     totalCostUsd: merged.claudeTotalCostUsd || merged.totalCostUsd,
     costPerTurn: merged.claudeCostPerTurn || merged.costPerTurn,
-    durationPerTurnMs: merged.claudeDurationPerTurnMs || merged.durationPerTurnMs,
+    durationPerTurnMs:
+      merged.claudeDurationPerTurnMs || merged.durationPerTurnMs,
     numToolCalls: merged.claudeNumToolCalls || merged.numToolCalls,
     toolBreakdown: merged.claudeToolBreakdown || merged.toolBreakdown,
     readFilesCount: merged.claudeReadFilesCount || merged.readFilesCount,
     editFilesCount: merged.claudeEditFilesCount || merged.editFilesCount,
-    numFailedToolCalls: merged.claudeNumFailedToolCalls || merged.numFailedToolCalls,
-    changedFilesCount: merged.claudeChangedFilesCount || merged.changedFilesCount,
-    numRejectedToolCalls: merged.claudeNumRejectedToolCalls || merged.numRejectedToolCalls,
+    numFailedToolCalls:
+      merged.claudeNumFailedToolCalls || merged.numFailedToolCalls,
+    changedFilesCount:
+      merged.claudeChangedFilesCount || merged.changedFilesCount,
+    numRejectedToolCalls:
+      merged.claudeNumRejectedToolCalls || merged.numRejectedToolCalls,
     denialRate: merged.claudeDenialRate || merged.denialRate,
     isError: merged.claudeIsError || merged.isError,
     failureReason: merged.claudeFailureReason || merged.failureReason,
@@ -99,7 +140,8 @@ function normalizeMetrics(input = {}) {
     errorMessages: merged.claudeErrorMessages || merged.errorMessages,
     lastOutput: merged.claudeLastOutput || merged.lastOutput,
     changedFilesList: merged.claudeChangedFilesList || merged.changedFilesList,
-    rejectedToolsList: merged.claudeRejectedToolsList || merged.rejectedToolsList,
+    rejectedToolsList:
+      merged.claudeRejectedToolsList || merged.rejectedToolsList,
     readFilesList: merged.claudeReadFilesList || merged.readFilesList,
     editFilesList: merged.claudeEditFilesList || merged.editFilesList,
   };
@@ -124,7 +166,9 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
   if (!hasClaudeInfo(metrics)) return '';
 
   const turns = valueOrFallback(metrics.numTurns);
-  const turnsPct = metrics.turnsBudgetPct ? ` (${metrics.turnsBudgetPct}%)` : '';
+  const turnsPct = metrics.turnsBudgetPct
+    ? ` (${metrics.turnsBudgetPct}%)`
+    : '';
   const attempt = metrics.attempt ? `${metrics.attempt}/3` : 'N/A';
   const rows = [
     ['Outcome', valueOrFallback(metrics.outcome)],
@@ -155,26 +199,58 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
 
   const primaryError = metrics.actionError || metrics.failureReason;
   if (primaryError) {
-    lines.push('', `**Error:** \`${valueOrFallback(primaryError).replace(/`/g, "'")}\``);
+    lines.push(
+      '',
+      `**Error:** \`${valueOrFallback(primaryError).replace(/`/g, "'")}\``,
+    );
   }
 
-  const errors = asArray(metrics.errorMessages).filter((message) => message && message !== primaryError);
+  const errors = asArray(metrics.errorMessages).filter(
+    (message) => message && message !== primaryError,
+  );
   if (errors.length > 0) {
-    lines.push('', '**Error messages:**', ...errors.slice(0, 5).map((message) => `- \`${String(message).replace(/`/g, "'")}\``));
+    lines.push(
+      '',
+      '**Error messages:**',
+      ...errors
+        .slice(0, 5)
+        .map((message) => `- \`${String(message).replace(/`/g, "'")}\``),
+    );
   }
 
   const rejectedTools = asArray(metrics.rejectedToolsList);
   if (rejectedTools.length > 0) {
-    lines.push('', '<details><summary>Rejected tools</summary>', '', codeBlock(rejectedTools.join('\n')), '', '</details>');
+    lines.push(
+      '',
+      '<details><summary>Rejected tools</summary>',
+      '',
+      codeBlock(rejectedTools.join('\n')),
+      '',
+      '</details>',
+    );
   }
 
   const changedFiles = asArray(metrics.changedFilesList);
   if (changedFiles.length > 0) {
-    lines.push('', '<details><summary>Changed files</summary>', '', codeBlock(changedFiles.join('\n')), '', '</details>');
+    lines.push(
+      '',
+      '<details><summary>Changed files</summary>',
+      '',
+      codeBlock(changedFiles.join('\n')),
+      '',
+      '</details>',
+    );
   }
 
   if (metrics.lastOutput) {
-    lines.push('', '<details><summary>Last Claude SDK output</summary>', '', codeBlock(metrics.lastOutput), '', '</details>');
+    lines.push(
+      '',
+      '<details><summary>Last Claude SDK output</summary>',
+      '',
+      codeBlock(metrics.lastOutput),
+      '',
+      '</details>',
+    );
   }
 
   return `${lines.join('\n')}\n`;
@@ -186,6 +262,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  mergeClaudeMetrics,
   normalizeMetrics,
   renderClaudeExecutionSection,
 };

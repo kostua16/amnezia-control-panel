@@ -214,6 +214,28 @@ runs:
         echo "model=$(resolve '${{ inputs.model }}')" >> "$GITHUB_OUTPUT"
         echo "subagent_model=$(resolve '${{ inputs.subagent-model }}')" >> "$GITHUB_OUTPUT"
 
+    - id: resolve-track-progress
+      shell: bash
+      env:
+        REQUESTED_TRACK_PROGRESS: ${{ inputs.track-progress }}
+        EVENT_NAME: ${{ github.event_name }}
+      run: |
+        supported=false
+        case "$EVENT_NAME" in
+          pull_request|issues|issue_comment|pull_request_review_comment|pull_request_review)
+            supported=true
+            ;;
+        esac
+
+        value=false
+        if [[ "$REQUESTED_TRACK_PROGRESS" == "true" && "$supported" == "true" ]]; then
+          value=true
+        elif [[ "$REQUESTED_TRACK_PROGRESS" == "true" ]]; then
+          echo "track_progress requested but disabled for unsupported event: $EVENT_NAME"
+        fi
+
+        echo "value=$value" >> "$GITHUB_OUTPUT"
+
     - name: Resolve Bun executable
       id: resolve_bun
       shell: bash
@@ -250,7 +272,7 @@ runs:
         github_token: ${{ inputs.github-token }}
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
-        track_progress: ${{ inputs.track-progress }}
+        track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-
@@ -350,7 +372,7 @@ runs:
         github_token: ${{ inputs.github-token }}
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
-        track_progress: ${{ inputs.track-progress }}
+        track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-
@@ -448,7 +470,7 @@ runs:
         github_token: ${{ inputs.github-token }}
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
-        track_progress: ${{ inputs.track-progress }}
+        track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-

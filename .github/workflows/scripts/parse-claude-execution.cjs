@@ -22,7 +22,7 @@ function redactSecrets(value) {
     .replace(/(Basic\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[REDACTED]')
     .replace(
       /((?:api[_-]?key|auth[_-]?token|access[_-]?token|github[_-]?token|password|secret)\s*[:=]\s*["']?)[^"'\s,}]+/gi,
-      '$1[REDACTED]'
+      '$1[REDACTED]',
     );
 }
 
@@ -88,7 +88,12 @@ function asBoolean(value) {
 }
 
 function percent(numerator, denominator) {
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return null;
+  if (
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    denominator <= 0
+  )
+    return null;
   return Math.round((numerator / denominator) * 1000) / 10;
 }
 
@@ -99,7 +104,8 @@ function addToolCall(metrics, name, input = {}) {
 
   const filePath = input.file_path || input.path || input.notebook_path;
   if (name === 'Read' && filePath) metrics.readFiles.add(filePath);
-  if (['Edit', 'Write', 'MultiEdit'].includes(name) && filePath) metrics.editFiles.add(filePath);
+  if (['Edit', 'Write', 'MultiEdit'].includes(name) && filePath)
+    metrics.editFiles.add(filePath);
 }
 
 function parseEvents(executionText) {
@@ -124,13 +130,20 @@ function parseEvents(executionText) {
         metrics.modelUsed = node.model;
       }
 
-      if (node.type === 'result' || node.num_turns !== undefined || node.duration_ms !== undefined) {
+      if (
+        node.type === 'result' ||
+        node.num_turns !== undefined ||
+        node.duration_ms !== undefined
+      ) {
         metrics.durationMs = asNumber(node.duration_ms, metrics.durationMs);
-        metrics.totalCostUsd = asNumber(node.total_cost_usd, metrics.totalCostUsd);
+        metrics.totalCostUsd = asNumber(
+          node.total_cost_usd,
+          metrics.totalCostUsd,
+        );
         metrics.numTurns = asNumber(node.num_turns, metrics.numTurns);
         metrics.permissionDenialsCount = asNumber(
           node.permission_denials_count,
-          metrics.permissionDenialsCount
+          metrics.permissionDenialsCount,
         );
         const parsedError = asBoolean(node.is_error);
         if (parsedError !== null) metrics.isError = parsedError;
@@ -144,7 +157,9 @@ function parseEvents(executionText) {
 
       if (
         node.type === 'tool_result' &&
-        (node.is_error === true || node.isError === true || /(^|\b)error\b/i.test(String(node.content || '')))
+        (node.is_error === true ||
+          node.isError === true ||
+          /(^|\b)error\b/i.test(String(node.content || '')))
       ) {
         metrics.numFailedToolCalls += 1;
       }
@@ -166,13 +181,20 @@ function emptyToolMetrics() {
 
 function parseLogToolMetrics(logText) {
   const metrics = emptyToolMetrics();
-  const lines = String(logText || '').split('\n').map((line) => stripGitHubLogPrefix(sanitizeText(line)));
+  const lines = String(logText || '')
+    .split('\n')
+    .map((line) => stripGitHubLogPrefix(sanitizeText(line)));
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (/"type"\s*:\s*"tool_use"/.test(line) || /"tool_name"\s*:\s*"[^"]+"/.test(line)) {
+    if (
+      /"type"\s*:\s*"tool_use"/.test(line) ||
+      /"tool_name"\s*:\s*"[^"]+"/.test(line)
+    ) {
       const block = lines.slice(index, index + 40).join('\n');
       const name = block.match(/"(?:name|tool_name)"\s*:\s*"([^"]+)"/)?.[1];
-      const filePath = block.match(/"(?:file_path|path|notebook_path)"\s*:\s*"([^"]+)"/)?.[1];
+      const filePath = block.match(
+        /"(?:file_path|path|notebook_path)"\s*:\s*"([^"]+)"/,
+      )?.[1];
       addToolCall(metrics, name, filePath ? { file_path: filePath } : {});
     }
     if (/"type"\s*:\s*"tool_result"/.test(line)) {
@@ -193,6 +215,7 @@ function extractRejectedTools(logText) {
     if (!match) continue;
     for (const item of match[1].split(/[,;]/)) {
       const value = item.trim();
+      if (/^\$[{A-Za-z_]/.test(value)) continue;
       if (value) rejected.add(value);
     }
   }
@@ -200,7 +223,9 @@ function extractRejectedTools(logText) {
 }
 
 function extractJsonFieldFromLog(logText, field) {
-  const pattern = new RegExp(`"${field}"\\s*:\\s*("[^"]*"|-?[0-9]+(?:\\.[0-9]+)?|true|false|null)`);
+  const pattern = new RegExp(
+    `"${field}"\\s*:\\s*("[^"]*"|-?[0-9]+(?:\\.[0-9]+)?|true|false|null)`,
+  );
   for (const rawLine of String(logText || '').split('\n')) {
     const line = stripGitHubLogPrefix(sanitizeText(rawLine));
     const match = line.match(pattern);
@@ -221,7 +246,11 @@ function extractErrorMessages(logText) {
     const line = stripGitHubLogPrefix(sanitizeText(rawLine)).trim();
     const errorMatch = line.match(/##\[error\](.+)$/);
     const actionMatch = line.match(/Action failed with error:\s*(.+)$/);
-    const value = (actionMatch ? `Action failed with error: ${actionMatch[1]}` : errorMatch?.[1] || '').trim();
+    const value = (
+      actionMatch
+        ? `Action failed with error: ${actionMatch[1]}`
+        : errorMatch?.[1] || ''
+    ).trim();
     if (!value || seen.has(value)) continue;
     seen.add(value);
     messages.push(value.slice(0, 500));
@@ -237,14 +266,19 @@ function extractActionError(logText, errorMessages) {
   for (const rawLine of String(logText || '').split('\n')) {
     const line = stripGitHubLogPrefix(sanitizeText(rawLine));
     const match = line.match(/Action failed with error:\s*(.+)$/);
-    if (match) return `Action failed with error: ${match[1].trim()}`.slice(0, 500);
+    if (match)
+      return `Action failed with error: ${match[1].trim()}`.slice(0, 500);
   }
   return '';
 }
 
 function extractLastOutput(logText) {
-  const rawLines = String(logText || '').split('\n').map((line) => stripGitHubLogPrefix(sanitizeText(line)));
-  const start = rawLines.findIndex((line) => line.includes('Running Claude Code via SDK'));
+  const rawLines = String(logText || '')
+    .split('\n')
+    .map((line) => stripGitHubLogPrefix(sanitizeText(line)));
+  const start = rawLines.findIndex((line) =>
+    line.includes('Running Claude Code via SDK'),
+  );
   const scoped = start >= 0 ? rawLines.slice(start) : rawLines;
   const relevant = scoped.filter((line) => {
     const trimmed = line.trim();
@@ -256,8 +290,10 @@ function extractLastOutput(logText) {
       trimmed.includes('Action failed with error:') ||
       trimmed.includes('DISALLOWED_TOOLS:') ||
       trimmed.includes('##[error]') ||
-      /^["{}[\],:\sA-Za-z0-9._-]+$/.test(trimmed) &&
-        /"(type|subtype|model|is_error|duration_ms|num_turns|total_cost_usd|permission_denials_count)"\s*:/.test(trimmed)
+      (/^["{}[\],:\sA-Za-z0-9._-]+$/.test(trimmed) &&
+        /"(type|subtype|model|is_error|duration_ms|num_turns|total_cost_usd|permission_denials_count)"\s*:/.test(
+          trimmed,
+        ))
     );
   });
 
@@ -265,7 +301,9 @@ function extractLastOutput(logText) {
   let output = tail.join('\n').trim();
   if (Buffer.byteLength(output, 'utf8') > MAX_LAST_OUTPUT_BYTES) {
     const buffer = Buffer.from(output, 'utf8');
-    output = buffer.subarray(buffer.length - MAX_LAST_OUTPUT_BYTES).toString('utf8');
+    output = buffer
+      .subarray(buffer.length - MAX_LAST_OUTPUT_BYTES)
+      .toString('utf8');
     const firstNewline = output.indexOf('\n');
     if (firstNewline >= 0) output = output.slice(firstNewline + 1);
   }
@@ -273,7 +311,14 @@ function extractLastOutput(logText) {
 }
 
 function parseChangedFiles(value) {
-  return [...new Set(String(value || '').split('\n').map((line) => line.trim()).filter(Boolean))].sort();
+  return [
+    ...new Set(
+      String(value || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean),
+    ),
+  ].sort();
 }
 
 function parseClaudeExecution(options = {}) {
@@ -286,36 +331,58 @@ function parseClaudeExecution(options = {}) {
   const actionError = extractActionError(logText, errorMessages);
   const changedFilesList = parseChangedFiles(options.changedFiles || '');
   const maxTurns = asNumber(options.maxTurns, null);
-  const numTurns = eventMetrics.numTurns ?? asNumber(extractJsonFieldFromLog(logText, 'num_turns'), null);
-  const durationMs = eventMetrics.durationMs ?? asNumber(extractJsonFieldFromLog(logText, 'duration_ms'), null);
-  const totalCostUsd = eventMetrics.totalCostUsd ?? asNumber(extractJsonFieldFromLog(logText, 'total_cost_usd'), null);
-  const isError = eventMetrics.isError ?? asBoolean(extractJsonFieldFromLog(logText, 'is_error'));
+  const numTurns =
+    eventMetrics.numTurns ??
+    asNumber(extractJsonFieldFromLog(logText, 'num_turns'), null);
+  const durationMs =
+    eventMetrics.durationMs ??
+    asNumber(extractJsonFieldFromLog(logText, 'duration_ms'), null);
+  const totalCostUsd =
+    eventMetrics.totalCostUsd ??
+    asNumber(extractJsonFieldFromLog(logText, 'total_cost_usd'), null);
+  const isError =
+    eventMetrics.isError ??
+    asBoolean(extractJsonFieldFromLog(logText, 'is_error'));
   const permissionDenialsCount =
-    eventMetrics.permissionDenialsCount || asNumber(extractJsonFieldFromLog(logText, 'permission_denials_count'), 0);
-  const modelUsed = eventMetrics.modelUsed || extractJsonFieldFromLog(logText, 'model') || '';
-  const numRejectedToolCalls = permissionDenialsCount || rejectedToolsList.length;
+    eventMetrics.permissionDenialsCount ||
+    asNumber(extractJsonFieldFromLog(logText, 'permission_denials_count'), 0);
+  const modelUsed =
+    eventMetrics.modelUsed || extractJsonFieldFromLog(logText, 'model') || '';
+  const numRejectedToolCalls =
+    permissionDenialsCount || rejectedToolsList.length;
   const numToolCalls = eventMetrics.numToolCalls || logToolMetrics.numToolCalls;
   const toolBreakdown =
-    eventMetrics.numToolCalls > 0 ? eventMetrics.toolBreakdown : logToolMetrics.toolBreakdown;
+    eventMetrics.numToolCalls > 0
+      ? eventMetrics.toolBreakdown
+      : logToolMetrics.toolBreakdown;
   const numFailedToolCalls =
     eventMetrics.numFailedToolCalls || logToolMetrics.numFailedToolCalls;
-  const readFiles = new Set([...eventMetrics.readFiles, ...logToolMetrics.readFiles]);
-  const editFiles = new Set([...eventMetrics.editFiles, ...logToolMetrics.editFiles]);
+  const readFiles = new Set([
+    ...eventMetrics.readFiles,
+    ...logToolMetrics.readFiles,
+  ]);
+  const editFiles = new Set([
+    ...eventMetrics.editFiles,
+    ...logToolMetrics.editFiles,
+  ]);
 
   return {
     attempt: asNumber(options.attempt, null),
     outcome: options.outcome || '',
     maxTurns,
     durationMs,
-    durationSec: Number.isFinite(durationMs) ? Math.round((durationMs / 1000) * 10) / 10 : null,
+    durationSec: Number.isFinite(durationMs)
+      ? Math.round((durationMs / 1000) * 10) / 10
+      : null,
     totalCostUsd,
     modelUsed,
     numTurns,
     isError,
     turnsBudgetPct: percent(numTurns, maxTurns),
-    costPerTurn: percent(totalCostUsd, numTurns) === null
-      ? null
-      : Math.round((totalCostUsd / numTurns) * 10000) / 10000,
+    costPerTurn:
+      percent(totalCostUsd, numTurns) === null
+        ? null
+        : Math.round((totalCostUsd / numTurns) * 10000) / 10000,
     durationPerTurnMs:
       Number.isFinite(durationMs) && Number.isFinite(numTurns) && numTurns > 0
         ? Math.round(durationMs / numTurns)
@@ -348,8 +415,13 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (!arg.startsWith('--')) continue;
-    const key = arg.slice(2).replace(/-([a-z])/g, (_, char) => char.toUpperCase());
-    args[key] = argv[index + 1] && !argv[index + 1].startsWith('--') ? argv[++index] : 'true';
+    const key = arg
+      .slice(2)
+      .replace(/-([a-z])/g, (_, char) => char.toUpperCase());
+    args[key] =
+      argv[index + 1] && !argv[index + 1].startsWith('--')
+        ? argv[++index]
+        : 'true';
   }
   return args;
 }
