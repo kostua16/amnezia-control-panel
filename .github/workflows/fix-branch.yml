@@ -61,3 +61,9 @@ jobs:
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           triggering-run-url: ${{ github.event.workflow_run.html_url }}
           branch: ${{ github.event.workflow_run.head_branch }}
+          claude-step-outcome: ${{ needs.fix.result }}
+          claude-turns: ${{ needs.fix.outputs.claude-num-turns }}
+          claude-is-error: ${{ needs.fix.outputs.claude-is-error }}
+          claude-used-attempt: ${{ needs.fix.outputs.claude-used-attempt }}
+          claude-failure-reason: ${{ needs.fix.outputs.claude-failure-reason }}
+          claude-metrics-json: ${{ needs.fix.outputs.claude-metrics-json }}

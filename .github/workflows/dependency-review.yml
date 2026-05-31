@@ -61,7 +61,7 @@ jobs:
   ai-dependency-review:
     needs: [resolve-pr]
     if: needs.resolve-pr.outputs.should-run == 'true'
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5

@@ -21,7 +21,7 @@ env:
 
 jobs:
   triage:
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 15
     if: |
       github.event_name == 'issues' ||

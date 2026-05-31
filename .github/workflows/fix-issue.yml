@@ -47,9 +47,16 @@ jobs:
 
   fix:
     needs: [authorize]
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 20
     if: needs.authorize.outputs.should-run == 'true'
+    outputs:
+      claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
+      claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
+      claude_num_turns: ${{ steps.claude_run.outputs.claude_num_turns }}
+      claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
+      claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
+      claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -86,7 +93,8 @@ jobs:
         with:
           branch-name: claude-fix-issue-${{ github.event.issue.number }}-${{ github.run_id }}
 
-      - uses: ./.github/actions/run-zai
+      - id: claude_run
+        uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
@@ -199,3 +207,9 @@ jobs:
           mode: 'comment'
           issue-number: ${{ github.event.issue.number }}
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          claude-step-outcome: ${{ needs.fix.result }}
+          claude-turns: ${{ needs.fix.outputs.claude_num_turns }}
+          claude-is-error: ${{ needs.fix.outputs.claude_is_error }}
+          claude-used-attempt: ${{ needs.fix.outputs.claude_used_attempt }}
+          claude-failure-reason: ${{ needs.fix.outputs.claude_failure_reason }}
+          claude-metrics-json: ${{ needs.fix.outputs.claude_metrics_json }}

@@ -17,6 +17,21 @@ outputs:
   used_attempt:
     description: 'Successful Claude Code retry attempt number'
     value: ${{ steps.select-outputs.outputs.used_attempt }}
+  last_attempt:
+    description: 'Last Claude Code attempt that actually ran'
+    value: ${{ steps.select-outputs.outputs.last_attempt }}
+  last_attempt_outcome:
+    description: 'Outcome of the last Claude Code attempt that actually ran'
+    value: ${{ steps.select-outputs.outputs.last_attempt_outcome }}
+  last_execution_file:
+    description: 'Execution file path from the last Claude Code attempt that actually ran'
+    value: ${{ steps.select-outputs.outputs.last_execution_file }}
+  last_session_id:
+    description: 'Session id from the last Claude Code attempt that actually ran'
+    value: ${{ steps.select-outputs.outputs.last_session_id }}
+  last_structured_output:
+    description: 'Structured JSON output from the last Claude Code attempt that actually ran'
+    value: ${{ steps.select-outputs.outputs.last_structured_output }}
   claude_failed:
     description: 'true when Claude failed hard or produced a soft-failure execution result'
     value: ${{ steps.claude-health.outputs.failed }}
@@ -35,6 +50,75 @@ outputs:
   claude_has_findings:
     description: 'true when the Claude log scanner found any known issue pattern'
     value: ${{ steps.scan-logs.outputs.has_findings }}
+  claude_duration_ms:
+    description: 'Claude execution duration in milliseconds'
+    value: ${{ steps.scan-logs.outputs.duration_ms }}
+  claude_duration_sec:
+    description: 'Claude execution duration in seconds'
+    value: ${{ steps.scan-logs.outputs.duration_sec }}
+  claude_total_cost_usd:
+    description: 'Claude total cost in USD'
+    value: ${{ steps.scan-logs.outputs.total_cost_usd }}
+  claude_model_used:
+    description: 'Claude model used by the run'
+    value: ${{ steps.scan-logs.outputs.model_used }}
+  claude_turns_budget_pct:
+    description: 'Percent of max turns used'
+    value: ${{ steps.scan-logs.outputs.turns_budget_pct }}
+  claude_cost_per_turn:
+    description: 'Claude cost per turn'
+    value: ${{ steps.scan-logs.outputs.cost_per_turn }}
+  claude_duration_per_turn_ms:
+    description: 'Claude duration per turn in milliseconds'
+    value: ${{ steps.scan-logs.outputs.duration_per_turn_ms }}
+  claude_num_tool_calls:
+    description: 'Total Claude tool calls parsed from execution output'
+    value: ${{ steps.scan-logs.outputs.num_tool_calls }}
+  claude_tool_breakdown:
+    description: 'Tool invocation counts as JSON'
+    value: ${{ steps.scan-logs.outputs.tool_breakdown }}
+  claude_num_failed_tool_calls:
+    description: 'Failed Claude tool result count'
+    value: ${{ steps.scan-logs.outputs.num_failed_tool_calls }}
+  claude_num_rejected_tool_calls:
+    description: 'Rejected Claude tool call count'
+    value: ${{ steps.scan-logs.outputs.num_rejected_tool_calls }}
+  claude_rejected_tools_list:
+    description: 'Rejected/disallowed Claude tools as JSON array'
+    value: ${{ steps.scan-logs.outputs.rejected_tools_list }}
+  claude_denial_rate:
+    description: 'Rejected tool call percentage'
+    value: ${{ steps.scan-logs.outputs.denial_rate }}
+  claude_read_files_count:
+    description: 'Unique files read by Claude Read tool'
+    value: ${{ steps.scan-logs.outputs.read_files_count }}
+  claude_read_files_list:
+    description: 'Unique files read by Claude Read tool as JSON array'
+    value: ${{ steps.scan-logs.outputs.read_files_list }}
+  claude_edit_files_count:
+    description: 'Unique files edited by Claude edit/write tools'
+    value: ${{ steps.scan-logs.outputs.edit_files_count }}
+  claude_edit_files_list:
+    description: 'Unique files edited by Claude edit/write tools as JSON array'
+    value: ${{ steps.scan-logs.outputs.edit_files_list }}
+  claude_changed_files_count:
+    description: 'Git changed file count after Claude run'
+    value: ${{ steps.scan-logs.outputs.changed_files_count }}
+  claude_changed_files_list:
+    description: 'Git changed files after Claude run as JSON array'
+    value: ${{ steps.scan-logs.outputs.changed_files_list }}
+  claude_action_error:
+    description: 'Action-level Claude failure error when available'
+    value: ${{ steps.scan-logs.outputs.action_error }}
+  claude_error_messages:
+    description: 'Sanitized Claude error messages as JSON array'
+    value: ${{ steps.scan-logs.outputs.error_messages }}
+  claude_last_output:
+    description: 'Sanitized capped Claude SDK output excerpt'
+    value: ${{ steps.scan-logs.outputs.last_output }}
+  claude_metrics_json:
+    description: 'All parsed Claude metrics as compact JSON'
+    value: ${{ steps.scan-logs.outputs.metrics_json }}
 
 inputs:
   api-key:
@@ -87,6 +171,9 @@ inputs:
   claude-debug:
     description: 'Claude debug'
     default: 'false'
+  claude-full-output:
+    description: 'Show full Claude SDK output. Defaults true for this private repo; public reusable workflows should default false.'
+    default: 'true'
   additional-permissions:
     description: "Additional GitHub permissions for the App token (e.g. 'issues: write')"
     default: ''
@@ -138,6 +225,10 @@ runs:
         fi
         echo "bun-path=$bun_path" >> "$GITHUB_OUTPUT"
 
+    - name: Clear Claude execution output (attempt 1)
+      shell: bash
+      run: rm -f "${RUNNER_TEMP}/claude-execution-output.json"
+
     # --- Attempt 1 ---
     - name: Run Claude Code (attempt 1)
       id: claude-run-1
@@ -160,7 +251,7 @@ runs:
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
-        show_full_output: ${{ inputs.claude-debug || false }}
+        show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
@@ -186,14 +277,15 @@ runs:
             }
           }
 
-    # Check if failure is 429 rate-limit before deciding to retry
-    - name: Check for rate limit (attempt 1)
+    # Check whether a failed attempt is safe to retry.
+    - name: Check retry condition (attempt 1)
       id: check-429-1
       if: ${{ steps.claude-run-1.outcome == 'failure' }}
       shell: bash
       env:
         API_URL: ${{ inputs.api-url }}
         API_KEY: ${{ inputs.api-key }}
+        JSON_SCHEMA_ENABLED: ${{ inputs.json-schema != '' && 'true' || 'false' }}
       run: |
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
@@ -202,24 +294,44 @@ runs:
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30)
-        echo "http_code=${http_code}" >> "$GITHUB_OUTPUT"
+        is_rate_limited=false
+        should_retry=false
+        retry_reason=non_retryable
+
         if [[ "$http_code" == "429" ]]; then
-          echo "is_rate_limited=true" >> "$GITHUB_OUTPUT"
+          is_rate_limited=true
+          should_retry=true
+          retry_reason=rate_limited
           echo "::warning::Attempt 1 failed and API returned 429 (rate limited). Will retry after 2 min wait."
+        elif [[ "$JSON_SCHEMA_ENABLED" == "true" ]] && [[ -f "${RUNNER_TEMP}/claude-execution-output.json" ]] && jq -e '.. | objects | select(.type == "result" and ((.is_error // false) == false))' "${RUNNER_TEMP}/claude-execution-output.json" >/dev/null 2>&1; then
+          should_retry=true
+          retry_reason=missing_structured_output
+          echo "::warning::Attempt 1 produced a successful execution result but no structured output. Retrying once because --json-schema was requested."
         else
-          echo "is_rate_limited=false" >> "$GITHUB_OUTPUT"
-          echo "::error::Attempt 1 failed with non-rate-limit error (API probe returned HTTP ${http_code}). Skipping retries."
+          echo "::error::Attempt 1 failed with non-retryable error (API probe returned HTTP ${http_code}). Skipping retries."
         fi
+
+        {
+          echo "http_code=${http_code}"
+          echo "is_rate_limited=${is_rate_limited}"
+          echo "should_retry=${should_retry}"
+          echo "retry_reason=${retry_reason}"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Rate limit wait (attempt 1 → 2)
       if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' }}
       shell: bash
       run: sleep 120
 
+    - name: Clear Claude execution output (attempt 2)
+      if: ${{ steps.check-429-1.outputs.should_retry == 'true' }}
+      shell: bash
+      run: rm -f "${RUNNER_TEMP}/claude-execution-output.json"
+
     # --- Attempt 2 ---
     - name: Run Claude Code (attempt 2)
       id: claude-run-2
-      if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' }}
+      if: ${{ steps.check-429-1.outputs.should_retry == 'true' }}
       continue-on-error: true
       uses: anthropics/claude-code-action@v1
       env:
@@ -239,7 +351,7 @@ runs:
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
-        show_full_output: ${{ inputs.claude-debug || false }}
+        show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
@@ -265,13 +377,14 @@ runs:
             }
           }
 
-    - name: Check for rate limit (attempt 2)
+    - name: Check retry condition (attempt 2)
       id: check-429-2
       if: ${{ steps.claude-run-2.outcome == 'failure' }}
       shell: bash
       env:
         API_URL: ${{ inputs.api-url }}
         API_KEY: ${{ inputs.api-key }}
+        JSON_SCHEMA_ENABLED: ${{ inputs.json-schema != '' && 'true' || 'false' }}
       run: |
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
@@ -280,24 +393,44 @@ runs:
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30)
-        echo "http_code=${http_code}" >> "$GITHUB_OUTPUT"
+        is_rate_limited=false
+        should_retry=false
+        retry_reason=non_retryable
+
         if [[ "$http_code" == "429" ]]; then
-          echo "is_rate_limited=true" >> "$GITHUB_OUTPUT"
+          is_rate_limited=true
+          should_retry=true
+          retry_reason=rate_limited
           echo "::warning::Attempt 2 failed and API returned 429 (rate limited). Final retry after 2 min wait."
+        elif [[ "$JSON_SCHEMA_ENABLED" == "true" ]] && [[ -f "${RUNNER_TEMP}/claude-execution-output.json" ]] && jq -e '.. | objects | select(.type == "result" and ((.is_error // false) == false))' "${RUNNER_TEMP}/claude-execution-output.json" >/dev/null 2>&1; then
+          should_retry=true
+          retry_reason=missing_structured_output
+          echo "::warning::Attempt 2 produced a successful execution result but no structured output. Retrying final attempt because --json-schema was requested."
         else
-          echo "is_rate_limited=false" >> "$GITHUB_OUTPUT"
-          echo "::error::Attempt 2 failed with non-rate-limit error (API probe returned HTTP ${http_code}). Skipping final retry."
+          echo "::error::Attempt 2 failed with non-retryable error (API probe returned HTTP ${http_code}). Skipping final retry."
         fi
+
+        {
+          echo "http_code=${http_code}"
+          echo "is_rate_limited=${is_rate_limited}"
+          echo "should_retry=${should_retry}"
+          echo "retry_reason=${retry_reason}"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Rate limit wait (attempt 2 → 3)
       if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' }}
       shell: bash
       run: sleep 120
 
+    - name: Clear Claude execution output (attempt 3)
+      if: ${{ steps.check-429-2.outputs.should_retry == 'true' }}
+      shell: bash
+      run: rm -f "${RUNNER_TEMP}/claude-execution-output.json"
+
     # --- Attempt 3 (final) ---
     - name: Run Claude Code (attempt 3)
       id: claude-run-3
-      if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' }}
+      if: ${{ steps.check-429-2.outputs.should_retry == 'true' }}
       uses: anthropics/claude-code-action@v1
       env:
         DISABLE_TELEMETRY: '1'
@@ -316,7 +449,7 @@ runs:
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
         allowed_bots: ${{ inputs.allowed-bots }}
         track_progress: ${{ inputs.track-progress }}
-        show_full_output: ${{ inputs.claude-debug || false }}
+        show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
@@ -342,7 +475,7 @@ runs:
             }
           }
 
-    - name: Select successful Claude outputs
+    - name: Select Claude outputs
       id: select-outputs
       if: always()
       shell: bash
@@ -360,6 +493,16 @@ runs:
         RUN3_EXECUTION_FILE: ${{ steps.claude-run-3.outputs.execution_file || '' }}
         RUN3_STRUCTURED_OUTPUT: ${{ steps.claude-run-3.outputs.structured_output || '' }}
       run: |
+        emit_multiline() {
+          local key="$1"
+          local value="$2"
+          local delim
+          delim="EOF-$(openssl rand -hex 8)"
+          echo "$key<<$delim"
+          printf '%s\n' "$value"
+          echo "$delim"
+        }
+
         if [[ "${{ steps.claude-run-3.outcome }}" == "success" ]]; then
           prefix="RUN3"
           attempt="3"
@@ -374,6 +517,17 @@ runs:
           attempt=""
         fi
 
+        last_prefix=""
+        last_attempt=""
+        last_outcome=""
+        if [[ "${{ steps.claude-run-3.outcome }}" != "" && "${{ steps.claude-run-3.outcome }}" != "skipped" ]]; then
+          last_prefix="RUN3"; last_attempt="3"; last_outcome="${{ steps.claude-run-3.outcome }}"
+        elif [[ "${{ steps.claude-run-2.outcome }}" != "" && "${{ steps.claude-run-2.outcome }}" != "skipped" ]]; then
+          last_prefix="RUN2"; last_attempt="2"; last_outcome="${{ steps.claude-run-2.outcome }}"
+        elif [[ "${{ steps.claude-run-1.outcome }}" != "" && "${{ steps.claude-run-1.outcome }}" != "skipped" ]]; then
+          last_prefix="RUN1"; last_attempt="1"; last_outcome="${{ steps.claude-run-1.outcome }}"
+        fi
+
         {
           if [[ -n "$prefix" ]]; then
             session_id_var="${prefix}_SESSION_ID"
@@ -384,18 +538,56 @@ runs:
             echo "session_id=${!session_id_var}"
             echo "branch_name=${!branch_name_var}"
             echo "execution_file=${!execution_file_var}"
-            DELIM="EOF-$(openssl rand -hex 8)"
-            echo "structured_output<<$DELIM"
-            printf '%s\n' "${!structured_output_var}"
-            echo "$DELIM"
+            emit_multiline "structured_output" "${!structured_output_var}"
             echo "used_attempt=$attempt"
           else
             echo "session_id="
             echo "branch_name="
             echo "execution_file="
-            echo "structured_output="
+            emit_multiline "structured_output" ""
             echo "used_attempt="
           fi
+
+          if [[ -n "$last_prefix" ]]; then
+            last_session_id_var="${last_prefix}_SESSION_ID"
+            last_execution_file_var="${last_prefix}_EXECUTION_FILE"
+            last_structured_output_var="${last_prefix}_STRUCTURED_OUTPUT"
+
+            echo "last_attempt=$last_attempt"
+            echo "last_attempt_outcome=$last_outcome"
+            echo "last_execution_file=${!last_execution_file_var}"
+            echo "last_session_id=${!last_session_id_var}"
+            emit_multiline "last_structured_output" "${!last_structured_output_var}"
+          else
+            echo "last_attempt="
+            echo "last_attempt_outcome="
+            echo "last_execution_file="
+            echo "last_session_id="
+            emit_multiline "last_structured_output" ""
+          fi
+        } >> "$GITHUB_OUTPUT"
+
+    - name: collect-file-stats
+      id: collect-file-stats
+      if: always()
+      shell: bash
+      run: |
+        changed_files="$(
+          {
+            git diff --name-only HEAD 2>/dev/null || true
+            git ls-files --others --exclude-standard 2>/dev/null || true
+          } | sed '/^$/d' | sort -u
+        )"
+        changed_count="0"
+        if [[ -n "$changed_files" ]]; then
+          changed_count="$(printf '%s\n' "$changed_files" | wc -l | tr -d ' ')"
+        fi
+        {
+          echo "changed_files_count=$changed_count"
+          delim="EOF-$(openssl rand -hex 8)"
+          echo "changed_files_list<<$delim"
+          printf '%s\n' "$changed_files"
+          echo "$delim"
         } >> "$GITHUB_OUTPUT"
 
     # --- Scan Claude logs for known error patterns ---
@@ -409,84 +601,87 @@ runs:
         GITHUB_RUN_ID: ${{ github.run_id }}
         GITHUB_JOB_NAME: ${{ github.job }}
         MAX_TURNS_INPUT: ${{ inputs.max-turns }}
+        LAST_ATTEMPT: ${{ steps.select-outputs.outputs.last_attempt }}
+        LAST_ATTEMPT_OUTCOME: ${{ steps.select-outputs.outputs.last_attempt_outcome }}
+        LAST_EXECUTION_FILE: ${{ steps.select-outputs.outputs.last_execution_file }}
+        CHANGED_FILES_LIST: ${{ steps.collect-file-stats.outputs.changed_files_list }}
       run: |
-        # Determine which attempt ran (use last completed attempt)
-        ATTEMPT=0
-        CONCLUSION="success"
-        if [[ "${{ steps.claude-run-3.outcome }}" == "failure" ]]; then
-          ATTEMPT=3; CONCLUSION="failure"
-        elif [[ "${{ steps.claude-run-3.outcome }}" == "success" ]]; then
-          ATTEMPT=3; CONCLUSION="success"
-        elif [[ "${{ steps.claude-run-2.outcome }}" == "failure" ]]; then
-          ATTEMPT=2; CONCLUSION="failure"
-        elif [[ "${{ steps.claude-run-2.outcome }}" == "success" ]]; then
-          ATTEMPT=2; CONCLUSION="success"
-        elif [[ "${{ steps.claude-run-1.outcome }}" == "failure" ]]; then
-          ATTEMPT=1; CONCLUSION="failure"
-        elif [[ "${{ steps.claude-run-1.outcome }}" == "success" ]]; then
-          ATTEMPT=1; CONCLUSION="success"
-        fi
+        emit_output() {
+          local key="$1"
+          local value="$2"
+          local delim
+          delim="EOF-$(openssl rand -hex 8)"
+          echo "$key<<$delim"
+          printf '%s\n' "$value"
+          echo "$delim"
+        }
 
-        # Skip if no Claude step ran at all
-        if [[ "$ATTEMPT" -eq 0 ]]; then
-          echo "No Claude attempt ran — skipping scan."
-          echo "claude_issues_json={}" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-
-        # Read claude-execution-output.json if it exists
-        EXEC_JSON_PATH="${RUNNER_TEMP}/claude-execution-output.json"
-        NUM_TURNS="null"
-        IS_ERROR="null"
-        PERM_DENIALS="0"
-        if [[ -f "$EXEC_JSON_PATH" ]]; then
-          NUM_TURNS=$(jq -r '.num_turns // "null"' "$EXEC_JSON_PATH" 2>/dev/null || echo "null")
-          IS_ERROR=$(jq -r '.is_error // "null"' "$EXEC_JSON_PATH" 2>/dev/null || echo "null")
-          PERM_DENIALS=$(jq -r '.permission_denials_count // 0' "$EXEC_JSON_PATH" 2>/dev/null || echo "0")
+        ATTEMPT="${LAST_ATTEMPT:-0}"
+        CONCLUSION="${LAST_ATTEMPT_OUTCOME:-skipped}"
+        EXEC_JSON_PATH="${LAST_EXECUTION_FILE:-}"
+        if [[ -z "$EXEC_JSON_PATH" || ! -f "$EXEC_JSON_PATH" ]]; then
+          EXEC_JSON_PATH="${RUNNER_TEMP}/claude-execution-output.json"
         fi
 
         # Download current job logs
         LOG_FILE=$(mktemp)
-        # Find the current job ID within the run
-        JOBS_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" --jq '.jobs[] | select(.name == env.GITHUB_JOB_NAME) | .id' 2>/dev/null || echo "")
-        if [[ -n "$JOBS_JSON" ]]; then
-          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${JOBS_JSON}/logs" > "$LOG_FILE" 2>/dev/null || true
+        JOB_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" \
+          --jq '.jobs[] | select(.name == env.GITHUB_JOB_NAME or (.name | startswith(env.GITHUB_JOB_NAME + " ("))) | .id' \
+          2>/dev/null | head -1 || true)
+        if [[ -n "$JOB_ID" ]]; then
+          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${JOB_ID}/logs" > "$LOG_FILE" 2>/dev/null || true
         fi
 
         if [[ ! -s "$LOG_FILE" ]]; then
-          echo "Could not download job logs — skipping scan."
-          echo "claude_issues_json={}" >> "$GITHUB_OUTPUT"
-          rm -f "$LOG_FILE"
-          exit 0
+          echo "Could not download job logs — continuing with execution JSON only."
         fi
 
-        # --- Pattern matching ---
+        CHANGED_FILES_FILE=$(mktemp)
+        printf '%s\n' "$CHANGED_FILES_LIST" > "$CHANGED_FILES_FILE"
+        METRICS_FILE=$(mktemp /tmp/claude-metrics-XXXXXX.json)
+        node .github/workflows/scripts/parse-claude-execution.cjs \
+          --execution-file "$EXEC_JSON_PATH" \
+          --log-file "$LOG_FILE" \
+          --changed-files-file "$CHANGED_FILES_FILE" \
+          --max-turns "$MAX_TURNS_INPUT" \
+          --attempt "$ATTEMPT" \
+          --outcome "$CONCLUSION" \
+          --metrics-file "$METRICS_FILE"
+
+        NUM_TURNS=$(jq -r 'if .numTurns == null then "null" else (.numTurns|tostring) end' "$METRICS_FILE")
+        IS_ERROR=$(jq -r 'if .isError == null then "null" else (.isError|tostring) end' "$METRICS_FILE")
+        PERM_DENIALS=$(jq -r '.numRejectedToolCalls // 0' "$METRICS_FILE")
+        ACTION_ERROR=$(jq -r '.actionError // ""' "$METRICS_FILE")
+        ERROR_MESSAGES_JSON=$(jq -c '.errorMessages // []' "$METRICS_FILE")
+        METRICS_JSON=$(jq -c '.' "$METRICS_FILE")
+
         FINDINGS="[]"
 
-        # 1. Permission denials
+        if [[ -n "$ACTION_ERROR" ]]; then
+          FINDINGS=$(echo "$FINDINGS" | jq --arg det "$ACTION_ERROR" \
+            '. + [{category:"action_error",severity:"error",message:"Claude action failed",detail:$det}]')
+        fi
+
         if [[ "$PERM_DENIALS" -gt 0 ]]; then
           if [[ "$PERM_DENIALS" -gt 5 ]]; then SEV="error"; else SEV="warning"; fi
-          DISALLOWED=$(grep -oP 'DISALLOWED_TOOLS: \K.*' "$LOG_FILE" | head -1 || echo "")
-          DETAIL="Consider adding denied tools to allowed-tools"
+          DISALLOWED=$(jq -r '(.rejectedToolsList // []) | join(", ")' "$METRICS_FILE")
+          DETAIL="${PERM_DENIALS} rejected tool call(s)"
           [[ -n "$DISALLOWED" ]] && DETAIL="DISALLOWED_TOOLS: $DISALLOWED"
           FINDINGS=$(echo "$FINDINGS" | jq --arg sev "$SEV" --arg msg "${PERM_DENIALS} tool permission denials" --arg det "$DETAIL" \
             '. + [{category:"permission_denials",severity:$sev,message:$msg,detail:$det}]')
         fi
 
-        # 2. Git Push 403
-        if grep -qP 'fatal: unable to access.*returned error: 403' "$LOG_FILE"; then
+        if [[ -s "$LOG_FILE" ]] && grep -qP 'fatal: unable to access.*returned error: 403' "$LOG_FILE"; then
           LINE=$(grep -m1 'fatal: unable to access.*returned error: 403' "$LOG_FILE" | head -c 200)
           FINDINGS=$(echo "$FINDINGS" | jq --arg det "$LINE" \
             '. + [{category:"git_push_403",severity:"error",message:"Git push failed with HTTP 403",detail:$det}]')
         fi
 
-        # 3. GraphQL PR failure
-        if grep -qP 'pull request create failed: GraphQL:' "$LOG_FILE"; then
+        if [[ -s "$LOG_FILE" ]] && grep -qP 'pull request create failed: GraphQL:' "$LOG_FILE"; then
           FINDINGS=$(echo "$FINDINGS" | jq \
             '. + [{category:"graphql_pr_fail",severity:"error",message:"GraphQL PR creation failed",detail:"pull request create failed: GraphQL:"}]')
         fi
 
-        # 4. Turn limit hit
         if [[ "$NUM_TURNS" != "null" && "$NUM_TURNS" -gt 0 ]]; then
           MAX_T="$MAX_TURNS_INPUT"
           if [[ "$NUM_TURNS" -ge "$MAX_T" && "$IS_ERROR" == "true" ]]; then
@@ -495,68 +690,47 @@ runs:
           fi
         fi
 
-        # 5. Zero turns
         if [[ "$NUM_TURNS" == "0" ]]; then
           FINDINGS=$(echo "$FINDINGS" | jq \
             '. + [{category:"zero_turns",severity:"error",message:"Claude used zero turns",detail:"num_turns: 0"}]')
         fi
 
-        # 6. Internal error
-        if grep -qP 'Internal error: directory mismatch' "$LOG_FILE"; then
+        if [[ -s "$LOG_FILE" ]] && grep -qP 'Internal error: directory mismatch' "$LOG_FILE"; then
           FINDINGS=$(echo "$FINDINGS" | jq \
             '. + [{category:"internal_error",severity:"warning",message:"Internal directory mismatch",detail:"Internal error: directory mismatch"}]')
         fi
 
-        # 7. Disallowed tools (log-level, even if JSON didn't report counts)
-        DISALLOWED_LOG=$(grep -oP 'DISALLOWED_TOOLS: \K.*' "$LOG_FILE" | head -1 || true)
+        DISALLOWED_LOG=$(jq -r '(.rejectedToolsList // []) | join(", ")' "$METRICS_FILE")
         if [[ -n "$DISALLOWED_LOG" && "$PERM_DENIALS" -eq 0 ]]; then
           FINDINGS=$(echo "$FINDINGS" | jq --arg det "$DISALLOWED_LOG" \
             '. + [{category:"disallowed_tools",severity:"info",message:"Disallowed tools detected",detail:$det}]')
         fi
 
-        # 8. Action not found
-        if grep -qP "Can't find 'action\.yml'" "$LOG_FILE"; then
+        if [[ -s "$LOG_FILE" ]] && grep -qP "Can't find 'action\.yml'" "$LOG_FILE"; then
           FINDINGS=$(echo "$FINDINGS" | jq \
             '. + [{category:"action_not_found",severity:"error",message:"Missing action.yml",detail:"action.yml not found"}]')
         fi
 
-        # 9. GraphQL user error
-        if grep -qP 'Failed to fetch user display name.*GraphqlResponseError' "$LOG_FILE"; then
+        if [[ -s "$LOG_FILE" ]] && grep -qP 'Failed to fetch user display name.*GraphqlResponseError' "$LOG_FILE"; then
           FINDINGS=$(echo "$FINDINGS" | jq \
             '. + [{category:"graphql_user_err",severity:"warning",message:"GraphQL user fetch failed",detail:"GraphqlResponseError"}]')
         fi
 
-        # 10. Rate limited all 3 attempts
-        CHECKS=$(grep -c 'is_rate_limited=true' "$LOG_FILE" || true)
+        CHECKS=0
+        [[ -s "$LOG_FILE" ]] && CHECKS=$(grep -c 'is_rate_limited=true' "$LOG_FILE" || true)
         if [[ "$CHECKS" -ge 3 ]]; then
           FINDINGS=$(echo "$FINDINGS" | jq \
             '. + [{category:"rate_limited",severity:"error",message:"All 3 attempts rate limited",detail:"All attempts hit 429"}]')
         fi
 
-        # 11. Uncategorized errors (fallback)
-        # Collect lines matching generic error signatures, excluding already-captured patterns
-        CAPPED_CATS=$(echo "$FINDINGS" | jq -r '.[].category')
-        UNCATEG_LINES=()
-        while IFS= read -r ULINE; do
-          [[ -z "$ULINE" ]] && continue
-          UNCATEG_LINES+=("$ULINE")
-        done < <(
-          grep -E '##\[error\]|^\s*Error:\s+|ERR_TEST_FAILURE|"is_error":\s*true|^fatal:\s+|Process completed with exit code [1-9]' "$LOG_FILE" \
-            | grep -vF 'Claude Code failed with a non-rate-limit error' \
-            | grep -vP 'fatal: unable to access.*returned error: 403' \
-            | grep -vP 'pull request create failed: GraphQL:' \
-            | grep -vP 'Internal error: directory mismatch' \
-            | grep -vP "Can't find 'action\.yml'" \
-            | grep -vP 'Failed to fetch user display name.*GraphqlResponseError' \
-            | sort -u | head -3
-        )
-        if [[ ${#UNCATEG_LINES[@]} -gt 0 ]]; then
-          DETAIL=$(printf '%s\n' "${UNCATEG_LINES[@]}" | head -3 | head -c 300 | jq -Rs .)
-          FINDINGS=$(echo "$FINDINGS" | jq --argjson count "${#UNCATEG_LINES[@]}" --argjson det "$DETAIL" \
+        EXTRA_ERRORS=$(echo "$ERROR_MESSAGES_JSON" | jq -c --arg action "$ACTION_ERROR" '[.[] | select(. != $action and (test("Claude Code failed with a non-(rate-limit|retryable) error") | not))] | .[0:3]')
+        EXTRA_ERROR_COUNT=$(echo "$EXTRA_ERRORS" | jq 'length')
+        if [[ "$EXTRA_ERROR_COUNT" -gt 0 ]]; then
+          DETAIL=$(echo "$EXTRA_ERRORS" | jq -r 'join("\n")' | head -c 300 | jq -Rs .)
+          FINDINGS=$(echo "$FINDINGS" | jq --argjson count "$EXTRA_ERROR_COUNT" --argjson det "$DETAIL" \
             '. + [{category:"uncategorized",severity:"error",message:"\($count) unrecognized error(s) from Claude run",detail:$det}]')
         fi
 
-        # Build final JSON
         RESULT=$(jq -n \
           --arg run_id "$GITHUB_RUN_ID" \
           --arg workflow "$GITHUB_JOB_NAME" \
@@ -567,7 +741,8 @@ runs:
           --argjson perm_denials "$PERM_DENIALS" \
           --argjson is_error "$IS_ERROR" \
           --argjson findings "$FINDINGS" \
-          '{run_id:($run_id|tonumber),workflow:$workflow,conclusion:$conclusion,attempt:$attempt,num_turns:$num_turns,max_turns:($max_turns|tonumber),permission_denials_count:$perm_denials,is_error:$is_error,findings:$findings}')
+          --argjson metrics "$METRICS_JSON" \
+          '{run_id:($run_id|tonumber),workflow:$workflow,conclusion:$conclusion,attempt:$attempt,num_turns:$num_turns,max_turns:($max_turns|tonumber),permission_denials_count:$perm_denials,is_error:$is_error,metrics:$metrics,findings:$findings}')
 
         # Only set output if there are findings
         FINDING_COUNT=$(echo "$FINDINGS" | jq 'length')
@@ -595,11 +770,35 @@ runs:
           echo "findings_summary=" >> "$GITHUB_OUTPUT"
         fi
 
-        # Expose execution metrics for health normalization
-        echo "num_turns=$NUM_TURNS" >> "$GITHUB_OUTPUT"
-        echo "is_error=$IS_ERROR" >> "$GITHUB_OUTPUT"
+        {
+          echo "num_turns=$NUM_TURNS"
+          echo "is_error=$IS_ERROR"
+          echo "duration_ms=$(jq -r '.durationMs // ""' "$METRICS_FILE")"
+          echo "duration_sec=$(jq -r '.durationSec // ""' "$METRICS_FILE")"
+          echo "total_cost_usd=$(jq -r '.totalCostUsd // ""' "$METRICS_FILE")"
+          echo "model_used=$(jq -r '.modelUsed // ""' "$METRICS_FILE")"
+          echo "turns_budget_pct=$(jq -r '.turnsBudgetPct // ""' "$METRICS_FILE")"
+          echo "cost_per_turn=$(jq -r '.costPerTurn // ""' "$METRICS_FILE")"
+          echo "duration_per_turn_ms=$(jq -r '.durationPerTurnMs // ""' "$METRICS_FILE")"
+          echo "num_tool_calls=$(jq -r '.numToolCalls // 0' "$METRICS_FILE")"
+          echo "num_failed_tool_calls=$(jq -r '.numFailedToolCalls // 0' "$METRICS_FILE")"
+          echo "num_rejected_tool_calls=$(jq -r '.numRejectedToolCalls // 0' "$METRICS_FILE")"
+          echo "denial_rate=$(jq -r '.denialRate // ""' "$METRICS_FILE")"
+          echo "read_files_count=$(jq -r '.readFilesCount // 0' "$METRICS_FILE")"
+          echo "edit_files_count=$(jq -r '.editFilesCount // 0' "$METRICS_FILE")"
+          echo "changed_files_count=$(jq -r '.changedFilesCount // 0' "$METRICS_FILE")"
+          emit_output "tool_breakdown" "$(jq -c '.toolBreakdown // {}' "$METRICS_FILE")"
+          emit_output "rejected_tools_list" "$(jq -c '.rejectedToolsList // []' "$METRICS_FILE")"
+          emit_output "read_files_list" "$(jq -c '.readFilesList // []' "$METRICS_FILE")"
+          emit_output "edit_files_list" "$(jq -c '.editFilesList // []' "$METRICS_FILE")"
+          emit_output "changed_files_list" "$(jq -c '.changedFilesList // []' "$METRICS_FILE")"
+          emit_output "action_error" "$ACTION_ERROR"
+          emit_output "error_messages" "$ERROR_MESSAGES_JSON"
+          emit_output "last_output" "$(jq -r '.lastOutput // ""' "$METRICS_FILE")"
+          emit_output "metrics_json" "$METRICS_JSON"
+        } >> "$GITHUB_OUTPUT"
 
-        rm -f "$LOG_FILE"
+        rm -f "$LOG_FILE" "$CHANGED_FILES_FILE" "$METRICS_FILE"
 
     # --- Report findings to rolling GitHub issue ---
     - name: ensure-claude-health-labels
@@ -619,6 +818,7 @@ runs:
         github-token: ${{ inputs.github-token }}
         script: |
           const fs = require('fs');
+          const { renderClaudeExecutionSection } = require('./.github/workflows/scripts/render-claude-report.cjs');
           const issuesFile = process.env.ISSUES_FILE;
           if (!issuesFile || !fs.existsSync(issuesFile)) {
             core.info('No issues file — skipping report.');
@@ -684,10 +884,19 @@ runs:
             table += `| ${f.category} | ${sevIcon} ${f.severity} | ${detail} |\n`;
           }
 
+          const metricsSection = renderClaudeExecutionSection({
+            claudeMetricsJson: JSON.stringify(data.metrics || {}),
+            claudeStepOutcome: data.conclusion,
+            claudeUsedAttempt: String(data.attempt || ''),
+            maxTurns: data.max_turns,
+          }, { heading: '### Claude Execution Metrics' }).trim();
+
           const comment = [
             `## Run ${data.run_id} — ${data.workflow} — ${statusEmoji}`,
             '',
             table,
+            metricsSection,
+            '',
             `_Attempt: ${data.attempt}/3 | Turns: ${data.num_turns}/${data.max_turns} | ${timestamp}_`,
             `_Run: https://github.com/${owner}/${repo}/actions/runs/${data.run_id}_`,
           ].join('\n');
@@ -721,7 +930,8 @@ runs:
       if: always()
       shell: bash
       env:
-        USED_ATTEMPT: ${{ steps.select-outputs.outputs.used_attempt }}
+        LAST_ATTEMPT: ${{ steps.select-outputs.outputs.last_attempt }}
+        LAST_ATTEMPT_OUTCOME: ${{ steps.select-outputs.outputs.last_attempt_outcome }}
         ATTEMPT1_OUTCOME: ${{ steps.claude-run-1.outcome }}
         ATTEMPT2_OUTCOME: ${{ steps.claude-run-2.outcome || '' }}
         ATTEMPT3_OUTCOME: ${{ steps.claude-run-3.outcome || '' }}
@@ -729,10 +939,29 @@ runs:
         SCAN_IS_ERROR: ${{ steps.scan-logs.outputs.is_error }}
         SCAN_HAS_ERROR_FINDINGS: ${{ steps.scan-logs.outputs.has_error_findings }}
         SCAN_FINDINGS_SUMMARY: ${{ steps.scan-logs.outputs.findings_summary }}
+        SCAN_ACTION_ERROR: ${{ steps.scan-logs.outputs.action_error }}
+        SCAN_DURATION_MS: ${{ steps.scan-logs.outputs.duration_ms }}
         MAX_TURNS_INPUT: ${{ inputs.max-turns }}
       run: |
+        reason_with_context() {
+          local reason="$1"
+          local context=""
+          if [[ "$SCAN_NUM_TURNS" != "" && "$SCAN_NUM_TURNS" != "null" ]]; then
+            context=" after ${SCAN_NUM_TURNS} turn(s)"
+          fi
+          if [[ "$SCAN_DURATION_MS" != "" ]]; then
+            local seconds=$((SCAN_DURATION_MS / 1000))
+            if [[ -n "$context" ]]; then
+              context="${context}, ${seconds}s"
+            else
+              context=" after ${seconds}s"
+            fi
+          fi
+          printf '%s%s\n' "$reason" "$context"
+        }
+
         # Rule 1: No Claude attempt ran
-        if [[ -z "$USED_ATTEMPT" || "$USED_ATTEMPT" == "" ]]; then
+        if [[ -z "$LAST_ATTEMPT" || "$LAST_ATTEMPT" == "" ]]; then
           echo "failed=true" >> "$GITHUB_OUTPUT"
           echo "reason=claude step did not run" >> "$GITHUB_OUTPUT"
           echo "num_turns=null" >> "$GITHUB_OUTPUT"
@@ -741,24 +970,31 @@ runs:
           exit 0
         fi
 
-        OUTCOME_VAR="ATTEMPT${USED_ATTEMPT}_OUTCOME"
-        OUTCOME="${!OUTCOME_VAR}"
+        OUTCOME="$LAST_ATTEMPT_OUTCOME"
+        if [[ -z "$OUTCOME" ]]; then
+          OUTCOME_VAR="ATTEMPT${LAST_ATTEMPT}_OUTCOME"
+          OUTCOME="${!OUTCOME_VAR}"
+        fi
 
         echo "num_turns=$SCAN_NUM_TURNS" >> "$GITHUB_OUTPUT"
         echo "is_error=$SCAN_IS_ERROR" >> "$GITHUB_OUTPUT"
-        echo "used_attempt=$USED_ATTEMPT" >> "$GITHUB_OUTPUT"
+        echo "used_attempt=$LAST_ATTEMPT" >> "$GITHUB_OUTPUT"
 
         # Rule 2: Final attempt outcome is failure
         if [[ "$OUTCOME" == "failure" ]]; then
           echo "failed=true" >> "$GITHUB_OUTPUT"
-          echo "reason=claude-code-action step failed" >> "$GITHUB_OUTPUT"
+          if [[ -n "$SCAN_ACTION_ERROR" ]]; then
+            echo "reason=$(reason_with_context "$SCAN_ACTION_ERROR")" >> "$GITHUB_OUTPUT"
+          else
+            echo "reason=$(reason_with_context "claude-code-action step failed")" >> "$GITHUB_OUTPUT"
+          fi
           exit 0
         fi
 
         # Rule 3: Execution output missing or unreadable after success
         if [[ "$SCAN_NUM_TURNS" == "null" && "$SCAN_IS_ERROR" == "null" ]]; then
           echo "failed=true" >> "$GITHUB_OUTPUT"
-          echo "reason=execution output unreadable: missing or empty" >> "$GITHUB_OUTPUT"
+          echo "reason=$(reason_with_context "execution output unreadable: missing or empty")" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
@@ -772,14 +1008,18 @@ runs:
         # Rule 5: is_error
         if [[ "$SCAN_IS_ERROR" == "true" ]]; then
           echo "failed=true" >> "$GITHUB_OUTPUT"
-          echo "reason=claude reported is_error=true" >> "$GITHUB_OUTPUT"
+          echo "reason=$(reason_with_context "claude reported is_error=true")" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
         # Rule 6: zero turns
         if [[ "$SCAN_NUM_TURNS" == "0" ]]; then
           echo "failed=true" >> "$GITHUB_OUTPUT"
-          echo "reason=claude completed 0 turns" >> "$GITHUB_OUTPUT"
+          if [[ -n "$SCAN_ACTION_ERROR" ]]; then
+            echo "reason=$(reason_with_context "$SCAN_ACTION_ERROR")" >> "$GITHUB_OUTPUT"
+          else
+            echo "reason=$(reason_with_context "claude completed 0 turns")" >> "$GITHUB_OUTPUT"
+          fi
           exit 0
         fi
 
@@ -793,11 +1033,11 @@ runs:
         echo "failed=false" >> "$GITHUB_OUTPUT"
         echo "reason=" >> "$GITHUB_OUTPUT"
 
-    # Belt-and-suspenders: fail job if attempt 1 failed but was non-429
-    # (attempts 2/3 are skipped so no step naturally fails the job)
-    - name: Fail on non-rate-limit error
-      if: ${{ steps.claude-run-1.outcome == 'failure' && steps.check-429-1.outputs.is_rate_limited == 'false' }}
+    # Belt-and-suspenders: fail job if an early attempt failed and was not retryable
+    # (later attempts are skipped, so no Claude step naturally fails the job).
+    - name: Fail on non-retryable error
+      if: ${{ (steps.claude-run-1.outcome == 'failure' && steps.check-429-1.outputs.should_retry != 'true') || (steps.claude-run-2.outcome == 'failure' && steps.check-429-2.outputs.should_retry != 'true') }}
       shell: bash
       run: |
-        echo "::error::Claude Code failed with a non-rate-limit error. Not retrying."
+        echo "::error::Claude Code failed with a non-retryable error. Not retrying."
         exit 1

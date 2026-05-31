@@ -31,6 +31,21 @@ on:
       pushed:
         description: 'Whether the auto-fix workflow pushed a branch'
         value: ${{ jobs.fix.outputs.pushed }}
+      claude-metrics-json:
+        description: 'Parsed Claude metrics JSON from the auto-fix run'
+        value: ${{ jobs.fix.outputs.claude_metrics_json }}
+      claude-failure-reason:
+        description: 'Claude failure reason from the auto-fix run'
+        value: ${{ jobs.fix.outputs.claude_failure_reason }}
+      claude-num-turns:
+        description: 'Claude turn count from the auto-fix run'
+        value: ${{ jobs.fix.outputs.claude_num_turns }}
+      claude-is-error:
+        description: 'Claude is_error value from the auto-fix run'
+        value: ${{ jobs.fix.outputs.claude_is_error }}
+      claude-used-attempt:
+        description: 'Claude attempt number from the auto-fix run'
+        value: ${{ jobs.fix.outputs.claude_used_attempt }}
 
 env:
   NODE_VERSION: '22.x'
@@ -38,11 +53,16 @@ env:
 
 jobs:
   fix:
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 20
     outputs:
       pr-number: ${{ steps.pr-context.outputs.pr_number }}
       pushed: ${{ steps.push.outputs.pushed }}
+      claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
+      claude_num_turns: ${{ steps.claude_run.outputs.claude_num_turns }}
+      claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
+      claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
+      claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -179,7 +199,8 @@ jobs:
             echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: ./.github/actions/run-zai
+      - id: claude_run
+        uses: ./.github/actions/run-zai
         if: steps.failure.outputs.fixable == 'true' && steps.prettier.outputs.prettier_only != 'true'
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}

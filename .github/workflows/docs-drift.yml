@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   docs-drift:
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 30
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
@@ -29,6 +29,7 @@ jobs:
       claude_num_turns: ${{ steps.claude_run.outputs.claude_num_turns }}
       claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
+      claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -135,3 +136,4 @@ jobs:
           claude-is-error: ${{ needs.docs-drift.outputs.claude_is_error }}
           claude-used-attempt: ${{ needs.docs-drift.outputs.claude_used_attempt }}
           claude-failure-reason: ${{ needs.docs-drift.outputs.claude_failure_reason }}
+          claude-metrics-json: ${{ needs.docs-drift.outputs.claude_metrics_json }}

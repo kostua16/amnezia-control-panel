@@ -189,7 +189,7 @@ while IFS= read -r ROW; do
 
   # 11. Uncategorized errors (fallback)
   UNCATEG=$(grep -E '##\[error\]|Error:|ERR_TEST_FAILURE|"is_error".*true|^fatal:' "$RUN_LOG" 2>/dev/null \
-    | grep -v 'Claude Code failed with a non-rate-limit error' \
+    | grep -Ev 'Claude Code failed with a non-(rate-limit|retryable) error' \
     | grep -v 'returned error: 403' \
     | grep -v 'pull request create failed: GraphQL:' \
     | grep -v 'Internal error: directory mismatch' \
