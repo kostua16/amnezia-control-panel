@@ -18,6 +18,11 @@ const eslintConfig = defineConfig([
     '.claude/skills/**',
     // Claude script helpers are managed as local agent tooling.
     '.claude/scripts/**',
+    // Codex/agent local tooling is managed outside app lint rules.
+    '.codex/skills/**',
+    '.codex/scripts/**',
+    '.agents/skills/**',
+    '.agents/scripts/**',
     // Claude skills/agents use CommonJS require():
     '.claude/**',
     // CommonJS launch scripts use require() by design:

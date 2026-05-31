@@ -8,3 +8,7 @@ coverage
 package-lock.json
 .claude/skills/**
 .claude/scripts/**
+.codex/skills/**
+.codex/scripts/**
+.agents/skills/**
+.agents/scripts/**
