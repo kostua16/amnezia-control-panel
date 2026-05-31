@@ -105,7 +105,7 @@ jobs:
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","manual","blocked"]},"summary":{"type":"string"},"update_type":{"type":"string","enum":["patch","minor","major","unknown"]},"risk_notes":{"type":"string"}},"required":["verdict","summary","update_type","risk_notes"],"additionalProperties":false}'
-          allowed-tools: 'Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(grep *),Bash(head *),Bash(node *)'
+          allowed-tools: 'Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(grep *),Bash(head *),Bash(node *),Bash(rtk:*)'
           prompt: |
             Review this Dependabot dependency update PR using only local repository context.
 

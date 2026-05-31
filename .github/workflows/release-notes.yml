@@ -51,7 +51,7 @@ jobs:
           model: 'haiku'
           max-turns: "${{ env.MAX_TURNS }}"
           track-progress: "false"
-          allowed-tools: "Bash(cat *),Bash(git log *),Bash(git diff *)"
+          allowed-tools: "Bash(cat *),Bash(git log *),Bash(git diff *),Bash(rtk:*)"
           json-schema: '{"type":"object","properties":{"notes":{"type":"string"}},"required":["notes"],"additionalProperties":false}'
           prompt: |
             Generate release notes for ${{ github.ref_name }}.

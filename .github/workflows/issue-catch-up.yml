@@ -361,7 +361,7 @@ jobs:
           max-turns: '30'
           track-progress: 'false'
           allowed-bots: 'github-actions[bot]'
-          allowed-tools: 'Bash(rtk:*),Bash(gh:*),Read,Grep'
+          allowed-tools: 'Bash(rtk:*),Bash(gh:*),Bash(git:*),Read,Grep'
           additional-permissions: 'issues: write'
           prompt: |
             ## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues

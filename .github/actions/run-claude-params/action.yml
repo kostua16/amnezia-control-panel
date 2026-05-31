@@ -147,7 +147,7 @@ inputs:
     required: false
   allowed-tools:
     description: 'Allowed tools'
-    default: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*)'
+    default: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*),Bash(rtk:*)'
   system-prompt:
     description: 'Custom system prompt. When empty, Claude uses its built-in default. Note: literal { and } must be escaped as {{ and }}.'
     required: false
