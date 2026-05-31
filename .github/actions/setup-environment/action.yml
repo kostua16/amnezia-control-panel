@@ -87,11 +87,13 @@ runs:
         command -v gh >/dev/null 2>&1 && echo "gh(before setup-gh)=$(command -v gh)" || echo "gh(before setup-gh)=<not found>"
 
     - id: setup_gh
-      uses: kostua16/setup-gh@v1
+      uses: kostua16/setup-gh@v1.0.2
       with:
         gh-version: ${{ inputs.gh-version }}
         cli-token: ${{ inputs.github-token }}
         token: ${{ inputs.github-token }}
+        switch-account: 'true'
+        skip-matching-version: 'false'
 
     - name: Debug PATH after setup-gh
       if: runner.debug == '1'
@@ -101,10 +103,8 @@ runs:
         echo "PATH(after setup-gh)=$PATH"
         command -v gh >/dev/null 2>&1 && echo "gh(after setup-gh)=$(command -v gh)" || echo "gh(after setup-gh)=<not found>"
 
-    - name: Ensure gh authenticated
+    - name: Verify gh authenticated
       shell: bash
-      env:
-        GH_LOGIN_TOKEN: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
 
@@ -116,9 +116,7 @@ runs:
         gh --version
 
         host="${GITHUB_SERVER_URL#https://}"
-        if ! gh auth status -h "$host" >/dev/null 2>&1; then
-          printf '%s' "$GH_LOGIN_TOKEN" | gh auth login -h "$host" --with-token
-        fi
+        gh auth status -h "$host"
 
     # Previous GitHub-hosted cache retained for audit only. It restored from
     # remote GitHub/Azure storage too slowly on self-hosted runners.
