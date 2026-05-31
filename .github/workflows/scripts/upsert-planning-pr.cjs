@@ -410,7 +410,7 @@ if (commitCreated) {
     run('git', ['push', '--force-with-lease', 'origin', branchName], {
       capture: false,
     });
-  } catch (error) {
+  } catch {
     console.warn(
       `::warning::Concurrent push detected for ${branchName}; skipping stale planning PR update.`,
     );

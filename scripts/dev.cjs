@@ -1,7 +1,7 @@
-const { spawn } = require("child_process");
-const path = require("path");
+const { spawn } = require('child_process');
+const path = require('path');
 
-const serverScript = path.join(__dirname, "..", "server.mjs");
+const serverScript = path.join(__dirname, '..', 'server.mjs');
 const userArgs = process.argv.slice(2);
 const npmPort = process.env.npm_config_port;
 
@@ -18,7 +18,11 @@ function resolvePortFromNpmShorthand(args) {
   }
 
   // npm run dev --port 3334 (npm sets npm_config_port=true and passes "3334" as argv)
-  if (String(npmPort) === "true" && args.length > 0 && isPositiveIntegerText(args[0])) {
+  if (
+    String(npmPort) === 'true' &&
+    args.length > 0 &&
+    isPositiveIntegerText(args[0])
+  ) {
     return { port: args[0], remainingArgs: args.slice(1) };
   }
 
@@ -27,8 +31,8 @@ function resolvePortFromNpmShorthand(args) {
 
 function hasPortInArgs(args) {
   for (const a of args) {
-    if (a === "-p" || a === "--port") return true;
-    if (a.startsWith("--port=") || a.startsWith("-p=")) return true;
+    if (a === '-p' || a === '--port') return true;
+    if (a.startsWith('--port=') || a.startsWith('-p=')) return true;
   }
   return false;
 }
@@ -59,22 +63,26 @@ if (port) {
  */
 function envForDevChild() {
   const env = { ...process.env };
-  const opts = env.NODE_OPTIONS ?? "";
+  const opts = env.NODE_OPTIONS ?? '';
   if (!/--max-old-space-size=\d+/.test(opts)) {
-    const extra = "--max-old-space-size=8192";
+    const extra = '--max-old-space-size=8192';
     env.NODE_OPTIONS = opts.trim() ? `${opts.trim()} ${extra}` : extra;
   }
   return env;
 }
 
 // Pass remaining args as environment or ignore (custom server doesn't support all next CLI flags)
-const child = spawn(process.execPath, [serverScript, ...argsWithoutNpmPortValue], {
-  stdio: "inherit",
-  windowsHide: true,
-  env: envForDevChild(),
-});
+const child = spawn(
+  process.execPath,
+  [serverScript, ...argsWithoutNpmPortValue],
+  {
+    stdio: 'inherit',
+    windowsHide: true,
+    env: envForDevChild(),
+  },
+);
 
-child.on("exit", (code, signal) => {
+child.on('exit', (code, signal) => {
   if (signal) process.exit(1);
   process.exit(code === null ? 1 : code);
 });

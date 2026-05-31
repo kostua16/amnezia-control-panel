@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // Claude skills are vendored local tooling; do not lint their sources.
+    '.claude/skills/**',
     // Claude skills/agents use CommonJS require():
     '.claude/**',
     // CommonJS launch scripts use require() by design:
