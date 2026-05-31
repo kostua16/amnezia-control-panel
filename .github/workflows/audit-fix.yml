@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   audit-fix:
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 60
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}

@@ -53,7 +53,7 @@ env:
 
 jobs:
   fix:
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 20
     outputs:
       pr-number: ${{ steps.pr-context.outputs.pr_number }}

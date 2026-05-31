@@ -328,7 +328,7 @@ jobs:
 
   analyze-and-act:
     name: Analyze & Act
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 30
     needs: [collect-issues]
     if: needs.collect-issues.outputs.has-actionable == 'true'

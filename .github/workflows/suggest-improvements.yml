@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   suggest-improvements:
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 45
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}

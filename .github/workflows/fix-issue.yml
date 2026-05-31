@@ -47,7 +47,7 @@ jobs:
 
   fix:
     needs: [authorize]
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     timeout-minutes: 20
     if: needs.authorize.outputs.should-run == 'true'
     outputs:
