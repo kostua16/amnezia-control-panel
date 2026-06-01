@@ -1,12 +1,9 @@
 'use strict';
 
-const { VALIDATE_SUBCOMMANDS } = require('./command-aliases.generated.cjs');
+const { VALIDATE_SUBCOMMANDS } = require('./command-aliases.cjs');
 const { formatGsdSlash, resolveRuntime } = require('./runtime-slash.cjs');
 const { routeCjsCommandFamily } = require('./cjs-command-router-adapter.cjs');
-const { output } = require('./core.cjs');
-
-// ─── SDK bridge (Phase 6) — shared loader via cjs-sdk-bridge.cjs ──────────────
-const { tryLoadSdk, getExecuteForCjs } = require('./cjs-sdk-bridge.cjs');
+const { parseNamedArgs } = require('./command-arg-projection.cjs');
 
 /**
  * Manifest-backed validate subcommand router.
@@ -24,47 +21,7 @@ const { tryLoadSdk, getExecuteForCjs } = require('./cjs-sdk-bridge.cjs');
  *
  * SDK-only (unsupported in CJS router): none.
  */
-function routeValidateCommand({ verify, args, cwd, raw, parseNamedArgs, output: outputFn, error }) {
-  const activeWorkstream = process.env.GSD_WORKSTREAM;
-  const sdkAvailable = !activeWorkstream && tryLoadSdk();
-
-  function sdkHandler(registryCommand, registryArgs, legacyArgs, cjsFallback) {
-    if (!sdkAvailable) return cjsFallback;
-    return () => {
-      let result;
-      try {
-        result = getExecuteForCjs()({
-          registryCommand,
-          registryArgs,
-          legacyCommand: 'validate',
-          legacyArgs,
-          // #3631: under --raw, request mode:'raw' so the bridge runs the SDK's
-          // raw projection (formatQueryRawOutput) and returns the scalar string
-          // CJS callers used to print. We then bypass output()'s JSON-stringify
-          // path by passing rawValue (the third positional). With mode:'json',
-          // output() emits the JSON IR as before.
-          mode: raw ? 'raw' : 'json',
-          projectDir: cwd,
-        });
-      } catch {
-        // Bridge threw (e.g. synckit worker crash, Atomics failure on Windows).
-        // Fall through to CJS handler — the CJS path is the designed safety net.
-        return cjsFallback();
-      }
-      if (!result.ok) {
-        error(result.errorDetails && result.errorDetails.message
-          ? result.errorDetails.message
-          : `validate ${registryCommand} failed (${result.errorKind})`);
-        return;
-      }
-      if (raw) {
-        output(null, true, typeof result.data === 'string' ? result.data : String(result.data ?? ''));
-      } else {
-        output(result.data);
-      }
-    };
-  }
-
+function routeValidateCommand({ verify, args, cwd, raw, output: outputFn, error }) {
   routeCjsCommandFamily({
     args,
     subcommands: VALIDATE_SUBCOMMANDS,
@@ -72,12 +29,7 @@ function routeValidateCommand({ verify, args, cwd, raw, parseNamedArgs, output: 
     error,
     unknownMessage: (_subcommand, available) => `Unknown validate subcommand. Available: ${available.join(', ')}`,
     handlers: {
-      consistency: sdkHandler(
-        'validate.consistency',
-        args.slice(2),
-        args.slice(1),
-        () => verify.cmdValidateConsistency(cwd, raw),
-      ),
+      consistency: () => verify.cmdValidateConsistency(cwd, raw),
       // Keep health on CJS for now so fix hints are rendered via runtime-slash
       // helpers (codex expects $gsd-* command shape).
       health: () => {
@@ -85,12 +37,7 @@ function routeValidateCommand({ verify, args, cwd, raw, parseNamedArgs, output: 
         const backfillFlag = args.includes('--backfill');
         verify.cmdValidateHealth(cwd, { repair: repairFlag, backfill: backfillFlag }, raw);
       },
-      agents: sdkHandler(
-        'validate.agents',
-        args.slice(2),
-        args.slice(1),
-        () => verify.cmdValidateAgents(cwd, raw),
-      ),
+      agents: () => verify.cmdValidateAgents(cwd, raw),
       // context: CJS-only — complex inline logic using classifyContextUtilization
       // with custom output formatting that has no direct SDK counterpart.
       context: () => {

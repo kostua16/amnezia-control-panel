@@ -1,11 +1,6 @@
 'use strict';
 
 /**
- * GENERATED FILE — DO NOT EDIT.
- *
- * Source: sdk/src/project-root/index.ts
- * Regenerate: cd sdk && npm run gen:project-root
- *
  * Project-Root Resolution Module — resolves a project root from a starting
  * directory by walking the ancestor chain and applying four heuristics:
  *   (0) own .planning/ guard (#1362)

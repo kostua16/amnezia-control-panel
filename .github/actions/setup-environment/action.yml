@@ -24,14 +24,17 @@ inputs:
     description: 'Restore and save the Next.js build cache'
     default: 'false'
   install-gsd:
-    description: 'Install or verify GSD (@opengsd/get-shit-done-redux) in .claude'
+    description: 'Install or verify GSD (@opengsd/gsd-core) in .claude'
     default: 'false'
   install-rtk:
     description: 'Install RTK (Rust Token Killer) binary with cache; project hooks are committed'
     default: 'false'
   gsd-version:
-    description: 'Pinned @opengsd/get-shit-done-redux version used when project-local GSD assets are missing'
-    default: '1.1.0'
+    description: 'Pinned @opengsd/gsd-core version used when project-local GSD assets are missing'
+    default: '1.2.0'
+  gsd-global:
+    description: 'Install GSD (@opengsd/gsd-core) globally'
+    default: 'false'
   rtk-version:
     description: 'Pinned RTK version used for workflow bootstrap'
     default: '0.35.0'
@@ -168,7 +171,11 @@ runs:
         if [ -f .claude/commands/gsd/quick.md ] && [ -f .claude/get-shit-done/bin/gsd-tools.cjs ]; then
           echo "Using project-local GSD install from committed .claude assets"
         else
-          npx @opengsd/get-shit-done-redux@${{ inputs.gsd-version }} --claude --local
+          if [ "${{ inputs.gsd-global }}" = 'true' ]; then
+            npx @opengsd/gsd-core@${{ inputs.gsd-version }} --claude --global
+          else
+            npx @opengsd/gsd-core@${{ inputs.gsd-version }} --claude --local
+          fi
         fi
       shell: bash
 

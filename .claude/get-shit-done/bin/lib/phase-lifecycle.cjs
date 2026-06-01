@@ -1,11 +1,6 @@
 'use strict';
 
 /**
- * GENERATED FILE — DO NOT EDIT.
- *
- * Source: sdk/src/query/phase-lifecycle.ts
- * Regenerate: cd sdk && npm run gen:phase-lifecycle
- *
  * Phase Lifecycle Pure Helpers — pure-computation functions extracted from
  * the phase-lifecycle SDK handler.
  *
@@ -21,7 +16,7 @@
  *
  * References:
  *   - ADR-3524 (docs/adr/3524-cjs-sdk-hard-seam.md)
- *   - Issue #4 (open-gsd/get-shit-done-redux)
+ *   - Issue #4 (open-gsd/gsd-core)
  */
 
 /**

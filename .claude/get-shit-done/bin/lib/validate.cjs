@@ -1,11 +1,6 @@
 'use strict';
 
 /**
- * GENERATED FILE — DO NOT EDIT.
- *
- * Source: sdk/src/query/validate.ts
- * Regenerate: cd sdk && npm run gen:validate
- *
  * Validate Helpers — pure computation helpers and regex constants extracted from
  * sdk/src/query/validate.ts. No I/O. No async. No filesystem operations.
  *
@@ -27,8 +22,8 @@
  *
  * References:
  *   - ADR-3524 (docs/adr/3524-cjs-sdk-hard-seam.md)
- *   - Issue #6 (open-gsd/get-shit-done-redux)
- *   - Issue #26 (open-gsd/get-shit-done-redux)
+ *   - Issue #6 (open-gsd/gsd-core)
+ *   - Issue #26 (open-gsd/gsd-core)
  *   - PR #154 (issue #4) — generator pattern precedent
  *   - PR #156 (issue #6) — validate.ts generator that #26 extends
  */
@@ -59,7 +54,7 @@ function phaseVariants(phase) {
                 variants.add(`${String(parseInt(numericHead, 10))}${letterSuffix}${tail}`);
                 variants.add(`${numericHead.padStart(2, '0')}${letterSuffix}${tail}`);
                 return variants;
-
+            
 }
 
 function buildRoadmapPhaseVariants(roadmapContent) {

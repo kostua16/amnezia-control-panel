@@ -7,6 +7,7 @@ const path = require('path');
 const { escapeRegex, loadConfig, getMilestoneInfo, getMilestonePhaseFilter, output, error } = require('./core.cjs');
 const { platformWriteSync, platformReadSync, platformEnsureDir } = require('./shell-command-projection.cjs');
 const { planningDir, planningPaths } = require('./planning-workspace.cjs');
+const { realClock } = require('./clock.cjs');
 const { extractFrontmatter, reconstructFrontmatter } = require('./frontmatter.cjs');
 const scanPhasePlans = require('./plan-scan.cjs');
 const {
@@ -16,6 +17,9 @@ const {
   shouldPreserveExistingProgress,
   stateExtractField,
   stateReplaceField,
+  KNOWN_TEMPLATE_DEFAULTS,
+  KNOWN_STATUS_PATTERNS,
+  stateReplaceFieldIfTemplate,
 } = require('./state-document.cjs');
 
 // Cache disk scan results from buildStateFrontmatter per cwd per process (#1967).
@@ -37,6 +41,9 @@ process.on('exit', () => {
     try { require('fs').unlinkSync(lockPath); } catch { /* already gone */ }
   }
 });
+
+// Hoisted to module scope — compiled once, not per call (#320). Stateless (/i, used with .match).
+const byPhaseTablePattern = /(\|\s*Phase\s*\|\s*Plans\s*\|\s*Total\s*\|\s*Avg\/Plan\s*\|[ \t]*\n\|(?:[- :\t]+\|)+[ \t]*\n)((?:[ \t]*\|[^\n]*\n)*)(?=\n|$)/i;
 
 function cmdStateLoad(cwd, raw) {
   const config = loadConfig(cwd);
@@ -253,12 +260,34 @@ function updateCurrentPositionFields(content, fields) {
   if (!posMatch) return content;
 
   let posBody = posMatch[2];
+  const statusDefaults = KNOWN_TEMPLATE_DEFAULTS['Status'];
+  const lastActivityDefaults = KNOWN_TEMPLATE_DEFAULTS['Last Activity'];
 
   if (fields.status && /^Status:/m.test(posBody)) {
-    posBody = posBody.replace(/^Status:.*$/m, `Status: ${fields.status}`);
+    // Only replace when the existing Current Position Status is a known template default.
+    const existingStatusMatch = posBody.match(/^Status:\s*(.+)$/m);
+    const existingStatus = existingStatusMatch ? existingStatusMatch[1].trim() : null;
+    const isInList = existingStatus && statusDefaults.some(d => d.toLowerCase() === existingStatus.toLowerCase());
+    const matchesPattern = existingStatus && KNOWN_STATUS_PATTERNS.some(p => p.test(existingStatus));
+    const isDefault = !existingStatus || isInList || matchesPattern;
+    if (isDefault) {
+      posBody = posBody.replace(/^Status:.*$/m, `Status: ${fields.status}`);
+    }
   }
   if (fields.lastActivity && /^Last activity:/im.test(posBody)) {
-    posBody = posBody.replace(/^Last activity:.*$/im, `Last activity: ${fields.lastActivity}`);
+    // Only replace when the existing Current Position Last activity is a known template
+    // default (a bare ISO date).  Executor-authored narrative prose is preserved.
+    const existingActivityMatch = posBody.match(/^Last activity:\s*(.+)$/im);
+    const existingActivity = existingActivityMatch ? existingActivityMatch[1].trim() : null;
+    // A bare ISO date (YYYY-MM-DD with nothing after) is handler-generated.
+    // A date with a narrative suffix (e.g. "2026-02-15 -- blocked by infra...")
+    // was authored by the executor and must be preserved.
+    const isDateShape = existingActivity && /^\d{4}-\d{2}-\d{2}$/.test(existingActivity);
+    const inList = existingActivity && lastActivityDefaults.some(d => d.toLowerCase() === existingActivity.toLowerCase());
+    const isDefault = !existingActivity || isDateShape || inList;
+    if (isDefault) {
+      posBody = posBody.replace(/^Last activity:.*$/im, `Last activity: ${fields.lastActivity}`);
+    }
   }
   if (fields.plan && /^Plan:/m.test(posBody)) {
     posBody = posBody.replace(/^Plan:.*$/m, `Plan: ${fields.plan}`);
@@ -271,7 +300,7 @@ function cmdStateAdvancePlan(cwd, raw) {
   const statePath = planningPaths(cwd).state;
   if (!fs.existsSync(statePath)) { output({ error: 'STATE.md not found' }, raw); return; }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = realClock.today();
   let result = null;
 
   readModifyWriteStateMd(statePath, (content) => {
@@ -299,9 +328,16 @@ function cmdStateAdvancePlan(cwd, raw) {
       return content;
     }
 
+    const statusDefaults = KNOWN_TEMPLATE_DEFAULTS['Status'];
+    const lastActivityDefaults = KNOWN_TEMPLATE_DEFAULTS['Last Activity'];
+
     if (currentPlan >= totalPlans) {
-      content = stateReplaceFieldWithFallback(content, 'Status', null, 'Phase complete — ready for verification');
-      content = stateReplaceFieldWithFallback(content, 'Last Activity', 'Last activity', today);
+      // Phase-complete branch — only replace Status/Last Activity when the existing
+      // value is a known template default (Knuth invariant: preserve executor-authored).
+      content = stateReplaceFieldIfTemplate(content, 'Status', statusDefaults, 'Phase complete — ready for verification');
+      content = stateReplaceFieldIfTemplate(content, 'Last Activity', lastActivityDefaults, today);
+      // stateReplaceFieldWithFallback tries 'Last activity' alias too
+      content = stateReplaceFieldIfTemplate(content, 'Last activity', lastActivityDefaults, today);
       content = updateCurrentPositionFields(content, { status: 'Phase complete — ready for verification', lastActivity: today });
       result = { advanced: false, reason: 'last_plan', current_plan: currentPlan, total_plans: totalPlans, status: 'ready_for_verification' };
     } else {
@@ -315,8 +351,11 @@ function cmdStateAdvancePlan(cwd, raw) {
         planDisplayValue = `${newPlan} of ${totalPlans}`;
         content = stateReplaceField(content, 'Current Plan', String(newPlan)) || content;
       }
-      content = stateReplaceFieldWithFallback(content, 'Status', null, 'Ready to execute');
-      content = stateReplaceFieldWithFallback(content, 'Last Activity', 'Last activity', today);
+      // Normal advance — only replace Status/Last Activity when the existing value is
+      // a known template default (Knuth invariant: preserve executor-authored).
+      content = stateReplaceFieldIfTemplate(content, 'Status', statusDefaults, 'Ready to execute');
+      content = stateReplaceFieldIfTemplate(content, 'Last Activity', lastActivityDefaults, today);
+      content = stateReplaceFieldIfTemplate(content, 'Last activity', lastActivityDefaults, today);
       content = updateCurrentPositionFields(content, { status: 'Ready to execute', lastActivity: today, plan: planDisplayValue });
       result = { advanced: true, previous_plan: currentPlan, current_plan: newPlan, total_plans: totalPlans };
     }
@@ -590,7 +629,7 @@ function cmdStateRecordSession(cwd, options, raw) {
   const statePath = planningPaths(cwd).state;
   if (!fs.existsSync(statePath)) { output({ error: 'STATE.md not found' }, raw); return; }
 
-  const now = new Date().toISOString();
+  const now = realClock.nowIso();
   const updated = [];
 
   readModifyWriteStateMd(statePath, (content) => {
@@ -607,11 +646,32 @@ function cmdStateRecordSession(cwd, options, raw) {
       if (result) { content = result; updated.push('Stopped At'); }
     }
 
-    // Update Resume file
-    const resumeFile = options.resume_file || 'None';
-    result = stateReplaceField(content, 'Resume File', resumeFile);
-    if (!result) result = stateReplaceField(content, 'Resume file', resumeFile);
-    if (result) { content = result; updated.push('Resume File'); }
+    // Update Resume File — only when the caller explicitly passed a value OR the
+    // existing value is a known template default.  An executor-authored path must
+    // not be silently replaced with 'None' just because --resume-file was omitted
+    // (Knuth invariant: handler-owns-transition-between-known-template-defaults).
+    const resumeFileDefaults = KNOWN_TEMPLATE_DEFAULTS['Resume File'];
+    if (options.resume_file !== undefined && options.resume_file !== null) {
+      // Caller explicitly passed a value — always honour it.
+      result = stateReplaceField(content, 'Resume File', options.resume_file);
+      if (!result) result = stateReplaceField(content, 'Resume file', options.resume_file);
+      if (result) { content = result; updated.push('Resume File'); }
+    } else {
+      // No explicit value — only set 'None' when existing value is also a known default
+      // (i.e. not executor-authored).
+      const newRf = stateReplaceFieldIfTemplate(content, 'Resume File', resumeFileDefaults, 'None');
+      if (newRf !== content) {
+        content = newRf;
+        updated.push('Resume File');
+      } else {
+        // Try alternate capitalisation
+        const newRfAlt = stateReplaceFieldIfTemplate(content, 'Resume file', resumeFileDefaults, 'None');
+        if (newRfAlt !== content) {
+          content = newRfAlt;
+          updated.push('Resume File');
+        }
+      }
+    }
 
     return content;
   }, cwd);
@@ -867,7 +927,7 @@ function buildStateFrontmatter(bodyContent, cwd) {
   fm.status = normalizedStatus;
   if (stoppedAt) fm.stopped_at = stoppedAt;
   if (pausedAt) fm.paused_at = pausedAt;
-  fm.last_updated = new Date().toISOString();
+  fm.last_updated = realClock.nowIso();
   if (lastActivity) fm.last_activity = lastActivity;
 
   const progress = {};
@@ -886,7 +946,7 @@ function stripFrontmatter(content) {
   // Handles CRLF line endings and multiple stacked blocks (corruption recovery).
   // Greedy: keeps stripping ---...--- blocks separated by optional whitespace.
   let result = content;
-  // eslint-disable-next-line no-constant-condition
+   
   while (true) {
     const stripped = result.replace(/^\s*---\r?\n[\s\S]*?\r?\n---\s*/, '');
     if (stripped === result) break;
@@ -933,15 +993,22 @@ const ACQUIRE_LOCK_RETRY_ERRNOS = new Set([
 /**
  * Acquire a lockfile for STATE.md operations.
  * Returns the lock path for later release.
+ *
+ * @param {string} statePath
+ * @param {{ now(): number, sleep(ms: number): void }} [clock]
+ *   Optional clock seam for testing. Defaults to realClock (Date.now + Atomics.wait).
+ *   Pass a fake clock from tests/helpers/clock.cjs to drive timeout/stale logic
+ *   without real wall-clock waits.
  */
-function acquireStateLock(statePath) {
+function acquireStateLock(statePath, clock) {
+  if (clock === undefined) clock = realClock;
   const lockPath = statePath + '.lock';
   const retryDelay = 200; // ms
   const staleThresholdMs = 10000;
   const maxWaitMs = 30000;
-  const startedAt = Date.now();
+  const startedAt = clock.now();
 
-  // eslint-disable-next-line no-constant-condition
+   
   while (true) {
     try {
       const fd = fs.openSync(lockPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
@@ -961,19 +1028,19 @@ function acquireStateLock(statePath) {
       // writer causes lost updates (#3711 regression).
       try {
         const stat = fs.statSync(lockPath);
-        if (Date.now() - stat.mtimeMs > staleThresholdMs) {
+        if (clock.now() - stat.mtimeMs > staleThresholdMs) {
           try { fs.unlinkSync(lockPath); } catch { /* already gone */ }
           continue;
         }
       } catch { continue; /* released between EEXIST and stat */ }
-      if (Date.now() - startedAt >= maxWaitMs) {
+      if (clock.now() - startedAt >= maxWaitMs) {
         throw new Error(
           'acquireStateLock: ' + lockPath + ' held by live process for ' +
-          (Date.now() - startedAt) + 'ms (exceeded ' + maxWaitMs + 'ms budget)'
+          (clock.now() - startedAt) + 'ms (exceeded ' + maxWaitMs + 'ms budget)'
         );
       }
       const jitter = Math.floor(Math.random() * 50);
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, retryDelay + jitter);
+      clock.sleep(retryDelay + jitter);
     }
   }
 }
@@ -983,19 +1050,34 @@ function releaseStateLock(lockPath) {
   try { fs.unlinkSync(lockPath); } catch { /* lock already gone */ }
 }
 
+function withStateLock(statePath, fn) {
+  const lockPath = acquireStateLock(statePath);
+  try {
+    return fn();
+  } finally {
+    releaseStateLock(lockPath);
+  }
+}
+
 /**
  * Write STATE.md with synchronized YAML frontmatter.
  * All STATE.md writes should use this instead of raw writeFileSync.
  * Uses a simple lockfile to prevent parallel agents from overwriting
  * each other's changes (race condition with read-modify-write cycle).
+ *
+ * @param {string} statePath
+ * @param {string} content
+ * @param {string} [cwd]
+ * @param {{ now(): number, sleep(ms: number): void }} [clock]
+ *   Optional clock seam; defaults to realClock. Passed through to acquireStateLock.
  */
-function writeStateMd(statePath, content, cwd) {
+function writeStateMd(statePath, content, cwd, clock) {
   // Invalidate disk scan cache before computing new frontmatter — the write
   // may create new PLAN/SUMMARY files that buildStateFrontmatter must see.
   // Safe for any calling pattern, not just short-lived CLI processes (#1967).
   if (cwd) _diskScanCache.delete(cwd);
   const synced = syncStateFrontmatter(content, cwd);
-  const lockPath = acquireStateLock(statePath);
+  const lockPath = acquireStateLock(statePath, clock);
   try {
     platformWriteSync(statePath, synced);
   } finally {
@@ -1020,10 +1102,12 @@ function writeStateMd(statePath, content, cwd) {
  *   When resync is false, syncStateFrontmatter still runs to maintain/create the
  *   frontmatter block, but any existing progress.* sub-keys are preserved from
  *   the pre-transform file rather than being rebuilt from disk.
+ * @param {{ now(): number, sleep(ms: number): void }} [clock]
+ *   Optional clock seam; defaults to realClock. Passed through to acquireStateLock.
  */
-function readModifyWriteStateMd(statePath, transformFn, cwd, options) {
+function readModifyWriteStateMd(statePath, transformFn, cwd, options, clock) {
   const resync = !options || options.resync !== false;
-  const lockPath = acquireStateLock(statePath);
+  const lockPath = acquireStateLock(statePath, clock);
   try {
     const content = platformReadSync(statePath) || '';
     // Snapshot the existing progress block BEFORE the transform so we can
@@ -1101,7 +1185,7 @@ function cmdStateBeginPhase(cwd, phaseNumber, phaseName, planCount, raw) {
     return;
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = realClock.today();
   const updated = [];
 
   readModifyWriteStateMd(statePath, (content) => {
@@ -1235,7 +1319,7 @@ function cmdSignalWaiting(cwd, type, question, options, phase, raw) {
     type: type || 'decision_point',
     question: question || null,
     options: options ? options.split('|').map(o => o.trim()) : [],
-    since: new Date().toISOString(),
+    since: realClock.nowIso(),
     phase: phase || null,
   };
 
@@ -1285,7 +1369,6 @@ function updatePerformanceMetricsSection(content, cwd, phaseNum, planCount, summ
   );
 
   // Update By Phase table — upsert row for this phase
-  const byPhaseTablePattern = /(\|\s*Phase\s*\|\s*Plans\s*\|\s*Total\s*\|\s*Avg\/Plan\s*\|[ \t]*\n\|(?:[- :\t]+\|)+[ \t]*\n)((?:[ \t]*\|[^\n]*\n)*)(?=\n|$)/i;
   const byPhaseMatch = content.match(byPhaseTablePattern);
   if (byPhaseMatch) {
     let tableBody = byPhaseMatch[2].trim();
@@ -1318,37 +1401,48 @@ function cmdStatePlannedPhase(cwd, phaseNumber, planCount, raw) {
     return;
   }
 
-  let content = fs.readFileSync(statePath, 'utf-8');
-  const today = new Date().toISOString().split('T')[0];
+  const today = realClock.today();
   const updated = [];
 
-  // Update Status
-  let result = stateReplaceField(content, 'Status', 'Ready to execute');
-  if (result) { content = result; updated.push('Status'); }
+  const statusDefaults = KNOWN_TEMPLATE_DEFAULTS['Status'];
+  const lastActivityDefaults = KNOWN_TEMPLATE_DEFAULTS['Last Activity'];
 
-  // Update Total Plans in Phase
-  if (planCount !== null && planCount !== undefined) {
-    result = stateReplaceField(content, 'Total Plans in Phase', String(planCount));
-    if (result) { content = result; updated.push('Total Plans in Phase'); }
-  }
+  // plan-phase updates per-phase body fields only. It must NOT resync the
+  // milestone-wide progress.* frontmatter from a half-planned disk snapshot —
+  // doing so tramples curated/known-good counters. Route through the body-only
+  // write contract (resync:false), the same guard state.update uses. (#500 RC1)
+  readModifyWriteStateMd(statePath, (content) => {
+    // Update Status — only when the existing value is a known template default
+    // (Knuth invariant: preserve executor-authored values).
+    const newContent = stateReplaceFieldIfTemplate(content, 'Status', statusDefaults, 'Ready to execute');
+    if (newContent !== content) { content = newContent; updated.push('Status'); }
 
-  // Update Last Activity
-  result = stateReplaceField(content, 'Last Activity', today);
-  if (result) { content = result; updated.push('Last Activity'); }
+    // Update Total Plans in Phase
+    if (planCount !== null && planCount !== undefined) {
+      const result = stateReplaceField(content, 'Total Plans in Phase', String(planCount));
+      if (result) { content = result; updated.push('Total Plans in Phase'); }
+    }
 
-  // Update Last Activity Description
-  result = stateReplaceField(content, 'Last Activity Description', `Phase ${phaseNumber} planning complete — ${planCount || '?'} plans ready`);
-  if (result) { content = result; updated.push('Last Activity Description'); }
+    // Update Last Activity — only when the existing value is a known template default
+    {
+      const after = stateReplaceFieldIfTemplate(content, 'Last Activity', lastActivityDefaults, today);
+      if (after !== content) { content = after; updated.push('Last Activity'); }
+    }
 
-  // Update Current Position section
-  content = updateCurrentPositionFields(content, {
-    status: 'Ready to execute',
-    lastActivity: `${today} -- Phase ${phaseNumber} planning complete`,
-  });
+    // Update Last Activity Description
+    {
+      const result = stateReplaceField(content, 'Last Activity Description', `Phase ${phaseNumber} planning complete — ${planCount || '?'} plans ready`);
+      if (result) { content = result; updated.push('Last Activity Description'); }
+    }
 
-  if (updated.length > 0) {
-    writeStateMd(statePath, content, cwd);
-  }
+    // Update Current Position section
+    content = updateCurrentPositionFields(content, {
+      status: 'Ready to execute',
+      lastActivity: `${today} -- Phase ${phaseNumber} planning complete`,
+    });
+
+    return content;
+  }, cwd, { resync: false });
 
   output({ updated, phase: phaseNumber, plan_count: planCount }, raw, updated.length > 0 ? 'true' : 'false');
 }
@@ -1366,7 +1460,7 @@ function cmdStateMilestoneSwitch(cwd, version, name, raw) {
   }
   const resolvedName = (name && String(name).trim()) || 'milestone';
   const statePath = planningPaths(cwd).state;
-  const today = new Date().toISOString().split('T')[0];
+  const today = realClock.today();
 
   const lockPath = acquireStateLock(statePath);
   try {
@@ -1393,7 +1487,7 @@ function cmdStateMilestoneSwitch(cwd, version, name, raw) {
       milestone: version,
       milestone_name: resolvedName,
       status: 'planning',
-      last_updated: new Date().toISOString(),
+      last_updated: realClock.nowIso(),
       last_activity: today,
       progress: {
         total_phases: 0,
@@ -1499,7 +1593,7 @@ function cmdStateSync(cwd, options, raw) {
   const content = fs.readFileSync(statePath, 'utf-8');
   const changes = [];
   let modified = content;
-  const today = new Date().toISOString().split('T')[0];
+  const today = realClock.today();
 
   const phasesDir = planningPaths(cwd).phases;
   if (!fs.existsSync(phasesDir)) {
@@ -1774,7 +1868,7 @@ function cmdStatePrune(cwd, options, raw) {
 
   // Write archived entries to STATE-ARCHIVE.md
   if (archived.length > 0) {
-    const timestamp = new Date().toISOString().split('T')[0];
+    const timestamp = realClock.today();
     let archiveContent = platformReadSync(archivePath);
     if (archiveContent === null) {
       archiveContent = '# STATE Archive\n\nPruned entries from STATE.md. Recoverable but no longer loaded into agent context.\n\n';
@@ -1849,7 +1943,7 @@ function cmdStateCompletePhase(cwd, raw, overridePhase) {
     return;
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = realClock.today();
   const updated = [];
 
   readModifyWriteStateMd(statePath, (content) => {
@@ -1912,8 +2006,12 @@ module.exports = {
   stateExtractField,
   stateReplaceField,
   stateReplaceFieldWithFallback,
+  acquireStateLock,
+  releaseStateLock,
   writeStateMd,
   readModifyWriteStateMd,
+  syncStateFrontmatter,
+  withStateLock,
   updatePerformanceMetricsSection,
   cmdStateLoad,
   cmdStateGet,

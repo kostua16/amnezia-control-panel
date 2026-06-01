@@ -151,6 +151,16 @@ The following workflows expose `workflow_dispatch` dry-run inputs for safe testi
 - `pr-improve.yml`
 - `issue-catch-up.yml`
 
+## GSD Slash Command Format
+
+All GSD slash commands in workflow prompts **must** use the colon namespace format (`/gsd:xxx`), not the hyphenated form (`/gsd-xxx`). Claude Code's CLI parser only recognizes `/gsd:xxx` as a valid skill invocation. The hyphenated form is a display alias that the local skill router resolves interactively but the CLI rejects when used as the first token in a prompt — the entire run fails with `Unknown command` at turn 0.
+
+| Use           | Avoid         |
+|---------------|---------------|
+| `/gsd:health` | `/gsd-health` |
+| `/gsd:debug`  | `/gsd-debug`  |
+| `/gsd:quick`  | `/gsd-quick`  |
+
 ## Syntax Gate
 
 `actionlint` should remain the mandatory syntax check after any workflow edit. Run it before merging workflow changes.

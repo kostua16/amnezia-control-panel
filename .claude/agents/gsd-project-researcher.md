@@ -9,6 +9,7 @@ color: cyan
 #       hooks:
 #         - type: command
 #           command: "npx eslint --fix $FILE 2>/dev/null || true"
+effort: high
 ---
 
 <role>
@@ -128,7 +129,7 @@ Use multiple query variations. Mark WebSearch-only findings as LOW confidence. D
 Check `brave_search` from orchestrator context. If `true`, use Brave Search for higher quality results:
 
 ```bash
-gsd-sdk query websearch "your query" --limit 10
+gsd-tools query websearch "your query" --limit 10
 ```
 
 **Options:**

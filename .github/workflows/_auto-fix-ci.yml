@@ -159,7 +159,7 @@ jobs:
           {
             DELIM="EOF-$(openssl rand -hex 8)"
             echo "content<<$DELIM"
-            echo "/gsd-debug"
+            echo "/gsd:debug"
             echo "Failed CI Run: $RUN_URL"
             echo "Failed Jobs: $FAILED_JOBS"
             if [ "$MODE" = "pr" ] && [ -n "$PR_NUMBER" ]; then

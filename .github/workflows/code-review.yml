@@ -123,9 +123,9 @@ jobs:
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","concerns"]},"summary":{"type":"string"},"blocking_findings_count":{"type":"integer","minimum":0}},"required":["verdict","summary","blocking_findings_count"],"additionalProperties":false}'
-          allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)'
+          allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *),Bash(rtk:*)'
           prompt: |
-            /gsd-code-review
+            /gsd:code-review
             REPO: ${{ github.repository }}
             PR NUMBER: '${{ needs.resolve-pr.outputs.pr-number }}'
 
@@ -137,6 +137,16 @@ jobs:
             - Test coverage (unit and integration)
             - Documentation for new features
             - Breaking changes
+
+            ## Diff Hygiene
+            - Lines prefixed `-` are REMOVED, lines prefixed `+` are ADDED.
+            - Only flag issues on `+` lines. Never treat a `-` line as current code.
+            - If uncertain, read the file at HEAD (`git show HEAD:<path>`) before posting.
+
+            ## Cross-Module Accuracy
+            - Before claiming code violates a contract from another module, trace the
+              actual call path. Only flag if the code actually participates in that contract.
+            - A top-level CLI exit handler is not subject to an in-process router's no-throw rule.
 
             Post actionable findings as inline review comments.
             If the PR touches UI components, also check layout, accessibility, and responsiveness.
@@ -214,11 +224,16 @@ jobs:
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","concerns"]},"summary":{"type":"string"},"highest_severity":{"type":"string","enum":["none","low","medium","high","critical"]}},"required":["verdict","summary","highest_severity"],"additionalProperties":false}'
-          allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *)'
+          allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *),Bash(rtk:*)'
           prompt: |
-            /gsd-secure-phase
+            /gsd:secure-phase
             REPO: ${{ github.repository }}
             PR NUMBER: '${{ needs.resolve-pr.outputs.pr-number }}'
+
+            ## Diff Hygiene
+            - Lines prefixed `-` are REMOVED, lines prefixed `+` are ADDED.
+            - Only flag issues on `+` lines. Never treat a `-` line as current code.
+            - If uncertain, read the file at HEAD (`git show HEAD:<path>`) before posting.
 
             Perform a STRIDE + OWASP security review of changed files:
 
@@ -241,6 +256,20 @@ jobs:
             - Hardcoded secrets or credentials
             - Insecure cryptographic practices
             - Race conditions or TOCTOU issues
+
+            ## Cross-Module Accuracy
+            - Before claiming code violates a contract from another module, trace the
+              actual call path. Only flag if the code actually participates in that contract.
+            - A top-level CLI exit handler is not subject to an in-process router's no-throw rule.
+
+            ## Threat Model Awareness
+            - Standard CLI patterns (env var config overrides, Date.now() temp files,
+              process.exit() in error handlers) are NOT security findings without a concrete
+              exploit path viable in this deployment model.
+            - Crypto hashes used for non-security purposes (directory naming, cache keys)
+              are NOT insecure-crypto findings. Only flag crypto used for auth/integrity.
+            - If you cannot describe a realistic attack scenario given project architecture, 
+              do not post the finding.
 
             Rate severity as none, low, medium, high, or critical.
             Post actionable inline comments with remediation steps.

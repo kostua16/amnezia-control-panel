@@ -60,9 +60,9 @@ jobs:
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           allowed-bots: 'claude[bot],github-actions[bot]'
-          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(rtk:*)'
           prompt: |
-            /gsd-audit-fix
+            /gsd:audit-fix
             Run a full repository audit for technical debt, code smells, and missing tests.
             Implement targeted fixes, run the most relevant verification you can, and stop once the audit findings are addressed.
 

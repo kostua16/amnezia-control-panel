@@ -1,11 +1,6 @@
 'use strict';
 
 /**
- * GENERATED FILE — DO NOT EDIT.
- *
- * Source: sdk/src/configuration/index.ts
- * Regenerate: cd sdk && npm run gen:configuration
- *
  * Configuration Module — single source of truth for config loading,
  * legacy-key normalization, defaults merge, and explicit on-disk migration.
  */
@@ -158,7 +153,7 @@ function normalizeLegacyKeys(parsed) {
 
 function mergeDefaults(parsed) {
     // Start with a deep clone of defaults, then overlay parsed
-    const defaults = JSON.parse(JSON.stringify(CONFIG_DEFAULTS));
+    const defaults = structuredClone(CONFIG_DEFAULTS);
     return deepMergeConfig(defaults, parsed);
 }
 

@@ -142,9 +142,9 @@ jobs:
           max-turns: '40'
           track-progress: 'false'
           json-schema: '{"type":"object","properties":{"summary":{"type":"string"},"quick_tasks":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"},"artifact_type":{"type":"string","enum":["quick-task","workflow-improvement"]}},"required":["title","rationale","owner","artifact_type"],"additionalProperties":false}},"phase_suggestions":{"type":"array","items":{"type":"object","properties":{"phase":{"type":"string","enum":["13.1","13.2","13.3","13.4"]},"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"}},"required":["phase","title","rationale","owner"],"additionalProperties":false}}},"required":["summary","quick_tasks","phase_suggestions"],"additionalProperties":false}'
-          allowed-tools: 'Read,Glob,Grep,LS,Bash(cat *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(node *),Bash(ls *),Bash(find *),Bash(gh pr diff:*),Bash(gh pr view:*)'
+          allowed-tools: 'Read,Glob,Grep,LS,Bash(cat *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(node *),Bash(ls *),Bash(find *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(rtk:*)'
           prompt: |
-            /gsd-quick
+            /gsd:quick
             Analyze this pull request for follow-up improvements and roadmap-worthy automation work.
 
             SOURCE PR NUMBER: ${{ matrix.pr-number }}

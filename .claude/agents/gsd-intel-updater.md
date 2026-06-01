@@ -4,6 +4,7 @@ description: Analyzes codebase and writes structured intel files to .planning/in
 tools: Read, Write, Bash, Glob, Grep
 color: cyan
 # hooks:
+effort: low
 ---
 
 <required_reading>
@@ -59,11 +60,11 @@ The /gsd-map-codebase --query command has already confirmed that intel.enabled i
 
 <!-- Layout detection: only meaningful when analysing the GSD framework's own repo (#3290). -->
 
-**Runtime layout detection (GSD framework repo only):** If `package.json` `"name"` equals `"get-shit-done-redux"`, this project IS the GSD framework. In that case, detect the runtime root to choose canonical paths:
+**Runtime layout detection (GSD framework repo only):** If `package.json` `"name"` equals `"@opengsd/gsd-core"`, this project IS the GSD framework. In that case, detect the runtime root to choose canonical paths:
 
 ```bash
 # Only run layout detection when analysing the GSD framework repo itself.
-if [[ "$(jq -r '.name // ""' package.json 2>/dev/null)" == "get-shit-done-redux" ]]; then
+if [[ "$(jq -r '.name // ""' package.json 2>/dev/null)" == "@opengsd/gsd-core" ]]; then
   ls -d .kilo 2>/dev/null && echo "kilo" || (ls -d .claude/get-shit-done 2>/dev/null && echo "claude") || echo "unknown"
 fi
 ```
@@ -219,7 +220,7 @@ Glob for project structure indicators:
 
 Read package.json, configs, and build files. Write `stack.json`. Then patch its timestamp:
 ```bash
-gsd-tools intel patch-meta .planning/intel/stack.json
+gsd-tools intel patch-meta .planning/intel/stack.json 
 ```
 
 ### Step 3: File Graph
@@ -228,7 +229,7 @@ Glob source files (`**/*.ts`, `**/*.js`, `**/*.py`, etc., excluding node_modules
 Read key files (entry points, configs, core modules) for imports/exports.
 Write `files.json`. Then patch its timestamp:
 ```bash
-gsd-tools intel patch-meta .planning/intel/files.json
+gsd-tools intel patch-meta .planning/intel/files.json 
 ```
 
 Focus on files that matter -- entry points, core modules, configs. Skip test files and generated code unless they reveal architecture.
@@ -239,7 +240,7 @@ Grep for route definitions, endpoint declarations, CLI command registrations.
 Patterns to search: `app.get(`, `router.post(`, `@GetMapping`, `def route`, express route patterns.
 Write `apis.json`. If no API endpoints found, write an empty entries object. Then patch its timestamp:
 ```bash
-gsd-tools intel patch-meta .planning/intel/apis.json
+gsd-tools intel patch-meta .planning/intel/apis.json 
 ```
 
 ### Step 5: Dependencies
@@ -248,7 +249,7 @@ Read package.json (dependencies, devDependencies), requirements.txt, go.mod, Car
 Cross-reference with actual imports to populate `used_by`.
 Write `deps.json`. Then patch its timestamp:
 ```bash
-gsd-tools intel patch-meta .planning/intel/deps.json
+gsd-tools intel patch-meta .planning/intel/deps.json 
 ```
 
 ### Step 6: Architecture

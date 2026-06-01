@@ -5,6 +5,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 color: "#10B981"
 # hooks:
 #   - before_write
+effort: high
 ---
 
 <role>
@@ -175,7 +176,7 @@ The **Fix:** section may contain:
    code snippet
    ```
    Extract code from triple-backtick fences
-
+   
    **IMPORTANT:** Code fences may contain markdown-like syntax (headings, horizontal rules).
    Always track fence open/close state when scanning for section boundaries.
    Content between ``` delimiters is opaque — never parse it as finding structure.
@@ -454,9 +455,9 @@ For each finding in sorted order:
 
 **If verification passed:**
 
-Use `gsd-sdk query commit` with conventional format (message first, then every staged file path):
+Use `gsd-tools query commit` with conventional format (message first, then every staged file path):
 ```bash
-gsd-sdk query commit \
+gsd-tools query commit \
   "fix({padded_phase}): {finding_id} {short_description}" \
   --files \
   {all_modified_files}
@@ -468,7 +469,7 @@ Examples:
 
 **Multiple files:** List ALL modified files after the message (space-separated):
 ```bash
-gsd-sdk query commit "fix(02): CR-01 ..." --files \
+gsd-tools query commit "fix(02): CR-01 ..." --files \
   src/api/auth.ts src/types/user.ts tests/auth.test.ts
 ```
 

@@ -59,18 +59,18 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'false'
-          allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm *),Bash(gh issue:*),Bash(git *)'
+          allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm *),Bash(gh issue:*),Bash(git *),Bash(rtk:*)'
           prompt: |
-            /gsd-health && /gsd-stats
+            /gsd:health && /gsd:stats
             REPO: ${{ github.repository }}
 
             Perform daily repository maintenance:
 
-            1. Run /gsd-health to diagnose planning directory status
+            1. Run /gsd:health to diagnose planning directory status
             2. Run /ck:security-scan for dependency vulnerabilities (npm audit)
-            3. Run /gsd-progress to summarize phase completion status
+            3. Run /gsd:progress to summarize phase completion status
             4. Check for TODO/FIXME comments in recent commits (last 12h): `git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`
-            5. Review open issues older than 90 days with /gsd-inbox
+            5. Review open issues older than 90 days with /gsd:inbox
 
             For EACH category where findings exist, create a NEW GitHub issue:
             - Security findings: `gh issue create --title "Security: [summary of vulnerabilities]" --label "security" --body "[detailed findings]"`
