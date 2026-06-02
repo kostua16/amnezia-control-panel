@@ -118,6 +118,10 @@ jobs:
             5. Run: npm run lint && npx tsc --noEmit
             6. If lint/types fail, fix ONLY the errors you introduced — do not expand scope
 
+            BASH CONSTRAINTS:
+            - Avoid bash brace expansion (e.g., `{a,b,c}`) and glob patterns in for loops — the sandbox blocks them.
+            - Use the Glob tool or `find` with `-name` flags instead.
+
             STRICT SCOPE RULES:
             - Do NOT commit or push — the workflow handles that
             - Do NOT fix multiple unrelated issues in one run — one root cause per PR
