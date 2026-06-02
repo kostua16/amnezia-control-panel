@@ -95,7 +95,7 @@ jobs:
             4. Check for duplicates against existing issues
             5. Add the "triaged" label: ./.github/workflows/scripts/edit-issue-labels.sh --add-label "triaged"
 
-            Use ./.github/workflows/scripts/gh.sh to interact with GitHub:
+            Use ./.github/workflows/scripts/gh.sh for READ-ONLY queries only:
             - `./.github/workflows/scripts/gh.sh issue view [number]` to view the issue
             - `./.github/workflows/scripts/gh.sh search issues "query"` to find similar issues
             - `./.github/workflows/scripts/gh.sh label list` to see available labels
