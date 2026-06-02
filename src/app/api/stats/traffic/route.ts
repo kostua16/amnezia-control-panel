@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { success, error } from '@/lib/api-response';
+import { success, error, validationError } from '@/lib/api-response';
 
 const trafficStatsSchema = z.object({
   userId: z.coerce.number().int().min(1).optional(),
@@ -29,13 +29,13 @@ export async function GET(request: NextRequest) {
     const parsed = trafficStatsSchema.safeParse(params);
 
     if (!parsed.success) {
-      return error('Invalid query parameters', 422);
+      return validationError(parsed.error);
     }
 
     const { userId, period, startDate, endDate } = parsed.data;
 
     // Build parameterized query — truncExpr is safe (from fixed map),
-    // user values are bound via Prisma.sql tagged template.
+    // user values are bound via positional ? placeholders.
     const truncExpr = TRUNC_EXPRS[period];
     const conditions: string[] = [];
     const p: unknown[] = [];
@@ -62,10 +62,9 @@ export async function GET(request: NextRequest) {
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // Prisma.sql only allows ? placeholders via tagged template interpolation.
-    // Build the final query with Prisma.join for the parameter list.
-    // Since truncExpr and whereClause are server-controlled (not user input),
-    // and all user values are bound as parameters, this is safe.
+    // $queryRawUnsafe with positional ? placeholders and spread bound params.
+    // truncExpr and whereClause are server-controlled (not user input),
+    // and all user values are bound as parameters, so this is safe.
     const bucketsRaw: Array<{
       bucket: string;
       bytesIn: bigint;
