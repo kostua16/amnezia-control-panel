@@ -89,8 +89,10 @@ function normalizeFileDetails(pr, filesPayload) {
         };
       }
 
-      const additions = Number(file.additions ?? file.added ?? 0);
-      const deletions = Number(file.deletions ?? file.deleted ?? 0);
+      const rawAdditions = file.additions ?? file.added;
+      const rawDeletions = file.deletions ?? file.deleted;
+      const additions = Number(rawAdditions);
+      const deletions = Number(rawDeletions);
       const pathValue = file.path ?? file.filename;
 
       return {
@@ -98,7 +100,7 @@ function normalizeFileDetails(pr, filesPayload) {
         additions: Number.isFinite(additions) ? additions : 0,
         deletions: Number.isFinite(deletions) ? deletions : 0,
         changedLinesKnown:
-          Number.isFinite(additions) || Number.isFinite(deletions),
+          Number.isFinite(additions) && Number.isFinite(deletions),
       };
     })
     .filter((file) => file.path);

@@ -103,7 +103,7 @@ Always manual-only:
 | `claude-audit-safe-fix-*` touching a small component/hook/resource-monitor diff, green checks, `ai-review-passed`, `security-review-passed`        | Finalizer approves and enables squash auto-merge |
 | `claude-audit-safe-fix-*` touching `src/app/api/**`, auth/sync/config paths, Prisma, packages, workflows, or more than 3 files / 120 changed lines | Finalizer leaves it manual-only                  |
 | `claude-audit-fix-*` from a broad autonomous audit                                                                                                 | Finalizer leaves it manual-only                  |
-| PR #166 style audit fix touching API route + seed/security-sensitive paths and 7 files                                                             | Finalizer leaves it manual-only                  |
+| Broad audit fix touching API route + seed/security-sensitive paths and 7+ files                                                                    | Finalizer leaves it manual-only                  |
 | `dependabot/npm_and_yarn/react-*` with patch/minor update and `deps-review-passed`                                                                 | Finalizer approves and enables squash auto-merge |
 | `dependabot/github_actions/actions-checkout-*`                                                                                                     | Finalizer leaves it manual-only                  |
 | Any PR with `do-not-merge` or a concern/block label                                                                                                | Finalizer does not approve or enable auto-merge  |

@@ -23,7 +23,15 @@ function pr({
 }: {
   headRefName: string;
   labels?: string[];
-  files?: Array<{ path: string; additions: number; deletions: number }>;
+  files?: Array<
+    | string
+    | {
+        path: string;
+        additions?: number;
+        deletions?: number;
+        changedLinesKnown?: boolean;
+      }
+  >;
   isDraft?: boolean;
 }) {
   return {
@@ -124,6 +132,57 @@ describe('audit-safe PR policy', () => {
     assert.match(result.blocked_reason ?? '', /file count 4 exceeds limit 3/);
   });
 
+  it('blocks safe audit PRs that exceed changed-line limits', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'claude-audit-safe-fix-123',
+        labels: ['ai-review-passed', 'security-review-passed'],
+        files: [file('src/lib/resource-monitor.ts', 100, 21)],
+      }),
+      policy,
+    );
+
+    assert.equal(result.manual_only, true);
+    assert.equal(result.eligible, false);
+    assert.match(
+      result.blocked_reason ?? '',
+      /changed lines 121 exceed limit 120/,
+    );
+  });
+
+  it('blocks safe audit PRs with mixed allowed and disallowed paths', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'claude-audit-safe-fix-123',
+        labels: ['ai-review-passed', 'security-review-passed'],
+        files: [
+          file('src/lib/resource-monitor.ts'),
+          file('src/lib/unreviewed-helper.ts'),
+        ],
+      }),
+      policy,
+    );
+
+    assert.equal(result.manual_only, true);
+    assert.equal(result.eligible, false);
+    assert.match(result.blocked_reason ?? '', /outside safe allow list/);
+  });
+
+  it('blocks safe audit PRs when changed-line counts are unknown', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'claude-audit-safe-fix-123',
+        labels: ['ai-review-passed', 'security-review-passed'],
+        files: ['src/lib/resource-monitor.ts'],
+      }),
+      policy,
+    );
+
+    assert.equal(result.manual_only, true);
+    assert.equal(result.eligible, false);
+    assert.match(result.blocked_reason ?? '', /line counts unavailable/);
+  });
+
   it('keeps broad audit PRs manual-only', () => {
     const result = evaluatePrPolicy(
       pr({
@@ -182,6 +241,50 @@ describe('audit-fix classifier', () => {
     assert.equal(result.branch_name, 'claude-audit-fix-123');
     assert.equal(result.draft, 'true');
     assert.equal(result.labels, 'auto-fix,needs-review');
+  });
+
+  it('routes line-limit overflows to the manual branch lane', () => {
+    const result = classifyAuditFix({
+      mode: 'auto',
+      policy,
+      runId: '123',
+      fileDetails: [
+        {
+          path: 'src/lib/resource-monitor.ts',
+          additions: 100,
+          deletions: 21,
+          changedLinesKnown: true,
+        },
+      ],
+    });
+
+    assert.equal(result.eligible, false);
+    assert.equal(result.branch_name, 'claude-audit-fix-123');
+    assert.equal(result.draft, 'true');
+    assert.equal(result.labels, 'auto-fix,needs-review');
+    assert.match(result.reason, /changed lines 121 exceed limit 120/);
+  });
+
+  it('routes unknown changed-line counts to the manual branch lane', () => {
+    const result = classifyAuditFix({
+      mode: 'auto',
+      policy,
+      runId: '123',
+      fileDetails: [
+        {
+          path: 'src/lib/resource-monitor.ts',
+          additions: 0,
+          deletions: 0,
+          changedLinesKnown: false,
+        },
+      ],
+    });
+
+    assert.equal(result.eligible, false);
+    assert.equal(result.branch_name, 'claude-audit-fix-123');
+    assert.equal(result.draft, 'true');
+    assert.equal(result.labels, 'auto-fix,needs-review');
+    assert.match(result.reason, /line counts unavailable/);
   });
 
   it('keeps no-change runs on the manual no-op lane', () => {

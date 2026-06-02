@@ -95,6 +95,7 @@ jobs:
           AUDIT_FIX_MODE: ${{ github.event.inputs.lane || 'auto' }}
           RUN_ID: ${{ github.run_id }}
         run: |
+          # PR Finalizer independently re-validates audit-safe policy from PR file metadata.
           node .github/workflows/scripts/classify-audit-fix.cjs \
             --policy-file .github/workflows/policy.json \
             --mode "$AUDIT_FIX_MODE" \
