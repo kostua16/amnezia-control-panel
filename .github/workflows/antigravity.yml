@@ -54,10 +54,12 @@ jobs:
 
       - name: Post Comment
         if: steps.check-secrets.outputs.missing != 'true'
+        env:
+          REVIEW_OUTPUT: ${{ steps.run-antigravity.outputs.output }}
         uses: actions/github-script@v7
         with:
           script: |
-            const output = `${{ steps.run-antigravity.outputs.output }}`;
+            const output = process.env.REVIEW_OUTPUT;
             if (context.eventName === 'issues' || context.eventName === 'issue_comment') {
               github.rest.issues.createComment({
                 issue_number: context.issue.number,
