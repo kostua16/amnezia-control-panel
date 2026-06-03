@@ -100,7 +100,7 @@ jobs:
           PR_NUMBER: ${{ matrix.pr-number }}
         run: |
           gh pr view "$PR_NUMBER" \
-            --json number,title,url,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \
+            --json number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \
             > /tmp/pr.json
           node .github/workflows/scripts/evaluate-pr-policy.cjs \
             --policy-file .github/workflows/policy.json \
@@ -115,6 +115,11 @@ jobs:
           base_ref="${{ github.event.inputs.base_ref || '' }}"
           if [ -z "$base_ref" ]; then
             base_ref=$(jq -r '.base_ref_name' /tmp/policy-eval.json)
+          fi
+          pr_state=$(jq -r '.state // ""' /tmp/pr.json)
+          merged_at=$(jq -r '.mergedAt // ""' /tmp/pr.json)
+          if [ "$pr_state" != "OPEN" ] || [ -n "$merged_at" ]; then
+            should_analyze="false"
           fi
           {
             echo "should_analyze=$should_analyze"

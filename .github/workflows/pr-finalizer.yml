@@ -74,11 +74,13 @@ jobs:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
         run: |
           gh pr view "$PR_NUMBER" \
-            --json number,title,url,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \
+            --json number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \
             > /tmp/pr.json
           expected_head_sha="${{ github.event.inputs.head_sha || '' }}"
           actual_head_sha=$(jq -r '.headRefOid // ""' /tmp/pr.json)
-          if [ -n "$expected_head_sha" ] && [ "$expected_head_sha" != "$actual_head_sha" ]; then
+          pr_state=$(jq -r '.state // ""' /tmp/pr.json)
+          merged_at=$(jq -r '.mergedAt // ""' /tmp/pr.json)
+          if { [ -n "$expected_head_sha" ] && [ "$expected_head_sha" != "$actual_head_sha" ]; } || { [ "$pr_state" != "OPEN" ] || [ -n "$merged_at" ]; }; then
             {
               echo "head_ref="
               echo "same_repo=false"
