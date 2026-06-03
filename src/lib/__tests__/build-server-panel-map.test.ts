@@ -11,7 +11,10 @@ const makePanel = (id: number, panelUrl: string) => ({ id, panelUrl });
 
 describe('buildServerPanelMap', () => {
   it('returns empty map when no servers', () => {
-    const result = buildServerPanelMap([], [makePanel(1, 'https://panel1.ts.net')]);
+    const result = buildServerPanelMap(
+      [],
+      [makePanel(1, 'https://panel1.ts.net')],
+    );
     assert.deepStrictEqual(result, {});
   });
 
@@ -24,7 +27,9 @@ describe('buildServerPanelMap', () => {
   });
 
   it('matches server tailnetIP to panel URL hostname', () => {
-    const servers = [makeServer(1, { hostname: 'srv1', tailnetIP: '100.64.0.1' })];
+    const servers = [
+      makeServer(1, { hostname: 'srv1', tailnetIP: '100.64.0.1' }),
+    ];
     const panels = [makePanel(10, 'https://100.64.0.1:3333')];
     const result = buildServerPanelMap(servers, panels);
     assert.deepStrictEqual(result, { 1: 10 });
@@ -58,7 +63,11 @@ describe('buildServerPanelMap', () => {
       makePanel(20, 'https://srv1.example.com:3333'),
     ];
     const result = buildServerPanelMap(servers, panels);
-    assert.equal(result[1], 10, 'Should match tailnetIP panel, not hostname panel');
+    assert.equal(
+      result[1],
+      10,
+      'Should match tailnetIP panel, not hostname panel',
+    );
   });
 
   it('omits unmatched servers', () => {

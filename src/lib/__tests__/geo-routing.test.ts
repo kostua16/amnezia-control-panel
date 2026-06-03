@@ -1,9 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  evaluateGeoRules,
-  classifyDomesticForeign,
-} from '../geo-routing';
+import { evaluateGeoRules, classifyDomesticForeign } from '../geo-routing';
 import type { GeoRoutingRule } from '@/types/geo-routing';
 
 function makeRule(overrides: Partial<GeoRoutingRule> = {}): GeoRoutingRule {

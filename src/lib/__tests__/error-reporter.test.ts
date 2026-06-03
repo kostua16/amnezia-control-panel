@@ -24,7 +24,10 @@ describe('enrichError', () => {
   });
 
   it('classifies invalid config errors', () => {
-    const result = enrichError('Configuration validation failed: bad value', 'Panel4');
+    const result = enrichError(
+      'Configuration validation failed: bad value',
+      'Panel4',
+    );
     assert.equal(result.type, 'invalid_config');
   });
 
