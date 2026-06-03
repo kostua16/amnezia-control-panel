@@ -218,10 +218,10 @@ Always manual-only:
 
 - relies on checkout's retained auth for push; no `token` input needed
 
-`run-antigravity`:
+`google-github-actions/run-gemini-cli@v0`:
 
-- composite action that installs the Antigravity CLI (`agy`) and runs it
-- accepts `api-key` and `prompt`
+- external action that runs the Gemini CLI (Antigravity) natively
+- requires `GEMINI_CLI_TRUST_WORKSPACE: 'true'` for autonomous workspace access
 
 ## Dry-Run Entry Points
 

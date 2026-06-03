@@ -16,14 +16,36 @@ permissions:
   issues: write
 
 jobs:
+  authorize:
+    runs-on: self-hosted
+    outputs:
+      triggered: ${{ steps.gate.outputs.triggered }}
+      trusted: ${{ steps.gate.outputs.trusted }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Evaluate trigger trust
+        id: gate
+        shell: bash
+        run: |
+          node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode antigravity \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            > /tmp/trigger-policy.json
+          {
+            echo "triggered=$(jq -r '.triggered' /tmp/trigger-policy.json)"
+            echo "trusted=$(jq -r '.trusted' /tmp/trigger-policy.json)"
+          } >> "$GITHUB_OUTPUT"
+
   antigravity-interaction:
+    needs: [authorize]
+    if: needs.authorize.outputs.triggered == 'true' && needs.authorize.outputs.trusted == 'true'
     runs-on: [self-hosted, big]
     timeout-minutes: 15
-    if: >-
-      (github.event_name == 'issue_comment' && (contains(github.event.comment.body, '@gemini') || contains(github.event.comment.body, '@antigravity'))) ||
-      (github.event_name == 'pull_request_review_comment' && (contains(github.event.comment.body, '@gemini') || contains(github.event.comment.body, '@antigravity'))) ||
-      (github.event_name == 'pull_request_review' && (contains(github.event.review.body, '@gemini') || contains(github.event.review.body, '@antigravity'))) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.title, '@gemini') || contains(github.event.issue.title, '@antigravity') || contains(github.event.issue.body, '@gemini') || contains(github.event.issue.body, '@antigravity')))
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -54,9 +76,10 @@ jobs:
           prompt: |
             You are an expert AI agent named Antigravity.
             Please read the following context and respond to the user's request.
-            Context: The user triggered you by mentioning @gemini or @antigravity.
+            Context: The user triggered you by mentioning @gemini or @antigravity in an issue or PR comment.
             Event Type: ${{ github.event_name }}
-            Payload JSON: ${{ toJSON(github.event) }}
+            Title: ${{ github.event.issue.title || github.event.pull_request.title }}
+            Body/Comment: ${{ github.event.comment.body || github.event.review.body || github.event.issue.body || github.event.pull_request.body }}
 
       - name: Post Comment
         if: steps.check-secrets.outputs.missing != 'true'

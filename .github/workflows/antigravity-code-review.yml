@@ -52,12 +52,6 @@ jobs:
 
           # Fetch PR diff
           gh pr diff "$PR_NUM" > pr_diff.patch
-          
-          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-          echo "PR_DIFF<<$EOF" >> "$GITHUB_ENV"
-          cat pr_diff.patch >> "$GITHUB_ENV"
-          echo "" >> "$GITHUB_ENV"
-          echo "$EOF" >> "$GITHUB_ENV"
 
       - name: Run Gemini CLI for Review
         id: run-gemini
@@ -69,9 +63,12 @@ jobs:
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY || secrets.AV_API_KEY }}
           prompt: |
-            You are an expert AI code reviewer. Please review the following code changes for bugs, security issues, and code quality improvements. Keep your feedback concise and actionable.
-
-            ${{ env.PR_DIFF }}
+            You are an expert AI code reviewer. Please review the code changes in the PR.
+            The diff of the pull request has been saved to the file `pr_diff.patch` in the workspace.
+            Read the file `pr_diff.patch` to see the changes.
+            Keep your feedback concise and actionable.
+            You must begin your review with a bold header **Gemini code review**.
+            END YOUR REVIEW WITH EXACTLY ONE OF THESE TWO STRINGS: [VERDICT: PASSED] or [VERDICT: CONCERNS].
 
       - name: Post Review Comment
         if: steps.check-secrets.outputs.missing != 'true'
@@ -97,8 +94,8 @@ jobs:
         with:
           script: |
             const prNum = parseInt(`${{ steps.pr-info.outputs.pr_num }}`);
-            const output = (process.env.REVIEW_OUTPUT || "").toLowerCase();
-            const label = output.includes("blocking concern") ? "antigravity-review-concerns" : "antigravity-review-passed";
+            const output = (process.env.REVIEW_OUTPUT || "");
+            const label = output.includes("[VERDICT: CONCERNS]") ? "antigravity-review-concerns" : "antigravity-review-passed";
 
             github.rest.issues.addLabels({
               issue_number: prNum,
