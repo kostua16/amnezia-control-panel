@@ -43,9 +43,6 @@ export function calculateNodePositions(
 
 function linearLayout(nodes: LayoutNode[]): NodePosition[] {
   const positions: NodePosition[] = [];
-  // Calculate total width but it's not used in the layout calculation
-  // Keeping for potential future centering logic
-  void (nodes.length * NODE_WIDTH + (nodes.length - 1) * HORIZONTAL_GAP);
   const startX = CANVAS_PADDING;
 
   for (let i = 0; i < nodes.length; i++) {
@@ -86,9 +83,6 @@ function splitLayout(nodes: LayoutNode[]): NodePosition[] {
 function meshLayout(nodes: LayoutNode[]): NodePosition[] {
   const positions: NodePosition[] = [];
   const cols = Math.ceil(Math.sqrt(nodes.length));
-  // Calculate rows but it's not used in the layout calculation
-  // Keeping for potential future adjustments
-  void Math.ceil(nodes.length / cols);
 
   for (let i = 0; i < nodes.length; i++) {
     const col = i % cols;

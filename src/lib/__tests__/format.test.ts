@@ -7,11 +7,12 @@ describe('formatBytes', () => {
     assert.strictEqual(formatBytes(0), '0 B');
   });
 
-  it('formats bytes under 1 KB', () => {
+  it('formats bytes correctly', () => {
     assert.strictEqual(formatBytes(512), '512 B');
   });
 
   it('formats kilobytes with one decimal', () => {
+    assert.strictEqual(formatBytes(1024), '1.0 KB');
     assert.strictEqual(formatBytes(1536), '1.5 KB');
   });
 
@@ -27,8 +28,20 @@ describe('formatBytes', () => {
     assert.strictEqual(formatBytes(1099511627776), '1.0 TB');
   });
 
-  it('rounds to one decimal for units above B', () => {
-    const result = formatBytes(1536);
-    assert.ok(result.includes('.'));
+  it('clamps to TB unit for very large values', () => {
+    const result = formatBytes(1099511627776 * 5);
+    assert.ok(result.endsWith('TB'), `Expected TB unit, got: ${result}`);
+  });
+
+  it('returns "0 B" for negative input', () => {
+    assert.strictEqual(formatBytes(-100), '0 B');
+  });
+
+  it('returns "0 B" for NaN', () => {
+    assert.strictEqual(formatBytes(NaN), '0 B');
+  });
+
+  it('returns "0 B" for Infinity', () => {
+    assert.strictEqual(formatBytes(Infinity), '0 B');
   });
 });
