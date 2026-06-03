@@ -8,10 +8,11 @@ Settings -> Secrets and variables -> Actions -> **New repository secret**
 
 | Secret        | Used by                                                                                                                                                                                     | Description                                                                                                                                                     |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ZAI_API_KEY` | `claude`, `triage`, `code-review`, `dependency-review`, `release-notes`, `maintenance`, `fix-pr`, `fix-branch`, `pr-improve`, `workflow-health-optimize`                                    | API key for the Claude-compatible coding workflows                                                                                                              |
-| `GEMINI_API_KEY` | `antigravity`, `antigravity-code-review`                                                                                                  | API key for the Antigravity CLI agent workflows                                                                                                                    |
-| `AV_API_KEY` | `antigravity`, `antigravity-code-review`                                                                                                  | Alternative API key for the Antigravity CLI agent workflows                                                                                                                    |
-| `GH_PAT`      | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve`, `audit-fix`, `suggest-improvements`, `docs-drift`, `maintenance`, `_auto-fix-ci` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
+| `ZAI_API_KEY`       | `claude`, `triage`, `code-review`, `dependency-review`, `release-notes`, `maintenance`, `fix-pr`, `fix-branch`, `pr-improve`, `workflow-health-optimize`                                    | API key for the Claude-compatible coding workflows (Z.AI provider)                                                                                            |
+| `GEMINI_API_KEY`    | `antigravity`, `antigravity-code-review`                                                                                                  | API key for the Antigravity CLI agent workflows                                                                                                                    |
+| `AV_API_KEY`        | `antigravity`, `antigravity-code-review`                                                                                                  | Alternative API key for the Antigravity CLI agent workflows                                                                                                                    |
+| `DEEPSEEK_API_KEY`  | `deepseek`, `deepseek-code-review`                                                                                                                                                           | API key for DeepSeek coding workflows (Anthropic-compatible endpoint). Optional — workflows skip gracefully when not set.                                     |
+| `GH_PAT`            | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve`, `audit-fix`, `suggest-improvements`, `docs-drift`, `maintenance`, `_auto-fix-ci` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
 
 `GITHUB_TOKEN` is automatic and is sufficient for read/comment/approve operations that do not need recursive workflow triggering.
 
@@ -58,6 +59,19 @@ code-review.yml
   -> produces security-review-passed / security-review-concerns
   -> pr-flow.yml consumes those signals
 
+deepseek.yml
+  -> standalone @deepseek trigger (issue_comment, PR review, issues)
+  -> same trigger pattern as claude.yml but with @deepseek mention
+  -> uses run-deepseek action with DEEPSEEK_API_KEY
+  -> skips gracefully when DEEPSEEK_API_KEY secret is not set
+
+deepseek-code-review.yml
+  -> standalone non-blocking code review via /deepseek-review comment or workflow_dispatch
+  -> single-phase review (no separate security phase)
+  -> produces deepseek-review-passed / deepseek-review-concerns (non-blocking labels)
+  -> NOT integrated into pr-flow.yml — runs independently
+  -> skips gracefully when DEEPSEEK_API_KEY secret is not set
+
 dependency-review.yml
   -> dispatch-only worker controlled by pr-flow.yml
   -> produces deps-review-passed / deps-review-manual / deps-review-blocked
@@ -92,6 +106,8 @@ The following labels are enforced or created automatically by the workflow stack
 | `ai-review-concerns`        | Main AI review found blocking issues                    |
 | `security-review-passed`    | Security review found no significant issues             |
 | `security-review-concerns`  | Security review found significant issues                |
+| `deepseek-review-passed`    | DeepSeek code review found no issues (non-blocking)     |
+| `deepseek-review-concerns`  | DeepSeek code review found concerns (non-blocking)      |
 | `deps-review-passed`        | Dependabot PR remains auto-merge eligible               |
 | `deps-review-manual`        | Dependency PR needs manual review                       |
 | `deps-review-blocked`       | Dependency PR is blocked from auto-merge                |
@@ -167,6 +183,15 @@ Always manual-only:
 - accepts `claude-full-output`; it defaults to `true` in this private repo but should default to `false` before public reusable workflow extraction
 - modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
 - workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; existing `actions: write` flows already satisfy this for CI-status MCP support
+
+`run-deepseek`:
+
+- same pattern as `run-zai` but routes to `https://api.deepseek.com/anthropic` (DeepSeek's Anthropic-compatible endpoint)
+- model defaults: haiku→`deepseek-v4-flash`, sonnet→`deepseek-v4-pro[1m]`, opus→`deepseek-v4-pro[1m]`
+- always sets `CLAUDE_CODE_EFFORT_LEVEL=max` for maximum reasoning depth
+- accepts `github-token` (default `GITHUB_TOKEN`) and passes it to `run-claude-params`
+- exposes the same Claude health and metrics outputs as `run-zai`
+- workflows or jobs using `run-deepseek` must grant at least `actions: read`
 
 `run-claude-params`:
 
