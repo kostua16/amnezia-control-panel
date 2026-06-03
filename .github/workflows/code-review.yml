@@ -93,7 +93,9 @@ jobs:
 
             const expectedHeadSha = context.payload.inputs?.head_sha || '';
             const headMatches = !expectedHeadSha || pr.head.sha === expectedHeadSha;
+            const isOpen = pr.state === 'open' && !pr.merged;
             const shouldRun =
+              isOpen &&
               headMatches &&
               !pr.draft &&
               pr.user.login !== 'dependabot[bot]' &&

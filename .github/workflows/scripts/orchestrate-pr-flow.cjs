@@ -180,6 +180,8 @@ function normalizePr(pr) {
     number: pr.number,
     title: pr.title,
     url: pr.url,
+    state: pr.state ?? '',
+    mergedAt: pr.mergedAt ?? '',
     isDraft: Boolean(pr.isDraft),
     headRefName: pr.headRefName ?? '',
     headSha: pr.headRefOid ?? pr.head?.sha ?? '',
@@ -596,6 +598,10 @@ function makeDecision(context) {
     };
   }
 
+  if (String(pr.state).toUpperCase() !== 'OPEN' || pr.mergedAt) {
+    return finish(null, 'PR is closed or already merged.');
+  }
+
   if (pr.isDraft) {
     return finish('flow/draft', 'PR is draft.');
   }
@@ -833,7 +839,7 @@ function fetchPullRequest(prNumber) {
       'view',
       String(prNumber),
       '--json',
-      'number,title,url,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository',
+      'number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository',
     ],
     null,
     { allowedFailurePattern: PR_NOT_FOUND_PATTERN },

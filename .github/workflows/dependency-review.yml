@@ -66,7 +66,8 @@ jobs:
 
             const expectedHeadSha = context.payload.inputs?.head_sha || '';
             const headMatches = !expectedHeadSha || pr.head.sha === expectedHeadSha;
-            const shouldRun = headMatches && pr.user.login === 'dependabot[bot]';
+            const isOpen = pr.state === 'open' && !pr.merged;
+            const shouldRun = isOpen && headMatches && pr.user.login === 'dependabot[bot]';
             core.setOutput('should_run', String(shouldRun));
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('base_ref', context.payload.inputs?.base_ref || pr.base.ref);

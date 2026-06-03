@@ -33,6 +33,8 @@ type Pr = {
   number: number;
   title: string;
   url: string;
+  state: string;
+  mergedAt: string | null;
   isDraft: boolean;
   headRefName: string;
   headSha: string;
@@ -144,6 +146,8 @@ function prFixture(overrides: Partial<Pr> = {}): Pr {
     number: 181,
     title: 'fix: sample PR',
     url: 'https://github.example.test/repo/pull/181',
+    state: 'OPEN',
+    mergedAt: null,
     isDraft: false,
     headRefName: 'feature/pr-flow',
     headSha,
@@ -228,6 +232,22 @@ function decide(overrides: DecisionOverrides = {}) {
 }
 
 describe('makeDecision', () => {
+  it('skips closed or merged PRs without dispatching workers', () => {
+    const decision = decide({
+      pr: prFixture({
+        state: 'MERGED',
+        mergedAt: '2026-06-03T09:50:00Z',
+        labels: ['flow/checks-pending'],
+      }),
+    });
+
+    assert.equal(decision.state, null);
+    assert.equal(decision.reason, 'PR is closed or already merged.');
+    assert.equal(decision.dispatch, null);
+    assert.deepEqual(decision.labelsToAdd, []);
+    assert.ok(decision.labelsToRemove.includes('flow/checks-pending'));
+  });
+
   it('pauses draft PRs without requiring checks or worker runs', () => {
     const queriedWorkers: string[] = [];
     const decision = decide({
