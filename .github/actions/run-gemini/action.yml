@@ -1,0 +1,50 @@
+name: 'Run Gemini CLI'
+description: 'google-github-actions/run-gemini-cli wrapper with shared defaults'
+
+inputs:
+  api-key:
+    description: 'Gemini API key'
+    required: true
+  prompt:
+    description: 'Prompt for Gemini CLI'
+    required: true
+  model:
+    description: 'Override Gemini model'
+    required: false
+    default: ''
+  settings:
+    description: 'JSON settings for Gemini CLI (tools, MCP servers, etc.)'
+    required: false
+    default: '{}'
+  gemini-cli-version:
+    description: 'Gemini CLI version to install'
+    required: false
+    default: 'latest'
+  github-token:
+    description: 'GitHub token for gh CLI operations'
+    required: false
+    default: '${{ github.token }}'
+
+outputs:
+  summary:
+    description: 'Gemini CLI response summary'
+    value: ${{ steps.gemini.outputs.summary }}
+  error:
+    description: 'Gemini CLI error output'
+    value: ${{ steps.gemini.outputs.error }}
+
+runs:
+  using: composite
+  steps:
+    - name: Run Gemini CLI
+      id: gemini
+      uses: google-github-actions/run-gemini-cli@v0
+      with:
+        gemini_api_key: ${{ inputs.api-key }}
+        prompt: ${{ inputs.prompt }}
+        gemini_model: ${{ inputs.model }}
+        settings: ${{ inputs.settings }}
+        gemini_cli_version: ${{ inputs.gemini-cli-version }}
+      env:
+        GEMINI_API_KEY: ${{ inputs.api-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}

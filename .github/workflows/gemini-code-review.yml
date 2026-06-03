@@ -1,0 +1,165 @@
+name: 'Gemini Code Review'
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to review'
+        required: true
+        type: string
+      head_sha:
+        description: 'Expected PR head SHA'
+        required: false
+        type: string
+
+concurrency:
+  group: 'gemini-code-review-${{ github.event.inputs.pr_number || github.event.issue.number }}'
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  resolve-pr:
+    name: Resolve PR
+    runs-on: self-hosted
+    outputs:
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+      should_run: ${{ steps.resolve.outputs.should_run }}
+    steps:
+      - name: Resolve PR
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [[ -z "$GEMINI_API_KEY" ]]; then
+            echo "Secret GEMINI_API_KEY is not set. Skipping."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # If triggered by comment, check keyword
+          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
+            if [[ ! "$COMMENT_BODY" =~ "/gemini-review" ]]; then
+              echo "Keyword not found. Skipping."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [[ -z "${{ github.event.issue.pull_request }}" ]]; then
+              echo "Not a PR comment. Skipping."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            PR_NUMBER="${{ github.event.issue.number }}"
+          else
+            PR_NUMBER="${{ inputs.pr_number }}"
+          fi
+
+          # Fetch PR details
+          PR_JSON=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER")
+          DRAFT=$(echo "$PR_JSON" | jq -r .draft)
+          TITLE=$(echo "$PR_JSON" | jq -r .title)
+          USER_LOGIN=$(echo "$PR_JSON" | jq -r .user.login)
+
+          if [[ "$DRAFT" == "true" ]]; then
+            echo "PR is draft. Skipping."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$TITLE" == *"[skip-review]"* ]]; then
+            echo "PR has [skip-review]. Skipping."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$USER_LOGIN" == *"dependabot"* ]]; then
+            echo "PR is from dependabot. Skipping."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+
+  gemini-review:
+    name: Run Gemini Review
+    needs: resolve-pr
+    if: needs.resolve-pr.outputs.should_run == 'true'
+    runs-on: [self-hosted, big]
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ needs.resolve-pr.outputs.pr_number }}/head
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Gemini
+        id: gemini
+        uses: ./.github/actions/run-gemini
+        with:
+          api-key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            Review this pull request (PR #${{ needs.resolve-pr.outputs.pr_number }}) for:
+            - Code quality and best practices
+            - Potential bugs or logic issues
+            - Performance considerations
+            - Adherence to project coding conventions (see GEMINI.md)
+            - Test coverage
+            - Breaking changes
+
+            ## Diff Hygiene
+            - Lines prefixed `-` are REMOVED, lines prefixed `+` are ADDED.
+            - Only flag issues on `+` lines. Never treat a `-` line as current code.
+            - If uncertain, read the file at HEAD before posting.
+
+            Post actionable findings as PR comments.
+            After finishing, provide a brief summary of findings.
+
+            Do NOT approve the PR, request changes, or edit PR labels yourself.
+            The workflow handles review signals.
+
+  apply-signal:
+    name: Apply Review Signal
+    needs: [resolve-pr, gemini-review]
+    if: always() && needs.resolve-pr.outputs.should_run == 'true'
+    runs-on: self-hosted
+    steps:
+      - name: Apply labels
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr_number }}
+          REVIEW_OUTCOME: ${{ needs.gemini-review.result }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const outcome = process.env.REVIEW_OUTCOME;
+            const { owner, repo } = context.repo;
+
+            const addLabel = async (label) => {
+              try {
+                await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: [label] });
+              } catch (e) { console.log(e); }
+            };
+            const removeLabel = async (label) => {
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: prNumber, name: label });
+              } catch (e) { console.log(e); }
+            };
+
+            if (outcome === 'success') {
+              await addLabel('gemini-review-passed');
+              await removeLabel('gemini-review-concerns');
+            } else {
+              await addLabel('gemini-review-concerns');
+              await removeLabel('gemini-review-passed');
+            }

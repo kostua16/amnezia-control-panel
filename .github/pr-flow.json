@@ -54,7 +54,9 @@
       "deps-review-passed",
       "deps-review-manual",
       "deps-review-blocked",
-      "planning-draft-open"
+      "planning-draft-open",
+      "gemini-review-passed",
+      "gemini-review-concerns"
     ]
   },
   "checks": {
@@ -70,6 +72,12 @@
       "workflow": "code-review.yml",
       "passLabels": ["ai-review-passed", "security-review-passed"],
       "blockLabels": ["ai-review-concerns", "security-review-concerns"]
+    },
+    "geminiCodeReview": {
+      "workflow": "gemini-code-review.yml",
+      "passLabels": ["gemini-review-passed"],
+      "blockLabels": [],
+      "required": false
     },
     "dependencyReview": {
       "workflow": "dependency-review.yml",

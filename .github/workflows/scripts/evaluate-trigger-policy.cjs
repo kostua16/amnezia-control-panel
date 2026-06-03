@@ -62,6 +62,30 @@ if (mode === 'claude') {
   process.exit(0);
 }
 
+if (mode === 'gemini') {
+  const triggered =
+    (eventName === 'issue_comment' && commentBody.includes('@gemini')) ||
+    (eventName === 'pull_request_review_comment' &&
+      commentBody.includes('@gemini')) ||
+    (eventName === 'pull_request_review' && reviewBody.includes('@gemini')) ||
+    (eventName === 'issues' &&
+      (issueTitle.includes('@gemini') || issueBody.includes('@gemini')));
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        triggered,
+        trusted: triggered && isMaintainer,
+        author_association: association,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 if (mode === 'fix-issue') {
   const isOpenIssue =
     event.issue?.state !== 'closed' && !event.issue?.pull_request;

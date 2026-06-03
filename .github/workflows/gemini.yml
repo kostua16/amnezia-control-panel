@@ -1,0 +1,113 @@
+name: 'Gemini Agent'
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened]
+
+concurrency:
+  group: 'gemini-${{ github.event.issue.number || github.event.pull_request.number || github.sha }}'
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  authorize:
+    name: Authorize
+    runs-on: self-hosted
+    outputs:
+      triggered: ${{ steps.policy.outputs.triggered }}
+      trusted: ${{ steps.policy.outputs.trusted }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+
+      - name: Evaluate policy
+        id: policy
+        env:
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [[ -z "$GEMINI_API_KEY" ]]; then
+            echo "Secret GEMINI_API_KEY is not set. Skipping."
+            echo "triggered=false" >> "$GITHUB_OUTPUT"
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          result=$(node .github/workflows/scripts/evaluate-trigger-policy.cjs --mode gemini)
+          echo "$result"
+
+          triggered=$(echo "$result" | jq -r '.triggered')
+          trusted=$(echo "$result" | jq -r '.trusted')
+
+          echo "triggered=$triggered" >> "$GITHUB_OUTPUT"
+          echo "trusted=$trusted" >> "$GITHUB_OUTPUT"
+
+      - name: Require trust
+        if: steps.policy.outputs.triggered == 'true' && steps.policy.outputs.trusted != 'true'
+        run: |
+          echo "::error::User is not authorized to trigger Gemini."
+          exit 1
+
+  gemini:
+    name: Run Gemini
+    needs: authorize
+    if: needs.authorize.outputs.triggered == 'true' && needs.authorize.outputs.trusted == 'true'
+    runs-on: [self-hosted, big]
+    steps:
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract user request
+        id: request
+        env:
+          BODY: ${{ github.event.comment.body || github.event.review.body || github.event.issue.body }}
+        run: |
+          delim="EOF-$(openssl rand -hex 8)"
+          {
+            echo "body<<$delim"
+            echo "$BODY"
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Gemini
+        uses: ./.github/actions/run-gemini
+        with:
+          api-key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            You are helping with the Amnezia Control Panel project.
+            The user requested:
+
+            ${{ steps.request.outputs.body }}
+
+            Follow our coding standards. Ensure all new code has tests.
+            Use TypeScript for new files.
+          settings: >-
+            {
+              "tools": {
+                "core": [
+                  "read_file", "list_directory", "grep_search",
+                  "run_shell_command(gh *)", "run_shell_command(npm *)",
+                  "run_shell_command(npx *)", "run_shell_command(git *)",
+                  "run_shell_command(node *)", "run_shell_command(ls *)",
+                  "run_shell_command(cat *)", "run_shell_command(grep *)",
+                  "run_shell_command(find *)"
+                ]
+              }
+            }
