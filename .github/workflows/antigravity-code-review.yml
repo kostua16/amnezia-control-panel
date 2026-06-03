@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   antigravity-review:
-    runs-on: self-hosted
+    runs-on: [self-hosted, big]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
