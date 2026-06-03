@@ -55,7 +55,7 @@ jobs:
     name: Build
     runs-on: [self-hosted, big]
     timeout-minutes: 15
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck]
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-environment
