@@ -30,7 +30,6 @@ jobs:
           if [ -z "${{ secrets.GEMINI_API_KEY }}" ] && [ -z "${{ secrets.AV_API_KEY }}" ]; then
             echo "Error: Neither GEMINI_API_KEY nor AV_API_KEY secret is configured."
             echo "missing=true" >> "$GITHUB_OUTPUT"
-            exit 1
           fi
 
       - name: Fetch PR Details

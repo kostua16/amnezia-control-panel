@@ -43,6 +43,8 @@ runs:
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         GH_TOKEN: ${{ github.token }}
       run: |
+        export API_KEY="${GEMINI_API_KEY:-$AV_API_KEY}"
+        
         # Write prompt to a temp file to avoid quoting issues
         cat << 'EOF' > /tmp/agy_prompt.txt
         ${{ inputs.prompt }}
