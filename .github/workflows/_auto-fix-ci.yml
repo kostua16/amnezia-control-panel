@@ -47,6 +47,10 @@ on:
         description: 'Claude attempt number from the auto-fix run'
         value: ${{ jobs.fix.outputs.claude_used_attempt }}
 
+permissions:
+  contents: read
+  actions: read
+
 env:
   NODE_VERSION: '22.x'
   MAX_TURNS: '70'

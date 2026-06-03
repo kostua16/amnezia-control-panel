@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 env:
   MAX_TURNS: 80

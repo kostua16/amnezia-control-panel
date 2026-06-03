@@ -147,6 +147,7 @@ Always manual-only:
 - exposes Claude health and metrics outputs, including `claude_failed`, `claude_failure_reason`, `claude_num_turns`, `claude_is_error`, `claude_used_attempt`, `claude_has_findings`, `claude_failed_tool_samples`, and `claude_metrics_json`
 - accepts `claude-full-output`; it defaults to `true` in this private repo but should default to `false` before public reusable workflow extraction
 - modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
+- workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; existing `actions: write` flows already satisfy this for CI-status MCP support
 
 `run-claude-params`:
 

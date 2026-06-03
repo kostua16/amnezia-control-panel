@@ -29,6 +29,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  actions: read
 
 concurrency:
   group: code-review-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha }}
