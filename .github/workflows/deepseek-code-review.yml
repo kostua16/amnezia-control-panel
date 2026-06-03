@@ -1,0 +1,212 @@
+name: DeepSeek Code Review
+
+run-name: "${{ github.event_name == 'issue_comment' && github.event.issue.pull_request == null && format('Issue #{0} @ {1}', github.event.issue.number, github.sha) || format('PR #{0} @ {1}', github.event.inputs.pr_number || github.event.issue.number || 'manual', github.event.inputs.head_sha || github.sha) }}"
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to review'
+        required: true
+        type: string
+      head_sha:
+        description: 'Expected pull request head SHA'
+        required: false
+        type: string
+      base_ref:
+        description: 'Expected pull request base ref'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read
+
+concurrency:
+  group: deepseek-code-review-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha }}
+  cancel-in-progress: true
+
+env:
+  MAX_TURNS: 100
+  NODE_VERSION: '22.x'
+
+jobs:
+  resolve-pr:
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
+    runs-on: self-hosted
+    outputs:
+      should-run: ${{ steps.resolve.outputs.should_run }}
+      pr-number: ${{ steps.resolve.outputs.pr_number }}
+      head-sha: ${{ steps.resolve.outputs.head_sha }}
+      base-ref: ${{ steps.resolve.outputs.base_ref }}
+      key-available: ${{ steps.check-key.outputs.available }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Resolve PR context
+        id: resolve
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const eventName = context.eventName;
+            let pr = null;
+
+            if (eventName === 'issue_comment') {
+              const isPrComment = Boolean(context.payload.issue?.pull_request);
+              const wantsReview = context.payload.comment?.body?.includes('/deepseek-review');
+              if (!isPrComment || !wantsReview) {
+                core.setOutput('should_run', 'false');
+                return;
+              }
+              const response = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.issue.number
+              });
+              pr = response.data;
+            } else if (eventName === 'workflow_dispatch') {
+              const response = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: Number(context.payload.inputs.pr_number)
+              });
+              pr = response.data;
+            }
+
+            if (!pr) {
+              core.setOutput('should_run', 'false');
+              return;
+            }
+
+            const expectedHeadSha = context.payload.inputs?.head_sha || '';
+            const headMatches = !expectedHeadSha || pr.head.sha === expectedHeadSha;
+            const isOpen = pr.state === 'open' && !pr.merged;
+            const shouldRun =
+              isOpen &&
+              headMatches &&
+              !pr.draft &&
+              pr.user.login !== 'dependabot[bot]' &&
+              !(pr.title || '').includes('[skip-review]');
+
+            core.setOutput('should_run', String(shouldRun));
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('base_ref', context.payload.inputs?.base_ref || pr.base.ref);
+
+      - name: Check DeepSeek API key available
+        id: check-key
+        shell: bash
+        run: |
+          if [[ -z "${{ secrets.DEEPSEEK_API_KEY }}" ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deepseek-review:
+    needs: [resolve-pr]
+    if: needs.resolve-pr.outputs.should-run == 'true' && needs.resolve-pr.outputs.key-available == 'true'
+    runs-on: [self-hosted, big]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
+
+      - name: Ensure review labels exist
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+          names: deepseek-review-passed,deepseek-review-concerns
+
+      - name: DeepSeek code review
+        id: review
+        uses: ./.github/actions/run-deepseek
+        with:
+          api-key: ${{ secrets.DEEPSEEK_API_KEY }}
+          max-turns: '${{ env.MAX_TURNS }}'
+          track-progress: 'true'
+          json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","concerns"]},"summary":{"type":"string"},"findings_count":{"type":"integer","minimum":0}},"required":["verdict","summary","findings_count"],"additionalProperties":false}'
+          allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *),Bash(rtk:*)'
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: '${{ needs.resolve-pr.outputs.pr-number }}'
+
+            Review this pull request for:
+            - Code quality and best practices
+            - Potential bugs or logic issues
+            - Performance considerations
+            - Adherence to project coding conventions
+            - Test coverage (unit and integration)
+            - Documentation for new features
+            - Breaking changes
+
+            ## Diff Hygiene
+            - Lines prefixed `-` are REMOVED, lines prefixed `+` are ADDED.
+            - Only flag issues on `+` lines. Never treat a `-` line as current code.
+            - If uncertain, read the file at HEAD (`git show HEAD:<path>`) before posting.
+
+            ## Cross-Module Accuracy
+            - Before claiming code violates a contract from another module, trace the
+              actual call path. Only flag if the code actually participates in that contract.
+            - A top-level CLI exit handler is not subject to an in-process router's no-throw rule.
+
+            Post actionable findings as inline review comments.
+            If the PR touches UI components, also check layout, accessibility, and responsiveness.
+
+            After finishing, return JSON only:
+            - verdict: "passed" if no blocking issues remain, otherwise "concerns"
+            - summary: one short sentence
+            - findings_count: integer
+
+            Do NOT approve the PR, request changes, or edit PR labels yourself. The workflow handles review signals.
+
+      - name: Apply review signal
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
+          STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
+        with:
+          script: |
+            const review = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
+            const issueNumber = Number(process.env.PR_NUMBER);
+            const addLabel = review.verdict === 'passed' ? 'deepseek-review-passed' : 'deepseek-review-concerns';
+            const removeLabel = review.verdict === 'passed' ? 'deepseek-review-concerns' : 'deepseek-review-passed';
+
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                name: removeLabel
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: [addLabel]
+            });

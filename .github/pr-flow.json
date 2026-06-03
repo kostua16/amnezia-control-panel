@@ -54,6 +54,8 @@
       "deps-review-passed",
       "deps-review-manual",
       "deps-review-blocked",
+      "deepseek-review-passed",
+      "deepseek-review-concerns",
       "planning-draft-open"
     ]
   },
