@@ -43,7 +43,8 @@ jobs:
         if: steps.check-secrets.outputs.missing != 'true'
         uses: ./.github/actions/run-antigravity
         with:
-          api-key: ${{ secrets.GEMINI_API_KEY || secrets.AV_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          av-api-key: ${{ secrets.AV_API_KEY }}
           prompt: |
             You are an expert AI agent named Antigravity.
             Please read the following context and respond to the user's request.

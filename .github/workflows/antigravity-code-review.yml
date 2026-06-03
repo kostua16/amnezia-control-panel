@@ -50,11 +50,12 @@ jobs:
           gh pr diff "$PR_NUM" > pr_diff.patch
 
       - name: Run Antigravity CLI for Review
-        id: run-antigravity
+        id: agy-review
         if: steps.check-secrets.outputs.missing != 'true'
         uses: ./.github/actions/run-antigravity
         with:
-          api-key: ${{ secrets.GEMINI_API_KEY || secrets.AV_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          av-api-key: ${{ secrets.AV_API_KEY }}
           prompt: |
             You are an expert AI code reviewer. Please review the following code changes for bugs, security issues, and code quality improvements. Keep your feedback concise and actionable.
 

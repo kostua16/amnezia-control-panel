@@ -2,9 +2,12 @@ name: 'Run Antigravity CLI'
 description: 'Installs and runs the Antigravity CLI with caching'
 
 inputs:
-  api-key:
-    description: 'API key for Antigravity or Gemini'
-    required: true
+  gemini-api-key:
+    description: 'API key for Gemini'
+    required: false
+  av-api-key:
+    description: 'API key for Antigravity'
+    required: false
   prompt:
     description: 'Prompt to send to the CLI'
     required: true
@@ -36,8 +39,8 @@ runs:
       id: run-agy
       shell: bash
       env:
-        AV_API_KEY: ${{ inputs.api-key }}
-        GEMINI_API_KEY: ${{ inputs.api-key }}
+        AV_API_KEY: ${{ inputs.av-api-key }}
+        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         GH_TOKEN: ${{ github.token }}
       run: |
         # Write prompt to a temp file to avoid quoting issues
