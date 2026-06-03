@@ -67,6 +67,34 @@
       }
     ]
   },
+  "statuses": {
+    "aggregate": {
+      "context": "pr-flow/ready",
+      "description": "Required aggregate PR orchestration status"
+    },
+    "workers": {
+      "codeReview": {
+        "context": "pr-flow/code-review",
+        "description": "AI code review worker status"
+      },
+      "securityReview": {
+        "context": "pr-flow/security-review",
+        "description": "AI security review worker status"
+      },
+      "dependencyReview": {
+        "context": "pr-flow/dependency-review",
+        "description": "Dependency review worker status"
+      },
+      "prImprove": {
+        "context": "pr-flow/pr-improve",
+        "description": "Optional PR improvement worker status"
+      },
+      "finalizer": {
+        "context": "pr-flow/finalizer",
+        "description": "PR finalizer worker status"
+      }
+    }
+  },
   "workers": {
     "codeReview": {
       "workflow": "code-review.yml",
