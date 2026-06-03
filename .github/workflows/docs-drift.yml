@@ -127,10 +127,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: issue
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          issue-title: "[docs-drift] Documentation drift checker failed"
+          issue-title: '[docs-drift] Documentation drift checker failed'
           labels: auto-fix,ci-failure
           ensure-labels: auto-fix,ci-failure
-          dispatch-triage: "true"
+          dispatch-triage: 'true'
           claude-step-outcome: ${{ needs.docs-drift.result }}
           claude-turns: ${{ needs.docs-drift.outputs.claude_num_turns }}
           claude-is-error: ${{ needs.docs-drift.outputs.claude_is_error }}

@@ -56,7 +56,9 @@
       "deps-review-blocked",
       "deepseek-review-passed",
       "deepseek-review-concerns",
-      "planning-draft-open"
+      "planning-draft-open",
+      "antigravity-review-passed",
+      "antigravity-review-concerns"
     ]
   },
   "checks": {
@@ -100,6 +102,12 @@
       "workflow": "code-review.yml",
       "passLabels": ["ai-review-passed", "security-review-passed"],
       "blockLabels": ["ai-review-concerns", "security-review-concerns"]
+    },
+    "antigravityCodeReview": {
+      "workflow": "antigravity-code-review.yml",
+      "passLabels": ["antigravity-review-passed"],
+      "blockLabels": ["antigravity-review-concerns"],
+      "required": false
     },
     "dependencyReview": {
       "workflow": "dependency-review.yml",

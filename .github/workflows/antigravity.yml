@@ -1,0 +1,107 @@
+name: Antigravity Interactive Workflow
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened, edited]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  authorize:
+    runs-on: self-hosted
+    outputs:
+      triggered: ${{ steps.gate.outputs.triggered }}
+      trusted: ${{ steps.gate.outputs.trusted }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Evaluate trigger trust
+        id: gate
+        shell: bash
+        run: |
+          node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode antigravity \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            > /tmp/trigger-policy.json
+          {
+            echo "triggered=$(jq -r '.triggered' /tmp/trigger-policy.json)"
+            echo "trusted=$(jq -r '.trusted' /tmp/trigger-policy.json)"
+          } >> "$GITHUB_OUTPUT"
+
+  antigravity-interaction:
+    needs: [authorize]
+    if: needs.authorize.outputs.triggered == 'true' && needs.authorize.outputs.trusted == 'true'
+    runs-on: [self-hosted, big]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify API Key Presence
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ] && [ -z "${{ secrets.AV_API_KEY }}" ]; then
+            echo "Error: Neither GEMINI_API_KEY nor AV_API_KEY secret is configured."
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Gemini CLI
+        id: run-gemini
+        if: steps.check-secrets.outputs.missing != 'true'
+        uses: google-github-actions/run-gemini-cli@v0
+        timeout-minutes: 10
+        env:
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY || secrets.AV_API_KEY }}
+          prompt: |
+            You are an expert AI agent named Antigravity.
+            Please read the following context and respond to the user's request.
+            Context: The user triggered you by mentioning @gemini or @antigravity in an issue or PR comment.
+            Event Type: ${{ github.event_name }}
+            Title: ${{ github.event.issue.title || github.event.pull_request.title }}
+            Body/Comment: ${{ github.event.comment.body || github.event.review.body || github.event.issue.body || github.event.pull_request.body }}
+
+      - name: Post Comment
+        if: steps.check-secrets.outputs.missing != 'true'
+        env:
+          REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = process.env.REVIEW_OUTPUT;
+            if (context.eventName === 'issues' || context.eventName === 'issue_comment') {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output
+              });
+            } else if (context.eventName === 'pull_request_review' || context.eventName === 'pull_request_review_comment') {
+              github.rest.pulls.createReview({
+                pull_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output,
+                event: 'COMMENT'
+              });
+            }
