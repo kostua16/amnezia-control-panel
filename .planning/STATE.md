@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: verifying
 stopped_at: context exhaustion at 77% (2026-05-03)
-last_updated: '2026-06-03T18:58:45Z'
-last_activity: 2026-06-03 -- Fix PR-flow ready status for manual-review PRs
+last_updated: '2026-06-03T19:46:36Z'
+last_activity: 2026-06-03 -- Wake PR orchestrator from dispatched workers
 progress:
   total_phases: 23
   completed_phases: 20
@@ -29,7 +29,7 @@ progress:
 Phase: 12.15 of 12.15 (Requirements reconciliation & middleware hardening) -- PLANNED
 Plan: 0 of 0 in current phase (planned)
 Status: 12.14 complete (GEO-03/04 + TSCL-01-03 verified, audit 19/20)
-Last activity: 2026-06-03 -- Fix PR-flow ready status for manual-review PRs
+Last activity: 2026-06-03 -- Wake PR orchestrator from dispatched workers
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -126,8 +126,9 @@ Resume file: None
 | 2026-06-03 | 260603-nhf   | Fix PR orchestrator stalled review fan-out                  |
 | 2026-06-03 | 260603-u1d   | PR orchestrator visibility + required aggregate status      |
 | 2026-06-03 | 260603-x6b   | Fix PR-flow ready status for manual-review PRs              |
+| 2026-06-03 | 260604-12u   | Wake PR orchestrator from dispatched workers                |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-03 - Fix PR-flow ready status for manual-review PRs (quick 260603-x6b)_
+_Last updated: 2026-06-03 - Wake PR orchestrator from dispatched workers (quick 260604-12u)_

@@ -29,7 +29,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
-  actions: read
+  actions: write
 
 concurrency:
   group: code-review-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha }}
@@ -332,3 +332,25 @@ jobs:
               issue_number: issueNumber,
               labels: [addLabel]
             });
+
+  wake-orchestrator:
+    needs: [resolve-pr, claude-main-review, claude-security-review]
+    if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Wake PR Orchestrator
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+        run: |
+          gh workflow run pr-flow.yml \
+            --ref main \
+            -f pr_number="$PR_NUMBER" \
+            -f dry_run=false

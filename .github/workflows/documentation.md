@@ -112,6 +112,11 @@ appear as native PR checks for the head SHA. `pr-flow.yml` bridges that gap by
 writing commit statuses directly to the PR head SHA and by updating the sticky
 `<!-- pr-flow-orchestration -->` PR comment.
 
+Worker completion also explicitly wakes `pr-flow.yml` with `workflow_dispatch`
+when the worker was orchestrator-dispatched. The `workflow_run` trigger remains
+as a useful backup for native CI and other visible runs, but `GITHUB_TOKEN`
+dispatch chains should not rely on `workflow_run` alone for progression.
+
 The worker run-name contract is part of the orchestration API: worker run names
 must include `PR #<number> @ <head_sha>`. `orchestrate-pr-flow.cjs` uses that
 pattern to match active or completed dispatch runs back to the current PR head
@@ -214,7 +219,7 @@ Always manual-only:
 - exposes Claude health and metrics outputs, including `claude_failed`, `claude_failure_reason`, `claude_num_turns`, `claude_is_error`, `claude_used_attempt`, `claude_has_findings`, `claude_failed_tool_samples`, and `claude_metrics_json`
 - accepts `claude-full-output`; it defaults to `true` in this private repo but should default to `false` before public reusable workflow extraction
 - modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
-- workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; existing `actions: write` flows already satisfy this for CI-status MCP support
+- workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; orchestrated workers that wake `pr-flow.yml` must grant `actions: write`
 - orchestrator-dispatched `workflow_dispatch` workers run as `github-actions[bot]`, so Claude/ZAI steps must pass `allowed-bots: github-actions,github-actions[bot],claude[bot]` when `orchestrated=true`; do not use wildcard bot allowance
 
 `run-deepseek`:

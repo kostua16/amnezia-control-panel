@@ -32,6 +32,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  actions: write
 
 concurrency:
   group: pr-finalizer-${{ github.event.pull_request.number || github.event.inputs.pr_number || github.run_id }}
@@ -290,3 +291,24 @@ jobs:
         run: |
           echo "::error::PR finalizer could not complete approval or auto-merge. See finalizer status comment for details."
           exit 1
+
+  wake-orchestrator:
+    needs: [finalize]
+    if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wake PR Orchestrator
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+        run: |
+          gh workflow run pr-flow.yml \
+            --ref main \
+            -f pr_number="$PR_NUMBER" \
+            -f dry_run=false
