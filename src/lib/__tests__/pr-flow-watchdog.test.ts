@@ -200,9 +200,34 @@ describe('PR flow workflow invariants', () => {
     const permissions = readTopLevelMapping('permissions');
 
     assert.equal(permissions.get('checks'), 'read');
-    assert.equal(permissions.get('statuses'), 'read');
+    assert.equal(permissions.get('statuses'), 'write');
     assert.equal(permissions.get('actions'), 'write');
     assert.equal(permissions.get('pull-requests'), 'write');
     assert.equal(permissions.get('issues'), 'write');
+  });
+
+  it('wakes the orchestrator when PR Finalizer completes', () => {
+    const workflow = fs.readFileSync('.github/workflows/pr-flow.yml', 'utf8');
+
+    assert.match(workflow, /workflows:\s*\[[^\]]*'PR Finalizer'[^\]]*\]/);
+  });
+
+  it('allows explicit bots only for orchestrated Claude worker runs', () => {
+    for (const workflowName of [
+      'code-review.yml',
+      'dependency-review.yml',
+      'pr-improve.yml',
+    ]) {
+      const workflow = fs.readFileSync(
+        `.github/workflows/${workflowName}`,
+        'utf8',
+      );
+
+      assert.match(
+        workflow,
+        /allowed-bots:\s*\$\{\{\s*github\.event\.inputs\.orchestrated == 'true' && 'github-actions,github-actions\[bot\],claude\[bot\]' \|\| ''\s*\}\}/,
+        workflowName,
+      );
+    }
   });
 });

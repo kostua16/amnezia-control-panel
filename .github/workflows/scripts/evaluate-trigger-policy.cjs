@@ -122,10 +122,7 @@ if (mode === 'antigravity-review') {
   const isPrComment = Boolean(event.issue?.pull_request);
   const wantsReview = commentBody.includes('/gemini-review');
   const commentTriggered =
-    eventName === 'issue_comment' &&
-    isPrComment &&
-    wantsReview &&
-    isMaintainer;
+    eventName === 'issue_comment' && isPrComment && wantsReview && isMaintainer;
   const dispatchTriggered = eventName === 'workflow_dispatch';
   const prNumber = event.inputs?.pr_number ?? event.issue?.number ?? null;
 

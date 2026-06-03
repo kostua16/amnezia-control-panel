@@ -6,13 +6,13 @@ Setup guide for installing this repository's GitHub workflow stack on a new repo
 
 Settings -> Secrets and variables -> Actions -> **New repository secret**
 
-| Secret        | Used by                                                                                                                                                                                     | Description                                                                                                                                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ZAI_API_KEY`       | `claude`, `triage`, `code-review`, `dependency-review`, `release-notes`, `maintenance`, `fix-pr`, `fix-branch`, `pr-improve`, `workflow-health-optimize`                                    | API key for the Claude-compatible coding workflows (Z.AI provider)                                                                                            |
-| `GEMINI_API_KEY`    | `antigravity`, `antigravity-code-review`                                                                                                  | API key for the Antigravity CLI agent workflows                                                                                                                    |
-| `AV_API_KEY`        | `antigravity`, `antigravity-code-review`                                                                                                  | Alternative API key for the Antigravity CLI agent workflows                                                                                                                    |
-| `DEEPSEEK_API_KEY`  | `deepseek`, `deepseek-code-review`                                                                                                                                                           | API key for DeepSeek coding workflows (Anthropic-compatible endpoint). Optional — workflows skip gracefully when not set.                                     |
-| `GH_PAT`            | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve`, `audit-fix`, `suggest-improvements`, `docs-drift`, `maintenance`, `_auto-fix-ci` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
+| Secret             | Used by                                                                                                                                                                                     | Description                                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ZAI_API_KEY`      | `claude`, `triage`, `code-review`, `dependency-review`, `release-notes`, `maintenance`, `fix-pr`, `fix-branch`, `pr-improve`, `workflow-health-optimize`                                    | API key for the Claude-compatible coding workflows (Z.AI provider)                                                                                              |
+| `GEMINI_API_KEY`   | `antigravity`, `antigravity-code-review`                                                                                                                                                    | API key for the Antigravity CLI agent workflows                                                                                                                 |
+| `AV_API_KEY`       | `antigravity`, `antigravity-code-review`                                                                                                                                                    | Alternative API key for the Antigravity CLI agent workflows                                                                                                     |
+| `DEEPSEEK_API_KEY` | `deepseek`, `deepseek-code-review`                                                                                                                                                          | API key for DeepSeek coding workflows (Anthropic-compatible endpoint). Optional — workflows skip gracefully when not set.                                       |
+| `GH_PAT`           | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve`, `audit-fix`, `suggest-improvements`, `docs-drift`, `maintenance`, `_auto-fix-ci` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
 
 `GITHUB_TOKEN` is automatic and is sufficient for read/comment/approve operations that do not need recursive workflow triggering.
 
@@ -49,6 +49,8 @@ pr-flow-watchdog.yml
 pull_request_target lifecycle events
   -> pr-flow.yml
   -> reads .github/pr-flow.json, classifies the PR, syncs one flow/* state label, and dispatches one next worker
+  -> publishes commit statuses on the PR head SHA for pr-flow/ready and worker visibility
+  -> upserts one PR Flow Orchestration comment with worker links and latest decisions
   -> treats draft-to-ready as orchestration only; CI reruns require a new commit
 
 code-review.yml
@@ -96,38 +98,61 @@ pr-finalizer.yml
   -> approves and enables auto-merge only for eligible trusted PRs
 ```
 
+## PR Flow Visibility
+
+`pr-flow/ready` is the only PR-flow status context that should be required in
+branch protection or repository rulesets. The per-worker contexts are visible
+diagnostics: `pr-flow/code-review`, `pr-flow/security-review`,
+`pr-flow/dependency-review`, `pr-flow/pr-improve`, and `pr-flow/finalizer`.
+
+Dispatch-only workers run through `workflow_dispatch`. GitHub associates a
+`workflow_dispatch` run with the dispatched ref, which is normally `main` here,
+not with the PR head commit. That means dispatched worker runs do not naturally
+appear as native PR checks for the head SHA. `pr-flow.yml` bridges that gap by
+writing commit statuses directly to the PR head SHA and by updating the sticky
+`<!-- pr-flow-orchestration -->` PR comment.
+
+The worker run-name contract is part of the orchestration API: worker run names
+must include `PR #<number> @ <head_sha>`. `orchestrate-pr-flow.cjs` uses that
+pattern to match active or completed dispatch runs back to the current PR head
+and to avoid double dispatching stale workers.
+
+Branch protection setup is external repository state. After the first
+orchestrator run creates `pr-flow/ready`, require exactly that context if PR-flow
+completion should block merges.
+
 ## Policy Labels
 
 The following labels are enforced or created automatically by the workflow stack:
 
-| Label                       | Purpose                                                 |
-| --------------------------- | ------------------------------------------------------- |
-| `ai-review-passed`          | Main AI review found no blocking issues                 |
-| `ai-review-concerns`        | Main AI review found blocking issues                    |
-| `security-review-passed`    | Security review found no significant issues             |
-| `security-review-concerns`  | Security review found significant issues                |
-| `deepseek-review-passed`    | DeepSeek code review found no issues (non-blocking)     |
-| `deepseek-review-concerns`  | DeepSeek code review found concerns (non-blocking)      |
-| `deps-review-passed`        | Dependabot PR remains auto-merge eligible               |
-| `deps-review-manual`        | Dependency PR needs manual review                       |
-| `deps-review-blocked`       | Dependency PR is blocked from auto-merge                |
-| `skip-improve`              | Skip the Claude+GSD improvement analysis flow           |
-| `planning-draft-open`       | A draft planning PR exists for follow-up work           |
-| `flow/draft`                | PR flow is paused while the PR is draft                 |
-| `flow/checks-pending`       | PR flow is waiting for required PR checks               |
-| `flow/checks-failed`        | PR flow is blocked by failed required PR checks         |
-| `flow/checks-unavailable`   | PR flow could not read completed required PR checks     |
-| `flow/review-pending`       | PR flow is waiting for review automation                |
-| `flow/review-blocked`       | PR flow is blocked by review or policy labels           |
-| `flow/review-failed`        | PR flow review automation failed                        |
-| `flow/improve-pending`      | PR flow is waiting for improvement intake               |
-| `flow/improve-failed`       | PR flow improvement intake failed                       |
-| `flow/finalizer-dispatched` | PR flow dispatched the finalizer for this PR head       |
-| `flow/manual-only`          | PR flow reached a manual-only finalizer path            |
-| `do-not-merge`              | Explicitly block finalizer approval and auto-merge      |
-| `auto-fix-approved`         | Maintainer explicitly approved issue auto-fix execution |
-| `antigravity-review-passed` | Antigravity AI code review found no blocking issues     |
-| `antigravity-review-concerns`| Antigravity AI code review found blocking concerns      |
+| Label                         | Purpose                                                 |
+| ----------------------------- | ------------------------------------------------------- |
+| `ai-review-passed`            | Main AI review found no blocking issues                 |
+| `ai-review-concerns`          | Main AI review found blocking issues                    |
+| `security-review-passed`      | Security review found no significant issues             |
+| `security-review-concerns`    | Security review found significant issues                |
+| `deepseek-review-passed`      | DeepSeek code review found no issues (non-blocking)     |
+| `deepseek-review-concerns`    | DeepSeek code review found concerns (non-blocking)      |
+| `deps-review-passed`          | Dependabot PR remains auto-merge eligible               |
+| `deps-review-manual`          | Dependency PR needs manual review                       |
+| `deps-review-blocked`         | Dependency PR is blocked from auto-merge                |
+| `skip-improve`                | Skip the Claude+GSD improvement analysis flow           |
+| `planning-draft-open`         | A draft planning PR exists for follow-up work           |
+| `flow/draft`                  | PR flow is paused while the PR is draft                 |
+| `flow/checks-pending`         | PR flow is waiting for required PR checks               |
+| `flow/checks-failed`          | PR flow is blocked by failed required PR checks         |
+| `flow/checks-unavailable`     | PR flow could not read completed required PR checks     |
+| `flow/review-pending`         | PR flow is waiting for review automation                |
+| `flow/review-blocked`         | PR flow is blocked by review or policy labels           |
+| `flow/review-failed`          | PR flow review automation failed                        |
+| `flow/improve-pending`        | PR flow is waiting for improvement intake               |
+| `flow/improve-failed`         | PR flow improvement intake failed                       |
+| `flow/finalizer-dispatched`   | PR flow dispatched the finalizer for this PR head       |
+| `flow/manual-only`            | PR flow reached a manual-only finalizer path            |
+| `do-not-merge`                | Explicitly block finalizer approval and auto-merge      |
+| `auto-fix-approved`           | Maintainer explicitly approved issue auto-fix execution |
+| `antigravity-review-passed`   | Antigravity AI code review found no blocking issues     |
+| `antigravity-review-concerns` | Antigravity AI code review found blocking concerns      |
 
 Existing operational labels still used by the repo include `auto-fix`, `needs-review`, `triaged`, `duplicate`, `fixed`, `canceled`, and `ci-failure`.
 
@@ -183,6 +208,7 @@ Always manual-only:
 - accepts `claude-full-output`; it defaults to `true` in this private repo but should default to `false` before public reusable workflow extraction
 - modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
 - workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; existing `actions: write` flows already satisfy this for CI-status MCP support
+- orchestrator-dispatched `workflow_dispatch` workers run as `github-actions[bot]`, so Claude/ZAI steps must pass `allowed-bots: github-actions,github-actions[bot],claude[bot]` when `orchestrated=true`; do not use wildcard bot allowance
 
 `run-deepseek`:
 

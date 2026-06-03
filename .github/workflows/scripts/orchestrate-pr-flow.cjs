@@ -12,7 +12,47 @@ const TIMING_NAMES = [
   'worker-runs',
   'labels',
   'dispatch',
+  'visibility',
 ];
+
+const DEFAULT_STATUS_CONFIG = {
+  aggregate: {
+    context: 'pr-flow/ready',
+    description: 'Required aggregate PR orchestration status',
+  },
+  workers: {
+    codeReview: {
+      context: 'pr-flow/code-review',
+      description: 'AI code review worker status',
+    },
+    securityReview: {
+      context: 'pr-flow/security-review',
+      description: 'AI security review worker status',
+    },
+    dependencyReview: {
+      context: 'pr-flow/dependency-review',
+      description: 'Dependency review worker status',
+    },
+    prImprove: {
+      context: 'pr-flow/pr-improve',
+      description: 'Optional PR improvement worker status',
+    },
+    finalizer: {
+      context: 'pr-flow/finalizer',
+      description: 'PR finalizer worker status',
+    },
+  },
+};
+
+const STATUS_WORKER_LABELS = {
+  codeReview: 'Code review',
+  securityReview: 'Security review',
+  dependencyReview: 'Dependency review',
+  prImprove: 'PR Improve',
+  finalizer: 'Finalizer',
+};
+
+const COMMENT_MARKER = '<!-- pr-flow-orchestration -->';
 
 const PR_NOT_FOUND_PATTERN =
   /Could not resolve to a PullRequest|no pull requests found|HTTP 404|Not Found/i;
@@ -200,6 +240,50 @@ function writeTempJson(prefix, value) {
   );
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
   return filePath;
+}
+
+function getRepoSlug() {
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!repo || !repo.includes('/')) {
+    throw new Error('GITHUB_REPOSITORY must be set to owner/repo.');
+  }
+  return repo;
+}
+
+function getCurrentRunUrl() {
+  const serverUrl = process.env.GITHUB_SERVER_URL || 'https://github.com';
+  const repo = process.env.GITHUB_REPOSITORY;
+  const runId = process.env.GITHUB_RUN_ID;
+  return repo && runId ? `${serverUrl}/${repo}/actions/runs/${runId}` : '';
+}
+
+function formatCommandError(error) {
+  const stderr = String(error?.stderr ?? '').trim();
+  const stdout = String(error?.stdout ?? '').trim();
+  const message = String(error?.message ?? '').trim();
+  return stderr || stdout || message || 'Command failed.';
+}
+
+function truncateStatusDescription(value) {
+  const normalized = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized.length > 140
+    ? `${normalized.slice(0, 137)}...`
+    : normalized;
+}
+
+function getStatusConfig(config) {
+  return {
+    aggregate: {
+      ...DEFAULT_STATUS_CONFIG.aggregate,
+      ...(config.statuses?.aggregate ?? {}),
+    },
+    workers: {
+      ...DEFAULT_STATUS_CONFIG.workers,
+      ...(config.statuses?.workers ?? {}),
+    },
+  };
 }
 
 function emptyPolicy() {
@@ -514,6 +598,585 @@ function summarizeWorkerRuns(workerRuns, workerName, pr) {
   return {
     active,
     latest: runs[0] ?? null,
+  };
+}
+
+function getWorkerSummary(workerRuns, workerName, pr) {
+  return summarizeWorkerRuns(workerRuns, workerName, pr);
+}
+
+function workerRunFailed(summary) {
+  return (
+    summary.latest &&
+    summary.latest.conclusion &&
+    summary.latest.conclusion !== 'success'
+  );
+}
+
+function workerRunSucceeded(summary) {
+  return summary.latest?.conclusion === 'success';
+}
+
+function getWorkerTargetUrl(summary, fallbackUrl) {
+  return summary.active?.url || summary.latest?.url || fallbackUrl;
+}
+
+function makeCommitStatus({
+  context,
+  state,
+  displayState = state,
+  description,
+  targetUrl,
+  details = '',
+}) {
+  return {
+    context,
+    state,
+    displayState,
+    description: truncateStatusDescription(description),
+    targetUrl,
+    details,
+  };
+}
+
+function makeWorkerStatus(statusConfig, workerName, values) {
+  const configured = statusConfig.workers[workerName];
+  return makeCommitStatus({
+    context: configured.context,
+    ...values,
+  });
+}
+
+function buildFlowVisibility({
+  pr,
+  config,
+  policy = emptyPolicy(),
+  decision,
+  workerRuns = {},
+  eventName,
+  event,
+  dispatchOutcome = null,
+  visibilityErrors = [],
+  currentRunUrl = getCurrentRunUrl(),
+}) {
+  const statusConfig = getStatusConfig(config);
+  const labels = getLabelsForDecision(pr, config, eventName, event);
+  const workers = config.workers ?? {};
+  const codeRuns = getWorkerSummary(workerRuns, 'codeReview', pr);
+  const dependencyRuns = getWorkerSummary(workerRuns, 'dependencyReview', pr);
+  const improveRuns = getWorkerSummary(workerRuns, 'prImprove', pr);
+  const finalizerRuns = getWorkerSummary(workerRuns, 'finalizer', pr);
+  const dispatchKey = decision.dispatch?.key ?? null;
+  const dispatchFailed = dispatchOutcome?.ok === false;
+  const dispatchError = dispatchOutcome?.error ?? '';
+  const needsDependencyReview =
+    Boolean(policy.dependabot) &&
+    pathsMatch(pr.files, workers.dependencyReview?.paths);
+  const shouldImprove =
+    !policy.dependabot &&
+    policy.should_analyze &&
+    !hasAny(labels, workers.prImprove?.skipLabels) &&
+    !hasAny(labels, workers.prImprove?.successLabels);
+  const finalizerAlreadyDispatched = labels.includes(
+    'flow/finalizer-dispatched',
+  );
+  const statuses = {};
+
+  function dispatchErrorFor(workerName) {
+    if (!dispatchFailed) return null;
+    if (dispatchKey === workerName) return dispatchError;
+    if (workerName === 'securityReview' && dispatchKey === 'codeReview') {
+      return dispatchError;
+    }
+    return null;
+  }
+
+  function waitingStatus(workerName, description, targetUrl = currentRunUrl) {
+    return makeWorkerStatus(statusConfig, workerName, {
+      state: 'pending',
+      displayState: 'pending',
+      description,
+      targetUrl,
+    });
+  }
+
+  function runningStatus(workerName, summary, description) {
+    return makeWorkerStatus(statusConfig, workerName, {
+      state: 'pending',
+      displayState: 'running',
+      description,
+      targetUrl: getWorkerTargetUrl(summary, currentRunUrl),
+    });
+  }
+
+  function successStatus(workerName, description, targetUrl = currentRunUrl) {
+    return makeWorkerStatus(statusConfig, workerName, {
+      state: 'success',
+      displayState: 'success',
+      description,
+      targetUrl,
+    });
+  }
+
+  function skippedStatus(workerName, description) {
+    return makeWorkerStatus(statusConfig, workerName, {
+      state: 'success',
+      displayState: 'N/A',
+      description,
+      targetUrl: currentRunUrl,
+    });
+  }
+
+  function failureStatus(workerName, description, targetUrl = currentRunUrl) {
+    return makeWorkerStatus(statusConfig, workerName, {
+      state: 'failure',
+      displayState: 'failure',
+      description,
+      targetUrl,
+    });
+  }
+
+  function errorStatus(workerName, description) {
+    return makeWorkerStatus(statusConfig, workerName, {
+      state: 'error',
+      displayState: 'error',
+      description,
+      targetUrl: currentRunUrl,
+    });
+  }
+
+  const codeDispatchError = dispatchErrorFor('codeReview');
+  if (policy.dependabot) {
+    statuses.codeReview = skippedStatus(
+      'codeReview',
+      'N/A: Dependabot PRs use dependency review.',
+    );
+  } else if (codeDispatchError) {
+    statuses.codeReview = errorStatus(
+      'codeReview',
+      `Code review dispatch failed: ${codeDispatchError}`,
+    );
+  } else if (hasAny(labels, ['ai-review-concerns'])) {
+    statuses.codeReview = failureStatus(
+      'codeReview',
+      'Code review concerns are present.',
+    );
+  } else if (hasAny(labels, ['ai-review-passed'])) {
+    statuses.codeReview = successStatus(
+      'codeReview',
+      'Code review signal passed.',
+      getWorkerTargetUrl(codeRuns, currentRunUrl),
+    );
+  } else if (codeRuns.active) {
+    statuses.codeReview = runningStatus(
+      'codeReview',
+      codeRuns,
+      'Code review is running.',
+    );
+  } else if (workerRunFailed(codeRuns)) {
+    statuses.codeReview = failureStatus(
+      'codeReview',
+      'Code review workflow failed.',
+      getWorkerTargetUrl(codeRuns, currentRunUrl),
+    );
+  } else if (dispatchKey === 'codeReview') {
+    statuses.codeReview = waitingStatus(
+      'codeReview',
+      'Code review was dispatched.',
+    );
+  } else {
+    statuses.codeReview = waitingStatus(
+      'codeReview',
+      'Waiting for code review signal.',
+    );
+  }
+
+  const securityDispatchError = dispatchErrorFor('securityReview');
+  if (policy.dependabot) {
+    statuses.securityReview = skippedStatus(
+      'securityReview',
+      'N/A: Dependabot PRs use dependency review.',
+    );
+  } else if (securityDispatchError) {
+    statuses.securityReview = errorStatus(
+      'securityReview',
+      `Security review dispatch failed: ${securityDispatchError}`,
+    );
+  } else if (hasAny(labels, ['security-review-concerns'])) {
+    statuses.securityReview = failureStatus(
+      'securityReview',
+      'Security review concerns are present.',
+    );
+  } else if (hasAny(labels, ['security-review-passed'])) {
+    statuses.securityReview = successStatus(
+      'securityReview',
+      'Security review signal passed.',
+      getWorkerTargetUrl(codeRuns, currentRunUrl),
+    );
+  } else if (codeRuns.active) {
+    statuses.securityReview = runningStatus(
+      'securityReview',
+      codeRuns,
+      'Security review is queued in the code review workflow.',
+    );
+  } else if (workerRunFailed(codeRuns)) {
+    statuses.securityReview = failureStatus(
+      'securityReview',
+      'Code review workflow failed before the security signal.',
+      getWorkerTargetUrl(codeRuns, currentRunUrl),
+    );
+  } else if (dispatchKey === 'codeReview') {
+    statuses.securityReview = waitingStatus(
+      'securityReview',
+      'Security review was dispatched with code review.',
+    );
+  } else {
+    statuses.securityReview = waitingStatus(
+      'securityReview',
+      'Waiting for security review signal.',
+    );
+  }
+
+  const dependencyDispatchError = dispatchErrorFor('dependencyReview');
+  if (!needsDependencyReview) {
+    statuses.dependencyReview = skippedStatus(
+      'dependencyReview',
+      'N/A: Dependency review is not required for this PR.',
+    );
+  } else if (dependencyDispatchError) {
+    statuses.dependencyReview = errorStatus(
+      'dependencyReview',
+      `Dependency review dispatch failed: ${dependencyDispatchError}`,
+    );
+  } else if (hasAny(labels, ['deps-review-manual', 'deps-review-blocked'])) {
+    statuses.dependencyReview = failureStatus(
+      'dependencyReview',
+      'Dependency review is manual or blocked.',
+    );
+  } else if (hasAny(labels, ['deps-review-passed'])) {
+    statuses.dependencyReview = successStatus(
+      'dependencyReview',
+      'Dependency review signal passed.',
+      getWorkerTargetUrl(dependencyRuns, currentRunUrl),
+    );
+  } else if (dependencyRuns.active) {
+    statuses.dependencyReview = runningStatus(
+      'dependencyReview',
+      dependencyRuns,
+      'Dependency review is running.',
+    );
+  } else if (workerRunFailed(dependencyRuns)) {
+    statuses.dependencyReview = failureStatus(
+      'dependencyReview',
+      'Dependency review workflow failed.',
+      getWorkerTargetUrl(dependencyRuns, currentRunUrl),
+    );
+  } else if (dispatchKey === 'dependencyReview') {
+    statuses.dependencyReview = waitingStatus(
+      'dependencyReview',
+      'Dependency review was dispatched.',
+    );
+  } else {
+    statuses.dependencyReview = waitingStatus(
+      'dependencyReview',
+      'Waiting for dependency review signal.',
+    );
+  }
+
+  const improveDispatchError = dispatchErrorFor('prImprove');
+  if (!shouldImprove) {
+    statuses.prImprove = skippedStatus(
+      'prImprove',
+      'N/A: PR Improve is not required for this PR.',
+    );
+  } else if (improveDispatchError) {
+    statuses.prImprove = errorStatus(
+      'prImprove',
+      `PR Improve dispatch failed: ${improveDispatchError}`,
+    );
+  } else if (hasAny(labels, workers.prImprove?.successLabels)) {
+    statuses.prImprove = successStatus(
+      'prImprove',
+      'PR Improve completed.',
+      getWorkerTargetUrl(improveRuns, currentRunUrl),
+    );
+  } else if (improveRuns.active) {
+    statuses.prImprove = runningStatus(
+      'prImprove',
+      improveRuns,
+      'PR Improve is running.',
+    );
+  } else if (workerRunFailed(improveRuns)) {
+    statuses.prImprove = failureStatus(
+      'prImprove',
+      'PR Improve workflow failed.',
+      getWorkerTargetUrl(improveRuns, currentRunUrl),
+    );
+  } else if (dispatchKey === 'prImprove') {
+    statuses.prImprove = waitingStatus(
+      'prImprove',
+      'PR Improve was dispatched.',
+    );
+  } else {
+    statuses.prImprove = waitingStatus('prImprove', 'Waiting for PR Improve.');
+  }
+
+  const finalizerDispatchError = dispatchErrorFor('finalizer');
+  if (finalizerDispatchError) {
+    statuses.finalizer = errorStatus(
+      'finalizer',
+      `Finalizer dispatch failed: ${finalizerDispatchError}`,
+    );
+  } else if (finalizerRuns.active) {
+    statuses.finalizer = runningStatus(
+      'finalizer',
+      finalizerRuns,
+      'Finalizer is running.',
+    );
+  } else if (workerRunSucceeded(finalizerRuns)) {
+    statuses.finalizer = successStatus(
+      'finalizer',
+      'Finalizer completed.',
+      getWorkerTargetUrl(finalizerRuns, currentRunUrl),
+    );
+  } else if (workerRunFailed(finalizerRuns)) {
+    statuses.finalizer = failureStatus(
+      'finalizer',
+      'Finalizer workflow failed.',
+      getWorkerTargetUrl(finalizerRuns, currentRunUrl),
+    );
+  } else if (dispatchKey === 'finalizer') {
+    statuses.finalizer = waitingStatus(
+      'finalizer',
+      'Finalizer was dispatched.',
+    );
+  } else if (finalizerAlreadyDispatched) {
+    statuses.finalizer = waitingStatus(
+      'finalizer',
+      'Finalizer was dispatched and has not completed yet.',
+    );
+  } else {
+    statuses.finalizer = waitingStatus(
+      'finalizer',
+      'Waiting for prior orchestration gates.',
+    );
+  }
+
+  const blockingWorker = Object.values(statuses).find((status) =>
+    ['failure', 'error'].includes(status.state),
+  );
+  let aggregateState = 'pending';
+  let aggregateDescription = decision.reason || 'PR orchestration is pending.';
+  let aggregateDisplayState = 'pending';
+
+  if (String(pr.state).toUpperCase() !== 'OPEN' || pr.mergedAt) {
+    aggregateState = 'success';
+    aggregateDisplayState = 'success';
+    aggregateDescription = 'PR is closed or already merged.';
+  } else if (visibilityErrors.length > 0) {
+    aggregateState = 'error';
+    aggregateDisplayState = 'error';
+    aggregateDescription = visibilityErrors[0];
+  } else if (dispatchFailed) {
+    aggregateState = 'error';
+    aggregateDisplayState = 'error';
+    aggregateDescription = `Worker dispatch failed: ${dispatchError}`;
+  } else if (decision.checkStatus?.status === 'unavailable') {
+    aggregateState = 'error';
+    aggregateDisplayState = 'error';
+    aggregateDescription =
+      decision.checkStatus.reason || 'Required checks could not be read.';
+  } else if (
+    [
+      'flow/checks-failed',
+      'flow/review-blocked',
+      'flow/review-failed',
+      'flow/improve-failed',
+    ].includes(decision.state)
+  ) {
+    aggregateState = 'failure';
+    aggregateDisplayState = 'failure';
+  } else if (statuses.finalizer.state === 'failure') {
+    aggregateState = 'failure';
+    aggregateDisplayState = 'failure';
+    aggregateDescription = statuses.finalizer.description;
+  } else if (statuses.finalizer.state === 'success') {
+    aggregateState = 'success';
+    aggregateDisplayState = 'success';
+    aggregateDescription = 'PR orchestration gates completed.';
+  } else if (
+    blockingWorker &&
+    blockingWorker.context !== statuses.prImprove.context
+  ) {
+    aggregateState = blockingWorker.state;
+    aggregateDisplayState = blockingWorker.displayState;
+    aggregateDescription = blockingWorker.description;
+  }
+
+  const aggregate = makeCommitStatus({
+    context: statusConfig.aggregate.context,
+    state: aggregateState,
+    displayState: aggregateDisplayState,
+    description: aggregateDescription,
+    targetUrl: currentRunUrl,
+  });
+
+  return {
+    aggregate,
+    workers: statuses,
+    orderedStatuses: [
+      aggregate,
+      statuses.codeReview,
+      statuses.securityReview,
+      statuses.dependencyReview,
+      statuses.prImprove,
+      statuses.finalizer,
+    ],
+  };
+}
+
+function renderFlowComment({
+  pr,
+  decision,
+  visibility,
+  dispatchOutcome = null,
+}) {
+  const statusLines = Object.entries(visibility.workers).map(
+    ([workerName, status]) => {
+      const label = STATUS_WORKER_LABELS[workerName] ?? workerName;
+      const link = status.targetUrl ? `[run](${status.targetUrl})` : '';
+      return `| ${label} | ${status.displayState} | ${status.description} | ${link} |`;
+    },
+  );
+  const dispatchLine = dispatchOutcome
+    ? dispatchOutcome.ok
+      ? `- Dispatch: ${decision.dispatch?.key ?? 'none'} succeeded`
+      : `- Dispatch: ${decision.dispatch?.key ?? 'none'} failed: ${dispatchOutcome.error}`
+    : `- Dispatch: ${decision.dispatch?.key ?? 'none'}`;
+
+  return [
+    COMMENT_MARKER,
+    '## PR Flow Orchestration',
+    '',
+    `- Head SHA: \`${pr.headSha}\``,
+    `- Aggregate: **${visibility.aggregate.displayState}** (${visibility.aggregate.context})`,
+    `- Decision: ${decision.state ?? 'none'}`,
+    `- Reason: ${decision.reason}`,
+    dispatchLine,
+    '',
+    '| Worker | Status | Details | Link |',
+    '| --- | --- | --- | --- |',
+    ...statusLines,
+  ].join('\n');
+}
+
+function publishCommitStatus(pr, status) {
+  const repo = getRepoSlug();
+  const payloadFile = writeTempJson('pr-flow-status', {
+    state: status.state,
+    context: status.context,
+    description: status.description,
+    target_url: status.targetUrl || undefined,
+  });
+
+  try {
+    run('gh', [
+      'api',
+      '-X',
+      'POST',
+      `repos/${repo}/statuses/${pr.headSha}`,
+      '--input',
+      payloadFile,
+    ]);
+  } finally {
+    fs.rmSync(payloadFile, { force: true });
+  }
+}
+
+function publishFlowStatuses(pr, visibility) {
+  for (const status of visibility.orderedStatuses) {
+    publishCommitStatus(pr, status);
+  }
+}
+
+function upsertFlowComment(pr, body) {
+  const repo = getRepoSlug();
+  const comments = runJson(
+    'gh',
+    ['api', `repos/${repo}/issues/${pr.number}/comments`, '--paginate'],
+    [],
+  );
+  const existing = comments.find(
+    (comment) =>
+      comment.user?.login === 'github-actions[bot]' &&
+      String(comment.body ?? '').includes(COMMENT_MARKER),
+  );
+  const payloadFile = writeTempJson('pr-flow-comment', { body });
+
+  try {
+    if (existing) {
+      run('gh', [
+        'api',
+        '-X',
+        'PATCH',
+        `repos/${repo}/issues/comments/${existing.id}`,
+        '--input',
+        payloadFile,
+      ]);
+      return;
+    }
+
+    run('gh', [
+      'api',
+      '-X',
+      'POST',
+      `repos/${repo}/issues/${pr.number}/comments`,
+      '--input',
+      payloadFile,
+    ]);
+  } finally {
+    fs.rmSync(payloadFile, { force: true });
+  }
+}
+
+function collectConfiguredWorkerRuns(config, workerRuns, getWorkerRuns) {
+  for (const workerName of Object.keys(config.workers ?? {})) {
+    if (workerRuns[workerName] === undefined) {
+      workerRuns[workerName] = getWorkerRuns(workerName);
+    }
+  }
+  return workerRuns;
+}
+
+function decisionWithDispatchError({ decision, pr, config, errorMessage }) {
+  const failureStateByWorker = {
+    codeReview: 'flow/review-failed',
+    dependencyReview: 'flow/review-failed',
+    prImprove: 'flow/improve-failed',
+    finalizer: 'flow/finalizer-dispatched',
+  };
+  const key = decision.dispatch?.key;
+  const state = failureStateByWorker[key] ?? decision.state;
+  const extraLabels = decision.desiredLabels.includes('flow/manual-only')
+    ? ['flow/manual-only']
+    : [];
+  const desiredLabels = unique([state, ...extraLabels]);
+  const presentFlowLabels = allFlowLabels(config).filter((label) =>
+    pr.labels.includes(label),
+  );
+
+  return {
+    ...decision,
+    state,
+    reason: `Failed to dispatch ${key ?? 'worker'}: ${errorMessage}`,
+    desiredLabels,
+    labelsToAdd: desiredLabels.filter((label) => !pr.labels.includes(label)),
+    labelsToRemove: unique([
+      ...presentFlowLabels.filter((label) => !desiredLabels.includes(label)),
+      ...decision.labelsToRemove.filter(
+        (label) => !desiredLabels.includes(label),
+      ),
+    ]),
   };
 }
 
@@ -969,39 +1632,142 @@ function main() {
     config,
     checkStatus,
   });
+  let appliedDecision = decision;
+  let dispatchOutcome = null;
+  let visibility = null;
+  let fatalError = null;
+  const visibilityErrors = [];
 
   if (!dryRun) {
-    timeStep(timings, 'labels', () => {
-      if (ensureLabelsRequested) {
-        ensureLabels(config);
+    if (decision.dispatch) {
+      try {
+        timeStep(timings, 'dispatch', () =>
+          dispatchWorker(pr, decision.dispatch),
+        );
+        dispatchOutcome = { ok: true, error: null };
+      } catch (error) {
+        const errorMessage = formatCommandError(error);
+        dispatchOutcome = { ok: false, error: errorMessage };
+        appliedDecision = decisionWithDispatchError({
+          decision,
+          pr,
+          config,
+          errorMessage,
+        });
+        console.error(`Worker dispatch failed: ${errorMessage}`);
       }
-      syncLabels(pr.number, decision);
+    }
+
+    timeStep(timings, 'labels', () => {
+      try {
+        if (ensureLabelsRequested) {
+          ensureLabels(config);
+        }
+        syncLabels(pr.number, appliedDecision);
+      } catch (error) {
+        const errorMessage = formatCommandError(error);
+        visibilityErrors.push(`Label update failed: ${errorMessage}`);
+        console.error(`Label update failed: ${errorMessage}`);
+      }
     });
 
-    if (decision.dispatch) {
-      timeStep(timings, 'dispatch', () =>
-        dispatchWorker(pr, decision.dispatch),
+    timeStep(timings, 'visibility', () => {
+      collectConfiguredWorkerRuns(config, workerRuns, getWorkerRuns);
+      visibility = buildFlowVisibility({
+        pr,
+        config,
+        policy,
+        decision: appliedDecision,
+        workerRuns,
+        eventName,
+        event,
+        dispatchOutcome,
+        visibilityErrors,
+      });
+
+      publishFlowStatuses(pr, visibility);
+
+      try {
+        upsertFlowComment(
+          pr,
+          renderFlowComment({
+            pr,
+            decision: appliedDecision,
+            visibility,
+            dispatchOutcome,
+          }),
+        );
+      } catch (error) {
+        const errorMessage = formatCommandError(error);
+        const commentError = `PR flow comment update failed: ${errorMessage}`;
+        visibilityErrors.push(commentError);
+        const errorVisibility = buildFlowVisibility({
+          pr,
+          config,
+          policy,
+          decision: appliedDecision,
+          workerRuns,
+          eventName,
+          event,
+          dispatchOutcome,
+          visibilityErrors,
+        });
+        visibility = errorVisibility;
+        publishCommitStatus(pr, errorVisibility.aggregate);
+        fatalError = new Error(commentError);
+      }
+    });
+
+    if (dispatchOutcome?.ok === false || visibilityErrors.length > 0) {
+      fatalError = new Error(
+        [
+          dispatchOutcome?.ok === false
+            ? `Worker dispatch failed: ${dispatchOutcome.error}`
+            : '',
+          ...visibilityErrors,
+        ]
+          .filter(Boolean)
+          .join('; '),
       );
     }
+  } else {
+    visibility = buildFlowVisibility({
+      pr,
+      config,
+      policy,
+      decision: appliedDecision,
+      workerRuns,
+      eventName,
+      event,
+      dispatchOutcome,
+      visibilityErrors,
+    });
   }
 
   const summary = {
     status: dryRun ? 'dry-run' : 'applied',
     pr: pr.number,
     headSha: pr.headSha,
-    state: decision.state,
-    reason: decision.reason,
-    dispatch: decision.dispatch,
-    desiredLabels: decision.desiredLabels,
-    labelsToAdd: decision.labelsToAdd,
-    labelsToRemove: decision.labelsToRemove,
-    checkStatus: decision.checkStatus,
+    state: appliedDecision.state,
+    reason: appliedDecision.reason,
+    dispatch: appliedDecision.dispatch,
+    dispatchOutcome,
+    desiredLabels: appliedDecision.desiredLabels,
+    labelsToAdd: appliedDecision.labelsToAdd,
+    labelsToRemove: appliedDecision.labelsToRemove,
+    checkStatus: appliedDecision.checkStatus,
     checkSource: checkEvidence.source,
     checkSourceReason: checkEvidence.reason,
+    visibility,
+    visibilityErrors,
     timings,
   };
 
   console.log(JSON.stringify(summary, null, 2));
+
+  if (fatalError) {
+    throw fatalError;
+  }
 }
 
 if (require.main === module) {
@@ -1009,11 +1775,14 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildFlowVisibility,
   collectCheckEvidence,
+  decisionWithDispatchError,
   getLabelsForDecision,
   getRequiredCheckStatus,
   makeDecision,
   readConfig,
+  renderFlowComment,
   resolvePrNumber,
   summarizeWorkerRuns,
 };

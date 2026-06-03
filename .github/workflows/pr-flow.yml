@@ -13,7 +13,8 @@ on:
       - labeled
       - unlabeled
   workflow_run:
-    workflows: ['CI', 'Code Review', 'Dependency Review', 'PR Improve']
+    workflows:
+      ['CI', 'Code Review', 'Dependency Review', 'PR Improve', 'PR Finalizer']
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -30,7 +31,7 @@ on:
 permissions:
   contents: read
   checks: read
-  statuses: read
+  statuses: write
   pull-requests: write
   issues: write
   actions: write

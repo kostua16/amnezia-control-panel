@@ -11,6 +11,10 @@ on:
         description: 'PR Number to review'
         required: true
         type: string
+      head_sha:
+        description: 'PR head SHA for run-name correlation'
+        required: false
+        type: string
 
 permissions:
   contents: write

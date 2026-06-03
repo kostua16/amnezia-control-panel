@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: verifying
 stopped_at: context exhaustion at 77% (2026-05-03)
-last_updated: "2026-06-03T12:00:16Z"
-last_activity: 2026-06-03 -- Fix PR orchestrator stalled review fan-out
+last_updated: '2026-06-03T16:52:04Z'
+last_activity: 2026-06-03 -- Implement PR orchestrator visibility and required aggregate status
 progress:
   total_phases: 23
   completed_phases: 20
@@ -29,7 +29,7 @@ progress:
 Phase: 12.15 of 12.15 (Requirements reconciliation & middleware hardening) -- PLANNED
 Plan: 0 of 0 in current phase (planned)
 Status: 12.14 complete (GEO-03/04 + TSCL-01-03 verified, audit 19/20)
-Last activity: 2026-06-03 -- Fix PR orchestrator stalled review fan-out
+Last activity: 2026-06-03 -- Implement PR orchestrator visibility and required aggregate status
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -43,26 +43,26 @@ Progress: [█████████] 100% (v1.1 complete; audit remediation i
 
 **By Phase:**
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 11.1 | 1 | 7min | 7min |
-| 11.2 | 3 | 25min | 8min |
-| 11.3 | 3 | 12min | 4min |
-| 11.4-11.8 | -- | -- | -- |
-| 12.1 | 1 | 3min | 3min |
-| 12.2 | 1 | 4min | 4min |
-| 12.3 | 1 | 7min | 7min |
-| 12.4 | 1 | 5min | 5min |
-| 12.5 | 1 | 4min | 4min |
-| 12.6 | 1 | 5min | 5min |
-| 12.7 | 1 | 4min | 4min |
-| 12.8 | 2 | -- | -- |  (planned, not yet executed)
-| 12.9 | 1 | 3min | 3min |
+| Phase     | Plans | Total | Avg/Plan |
+| --------- | ----- | ----- | -------- | --------------------------- |
+| 11.1      | 1     | 7min  | 7min     |
+| 11.2      | 3     | 25min | 8min     |
+| 11.3      | 3     | 12min | 4min     |
+| 11.4-11.8 | --    | --    | --       |
+| 12.1      | 1     | 3min  | 3min     |
+| 12.2      | 1     | 4min  | 4min     |
+| 12.3      | 1     | 7min  | 7min     |
+| 12.4      | 1     | 5min  | 5min     |
+| 12.5      | 1     | 4min  | 4min     |
+| 12.6      | 1     | 5min  | 5min     |
+| 12.7      | 1     | 4min  | 4min     |
+| 12.8      | 2     | --    | --       | (planned, not yet executed) |
+| 12.9      | 1     | 3min  | 3min     |
 
 - Last 5 plans: 12.9-01 (3min), 12.7-01 (4min), 12.6-01 (5min), 12.5-01 (4min), 12.4-01 (5min)
 - Trend: stable
 
-*Updated after each plan completion*
+_Updated after each plan completion_
 
 ## Accumulated Context
 
@@ -82,7 +82,7 @@ Recent decisions affecting current work:
 - 12.1-01: Public API routes excluded from JWT: auth/login, health, ws, sync/receive, sync/apply
 - 12.1-01: auth/me uses decodeJwt (no verify) since middleware already validated token
 - 12.2-01: Custom server (server.mjs) over instrumentation-only for Socket.IO -- register() provides no HTTP server access
-- 12.2-01: globalThis.__socketIO bridge -- server.mjs (plain JS) cannot import .ts, io instance shared via global
+- 12.2-01: globalThis.\_\_socketIO bridge -- server.mjs (plain JS) cannot import .ts, io instance shared via global
 - 12.2-01: instrumentation.ts starts broadcaster -- Next.js compiles .ts imports in register(), broadcaster needs DB access
 - 12.5-01: Tab toggle over Tabs component -- no shadcn/ui Tabs available, custom button-based segment control
 - 12.5-01: buildServerPanelMap uses Tailscale address matching -- no FK between Server and RemotePanel in schema
@@ -102,11 +102,11 @@ None yet.
 
 ## Deferred Items
 
-| Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| Tech debt | In-memory geo-routing state lost on restart | Being addressed in Phase 11.5 | v1.0 close |
-| Integration | applyChainConfig stub needs real CLI commands | Being addressed in Phase 11.4 | v1.0 close |
-| TS errors | Pre-existing TS errors in chain-flow-editor.tsx, chain-presets/route.ts | Out of scope for 12.4 | 12.4 |
+| Category    | Item                                                                    | Status                        | Deferred At |
+| ----------- | ----------------------------------------------------------------------- | ----------------------------- | ----------- |
+| Tech debt   | In-memory geo-routing state lost on restart                             | Being addressed in Phase 11.5 | v1.0 close  |
+| Integration | applyChainConfig stub needs real CLI commands                           | Being addressed in Phase 11.4 | v1.0 close  |
+| TS errors   | Pre-existing TS errors in chain-flow-editor.tsx, chain-presets/route.ts | Out of scope for 12.4         | 12.4        |
 
 ## Session Continuity
 
@@ -116,15 +116,17 @@ Resume file: None
 
 ## Quick Tasks Completed
 
-| Date       | Slug / ID        | Summary                                      |
-| ---------- | ---------------- | -------------------------------------------- |
-| 2026-04-30 | 260430-q7v       | Dev default port 3333; override via CLI/PORT |
-| 2026-04-30 | 260430-r2n       | npm `--port` shorthand support + Next lock behavior |
-| 2026-05-29 | 260529-geist     | Self-host Geist fonts (dev6 gstatic block, CI #26663122321) |
-| 2026-05-31 | 260531-pol       | Issue #152 turn budgets + Claude failed-tool reporting |
-| 2026-05-31 | 260531-qyb       | Refactor `scan-claude-logs` into tested CJS scanner |
-| 2026-06-03 | 260603-nhf       | Fix PR orchestrator stalled review fan-out |
+| Date       | Slug / ID    | Summary                                                     |
+| ---------- | ------------ | ----------------------------------------------------------- |
+| 2026-04-30 | 260430-q7v   | Dev default port 3333; override via CLI/PORT                |
+| 2026-04-30 | 260430-r2n   | npm `--port` shorthand support + Next lock behavior         |
+| 2026-05-29 | 260529-geist | Self-host Geist fonts (dev6 gstatic block, CI #26663122321) |
+| 2026-05-31 | 260531-pol   | Issue #152 turn budgets + Claude failed-tool reporting      |
+| 2026-05-31 | 260531-qyb   | Refactor `scan-claude-logs` into tested CJS scanner         |
+| 2026-06-03 | 260603-nhf   | Fix PR orchestrator stalled review fan-out                  |
+| 2026-06-03 | 260603-u1d   | PR orchestrator visibility + required aggregate status      |
 
 ---
-*State initialized: 2026-04-27*
-*Last updated: 2026-06-03 - Fix PR orchestrator stalled review fan-out (quick 260603-nhf)*
+
+_State initialized: 2026-04-27_
+_Last updated: 2026-06-03 - Implement PR orchestrator visibility and required aggregate status (quick 260603-u1d)_

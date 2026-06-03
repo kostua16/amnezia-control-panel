@@ -4,10 +4,13 @@ import { describe, it } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const {
+  buildFlowVisibility,
   collectCheckEvidence,
+  decisionWithDispatchError,
   getLabelsForDecision,
   makeDecision,
   readConfig,
+  renderFlowComment,
   resolvePrNumber,
 } = require('../../../.github/workflows/scripts/orchestrate-pr-flow.cjs');
 
@@ -114,6 +117,34 @@ const config = {
         names: requiredCheckNames,
       },
     ],
+  },
+  statuses: {
+    aggregate: {
+      context: 'pr-flow/ready',
+      description: 'Required aggregate PR orchestration status',
+    },
+    workers: {
+      codeReview: {
+        context: 'pr-flow/code-review',
+        description: 'AI code review worker status',
+      },
+      securityReview: {
+        context: 'pr-flow/security-review',
+        description: 'AI security review worker status',
+      },
+      dependencyReview: {
+        context: 'pr-flow/dependency-review',
+        description: 'Dependency review worker status',
+      },
+      prImprove: {
+        context: 'pr-flow/pr-improve',
+        description: 'Optional PR improvement worker status',
+      },
+      finalizer: {
+        context: 'pr-flow/finalizer',
+        description: 'PR finalizer worker status',
+      },
+    },
   },
   workers: {
     codeReview: {
@@ -586,6 +617,167 @@ describe('makeDecision', () => {
   });
 });
 
+describe('buildFlowVisibility', () => {
+  it('publishes pending aggregate and worker statuses for a dispatched code review', () => {
+    const pr = prFixture();
+    const decision = decide({ pr });
+    const visibility = buildFlowVisibility({
+      pr,
+      config,
+      policy: policyFixture(),
+      decision,
+      workerRuns: {},
+      eventName: 'pull_request_target',
+      event: { action: 'ready_for_review' },
+      currentRunUrl: 'https://github.example.test/run/orchestrator',
+    });
+
+    assert.equal(visibility.aggregate.context, 'pr-flow/ready');
+    assert.equal(visibility.aggregate.state, 'pending');
+    assert.equal(visibility.workers.codeReview.state, 'pending');
+    assert.equal(visibility.workers.securityReview.state, 'pending');
+    assert.equal(visibility.workers.dependencyReview.displayState, 'N/A');
+    assert.equal(visibility.workers.finalizer.state, 'pending');
+  });
+
+  it('marks aggregate ready when the finalizer completed for the head SHA', () => {
+    const pr = prFixture({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/finalizer-dispatched',
+      ],
+    });
+    const workerRuns = {
+      finalizer: [
+        {
+          displayTitle: `PR #181 @ ${headSha}`,
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: '2026-06-03T16:00:00Z',
+          url: 'https://github.example.test/run/finalizer',
+        },
+      ],
+    };
+    const decision = decide({ pr, workerRuns });
+    const visibility = buildFlowVisibility({
+      pr,
+      config,
+      policy: policyFixture(),
+      decision,
+      workerRuns,
+      eventName: 'workflow_run',
+      event: workflowRunEvent({ workflow_name: 'PR Finalizer' }),
+      currentRunUrl: 'https://github.example.test/run/orchestrator',
+    });
+
+    assert.equal(visibility.aggregate.state, 'success');
+    assert.equal(visibility.workers.finalizer.state, 'success');
+    assert.equal(
+      visibility.workers.finalizer.targetUrl,
+      workerRuns.finalizer[0].url,
+    );
+  });
+
+  it('surfaces dispatch failures as error statuses and a failed flow label', () => {
+    const pr = prFixture();
+    const decision = decide({ pr });
+    const failedDecision = decisionWithDispatchError({
+      decision,
+      pr,
+      config,
+      errorMessage: 'workflow not found',
+    });
+    const visibility = buildFlowVisibility({
+      pr,
+      config,
+      policy: policyFixture(),
+      decision: failedDecision,
+      workerRuns: {},
+      eventName: 'pull_request_target',
+      event: { action: 'ready_for_review' },
+      dispatchOutcome: { ok: false, error: 'workflow not found' },
+      currentRunUrl: 'https://github.example.test/run/orchestrator',
+    });
+
+    assert.equal(failedDecision.state, 'flow/review-failed');
+    assert.deepEqual(failedDecision.labelsToAdd, ['flow/review-failed']);
+    assert.equal(visibility.aggregate.state, 'error');
+    assert.equal(visibility.workers.codeReview.state, 'error');
+    assert.equal(visibility.workers.securityReview.state, 'error');
+  });
+
+  it('keeps optional PR Improve failure visible without blocking ready aggregate', () => {
+    const pr = prFixture({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/finalizer-dispatched',
+      ],
+    });
+    const policy = policyFixture({ should_analyze: true });
+    const workerRuns = {
+      prImprove: [
+        {
+          displayTitle: `PR #181 @ ${headSha}`,
+          status: 'completed',
+          conclusion: 'failure',
+          createdAt: '2026-06-03T15:58:00Z',
+          url: 'https://github.example.test/run/improve',
+        },
+      ],
+      finalizer: [
+        {
+          displayTitle: `PR #181 @ ${headSha}`,
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: '2026-06-03T16:00:00Z',
+          url: 'https://github.example.test/run/finalizer',
+        },
+      ],
+    };
+    const decision = decide({ pr, policy, workerRuns });
+    const visibility = buildFlowVisibility({
+      pr,
+      config,
+      policy,
+      decision,
+      workerRuns,
+      eventName: 'workflow_run',
+      event: workflowRunEvent({ workflow_name: 'PR Finalizer' }),
+      currentRunUrl: 'https://github.example.test/run/orchestrator',
+    });
+
+    assert.equal(visibility.workers.prImprove.state, 'failure');
+    assert.equal(visibility.aggregate.state, 'success');
+  });
+
+  it('renders a sticky PR orchestration comment with worker links', () => {
+    const pr = prFixture();
+    const decision = decide({ pr });
+    const visibility = buildFlowVisibility({
+      pr,
+      config,
+      policy: policyFixture(),
+      decision,
+      workerRuns: {},
+      eventName: 'pull_request_target',
+      event: { action: 'ready_for_review' },
+      currentRunUrl: 'https://github.example.test/run/orchestrator',
+    });
+    const body = renderFlowComment({
+      pr,
+      decision,
+      visibility,
+      dispatchOutcome: { ok: true, error: null },
+    });
+
+    assert.match(body, /<!-- pr-flow-orchestration -->/);
+    assert.match(body, /\| Code review \| pending \|/);
+    assert.match(body, /Aggregate: \*\*pending\*\* \(pr-flow\/ready\)/);
+  });
+});
+
 describe('resolvePrNumber', () => {
   it('skips issue-only workflow_run titles', () => {
     const prNumber = resolvePrNumber(
@@ -624,5 +816,10 @@ describe('readConfig', () => {
 
     assert.equal(loaded.workers.codeReview.workflow, 'code-review.yml');
     assert.equal(loaded.labels['flow/draft'].color, '6e7781');
+    assert.equal(loaded.statuses.aggregate.context, 'pr-flow/ready');
+    assert.equal(
+      loaded.statuses.workers.securityReview.context,
+      'pr-flow/security-review',
+    );
   });
 });
