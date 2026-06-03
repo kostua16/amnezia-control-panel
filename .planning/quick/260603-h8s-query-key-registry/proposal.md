@@ -1,0 +1,98 @@
+# Quick Task 260603-h8s: React Query key registry + WS invalidation hardening
+
+## Problem
+
+React Query keys are string-array literals scattered across 9+ hooks with no central registry:
+
+```
+use-dashboard-stats.ts  → ['dashboard-stats']
+use-alerts.ts           → ['alerts', params], ['alerts-unread-count']
+use-users.ts            → ['users', params]
+use-service-status.ts   → ['service-status', serviceKey]
+use-multi-panel-status.ts → ['fleet-status']
+use-system-resources.ts → ['system-resources']
+use-traffic-stats.ts    → ['traffic-stats', params]
+use-top-user-traffic.ts → ['top-user-traffic', limit, period]
+use-chain-status.ts     → (direct socket, no RQ)
+```
+
+The WS→RQ invalidation bridge in `providers.tsx:43-51` maps WS events to query keys via a hardcoded `WS_TO_QUERY_KEYS` object. When a new hook is added, the developer must remember to update both the hook's `queryKey` and the `WS_TO_QUERY_KEYS` mapping. If either is missed, stale data silently persists.
+
+Current coverage gaps in `WS_TO_QUERY_KEYS`:
+- `alert:new` → not mapped (handled by use-alerts directly, but `invalidateQueries` from use-alerts only runs after user action, not on WS push)
+- `panel:push-progress` → not mapped (consumed by push-wizard via lastEvent)
+- `chain:status-update` → not mapped (consumed via direct socket)
+- `service-status` queries → no WS event triggers invalidation at all (service status changes are only picked up by the 30s `refetchInterval`)
+- `traffic-stats` / `top-user-traffic` → no WS event triggers invalidation
+
+This means several dashboard sections only update on the 30-second poll cycle, not on real-time events.
+
+## Scope
+
+### 1. Create centralized query key factory
+
+- **files**: Create `src/lib/query-keys.ts`
+- **action**:
+  - Define all query keys as typed constants with factory functions for parameterized keys
+  - Example:
+    ```ts
+    export const queryKeys = {
+      dashboardStats: ['dashboard-stats'] as const,
+      alerts: (params?: AlertListParams) => ['alerts', params] as const,
+      alertsUnreadCount: ['alerts-unread-count'] as const,
+      users: (params?: UserListParams) => ['users', params] as const,
+      serviceStatus: (key: string) => ['service-status', key] as const,
+      fleetStatus: ['fleet-status'] as const,
+      systemResources: ['system-resources'] as const,
+      trafficStats: (params: TrafficParams) => ['traffic-stats', params] as const,
+      topUserTraffic: (limit: number, period: string) => ['top-user-traffic', limit, period] as const,
+    } as const;
+    ```
+  - ~30-40 lines
+- **verify**: TypeScript compiles; importing from hooks works
+- **done**: Single source of truth for all query keys
+
+### 2. Migrate hooks to use centralized keys
+
+- **files**: All 8 hooks in `src/hooks/` that use `queryKey`
+- **action**:
+  - Replace inline `queryKey` arrays with imports from `query-keys.ts`
+  - Replace `invalidateQueries({ queryKey: ['alerts'] })` in `use-alerts.ts` with `queryKeys.alerts()`
+  - One hook per commit for safe rollback
+- **verify**: Dev server starts; dashboard loads; WS events trigger invalidation
+- **done**: All hooks use centralized keys
+
+### 3. Harden WS→RQ bridge
+
+- **files**: `src/components/providers.tsx`
+- **action**:
+  - Replace hardcoded `WS_TO_QUERY_KEYS` mapping with references to `queryKeys`
+  - Add missing mappings:
+    - `alert:new` → invalidate `queryKeys.alerts()` and `queryKeys.alertsUnreadCount`
+    - `chain:status-update` → invalidate `queryKeys.fleetStatus`
+    - `service-status` queries → add new WS event type or invalidate on `stats:update`
+  - Add a TypeScript check that every key in `queryKeys` is either mapped in WS_TO_QUERY_KEYS or explicitly listed as poll-only
+- **verify**: Create alert via API → dashboard updates without 30s delay; chain status change → fleet panel refreshes
+- **done**: All real-time data flows through WS invalidation, not just polling
+
+## Acceptance Criteria
+
+- [ ] `src/lib/query-keys.ts` exists with typed factory for all query keys
+- [ ] All 8 hooks import keys from the central registry
+- [ ] `providers.tsx` uses `queryKeys` references instead of string literals
+- [ ] `alert:new` WS event triggers alert cache invalidation
+- [ ] TypeScript compile passes; no behavioral regressions
+
+## Risk
+
+- Low-medium — refactoring query keys is safe if done one hook at a time
+- Adding new WS→RQ mappings could cause duplicate fetches if both poll and WS trigger simultaneously; mitigated by React Query's deduplication
+
+## Estimated Effort
+
+1-2 focused sessions
+
+## Relationship to Existing Proposals
+
+- Complements `d4p` (broadcaster throttling) — the WS client tracking from d4p (`hasConnectedClients`) pairs naturally with this invalidation hardening
+- Independent of `f6n` (API error standardization) — this is client-side caching, not server-side error handling
