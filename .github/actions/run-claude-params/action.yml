@@ -177,6 +177,9 @@ inputs:
   claude-full-output:
     description: 'Show full Claude SDK output. Defaults true for this private repo; public reusable workflows should default false.'
     default: 'true'
+  effort-level:
+    description: 'Claude Code reasoning effort level (low, medium, high, max). Empty uses default.'
+    default: ''
   additional-permissions:
     description: "Additional GitHub permissions for the App token (e.g. 'issues: write')"
     default: ''
@@ -267,6 +270,7 @@ runs:
         ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.sonnet-model }}
         ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.opus-model }}
         CLAUDE_CODE_SUBAGENT_MODEL: ${{ steps.resolve-models.outputs.subagent_model }}
+        CLAUDE_CODE_EFFORT_LEVEL: ${{ inputs.effort-level }}
         ANTHROPIC_BASE_URL: ${{ inputs.api-url }}
         ANTHROPIC_API_KEY: ${{ inputs.api-key }}
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.api-key }}
@@ -351,6 +355,7 @@ runs:
         ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.sonnet-model }}
         ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.opus-model }}
         CLAUDE_CODE_SUBAGENT_MODEL: ${{ steps.resolve-models.outputs.subagent_model }}
+        CLAUDE_CODE_EFFORT_LEVEL: ${{ inputs.effort-level }}
         ANTHROPIC_BASE_URL: ${{ inputs.api-url }}
         ANTHROPIC_API_KEY: ${{ inputs.api-key }}
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.api-key }}
@@ -433,6 +438,7 @@ runs:
         ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.sonnet-model }}
         ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.opus-model }}
         CLAUDE_CODE_SUBAGENT_MODEL: ${{ steps.resolve-models.outputs.subagent_model }}
+        CLAUDE_CODE_EFFORT_LEVEL: ${{ inputs.effort-level }}
         ANTHROPIC_BASE_URL: ${{ inputs.api-url }}
         ANTHROPIC_API_KEY: ${{ inputs.api-key }}
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.api-key }}

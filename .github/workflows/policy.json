@@ -177,6 +177,14 @@
       "color": "b60205",
       "description": "Claude automation health tracker contains critical findings"
     },
+    "deepseek-review-passed": {
+      "color": "0e8a16",
+      "description": "DeepSeek code review found no blocking issues (informational, non-blocking)"
+    },
+    "deepseek-review-concerns": {
+      "color": "fbca04",
+      "description": "DeepSeek code review found concerns (informational, non-blocking)"
+    },
     "auto-fix-approved": {
       "color": "5319e7",
       "description": "Maintainer explicitly approved issue auto-fix execution"
