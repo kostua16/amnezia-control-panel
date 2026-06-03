@@ -39,6 +39,10 @@ CI
   -> fix-branch.yml (direct push failure path)
   -> pr-flow.yml (wakes orchestrator after CI settles)
 
+pr-flow-watchdog.yml
+  -> scheduled/manual stale-state recovery
+  -> dispatches pr-flow.yml for open non-draft PRs still labeled flow/draft
+
 pull_request_target lifecycle events
   -> pr-flow.yml
   -> reads .github/pr-flow.json, classifies the PR, syncs one flow/* state label, and dispatches one next worker
@@ -182,11 +186,20 @@ Always manual-only:
 The following workflows expose `workflow_dispatch` dry-run inputs for safe testing:
 
 - `pr-flow.yml`
+- `pr-flow-watchdog.yml`
 - `pr-finalizer.yml`
 - `pr-improve.yml`
 - `issue-catch-up.yml`
 
 `pr-flow.yml` uses `.github/pr-flow.json` for worker order, required checks, reset labels, and managed `flow/*` labels. Routine runs do not recreate labels; pass `--ensure-labels true` to `.github/workflows/scripts/orchestrate-pr-flow.cjs` only for one-time label setup or repair.
+
+If a PR is no longer draft but remains stuck on `flow/draft`, run:
+
+```bash
+gh workflow run pr-flow.yml --ref main -f pr_number=<PR> -f dry_run=false
+```
+
+`pr-flow-watchdog.yml` runs every 15 minutes away from the top of the hour and performs the same recovery automatically for open non-draft PRs that still have `flow/draft`.
 
 ## GSD Slash Command Format
 
