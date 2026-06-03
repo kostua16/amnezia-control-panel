@@ -8,6 +8,10 @@ import { describe, it } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const {
+  getPhaseDisplayId,
+  normalizePhaseSuggestions,
+  renderQuickPlan,
+  renderQuickSummary,
   run,
 } = require('../../../.github/workflows/scripts/upsert-planning-pr.cjs');
 
@@ -138,7 +142,7 @@ describe('upsert-planning-pr', () => {
         ],
         phase_suggestions: [
           {
-            phase: '13.4',
+            bucket: 'planning-automation',
             title: 'Harden planning helper IO',
             rationale:
               'Planning automation should keep command logs out of JSON outputs.',
@@ -171,12 +175,85 @@ describe('upsert-planning-pr', () => {
 
     assert.equal(output.dry_run, true);
     assert.equal(output.branch_name, 'claude-planning-pr-177');
+    assert.equal(output.phase_namespace, 'pr177');
     assert.equal(output.summary, 'sample planning intake');
     assert.equal(output.quick_task_count, 1);
     assert.equal(output.phase_suggestion_count, 1);
+    assert.equal(output.phase_mapping, 'pr177.4 x1');
+    assert.deepEqual(
+      output.tracked_paths.filter((trackedPath: string) =>
+        trackedPath.includes('.planning/phases/'),
+      ),
+      [],
+    );
     assert.match(
       output.quick_artifact_path,
       /^\.planning\/quick\/\d{6}-pr177-workflow-improve\/\d{6}-pr177-PLAN\.md$/,
     );
+  });
+
+  it('maps semantic phase buckets to source-PR phase IDs', () => {
+    assert.equal(getPhaseDisplayId(185, 'workflow-governance'), 'pr185.1');
+    assert.equal(getPhaseDisplayId(185, 'ci-correctness'), 'pr185.2');
+    assert.equal(getPhaseDisplayId(185, 'approval-policy'), 'pr185.3');
+    assert.equal(getPhaseDisplayId(185, 'planning-automation'), 'pr185.4');
+  });
+
+  it('keeps legacy numeric phase suggestions backward-compatible', () => {
+    const suggestions = normalizePhaseSuggestions(
+      [
+        {
+          phase: '13.1',
+          title: 'Centralize trust gates',
+          rationale: 'The old schema emitted fixed milestone names.',
+          owner: 'maintainer',
+        },
+      ],
+      181,
+    );
+
+    assert.deepEqual(
+      suggestions.map((suggestion: { bucket: string; phase: string }) => ({
+        bucket: suggestion.bucket,
+        phase: suggestion.phase,
+      })),
+      [{ bucket: 'workflow-governance', phase: 'pr181.1' }],
+    );
+  });
+
+  it('renders quick artifacts with source-PR namespace labels', () => {
+    const phaseSuggestions = normalizePhaseSuggestions(
+      [
+        {
+          bucket: 'planning-automation',
+          title: 'Add repair command',
+          rationale: 'Planning PRs should be deterministic.',
+          owner: 'maintainer',
+        },
+      ],
+      192,
+    );
+
+    const plan = renderQuickPlan({
+      sourcePrNumber: 192,
+      sourcePrTitle: 'planning namespace fix',
+      sourcePrUrl: 'https://github.com/kostua16/amnezia-control-panel/pull/192',
+      summary: 'sample',
+      quickTasks: [],
+      phaseSuggestions,
+    });
+    const summary = renderQuickSummary({
+      sourcePrNumber: 192,
+      sourcePrUrl: 'https://github.com/kostua16/amnezia-control-panel/pull/192',
+      summary: 'sample',
+      quickTasks: [],
+      phaseSuggestions,
+    });
+
+    assert.match(plan, /## pr192\.x Phase Candidates/);
+    assert.match(plan, /- pr192\.4: Add repair command/);
+    assert.match(summary, /- pr192\.x mapping: pr192\.4 x1/);
+    assert.doesNotMatch(plan, /13\.x|13\.[1-4]/);
+    assert.doesNotMatch(summary, /13\.x|13\.[1-4]/);
   });
 });

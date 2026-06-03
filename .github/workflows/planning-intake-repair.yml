@@ -1,0 +1,177 @@
+name: Planning Intake Repair
+
+run-name: "Planning intake repair #${{ github.event.inputs.planning_pr_number || github.event.issue.number || 'manual' }}"
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      planning_pr_number:
+        description: 'Draft planning PR number to repair'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+concurrency:
+  group: planning-intake-repair-${{ github.event.issue.number || github.event.inputs.planning_pr_number || github.sha }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22.x'
+
+jobs:
+  authorize:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/planning-rename-milestones'))
+    runs-on: self-hosted
+    outputs:
+      should-run: ${{ steps.gate.outputs.should_run }}
+      planning-pr-number: ${{ steps.gate.outputs.planning_pr_number }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Evaluate repair trigger
+        id: gate
+        shell: bash
+        run: |
+          node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode planning-intake-repair \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            > /tmp/planning-intake-repair-policy.json
+          {
+            echo "should_run=$(jq -r '.should_run' /tmp/planning-intake-repair-policy.json)"
+            echo "planning_pr_number=$(jq -r '.planning_pr_number // empty' /tmp/planning-intake-repair-policy.json)"
+          } >> "$GITHUB_OUTPUT"
+
+  repair:
+    needs: [authorize]
+    if: needs.authorize.outputs.should-run == 'true'
+    runs-on: self-hosted
+    steps:
+      - name: Checkout trusted repair script
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Copy repair script
+        run: |
+          cp .github/workflows/scripts/repair-planning-intake.cjs /tmp/repair-planning-intake.cjs
+
+      - name: Resolve planning PR
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          PR_NUMBER: ${{ needs.authorize.outputs.planning-pr-number }}
+        run: |
+          node /tmp/repair-planning-intake.cjs \
+            --planning-pr-number "$PR_NUMBER" \
+            --dry-run true \
+            > /tmp/planning-intake-repair-preview.json
+          gh pr view "$PR_NUMBER" \
+            --json headRefName,baseRefName \
+            > /tmp/planning-pr.json
+          {
+            echo "head_branch=$(jq -r '.headRefName' /tmp/planning-pr.json)"
+            echo "base_ref=$(jq -r '.baseRefName' /tmp/planning-pr.json)"
+            echo "source_pr_number=$(jq -r '.source_pr_number' /tmp/planning-intake-repair-preview.json)"
+            echo "phase_namespace=$(jq -r '.phase_namespace' /tmp/planning-intake-repair-preview.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout planning branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.resolve.outputs.head_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-bot-git
+
+      - name: Repair planning intake
+        id: repair
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          PR_NUMBER: ${{ needs.authorize.outputs.planning-pr-number }}
+        run: |
+          node /tmp/repair-planning-intake.cjs \
+            --planning-pr-number "$PR_NUMBER" \
+            > /tmp/planning-intake-repair-output.json
+          {
+            echo "body_updated=$(jq -r '.body_updated' /tmp/planning-intake-repair-output.json)"
+            echo "quick_artifact_path=$(jq -r '.quick_artifact_path' /tmp/planning-intake-repair-output.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/commit-and-push
+        id: push
+        with:
+          branch-name: ${{ steps.resolve.outputs.head_branch }}
+          commit-message: 'docs(planning): repair milestone namespace for PR #${{ steps.resolve.outputs.source_pr_number }}'
+
+      - name: Upsert repair status comment
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ needs.authorize.outputs.planning-pr-number }}
+          SOURCE_PR_NUMBER: ${{ steps.resolve.outputs.source_pr_number }}
+          PHASE_NAMESPACE: ${{ steps.resolve.outputs.phase_namespace }}
+          QUICK_ARTIFACT_PATH: ${{ steps.repair.outputs.quick_artifact_path }}
+          BODY_UPDATED: ${{ steps.repair.outputs.body_updated }}
+          PUSHED: ${{ steps.push.outputs.pushed }}
+        with:
+          script: |
+            const issueNumber = Number(process.env.PR_NUMBER);
+            const marker = '<!-- planning-intake-repair -->';
+            const body = [
+              marker,
+              '## Planning Intake Repair',
+              '',
+              `- Source PR: #${process.env.SOURCE_PR_NUMBER}`,
+              `- Namespace: \`${process.env.PHASE_NAMESPACE}.x\``,
+              `- Quick artifact: \`${process.env.QUICK_ARTIFACT_PATH}\``,
+              `- PR body updated: ${process.env.BODY_UPDATED}`,
+              `- Branch pushed: ${process.env.PUSHED}`
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100
+            });
+            const existing = comments.find((comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body
+              });
+            }

@@ -4,33 +4,43 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const ROADMAP_PATH = '.planning/ROADMAP.md';
-const ROADMAP_INTAKE_START = '<!-- AUTO-13X-INTAKE-START -->';
-const ROADMAP_INTAKE_END = '<!-- AUTO-13X-INTAKE-END -->';
-const PHASE_INTAKE_START = '<!-- AUTO-PR-IMPROVE-START -->';
-const PHASE_INTAKE_END = '<!-- AUTO-PR-IMPROVE-END -->';
+const ROADMAP_INTAKE_START = '<!-- AUTO-PR-IMPROVE-INTAKE-START -->';
+const ROADMAP_INTAKE_END = '<!-- AUTO-PR-IMPROVE-INTAKE-END -->';
+const LEGACY_ROADMAP_INTAKE_START = '<!-- AUTO-13X-INTAKE-START -->';
+const LEGACY_ROADMAP_INTAKE_END = '<!-- AUTO-13X-INTAKE-END -->';
 
-const PHASE_METADATA = {
-  13.1: {
-    dir: '.planning/phases/13.1-workflow-governance-hardening',
-    plan: '13.1-PLAN.md',
+const PHASE_BUCKETS = [
+  {
+    key: 'workflow-governance',
+    index: 1,
     title: 'Workflow governance hardening',
   },
-  13.2: {
-    dir: '.planning/phases/13.2-ci-supply-chain-correctness',
-    plan: '13.2-PLAN.md',
+  {
+    key: 'ci-correctness',
+    index: 2,
     title: 'CI and supply-chain correctness',
   },
-  13.3: {
-    dir: '.planning/phases/13.3-pr-finalizer-approval-policy',
-    plan: '13.3-PLAN.md',
+  {
+    key: 'approval-policy',
+    index: 3,
     title: 'PR finalizer and approval policy',
   },
-  13.4: {
-    dir: '.planning/phases/13.4-claude-gsd-planning-automation',
-    plan: '13.4-PLAN.md',
+  {
+    key: 'planning-automation',
+    index: 4,
     title: 'Claude+GSD planning automation',
   },
-};
+];
+
+const PHASE_BUCKET_BY_KEY = new Map(
+  PHASE_BUCKETS.map((bucket) => [bucket.key, bucket]),
+);
+const PHASE_BUCKET_ALIASES = new Map([
+  ['13.1', 'workflow-governance'],
+  ['13.2', 'ci-correctness'],
+  ['13.3', 'approval-policy'],
+  ['13.4', 'planning-automation'],
+]);
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -88,40 +98,92 @@ function upsertSingleLineEntry(content, startMarker, endMarker, entryId, line) {
   return `${beforeBlock}${startMarker}\n${lines.join('\n')}\n${endMarker}${afterBlock}`;
 }
 
-function upsertNamedBlock(content, entryId, renderedBlock) {
-  const startMarker = `<!-- ${entryId} START -->`;
-  const endMarker = `<!-- ${entryId} END -->`;
-  const blockRegex = new RegExp(
-    `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}\\n?`,
-    'g',
-  );
-  const cleaned = content.replace(blockRegex, '').replace(/\n{3,}/g, '\n\n');
-
+function ensureRoadmapIntakeMarkers(content) {
   if (
-    !cleaned.includes(PHASE_INTAKE_START) ||
-    !cleaned.includes(PHASE_INTAKE_END)
+    content.includes(ROADMAP_INTAKE_START) &&
+    content.includes(ROADMAP_INTAKE_END)
   ) {
-    throw new Error(`Missing phase intake markers in phase plan file`);
+    return content;
   }
 
-  return cleaned.replace(
-    PHASE_INTAKE_END,
-    `${renderedBlock}\n${PHASE_INTAKE_END}`,
+  if (
+    content.includes(LEGACY_ROADMAP_INTAKE_START) &&
+    content.includes(LEGACY_ROADMAP_INTAKE_END)
+  ) {
+    return content
+      .replace(LEGACY_ROADMAP_INTAKE_START, ROADMAP_INTAKE_START)
+      .replace(LEGACY_ROADMAP_INTAKE_END, ROADMAP_INTAKE_END);
+  }
+
+  throw new Error(
+    `Missing roadmap intake markers ${ROADMAP_INTAKE_START} / ${ROADMAP_INTAKE_END}`,
   );
 }
 
-function escapeRegExp(value) {
-  return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+function getPhaseNamespace(sourcePrNumber) {
+  return `pr${sourcePrNumber}`;
 }
 
-function summarizePhaseSuggestions(phaseSuggestions) {
+function normalizeBucketKey(rawBucket) {
+  const value = String(rawBucket ?? '').trim();
+  if (PHASE_BUCKET_BY_KEY.has(value)) {
+    return value;
+  }
+
+  if (PHASE_BUCKET_ALIASES.has(value)) {
+    return PHASE_BUCKET_ALIASES.get(value);
+  }
+
+  const numericSuffixMatch = value.match(/^(?:pr)?\d+\.(\d)$/);
+  if (numericSuffixMatch) {
+    const index = Number(numericSuffixMatch[1]);
+    return PHASE_BUCKETS.find((bucket) => bucket.index === index)?.key ?? null;
+  }
+
+  return null;
+}
+
+function getPhaseDisplayId(sourcePrNumber, bucketKey) {
+  const bucket = PHASE_BUCKET_BY_KEY.get(bucketKey);
+  if (!bucket) {
+    throw new Error(`Unknown phase bucket "${bucketKey}"`);
+  }
+
+  return `${getPhaseNamespace(sourcePrNumber)}.${bucket.index}`;
+}
+
+function normalizePhaseSuggestion(item, sourcePrNumber) {
+  const bucket = normalizeBucketKey(item?.bucket ?? item?.phase);
+  if (!bucket) {
+    return null;
+  }
+
+  return {
+    ...item,
+    bucket,
+    phase: getPhaseDisplayId(sourcePrNumber, bucket),
+  };
+}
+
+function normalizePhaseSuggestions(items, sourcePrNumber) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .map((item) => normalizePhaseSuggestion(item, sourcePrNumber))
+    .filter((item) => item !== null);
+}
+
+function summarizePhaseSuggestions(phaseSuggestions, sourcePrNumber) {
   const counts = new Map();
   for (const suggestion of phaseSuggestions) {
     counts.set(suggestion.phase, (counts.get(suggestion.phase) ?? 0) + 1);
   }
 
+  const namespace = getPhaseNamespace(sourcePrNumber);
   if (counts.size === 0) {
-    return 'no new 13.x milestone suggestions';
+    return `no new ${namespace}.x milestone suggestions`;
   }
 
   return [...counts.entries()]
@@ -144,6 +206,7 @@ function renderQuickPlan({
   quickTasks,
   phaseSuggestions,
 }) {
+  const namespace = getPhaseNamespace(sourcePrNumber);
   const lines = [
     `# Quick Plan: PR #${sourcePrNumber} workflow improvement intake`,
     '',
@@ -167,7 +230,7 @@ function renderQuickPlan({
     }
   }
 
-  lines.push('', '## 13.x Phase Candidates');
+  lines.push('', `## ${namespace}.x Phase Candidates`);
 
   if (phaseSuggestions.length === 0) {
     lines.push('- None identified in this run.');
@@ -189,6 +252,7 @@ function renderQuickSummary({
   quickTasks,
   phaseSuggestions,
 }) {
+  const namespace = getPhaseNamespace(sourcePrNumber);
   return (
     [
       `# Summary: PR #${sourcePrNumber} workflow improvement intake`,
@@ -197,41 +261,38 @@ function renderQuickSummary({
       `- Summary: ${summary}`,
       `- Quick tasks: ${quickTasks.length}`,
       `- Phase suggestions: ${phaseSuggestions.length}`,
-      `- 13.x mapping: ${summarizePhaseSuggestions(phaseSuggestions)}`,
+      `- ${namespace}.x mapping: ${summarizePhaseSuggestions(phaseSuggestions, sourcePrNumber)}`,
     ].join('\n') + '\n'
   );
 }
 
-function buildPhaseBlock(
-  sourcePrNumber,
-  sourcePrTitle,
-  sourcePrUrl,
-  suggestions,
-) {
-  const entryId = `PR-IMPROVE:${sourcePrNumber}`;
-  const body = [
-    `<!-- ${entryId} START -->`,
-    `### Intake from PR #${sourcePrNumber}: ${sourcePrTitle}`,
-    `- Source: ${sourcePrUrl}`,
-  ];
-
-  for (const suggestion of suggestions) {
-    body.push(
-      `- ${suggestion.title} -- ${suggestion.rationale} (owner: ${suggestion.owner || 'maintainer'})`,
-    );
-  }
-
-  body.push(`<!-- ${entryId} END -->`, '');
-  return body.join('\n');
+function collectTrackedPaths(quickDir, quickPlanPath, quickSummaryPath) {
+  return [ROADMAP_PATH, quickPlanPath, quickSummaryPath, quickDir];
 }
 
-function collectTrackedPaths(quickDir, quickPlanPath, quickSummaryPath) {
-  const tracked = [ROADMAP_PATH, quickPlanPath, quickSummaryPath];
-  for (const phase of Object.values(PHASE_METADATA)) {
-    tracked.push(path.join(phase.dir, phase.plan));
-  }
-  tracked.push(quickDir);
-  return tracked;
+function buildPlanningPrBody({
+  sourcePrNumber,
+  sourcePrUrl,
+  summary,
+  quickArtifactPath,
+  phaseSuggestions,
+}) {
+  const namespace = getPhaseNamespace(sourcePrNumber);
+  return (
+    [
+      '## Claude+GSD Planning Intake',
+      '',
+      `Source PR: #${sourcePrNumber} (${sourcePrUrl})`,
+      '',
+      `Summary: ${summary}`,
+      '',
+      `Quick artifact: \`${quickArtifactPath}\``,
+      '',
+      `${namespace}.x mapping: ${summarizePhaseSuggestions(phaseSuggestions, sourcePrNumber)}`,
+      '',
+      'This draft PR is intentionally manual-only and should never be auto-approved or auto-merged.',
+    ].join('\n') + '\n'
+  );
 }
 
 function main() {
@@ -257,9 +318,10 @@ function main() {
   const quickTasks = Array.isArray(suggestions.quick_tasks)
     ? suggestions.quick_tasks
     : [];
-  const phaseSuggestions = Array.isArray(suggestions.phase_suggestions)
-    ? suggestions.phase_suggestions.filter((item) => PHASE_METADATA[item.phase])
-    : [];
+  const phaseSuggestions = normalizePhaseSuggestions(
+    suggestions.phase_suggestions,
+    sourcePrNumber,
+  );
 
   const dateStamp = new Date().toISOString().slice(2, 10).replace(/-/g, '');
   const quickSlug = `${dateStamp}-pr${sourcePrNumber}-workflow-improve`;
@@ -274,6 +336,7 @@ function main() {
   );
   const quickArtifactPath = quickPlanPath;
   const branchName = `claude-planning-pr-${sourcePrNumber}`;
+  const phaseNamespace = getPhaseNamespace(sourcePrNumber);
 
   const trackedPaths = collectTrackedPaths(
     quickDir,
@@ -287,11 +350,16 @@ function main() {
         {
           dry_run: true,
           branch_name: branchName,
+          phase_namespace: phaseNamespace,
           quick_artifact_path: quickArtifactPath,
           tracked_paths: trackedPaths,
           summary,
           quick_task_count: quickTasks.length,
           phase_suggestion_count: phaseSuggestions.length,
+          phase_mapping: summarizePhaseSuggestions(
+            phaseSuggestions,
+            sourcePrNumber,
+          ),
         },
         null,
         2,
@@ -328,8 +396,10 @@ function main() {
     }),
   );
 
-  let roadmap = fs.readFileSync(ROADMAP_PATH, 'utf8');
-  const roadmapLine = `- PR #${sourcePrNumber}: ${sourcePrTitle} -- ${summarizePhaseSuggestions(phaseSuggestions)}. Quick artifact: \`${quickArtifactPath}\`.`;
+  let roadmap = ensureRoadmapIntakeMarkers(
+    fs.readFileSync(ROADMAP_PATH, 'utf8'),
+  );
+  const roadmapLine = `- PR #${sourcePrNumber}: ${sourcePrTitle} -- ${summarizePhaseSuggestions(phaseSuggestions, sourcePrNumber)}. Quick artifact: \`${quickArtifactPath}\`.`;
   roadmap = upsertSingleLineEntry(
     roadmap,
     ROADMAP_INTAKE_START,
@@ -338,44 +408,6 @@ function main() {
     roadmapLine,
   );
   fs.writeFileSync(ROADMAP_PATH, roadmap);
-
-  const suggestionsByPhase = new Map();
-  for (const suggestion of phaseSuggestions) {
-    if (!suggestionsByPhase.has(suggestion.phase)) {
-      suggestionsByPhase.set(suggestion.phase, []);
-    }
-    suggestionsByPhase.get(suggestion.phase).push(suggestion);
-  }
-
-  for (const [phaseNumber, metadata] of Object.entries(PHASE_METADATA)) {
-    const planPath = path.join(metadata.dir, metadata.plan);
-    let content = fs.readFileSync(planPath, 'utf8');
-    const phaseBlocks = suggestionsByPhase.get(phaseNumber) ?? [];
-    const entryId = `PR-IMPROVE:${sourcePrNumber}`;
-
-    const startMarker = `<!-- ${entryId} START -->`;
-    const endMarker = `<!-- ${entryId} END -->`;
-    const blockRegex = new RegExp(
-      `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}\\n?`,
-      'g',
-    );
-    content = content.replace(blockRegex, '');
-
-    if (phaseBlocks.length > 0) {
-      content = upsertNamedBlock(
-        content,
-        entryId,
-        buildPhaseBlock(
-          sourcePrNumber,
-          sourcePrTitle,
-          sourcePrUrl,
-          phaseBlocks,
-        ),
-      );
-    }
-
-    fs.writeFileSync(planPath, content.replace(/\n{3,}/g, '\n\n'));
-  }
 
   run('git', ['add', ...trackedPaths], { capture: false });
 
@@ -434,6 +466,7 @@ function main() {
           {
             dry_run: false,
             branch_name: branchName,
+            phase_namespace: phaseNamespace,
             pr_url: existingOnConflict?.url ?? null,
             quick_artifact_path: quickArtifactPath,
             commit_created: commitCreated,
@@ -451,19 +484,13 @@ function main() {
   const bodyFile = path.join('.git', `planning-pr-${sourcePrNumber}.md`);
   writeFile(
     bodyFile,
-    [
-      `## Claude+GSD Planning Intake`,
-      '',
-      `Source PR: #${sourcePrNumber} (${sourcePrUrl})`,
-      '',
-      `Summary: ${summary}`,
-      '',
-      `Quick artifact: \`${quickArtifactPath}\``,
-      '',
-      `13.x mapping: ${summarizePhaseSuggestions(phaseSuggestions)}`,
-      '',
-      'This draft PR is intentionally manual-only and should never be auto-approved or auto-merged.',
-    ].join('\n') + '\n',
+    buildPlanningPrBody({
+      sourcePrNumber,
+      sourcePrUrl,
+      summary,
+      quickArtifactPath,
+      phaseSuggestions,
+    }),
   );
 
   let prUrl = existing?.url ?? null;
@@ -507,6 +534,7 @@ function main() {
       {
         dry_run: false,
         branch_name: branchName,
+        phase_namespace: phaseNamespace,
         pr_url: prUrl,
         quick_artifact_path: quickArtifactPath,
         commit_created: commitCreated,
@@ -522,6 +550,18 @@ if (require.main === module) {
 }
 
 module.exports = {
+  PHASE_BUCKETS,
+  buildPlanningPrBody,
+  collectTrackedPaths,
+  ensureRoadmapIntakeMarkers,
+  getPhaseDisplayId,
+  getPhaseNamespace,
   main,
+  normalizeBucketKey,
+  normalizePhaseSuggestion,
+  normalizePhaseSuggestions,
+  renderQuickPlan,
+  renderQuickSummary,
   run,
+  summarizePhaseSuggestions,
 };

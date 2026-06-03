@@ -60,7 +60,7 @@ dependency-review.yml
 pr-improve.yml
   -> dispatch-only worker controlled by pr-flow.yml
   -> creates or updates claude-planning-pr-<pr-number> draft PRs
-  -> updates ROADMAP.md and 13.x planning intake artifacts
+  -> updates ROADMAP.md intake and source-PR namespaced quick artifacts
 
 pr-finalizer.yml
   -> dispatch-only worker controlled by pr-flow.yml
