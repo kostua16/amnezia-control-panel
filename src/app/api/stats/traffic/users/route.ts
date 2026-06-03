@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const { limit, period } = parsed.data;
     const cutoff = getDateFilter(period);
 
-    const topUsers = await prisma.$queryRawUnsafe<
+    const topUsers = await prisma.$queryRaw<
       Array<{
         userId: number;
         username: string;
@@ -48,8 +48,7 @@ export async function GET(request: NextRequest) {
         totalBytesOut: bigint;
         totalBytes: bigint;
       }>
-    >(
-      `
+    >`
       SELECT
         tl.userId as "userId",
         u.username as "username",
@@ -58,14 +57,11 @@ export async function GET(request: NextRequest) {
         SUM(tl.bytesIn) + SUM(tl.bytesOut) as "totalBytes"
       FROM traffic_logs tl
       JOIN users u ON u.id = tl.userId
-      WHERE tl.timestamp >= ?
+      WHERE tl.timestamp >= ${cutoff.toISOString()}
       GROUP BY tl.userId, u.username
       ORDER BY "totalBytes" DESC
-      LIMIT ?
-    `,
-      cutoff.toISOString(),
-      limit,
-    );
+      LIMIT ${limit}
+    `;
 
     const data = topUsers.map((row) => ({
       userId: row.userId,
