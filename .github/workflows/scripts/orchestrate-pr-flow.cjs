@@ -46,12 +46,14 @@ function run(command, args, options = {}) {
     : ['ignore', 'pipe', 'pipe'];
 
   try {
-    return execFileSync(command, args, {
-      encoding: 'utf8',
-      env: process.env,
-      input: options.input,
-      stdio,
-    }).trim();
+    return (
+      execFileSync(command, args, {
+        encoding: 'utf8',
+        env: process.env,
+        input: options.input,
+        stdio,
+      }) ?? ''
+    ).trim();
   } catch (error) {
     const stderr = String(error.stderr ?? '').trim();
     const allowed =

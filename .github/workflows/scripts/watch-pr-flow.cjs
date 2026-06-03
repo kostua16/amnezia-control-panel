@@ -51,11 +51,13 @@ function selectStaleDraftPrs(prs, labelName = STALE_DRAFT_LABEL) {
 }
 
 function run(command, args) {
-  return execFileSync(command, args, {
-    encoding: 'utf8',
-    env: process.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim();
+  return (
+    execFileSync(command, args, {
+      encoding: 'utf8',
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }) ?? ''
+  ).trim();
 }
 
 function runJson(command, args, fallback = []) {
