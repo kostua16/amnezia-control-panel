@@ -118,6 +118,38 @@ if (mode === 'deepseek') {
   process.exit(0);
 }
 
+if (mode === 'antigravity-review') {
+  const isPrComment = Boolean(event.issue?.pull_request);
+  const wantsReview = commentBody.includes('/gemini-review');
+  const commentTriggered =
+    eventName === 'issue_comment' &&
+    isPrComment &&
+    wantsReview &&
+    isMaintainer;
+  const dispatchTriggered = eventName === 'workflow_dispatch';
+  const prNumber = event.inputs?.pr_number ?? event.issue?.number ?? null;
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: commentTriggered || dispatchTriggered,
+        trusted: dispatchTriggered || isMaintainer,
+        author_association: association,
+        trigger_source: commentTriggered
+          ? 'comment'
+          : dispatchTriggered
+            ? 'workflow_dispatch'
+            : null,
+        pr_number: prNumber,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 if (mode === 'fix-issue') {
   const isOpenIssue =
     event.issue?.state !== 'closed' && !event.issue?.pull_request;
