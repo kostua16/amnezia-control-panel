@@ -139,7 +139,6 @@ Plans:
 **Improvement intake from PR automation**
 <!-- AUTO-13X-INTAKE-START -->
 <!-- PR-IMPROVE:182 --> - PR #182: fix(audit): address autonomous audit findings -- 13.2 x2, 13.3 x1, 13.4 x1. Quick artifact: `.planning/quick/260603-pr182-workflow-improve/260603-pr182-PLAN.md`.
-<!-- PR-IMPROVE:185 --> - PR #185: ci(workflows): hourly optimization - 26855106173 -- 13.1 x1, 13.2 x1, 13.3 x1, 13.4 x1. Quick artifact: `.planning/quick/260603-pr185-workflow-improve/260603-pr185-PLAN.md`.
 <!-- AUTO-13X-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
