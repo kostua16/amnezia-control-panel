@@ -2,7 +2,7 @@ name: Stale Issues
 
 on:
   schedule:
-    - cron: "23 1 * * 0"  # Weekly Sunday at 01:23 UTC
+    - cron: '23 1 * * 0' # Weekly Sunday at 01:23 UTC
   workflow_dispatch:
 
 permissions:
@@ -24,9 +24,9 @@ jobs:
         with:
           days-before-stale: 60
           days-before-close: 30
-          stale-issue-label: "stale"
-          stale-pr-label: "stale"
-          exempt-issue-labels: "keep-open,backlog,in-progress"
-          exempt-pr-labels: "keep-open,in-progress"
-          stale-issue-message: "This issue has been inactive for 60 days. It will be closed in 30 days unless there is new activity."
-          stale-pr-message: "This PR has been inactive for 60 days. It will be closed in 30 days unless there is new activity."
+          stale-issue-label: 'stale'
+          stale-pr-label: 'stale'
+          exempt-issue-labels: 'keep-open,backlog,in-progress'
+          exempt-pr-labels: 'keep-open,in-progress'
+          stale-issue-message: 'This issue has been inactive for 60 days. It will be closed in 30 days unless there is new activity.'
+          stale-pr-message: 'This PR has been inactive for 60 days. It will be closed in 30 days unless there is new activity.'

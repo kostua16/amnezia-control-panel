@@ -181,13 +181,13 @@
       "color": "5319e7",
       "description": "Maintainer explicitly approved issue auto-fix execution"
     },
-    "gemini-review-passed": {
+    "antigravity-review-passed": {
       "color": "0e8a16",
-      "description": "Gemini AI code review found no blocking issues"
+      "description": "Antigravity AI code review found no blocking issues"
     },
-    "gemini-review-concerns": {
+    "antigravity-review-concerns": {
       "color": "b60205",
-      "description": "Gemini AI code review found blocking concerns"
+      "description": "Antigravity AI code review found blocking concerns"
     }
   }
 }

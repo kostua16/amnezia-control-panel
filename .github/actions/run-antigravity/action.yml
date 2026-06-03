@@ -1,0 +1,52 @@
+name: 'Run Antigravity CLI'
+description: 'Installs and runs the Antigravity CLI with caching'
+
+inputs:
+  api-key:
+    description: 'API key for Antigravity or Gemini'
+    required: true
+  prompt:
+    description: 'Prompt to send to the CLI'
+    required: true
+
+outputs:
+  output:
+    description: 'Output from the CLI'
+    value: ${{ steps.run-agy.outputs.output }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Cache Antigravity CLI
+      id: cache-agy
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.local/bin/agy
+          ~/.antigravity
+          /usr/local/bin/agy
+        key: ${{ runner.os }}-antigravity-cli
+
+    - name: Install Antigravity CLI
+      if: steps.cache-agy.outputs.cache-hit != 'true'
+      shell: bash
+      run: curl -fsSL https://antigravity.google/cli/install.sh | sh
+
+    - name: Run Antigravity CLI
+      id: run-agy
+      shell: bash
+      env:
+        AV_API_KEY: ${{ inputs.api-key }}
+        GEMINI_API_KEY: ${{ inputs.api-key }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Write prompt to a temp file to avoid quoting issues
+        cat << 'EOF' > /tmp/agy_prompt.txt
+        ${{ inputs.prompt }}
+        EOF
+
+        # Run agy
+        OUTPUT=$(agy -p "$(cat /tmp/agy_prompt.txt)")
+        echo "output<<EOF_OUTPUT" >> $GITHUB_OUTPUT
+        echo "$OUTPUT" >> $GITHUB_OUTPUT
+        echo "EOF_OUTPUT" >> $GITHUB_OUTPUT

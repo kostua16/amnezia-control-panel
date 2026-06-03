@@ -62,14 +62,22 @@ if (mode === 'claude') {
   process.exit(0);
 }
 
-if (mode === 'gemini') {
+if (mode === 'antigravity') {
   const triggered =
-    (eventName === 'issue_comment' && commentBody.includes('@gemini')) ||
+    (eventName === 'issue_comment' &&
+      (commentBody.includes('@gemini') ||
+        commentBody.includes('@antigravity'))) ||
     (eventName === 'pull_request_review_comment' &&
-      commentBody.includes('@gemini')) ||
-    (eventName === 'pull_request_review' && reviewBody.includes('@gemini')) ||
+      (commentBody.includes('@gemini') ||
+        commentBody.includes('@antigravity'))) ||
+    (eventName === 'pull_request_review' &&
+      (reviewBody.includes('@gemini') ||
+        reviewBody.includes('@antigravity'))) ||
     (eventName === 'issues' &&
-      (issueTitle.includes('@gemini') || issueBody.includes('@gemini')));
+      (issueTitle.includes('@gemini') ||
+        issueTitle.includes('@antigravity') ||
+        issueBody.includes('@gemini') ||
+        issueBody.includes('@antigravity')));
 
   process.stdout.write(
     JSON.stringify(

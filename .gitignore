@@ -90,6 +90,5 @@ data/geoip/geoip.dat.tmp
 # Temporary files
 agent-reports/
 
-# Gemini CLI settings
-.gemini/
-gha-creds-*.json
+# Antigravity CLI settings
+.antigravity/
