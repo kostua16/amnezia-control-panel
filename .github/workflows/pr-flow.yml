@@ -1,0 +1,70 @@
+name: PR Orchestrator
+
+run-name: "PR Orchestrator ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.event.inputs.pr_number || github.event.workflow_run.display_title || github.run_id }}"
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - converted_to_draft
+      - ready_for_review
+      - labeled
+      - unlabeled
+  workflow_run:
+    workflows: ['CI', 'Code Review', 'Dependency Review', 'PR Improve']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to orchestrate'
+        required: true
+        type: string
+      dry_run:
+        description: 'Evaluate and print the decision without labels or dispatches'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+  pull-requests: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: pr-flow-${{ github.event.pull_request.number || github.event.inputs.pr_number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.display_title || github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  orchestrate:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.pull_requests[0].number ||
+      startsWith(github.event.workflow_run.display_title, 'PR #')
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          install-deps: 'false'
+
+      - name: Orchestrate PR flow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.inputs.pr_number || '' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          node .github/workflows/scripts/orchestrate-pr-flow.cjs \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --config-file .github/pr-flow.json \
+            --policy-file .github/workflows/policy.json \
+            --pr-number "$PR_NUMBER" \
+            --dry-run "$DRY_RUN"
