@@ -153,7 +153,7 @@ jobs:
           model: 'sonnet'
           max-turns: '40'
           track-progress: 'false'
-          json-schema: '{"type":"object","properties":{"summary":{"type":"string"},"quick_tasks":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"},"artifact_type":{"type":"string","enum":["quick-task","workflow-improvement"]}},"required":["title","rationale","owner","artifact_type"],"additionalProperties":false}},"phase_suggestions":{"type":"array","items":{"type":"object","properties":{"phase":{"type":"string","enum":["13.1","13.2","13.3","13.4"]},"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"}},"required":["phase","title","rationale","owner"],"additionalProperties":false}}},"required":["summary","quick_tasks","phase_suggestions"],"additionalProperties":false}'
+          json-schema: '{"type":"object","properties":{"summary":{"type":"string"},"quick_tasks":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"},"artifact_type":{"type":"string","enum":["quick-task","workflow-improvement"]}},"required":["title","rationale","owner","artifact_type"],"additionalProperties":false}},"phase_suggestions":{"type":"array","items":{"type":"object","properties":{"bucket":{"type":"string","enum":["workflow-governance","ci-correctness","approval-policy","planning-automation"]},"title":{"type":"string"},"rationale":{"type":"string"},"owner":{"type":"string"}},"required":["bucket","title","rationale","owner"],"additionalProperties":false}}},"required":["summary","quick_tasks","phase_suggestions"],"additionalProperties":false}'
           allowed-tools: 'Read,Glob,Grep,LS,Bash(cat *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(node *),Bash(ls *),Bash(find *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(rtk:*)'
           prompt: |
             /gsd:quick
@@ -172,11 +172,11 @@ jobs:
 
             Classification buckets:
             - quick_tasks: narrow, tactical follow-ups
-            - phase_suggestions: milestone-scale additions mapped to these phases only:
-              - 13.1 trust gates, central workflow policy, maintainer-only triggers, manual-only path rules
-              - 13.2 CI correctness, release-note generation, pinned bootstrap tooling, perf/build accuracy
-              - 13.3 review signals, approval policy, finalizer behavior, auto-merge governance
-              - 13.4 Claude+GSD planning automation, planning PRs, milestone/phase intake
+            - phase_suggestions: milestone-scale additions mapped to these semantic buckets only:
+              - workflow-governance: trust gates, central workflow policy, maintainer-only triggers, manual-only path rules
+              - ci-correctness: CI correctness, release-note generation, pinned bootstrap tooling, perf/build accuracy
+              - approval-policy: review signals, approval policy, finalizer behavior, auto-merge governance
+              - planning-automation: Claude+GSD planning automation, planning PRs, milestone/phase intake
 
             Return JSON only with concrete, repo-specific suggestions.
 

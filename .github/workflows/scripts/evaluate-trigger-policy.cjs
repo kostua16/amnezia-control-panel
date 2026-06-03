@@ -96,4 +96,36 @@ if (mode === 'fix-issue') {
   process.exit(0);
 }
 
+if (mode === 'planning-intake-repair') {
+  const isPrComment = Boolean(event.issue?.pull_request);
+  const commentTriggered =
+    eventName === 'issue_comment' &&
+    isPrComment &&
+    commentBody.includes('/planning-rename-milestones') &&
+    isMaintainer;
+  const dispatchTriggered = eventName === 'workflow_dispatch';
+  const planningPrNumber =
+    event.inputs?.planning_pr_number ?? event.issue?.number ?? null;
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: commentTriggered || dispatchTriggered,
+        trusted: dispatchTriggered || isMaintainer,
+        author_association: association,
+        trigger_source: commentTriggered
+          ? 'comment'
+          : dispatchTriggered
+            ? 'workflow_dispatch'
+            : null,
+        planning_pr_number: planningPrNumber,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 throw new Error(`Unsupported mode "${mode}"`);
