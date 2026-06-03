@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type { Node, Edge } from '@xyflow/react';
 import type { ChainNode, ChainTopology } from '@/types/chain';
 import type { RemotePanel } from '@/types/remote-panel';
@@ -140,5 +141,5 @@ export function reassignRoles(nodes: ChainBuilderNode[]): ChainBuilderNode[] {
  * Generate a unique node ID.
  */
 export function generateNodeId(): string {
-  return 'node-' + Date.now();
+  return 'node-' + randomUUID().slice(0, 8);
 }

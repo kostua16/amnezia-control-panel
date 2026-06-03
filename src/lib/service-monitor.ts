@@ -99,7 +99,7 @@ export class ServiceMonitor {
 
     const lastStatuses: Record<string, 'online' | 'offline'> = {};
 
-    this.intervalId = setInterval(async () => {
+    const check = async () => {
       for (const serviceKey of this.services) {
         const health = checkServiceStatus(serviceKey);
         const previous = lastStatuses[serviceKey];
@@ -121,7 +121,10 @@ export class ServiceMonitor {
 
         lastStatuses[serviceKey] = health.status;
       }
-    }, this.checkIntervalMs);
+    };
+
+    check();
+    this.intervalId = setInterval(check, this.checkIntervalMs);
   }
 
   /**
