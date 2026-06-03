@@ -85,6 +85,7 @@ The following labels are enforced or created automatically by the workflow stack
 | `flow/draft`                | PR flow is paused while the PR is draft                 |
 | `flow/checks-pending`       | PR flow is waiting for required PR checks               |
 | `flow/checks-failed`        | PR flow is blocked by failed required PR checks         |
+| `flow/checks-unavailable`   | PR flow could not read completed required PR checks     |
 | `flow/review-pending`       | PR flow is waiting for review automation                |
 | `flow/review-blocked`       | PR flow is blocked by review or policy labels           |
 | `flow/review-failed`        | PR flow review automation failed                        |

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const {
+  collectCheckEvidence,
   getLabelsForDecision,
   makeDecision,
   readConfig,
@@ -18,6 +19,14 @@ type Check = {
   workflow: string;
   bucket: string;
   state: string;
+};
+
+type CheckStatus = {
+  status: string;
+  failing: string[];
+  pending: string[];
+  missing: string[];
+  reason?: string;
 };
 
 type Pr = {
@@ -56,6 +65,7 @@ type DecisionOverrides = {
   pr?: Pr;
   policy?: Policy;
   checks?: Check[] | null;
+  checkStatus?: CheckStatus;
   workerRuns?: Record<string, WorkerRun[]>;
   getWorkerRuns?: (workerName: string) => WorkerRun[];
   eventName?: string;
@@ -66,6 +76,7 @@ const flowLabelNames = [
   'flow/draft',
   'flow/checks-pending',
   'flow/checks-failed',
+  'flow/checks-unavailable',
   'flow/review-pending',
   'flow/review-blocked',
   'flow/review-failed',
@@ -176,6 +187,28 @@ function pendingChecks(): Check[] {
   );
 }
 
+function workflowRunEvent(overrides = {}) {
+  return {
+    workflow_run: {
+      database_id: 12345,
+      workflow_name: 'CI',
+      name: 'CI',
+      status: 'completed',
+      head_sha: headSha,
+      pull_requests: [{ number: 181 }],
+      ...overrides,
+    },
+  };
+}
+
+function workflowRunJobs(overrides: Record<string, string> = {}) {
+  return requiredCheckNames.map((name) => ({
+    name,
+    status: 'completed',
+    conclusion: overrides[name] ?? 'success',
+  }));
+}
+
 function decide(overrides: DecisionOverrides = {}) {
   const checks = Object.hasOwn(overrides, 'checks')
     ? overrides.checks
@@ -185,6 +218,7 @@ function decide(overrides: DecisionOverrides = {}) {
     pr: overrides.pr ?? prFixture(),
     policy: overrides.policy ?? policyFixture(),
     checks,
+    checkStatus: overrides.checkStatus,
     workerRuns: overrides.workerRuns ?? {},
     getWorkerRuns: overrides.getWorkerRuns,
     eventName: overrides.eventName ?? 'pull_request_target',
@@ -227,6 +261,122 @@ describe('makeDecision', () => {
     assert.deepEqual(queriedWorkers, []);
   });
 
+  it('keeps PR-open all-missing checks pending without workflow-run fallback', () => {
+    const evidence = collectCheckEvidence({
+      pr: prFixture(),
+      config,
+      eventName: 'pull_request_target',
+      event: { action: 'opened' },
+      runJson(command: string, args: string[]) {
+        assert.equal(command, 'gh');
+        assert.equal(args[0], 'pr');
+        return { ok: true, value: [], error: null };
+      },
+    });
+    const decision = decide({
+      checks: evidence.checks,
+      checkStatus: evidence.checkStatus,
+    });
+
+    assert.equal(evidence.source, 'pr-checks');
+    assert.equal(decision.state, 'flow/checks-pending');
+    assert.equal(decision.dispatch, null);
+  });
+
+  it('uses completed CI workflow-run jobs when PR checks are invisible', () => {
+    const evidence = collectCheckEvidence({
+      pr: prFixture(),
+      config,
+      eventName: 'workflow_run',
+      event: workflowRunEvent(),
+      runJson(command: string, args: string[]) {
+        assert.equal(command, 'gh');
+        if (args[0] === 'pr') {
+          return { ok: true, value: [], error: null };
+        }
+        return {
+          ok: true,
+          value: { workflowName: 'CI', jobs: workflowRunJobs() },
+          error: null,
+        };
+      },
+    });
+    const decision = decide({
+      checks: evidence.checks,
+      checkStatus: evidence.checkStatus,
+      getWorkerRuns() {
+        return [];
+      },
+    });
+
+    assert.equal(evidence.source, 'workflow-run-jobs');
+    assert.equal(evidence.checkStatus.status, 'passed');
+    assert.equal(decision.state, 'flow/review-pending');
+    assert.equal(decision.dispatch?.key, 'codeReview');
+  });
+
+  it('blocks on failed completed CI workflow-run jobs', () => {
+    const evidence = collectCheckEvidence({
+      pr: prFixture(),
+      config,
+      eventName: 'workflow_run',
+      event: workflowRunEvent(),
+      runJson(command: string, args: string[]) {
+        assert.equal(command, 'gh');
+        if (args[0] === 'pr') {
+          return { ok: true, value: [], error: null };
+        }
+        return {
+          ok: true,
+          value: {
+            workflowName: 'CI',
+            jobs: workflowRunJobs({ Build: 'failure' }),
+          },
+          error: null,
+        };
+      },
+    });
+    const decision = decide({
+      checks: evidence.checks,
+      checkStatus: evidence.checkStatus,
+    });
+
+    assert.equal(evidence.source, 'workflow-run-jobs');
+    assert.equal(evidence.checkStatus.status, 'failed');
+    assert.deepEqual(evidence.checkStatus.failing, ['Build']);
+    assert.equal(decision.state, 'flow/checks-failed');
+    assert.equal(decision.dispatch, null);
+  });
+
+  it('marks completed CI checks unavailable when PR checks and run jobs are unreadable', () => {
+    const evidence = collectCheckEvidence({
+      pr: prFixture(),
+      config,
+      eventName: 'workflow_run',
+      event: workflowRunEvent(),
+      runJson(command: string, args: string[]) {
+        assert.equal(command, 'gh');
+        if (args[0] === 'pr') {
+          return { ok: true, value: [], error: null };
+        }
+        return {
+          ok: false,
+          value: null,
+          error: 'Resource not accessible by integration',
+        };
+      },
+    });
+    const decision = decide({
+      checks: evidence.checks,
+      checkStatus: evidence.checkStatus,
+    });
+
+    assert.equal(evidence.source, 'unavailable');
+    assert.equal(evidence.checkStatus.status, 'unavailable');
+    assert.equal(decision.state, 'flow/checks-unavailable');
+    assert.equal(decision.dispatch, null);
+  });
+
   it('dispatches code review only for a ready human PR with green checks', () => {
     const queriedWorkers: string[] = [];
     const decision = decide({
@@ -240,6 +390,17 @@ describe('makeDecision', () => {
     assert.equal(decision.dispatch?.key, 'codeReview');
     assert.equal(decision.dispatch?.workflow, 'code-review.yml');
     assert.deepEqual(queriedWorkers, ['codeReview']);
+  });
+
+  it('dispatches finalizer after human review labels are present', () => {
+    const decision = decide({
+      pr: prFixture({
+        labels: ['ai-review-passed', 'security-review-passed'],
+      }),
+    });
+
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch?.key, 'finalizer');
   });
 
   it('does not dispatch finalizer while one human review signal is missing', () => {
