@@ -5,6 +5,7 @@ on:
     paths: ['src/**', 'package.json', 'next.config.*']
 
 permissions:
+  actions: read
   pull-requests: write
   contents: read
 
@@ -24,9 +25,10 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          install-deps: "true"
-          generate-prisma: "true"
-          install-rtk: "true"
+          install-deps: 'true'
+          generate-prisma: 'true'
+          install-rtk: 'true'
+          cache-nextjs: 'true'
 
       - name: Build and measure PR
         id: pr-build
@@ -40,35 +42,20 @@ jobs:
           echo "size=$SIZE" >> "$GITHUB_OUTPUT"
           echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
         env:
-          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_TELEMETRY_DISABLED: '1'
 
-      - name: Prepare main baseline worktree
-        run: |
-          git worktree remove --force /tmp/perf-main 2>/dev/null || true
-          rm -rf /tmp/perf-main
-          git worktree add /tmp/perf-main origin/main
-
-      - name: Build and measure main
-        id: main-build
-        continue-on-error: true
-        working-directory: /tmp/perf-main
+      - name: Resolve main build metrics baseline
+        id: main-baseline
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          npm ci
-          npx prisma generate
-          START=$(date +%s)
-          npm run build 2>&1 | tail -20 > /tmp/main-build-output.txt
-          END=$(date +%s)
-          DURATION=$((END - START))
-          SIZE=$(du -sb .next | cut -f1)
-          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
-          echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
-        env:
-          NEXT_TELEMETRY_DISABLED: "1"
-
-      - name: Cleanup main baseline worktree
-        if: always()
-        run: git worktree remove --force /tmp/perf-main || true
+          node .github/workflows/scripts/build-metrics.cjs baseline \
+            --repo "$GH_REPO" \
+            --base-sha "$BASE_SHA" \
+            --download-dir "$RUNNER_TEMP/build-metrics-baseline"
 
       - name: Compare and comment
         if: always() && steps.pr-build.outcome == 'success'
@@ -76,13 +63,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_SIZE: ${{ steps.pr-build.outputs.size }}
           PR_DURATION: ${{ steps.pr-build.outputs.duration }}
-          MAIN_SIZE: ${{ steps.main-build.outputs.size }}
-          MAIN_DURATION: ${{ steps.main-build.outputs.duration }}
+          BASELINE_FOUND: ${{ steps.main-baseline.outputs.baseline_found }}
+          BASELINE_REASON: ${{ steps.main-baseline.outputs.baseline_reason }}
+          BASELINE_SOURCE: ${{ steps.main-baseline.outputs.baseline_source }}
+          MAIN_SIZE: ${{ steps.main-baseline.outputs.main_size }}
+          MAIN_DURATION: ${{ steps.main-baseline.outputs.main_duration }}
+          MAIN_SHA: ${{ steps.main-baseline.outputs.main_sha }}
+          MAIN_RUN_URL: ${{ steps.main-baseline.outputs.main_run_url }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           PR_SIZE_MB=$(echo "scale=2; $PR_SIZE / 1048576" | bc)
 
-          if [ -z "$MAIN_SIZE" ] || [ -z "$MAIN_DURATION" ]; then
+          if [ "$BASELINE_FOUND" != "true" ] || [ -z "$MAIN_SIZE" ] || [ -z "$MAIN_DURATION" ]; then
             BODY="## :warning: Build Performance
 
           | Metric | PR |
@@ -90,7 +82,8 @@ jobs:
           | Bundle size | ${PR_SIZE_MB}MB |
           | Build time | ${PR_DURATION}s |
 
-          > **Note:** Main baseline build did not complete. Comparison unavailable."
+          > **Note:** Main baseline metrics unavailable. Comparison skipped.
+          > ${BASELINE_REASON:-No build metrics artifact found.}"
             gh pr comment "$PR_NUMBER" --body "$BODY"
             exit 0
           fi
@@ -102,6 +95,7 @@ jobs:
 
           PR_SIZE_MB=$(echo "scale=2; $PR_SIZE / 1048576" | bc)
           MAIN_SIZE_MB=$(echo "scale=2; $MAIN_SIZE / 1048576" | bc)
+          MAIN_SHA_SHORT="${MAIN_SHA:0:8}"
 
           if [ "$SIZE_DIFF" -gt 5 ] || [ "$TIME_DIFF" -gt 20 ]; then
             ICON="warning"
@@ -110,6 +104,8 @@ jobs:
           fi
 
           BODY="## :${ICON}: Build Performance
+
+          Baseline: [main ${MAIN_SHA_SHORT}](${MAIN_RUN_URL}) (${BASELINE_SOURCE})
 
           | Metric | main | PR | Delta |
           |--------|------|-----|-------|
