@@ -78,6 +78,26 @@ describe('parseClaudeExecution', () => {
     assert.equal(metrics.durationPerTurnMs, 1500);
   });
 
+  it('extracts result-level API errors from execution JSON without requiring logs', () => {
+    const metrics = parseClaudeExecution({
+      executionText: JSON.stringify({
+        type: 'result',
+        is_error: true,
+        duration_ms: 1000,
+        num_turns: 1,
+        result:
+          'API Error: 529 {"error":"[1305][service temporarily overloaded]"}',
+      }),
+      maxTurns: '40',
+      outcome: 'failure',
+    });
+
+    assert.equal(metrics.isError, true);
+    assert.deepEqual(metrics.errorMessages, [
+      'API Error: 529 {"error":"[1305][service temporarily overloaded]"}',
+    ]);
+  });
+
   it('counts tool calls and dedupes read/edit file lists from execution events', () => {
     const executionText = [
       JSON.stringify({ type: 'system', subtype: 'init', model: 'glm-5' }),

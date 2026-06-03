@@ -9,6 +9,7 @@ const {
   parseClaudeExecution,
   redactSecrets,
 } = require('./parse-claude-execution.cjs');
+const { isRateLimitOrOverloadText } = require('./classify-claude-retry.cjs');
 
 function readOptionalFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return '';
@@ -76,6 +77,13 @@ function countMatches(logText, pattern) {
   return matches ? matches.length : 0;
 }
 
+function firstRateLimitEvidenceLine(value) {
+  return firstMatchingLine(
+    value,
+    /API Error:\s*529(?:\D|$)|(?:service\s+)?temporarily overloaded|service overloaded/i,
+  );
+}
+
 function compactJson(value) {
   return JSON.stringify(value);
 }
@@ -128,6 +136,12 @@ function buildFindings({
   const permissionDenials = asNumber(metrics.numRejectedToolCalls, 0);
   const failedToolCalls = asNumber(metrics.numFailedToolCalls, 0);
   const rejectedToolsList = asArray(metrics.rejectedToolsList);
+  const rateLimitEvidenceText = [
+    logText,
+    actionError,
+    ...errorMessages,
+    metrics.lastOutput || '',
+  ].join('\n');
 
   if (actionError) {
     addFinding(
@@ -265,13 +279,25 @@ function buildFindings({
     );
   }
 
-  if (countMatches(logText, /is_rate_limited=true/g) >= 3) {
+  const allAttemptsRateLimited =
+    countMatches(logText, /is_rate_limited=true/g) >= 3;
+  if (
+    allAttemptsRateLimited ||
+    isRateLimitOrOverloadText(rateLimitEvidenceText)
+  ) {
     addFinding(
       findings,
       'rate_limited',
       'error',
-      'All 3 attempts rate limited',
-      'All attempts hit 429',
+      allAttemptsRateLimited
+        ? 'All 3 attempts rate limited'
+        : 'Claude API temporarily overloaded',
+      allAttemptsRateLimited
+        ? 'All attempts hit 429'
+        : sanitizeLogLine(
+            firstRateLimitEvidenceLine(rateLimitEvidenceText) ||
+              'API Error: 529 / temporarily overloaded',
+          ),
     );
   }
 
@@ -282,7 +308,8 @@ function buildFindings({
         message !== actionError &&
         !/Claude Code failed with a non-(rate-limit|retryable) error/.test(
           message,
-        ),
+        ) &&
+        !isRateLimitOrOverloadText(message),
     )
     .slice(0, 3);
   if (extraErrors.length > 0) {

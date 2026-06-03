@@ -175,6 +175,13 @@ function addFailedToolSample(metrics, toolInfo = {}, errorText = '') {
   metrics.failedToolSamples.push(sample);
 }
 
+function addErrorMessage(metrics, value) {
+  const text = sanitizeText(value).replace(/\s+/g, ' ').trim().slice(0, 500);
+  if (!text || metrics.errorMessageKeys.has(text)) return;
+  metrics.errorMessageKeys.add(text);
+  metrics.errorMessages.push(text);
+}
+
 function parseEvents(executionText) {
   const events = parseJsonValues(executionText);
   const metrics = {
@@ -191,6 +198,8 @@ function parseEvents(executionText) {
     editFiles: new Set(),
     failedToolSamples: [],
     failedToolSampleKeys: new Set(),
+    errorMessages: [],
+    errorMessageKeys: new Set(),
   };
   const toolsById = new Map();
   const toolStack = [];
@@ -218,6 +227,12 @@ function parseEvents(executionText) {
         );
         const parsedError = asBoolean(node.is_error);
         if (parsedError !== null) metrics.isError = parsedError;
+        if (node.type === 'result' && parsedError === true) {
+          for (const key of ['result', 'error', 'message']) {
+            if (typeof node[key] === 'string')
+              addErrorMessage(metrics, node[key]);
+          }
+        }
       }
 
       if (node.type === 'tool_use') {
@@ -435,7 +450,12 @@ function parseClaudeExecution(options = {}) {
   const eventMetrics = parseEvents(executionText);
   const logToolMetrics = parseLogToolMetrics(logText);
   const rejectedToolsList = extractRejectedTools(logText);
-  const errorMessages = extractErrorMessages(logText);
+  const errorMessages = [
+    ...new Set([
+      ...eventMetrics.errorMessages,
+      ...extractErrorMessages(logText),
+    ]),
+  ];
   const actionError = extractActionError(logText, errorMessages);
   const changedFilesList = parseChangedFiles(options.changedFiles || '');
   const maxTurns = asNumber(options.maxTurns, null);
