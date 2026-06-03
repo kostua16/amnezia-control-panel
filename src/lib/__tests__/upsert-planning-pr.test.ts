@@ -63,6 +63,60 @@ describe('upsert-planning-pr', () => {
     assert.equal(stderrChunks.join(''), 'visible child stdout\n');
   });
 
+  it('handles execFileSync returning null for capture:false commands', () => {
+    const scriptPath = path.resolve(
+      '.github/workflows/scripts/upsert-planning-pr.cjs',
+    );
+    const childScript = `
+      const Module = require('module');
+      const originalLoad = Module._load;
+      const calls = [];
+
+      Module._load = function mockLoad(request, parent, isMain) {
+        if (request === 'child_process') {
+          return {
+            execFileSync(command, args, options) {
+              calls.push({
+                args,
+                command,
+                encoding: options.encoding,
+                envMatches: options.env === process.env,
+                stdio: options.stdio,
+              });
+              return null;
+            },
+          };
+        }
+
+        return originalLoad.call(this, request, parent, isMain);
+      };
+
+      const { run } = require(process.argv[1]);
+      const output = run('git', ['fetch', 'origin', 'main'], { capture: false });
+      process.stdout.write(JSON.stringify({ calls, output }));
+    `;
+
+    const stdout = execFileSync(
+      process.execPath,
+      ['-e', childScript, scriptPath],
+      {
+        encoding: 'utf8',
+      },
+    );
+    const result = JSON.parse(stdout);
+
+    assert.equal(result.output, '');
+    assert.deepEqual(result.calls, [
+      {
+        args: ['fetch', 'origin', 'main'],
+        command: 'git',
+        encoding: 'utf8',
+        envMatches: true,
+        stdio: ['ignore', 'pipe', 'inherit'],
+      },
+    ]);
+  });
+
   it('emits valid JSON for dry-run CLI output', () => {
     const tmpDir = makeTempDir();
     const suggestionsFile = path.join(tmpDir, 'suggestions.json');
