@@ -1,18 +1,32 @@
 name: Dependency Review
 
+run-name: "PR #${{ github.event.inputs.pr_number || 'manual' }} @ ${{ github.event.inputs.head_sha || github.sha }}"
+
 on:
-  pull_request:
-    paths: ['package.json', 'package-lock.json']
   workflow_dispatch:
     inputs:
       pr_number:
         description: 'Dependabot PR number to review'
         required: true
         type: string
+      head_sha:
+        description: 'Expected pull request head SHA'
+        required: false
+        type: string
+      base_ref:
+        description: 'Expected pull request base ref'
+        required: false
+        type: string
+      orchestrated:
+        description: 'Whether this run was dispatched by PR Orchestrator'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 concurrency:
   group: dep-review-${{ github.event.pull_request.number || github.event.inputs.pr_number || github.sha }}
@@ -42,21 +56,19 @@ jobs:
           script: |
             let pr = null;
 
-            if (context.eventName === 'pull_request') {
-              pr = context.payload.pull_request;
-            } else {
-              const response = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: Number(context.payload.inputs.pr_number)
-              });
-              pr = response.data;
-            }
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(context.payload.inputs.pr_number)
+            });
+            pr = response.data;
 
-            const shouldRun = pr.user.login === 'dependabot[bot]';
+            const expectedHeadSha = context.payload.inputs?.head_sha || '';
+            const headMatches = !expectedHeadSha || pr.head.sha === expectedHeadSha;
+            const shouldRun = headMatches && pr.user.login === 'dependabot[bot]';
             core.setOutput('should_run', String(shouldRun));
             core.setOutput('pr_number', String(pr.number));
-            core.setOutput('base_ref', pr.base.ref);
+            core.setOutput('base_ref', context.payload.inputs?.base_ref || pr.base.ref);
 
   ai-dependency-review:
     needs: [resolve-pr]

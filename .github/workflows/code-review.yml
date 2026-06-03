@@ -1,8 +1,8 @@
 name: Code Review
 
+run-name: "PR #${{ github.event.inputs.pr_number || github.event.issue.number || 'manual' }} @ ${{ github.event.inputs.head_sha || github.sha }}"
+
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -11,6 +11,19 @@ on:
         description: 'Pull request number to review'
         required: true
         type: string
+      head_sha:
+        description: 'Expected pull request head SHA'
+        required: false
+        type: string
+      base_ref:
+        description: 'Expected pull request base ref'
+        required: false
+        type: string
+      orchestrated:
+        description: 'Whether this run was dispatched by PR Orchestrator'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -49,9 +62,7 @@ jobs:
             const eventName = context.eventName;
             let pr = null;
 
-            if (eventName === 'pull_request') {
-              pr = context.payload.pull_request;
-            } else if (eventName === 'issue_comment') {
+            if (eventName === 'issue_comment') {
               const isPrComment = Boolean(context.payload.issue?.pull_request);
               const wantsReview = context.payload.comment?.body?.includes('/review');
               if (!isPrComment || !wantsReview) {
@@ -78,7 +89,10 @@ jobs:
               return;
             }
 
+            const expectedHeadSha = context.payload.inputs?.head_sha || '';
+            const headMatches = !expectedHeadSha || pr.head.sha === expectedHeadSha;
             const shouldRun =
+              headMatches &&
               !pr.draft &&
               pr.user.login !== 'dependabot[bot]' &&
               !(pr.title || '').includes('[skip-review]');
@@ -86,7 +100,7 @@ jobs:
             core.setOutput('should_run', String(shouldRun));
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('head_sha', pr.head.sha);
-            core.setOutput('base_ref', pr.base.ref);
+            core.setOutput('base_ref', context.payload.inputs?.base_ref || pr.base.ref);
 
   claude-main-review:
     needs: [resolve-pr]
