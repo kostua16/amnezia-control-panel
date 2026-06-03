@@ -79,6 +79,24 @@ function runJson(command, args, fallback, options = {}) {
   return output ? JSON.parse(output) : fallback;
 }
 
+function runJsonResult(command, args, fallback = null) {
+  try {
+    return {
+      ok: true,
+      value: JSON.parse(run(command, args)),
+      error: null,
+    };
+  } catch (error) {
+    const stderr = String(error.stderr ?? '').trim();
+    const message = String(error.message ?? '').trim();
+    return {
+      ok: false,
+      value: fallback,
+      error: stderr || message || 'Command failed.',
+    };
+  }
+}
+
 function createTimings() {
   return Object.fromEntries(TIMING_NAMES.map((name) => [name, 0]));
 }
@@ -260,8 +278,212 @@ function getRequiredCheckStatus(checks, requiredChecks) {
   return { status: 'passed', failing, pending, missing };
 }
 
+function getUnavailableCheckStatus(reason, missing = []) {
+  return {
+    status: 'unavailable',
+    failing: [],
+    pending: [],
+    missing,
+    reason,
+  };
+}
+
 function getNotRequestedCheckStatus() {
   return { status: 'not_requested', failing: [], pending: [], missing: [] };
+}
+
+function getRequiredCheckNames(requiredChecks) {
+  return unique((requiredChecks ?? []).flatMap((group) => group.names ?? []));
+}
+
+function getRequiredWorkflowNames(requiredChecks) {
+  return unique((requiredChecks ?? []).map((group) => group.workflow));
+}
+
+function areAllRequiredChecksMissing(checkStatus, requiredChecks) {
+  const requiredNames = getRequiredCheckNames(requiredChecks);
+  return (
+    requiredNames.length > 0 &&
+    checkStatus.failing.length === 0 &&
+    checkStatus.pending.length === 0 &&
+    requiredNames.every((name) => checkStatus.missing.includes(name))
+  );
+}
+
+function getWorkflowRunName(workflowRun) {
+  return workflowRun?.workflow_name ?? workflowRun?.name ?? '';
+}
+
+function workflowRunMatchesRequiredChecks(eventName, event, pr, config) {
+  if (eventName !== 'workflow_run') return false;
+
+  const workflowRun = event.workflow_run ?? {};
+  const requiredWorkflowNames = getRequiredWorkflowNames(
+    config.checks?.required,
+  );
+  const workflowName = getWorkflowRunName(workflowRun);
+  const headSha = workflowRun.head_sha ?? workflowRun.headSha ?? '';
+  const status = String(workflowRun.status ?? '').toLowerCase();
+  const prNumbers = (workflowRun.pull_requests ?? [])
+    .map((item) => toNumber(item.number))
+    .filter(Boolean);
+  const prMatches =
+    prNumbers.length === 0 || prNumbers.includes(toNumber(pr.number));
+
+  return (
+    status === 'completed' &&
+    headSha === pr.headSha &&
+    prMatches &&
+    requiredWorkflowNames.includes(workflowName)
+  );
+}
+
+function getWorkflowRunId(event) {
+  return (
+    event.workflow_run?.database_id ??
+    event.workflow_run?.databaseId ??
+    event.workflow_run?.id ??
+    null
+  );
+}
+
+function mapJobConclusion(job) {
+  const status = String(job.status ?? '').toLowerCase();
+  const conclusion = String(job.conclusion ?? '').toLowerCase();
+
+  if (status !== 'completed') {
+    return { bucket: 'pending', state: status || 'pending' };
+  }
+
+  if (conclusion === 'success') {
+    return { bucket: 'pass', state: 'success' };
+  }
+
+  if (conclusion === 'cancelled' || conclusion === 'skipped') {
+    return { bucket: 'cancel', state: conclusion };
+  }
+
+  if (
+    ['failure', 'timed_out', 'action_required', 'startup_failure'].includes(
+      conclusion,
+    )
+  ) {
+    return { bucket: 'fail', state: conclusion };
+  }
+
+  return { bucket: 'pending', state: conclusion || status || 'pending' };
+}
+
+function workflowRunJobsToChecks(runView, workflowName) {
+  return (runView?.jobs ?? []).map((job) => ({
+    name: job.name,
+    workflow: runView.workflowName ?? workflowName,
+    ...mapJobConclusion(job),
+  }));
+}
+
+function collectCheckEvidence({
+  pr,
+  config,
+  eventName,
+  event,
+  runJson = runJsonResult,
+}) {
+  const requiredChecks = config.checks?.required ?? [];
+  const requiredNames = getRequiredCheckNames(requiredChecks);
+  const prChecksResult = runJson(
+    'gh',
+    [
+      'pr',
+      'checks',
+      String(pr.number),
+      '--json',
+      'name,state,bucket,workflow,link',
+    ],
+    [],
+  );
+  const prChecks = prChecksResult.value ?? [];
+  const prCheckStatus = prChecksResult.ok
+    ? getRequiredCheckStatus(prChecks, requiredChecks)
+    : getUnavailableCheckStatus(
+        `Unable to read PR checks: ${prChecksResult.error}`,
+        requiredNames,
+      );
+  const shouldFallback =
+    workflowRunMatchesRequiredChecks(eventName, event, pr, config) &&
+    (!prChecksResult.ok ||
+      areAllRequiredChecksMissing(prCheckStatus, requiredChecks));
+
+  if (!shouldFallback) {
+    return {
+      checks: prChecksResult.ok ? prChecks : null,
+      checkStatus: prCheckStatus,
+      source: prChecksResult.ok ? 'pr-checks' : 'unavailable',
+      reason: prChecksResult.ok
+        ? 'Read PR checks.'
+        : `Unable to read PR checks: ${prChecksResult.error}`,
+    };
+  }
+
+  const runId = getWorkflowRunId(event);
+  if (!runId) {
+    return {
+      checks: null,
+      checkStatus: getUnavailableCheckStatus(
+        'Completed required workflow_run did not include a run id.',
+        requiredNames,
+      ),
+      source: 'unavailable',
+      reason: 'Completed required workflow_run did not include a run id.',
+    };
+  }
+
+  const workflowName = getWorkflowRunName(event.workflow_run);
+  const runViewResult = runJson(
+    'gh',
+    [
+      'run',
+      'view',
+      String(runId),
+      '--json',
+      'jobs,workflowName,status,conclusion',
+    ],
+    null,
+  );
+
+  if (!runViewResult.ok || !runViewResult.value) {
+    return {
+      checks: null,
+      checkStatus: getUnavailableCheckStatus(
+        `Unable to read workflow_run jobs: ${runViewResult.error}`,
+        requiredNames,
+      ),
+      source: 'unavailable',
+      reason: `Unable to read workflow_run jobs: ${runViewResult.error}`,
+    };
+  }
+
+  const jobChecks = workflowRunJobsToChecks(runViewResult.value, workflowName);
+  const jobCheckStatus = getRequiredCheckStatus(jobChecks, requiredChecks);
+
+  if (jobCheckStatus.missing.length > 0) {
+    return {
+      checks: null,
+      checkStatus: getUnavailableCheckStatus(
+        `Completed ${workflowName} workflow_run jobs are missing required checks: ${jobCheckStatus.missing.join(', ')}.`,
+        jobCheckStatus.missing,
+      ),
+      source: 'unavailable',
+      reason: `Completed ${workflowName} workflow_run jobs are missing required checks: ${jobCheckStatus.missing.join(', ')}.`,
+    };
+  }
+
+  return {
+    checks: jobChecks,
+    checkStatus: jobCheckStatus,
+    source: 'workflow-run-jobs',
+    reason: `Mapped completed ${workflowName} workflow_run jobs for required checks.`,
+  };
 }
 
 function pathsMatch(files, paths) {
@@ -340,9 +562,10 @@ function makeDecision(context) {
     currentLabels.includes(label),
   );
   const checkStatus =
-    checks === null
-      ? (providedCheckStatus ?? getNotRequestedCheckStatus())
-      : getRequiredCheckStatus(checks, config.checks?.required);
+    providedCheckStatus ??
+    (checks === null
+      ? getNotRequestedCheckStatus()
+      : getRequiredCheckStatus(checks, config.checks?.required));
 
   function getWorkerSummary(workerName) {
     if (workerRuns[workerName] === undefined) {
@@ -382,6 +605,12 @@ function makeDecision(context) {
   }
   if (checkStatus.status === 'pending') {
     return finish('flow/checks-pending', 'Waiting for required checks.');
+  }
+  if (checkStatus.status === 'unavailable') {
+    return finish(
+      'flow/checks-unavailable',
+      checkStatus.reason ?? 'Required checks could not be read.',
+    );
   }
 
   const dependencyWorker = workers.dependencyReview ?? {};
@@ -680,29 +909,26 @@ function main() {
   }
 
   const { config, pr } = resolved;
-  let checks = null;
+  let checkEvidence = {
+    checks: null,
+    checkStatus: getNotRequestedCheckStatus(),
+    source: 'not-requested',
+    reason: 'PR is draft.',
+  };
   let policy = emptyPolicy();
 
   if (!pr.isDraft) {
-    checks = timeStep(timings, 'checks', () =>
-      runJson(
-        'gh',
-        [
-          'pr',
-          'checks',
-          String(pr.number),
-          '--json',
-          'name,state,bucket,workflow,link',
-        ],
-        [],
-      ),
+    checkEvidence = timeStep(timings, 'checks', () =>
+      collectCheckEvidence({
+        pr,
+        config,
+        eventName,
+        event,
+      }),
     );
   }
 
-  const checkStatus =
-    checks === null
-      ? getNotRequestedCheckStatus()
-      : getRequiredCheckStatus(checks, config.checks?.required);
+  const { checks, checkStatus } = checkEvidence;
 
   if (!pr.isDraft && checkStatus.status === 'passed') {
     policy = timeStep(timings, 'policy', () =>
@@ -764,6 +990,8 @@ function main() {
     labelsToAdd: decision.labelsToAdd,
     labelsToRemove: decision.labelsToRemove,
     checkStatus: decision.checkStatus,
+    checkSource: checkEvidence.source,
+    checkSourceReason: checkEvidence.reason,
     timings,
   };
 
@@ -775,6 +1003,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  collectCheckEvidence,
   getLabelsForDecision,
   getRequiredCheckStatus,
   makeDecision,

@@ -12,6 +12,10 @@
       "color": "d93f0b",
       "description": "PR flow is blocked by failing required checks"
     },
+    "flow/checks-unavailable": {
+      "color": "d93f0b",
+      "description": "PR flow could not read completed required checks"
+    },
     "flow/review-pending": {
       "color": "1d76db",
       "description": "PR flow is waiting for review automation"
