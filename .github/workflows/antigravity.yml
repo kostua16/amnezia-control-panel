@@ -37,13 +37,12 @@ jobs:
             echo "missing=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run Antigravity CLI
-        id: run-antigravity
+      - name: Run Gemini CLI
+        id: run-gemini
         if: steps.check-secrets.outputs.missing != 'true'
-        uses: ./.github/actions/run-antigravity
+        uses: google-github-actions/run-gemini-cli@v0
         with:
-          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
-          av-api-key: ${{ secrets.AV_API_KEY }}
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY || secrets.AV_API_KEY }}
           prompt: |
             You are an expert AI agent named Antigravity.
             Please read the following context and respond to the user's request.
@@ -54,7 +53,7 @@ jobs:
       - name: Post Comment
         if: steps.check-secrets.outputs.missing != 'true'
         env:
-          REVIEW_OUTPUT: ${{ steps.run-antigravity.outputs.output }}
+          REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.gemini_response }}
         uses: actions/github-script@v7
         with:
           script: |
