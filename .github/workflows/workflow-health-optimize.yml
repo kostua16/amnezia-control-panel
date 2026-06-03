@@ -42,6 +42,10 @@ jobs:
         with:
           script: |
             const { parseClaudeExecution } = require('./.github/workflows/scripts/parse-claude-execution.cjs');
+            const {
+              duplicateSameSha,
+              summarizeWorkflowRunTiming,
+            } = require('./.github/workflows/scripts/workflow-run-timings.cjs');
 
             const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
@@ -93,27 +97,55 @@ jobs:
 
             const runSummaries = [];
             for (const run of filteredRuns) {
+              const runStartedAt = run.run_started_at || run.created_at;
+              const durationSec = Math.round((new Date(run.updated_at) - new Date(runStartedAt)) / 1000);
+              const isSlow = durationSec > 300;
               const summary = {
                 name: run.name,
                 status: run.conclusion,
                 runNumber: run.run_number,
-                duration: `${Math.round((new Date(run.updated_at) - new Date(run.run_started_at || run.created_at)) / 1000)}s`,
+                headSha: run.head_sha,
+                duration: `${durationSec}s`,
+                durationSec,
                 url: run.html_url,
                 headBranch: run.head_branch,
                 event: run.event,
-                runStartedAt: run.run_started_at || run.created_at,
+                runStartedAt,
                 runUpdatedAt: run.updated_at
               };
 
-              // Collect failure logs for failed runs
-              if (run.conclusion === 'failure') {
+              const duplicate = duplicateSameSha(run, filteredRuns);
+              if (duplicate) {
+                summary.duplicateSameSha = duplicate;
+              }
+
+              let jobs = null;
+              let jobsError = '';
+              if (run.conclusion === 'failure' || isSlow) {
                 try {
-                  const jobs = await github.rest.actions.listJobsForWorkflowRun({
+                  jobs = await github.rest.actions.listJobsForWorkflowRun({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
-                    run_id: run.id
+                    run_id: run.id,
+                    per_page: 100
                   });
+                } catch (e) {
+                  jobsError = e.message;
+                  summary.timingSummary = { error: `Could not fetch jobs: ${e.message}` };
+                }
+              }
 
+              if (isSlow && jobs) {
+                summary.timingSummary = summarizeWorkflowRunTiming({
+                  jobs: jobs.data.jobs
+                });
+              }
+
+              // Collect failure logs for failed runs
+              if (run.conclusion === 'failure') {
+                if (!jobs) {
+                  summary.failureLogs = [{ job: 'unknown', failedSteps: [], logTail: `Could not fetch jobs: ${jobsError || 'unknown error'}` }];
+                } else {
                   const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure');
                   summary.failedJobs = failedJobs.map(j => ({
                     name: j.name,
@@ -147,16 +179,13 @@ jobs:
                     claudeSummary: j.claudeSummary,
                     logTail: j.logTail
                   }));
-                } catch (e) {
-                  summary.failureLogs = [{ job: 'unknown', failedSteps: [], logTail: `Could not fetch jobs: ${e.message}` }];
                 }
               }
 
               runSummaries.push(summary);
 
               // Detect problems: failures or slow runs (>300s)
-              const durationSec = (new Date(run.updated_at) - new Date(run.run_started_at || run.created_at)) / 1000;
-              if (run.conclusion === 'failure' || durationSec > 300) {
+              if (run.conclusion === 'failure' || isSlow) {
                 hasProblems = true;
               }
             }
@@ -216,7 +245,7 @@ jobs:
             ## Task: Analyze Workflow Runs and Optimize Workflow Files
 
             You have completed workflow run data from the past hour AND workflow YAML files in `.github/workflows/`.
-            The run data may include compact `claudeSummary` objects extracted by the workflow itself.
+            The run data may include compact `claudeSummary`, `timingSummary`, and `duplicateSameSha` objects extracted by the workflow itself.
 
             ### Completed Runs Data
             ```json
@@ -229,6 +258,8 @@ jobs:
             - Read runs data. Any failures? Slow runs?
             - If ALL runs successful AND none exceeded 5 min → EXIT NOW, no changes.
             - Use ONLY the provided Completed Runs Data for run/log evidence.
+            - Use `timingSummary` to identify concrete queue, runner, job, or step bottlenecks. If timing evidence is missing, mark the slow run ambiguous.
+            - If a slow successful run is explained by `duplicateSameSha`, and CI no longer subscribes to `ready_for_review`, treat that duplicate-run class as already addressed and do not edit workflows for it.
             - Do NOT read any files yet.
 
             ### Phase 2: PLAN (turns 4-6)
