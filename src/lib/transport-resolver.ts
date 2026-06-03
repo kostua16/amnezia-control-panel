@@ -61,7 +61,7 @@ export async function resolvePanelTransport(
     tailnetHostname?: string | null;
     hostname: string;
   },
-  panel: { panelUrl: string },
+  _panel: { panelUrl: string },
   defaultPort = 443,
 ): Promise<ResolvedTransport | null> {
   try {

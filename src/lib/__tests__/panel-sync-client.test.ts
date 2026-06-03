@@ -230,7 +230,7 @@ describe('pushConfigToPanel', () => {
   it('calls fetch with X-API-Key header and X-Signature header', async () => {
     let capturedRequest: RequestInit | undefined;
     globalThis.fetch = mock.fn(
-      async (url: string | URL | Request, init?: RequestInit) => {
+      async (_url: string | URL | Request, init?: RequestInit) => {
         capturedRequest = init;
         return new Response(
           JSON.stringify({

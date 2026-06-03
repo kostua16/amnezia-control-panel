@@ -243,9 +243,7 @@ describe('applyChainConfig', () => {
   });
 
   it('returns valid result object when sourceIp is provided', async () => {
-    let _fetchCalled = false;
     globalThis.fetch = mock.fn(async () => {
-      _fetchCalled = true;
       return new Response('{}', { status: 200 });
     });
 
