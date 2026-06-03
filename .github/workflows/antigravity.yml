@@ -18,6 +18,7 @@ permissions:
 jobs:
   antigravity-interaction:
     runs-on: [self-hosted, big]
+    timeout-minutes: 15
     if: >-
       (github.event_name == 'issue_comment' && (contains(github.event.comment.body, '@gemini') || contains(github.event.comment.body, '@antigravity'))) ||
       (github.event_name == 'pull_request_review_comment' && (contains(github.event.comment.body, '@gemini') || contains(github.event.comment.body, '@antigravity'))) ||
@@ -45,6 +46,7 @@ jobs:
         id: run-gemini
         if: steps.check-secrets.outputs.missing != 'true'
         uses: google-github-actions/run-gemini-cli@v0
+        timeout-minutes: 10
         env:
           GEMINI_CLI_TRUST_WORKSPACE: 'true'
         with:

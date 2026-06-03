@@ -18,6 +18,7 @@ permissions:
 jobs:
   antigravity-review:
     runs-on: [self-hosted, big]
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -62,6 +63,7 @@ jobs:
         id: run-gemini
         if: steps.check-secrets.outputs.missing != 'true'
         uses: google-github-actions/run-gemini-cli@v0
+        timeout-minutes: 10
         env:
           GEMINI_CLI_TRUST_WORKSPACE: 'true'
         with:
