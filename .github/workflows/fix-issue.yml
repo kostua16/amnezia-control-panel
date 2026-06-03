@@ -12,7 +12,7 @@ concurrency:
 
 env:
   NODE_VERSION: '22.x'
-  MAX_TURNS: '100'
+  MAX_TURNS: '60'
 
 permissions:
   contents: write
