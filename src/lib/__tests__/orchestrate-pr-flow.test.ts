@@ -56,6 +56,7 @@ type Policy = {
   };
   should_analyze: boolean;
   manual_only: boolean;
+  blocked_reason?: string;
   blocking_labels_present: string[];
 };
 
@@ -463,7 +464,7 @@ describe('makeDecision', () => {
     assert.equal(decision.dispatch?.key, 'codeReview');
   });
 
-  it('dispatches report-only finalizer for a manual-only workflow PR after gates', () => {
+  it('completes manual-only workflow PRs without dispatching workers', () => {
     const decision = decide({
       pr: prFixture({
         headRefName: 'claude-workflow-optimize-181',
@@ -480,10 +481,30 @@ describe('makeDecision', () => {
       }),
     });
 
-    assert.equal(decision.state, 'flow/finalizer-dispatched');
-    assert.equal(decision.dispatch?.key, 'finalizer');
-    assert.deepEqual(decision.dispatch?.inputs, { dry_run: 'false' });
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(decision.dispatch, null);
     assert.ok(decision.labelsToAdd.includes('flow/manual-only'));
+  });
+
+  it('treats needs-review as manual-only instead of a hard status blocker', () => {
+    const decision = decide({
+      pr: prFixture({
+        headRefName: 'claude-audit-fix-26890853027',
+        labels: ['needs-review'],
+      }),
+      policy: policyFixture({
+        manual_only: true,
+        blocked_reason: 'audit-fix branches are manual-only by policy',
+        blocking_labels_present: ['needs-review'],
+      }),
+    });
+
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(
+      decision.reason,
+      'audit-fix branches are manual-only by policy',
+    );
+    assert.equal(decision.dispatch, null);
   });
 
   it('dispatches dependency review before finalizer for Dependabot package PRs', () => {
@@ -677,6 +698,40 @@ describe('buildFlowVisibility', () => {
       visibility.workers.finalizer.targetUrl,
       workerRuns.finalizer[0].url,
     );
+  });
+
+  it('marks manual-only PRs ready with worker diagnostics set to N/A', () => {
+    const pr = prFixture({
+      headRefName: 'claude-audit-fix-26890853027',
+      labels: ['needs-review'],
+    });
+    const policy = policyFixture({
+      manual_only: true,
+      blocked_reason: 'audit-fix branches are manual-only by policy',
+      blocking_labels_present: ['needs-review'],
+    });
+    const decision = decide({ pr, policy });
+    const visibility = buildFlowVisibility({
+      pr,
+      config,
+      policy,
+      decision,
+      workerRuns: {},
+      eventName: 'pull_request_target',
+      event: { action: 'ready_for_review' },
+      currentRunUrl: 'https://github.example.test/run/orchestrator',
+    });
+
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(visibility.aggregate.state, 'success');
+    assert.equal(
+      visibility.aggregate.description,
+      'audit-fix branches are manual-only by policy',
+    );
+    assert.equal(visibility.workers.codeReview.displayState, 'N/A');
+    assert.equal(visibility.workers.securityReview.displayState, 'N/A');
+    assert.equal(visibility.workers.prImprove.displayState, 'N/A');
+    assert.equal(visibility.workers.finalizer.displayState, 'N/A');
   });
 
   it('surfaces dispatch failures as error statuses and a failed flow label', () => {

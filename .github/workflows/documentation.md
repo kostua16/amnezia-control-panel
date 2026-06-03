@@ -112,6 +112,11 @@ appear as native PR checks for the head SHA. `pr-flow.yml` bridges that gap by
 writing commit statuses directly to the PR head SHA and by updating the sticky
 `<!-- pr-flow-orchestration -->` PR comment.
 
+Worker completion also explicitly wakes `pr-flow.yml` with `workflow_dispatch`
+when the worker was orchestrator-dispatched. The `workflow_run` trigger remains
+as a useful backup for native CI and other visible runs, but `GITHUB_TOKEN`
+dispatch chains should not rely on `workflow_run` alone for progression.
+
 The worker run-name contract is part of the orchestration API: worker run names
 must include `PR #<number> @ <head_sha>`. `orchestrate-pr-flow.cjs` uses that
 pattern to match active or completed dispatch runs back to the current PR head
@@ -120,6 +125,12 @@ and to avoid double dispatching stale workers.
 Branch protection setup is external repository state. After the first
 orchestrator run creates `pr-flow/ready`, require exactly that context if PR-flow
 completion should block merges.
+
+Manual-review markers such as `needs-review` intentionally complete
+`pr-flow/ready` with success once CI is green. They prevent auto-finalization,
+but they should not make the required aggregate status impossible to satisfy.
+Hard blockers such as `do-not-merge`, AI/security concern labels, and blocked
+dependency labels still fail `pr-flow/ready`.
 
 ## Policy Labels
 
@@ -148,7 +159,7 @@ The following labels are enforced or created automatically by the workflow stack
 | `flow/improve-pending`        | PR flow is waiting for improvement intake               |
 | `flow/improve-failed`         | PR flow improvement intake failed                       |
 | `flow/finalizer-dispatched`   | PR flow dispatched the finalizer for this PR head       |
-| `flow/manual-only`            | PR flow reached a manual-only finalizer path            |
+| `flow/manual-only`            | PR flow reached a manual-only orchestration path        |
 | `do-not-merge`                | Explicitly block finalizer approval and auto-merge      |
 | `auto-fix-approved`           | Maintainer explicitly approved issue auto-fix execution |
 | `antigravity-review-passed`   | Antigravity AI code review found no blocking issues     |
@@ -178,18 +189,19 @@ Always manual-only:
 
 ## Policy Examples
 
-| PR shape                                                                                                                                           | Result                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `claude-auto-fix-ci-main-12345` touching `src/**`, green checks, `ai-review-passed`, `security-review-passed`                                      | Finalizer approves and enables squash auto-merge |
-| `claude-auto-fix-ci-main-12345` touching `.github/workflows/ci.yml`                                                                                | Finalizer leaves it manual-only                  |
-| `claude-fix-issue-*` missing `security-review-passed`                                                                                              | Finalizer waits for review signals               |
-| `claude-audit-safe-fix-*` touching a small component/hook/resource-monitor diff, green checks, `ai-review-passed`, `security-review-passed`        | Finalizer approves and enables squash auto-merge |
-| `claude-audit-safe-fix-*` touching `src/app/api/**`, auth/sync/config paths, Prisma, packages, workflows, or more than 3 files / 120 changed lines | Finalizer leaves it manual-only                  |
-| `claude-audit-fix-*` from a broad autonomous audit                                                                                                 | Finalizer leaves it manual-only                  |
-| Broad audit fix touching API route + seed/security-sensitive paths and 7+ files                                                                    | Finalizer leaves it manual-only                  |
-| `dependabot/npm_and_yarn/react-*` with patch/minor update and `deps-review-passed`                                                                 | Finalizer approves and enables squash auto-merge |
-| `dependabot/github_actions/actions-checkout-*`                                                                                                     | Finalizer leaves it manual-only                  |
-| Any PR with `do-not-merge` or a concern/block label                                                                                                | Finalizer does not approve or enable auto-merge  |
+| PR shape                                                                                                                                           | Result                                                                          |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `claude-auto-fix-ci-main-12345` touching `src/**`, green checks, `ai-review-passed`, `security-review-passed`                                      | Finalizer approves and enables squash auto-merge                                |
+| `claude-auto-fix-ci-main-12345` touching `.github/workflows/ci.yml`                                                                                | Finalizer leaves it manual-only                                                 |
+| `claude-fix-issue-*` missing `security-review-passed`                                                                                              | Finalizer waits for review signals                                              |
+| `claude-audit-safe-fix-*` touching a small component/hook/resource-monitor diff, green checks, `ai-review-passed`, `security-review-passed`        | Finalizer approves and enables squash auto-merge                                |
+| `claude-audit-safe-fix-*` touching `src/app/api/**`, auth/sync/config paths, Prisma, packages, workflows, or more than 3 files / 120 changed lines | Finalizer leaves it manual-only                                                 |
+| `claude-audit-fix-*` from a broad autonomous audit                                                                                                 | Finalizer leaves it manual-only                                                 |
+| Broad audit fix touching API route + seed/security-sensitive paths and 7+ files                                                                    | Finalizer leaves it manual-only                                                 |
+| `dependabot/npm_and_yarn/react-*` with patch/minor update and `deps-review-passed`                                                                 | Finalizer approves and enables squash auto-merge                                |
+| `dependabot/github_actions/actions-checkout-*`                                                                                                     | Finalizer leaves it manual-only                                                 |
+| Any PR with `do-not-merge` or a concern/block label                                                                                                | Finalizer does not approve or enable auto-merge                                 |
+| Any PR with only `needs-review` after CI passes                                                                                                    | PR flow marks manual-only complete; human review remains outside PR-flow status |
 
 ## Composite Action Notes
 
@@ -207,7 +219,7 @@ Always manual-only:
 - exposes Claude health and metrics outputs, including `claude_failed`, `claude_failure_reason`, `claude_num_turns`, `claude_is_error`, `claude_used_attempt`, `claude_has_findings`, `claude_failed_tool_samples`, and `claude_metrics_json`
 - accepts `claude-full-output`; it defaults to `true` in this private repo but should default to `false` before public reusable workflow extraction
 - modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
-- workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; existing `actions: write` flows already satisfy this for CI-status MCP support
+- workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; orchestrated workers that wake `pr-flow.yml` must grant `actions: write`
 - orchestrator-dispatched `workflow_dispatch` workers run as `github-actions[bot]`, so Claude/ZAI steps must pass `allowed-bots: github-actions,github-actions[bot],claude[bot]` when `orchestrated=true`; do not use wildcard bot allowance
 
 `run-deepseek`:

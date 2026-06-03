@@ -38,7 +38,7 @@ function leadingSpaces(value: string) {
 }
 
 function readWorkflowList(parentKey: string, childKey: string) {
-  const workflow = fs.readFileSync('.github/workflows/pr-flow.yml', 'utf8');
+  const workflow = readWorkflow('.github/workflows/pr-flow.yml');
   const lines = workflow.split(/\r?\n/);
   const parentIndex = lines.findIndex(
     (line) => line.trim() === `${parentKey}:`,
@@ -71,8 +71,15 @@ function readWorkflowList(parentKey: string, childKey: string) {
   return values;
 }
 
-function readTopLevelMapping(parentKey: string) {
-  const workflow = fs.readFileSync('.github/workflows/pr-flow.yml', 'utf8');
+function readWorkflow(path: string) {
+  return fs.readFileSync(path, 'utf8');
+}
+
+function readTopLevelMapping(
+  parentKey: string,
+  workflowPath = '.github/workflows/pr-flow.yml',
+) {
+  const workflow = readWorkflow(workflowPath);
   const lines = workflow.split(/\r?\n/);
   const parentIndex = lines.findIndex(
     (line) => line.trim() === `${parentKey}:`,
@@ -206,8 +213,35 @@ describe('PR flow workflow invariants', () => {
     assert.equal(permissions.get('issues'), 'write');
   });
 
+  it('keeps orchestrated workers able to wake the orchestrator', () => {
+    const workerWorkflows = [
+      'code-review.yml',
+      'dependency-review.yml',
+      'pr-improve.yml',
+      'pr-finalizer.yml',
+    ];
+
+    for (const workflowName of workerWorkflows) {
+      const workflowPath = `.github/workflows/${workflowName}`;
+      const workflow = readWorkflow(workflowPath);
+      const permissions = readTopLevelMapping('permissions', workflowPath);
+
+      assert.equal(permissions.get('actions'), 'write', workflowName);
+      assert.match(
+        workflow,
+        /if:\s*always\(\) && github\.event\.inputs\.orchestrated == 'true' && github\.event\.inputs\.pr_number != ''/,
+        workflowName,
+      );
+      assert.match(
+        workflow,
+        /gh workflow run pr-flow\.yml\s+\\\n\s+--ref main\s+\\\n\s+-f pr_number="\$PR_NUMBER"\s+\\\n\s+-f dry_run=false/,
+        workflowName,
+      );
+    }
+  });
+
   it('wakes the orchestrator when PR Finalizer completes', () => {
-    const workflow = fs.readFileSync('.github/workflows/pr-flow.yml', 'utf8');
+    const workflow = readWorkflow('.github/workflows/pr-flow.yml');
 
     assert.match(workflow, /workflows:\s*\[[^\]]*'PR Finalizer'[^\]]*\]/);
   });
