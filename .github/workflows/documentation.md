@@ -42,6 +42,7 @@ CI
 pull_request_target lifecycle events
   -> pr-flow.yml
   -> reads .github/pr-flow.json, classifies the PR, syncs one flow/* state label, and dispatches one next worker
+  -> treats draft-to-ready as orchestration only; CI reruns require a new commit
 
 code-review.yml
   -> dispatch-only worker controlled by pr-flow.yml
