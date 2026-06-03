@@ -30,7 +30,7 @@ runs:
     - name: Install Antigravity CLI
       if: steps.cache-agy.outputs.cache-hit != 'true'
       shell: bash
-      run: curl -fsSL https://antigravity.google/cli/install.sh | sh
+      run: curl -fsSL https://antigravity.google/cli/install.sh | bash
 
     - name: Run Antigravity CLI
       id: run-agy
