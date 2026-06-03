@@ -1,0 +1,46 @@
+name: PR Flow Watchdog
+
+run-name: 'PR Flow Watchdog'
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Print stale PRs without dispatching PR Orchestrator'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  actions: write
+
+concurrency:
+  group: pr-flow-watchdog
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          install-deps: 'false'
+
+      - name: Wake stale PR flow states
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          node .github/workflows/scripts/watch-pr-flow.cjs \
+            --dry-run "$DRY_RUN" \
+            --ref main \
+            --workflow pr-flow.yml
