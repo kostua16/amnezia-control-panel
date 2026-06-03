@@ -107,10 +107,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: issue
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          issue-title: "[maintenance] Daily maintenance failed"
+          issue-title: '[maintenance] Daily maintenance failed'
           labels: maintenance,ci-failure
           ensure-labels: maintenance,ci-failure
-          dispatch-triage: "true"
+          dispatch-triage: 'true'
           claude-step-outcome: ${{ needs.maintenance.result }}
           claude-turns: ${{ needs.maintenance.outputs.claude_num_turns }}
           claude-is-error: ${{ needs.maintenance.outputs.claude_is_error }}

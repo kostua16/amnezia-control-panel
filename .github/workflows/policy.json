@@ -188,6 +188,14 @@
     "auto-fix-approved": {
       "color": "5319e7",
       "description": "Maintainer explicitly approved issue auto-fix execution"
+    },
+    "antigravity-review-passed": {
+      "color": "0e8a16",
+      "description": "Antigravity AI code review found no blocking issues"
+    },
+    "antigravity-review-concerns": {
+      "color": "b60205",
+      "description": "Antigravity AI code review found blocking concerns"
     }
   }
 }

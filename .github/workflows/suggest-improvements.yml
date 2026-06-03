@@ -126,10 +126,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: issue
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          issue-title: "[suggest-improvements] Repo improvement workflow failed"
+          issue-title: '[suggest-improvements] Repo improvement workflow failed'
           labels: auto-fix,ci-failure
           ensure-labels: auto-fix,ci-failure
-          dispatch-triage: "true"
+          dispatch-triage: 'true'
           claude-step-outcome: ${{ needs.suggest-improvements.result }}
           claude-turns: ${{ needs.suggest-improvements.outputs.claude_num_turns }}
           claude-is-error: ${{ needs.suggest-improvements.outputs.claude_is_error }}

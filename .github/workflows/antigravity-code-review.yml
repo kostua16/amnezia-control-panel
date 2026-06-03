@@ -1,0 +1,136 @@
+name: Antigravity Code Review Workflow
+
+run-name: "${{ github.event_name == 'issue_comment' && github.event.issue.pull_request == null && format('Issue #{0} @ {1}', github.event.issue.number, github.sha) || format('PR #{0} @ {1}', github.event.inputs.pr_number || github.event.issue.number || 'manual', github.event.inputs.head_sha || github.sha) }}"
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR Number to review'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  authorize:
+    runs-on: self-hosted
+    outputs:
+      should-run: ${{ steps.gate.outputs.should_run }}
+      trusted: ${{ steps.gate.outputs.trusted }}
+      pr-number: ${{ steps.gate.outputs.pr_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Evaluate trigger trust
+        id: gate
+        shell: bash
+        run: |
+          node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode antigravity-review \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            > /tmp/trigger-policy.json
+          {
+            echo "should_run=$(jq -r '.should_run' /tmp/trigger-policy.json)"
+            echo "trusted=$(jq -r '.trusted' /tmp/trigger-policy.json)"
+            echo "pr_number=$(jq -r '.pr_number' /tmp/trigger-policy.json)"
+          } >> "$GITHUB_OUTPUT"
+
+  antigravity-review:
+    needs: [authorize]
+    if: needs.authorize.outputs.should-run == 'true' && needs.authorize.outputs.trusted == 'true'
+    runs-on: [self-hosted, big]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify API Key Presence
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ] && [ -z "${{ secrets.AV_API_KEY }}" ]; then
+            echo "Error: Neither GEMINI_API_KEY nor AV_API_KEY secret is configured."
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch PR Details
+        id: pr-info
+        if: steps.check-secrets.outputs.missing != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM="${{ needs.authorize.outputs.pr-number }}"
+          if [ -z "$PR_NUM" ] || [ "$PR_NUM" == "null" ]; then
+            echo "No PR number provided."
+            exit 1
+          fi
+          echo "pr_num=$PR_NUM" >> "$GITHUB_OUTPUT"
+
+          # Fetch PR diff
+          gh pr diff "$PR_NUM" > pr_diff.patch
+
+      - name: Run Gemini CLI for Review
+        id: run-gemini
+        if: steps.check-secrets.outputs.missing != 'true'
+        uses: google-github-actions/run-gemini-cli@v0
+        timeout-minutes: 10
+        env:
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY || secrets.AV_API_KEY }}
+          prompt: |
+            You are an expert AI code reviewer. Please review the code changes in the PR.
+            The diff of the pull request has been saved to the file `pr_diff.patch` in the workspace.
+            Read the file `pr_diff.patch` to see the changes.
+            Keep your feedback concise and actionable.
+            You must begin your review with a bold header **Gemini code review**.
+            END YOUR REVIEW WITH EXACTLY ONE OF THESE TWO STRINGS: [VERDICT: PASSED] or [VERDICT: CONCERNS].
+
+      - name: Post Review Comment
+        if: steps.check-secrets.outputs.missing != 'true'
+        env:
+          REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = process.env.REVIEW_OUTPUT;
+            const prNum = parseInt(`${{ steps.pr-info.outputs.pr_num }}`);
+            github.rest.issues.createComment({
+              issue_number: prNum,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      - name: Apply Review Label
+        if: steps.check-secrets.outputs.missing != 'true'
+        env:
+          REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNum = parseInt(`${{ steps.pr-info.outputs.pr_num }}`);
+            const output = (process.env.REVIEW_OUTPUT || "");
+            const label = output.includes("[VERDICT: CONCERNS]") ? "antigravity-review-concerns" : "antigravity-review-passed";
+
+            github.rest.issues.addLabels({
+              issue_number: prNum,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: [label]
+            });
