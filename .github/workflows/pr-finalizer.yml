@@ -1,17 +1,27 @@
 name: PR Finalizer
 
+run-name: "PR #${{ github.event.inputs.pr_number || 'manual' }} @ ${{ github.event.inputs.head_sha || github.sha }}"
+
 on:
-  workflow_run:
-    workflows: ['CI', 'Code Review', 'Dependency Review']
-    types: [completed]
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   workflow_dispatch:
     inputs:
       pr_number:
         description: 'Pull request number to evaluate'
         required: true
         type: string
+      head_sha:
+        description: 'Expected pull request head SHA'
+        required: false
+        type: string
+      base_ref:
+        description: 'Expected pull request base ref'
+        required: false
+        type: string
+      orchestrated:
+        description: 'Whether this run was dispatched by PR Orchestrator'
+        required: false
+        default: false
+        type: boolean
       dry_run:
         description: 'Evaluate without approving, merging, or commenting'
         required: false
@@ -61,8 +71,18 @@ jobs:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
         run: |
           gh pr view "$PR_NUMBER" \
-            --json number,title,url,isDraft,headRefName,baseRefName,author,labels,files,isCrossRepository \
+            --json number,title,url,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \
             > /tmp/pr.json
+          expected_head_sha="${{ github.event.inputs.head_sha || '' }}"
+          actual_head_sha=$(jq -r '.headRefOid // ""' /tmp/pr.json)
+          if [ -n "$expected_head_sha" ] && [ "$expected_head_sha" != "$actual_head_sha" ]; then
+            {
+              echo "head_ref="
+              echo "same_repo=false"
+              echo "decision_ready=false"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           node .github/workflows/scripts/evaluate-pr-policy.cjs \
             --policy-file .github/workflows/policy.json \
             --pr-file /tmp/pr.json \
@@ -75,7 +95,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Evaluate finalizer decision
-        if: steps.resolve.outputs.pr_number != ''
+        if: steps.resolve.outputs.pr_number != '' && steps.metadata.outputs.decision_ready == 'true'
         id: decision
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
@@ -195,7 +215,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Upsert finalizer status comment
-        if: steps.resolve.outputs.pr_number != '' && steps.decision.outputs.dry_run != 'true'
+        if: steps.resolve.outputs.pr_number != '' && steps.metadata.outputs.decision_ready == 'true' && steps.decision.outputs.dry_run != 'true'
         uses: actions/github-script@v8
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}

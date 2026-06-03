@@ -1,16 +1,27 @@
 name: PR Improve
 
+run-name: "PR #${{ github.event.inputs.pr_number || 'manual' }} @ ${{ github.event.inputs.head_sha || github.sha }}"
+
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
-  schedule:
-    - cron: '17 2 * * *' # Daily at 02:17 UTC
   workflow_dispatch:
     inputs:
       pr_number:
         description: 'Pull request number to analyze'
         required: true
         type: string
+      head_sha:
+        description: 'Expected pull request head SHA'
+        required: false
+        type: string
+      base_ref:
+        description: 'Expected pull request base ref'
+        required: false
+        type: string
+      orchestrated:
+        description: 'Whether this run was dispatched by PR Orchestrator'
+        required: false
+        default: false
+        type: boolean
       dry_run:
         description: 'Analyze without creating or updating planning branches/PRs'
         required: false
@@ -47,21 +58,7 @@ jobs:
           script: |
             let targets = [];
 
-            if (context.eventName === 'pull_request_target') {
-              targets = [context.payload.pull_request.number];
-            } else if (context.eventName === 'workflow_dispatch') {
-              targets = [Number(context.payload.inputs.pr_number)];
-            } else {
-              const pulls = await github.paginate(github.rest.pulls.list, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                state: 'open',
-                per_page: 100
-              });
-              targets = pulls
-                .filter((pull) => !(pull.labels || []).some((label) => label.name === 'skip-improve'))
-                .map((pull) => pull.number);
-            }
+            targets = [Number(context.payload.inputs.pr_number)];
 
             core.setOutput('targets', JSON.stringify(targets));
             core.setOutput('count', String(targets.length));
@@ -103,15 +100,25 @@ jobs:
           PR_NUMBER: ${{ matrix.pr-number }}
         run: |
           gh pr view "$PR_NUMBER" \
-            --json number,title,url,isDraft,headRefName,baseRefName,author,labels,files,isCrossRepository \
+            --json number,title,url,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \
             > /tmp/pr.json
           node .github/workflows/scripts/evaluate-pr-policy.cjs \
             --policy-file .github/workflows/policy.json \
             --pr-file /tmp/pr.json \
             > /tmp/policy-eval.json
+          expected_head_sha="${{ github.event.inputs.head_sha || '' }}"
+          actual_head_sha=$(jq -r '.headRefOid // ""' /tmp/pr.json)
+          should_analyze=$(jq -r '.should_analyze' /tmp/policy-eval.json)
+          if [ -n "$expected_head_sha" ] && [ "$expected_head_sha" != "$actual_head_sha" ]; then
+            should_analyze="false"
+          fi
+          base_ref="${{ github.event.inputs.base_ref || '' }}"
+          if [ -z "$base_ref" ]; then
+            base_ref=$(jq -r '.base_ref_name' /tmp/policy-eval.json)
+          fi
           {
-            echo "should_analyze=$(jq -r '.should_analyze' /tmp/policy-eval.json)"
-            echo "base_ref=$(jq -r '.base_ref_name' /tmp/policy-eval.json)"
+            echo "should_analyze=$should_analyze"
+            echo "base_ref=$base_ref"
             echo "pr_title=$(jq -r '.title' /tmp/pr.json)"
             echo "pr_url=$(jq -r '.url' /tmp/pr.json)"
           } >> "$GITHUB_OUTPUT"
@@ -284,8 +291,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: issue
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          issue-title: "[pr-improve] PR improvement workflow failed"
+          issue-title: '[pr-improve] PR improvement workflow failed'
           labels: auto-fix,ci-failure
           ensure-labels: auto-fix,ci-failure
-          dispatch-triage: "true"
+          dispatch-triage: 'true'
           claude-step-outcome: ${{ needs.improve.result }}

@@ -1,0 +1,84 @@
+labels:
+  flow/draft:
+    color: '6e7781'
+    description: 'PR flow is paused because the pull request is draft'
+  flow/checks-pending:
+    color: 'fbca04'
+    description: 'PR flow is waiting for required checks'
+  flow/checks-failed:
+    color: 'd93f0b'
+    description: 'PR flow is blocked by failing required checks'
+  flow/review-pending:
+    color: '1d76db'
+    description: 'PR flow is waiting for review automation'
+  flow/review-blocked:
+    color: 'b60205'
+    description: 'PR flow is blocked by review signals'
+  flow/review-failed:
+    color: 'd93f0b'
+    description: 'PR flow review automation failed'
+  flow/improve-pending:
+    color: '1d76db'
+    description: 'PR flow is waiting for planning improvement intake'
+  flow/improve-failed:
+    color: 'd93f0b'
+    description: 'PR flow planning improvement intake failed'
+  flow/finalizer-dispatched:
+    color: '0e8a16'
+    description: 'PR flow dispatched finalizer for this head commit'
+  flow/manual-only:
+    color: 'fbca04'
+    description: 'PR flow reached a manual-only finalizer decision'
+
+resetOnHeadChange:
+  labels:
+    - ai-review-passed
+    - ai-review-concerns
+    - security-review-passed
+    - security-review-concerns
+    - deps-review-passed
+    - deps-review-manual
+    - deps-review-blocked
+    - planning-draft-open
+
+checks:
+  required:
+    - workflow: CI
+      names:
+        - Lint
+        - Type Check
+        - Test
+        - Build
+
+workers:
+  codeReview:
+    workflow: code-review.yml
+    passLabels:
+      - ai-review-passed
+      - security-review-passed
+    blockLabels:
+      - ai-review-concerns
+      - security-review-concerns
+  dependencyReview:
+    workflow: dependency-review.yml
+    paths:
+      - package.json
+      - package-lock.json
+    passLabels:
+      - deps-review-passed
+    blockLabels:
+      - deps-review-manual
+      - deps-review-blocked
+  prImprove:
+    workflow: pr-improve.yml
+    inputs:
+      dry_run: 'false'
+    required: false
+    successLabels:
+      - planning-draft-open
+    skipLabels:
+      - skip-improve
+  finalizer:
+    workflow: pr-finalizer.yml
+    inputs:
+      dry_run: 'false'

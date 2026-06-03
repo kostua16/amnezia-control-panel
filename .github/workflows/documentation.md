@@ -19,6 +19,7 @@ This repo intentionally keeps `GH_PAT` for the workflows that create commits, br
 
 Use `GITHUB_TOKEN` for:
 
+- `pr-flow` orchestration and worker dispatch
 - `pr-finalizer`
 - review-signal labeling
 - release creation
@@ -36,40 +37,62 @@ Use `GH_PAT` for:
 CI
   -> fix-pr.yml (same-repo PR failure path)
   -> fix-branch.yml (direct push failure path)
-  -> pr-finalizer.yml (re-evaluates trusted PRs after CI settles)
+  -> pr-flow.yml (wakes orchestrator after CI settles)
+
+pull_request_target lifecycle events
+  -> pr-flow.yml
+  -> classifies the PR, syncs flow/* state labels, and dispatches one next worker
 
 code-review.yml
+  -> dispatch-only worker controlled by pr-flow.yml
+  -> /review issue comments remain a manual override
   -> produces ai-review-passed / ai-review-concerns
   -> produces security-review-passed / security-review-concerns
-  -> pr-finalizer.yml consumes those signals
+  -> pr-flow.yml consumes those signals
 
 dependency-review.yml
+  -> dispatch-only worker controlled by pr-flow.yml
   -> produces deps-review-passed / deps-review-manual / deps-review-blocked
-  -> pr-finalizer.yml consumes those signals for Dependabot PRs
+  -> pr-flow.yml consumes those signals for Dependabot PRs
 
-pull_request_target / schedule
-  -> pr-improve.yml
+pr-improve.yml
+  -> dispatch-only worker controlled by pr-flow.yml
   -> creates or updates claude-planning-pr-<pr-number> draft PRs
   -> updates ROADMAP.md and 13.x planning intake artifacts
+
+pr-finalizer.yml
+  -> dispatch-only worker controlled by pr-flow.yml
+  -> revalidates required checks, review labels, policy, and head SHA
+  -> approves and enables auto-merge only for eligible trusted PRs
 ```
 
 ## Policy Labels
 
 The following labels are enforced or created automatically by the workflow stack:
 
-| Label                      | Purpose                                                 |
-| -------------------------- | ------------------------------------------------------- |
-| `ai-review-passed`         | Main AI review found no blocking issues                 |
-| `ai-review-concerns`       | Main AI review found blocking issues                    |
-| `security-review-passed`   | Security review found no significant issues             |
-| `security-review-concerns` | Security review found significant issues                |
-| `deps-review-passed`       | Dependabot PR remains auto-merge eligible               |
-| `deps-review-manual`       | Dependency PR needs manual review                       |
-| `deps-review-blocked`      | Dependency PR is blocked from auto-merge                |
-| `skip-improve`             | Skip the Claude+GSD improvement analysis flow           |
-| `planning-draft-open`      | A draft planning PR exists for follow-up work           |
-| `do-not-merge`             | Explicitly block finalizer approval and auto-merge      |
-| `auto-fix-approved`        | Maintainer explicitly approved issue auto-fix execution |
+| Label                       | Purpose                                                 |
+| --------------------------- | ------------------------------------------------------- |
+| `ai-review-passed`          | Main AI review found no blocking issues                 |
+| `ai-review-concerns`        | Main AI review found blocking issues                    |
+| `security-review-passed`    | Security review found no significant issues             |
+| `security-review-concerns`  | Security review found significant issues                |
+| `deps-review-passed`        | Dependabot PR remains auto-merge eligible               |
+| `deps-review-manual`        | Dependency PR needs manual review                       |
+| `deps-review-blocked`       | Dependency PR is blocked from auto-merge                |
+| `skip-improve`              | Skip the Claude+GSD improvement analysis flow           |
+| `planning-draft-open`       | A draft planning PR exists for follow-up work           |
+| `flow/draft`                | PR flow is paused while the PR is draft                 |
+| `flow/checks-pending`       | PR flow is waiting for required PR checks               |
+| `flow/checks-failed`        | PR flow is blocked by failed required PR checks         |
+| `flow/review-pending`       | PR flow is waiting for review automation                |
+| `flow/review-blocked`       | PR flow is blocked by review or policy labels           |
+| `flow/review-failed`        | PR flow review automation failed                        |
+| `flow/improve-pending`      | PR flow is waiting for improvement intake               |
+| `flow/improve-failed`       | PR flow improvement intake failed                       |
+| `flow/finalizer-dispatched` | PR flow dispatched the finalizer for this PR head       |
+| `flow/manual-only`          | PR flow reached a manual-only finalizer path            |
+| `do-not-merge`              | Explicitly block finalizer approval and auto-merge      |
+| `auto-fix-approved`         | Maintainer explicitly approved issue auto-fix execution |
 
 Existing operational labels still used by the repo include `auto-fix`, `needs-review`, `triaged`, `duplicate`, `fixed`, `canceled`, and `ci-failure`.
 
@@ -147,6 +170,7 @@ Always manual-only:
 
 The following workflows expose `workflow_dispatch` dry-run inputs for safe testing:
 
+- `pr-flow.yml`
 - `pr-finalizer.yml`
 - `pr-improve.yml`
 - `issue-catch-up.yml`
@@ -156,7 +180,7 @@ The following workflows expose `workflow_dispatch` dry-run inputs for safe testi
 All GSD slash commands in workflow prompts **must** use the colon namespace format (`/gsd:xxx`), not the hyphenated form (`/gsd-xxx`). Claude Code's CLI parser only recognizes `/gsd:xxx` as a valid skill invocation. The hyphenated form is a display alias that the local skill router resolves interactively but the CLI rejects when used as the first token in a prompt — the entire run fails with `Unknown command` at turn 0.
 
 | Use           | Avoid         |
-|---------------|---------------|
+| ------------- | ------------- |
 | `/gsd:health` | `/gsd-health` |
 | `/gsd:debug`  | `/gsd-debug`  |
 | `/gsd:quick`  | `/gsd-quick`  |
