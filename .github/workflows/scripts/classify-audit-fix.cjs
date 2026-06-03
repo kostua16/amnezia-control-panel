@@ -8,7 +8,7 @@ const {
 } = require('./evaluate-pr-policy.cjs');
 
 function runGit(args) {
-  return execFileSync('git', args, { encoding: 'utf8' }).trim();
+  return (execFileSync('git', args, { encoding: 'utf8' }) ?? '').trim();
 }
 
 function parseNumstat(output) {
