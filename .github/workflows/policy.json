@@ -6,7 +6,8 @@
   ],
   "manualOnlyBranchPrefixes": [
     "claude-workflow-optimize-",
-    "claude-planning-pr-"
+    "claude-planning-pr-",
+    "claude-audit-fix-"
   ],
   "planningBranchPrefix": "claude-planning-pr-",
   "fixApprovalLabel": "auto-fix-approved",
@@ -20,6 +21,52 @@
   ],
   "improveSkipLabels": ["skip-improve"],
   "manualOnlyPathGlobs": [".github/**", ".planning/**"],
+  "auditSafe": {
+    "safeBranchPrefix": "claude-audit-safe-fix-",
+    "manualBranchPrefix": "claude-audit-fix-",
+    "safeLabels": ["auto-fix", "audit-safe", "skip-improve"],
+    "manualLabels": ["auto-fix", "needs-review"],
+    "maxFiles": 3,
+    "maxChangedLines": 120,
+    "allowedPathGlobs": [
+      "src/components/**",
+      "src/hooks/**",
+      "src/lib/api-response.ts",
+      "src/lib/format.ts",
+      "src/lib/resource-monitor.ts",
+      "src/lib/resource-alerts.ts",
+      "src/types/api.ts",
+      "src/types/monitoring.ts",
+      "src/app/globals.css"
+    ],
+    "manualOnlyPathGlobs": [
+      ".github/**",
+      ".planning/**",
+      "prisma/**",
+      "src/generated/**",
+      "package*.json",
+      "next.config.*",
+      "scripts/**",
+      "src/middleware.ts",
+      "src/app/api/**",
+      "src/lib/seed.ts",
+      "src/lib/auth.ts",
+      "src/lib/auth-store.ts",
+      "src/lib/hmac.ts",
+      "src/lib/prisma.ts",
+      "src/lib/*sync*",
+      "src/lib/panel-*",
+      "src/lib/server-*",
+      "src/lib/user-*",
+      "src/lib/config-*",
+      "src/types/auth.ts",
+      "src/types/panel-sync.ts",
+      "src/types/remote-panel.ts",
+      "src/types/server.ts",
+      "src/types/user.ts",
+      "src/types/config*.ts"
+    ]
+  },
   "improveQualifyingGlobs": [
     "src/**",
     "prisma/**",
@@ -37,6 +84,10 @@
     "auto-fix": {
       "color": "e4e669",
       "description": "Automation-authored fix or maintenance follow-up"
+    },
+    "audit-safe": {
+      "color": "0e8a16",
+      "description": "Autonomous audit fix stayed within the safe auto-merge policy"
     },
     "ci-failure": {
       "color": "d73a4a",

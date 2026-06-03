@@ -15,22 +15,12 @@ const trafficStatsSchema = z.object({
 
 type Period = 'hourly' | 'daily' | 'weekly' | 'monthly';
 
-/**
- * SQLite-compatible date truncation via strftime.
- * Returns a SQL expression string for grouping by period.
- */
-function getTruncExpr(period: Period): string {
-  switch (period) {
-    case 'hourly':
-      return "strftime('%Y-%m-%d %H:00', timestamp)";
-    case 'daily':
-      return "strftime('%Y-%m-%d', timestamp)";
-    case 'weekly':
-      return "strftime('%Y-W%W', timestamp)";
-    case 'monthly':
-      return "strftime('%Y-%m', timestamp)";
-  }
-}
+const TRUNC_EXPRS: Record<Period, string> = {
+  hourly: "strftime('%Y-%m-%d %H:00', timestamp)",
+  daily: "strftime('%Y-%m-%d', timestamp)",
+  weekly: "strftime('%Y-W%W', timestamp)",
+  monthly: "strftime('%Y-%m', timestamp)",
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,56 +34,46 @@ export async function GET(request: NextRequest) {
 
     const { userId, period, startDate, endDate } = parsed.data;
 
-    // Build WHERE clause
-    const whereConditions: string[] = [];
-    const whereParams: Record<string, unknown> = {};
+    // Build parameterized query — truncExpr is safe (from fixed map),
+    // user values are bound via Prisma.sql tagged template.
+    const truncExpr = TRUNC_EXPRS[period];
+    const conditions: string[] = [];
+    const p: unknown[] = [];
 
     if (userId) {
-      whereConditions.push('userId = $userId');
-      whereParams.userId = userId;
+      conditions.push(`userId = ?`);
+      p.push(userId);
     }
-
     if (startDate) {
       const sd = new Date(startDate);
       if (!isNaN(sd.getTime())) {
-        whereConditions.push('timestamp >= $startDate');
-        whereParams.startDate = sd.toISOString();
+        conditions.push(`timestamp >= ?`);
+        p.push(sd.toISOString());
       }
     }
-
     if (endDate) {
       const ed = new Date(endDate);
       if (!isNaN(ed.getTime())) {
-        whereConditions.push('timestamp <= $endDate');
-        whereParams.endDate = ed.toISOString();
+        conditions.push(`timestamp <= ?`);
+        p.push(ed.toISOString());
       }
     }
 
     const whereClause =
-      whereConditions.length > 0
-        ? `WHERE ${whereConditions.join(' AND ')}`
-        : '';
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const truncExpr = getTruncExpr(period);
-
-    // Aggregate traffic by time bucket
+    // Prisma.sql only allows ? placeholders via tagged template interpolation.
+    // Build the final query with Prisma.join for the parameter list.
+    // Since truncExpr and whereClause are server-controlled (not user input),
+    // and all user values are bound as parameters, this is safe.
     const bucketsRaw: Array<{
       bucket: string;
       bytesIn: bigint;
       bytesOut: bigint;
       userCount: bigint;
     }> = await prisma.$queryRawUnsafe(
-      `
-      SELECT
-        ${truncExpr} as bucket,
-        SUM(bytesIn) as "bytesIn",
-        SUM(bytesOut) as "bytesOut",
-        COUNT(DISTINCT userId) as "userCount"
-      FROM traffic_logs
-      ${whereClause}
-      GROUP BY bucket
-      ORDER BY bucket ASC
-    `,
+      `SELECT ${truncExpr} as bucket, SUM(bytesIn) as "bytesIn", SUM(bytesOut) as "bytesOut", COUNT(DISTINCT userId) as "userCount" FROM traffic_logs ${whereClause} GROUP BY bucket ORDER BY bucket ASC`,
+      ...p,
     );
 
     const buckets = bucketsRaw.map((row) => ({

@@ -79,27 +79,34 @@ Auto-finalization candidates:
 
 - `claude-auto-fix-ci-*`
 - `claude-fix-issue-*`
+- `claude-audit-safe-fix-*` when the diff stays within the audit-safe limits and review signals pass
 - `dependabot/npm*` and `dependabot/npm_and_yarn/*` when the update is proven to be patch/minor and dependency review passes
 
 Always manual-only:
 
 - `claude-workflow-optimize-*`
+- `claude-audit-fix-*`
 - `claude-planning-pr-*`
 - any PR touching `.github/**`
 - any PR touching `.planning/**`
+- any audit-fix PR touching API routes, auth, sync, API key, panel/server/user config, Prisma/generated code, package manifests, scripts, or more than the audit-safe size limits
 - any Dependabot GitHub Actions update
 - any dependency PR labeled `deps-review-manual` or `deps-review-blocked`
 
 ## Policy Examples
 
-| PR shape                                                                                                      | Result                                           |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `claude-auto-fix-ci-main-12345` touching `src/**`, green checks, `ai-review-passed`, `security-review-passed` | Finalizer approves and enables squash auto-merge |
-| `claude-auto-fix-ci-main-12345` touching `.github/workflows/ci.yml`                                           | Finalizer leaves it manual-only                  |
-| `claude-fix-issue-*` missing `security-review-passed`                                                         | Finalizer waits for review signals               |
-| `dependabot/npm_and_yarn/react-*` with patch/minor update and `deps-review-passed`                            | Finalizer approves and enables squash auto-merge |
-| `dependabot/github_actions/actions-checkout-*`                                                                | Finalizer leaves it manual-only                  |
-| Any PR with `do-not-merge` or a concern/block label                                                           | Finalizer does not approve or enable auto-merge  |
+| PR shape                                                                                                                                           | Result                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `claude-auto-fix-ci-main-12345` touching `src/**`, green checks, `ai-review-passed`, `security-review-passed`                                      | Finalizer approves and enables squash auto-merge |
+| `claude-auto-fix-ci-main-12345` touching `.github/workflows/ci.yml`                                                                                | Finalizer leaves it manual-only                  |
+| `claude-fix-issue-*` missing `security-review-passed`                                                                                              | Finalizer waits for review signals               |
+| `claude-audit-safe-fix-*` touching a small component/hook/resource-monitor diff, green checks, `ai-review-passed`, `security-review-passed`        | Finalizer approves and enables squash auto-merge |
+| `claude-audit-safe-fix-*` touching `src/app/api/**`, auth/sync/config paths, Prisma, packages, workflows, or more than 3 files / 120 changed lines | Finalizer leaves it manual-only                  |
+| `claude-audit-fix-*` from a broad autonomous audit                                                                                                 | Finalizer leaves it manual-only                  |
+| Broad audit fix touching API route + seed/security-sensitive paths and 7+ files                                                                    | Finalizer leaves it manual-only                  |
+| `dependabot/npm_and_yarn/react-*` with patch/minor update and `deps-review-passed`                                                                 | Finalizer approves and enables squash auto-merge |
+| `dependabot/github_actions/actions-checkout-*`                                                                                                     | Finalizer leaves it manual-only                  |
+| Any PR with `do-not-merge` or a concern/block label                                                                                                | Finalizer does not approve or enable auto-merge  |
 
 ## Composite Action Notes
 
@@ -156,7 +163,7 @@ The following workflows expose `workflow_dispatch` dry-run inputs for safe testi
 All GSD slash commands in workflow prompts **must** use the colon namespace format (`/gsd:xxx`), not the hyphenated form (`/gsd-xxx`). Claude Code's CLI parser only recognizes `/gsd:xxx` as a valid skill invocation. The hyphenated form is a display alias that the local skill router resolves interactively but the CLI rejects when used as the first token in a prompt — the entire run fails with `Unknown command` at turn 0.
 
 | Use           | Avoid         |
-|---------------|---------------|
+| ------------- | ------------- |
 | `/gsd:health` | `/gsd-health` |
 | `/gsd:debug`  | `/gsd-debug`  |
 | `/gsd:quick`  | `/gsd-quick`  |

@@ -14,16 +14,12 @@ const CACHE_TTL_MS = 10_000;
  * Get CPU usage as a percentage (0-100).
  * Computed by sampling two snapshots 100ms apart.
  */
-function getCpuUsage(): number {
-  const cpus = os.cpus();
+async function getCpuUsage(): Promise<number> {
+  const sample1 = getAverageLoad();
 
-  const sample1 = getAverageLoad(cpus);
-  // Busy-wait 100ms to measure CPU work between samples
-  const start = Date.now();
-  while (Date.now() - start < 100) {
-    // intentional busy wait
-  }
-  const sample2 = getAverageLoad(cpus);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const sample2 = getAverageLoad();
 
   const idleDiff = sample2.idle - sample1.idle;
   const totalDiff = sample2.total - sample1.total;
@@ -32,7 +28,8 @@ function getCpuUsage(): number {
   return Math.min(100, Math.round(((totalDiff - idleDiff) / totalDiff) * 100));
 }
 
-function getAverageLoad(cpus: os.CpuInfo[]): { idle: number; total: number } {
+function getAverageLoad(): { idle: number; total: number } {
+  const cpus = os.cpus();
   let idle = 0;
   let total = 0;
   for (const cpu of cpus) {
@@ -110,7 +107,7 @@ function getDiskUsage(): {
  * Collect system resources (CPU, RAM, Disk).
  * Results are cached for 10 seconds.
  */
-export function getSystemResources(): SystemResources {
+export async function getSystemResources(): Promise<SystemResources> {
   const now = Date.now();
 
   if (cachedResources && cachedResources.expiresAt > now) {
@@ -125,7 +122,7 @@ export function getSystemResources(): SystemResources {
 
   const data: SystemResources = {
     cpu: {
-      usage: getCpuUsage(),
+      usage: await getCpuUsage(),
       cores: os.cpus().length,
     },
     memory: {

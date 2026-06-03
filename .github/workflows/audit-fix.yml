@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: '53 9,21 * * *' # Twice daily at 09:53 and 21:53 UTC
   workflow_dispatch:
+    inputs:
+      lane:
+        description: 'Audit PR lane selection'
+        required: false
+        type: choice
+        default: auto
+        options:
+          - auto
+          - manual-only
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -49,7 +58,7 @@ jobs:
         id: branch
         uses: ./.github/actions/prepare-automation-branch
         with:
-          branch-name: claude-workflow-optimize-audit-fix-${{ github.run_id }}
+          branch-name: claude-audit-work-${{ github.run_id }}
 
       - name: Audit repository and apply targeted fixes
         id: claude_run
@@ -70,6 +79,8 @@ jobs:
             - Do NOT run `git` or `gh`.
             - Do NOT commit, push, merge, or open a PR. The workflow handles that.
             - Keep changes reviewable; avoid broad refactors unless they are directly required by the audit finding.
+            - Prefer narrow, low-risk fixes in components, hooks, formatting helpers, API response helpers, resource monitoring, and monitoring types.
+            - Broad, security-sensitive, schema, package, API route, workflow, or planning changes are allowed when needed, but they will become manual-only PRs.
             - If no worthwhile fixes are identified, make no file changes.
 
       - name: Fail on Claude soft failure
@@ -78,10 +89,39 @@ jobs:
           echo "::error::Claude soft failure: ${{ steps.claude_run.outputs.claude_failure_reason }}"
           exit 1
 
+      - name: Classify audit fix lane
+        id: classify
+        env:
+          AUDIT_FIX_MODE: ${{ github.event.inputs.lane || 'auto' }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # PR Finalizer independently re-validates audit-safe policy from PR file metadata.
+          node .github/workflows/scripts/classify-audit-fix.cjs \
+            --policy-file .github/workflows/policy.json \
+            --mode "$AUDIT_FIX_MODE" \
+            --run-id "$RUN_ID" \
+            > /tmp/audit-classification.json
+
+          {
+            echo "eligible=$(jq -r '.eligible' /tmp/audit-classification.json)"
+            echo "reason=$(jq -r '.reason' /tmp/audit-classification.json)"
+            echo "branch_name=$(jq -r '.branch_name' /tmp/audit-classification.json)"
+            echo "draft=$(jq -r '.draft' /tmp/audit-classification.json)"
+            echo "labels=$(jq -r '.labels' /tmp/audit-classification.json)"
+            echo "title=$(jq -r '.title' /tmp/audit-classification.json)"
+            DELIM="EOF-$(openssl rand -hex 8)"
+            echo "body<<$DELIM"
+            jq -r '.body' /tmp/audit-classification.json
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Audit fix lane: $(jq -r '.branch_name' /tmp/audit-classification.json)"
+          echo "Audit fix classification: $(jq -r '.reason' /tmp/audit-classification.json)"
+
       - uses: ./.github/actions/commit-and-push
         id: push
         with:
-          branch-name: ${{ steps.branch.outputs.branch_name }}
+          branch-name: ${{ steps.classify.outputs.branch_name }}
           commit-message: 'fix(audit): address autonomous audit findings'
 
       - name: Log no-changes result
@@ -94,13 +134,11 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
           base: main
-          branch-name: ${{ steps.branch.outputs.branch_name }}
-          title: 'fix(audit): address autonomous audit findings'
-          body: |
-            Automated audit-fix output from the `audit-fix` workflow.
-
-            This PR is intentionally manual-only under repository policy and should be reviewed before merge.
-          draft: 'true'
+          branch-name: ${{ steps.classify.outputs.branch_name }}
+          title: ${{ steps.classify.outputs.title }}
+          body: ${{ steps.classify.outputs.body }}
+          labels: ${{ steps.classify.outputs.labels }}
+          draft: ${{ steps.classify.outputs.draft }}
 
   report-failure:
     needs: [audit-fix]
@@ -123,10 +161,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: issue
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          issue-title: "[audit-fix] Autonomous audit-fix workflow failed"
+          issue-title: '[audit-fix] Autonomous audit-fix workflow failed'
           labels: auto-fix,ci-failure
           ensure-labels: auto-fix,ci-failure
-          dispatch-triage: "true"
+          dispatch-triage: 'true'
           claude-step-outcome: ${{ needs.audit-fix.result }}
           claude-turns: ${{ needs.audit-fix.outputs.claude_num_turns }}
           claude-is-error: ${{ needs.audit-fix.outputs.claude_is_error }}

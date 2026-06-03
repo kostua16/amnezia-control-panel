@@ -29,6 +29,9 @@ concurrency:
 
 jobs:
   finalize:
+    if: |
+      github.event_name != 'workflow_run' ||
+      toJSON(github.event.workflow_run.pull_requests) != '[]'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5

@@ -129,7 +129,7 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
   };
 
   const handleToggleService = async (
-    serviceId: number,
+    _serviceId: number,
     serviceType: string,
     _currentStatus: string,
   ) => {

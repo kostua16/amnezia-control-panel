@@ -41,7 +41,7 @@ export interface ResourceCheckResult {
  * Prevents duplicate alerts within 30 minutes.
  */
 export async function checkResourceThresholds(): Promise<ResourceCheckResult> {
-  const resources = getSystemResources();
+  const resources = await getSystemResources();
   const results: ResourceCheckResult = {
     checks: [],
     alertsCreated: 0,

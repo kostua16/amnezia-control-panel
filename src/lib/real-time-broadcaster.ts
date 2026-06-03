@@ -48,9 +48,9 @@ export function startBroadcaster(): void {
   }, 30_000);
 
   // System resources — every 10s
-  resourcesInterval = setInterval(() => {
+  resourcesInterval = setInterval(async () => {
     try {
-      const resources = getSystemResources();
+      const resources = await getSystemResources();
       broadcastEvent('resource:update', resources);
     } catch (err) {
       console.error('[broadcaster] Resources push failed:', err);

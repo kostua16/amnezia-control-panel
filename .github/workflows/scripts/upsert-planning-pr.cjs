@@ -39,11 +39,21 @@ function getArg(name, fallback = null) {
 }
 
 function run(command, args, options = {}) {
-  return execFileSync(command, args, {
-    encoding: 'utf8',
-    env: process.env,
-    stdio: options.capture === false ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-  }).trim();
+  const stdout =
+    execFileSync(command, args, {
+      encoding: 'utf8',
+      env: process.env,
+      stdio:
+        options.capture === false
+          ? ['ignore', 'pipe', 'inherit']
+          : ['ignore', 'pipe', 'pipe'],
+    }) ?? '';
+
+  if (options.capture === false && stdout) {
+    process.stderr.write(stdout);
+  }
+
+  return stdout.trim();
 }
 
 function ensureDir(dirPath) {
@@ -224,280 +234,294 @@ function collectTrackedPaths(quickDir, quickPlanPath, quickSummaryPath) {
   return tracked;
 }
 
-const suggestionsFile = getArg('--suggestions-file');
-const sourcePrNumber = Number(getArg('--source-pr-number'));
-const sourcePrTitle = escapeInline(getArg('--source-pr-title'));
-const sourcePrUrl = getArg('--source-pr-url');
-const baseRef = getArg('--base-ref') ?? 'main';
-const dryRun = getArg('--dry-run', 'false') === 'true';
+function main() {
+  const suggestionsFile = getArg('--suggestions-file');
+  const sourcePrNumber = Number(getArg('--source-pr-number'));
+  const sourcePrTitle = escapeInline(getArg('--source-pr-title'));
+  const sourcePrUrl = getArg('--source-pr-url');
+  const baseRef = getArg('--base-ref') ?? 'main';
+  const dryRun = getArg('--dry-run', 'false') === 'true';
 
-if (!suggestionsFile) {
-  throw new Error('--suggestions-file is required');
-}
+  if (!suggestionsFile) {
+    throw new Error('--suggestions-file is required');
+  }
 
-if (!Number.isFinite(sourcePrNumber)) {
-  throw new Error('--source-pr-number must be numeric');
-}
+  if (!Number.isFinite(sourcePrNumber)) {
+    throw new Error('--source-pr-number must be numeric');
+  }
 
-const suggestions = readJson(suggestionsFile);
-const summary = escapeInline(
-  suggestions.summary || 'Claude+GSD generated no summary.',
-);
-const quickTasks = Array.isArray(suggestions.quick_tasks)
-  ? suggestions.quick_tasks
-  : [];
-const phaseSuggestions = Array.isArray(suggestions.phase_suggestions)
-  ? suggestions.phase_suggestions.filter((item) => PHASE_METADATA[item.phase])
-  : [];
-
-const dateStamp = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-const quickSlug = `${dateStamp}-pr${sourcePrNumber}-workflow-improve`;
-const quickDir = path.join('.planning', 'quick', quickSlug);
-const quickPlanPath = path.join(
-  quickDir,
-  `${dateStamp}-pr${sourcePrNumber}-PLAN.md`,
-);
-const quickSummaryPath = path.join(
-  quickDir,
-  `${dateStamp}-pr${sourcePrNumber}-SUMMARY.md`,
-);
-const quickArtifactPath = quickPlanPath;
-const branchName = `claude-planning-pr-${sourcePrNumber}`;
-
-const trackedPaths = collectTrackedPaths(
-  quickDir,
-  quickPlanPath,
-  quickSummaryPath,
-);
-
-if (dryRun) {
-  process.stdout.write(
-    JSON.stringify(
-      {
-        dry_run: true,
-        branch_name: branchName,
-        quick_artifact_path: quickArtifactPath,
-        tracked_paths: trackedPaths,
-        summary,
-        quick_task_count: quickTasks.length,
-        phase_suggestion_count: phaseSuggestions.length,
-      },
-      null,
-      2,
-    ),
+  const suggestions = readJson(suggestionsFile);
+  const summary = escapeInline(
+    suggestions.summary || 'Claude+GSD generated no summary.',
   );
-  process.exit(0);
-}
+  const quickTasks = Array.isArray(suggestions.quick_tasks)
+    ? suggestions.quick_tasks
+    : [];
+  const phaseSuggestions = Array.isArray(suggestions.phase_suggestions)
+    ? suggestions.phase_suggestions.filter((item) => PHASE_METADATA[item.phase])
+    : [];
 
-if (!dryRun) {
-  run('git', ['fetch', 'origin', baseRef, '--depth=1'], { capture: false });
-  run('git', ['checkout', '-B', branchName, `origin/${baseRef}`], {
-    capture: false,
-  });
-}
-
-writeFile(
-  quickPlanPath,
-  renderQuickPlan({
-    sourcePrNumber,
-    sourcePrTitle,
-    sourcePrUrl,
-    summary,
-    quickTasks,
-    phaseSuggestions,
-  }),
-);
-
-writeFile(
-  quickSummaryPath,
-  renderQuickSummary({
-    sourcePrNumber,
-    sourcePrUrl,
-    summary,
-    quickTasks,
-    phaseSuggestions,
-  }),
-);
-
-let roadmap = fs.readFileSync(ROADMAP_PATH, 'utf8');
-const roadmapLine = `- PR #${sourcePrNumber}: ${sourcePrTitle} -- ${summarizePhaseSuggestions(phaseSuggestions)}. Quick artifact: \`${quickArtifactPath}\`.`;
-roadmap = upsertSingleLineEntry(
-  roadmap,
-  ROADMAP_INTAKE_START,
-  ROADMAP_INTAKE_END,
-  `PR-IMPROVE:${sourcePrNumber}`,
-  roadmapLine,
-);
-fs.writeFileSync(ROADMAP_PATH, roadmap);
-
-const suggestionsByPhase = new Map();
-for (const suggestion of phaseSuggestions) {
-  if (!suggestionsByPhase.has(suggestion.phase)) {
-    suggestionsByPhase.set(suggestion.phase, []);
-  }
-  suggestionsByPhase.get(suggestion.phase).push(suggestion);
-}
-
-for (const [phaseNumber, metadata] of Object.entries(PHASE_METADATA)) {
-  const planPath = path.join(metadata.dir, metadata.plan);
-  let content = fs.readFileSync(planPath, 'utf8');
-  const phaseBlocks = suggestionsByPhase.get(phaseNumber) ?? [];
-  const entryId = `PR-IMPROVE:${sourcePrNumber}`;
-
-  const startMarker = `<!-- ${entryId} START -->`;
-  const endMarker = `<!-- ${entryId} END -->`;
-  const blockRegex = new RegExp(
-    `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}\\n?`,
-    'g',
+  const dateStamp = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+  const quickSlug = `${dateStamp}-pr${sourcePrNumber}-workflow-improve`;
+  const quickDir = path.join('.planning', 'quick', quickSlug);
+  const quickPlanPath = path.join(
+    quickDir,
+    `${dateStamp}-pr${sourcePrNumber}-PLAN.md`,
   );
-  content = content.replace(blockRegex, '');
-
-  if (phaseBlocks.length > 0) {
-    content = upsertNamedBlock(
-      content,
-      entryId,
-      buildPhaseBlock(sourcePrNumber, sourcePrTitle, sourcePrUrl, phaseBlocks),
-    );
-  }
-
-  fs.writeFileSync(planPath, content.replace(/\n{3,}/g, '\n\n'));
-}
-
-run('git', ['add', ...trackedPaths], { capture: false });
-
-let commitCreated = false;
-try {
-  run(
-    'git',
-    [
-      'commit',
-      '-m',
-      `docs(planning): intake workflow improvements from PR #${sourcePrNumber}`,
-    ],
-    { capture: false },
+  const quickSummaryPath = path.join(
+    quickDir,
+    `${dateStamp}-pr${sourcePrNumber}-SUMMARY.md`,
   );
-  commitCreated = true;
-} catch (error) {
-  const status = run('git', ['status', '--short', '--', ...trackedPaths]);
-  if (status) {
-    throw error;
-  }
-}
+  const quickArtifactPath = quickPlanPath;
+  const branchName = `claude-planning-pr-${sourcePrNumber}`;
 
-function findExistingPlanningPr() {
-  try {
-    return (
-      JSON.parse(
-        run('gh', [
-          'pr',
-          'list',
-          '--head',
-          branchName,
-          '--state',
-          'open',
-          '--json',
-          'number,url',
-        ]) || '[]',
-      )[0] ?? null
-    );
-  } catch {
-    return null;
-  }
-}
+  const trackedPaths = collectTrackedPaths(
+    quickDir,
+    quickPlanPath,
+    quickSummaryPath,
+  );
 
-if (commitCreated) {
-  try {
-    run('git', ['push', '--force-with-lease', 'origin', branchName], {
-      capture: false,
-    });
-  } catch {
-    console.warn(
-      `::warning::Concurrent push detected for ${branchName}; skipping stale planning PR update.`,
-    );
-    const existingOnConflict = findExistingPlanningPr();
+  if (dryRun) {
     process.stdout.write(
       JSON.stringify(
         {
-          dry_run: false,
+          dry_run: true,
           branch_name: branchName,
-          pr_url: existingOnConflict?.url ?? null,
           quick_artifact_path: quickArtifactPath,
-          commit_created: commitCreated,
-          skipped_due_to_push_conflict: true,
+          tracked_paths: trackedPaths,
+          summary,
+          quick_task_count: quickTasks.length,
+          phase_suggestion_count: phaseSuggestions.length,
         },
         null,
         2,
       ),
     );
-    process.exit(0);
+    return;
   }
-}
 
-const existing = findExistingPlanningPr();
-const bodyFile = path.join('.git', `planning-pr-${sourcePrNumber}.md`);
-writeFile(
-  bodyFile,
-  [
-    `## Claude+GSD Planning Intake`,
-    '',
-    `Source PR: #${sourcePrNumber} (${sourcePrUrl})`,
-    '',
-    `Summary: ${summary}`,
-    '',
-    `Quick artifact: \`${quickArtifactPath}\``,
-    '',
-    `13.x mapping: ${summarizePhaseSuggestions(phaseSuggestions)}`,
-    '',
-    'This draft PR is intentionally manual-only and should never be auto-approved or auto-merged.',
-  ].join('\n') + '\n',
-);
+  run('git', ['fetch', 'origin', baseRef, '--depth=1'], { capture: false });
+  run('git', ['checkout', '-B', branchName, `origin/${baseRef}`], {
+    capture: false,
+  });
 
-let prUrl = existing?.url ?? null;
+  writeFile(
+    quickPlanPath,
+    renderQuickPlan({
+      sourcePrNumber,
+      sourcePrTitle,
+      sourcePrUrl,
+      summary,
+      quickTasks,
+      phaseSuggestions,
+    }),
+  );
 
-if (existing) {
-  run(
-    'gh',
+  writeFile(
+    quickSummaryPath,
+    renderQuickSummary({
+      sourcePrNumber,
+      sourcePrUrl,
+      summary,
+      quickTasks,
+      phaseSuggestions,
+    }),
+  );
+
+  let roadmap = fs.readFileSync(ROADMAP_PATH, 'utf8');
+  const roadmapLine = `- PR #${sourcePrNumber}: ${sourcePrTitle} -- ${summarizePhaseSuggestions(phaseSuggestions)}. Quick artifact: \`${quickArtifactPath}\`.`;
+  roadmap = upsertSingleLineEntry(
+    roadmap,
+    ROADMAP_INTAKE_START,
+    ROADMAP_INTAKE_END,
+    `PR-IMPROVE:${sourcePrNumber}`,
+    roadmapLine,
+  );
+  fs.writeFileSync(ROADMAP_PATH, roadmap);
+
+  const suggestionsByPhase = new Map();
+  for (const suggestion of phaseSuggestions) {
+    if (!suggestionsByPhase.has(suggestion.phase)) {
+      suggestionsByPhase.set(suggestion.phase, []);
+    }
+    suggestionsByPhase.get(suggestion.phase).push(suggestion);
+  }
+
+  for (const [phaseNumber, metadata] of Object.entries(PHASE_METADATA)) {
+    const planPath = path.join(metadata.dir, metadata.plan);
+    let content = fs.readFileSync(planPath, 'utf8');
+    const phaseBlocks = suggestionsByPhase.get(phaseNumber) ?? [];
+    const entryId = `PR-IMPROVE:${sourcePrNumber}`;
+
+    const startMarker = `<!-- ${entryId} START -->`;
+    const endMarker = `<!-- ${entryId} END -->`;
+    const blockRegex = new RegExp(
+      `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}\\n?`,
+      'g',
+    );
+    content = content.replace(blockRegex, '');
+
+    if (phaseBlocks.length > 0) {
+      content = upsertNamedBlock(
+        content,
+        entryId,
+        buildPhaseBlock(
+          sourcePrNumber,
+          sourcePrTitle,
+          sourcePrUrl,
+          phaseBlocks,
+        ),
+      );
+    }
+
+    fs.writeFileSync(planPath, content.replace(/\n{3,}/g, '\n\n'));
+  }
+
+  run('git', ['add', ...trackedPaths], { capture: false });
+
+  let commitCreated = false;
+  try {
+    run(
+      'git',
+      [
+        'commit',
+        '-m',
+        `docs(planning): intake workflow improvements from PR #${sourcePrNumber}`,
+      ],
+      { capture: false },
+    );
+    commitCreated = true;
+  } catch (error) {
+    const status = run('git', ['status', '--short', '--', ...trackedPaths]);
+    if (status) {
+      throw error;
+    }
+  }
+
+  function findExistingPlanningPr() {
+    try {
+      return (
+        JSON.parse(
+          run('gh', [
+            'pr',
+            'list',
+            '--head',
+            branchName,
+            '--state',
+            'open',
+            '--json',
+            'number,url',
+          ]) || '[]',
+        )[0] ?? null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  if (commitCreated) {
+    try {
+      run('git', ['push', '--force-with-lease', 'origin', branchName], {
+        capture: false,
+      });
+    } catch {
+      console.warn(
+        `::warning::Concurrent push detected for ${branchName}; skipping stale planning PR update.`,
+      );
+      const existingOnConflict = findExistingPlanningPr();
+      process.stdout.write(
+        JSON.stringify(
+          {
+            dry_run: false,
+            branch_name: branchName,
+            pr_url: existingOnConflict?.url ?? null,
+            quick_artifact_path: quickArtifactPath,
+            commit_created: commitCreated,
+            skipped_due_to_push_conflict: true,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+  }
+
+  const existing = findExistingPlanningPr();
+  const bodyFile = path.join('.git', `planning-pr-${sourcePrNumber}.md`);
+  writeFile(
+    bodyFile,
     [
+      `## Claude+GSD Planning Intake`,
+      '',
+      `Source PR: #${sourcePrNumber} (${sourcePrUrl})`,
+      '',
+      `Summary: ${summary}`,
+      '',
+      `Quick artifact: \`${quickArtifactPath}\``,
+      '',
+      `13.x mapping: ${summarizePhaseSuggestions(phaseSuggestions)}`,
+      '',
+      'This draft PR is intentionally manual-only and should never be auto-approved or auto-merged.',
+    ].join('\n') + '\n',
+  );
+
+  let prUrl = existing?.url ?? null;
+
+  if (existing) {
+    run(
+      'gh',
+      [
+        'pr',
+        'edit',
+        String(existing.number),
+        '--title',
+        `planning: workflow improvement follow-ups for PR #${sourcePrNumber}`,
+        '--body-file',
+        bodyFile,
+        '--add-label',
+        'planning-draft-open',
+      ],
+      { capture: false },
+    );
+  } else {
+    prUrl = run('gh', [
       'pr',
-      'edit',
-      String(existing.number),
+      'create',
+      '--base',
+      baseRef,
+      '--head',
+      branchName,
       '--title',
       `planning: workflow improvement follow-ups for PR #${sourcePrNumber}`,
       '--body-file',
       bodyFile,
-      '--add-label',
+      '--draft',
+      '--label',
       'planning-draft-open',
-    ],
-    { capture: false },
+    ]);
+  }
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        dry_run: false,
+        branch_name: branchName,
+        pr_url: prUrl,
+        quick_artifact_path: quickArtifactPath,
+        commit_created: commitCreated,
+      },
+      null,
+      2,
+    ),
   );
-} else {
-  prUrl = run('gh', [
-    'pr',
-    'create',
-    '--base',
-    baseRef,
-    '--head',
-    branchName,
-    '--title',
-    `planning: workflow improvement follow-ups for PR #${sourcePrNumber}`,
-    '--body-file',
-    bodyFile,
-    '--draft',
-    '--label',
-    'planning-draft-open',
-  ]);
 }
 
-process.stdout.write(
-  JSON.stringify(
-    {
-      dry_run: false,
-      branch_name: branchName,
-      pr_url: prUrl,
-      quick_artifact_path: quickArtifactPath,
-      commit_created: commitCreated,
-    },
-    null,
-    2,
-  ),
-);
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  main,
+  run,
+};

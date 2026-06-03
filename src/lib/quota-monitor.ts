@@ -87,7 +87,7 @@ export async function checkUserQuotas(): Promise<{
  * Prevents duplicate alerts within the same quota period.
  */
 async function checkQuotaThreshold(
-  userId: number,
+  _userId: number,
   username: string,
   usagePercent: number,
   thresholdPercent: number,

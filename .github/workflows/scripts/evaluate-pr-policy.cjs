@@ -75,13 +75,40 @@ function normalizeLabels(pr) {
   );
 }
 
-function normalizeFiles(pr, filesPayload) {
+function normalizeFileDetails(pr, filesPayload) {
   const raw = filesPayload ?? pr.files ?? [];
+
+  return raw
+    .map((file) => {
+      if (typeof file === 'string') {
+        return {
+          path: file,
+          additions: 0,
+          deletions: 0,
+          changedLinesKnown: false,
+        };
+      }
+
+      const rawAdditions = file.additions ?? file.added;
+      const rawDeletions = file.deletions ?? file.deleted;
+      const additions = Number(rawAdditions);
+      const deletions = Number(rawDeletions);
+      const pathValue = file.path ?? file.filename;
+
+      return {
+        path: pathValue,
+        additions: Number.isFinite(additions) ? additions : 0,
+        deletions: Number.isFinite(deletions) ? deletions : 0,
+        changedLinesKnown:
+          Number.isFinite(additions) && Number.isFinite(deletions),
+      };
+    })
+    .filter((file) => file.path);
+}
+
+function normalizeFiles(pr, filesPayload) {
   return unique(
-    raw.map((file) => {
-      if (typeof file === 'string') return file;
-      return file.path ?? file.filename;
-    }),
+    normalizeFileDetails(pr, filesPayload).map((file) => file.path),
   );
 }
 
@@ -166,136 +193,256 @@ function parseDependabotUpdate(pr, headRefName) {
   };
 }
 
-const policyFile = getArg('--policy-file') ?? '.github/workflows/policy.json';
-const prFile = getArg('--pr-file');
-const filesFile = getArg('--files-file');
-
-if (!prFile) {
-  throw new Error('--pr-file is required');
+function countChangedLines(file) {
+  if (file.changedLinesKnown === false) return null;
+  return file.additions + file.deletions;
 }
 
-const policy = readJson(policyFile);
-const pr = readJson(prFile);
-const filesPayload = filesFile ? readJson(filesFile) : null;
-
-validateSupportedGlobs('manualOnlyPathGlobs', policy.manualOnlyPathGlobs ?? []);
-validateSupportedGlobs(
-  'improveQualifyingGlobs',
-  policy.improveQualifyingGlobs ?? [],
-);
-
-const labels = normalizeLabels(pr);
-const files = normalizeFiles(pr, filesPayload);
-const headRefName = normalizeHeadRef(pr);
-const baseRefName = normalizeBaseRef(pr);
-const isDraft = Boolean(pr.isDraft ?? pr.draft);
-const isCrossRepository = normalizeIsCrossRepository(pr);
-const blockedLabels = labels.filter((label) =>
-  policy.blockingLabels.includes(label),
-);
-const matchedManualPaths = files.filter((file) =>
-  matchesAny(file, policy.manualOnlyPathGlobs),
-);
-const matchedImprovePaths = files.filter((file) =>
-  matchesAny(file, policy.improveQualifyingGlobs),
-);
-const dependabotUpdate = parseDependabotUpdate(pr, headRefName);
-const isPlanningBranch = headRefName.startsWith(policy.planningBranchPrefix);
-const isTrustedAutomation = policy.trustedAutomationBranchPrefixes.some(
-  (prefix) => headRefName.startsWith(prefix),
-);
-const isManualBranch = policy.manualOnlyBranchPrefixes.some((prefix) =>
-  headRefName.startsWith(prefix),
-);
-const skipImprove = labels.some((label) =>
-  policy.improveSkipLabels.includes(label),
-);
-
-let prClass = 'other';
-let manualOnly = false;
-let blockedReason = null;
-let requiredPassLabels = [];
-
-if (isPlanningBranch) {
-  prClass = 'planning';
-  manualOnly = true;
-  blockedReason = 'planning branches are always human-reviewed';
-} else if (isManualBranch) {
-  prClass = 'workflow-manual';
-  manualOnly = true;
-  blockedReason = 'branch prefix is manual-only by policy';
-} else if (isTrustedAutomation) {
-  prClass = 'automation-fix';
-  requiredPassLabels = ['ai-review-passed', 'security-review-passed'];
-} else if (dependabotUpdate) {
-  const disallowedPrefix = policy.dependabot.manualOnlyBranchPrefixes.some(
-    (prefix) => headRefName.startsWith(prefix),
+function evaluateAuditSafePolicy(fileDetails, policy) {
+  const auditSafe = policy.auditSafe ?? {};
+  const allowedPathGlobs = auditSafe.allowedPathGlobs ?? [];
+  const manualOnlyPathGlobs = [
+    ...(policy.manualOnlyPathGlobs ?? []),
+    ...(auditSafe.manualOnlyPathGlobs ?? []),
+  ];
+  const maxFiles = Number(auditSafe.maxFiles ?? 0);
+  const maxChangedLines = Number(auditSafe.maxChangedLines ?? 0);
+  const files = fileDetails.map((file) => file.path);
+  const matchedManualPaths = files.filter((file) =>
+    matchesAny(file, manualOnlyPathGlobs),
   );
-  const allowedEcosystem = (policy.dependabot.allowedEcosystems ?? [])
-    .map(normalizeEcosystemName)
-    .includes(dependabotUpdate.ecosystem);
+  const disallowedPaths = files.filter(
+    (file) => !matchesAny(file, allowedPathGlobs),
+  );
+  const unknownLinePaths = fileDetails
+    .filter((file) => countChangedLines(file) === null)
+    .map((file) => file.path);
+  const totalChangedLines = fileDetails.reduce((sum, file) => {
+    const changedLines = countChangedLines(file);
+    return sum + (changedLines ?? 0);
+  }, 0);
 
-  prClass = 'dependabot';
-  requiredPassLabels = ['deps-review-passed'];
+  let reason = null;
 
-  if (disallowedPrefix) {
-    manualOnly = true;
-    blockedReason = 'dependabot GitHub Actions updates stay manual-only';
-  } else if (!allowedEcosystem) {
-    manualOnly = true;
-    blockedReason = `dependabot ecosystem "${dependabotUpdate.ecosystem}" is not in the auto-approve allow list`;
-  } else if (!dependabotUpdate.supported) {
-    manualOnly = true;
-    blockedReason =
-      dependabotUpdate.updateType === 'major'
-        ? 'dependabot major updates stay manual-only'
-        : 'dependabot update type could not be proven as patch/minor';
+  if (fileDetails.length === 0) {
+    reason = 'audit-safe changed files are unavailable';
+  } else if (maxFiles > 0 && fileDetails.length > maxFiles) {
+    reason = `audit-safe changed file count ${fileDetails.length} exceeds limit ${maxFiles}`;
+  } else if (unknownLinePaths.length > 0) {
+    reason = `audit-safe changed line counts unavailable for: ${unknownLinePaths.join(', ')}`;
+  } else if (maxChangedLines > 0 && totalChangedLines > maxChangedLines) {
+    reason = `audit-safe changed lines ${totalChangedLines} exceed limit ${maxChangedLines}`;
+  } else if (matchedManualPaths.length > 0) {
+    reason = `audit-safe diff touches manual-only paths: ${matchedManualPaths.join(', ')}`;
+  } else if (disallowedPaths.length > 0) {
+    reason = `audit-safe diff touches paths outside safe allow list: ${disallowedPaths.join(', ')}`;
+  }
+
+  return {
+    eligible: reason === null,
+    reason,
+    changed_files_count: fileDetails.length,
+    total_changed_lines: totalChangedLines,
+    max_files: maxFiles,
+    max_changed_lines: maxChangedLines,
+    matched_manual_paths: matchedManualPaths,
+    disallowed_paths: disallowedPaths,
+    unknown_line_paths: unknownLinePaths,
+  };
+}
+
+function validatePolicy(policy) {
+  validateSupportedGlobs(
+    'manualOnlyPathGlobs',
+    policy.manualOnlyPathGlobs ?? [],
+  );
+  validateSupportedGlobs(
+    'improveQualifyingGlobs',
+    policy.improveQualifyingGlobs ?? [],
+  );
+
+  if (policy.auditSafe) {
+    validateSupportedGlobs(
+      'auditSafe.allowedPathGlobs',
+      policy.auditSafe.allowedPathGlobs ?? [],
+    );
+    validateSupportedGlobs(
+      'auditSafe.manualOnlyPathGlobs',
+      policy.auditSafe.manualOnlyPathGlobs ?? [],
+    );
   }
 }
 
-if (!manualOnly && matchedManualPaths.length > 0) {
-  manualOnly = true;
-  blockedReason =
-    'changed files include manual-only workflow or planning paths';
+function evaluatePrPolicy(pr, policy, filesPayload = null) {
+  validatePolicy(policy);
+
+  const labels = normalizeLabels(pr);
+  const fileDetails = normalizeFileDetails(pr, filesPayload);
+  const files = unique(fileDetails.map((file) => file.path));
+  const headRefName = normalizeHeadRef(pr);
+  const baseRefName = normalizeBaseRef(pr);
+  const isDraft = Boolean(pr.isDraft ?? pr.draft);
+  const isCrossRepository = normalizeIsCrossRepository(pr);
+  const blockedLabels = labels.filter((label) =>
+    policy.blockingLabels.includes(label),
+  );
+  const matchedManualPaths = files.filter((file) =>
+    matchesAny(file, policy.manualOnlyPathGlobs),
+  );
+  const matchedImprovePaths = files.filter((file) =>
+    matchesAny(file, policy.improveQualifyingGlobs),
+  );
+  const dependabotUpdate = parseDependabotUpdate(pr, headRefName);
+  const auditSafeConfig = policy.auditSafe ?? {};
+  const isPlanningBranch = headRefName.startsWith(policy.planningBranchPrefix);
+  const isAuditSafeBranch =
+    auditSafeConfig.safeBranchPrefix &&
+    headRefName.startsWith(auditSafeConfig.safeBranchPrefix);
+  const isAuditManualBranch =
+    auditSafeConfig.manualBranchPrefix &&
+    headRefName.startsWith(auditSafeConfig.manualBranchPrefix);
+  const isTrustedAutomation = policy.trustedAutomationBranchPrefixes.some(
+    (prefix) => headRefName.startsWith(prefix),
+  );
+  const isManualBranch = policy.manualOnlyBranchPrefixes.some((prefix) =>
+    headRefName.startsWith(prefix),
+  );
+  const skipImprove = labels.some((label) =>
+    policy.improveSkipLabels.includes(label),
+  );
+
+  let prClass = 'other';
+  let manualOnly = false;
+  let blockedReason = null;
+  let requiredPassLabels = [];
+  let auditSafeEvaluation = null;
+
+  if (isPlanningBranch) {
+    prClass = 'planning';
+    manualOnly = true;
+    blockedReason = 'planning branches are always human-reviewed';
+  } else if (isAuditSafeBranch) {
+    prClass = 'audit-safe-fix';
+    requiredPassLabels = ['ai-review-passed', 'security-review-passed'];
+    auditSafeEvaluation = evaluateAuditSafePolicy(fileDetails, policy);
+
+    if (!auditSafeEvaluation.eligible) {
+      manualOnly = true;
+      blockedReason = auditSafeEvaluation.reason;
+    }
+  } else if (isAuditManualBranch) {
+    prClass = 'audit-manual-fix';
+    manualOnly = true;
+    blockedReason = 'audit-fix branches are manual-only by policy';
+  } else if (isManualBranch) {
+    prClass = 'workflow-manual';
+    manualOnly = true;
+    blockedReason = 'branch prefix is manual-only by policy';
+  } else if (isTrustedAutomation) {
+    prClass = 'automation-fix';
+    requiredPassLabels = ['ai-review-passed', 'security-review-passed'];
+  } else if (dependabotUpdate) {
+    const disallowedPrefix = policy.dependabot.manualOnlyBranchPrefixes.some(
+      (prefix) => headRefName.startsWith(prefix),
+    );
+    const allowedEcosystem = (policy.dependabot.allowedEcosystems ?? [])
+      .map(normalizeEcosystemName)
+      .includes(dependabotUpdate.ecosystem);
+
+    prClass = 'dependabot';
+    requiredPassLabels = ['deps-review-passed'];
+
+    if (disallowedPrefix) {
+      manualOnly = true;
+      blockedReason = 'dependabot GitHub Actions updates stay manual-only';
+    } else if (!allowedEcosystem) {
+      manualOnly = true;
+      blockedReason = `dependabot ecosystem "${dependabotUpdate.ecosystem}" is not in the auto-approve allow list`;
+    } else if (!dependabotUpdate.supported) {
+      manualOnly = true;
+      blockedReason =
+        dependabotUpdate.updateType === 'major'
+          ? 'dependabot major updates stay manual-only'
+          : 'dependabot update type could not be proven as patch/minor';
+    }
+  }
+
+  if (!manualOnly && matchedManualPaths.length > 0) {
+    manualOnly = true;
+    blockedReason =
+      'changed files include manual-only workflow or planning paths';
+  }
+
+  if (!manualOnly && blockedLabels.length > 0) {
+    blockedReason = `blocking label present: ${blockedLabels.join(', ')}`;
+  }
+
+  const eligible =
+    !isDraft &&
+    !isCrossRepository &&
+    !manualOnly &&
+    blockedLabels.length === 0 &&
+    (isTrustedAutomation ||
+      Boolean(isAuditSafeBranch) ||
+      (dependabotUpdate && dependabotUpdate.supported));
+
+  const shouldAnalyze =
+    !isDraft &&
+    !isPlanningBranch &&
+    !skipImprove &&
+    matchedImprovePaths.length > 0;
+
+  return {
+    eligible,
+    pr_class: prClass,
+    manual_only: manualOnly,
+    blocked_reason: blockedReason,
+    should_analyze: shouldAnalyze,
+    same_repo: !isCrossRepository,
+    is_draft: isDraft,
+    head_ref_name: headRefName,
+    base_ref_name: baseRefName,
+    required_pass_labels: requiredPassLabels,
+    labels,
+    blocking_labels_present: blockedLabels,
+    matched_manual_paths: matchedManualPaths,
+    matched_improve_paths: matchedImprovePaths,
+    dependabot: dependabotUpdate,
+    audit_safe: auditSafeEvaluation,
+  };
 }
 
-if (!manualOnly && blockedLabels.length > 0) {
-  blockedReason = `blocking label present: ${blockedLabels.join(', ')}`;
+function runCli() {
+  const policyFile = getArg('--policy-file') ?? '.github/workflows/policy.json';
+  const prFile = getArg('--pr-file');
+  const filesFile = getArg('--files-file');
+
+  if (!prFile) {
+    throw new Error('--pr-file is required');
+  }
+
+  const policy = readJson(policyFile);
+  const pr = readJson(prFile);
+  const filesPayload = filesFile ? readJson(filesFile) : null;
+
+  process.stdout.write(
+    JSON.stringify(evaluatePrPolicy(pr, policy, filesPayload), null, 2),
+  );
 }
 
-const eligible =
-  !isDraft &&
-  !isCrossRepository &&
-  !manualOnly &&
-  blockedLabels.length === 0 &&
-  (isTrustedAutomation || (dependabotUpdate && dependabotUpdate.supported));
+module.exports = {
+  evaluateAuditSafePolicy,
+  evaluatePrPolicy,
+  getArg,
+  globToRegExp,
+  matchesAny,
+  normalizeFileDetails,
+  normalizeFiles,
+  readJson,
+  runCli,
+  validatePolicy,
+};
 
-const shouldAnalyze =
-  !isDraft &&
-  !isPlanningBranch &&
-  !skipImprove &&
-  matchedImprovePaths.length > 0;
-
-process.stdout.write(
-  JSON.stringify(
-    {
-      eligible,
-      pr_class: prClass,
-      manual_only: manualOnly,
-      blocked_reason: blockedReason,
-      should_analyze: shouldAnalyze,
-      same_repo: !isCrossRepository,
-      is_draft: isDraft,
-      head_ref_name: headRefName,
-      base_ref_name: baseRefName,
-      required_pass_labels: requiredPassLabels,
-      labels,
-      blocking_labels_present: blockedLabels,
-      matched_manual_paths: matchedManualPaths,
-      matched_improve_paths: matchedImprovePaths,
-      dependabot: dependabotUpdate,
-    },
-    null,
-    2,
-  ),
-);
+if (require.main === module) {
+  runCli();
+}
