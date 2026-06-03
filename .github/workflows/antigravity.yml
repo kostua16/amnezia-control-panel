@@ -29,6 +29,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Verify API Key Presence
         id: check-secrets
         run: |
