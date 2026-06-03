@@ -319,29 +319,13 @@ runs:
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30)
-        is_rate_limited=false
-        should_retry=false
-        retry_reason=non_retryable
 
-        if [[ "$http_code" == "429" ]]; then
-          is_rate_limited=true
-          should_retry=true
-          retry_reason=rate_limited
-          echo "::warning::Attempt 1 failed and API returned 429 (rate limited). Will retry after 2 min wait."
-        elif [[ "$JSON_SCHEMA_ENABLED" == "true" ]] && [[ -f "${RUNNER_TEMP}/claude-execution-output.json" ]] && jq -e '.. | objects | select(.type == "result" and ((.is_error // false) == false))' "${RUNNER_TEMP}/claude-execution-output.json" >/dev/null 2>&1; then
-          should_retry=true
-          retry_reason=missing_structured_output
-          echo "::warning::Attempt 1 produced a successful execution result but no structured output. Retrying once because --json-schema was requested."
-        else
-          echo "::error::Attempt 1 failed with non-retryable error (API probe returned HTTP ${http_code}). Skipping retries."
-        fi
-
-        {
-          echo "http_code=${http_code}"
-          echo "is_rate_limited=${is_rate_limited}"
-          echo "should_retry=${should_retry}"
-          echo "retry_reason=${retry_reason}"
-        } >> "$GITHUB_OUTPUT"
+        node .github/workflows/scripts/classify-claude-retry.cjs \
+          --http-code "$http_code" \
+          --execution-file "${RUNNER_TEMP}/claude-execution-output.json" \
+          --json-schema-enabled "$JSON_SCHEMA_ENABLED" \
+          --attempt "1" \
+          --github-output "$GITHUB_OUTPUT"
 
     - name: Rate limit wait (attempt 1 → 2)
       if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' }}
@@ -418,29 +402,13 @@ runs:
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30)
-        is_rate_limited=false
-        should_retry=false
-        retry_reason=non_retryable
 
-        if [[ "$http_code" == "429" ]]; then
-          is_rate_limited=true
-          should_retry=true
-          retry_reason=rate_limited
-          echo "::warning::Attempt 2 failed and API returned 429 (rate limited). Final retry after 2 min wait."
-        elif [[ "$JSON_SCHEMA_ENABLED" == "true" ]] && [[ -f "${RUNNER_TEMP}/claude-execution-output.json" ]] && jq -e '.. | objects | select(.type == "result" and ((.is_error // false) == false))' "${RUNNER_TEMP}/claude-execution-output.json" >/dev/null 2>&1; then
-          should_retry=true
-          retry_reason=missing_structured_output
-          echo "::warning::Attempt 2 produced a successful execution result but no structured output. Retrying final attempt because --json-schema was requested."
-        else
-          echo "::error::Attempt 2 failed with non-retryable error (API probe returned HTTP ${http_code}). Skipping final retry."
-        fi
-
-        {
-          echo "http_code=${http_code}"
-          echo "is_rate_limited=${is_rate_limited}"
-          echo "should_retry=${should_retry}"
-          echo "retry_reason=${retry_reason}"
-        } >> "$GITHUB_OUTPUT"
+        node .github/workflows/scripts/classify-claude-retry.cjs \
+          --http-code "$http_code" \
+          --execution-file "${RUNNER_TEMP}/claude-execution-output.json" \
+          --json-schema-enabled "$JSON_SCHEMA_ENABLED" \
+          --attempt "2" \
+          --github-output "$GITHUB_OUTPUT"
 
     - name: Rate limit wait (attempt 2 → 3)
       if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' }}

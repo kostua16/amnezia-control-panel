@@ -227,6 +227,55 @@ describe('scan-claude-logs', () => {
     ]);
   });
 
+  it('classifies API Error 529 log text as rate_limited', () => {
+    const findings = buildFindings({
+      metrics: baseMetrics(),
+      maxTurns: 40,
+      logText:
+        '##[error]API Error: 529 {"error":"[1305][service temporarily overloaded]"}',
+    });
+    const categories = findings.map(
+      (finding: { category: string }) => finding.category,
+    );
+
+    assert.deepEqual(categories, ['rate_limited']);
+  });
+
+  it('classifies execution JSON 529 errors as rate_limited without job logs', () => {
+    const metrics = parseClaudeExecution({
+      executionText: JSON.stringify({
+        type: 'result',
+        is_error: true,
+        duration_ms: 1000,
+        num_turns: 1,
+        result:
+          'API Error: 529 {"error":"[1305][service temporarily overloaded]"}',
+      }),
+      maxTurns: '40',
+      attempt: '1',
+      outcome: 'failure',
+    });
+    const scan = buildClaudeLogScan({
+      metrics,
+      logText: '',
+      runId: '195',
+      workflow: 'fix-issue',
+      conclusion: 'failure',
+      attempt: '1',
+      maxTurns: '40',
+    });
+    const categories = scan.findings.map(
+      (finding: { category: string }) => finding.category,
+    );
+
+    assert.ok(
+      metrics.errorMessages.some((message: string) =>
+        message.includes('API Error: 529'),
+      ),
+    );
+    assert.deepEqual(categories, ['rate_limited']);
+  });
+
   it('CLI writes GitHub outputs and a readable issue JSON file from samples', () => {
     const tmpDir = makeTempDir();
     const executionFile = path.join(tmpDir, 'execution.jsonl');

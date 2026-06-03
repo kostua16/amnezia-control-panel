@@ -181,15 +181,19 @@ while IFS= read -r ROW; do
     add_finding "$RUN_ID" "graphql_user_err" "warning" "GraphQL user fetch failed" "GraphqlResponseError"
   fi
 
-  # 10. Rate limited (all 3 attempts)
+  # 10. Rate limited / temporarily overloaded
   CHECKS=$(grep -c 'is_rate_limited=true' "$RUN_LOG" 2>/dev/null || true)
   if [[ "$CHECKS" -ge 3 ]]; then
     add_finding "$RUN_ID" "rate_limited" "error" "All 3 attempts rate limited" "All attempts hit 429"
+  elif grep -qiE 'API Error:[[:space:]]*529([^0-9]|$)|temporarily overloaded|service overloaded' "$RUN_LOG" 2>/dev/null; then
+    LINE=$(grep -iE -m1 'API Error:[[:space:]]*529([^0-9]|$)|temporarily overloaded|service overloaded' "$RUN_LOG" 2>/dev/null | head -c 200 || true)
+    add_finding "$RUN_ID" "rate_limited" "error" "Claude API temporarily overloaded" "$LINE"
   fi
 
   # 11. Uncategorized errors (fallback)
   UNCATEG=$(grep -E '##\[error\]|Error:|ERR_TEST_FAILURE|"is_error".*true|^fatal:' "$RUN_LOG" 2>/dev/null \
     | grep -Ev 'Claude Code failed with a non-(rate-limit|retryable) error' \
+    | grep -viE 'API Error:[[:space:]]*529([^0-9]|$)|temporarily overloaded|service overloaded' \
     | grep -v 'returned error: 403' \
     | grep -v 'pull request create failed: GraphQL:' \
     | grep -v 'Internal error: directory mismatch' \
