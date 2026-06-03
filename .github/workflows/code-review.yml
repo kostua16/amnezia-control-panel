@@ -1,6 +1,6 @@
 name: Code Review
 
-run-name: "PR #${{ github.event.inputs.pr_number || github.event.issue.number || 'manual' }} @ ${{ github.event.inputs.head_sha || github.sha }}"
+run-name: "${{ github.event_name == 'issue_comment' && github.event.issue.pull_request == null && format('Issue #{0} @ {1}', github.event.issue.number, github.sha) || format('PR #{0} @ {1}', github.event.inputs.pr_number || github.event.issue.number || 'manual', github.event.inputs.head_sha || github.sha) }}"
 
 on:
   issue_comment:
@@ -40,6 +40,7 @@ env:
 
 jobs:
   resolve-pr:
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
     runs-on: self-hosted
     outputs:
       should-run: ${{ steps.resolve.outputs.should_run }}

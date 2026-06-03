@@ -4,7 +4,10 @@ import { describe, it } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const {
+  getLabelsForDecision,
   makeDecision,
+  readConfig,
+  resolvePrNumber,
 } = require('../../../.github/workflows/scripts/orchestrate-pr-flow.cjs');
 
 const requiredCheckNames = ['Lint', 'Type Check', 'Test', 'Build'];
@@ -52,8 +55,9 @@ type WorkerRun = {
 type DecisionOverrides = {
   pr?: Pr;
   policy?: Policy;
-  checks?: Check[];
+  checks?: Check[] | null;
   workerRuns?: Record<string, WorkerRun[]>;
+  getWorkerRuns?: (workerName: string) => WorkerRun[];
   eventName?: string;
   event?: { action?: string };
 };
@@ -173,11 +177,16 @@ function pendingChecks(): Check[] {
 }
 
 function decide(overrides: DecisionOverrides = {}) {
+  const checks = Object.hasOwn(overrides, 'checks')
+    ? overrides.checks
+    : greenChecks();
+
   return makeDecision({
     pr: overrides.pr ?? prFixture(),
     policy: overrides.policy ?? policyFixture(),
-    checks: overrides.checks ?? greenChecks(),
+    checks,
     workerRuns: overrides.workerRuns ?? {},
+    getWorkerRuns: overrides.getWorkerRuns,
     eventName: overrides.eventName ?? 'pull_request_target',
     event: overrides.event ?? { action: 'ready_for_review' },
     config,
@@ -185,30 +194,52 @@ function decide(overrides: DecisionOverrides = {}) {
 }
 
 describe('makeDecision', () => {
-  it('pauses draft PRs without dispatching workers', () => {
+  it('pauses draft PRs without requiring checks or worker runs', () => {
+    const queriedWorkers: string[] = [];
     const decision = decide({
       pr: prFixture({ isDraft: true }),
-      checks: pendingChecks(),
+      checks: null,
+      getWorkerRuns(workerName) {
+        queriedWorkers.push(workerName);
+        return [];
+      },
     });
 
     assert.equal(decision.state, 'flow/draft');
     assert.equal(decision.dispatch, null);
     assert.deepEqual(decision.labelsToAdd, ['flow/draft']);
+    assert.equal(decision.checkStatus.status, 'not_requested');
+    assert.deepEqual(queriedWorkers, []);
   });
 
-  it('waits for pending required checks before review or finalizer dispatch', () => {
-    const decision = decide({ checks: pendingChecks() });
+  it('waits for pending required checks without querying worker runs', () => {
+    const queriedWorkers: string[] = [];
+    const decision = decide({
+      checks: pendingChecks(),
+      getWorkerRuns(workerName) {
+        queriedWorkers.push(workerName);
+        return [];
+      },
+    });
 
     assert.equal(decision.state, 'flow/checks-pending');
     assert.equal(decision.dispatch, null);
+    assert.deepEqual(queriedWorkers, []);
   });
 
   it('dispatches code review only for a ready human PR with green checks', () => {
-    const decision = decide();
+    const queriedWorkers: string[] = [];
+    const decision = decide({
+      getWorkerRuns(workerName) {
+        queriedWorkers.push(workerName);
+        return [];
+      },
+    });
 
     assert.equal(decision.state, 'flow/review-pending');
     assert.equal(decision.dispatch?.key, 'codeReview');
     assert.equal(decision.dispatch?.workflow, 'code-review.yml');
+    assert.deepEqual(queriedWorkers, ['codeReview']);
   });
 
   it('does not dispatch finalizer while one human review signal is missing', () => {
@@ -321,5 +352,96 @@ describe('makeDecision', () => {
 
     assert.equal(decision.state, 'flow/review-pending');
     assert.equal(decision.dispatch, null);
+  });
+
+  it('keeps a correct existing flow label without label mutation', () => {
+    const decision = decide({
+      pr: prFixture({ labels: ['flow/checks-pending'] }),
+      checks: pendingChecks(),
+    });
+
+    assert.equal(decision.state, 'flow/checks-pending');
+    assert.deepEqual(decision.labelsToAdd, []);
+    assert.deepEqual(decision.labelsToRemove, []);
+  });
+
+  it('removes only present stale flow labels', () => {
+    const decision = decide({
+      pr: prFixture({ labels: ['flow/review-pending'] }),
+      checks: pendingChecks(),
+    });
+
+    assert.equal(decision.state, 'flow/checks-pending');
+    assert.deepEqual(decision.labelsToAdd, ['flow/checks-pending']);
+    assert.deepEqual(decision.labelsToRemove, ['flow/review-pending']);
+  });
+
+  it('ignores reset labels and flow labels on head changes', () => {
+    const resetPr = prFixture({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/finalizer-dispatched',
+      ],
+    });
+    const labels = getLabelsForDecision(
+      resetPr,
+      config,
+      'pull_request_target',
+      { action: 'synchronize' },
+    );
+    const decision = decide({
+      pr: resetPr,
+      event: { action: 'synchronize' },
+    });
+
+    assert.deepEqual(labels, []);
+    assert.equal(decision.dispatch?.key, 'codeReview');
+    assert.deepEqual(decision.labelsToRemove.sort(), [
+      'ai-review-passed',
+      'flow/finalizer-dispatched',
+      'security-review-passed',
+    ]);
+  });
+});
+
+describe('resolvePrNumber', () => {
+  it('skips issue-only workflow_run titles', () => {
+    const prNumber = resolvePrNumber(
+      'workflow_run',
+      {
+        workflow_run: {
+          display_title: 'Issue #195 @ 641528f',
+          pull_requests: [],
+        },
+      },
+      null,
+    );
+
+    assert.equal(prNumber, null);
+  });
+
+  it('accepts PR-style issue_comment workflow_run titles', () => {
+    const prNumber = resolvePrNumber(
+      'workflow_run',
+      {
+        workflow_run: {
+          display_title: `PR #181 @ ${headSha}`,
+          pull_requests: [],
+        },
+      },
+      null,
+    );
+
+    assert.equal(prNumber, 181);
+  });
+});
+
+describe('readConfig', () => {
+  it('loads the JSON orchestrator config', () => {
+    const loaded = readConfig('.github/pr-flow.json');
+
+    assert.equal(loaded.workers.codeReview.workflow, 'code-review.yml');
+    assert.equal(loaded.labels['flow/draft'].color, '6e7781');
   });
 });

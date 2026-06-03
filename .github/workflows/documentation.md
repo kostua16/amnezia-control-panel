@@ -41,11 +41,12 @@ CI
 
 pull_request_target lifecycle events
   -> pr-flow.yml
-  -> classifies the PR, syncs flow/* state labels, and dispatches one next worker
+  -> reads .github/pr-flow.json, classifies the PR, syncs one flow/* state label, and dispatches one next worker
 
 code-review.yml
   -> dispatch-only worker controlled by pr-flow.yml
   -> /review issue comments remain a manual override
+  -> issue-only comments are named Issue #... and skipped before setup
   -> produces ai-review-passed / ai-review-concerns
   -> produces security-review-passed / security-review-concerns
   -> pr-flow.yml consumes those signals
@@ -174,6 +175,8 @@ The following workflows expose `workflow_dispatch` dry-run inputs for safe testi
 - `pr-finalizer.yml`
 - `pr-improve.yml`
 - `issue-catch-up.yml`
+
+`pr-flow.yml` uses `.github/pr-flow.json` for worker order, required checks, reset labels, and managed `flow/*` labels. Routine runs do not recreate labels; pass `--ensure-labels true` to `.github/workflows/scripts/orchestrate-pr-flow.cjs` only for one-time label setup or repair.
 
 ## GSD Slash Command Format
 

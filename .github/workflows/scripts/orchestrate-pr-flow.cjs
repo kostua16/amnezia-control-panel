@@ -3,7 +3,19 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const yaml = require('js-yaml');
+const { performance } = require('perf_hooks');
+
+const TIMING_NAMES = [
+  'resolve-pr',
+  'checks',
+  'policy',
+  'worker-runs',
+  'labels',
+  'dispatch',
+];
+
+const PR_NOT_FOUND_PATTERN =
+  /Could not resolve to a PullRequest|no pull requests found|HTTP 404|Not Found/i;
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -16,12 +28,16 @@ function readJson(filePath) {
 }
 
 function readConfig(filePath) {
-  return yaml.load(fs.readFileSync(filePath, 'utf8'));
+  return readJson(filePath);
 }
 
 function toNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toBoolean(value) {
+  return String(value ?? '').toLowerCase() === 'true';
 }
 
 function run(command, args, options = {}) {
@@ -37,11 +53,16 @@ function run(command, args, options = {}) {
       stdio,
     }).trim();
   } catch (error) {
-    if (options.allowFailure) {
+    const stderr = String(error.stderr ?? '').trim();
+    const allowed =
+      options.allowFailure &&
+      (!options.allowedFailurePattern ||
+        options.allowedFailurePattern.test(stderr));
+
+    if (allowed) {
       return options.fallback ?? '';
     }
 
-    const stderr = String(error.stderr ?? '').trim();
     if (stderr) {
       console.error(stderr);
     }
@@ -49,12 +70,30 @@ function run(command, args, options = {}) {
   }
 }
 
-function runJson(command, args, fallback) {
+function runJson(command, args, fallback, options = {}) {
   const output = run(command, args, {
     allowFailure: fallback !== undefined,
+    allowedFailurePattern: options.allowedFailurePattern,
     fallback: fallback === undefined ? undefined : JSON.stringify(fallback),
   });
   return output ? JSON.parse(output) : fallback;
+}
+
+function createTimings() {
+  return Object.fromEntries(TIMING_NAMES.map((name) => [name, 0]));
+}
+
+function timeStep(timings, name, fn) {
+  const startedAt = performance.now();
+  try {
+    return fn();
+  } finally {
+    const elapsed = performance.now() - startedAt;
+    timings[name] = Number(((timings[name] ?? 0) + elapsed).toFixed(2));
+    console.log(
+      `::notice title=PR flow timing::${name} ${elapsed.toFixed(2)}ms`,
+    );
+  }
 }
 
 function unique(values) {
@@ -108,9 +147,10 @@ function resolvePrNumber(eventName, event, explicitPrNumber) {
     );
     if (fromPayload) return fromPayload;
 
-    const title =
-      event.workflow_run?.display_title ?? event.workflow_run?.name ?? '';
-    const match = title.match(/\bPR #(\d+)\b/);
+    const title = String(
+      event.workflow_run?.display_title ?? event.workflow_run?.name ?? '',
+    ).trim();
+    const match = title.match(/^PR #(\d+)\b/);
     return match ? toNumber(match[1]) : null;
   }
 
@@ -140,6 +180,15 @@ function writeTempJson(prefix, value) {
   );
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
   return filePath;
+}
+
+function emptyPolicy() {
+  return {
+    dependabot: null,
+    should_analyze: false,
+    manual_only: false,
+    blocking_labels_present: [],
+  };
 }
 
 function evaluatePolicy(pr, policyFile) {
@@ -211,6 +260,10 @@ function getRequiredCheckStatus(checks, requiredChecks) {
   return { status: 'passed', failing, pending, missing };
 }
 
+function getNotRequestedCheckStatus() {
+  return { status: 'not_requested', failing: [], pending: [], missing: [] };
+}
+
 function pathsMatch(files, paths) {
   return files.some((file) => (paths ?? []).includes(file));
 }
@@ -244,31 +297,79 @@ function allFlowLabels(config) {
   return Object.keys(config.labels ?? {});
 }
 
-function makeDecision(context) {
-  const { pr, policy, checks, workerRuns, eventName, event, config } = context;
-  const workers = config.workers ?? {};
-  const labels = pr.labels;
+function getResetLabels(config, eventName, event, pr) {
+  return isHeadResetEvent(eventName, event) && !pr.isDraft
+    ? (config.resetOnHeadChange?.labels ?? [])
+    : [];
+}
+
+function getLabelsForDecision(pr, config, eventName, event) {
+  const resetLabels = getResetLabels(config, eventName, event, pr);
   const flowLabels = allFlowLabels(config);
-  const labelsToRemove = [...flowLabels];
-  const labelsToAdd = [];
-  const resetLabels =
-    isHeadResetEvent(eventName, event) && !pr.isDraft
-      ? (config.resetOnHeadChange?.labels ?? [])
-      : [];
+  const resetLabelSet = new Set(resetLabels);
+  const flowLabelSet = new Set(flowLabels);
+
+  return pr.labels.filter((label) => {
+    if (resetLabelSet.has(label)) return false;
+    if (resetLabels.length > 0 && flowLabelSet.has(label)) return false;
+    return true;
+  });
+}
+
+function makeDecision(context) {
+  const {
+    pr,
+    policy = emptyPolicy(),
+    checks = null,
+    workerRuns = {},
+    getWorkerRuns,
+    eventName,
+    event,
+    config,
+    checkStatus: providedCheckStatus,
+  } = context;
+  const workers = config.workers ?? {};
+  const currentLabels = pr.labels;
+  const labels = getLabelsForDecision(pr, config, eventName, event);
+  const flowLabels = allFlowLabels(config);
+  const resetLabels = getResetLabels(config, eventName, event, pr);
+  const presentFlowLabels = flowLabels.filter((label) =>
+    currentLabels.includes(label),
+  );
+  const presentResetLabels = resetLabels.filter((label) =>
+    currentLabels.includes(label),
+  );
+  const checkStatus =
+    checks === null
+      ? (providedCheckStatus ?? getNotRequestedCheckStatus())
+      : getRequiredCheckStatus(checks, config.checks?.required);
+
+  function getWorkerSummary(workerName) {
+    if (workerRuns[workerName] === undefined) {
+      workerRuns[workerName] =
+        typeof getWorkerRuns === 'function' ? getWorkerRuns(workerName) : [];
+    }
+    return summarizeWorkerRuns(workerRuns, workerName, pr);
+  }
 
   function finish(state, reason, dispatch = null, extraLabels = []) {
-    labelsToAdd.push(...extraLabels);
-    if (state) {
-      labelsToAdd.unshift(state);
-    }
+    const desiredLabels = unique([state, ...extraLabels]);
+    const labelsToAdd = desiredLabels.filter(
+      (label) => !currentLabels.includes(label),
+    );
+    const labelsToRemove = unique([
+      ...presentFlowLabels.filter((label) => !desiredLabels.includes(label)),
+      ...presentResetLabels,
+    ]);
 
     return {
       state,
       reason,
       dispatch,
-      labelsToAdd: unique(labelsToAdd),
-      labelsToRemove: unique([...labelsToRemove, ...resetLabels]),
-      checkStatus: getRequiredCheckStatus(checks, config.checks?.required),
+      desiredLabels,
+      labelsToAdd,
+      labelsToRemove,
+      checkStatus,
     };
   }
 
@@ -276,7 +377,6 @@ function makeDecision(context) {
     return finish('flow/draft', 'PR is draft.');
   }
 
-  const checkStatus = getRequiredCheckStatus(checks, config.checks?.required);
   if (checkStatus.status === 'failed') {
     return finish('flow/checks-failed', 'Required checks are failing.');
   }
@@ -306,11 +406,7 @@ function makeDecision(context) {
     }
 
     if (!hasAll(labels, dependencyWorker.passLabels)) {
-      const dependencyRuns = summarizeWorkerRuns(
-        workerRuns,
-        'dependencyReview',
-        pr,
-      );
+      const dependencyRuns = getWorkerSummary('dependencyReview');
       if (dependencyRuns.active) {
         return finish(
           'flow/review-pending',
@@ -341,7 +437,7 @@ function makeDecision(context) {
     }
 
     if (!hasAll(labels, codeReviewWorker.passLabels)) {
-      const codeReviewRuns = summarizeWorkerRuns(workerRuns, 'codeReview', pr);
+      const codeReviewRuns = getWorkerSummary('codeReview');
       if (codeReviewRuns.active) {
         return finish('flow/review-pending', 'Code review is already running.');
       }
@@ -369,7 +465,7 @@ function makeDecision(context) {
     !hasAny(labels, improveWorker.successLabels);
 
   if (shouldImprove) {
-    const improveRuns = summarizeWorkerRuns(workerRuns, 'prImprove', pr);
+    const improveRuns = getWorkerSummary('prImprove');
     if (improveRuns.active) {
       return finish('flow/improve-pending', 'PR Improve is already running.');
     }
@@ -394,7 +490,7 @@ function makeDecision(context) {
     }
   }
 
-  const finalizerRuns = summarizeWorkerRuns(workerRuns, 'finalizer', pr);
+  const finalizerRuns = getWorkerSummary('finalizer');
   const finalizerAlreadyDispatched = labels.includes(
     'flow/finalizer-dispatched',
   );
@@ -421,28 +517,26 @@ function makeDecision(context) {
   );
 }
 
-function collectWorkerRuns(config) {
-  const entries = Object.entries(config.workers ?? {});
-  const result = {};
-
-  for (const [key, worker] of entries) {
-    result[key] = runJson(
-      'gh',
-      [
-        'run',
-        'list',
-        '--workflow',
-        worker.workflow,
-        '--limit',
-        '50',
-        '--json',
-        'databaseId,status,conclusion,event,displayTitle,createdAt,updatedAt,url',
-      ],
-      [],
-    );
+function collectWorkerRuns(config, workerName) {
+  const worker = config.workers?.[workerName];
+  if (!worker?.workflow) {
+    return [];
   }
 
-  return result;
+  return runJson(
+    'gh',
+    [
+      'run',
+      'list',
+      '--workflow',
+      worker.workflow,
+      '--limit',
+      '50',
+      '--json',
+      'databaseId,status,conclusion,event,displayTitle,createdAt,updatedAt,url',
+    ],
+    [],
+  );
 }
 
 function ensureLabels(config) {
@@ -502,26 +596,66 @@ function dispatchWorker(pr, dispatch) {
   run('gh', args);
 }
 
+function fetchPullRequest(prNumber) {
+  return runJson(
+    'gh',
+    [
+      'pr',
+      'view',
+      String(prNumber),
+      '--json',
+      'number,title,url,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository',
+    ],
+    null,
+    { allowedFailurePattern: PR_NOT_FOUND_PATTERN },
+  );
+}
+
+function skippedSummary(reason, eventName, timings, extra = {}) {
+  return {
+    status: 'skipped',
+    reason,
+    eventName,
+    timings,
+    ...extra,
+  };
+}
+
 function main() {
+  const timings = createTimings();
   const eventName = getArg('--event-name', process.env.GITHUB_EVENT_NAME ?? '');
   const eventPath = getArg('--event-path', process.env.GITHUB_EVENT_PATH ?? '');
   const explicitPrNumber =
     getArg('--pr-number', process.env.PR_NUMBER ?? '') || null;
-  const configFile = getArg('--config-file', '.github/pr-flow.yml');
+  const configFile = getArg('--config-file', '.github/pr-flow.json');
   const policyFile = getArg('--policy-file', '.github/workflows/policy.json');
-  const dryRun = getArg('--dry-run', process.env.DRY_RUN ?? 'false') === 'true';
+  const dryRun = toBoolean(getArg('--dry-run', process.env.DRY_RUN ?? 'false'));
+  const ensureLabelsRequested = toBoolean(
+    getArg('--ensure-labels', process.env.ENSURE_LABELS ?? 'false'),
+  );
   const event =
     eventPath && fs.existsSync(eventPath) ? readJson(eventPath) : {};
-  const prNumber = resolvePrNumber(eventName, event, explicitPrNumber);
 
-  if (!prNumber) {
+  const resolved = timeStep(timings, 'resolve-pr', () => {
+    const prNumber = resolvePrNumber(eventName, event, explicitPrNumber);
+    if (!prNumber) {
+      return { prNumber: null, config: null, pr: null };
+    }
+
+    const config = readConfig(configFile);
+    const rawPr = fetchPullRequest(prNumber);
+    const pr = rawPr ? normalizePr(rawPr) : null;
+    return { prNumber, config, pr };
+  });
+
+  if (!resolved.prNumber) {
     console.log(
       JSON.stringify(
-        {
-          status: 'skipped',
-          reason: 'No pull request context could be resolved.',
+        skippedSummary(
+          'No pull request context could be resolved.',
           eventName,
-        },
+          timings,
+        ),
         null,
         2,
       ),
@@ -529,37 +663,95 @@ function main() {
     return;
   }
 
-  const config = readConfig(configFile);
-  const rawPr = runJson('gh', [
-    'pr',
-    'view',
-    String(prNumber),
-    '--json',
-    'number,title,url,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository',
-  ]);
-  const pr = normalizePr(rawPr);
-  const checks = runJson(
-    'gh',
-    [
-      'pr',
-      'checks',
-      String(pr.number),
-      '--json',
-      'name,state,bucket,workflow,link',
-    ],
-    [],
-  );
-  const policy = evaluatePolicy(pr, policyFile);
-  const workerRuns = collectWorkerRuns(config);
+  if (!resolved.pr) {
+    console.log(
+      JSON.stringify(
+        skippedSummary(
+          `Resolved number #${resolved.prNumber} is not a pull request.`,
+          eventName,
+          timings,
+          { number: resolved.prNumber },
+        ),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  const { config, pr } = resolved;
+  let checks = null;
+  let policy = emptyPolicy();
+
+  if (!pr.isDraft) {
+    checks = timeStep(timings, 'checks', () =>
+      runJson(
+        'gh',
+        [
+          'pr',
+          'checks',
+          String(pr.number),
+          '--json',
+          'name,state,bucket,workflow,link',
+        ],
+        [],
+      ),
+    );
+  }
+
+  const checkStatus =
+    checks === null
+      ? getNotRequestedCheckStatus()
+      : getRequiredCheckStatus(checks, config.checks?.required);
+
+  if (!pr.isDraft && checkStatus.status === 'passed') {
+    policy = timeStep(timings, 'policy', () =>
+      evaluatePolicy(
+        {
+          ...pr,
+          labels: getLabelsForDecision(pr, config, eventName, event),
+        },
+        policyFile,
+      ),
+    );
+  }
+
+  const workerRuns = {};
+  const getWorkerRuns = (workerName) => {
+    if (workerRuns[workerName] === undefined) {
+      workerRuns[workerName] = timeStep(timings, 'worker-runs', () =>
+        collectWorkerRuns(config, workerName),
+      );
+    }
+    return workerRuns[workerName];
+  };
+
   const decision = makeDecision({
     pr,
     checks,
     policy,
     workerRuns,
+    getWorkerRuns,
     eventName,
     event,
     config,
+    checkStatus,
   });
+
+  if (!dryRun) {
+    timeStep(timings, 'labels', () => {
+      if (ensureLabelsRequested) {
+        ensureLabels(config);
+      }
+      syncLabels(pr.number, decision);
+    });
+
+    if (decision.dispatch) {
+      timeStep(timings, 'dispatch', () =>
+        dispatchWorker(pr, decision.dispatch),
+      );
+    }
+  }
 
   const summary = {
     status: dryRun ? 'dry-run' : 'applied',
@@ -568,18 +760,12 @@ function main() {
     state: decision.state,
     reason: decision.reason,
     dispatch: decision.dispatch,
+    desiredLabels: decision.desiredLabels,
     labelsToAdd: decision.labelsToAdd,
     labelsToRemove: decision.labelsToRemove,
     checkStatus: decision.checkStatus,
+    timings,
   };
-
-  if (!dryRun) {
-    ensureLabels(config);
-    syncLabels(pr.number, decision);
-    if (decision.dispatch) {
-      dispatchWorker(pr, decision.dispatch);
-    }
-  }
 
   console.log(JSON.stringify(summary, null, 2));
 }
@@ -589,8 +775,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  getLabelsForDecision,
   getRequiredCheckStatus,
   makeDecision,
+  readConfig,
   resolvePrNumber,
   summarizeWorkerRuns,
 };
