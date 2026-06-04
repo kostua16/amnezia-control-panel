@@ -197,10 +197,12 @@ runs:
           echo "::error::max-turns must be a non-negative integer, got: $max"
           exit 1
         fi
-        budget=$max
+        hard_max=$max
+        budget=$(( max * 80 / 100 ))
         investigate=$(( budget * 20 / 100 ))
         verify=$(( budget * 20 / 100 ))
         main=$(( budget - investigate - verify ))
+        echo "hard_max=$hard_max" >> "$GITHUB_OUTPUT"
         echo "budget=$budget" >> "$GITHUB_OUTPUT"
         echo "investigate=$investigate" >> "$GITHUB_OUTPUT"
         echo "main=$main" >> "$GITHUB_OUTPUT"
@@ -289,9 +291,11 @@ runs:
         prompt: |-
           ${{ inputs.prompt }}.
 
-          AGENT TURN LIMIT — maximum ${{ steps.turn_budget.outputs.budget }} turns (do not exceed):
-            - You have at most ${{ steps.turn_budget.outputs.budget }} turns total.
-            - Phase allocation (do not exceed):
+          AGENT TURN LIMIT — soft budget ${{ steps.turn_budget.outputs.budget }} turns; hard cap ${{ steps.turn_budget.outputs.hard_max }} turns:
+            - Complete the main work within the soft working budget of ${{ steps.turn_budget.outputs.budget }} turns.
+            - The hard execution cap is ${{ steps.turn_budget.outputs.hard_max }} turns.
+            - Reserve the remaining buffer only for final verification, cleanup, or reporting.
+            - Phase allocation uses the soft budget (do not exceed):
               • ≤${{ steps.turn_budget.outputs.investigate }} turns — investigate only (read logs, reproduce, search codebase).
               • ≤${{ steps.turn_budget.outputs.main }} turns — implement (edit files, run fixes, commit).
               • ≤${{ steps.turn_budget.outputs.verify }} turns — verify only (run tests, lint, confirm the fix).
@@ -374,9 +378,11 @@ runs:
         prompt: |-
           ${{ inputs.prompt }}.
 
-          AGENT TURN LIMIT — maximum ${{ steps.turn_budget.outputs.budget }} turns (do not exceed):
-            - You have at most ${{ steps.turn_budget.outputs.budget }} turns total.
-            - Phase allocation (do not exceed):
+          AGENT TURN LIMIT — soft budget ${{ steps.turn_budget.outputs.budget }} turns; hard cap ${{ steps.turn_budget.outputs.hard_max }} turns:
+            - Complete the main work within the soft working budget of ${{ steps.turn_budget.outputs.budget }} turns.
+            - The hard execution cap is ${{ steps.turn_budget.outputs.hard_max }} turns.
+            - Reserve the remaining buffer only for final verification, cleanup, or reporting.
+            - Phase allocation uses the soft budget (do not exceed):
               • ≤${{ steps.turn_budget.outputs.investigate }} turns — investigate only (read logs, reproduce, search codebase).
               • ≤${{ steps.turn_budget.outputs.main }} turns — implement (edit files, run fixes, commit).
               • ≤${{ steps.turn_budget.outputs.verify }} turns — verify only (run tests, lint, confirm the fix).
@@ -457,9 +463,11 @@ runs:
         prompt: |-
           ${{ inputs.prompt }}.
 
-          AGENT TURN LIMIT — maximum ${{ steps.turn_budget.outputs.budget }} turns (do not exceed):
-            - You have at most ${{ steps.turn_budget.outputs.budget }} turns total.
-            - Phase allocation (do not exceed):
+          AGENT TURN LIMIT — soft budget ${{ steps.turn_budget.outputs.budget }} turns; hard cap ${{ steps.turn_budget.outputs.hard_max }} turns:
+            - Complete the main work within the soft working budget of ${{ steps.turn_budget.outputs.budget }} turns.
+            - The hard execution cap is ${{ steps.turn_budget.outputs.hard_max }} turns.
+            - Reserve the remaining buffer only for final verification, cleanup, or reporting.
+            - Phase allocation uses the soft budget (do not exceed):
               • ≤${{ steps.turn_budget.outputs.investigate }} turns — investigate only (read logs, reproduce, search codebase).
               • ≤${{ steps.turn_budget.outputs.main }} turns — implement (edit files, run fixes, commit).
               • ≤${{ steps.turn_budget.outputs.verify }} turns — verify only (run tests, lint, confirm the fix).
