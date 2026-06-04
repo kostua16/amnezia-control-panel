@@ -168,9 +168,15 @@ function buildRoutingRulesDiff(
     if (!existing) {
       lines.push({ type: 'added', content: formatRule(rule) });
       added++;
-    } else {
+    } else if (ruleEquals(existing, rule)) {
       lines.push({ type: 'unchanged', content: formatRule(rule) });
       unchanged++;
+    } else {
+      // Changed — show removal of old + addition of new
+      lines.push({ type: 'removed', content: formatRule(existing) });
+      lines.push({ type: 'added', content: formatRule(rule) });
+      added++;
+      removed++;
     }
   }
 
@@ -231,6 +237,18 @@ function peerEquals(
     a.allowedIPs === b.allowedIPs &&
     a.endpoint === b.endpoint &&
     a.persistentKeepalive === b.persistentKeepalive
+  );
+}
+
+function ruleEquals(
+  a: PanelSyncPayload['routingRules'][number],
+  b: PanelSyncPayload['routingRules'][number],
+): boolean {
+  return (
+    a.type === b.type &&
+    a.value === b.value &&
+    a.outboundTag === b.outboundTag &&
+    a.priority === b.priority
   );
 }
 
