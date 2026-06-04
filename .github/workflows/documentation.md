@@ -252,9 +252,17 @@ Always manual-only:
 
 `upsert-pull-request`:
 
+- optionally enforces rich automation PR bodies with `require-rich-body: 'true'`
 - captures stderr on labeled creation attempts, retries without labels on failure
 - exits non-zero with `::error::` if PR creation fails with and without labels
 - null-checks post-create query to prevent silent `null` outputs
+
+`build-automation-pr-body`:
+
+- builds standard automation PR sections: Problem / Trigger, Why Automation Changed This, What Changed, Evidence, and Review Notes
+- renders source run, issue, and PR links plus changed files and capped evidence snippets
+- consumes Claude/ZAI execution files, structured output, and final output excerpts when available
+- redacts common token and secret shapes before writing the body
 
 `commit-and-push`:
 

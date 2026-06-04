@@ -146,6 +146,7 @@ jobs:
           body: ${{ steps.classify.outputs.body }}
           labels: ${{ steps.classify.outputs.labels }}
           draft: ${{ steps.classify.outputs.draft }}
+          require-rich-body: 'true'
 
   report-failure:
     needs: [audit-fix]

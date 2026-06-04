@@ -6,6 +6,7 @@ const {
   getArg,
   readJson,
 } = require('./evaluate-pr-policy.cjs');
+const { buildAutomationPrBody } = require('./build-automation-pr-body.cjs');
 
 function runGit(args) {
   return (execFileSync('git', args, { encoding: 'utf8' }) ?? '').trim();
@@ -71,21 +72,25 @@ function collectGitDiff() {
 
 function buildBody({ eligible, reason, runId, fileDetails }) {
   const lane = eligible ? 'safe auto-merge candidate' : 'manual review';
-  const files = fileDetails.map((file) => `- ${file.path}`).join('\n');
+  const files = fileDetails.map((file) => file.path).join('\n');
+  const reviewNotes = eligible
+    ? 'This PR matched the audit-safe policy and may be auto-merged after CI, AI review, and security review pass.'
+    : `This PR is intentionally manual-only under repository policy. Reason: ${reason}.`;
 
-  return [
-    'Automated audit-fix output from the `audit-fix` workflow.',
-    '',
-    `Classification: ${lane}.`,
-    `Run ID: ${runId}`,
-    '',
-    eligible
-      ? 'This PR matched the audit-safe policy and may be auto-merged after CI, AI review, and security review pass.'
-      : `This PR is intentionally manual-only under repository policy. Reason: ${reason}.`,
-    '',
-    'Changed files:',
-    files || '- (none)',
-  ].join('\n');
+  return buildAutomationPrBody({
+    workflowName: 'audit-fix',
+    problem:
+      'Autonomous audit-fix found audit findings and produced reviewable changes.',
+    trigger: `Audit fix run ID: ${runId}`,
+    rationale: `Classification: ${lane}. Policy reason: ${reason}.`,
+    changedFiles: files,
+    evidence: [
+      `Run ID: ${runId}`,
+      `Classification: ${lane}`,
+      `Reason: ${reason}`,
+    ].join('\n'),
+    reviewNotes,
+  });
 }
 
 function classifyAuditFix({ mode, policy, runId, fileDetails }) {
