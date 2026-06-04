@@ -258,9 +258,6 @@ export function startPanelHealthChecks(): void {
 
           // Fallback detection and auto-resync logic
           if (result.success) {
-            // Get previous failures for logging, then reset counter
-            const prevFailures = consecutiveFailures.get(panel.id) ?? 0;
-            void prevFailures; // Used for logging/debugging
             consecutiveFailures.set(panel.id, 0);
 
             // Auto-resync: if panel was in fallback and is now reachable
