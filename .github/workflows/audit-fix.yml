@@ -69,11 +69,13 @@ jobs:
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           allowed-bots: 'claude[bot],github-actions[bot]'
-          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(rtk:*)'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(mkdir *),Bash(rtk:*)'
           prompt: |
             /gsd:audit-fix
             Run a full repository audit for technical debt, code smells, and missing tests.
             Implement targeted fixes, run the most relevant verification you can, and stop once the audit findings are addressed.
+
+            When running tests or lint, always use `npm run <script>` or `npx <tool>` — never invoke binaries directly via node_modules paths (e.g. avoid `node node_modules/.bin/...` or `./node_modules/...`).
 
             Hard rules:
             - Do NOT run `git` or `gh`.
