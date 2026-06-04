@@ -92,3 +92,7 @@ agent-reports/
 
 # Antigravity CLI settings
 .antigravity/
+
+# Python
+__pycache__/
+*.pyc
