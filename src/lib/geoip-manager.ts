@@ -109,7 +109,7 @@ interface CachedCountry {
 
 // --- Protobuf helpers ---
 
-function readVarint(buffer: Buffer, offset: number): number {
+export function readVarint(buffer: Buffer, offset: number): number {
   let result = 0;
   let shift = 0;
   while (offset < buffer.length) {
@@ -123,7 +123,7 @@ function readVarint(buffer: Buffer, offset: number): number {
   return result >>> 0;
 }
 
-function varintSize(buffer: Buffer, offset: number): number {
+export function varintSize(buffer: Buffer, offset: number): number {
   let size = 0;
   while (offset + size < buffer.length) {
     size++;
@@ -133,7 +133,7 @@ function varintSize(buffer: Buffer, offset: number): number {
   return Math.max(size, 1);
 }
 
-function matchesCIDR(ipNum: number, cidr: string): boolean {
+export function matchesCIDR(ipNum: number, cidr: string): boolean {
   const slashIdx = cidr.indexOf('/');
   if (slashIdx === -1) return false;
 
