@@ -181,6 +181,30 @@ if (mode === 'fix-issue') {
   process.exit(0);
 }
 
+if (mode === 'approve-auto-fix') {
+  const isOpenIssue =
+    event.issue?.state !== 'closed' && !event.issue?.pull_request;
+  const commentTriggered =
+    eventName === 'issue_comment' &&
+    isOpenIssue &&
+    commentBody.includes('/approve-auto-fix') &&
+    isMaintainer;
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: commentTriggered,
+        author_association: association,
+        trusted: isMaintainer,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 if (mode === 'planning-intake-repair') {
   const isPrComment = Boolean(event.issue?.pull_request);
   const commentTriggered =
