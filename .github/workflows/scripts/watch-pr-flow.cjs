@@ -6,6 +6,7 @@ const { execFileSync } = require('child_process');
 const DEFAULT_ORCHESTRATOR_REF = 'main';
 const DEFAULT_ORCHESTRATOR_WORKFLOW = 'pr-flow.yml';
 const STALE_DRAFT_LABEL = 'flow/draft';
+const READY_STATUS_CONTEXT = 'pr-flow/ready';
 
 function parseArgs(argv) {
   const args = {};
@@ -39,15 +40,45 @@ function summarizePr(pr) {
     number: pr.number,
     title: pr.title,
     url: pr.url,
+    reasons: pr.recoveryReasons ?? [],
   };
 }
 
-function selectStaleDraftPrs(prs, labelName = STALE_DRAFT_LABEL) {
-  return (prs ?? []).filter((pr) => {
+function normalizeStatuses(statuses) {
+  if (Array.isArray(statuses)) return statuses;
+  return statuses?.statuses ?? [];
+}
+
+function hasCurrentReadyStatus(statuses) {
+  return normalizeStatuses(statuses).some(
+    (status) => status.context === READY_STATUS_CONTEXT,
+  );
+}
+
+function selectStalePrs(
+  prs,
+  { labelName = STALE_DRAFT_LABEL, getStatuses = () => [] } = {},
+) {
+  return (prs ?? []).flatMap((pr) => {
     const labels = normalizeLabels(pr.labels);
     const isOpen = !pr.state || pr.state === 'OPEN';
-    return isOpen && pr.isDraft === false && labels.includes(labelName);
+    if (!isOpen || pr.isDraft !== false) return [];
+
+    const recoveryReasons = [];
+    if (labels.includes(labelName)) {
+      recoveryReasons.push('stale-draft');
+    }
+
+    if (pr.headRefOid && !hasCurrentReadyStatus(getStatuses(pr))) {
+      recoveryReasons.push('missing-ready-status');
+    }
+
+    return recoveryReasons.length > 0 ? [{ ...pr, recoveryReasons }] : [];
   });
+}
+
+function selectStaleDraftPrs(prs, labelName = STALE_DRAFT_LABEL) {
+  return selectStalePrs(prs, { labelName, getStatuses: () => [] });
 }
 
 function run(command, args) {
@@ -76,10 +107,42 @@ function listOpenPullRequests({ runJsonCommand = runJson } = {}) {
       '--limit',
       '200',
       '--json',
-      'number,title,url,state,isDraft,labels',
+      'number,title,url,state,isDraft,labels,headRefOid',
     ],
     [],
   );
+}
+
+function readRepository({ runJsonCommand = runJson } = {}) {
+  return runJsonCommand('gh', ['repo', 'view', '--json', 'nameWithOwner'], null)
+    ?.nameWithOwner;
+}
+
+function createStatusReader({ runJsonCommand = runJson } = {}) {
+  let repository = null;
+  const unreadableStatuses = [{ context: READY_STATUS_CONTEXT }];
+
+  return (pr) => {
+    if (!pr.headRefOid) return [];
+
+    try {
+      repository ??= readRepository({ runJsonCommand });
+    } catch {
+      return unreadableStatuses;
+    }
+
+    if (!repository) return unreadableStatuses;
+
+    try {
+      return runJsonCommand(
+        'gh',
+        ['api', `repos/${repository}/commits/${pr.headRefOid}/status`],
+        { statuses: [] },
+      );
+    } catch {
+      return unreadableStatuses;
+    }
+  };
 }
 
 function buildDispatchArgs({
@@ -108,11 +171,16 @@ function runWatchdog({
   dryRun = false,
   listPullRequests = listOpenPullRequests,
   dispatch = dispatchOrchestrator,
+  getStatuses = null,
+  runJsonCommand = runJson,
   workflow = DEFAULT_ORCHESTRATOR_WORKFLOW,
   ref = DEFAULT_ORCHESTRATOR_REF,
 } = {}) {
-  const pullRequests = listPullRequests();
-  const selected = selectStaleDraftPrs(pullRequests);
+  const pullRequests = listPullRequests({ runJsonCommand });
+  const readStatuses = getStatuses ?? createStatusReader({ runJsonCommand });
+  const selected = selectStalePrs(pullRequests, {
+    getStatuses: readStatuses,
+  });
   const dispatched = [];
 
   if (!dryRun) {
@@ -152,6 +220,8 @@ if (require.main === module) {
 
 module.exports = {
   buildDispatchArgs,
+  hasCurrentReadyStatus,
   runWatchdog,
+  selectStalePrs,
   selectStaleDraftPrs,
 };

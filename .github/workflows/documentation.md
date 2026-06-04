@@ -116,6 +116,8 @@ Worker completion also explicitly wakes `pr-flow.yml` with `workflow_dispatch`
 when the worker was orchestrator-dispatched. The `workflow_run` trigger remains
 as a useful backup for native CI and other visible runs, but `GITHUB_TOKEN`
 dispatch chains should not rely on `workflow_run` alone for progression.
+`pr-flow-watchdog.yml` also wakes open non-draft PRs that are still labeled
+`flow/draft` or whose current head SHA has no `pr-flow/ready` status.
 
 The worker run-name contract is part of the orchestration API: worker run names
 must include `PR #<number> @ <head_sha>`. `orchestrate-pr-flow.cjs` uses that
@@ -126,11 +128,13 @@ Branch protection setup is external repository state. After the first
 orchestrator run creates `pr-flow/ready`, require exactly that context if PR-flow
 completion should block merges.
 
-Manual-review markers such as `needs-review` intentionally complete
-`pr-flow/ready` with success once CI is green. They prevent auto-finalization,
-but they should not make the required aggregate status impossible to satisfy.
-Hard blockers such as `do-not-merge`, AI/security concern labels, and blocked
-dependency labels still fail `pr-flow/ready`.
+Manual-review markers such as `needs-review` and manual-only policy paths still
+run advisory Code Review and Security Review after CI is green. Once those
+review signals pass, PR flow completes as `flow/manual-only`: `pr-flow/ready`
+can pass for branch protection, but PR Finalizer and auto-merge stay disabled so
+a human makes the final decision. Hard blockers such as `do-not-merge`,
+AI/security concern labels, and blocked dependency labels still fail
+`pr-flow/ready`.
 
 ## Policy Labels
 
@@ -159,7 +163,7 @@ The following labels are enforced or created automatically by the workflow stack
 | `flow/improve-pending`        | PR flow is waiting for improvement intake               |
 | `flow/improve-failed`         | PR flow improvement intake failed                       |
 | `flow/finalizer-dispatched`   | PR flow dispatched the finalizer for this PR head       |
-| `flow/manual-only`            | PR flow reached a manual-only orchestration path        |
+| `flow/manual-only`            | PR flow completed reviews but requires human merge      |
 | `do-not-merge`                | Explicitly block finalizer approval and auto-merge      |
 | `auto-fix-approved`           | Maintainer explicitly approved issue auto-fix execution |
 | `antigravity-review-passed`   | Antigravity AI code review found no blocking issues     |
@@ -189,19 +193,19 @@ Always manual-only:
 
 ## Policy Examples
 
-| PR shape                                                                                                                                           | Result                                                                          |
-| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `claude-auto-fix-ci-main-12345` touching `src/**`, green checks, `ai-review-passed`, `security-review-passed`                                      | Finalizer approves and enables squash auto-merge                                |
-| `claude-auto-fix-ci-main-12345` touching `.github/workflows/ci.yml`                                                                                | Finalizer leaves it manual-only                                                 |
-| `claude-fix-issue-*` missing `security-review-passed`                                                                                              | Finalizer waits for review signals                                              |
-| `claude-audit-safe-fix-*` touching a small component/hook/resource-monitor diff, green checks, `ai-review-passed`, `security-review-passed`        | Finalizer approves and enables squash auto-merge                                |
-| `claude-audit-safe-fix-*` touching `src/app/api/**`, auth/sync/config paths, Prisma, packages, workflows, or more than 3 files / 120 changed lines | Finalizer leaves it manual-only                                                 |
-| `claude-audit-fix-*` from a broad autonomous audit                                                                                                 | Finalizer leaves it manual-only                                                 |
-| Broad audit fix touching API route + seed/security-sensitive paths and 7+ files                                                                    | Finalizer leaves it manual-only                                                 |
-| `dependabot/npm_and_yarn/react-*` with patch/minor update and `deps-review-passed`                                                                 | Finalizer approves and enables squash auto-merge                                |
-| `dependabot/github_actions/actions-checkout-*`                                                                                                     | Finalizer leaves it manual-only                                                 |
-| Any PR with `do-not-merge` or a concern/block label                                                                                                | Finalizer does not approve or enable auto-merge                                 |
-| Any PR with only `needs-review` after CI passes                                                                                                    | PR flow marks manual-only complete; human review remains outside PR-flow status |
+| PR shape                                                                                                                                           | Result                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `claude-auto-fix-ci-main-12345` touching `src/**`, green checks, `ai-review-passed`, `security-review-passed`                                      | Finalizer approves and enables squash auto-merge                             |
+| `claude-auto-fix-ci-main-12345` touching `.github/workflows/ci.yml`                                                                                | Reviews run after CI; finalizer leaves it manual-only                        |
+| `claude-fix-issue-*` missing `security-review-passed`                                                                                              | Finalizer waits for review signals                                           |
+| `claude-audit-safe-fix-*` touching a small component/hook/resource-monitor diff, green checks, `ai-review-passed`, `security-review-passed`        | Finalizer approves and enables squash auto-merge                             |
+| `claude-audit-safe-fix-*` touching `src/app/api/**`, auth/sync/config paths, Prisma, packages, workflows, or more than 3 files / 120 changed lines | Reviews run after CI; finalizer leaves it manual-only                        |
+| `claude-audit-fix-*` from a broad autonomous audit                                                                                                 | Reviews run after CI; finalizer leaves it manual-only                        |
+| Broad audit fix touching API route + seed/security-sensitive paths and 7+ files                                                                    | Reviews run after CI; finalizer leaves it manual-only                        |
+| `dependabot/npm_and_yarn/react-*` with patch/minor update and `deps-review-passed`                                                                 | Finalizer approves and enables squash auto-merge                             |
+| `dependabot/github_actions/actions-checkout-*`                                                                                                     | Dependency/review policy runs after CI; finalizer leaves it manual-only      |
+| Any PR with `do-not-merge` or a concern/block label                                                                                                | Finalizer does not approve or enable auto-merge                              |
+| Any PR with only `needs-review` after CI passes                                                                                                    | Code/security reviews run, then PR flow marks manual-only for human decision |
 
 ## Composite Action Notes
 
