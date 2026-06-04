@@ -699,6 +699,15 @@ function buildFlowVisibility({
   const finalizerAlreadyDispatched = labels.includes(
     'flow/finalizer-dispatched',
   );
+  const closedOrMerged =
+    String(pr.state).toUpperCase() !== 'OPEN' || pr.mergedAt;
+  const policyBlockingLabels = policy.blocking_labels_present ?? [];
+  const { manualReview: manualReviewLabels } =
+    splitBlockingLabels(policyBlockingLabels);
+  const manualOnly =
+    Boolean(policy.manual_only) ||
+    manualReviewLabels.length > 0 ||
+    decision.state === 'flow/manual-only';
   const manualTerminal = decision.state === 'flow/manual-only';
   const statuses = {};
 
@@ -765,13 +774,36 @@ function buildFlowVisibility({
     });
   }
 
+  function reviewPendingStatus(workerName, defaultDescription) {
+    if (closedOrMerged) {
+      return skippedStatus(workerName, 'N/A: PR is closed or already merged.');
+    }
+
+    if (decision.state === 'flow/draft') {
+      return waitingStatus(
+        workerName,
+        'Review waits until the PR is ready for review.',
+      );
+    }
+
+    if (
+      [
+        'flow/checks-failed',
+        'flow/checks-pending',
+        'flow/checks-unavailable',
+      ].includes(decision.state)
+    ) {
+      return waitingStatus(
+        workerName,
+        'Review waits for required checks to pass.',
+      );
+    }
+
+    return waitingStatus(workerName, defaultDescription);
+  }
+
   const codeDispatchError = dispatchErrorFor('codeReview');
-  if (manualTerminal) {
-    statuses.codeReview = skippedStatus(
-      'codeReview',
-      'N/A: PR is manual-only.',
-    );
-  } else if (policy.dependabot) {
+  if (policy.dependabot) {
     statuses.codeReview = skippedStatus(
       'codeReview',
       'N/A: Dependabot PRs use dependency review.',
@@ -810,19 +842,14 @@ function buildFlowVisibility({
       'Code review was dispatched.',
     );
   } else {
-    statuses.codeReview = waitingStatus(
+    statuses.codeReview = reviewPendingStatus(
       'codeReview',
       'Waiting for code review signal.',
     );
   }
 
   const securityDispatchError = dispatchErrorFor('securityReview');
-  if (manualTerminal) {
-    statuses.securityReview = skippedStatus(
-      'securityReview',
-      'N/A: PR is manual-only.',
-    );
-  } else if (policy.dependabot) {
+  if (policy.dependabot) {
     statuses.securityReview = skippedStatus(
       'securityReview',
       'N/A: Dependabot PRs use dependency review.',
@@ -861,19 +888,14 @@ function buildFlowVisibility({
       'Security review was dispatched with code review.',
     );
   } else {
-    statuses.securityReview = waitingStatus(
+    statuses.securityReview = reviewPendingStatus(
       'securityReview',
       'Waiting for security review signal.',
     );
   }
 
   const dependencyDispatchError = dispatchErrorFor('dependencyReview');
-  if (manualTerminal) {
-    statuses.dependencyReview = skippedStatus(
-      'dependencyReview',
-      'N/A: PR is manual-only.',
-    );
-  } else if (!needsDependencyReview) {
+  if (!needsDependencyReview) {
     statuses.dependencyReview = skippedStatus(
       'dependencyReview',
       'N/A: Dependency review is not required for this PR.',
@@ -919,7 +941,7 @@ function buildFlowVisibility({
   }
 
   const improveDispatchError = dispatchErrorFor('prImprove');
-  if (manualTerminal) {
+  if (manualOnly) {
     statuses.prImprove = skippedStatus('prImprove', 'N/A: PR is manual-only.');
   } else if (!shouldImprove) {
     statuses.prImprove = skippedStatus(
@@ -959,8 +981,13 @@ function buildFlowVisibility({
   }
 
   const finalizerDispatchError = dispatchErrorFor('finalizer');
-  if (manualTerminal) {
+  if (manualOnly) {
     statuses.finalizer = skippedStatus('finalizer', 'N/A: PR is manual-only.');
+  } else if (closedOrMerged) {
+    statuses.finalizer = skippedStatus(
+      'finalizer',
+      'N/A: PR is closed or already merged.',
+    );
   } else if (finalizerDispatchError) {
     statuses.finalizer = errorStatus(
       'finalizer',
@@ -1008,7 +1035,7 @@ function buildFlowVisibility({
   let aggregateDescription = decision.reason || 'PR orchestration is pending.';
   let aggregateDisplayState = 'pending';
 
-  if (String(pr.state).toUpperCase() !== 'OPEN' || pr.mergedAt) {
+  if (closedOrMerged) {
     aggregateState = 'success';
     aggregateDisplayState = 'success';
     aggregateDescription = 'PR is closed or already merged.';
@@ -1040,6 +1067,11 @@ function buildFlowVisibility({
     aggregateDisplayState = 'success';
     aggregateDescription =
       decision.reason || 'PR is manual-only; orchestration is complete.';
+  } else if (manualOnly) {
+    aggregateState = 'pending';
+    aggregateDisplayState = 'pending';
+    aggregateDescription =
+      decision.reason || 'Manual-only PR is waiting for advisory reviews.';
   } else if (statuses.finalizer.state === 'failure') {
     aggregateState = 'failure';
     aggregateDisplayState = 'failure';
@@ -1333,22 +1365,18 @@ function makeDecision(context) {
   const policyBlockingLabels = policy.blocking_labels_present ?? [];
   const { hard: hardBlockingLabels, manualReview: manualReviewLabels } =
     splitBlockingLabels(policyBlockingLabels);
+  const manualOnly = policy.manual_only || manualReviewLabels.length > 0;
+  const manualOnlyReason =
+    policy.blocked_reason ||
+    (manualReviewLabels.length > 0
+      ? `Manual review is required by label: ${manualReviewLabels.join(', ')}.`
+      : 'PR is manual-only by policy.');
 
   if (hardBlockingLabels.length > 0) {
     return finish(
       'flow/review-blocked',
       `Blocking labels are present: ${hardBlockingLabels.join(', ')}.`,
     );
-  }
-
-  if (policy.manual_only || manualReviewLabels.length > 0) {
-    const reason =
-      policy.blocked_reason ||
-      (manualReviewLabels.length > 0
-        ? `Manual review is required by label: ${manualReviewLabels.join(', ')}.`
-        : 'PR is manual-only by policy.');
-
-    return finish('flow/manual-only', reason);
   }
 
   const needsDependencyReview =
@@ -1410,6 +1438,10 @@ function makeDecision(context) {
         inputs: codeReviewWorker.inputs,
       });
     }
+  }
+
+  if (manualOnly) {
+    return finish('flow/manual-only', manualOnlyReason);
   }
 
   const shouldImprove =
