@@ -1,0 +1,63 @@
+name: Approve Auto-Fix
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: approve-auto-fix-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  issues: write
+
+jobs:
+  authorize:
+    runs-on: self-hosted
+    outputs:
+      should-run: ${{ steps.gate.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Evaluate approve trigger
+        id: gate
+        shell: bash
+        run: |
+          node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode approve-auto-fix \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            > /tmp/approve-trigger-policy.json
+          echo "should_run=$(jq -r '.should_run' /tmp/approve-trigger-policy.json)" >> "$GITHUB_OUTPUT"
+
+  approve:
+    needs: [authorize]
+    runs-on: self-hosted
+    timeout-minutes: 5
+    if: needs.authorize.outputs.should-run == 'true'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+
+      - name: Ensure labels exist
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          policy-file: .github/workflows/policy.json
+          names: auto-fix-approved
+
+      - name: Apply auto-fix-approved label
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+        run: |
+          gh issue edit "$ISSUE_NUM" --add-label "auto-fix-approved"
+          gh issue comment "$ISSUE_NUM" --body "Auto-fix approved by @${{ github.actor }}. The \`fix-issue\` workflow will pick this up."
