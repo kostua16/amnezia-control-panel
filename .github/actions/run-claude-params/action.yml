@@ -197,7 +197,7 @@ runs:
           echo "::error::max-turns must be a non-negative integer, got: $max"
           exit 1
         fi
-        budget=$(( max * 80 / 100 ))
+        budget=$max
         investigate=$(( budget * 20 / 100 ))
         verify=$(( budget * 20 / 100 ))
         main=$(( budget - investigate - verify ))
