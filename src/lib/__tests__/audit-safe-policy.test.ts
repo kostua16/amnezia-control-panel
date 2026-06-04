@@ -10,6 +10,9 @@ const {
 const {
   classifyAuditFix,
 } = require('../../../.github/workflows/scripts/classify-audit-fix.cjs');
+const {
+  validateRichBody,
+} = require('../../../.github/workflows/scripts/build-automation-pr-body.cjs');
 
 function file(path: string, additions = 5, deletions = 1) {
   return { path, additions, deletions };
@@ -226,6 +229,11 @@ describe('audit-fix classifier', () => {
     assert.equal(result.branch_name, 'claude-audit-safe-fix-123');
     assert.equal(result.draft, 'false');
     assert.equal(result.labels, 'auto-fix,audit-safe,skip-improve');
+    assert.match(
+      result.body,
+      /This PR matched the audit-safe policy and may be auto-merged/,
+    );
+    validateRichBody(result.body);
   });
 
   it('routes manual-only mode to the manual branch lane', () => {
@@ -241,6 +249,8 @@ describe('audit-fix classifier', () => {
     assert.equal(result.branch_name, 'claude-audit-fix-123');
     assert.equal(result.draft, 'true');
     assert.equal(result.labels, 'auto-fix,needs-review');
+    assert.match(result.body, /manual-only under repository policy/);
+    validateRichBody(result.body);
   });
 
   it('routes line-limit overflows to the manual branch lane', () => {
