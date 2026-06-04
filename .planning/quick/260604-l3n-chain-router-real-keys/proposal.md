@@ -1,0 +1,67 @@
+# Quick Task 260604-l3n: Replace STUB public keys in chain-router with real key generation
+
+## Problem
+
+`src/lib/chain-router.ts:262` and 3 more lines generate WireGuard peer configs with placeholder keys:
+
+```ts
+publicKey: `STUB_PUBKEY_${next.label.replace(/\s+/g, '_')}`,
+```
+
+Similarly, `src/lib/vpn-services.ts:111-113` returns:
+```ts
+publicKey: publicKey ?? 'STUB_PUBLIC_KEY',
+privateKey: 'STUB_PRIVATE_KEY',
+address: 'STUB_ADDRESS',
+```
+
+These stubs mean that:
+1. **Chain application cannot work end-to-end** — `applyChainConfig()` will push configs with `STUB_PUBKEY_*` to real WireGuard interfaces, which reject invalid keys.
+2. **VPN service creation returns fake credentials** — user creation reports success but the returned config is unusable.
+3. **No test catches this** — there are no integration tests that verify the key lifecycle.
+
+The stubs were acceptable during initial scaffolding but are now blocking real functionality.
+
+## Scope
+
+### 1. Generate real WireGuard keypairs in chain-router
+- **files**: `src/lib/chain-router.ts`
+- **action**:
+  - Add a `generateWireGuardKeypair()` function that uses Node.js `crypto.generateKeyPairSync('x25519')` to create real Curve25519 keypairs.
+  - Encode public/private keys as base64 (WireGuard format).
+  - Replace all `STUB_PUBKEY_*` references with real generated public keys.
+  - Return private keys in the chain config so panels can configure their interfaces.
+- **verify**: Unit test: generated keypair is 32 bytes when decoded from base64; keys are unique across calls.
+- **done**: Zero `STUB_PUBKEY` in chain-router output.
+
+### 2. Generate real addresses and UUIDs in vpn-services
+- **files**: `src/lib/vpn-services.ts`
+- **action**:
+  - Replace `STUB_ADDRESS` with generated WireGuard IP from a configurable subnet (e.g. `10.66.66.x/32`).
+  - Replace `STUB_UUID` with `crypto.randomUUID()`.
+  - Replace `STUB_PUBLIC_KEY` with real key when available, or generate one.
+  - Keep `STUB_PRIVATE_KEY` replacement as a follow-up (private keys should be generated per-peer, not by the control panel).
+- **verify**: Unit test: `createAwgUser()` returns config with valid-looking IP and key; `createThreeXuiUser()` returns UUID.
+- **done**: Zero `STUB_ADDRESS`, `STUB_UUID`, `STUB_PUBLIC_KEY` in vpn-services output.
+
+### 3. Add key-generation utility
+- **files**: Create `src/lib/wireguard-keys.ts`
+- **action**:
+  - Export `generateKeypair(): { publicKey: string; privateKey: string }` — wraps `crypto.generateKeyPairSync('x25519')` with base64 encoding.
+  - Export `isValidWireGuardKey(key: string): boolean` — validates base64 + length.
+- **verify**: Unit test for both functions.
+- **done**: Shared key-generation module available for chain-router and vpn-services.
+
+## Acceptance Criteria
+- [ ] `src/lib/wireguard-keys.ts` with `generateKeypair()` and `isValidWireGuardKey()`
+- [ ] Zero `STUB_PUBKEY` in `chain-router.ts`
+- [ ] Zero `STUB_ADDRESS`, `STUB_UUID`, `STUB_PUBLIC_KEY` in `vpn-services.ts`
+- [ ] Unit tests for key generation pass
+- [ ] Generated keys are valid WireGuard base64 keys (32 bytes)
+
+## Risk
+- Medium — key generation changes the chain config output format. Must verify that `config-generator.ts:50` (which already filters stubs) is updated to accept real keys.
+- Mitigate by running the chain apply flow end-to-end in dev after implementation.
+
+## Estimated Effort
+1-2 focused sessions
