@@ -125,6 +125,16 @@ function summarizeToolInput(input = {}) {
   };
 }
 
+function summarizePermissionDenial(denial = {}) {
+  if (!denial || typeof denial !== 'object') return '';
+  const tool = denial.tool_name || denial.toolName || denial.name || '';
+  const input = denial.tool_input || denial.toolInput || denial.input || {};
+  const summary = summarizeToolInput(input);
+  const target = summary.command || summary.filePath || '';
+  if (tool && target) return `${tool}: ${target}`;
+  return tool || target || '';
+}
+
 function textFromToolResultContent(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -194,6 +204,8 @@ function parseEvents(executionText) {
     numToolCalls: 0,
     toolBreakdown: {},
     numFailedToolCalls: 0,
+    permissionDenialsCount: null,
+    rejectedTools: new Set(),
     readFiles: new Set(),
     editFiles: new Set(),
     failedToolSamples: [],
@@ -221,10 +233,21 @@ function parseEvents(executionText) {
           metrics.totalCostUsd,
         );
         metrics.numTurns = asNumber(node.num_turns, metrics.numTurns);
-        metrics.permissionDenialsCount = asNumber(
-          node.permission_denials_count,
-          metrics.permissionDenialsCount,
-        );
+        if (node.permission_denials_count !== undefined) {
+          metrics.permissionDenialsCount = asNumber(
+            node.permission_denials_count,
+            metrics.permissionDenialsCount,
+          );
+        }
+        if (Array.isArray(node.permission_denials)) {
+          if (metrics.permissionDenialsCount === null) {
+            metrics.permissionDenialsCount = node.permission_denials.length;
+          }
+          for (const denial of node.permission_denials) {
+            const summary = summarizePermissionDenial(denial);
+            if (summary) metrics.rejectedTools.add(summary);
+          }
+        }
         const parsedError = asBoolean(node.is_error);
         if (parsedError !== null) metrics.isError = parsedError;
         if (node.type === 'result' && parsedError === true) {
@@ -334,7 +357,7 @@ function extractRejectedTools(logText) {
   const rejected = new Set();
   for (const rawLine of String(logText || '').split('\n')) {
     const line = stripGitHubLogPrefix(sanitizeText(rawLine));
-    const match = line.match(/DISALLOWED_TOOLS:\s*(.+)$/);
+    const match = line.trim().match(/^DISALLOWED_TOOLS:\s*(.+)$/);
     if (!match) continue;
     for (const item of match[1].split(/[,;]/)) {
       const value = item.trim();
@@ -449,7 +472,8 @@ function parseClaudeExecution(options = {}) {
   const logText = options.logText || '';
   const eventMetrics = parseEvents(executionText);
   const logToolMetrics = parseLogToolMetrics(logText);
-  const rejectedToolsList = extractRejectedTools(logText);
+  const logRejectedToolsList = extractRejectedTools(logText);
+  const eventRejectedToolsList = [...eventMetrics.rejectedTools].sort();
   const errorMessages = [
     ...new Set([
       ...eventMetrics.errorMessages,
@@ -471,11 +495,22 @@ function parseClaudeExecution(options = {}) {
   const isError =
     eventMetrics.isError ??
     asBoolean(extractJsonFieldFromLog(logText, 'is_error'));
+  const logPermissionDenialsCount = asNumber(
+    extractJsonFieldFromLog(logText, 'permission_denials_count'),
+    null,
+  );
   const permissionDenialsCount =
-    eventMetrics.permissionDenialsCount ||
-    asNumber(extractJsonFieldFromLog(logText, 'permission_denials_count'), 0);
+    eventMetrics.permissionDenialsCount ?? logPermissionDenialsCount ?? 0;
   const modelUsed =
     eventMetrics.modelUsed || extractJsonFieldFromLog(logText, 'model') || '';
+  const shouldTrustLogRejectedTools =
+    eventMetrics.permissionDenialsCount === null &&
+    eventRejectedToolsList.length === 0 &&
+    logPermissionDenialsCount === null;
+  const rejectedToolsList =
+    eventRejectedToolsList.length > 0 || !shouldTrustLogRejectedTools
+      ? eventRejectedToolsList
+      : logRejectedToolsList;
   const numRejectedToolCalls =
     permissionDenialsCount || rejectedToolsList.length;
   const numToolCalls = eventMetrics.numToolCalls || logToolMetrics.numToolCalls;

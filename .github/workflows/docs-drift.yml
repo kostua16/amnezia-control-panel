@@ -92,6 +92,21 @@ jobs:
         if: steps.push.outputs.pushed != 'true'
         run: echo "No documentation drift updates were needed."
 
+      - name: Build docs drift PR body
+        id: pr-body
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/build-automation-pr-body
+        with:
+          workflow-name: docs-drift
+          problem: 'Documentation drift check found docs or planning artifacts that no longer matched the implementation.'
+          source-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          base-ref: main
+          changed-files: ${{ steps.claude_run.outputs.claude_changed_files_list }}
+          execution-file: ${{ steps.claude_run.outputs.last_execution_file }}
+          structured-output: ${{ steps.claude_run.outputs.structured_output }}
+          claude-last-output: ${{ steps.claude_run.outputs.claude_last_output }}
+          review-notes: 'Draft PR. Documentation-only changes are intentionally manual-only under repository policy.'
+
       - name: Create docs drift PR
         if: steps.push.outputs.pushed == 'true'
         uses: ./.github/actions/upsert-pull-request
@@ -100,11 +115,9 @@ jobs:
           base: main
           branch-name: ${{ steps.branch.outputs.branch_name }}
           title: 'docs: reconcile documentation drift'
-          body: |
-            Automated documentation drift reconciliation.
-
-            This PR was created by the docs-drift workflow and is intentionally manual-only under repository policy.
+          body: ${{ steps.pr-body.outputs.body }}
           draft: 'true'
+          require-rich-body: 'true'
 
   report-failure:
     needs: [docs-drift]

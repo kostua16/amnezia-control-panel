@@ -148,6 +148,36 @@ describe('scan-claude-logs', () => {
     assert.equal(outputs.findings_summary, 'action_error');
   });
 
+  it('keeps a successful run with a small number of permission denials warning-only', () => {
+    const metrics = baseMetrics({
+      numToolCalls: 20,
+      numRejectedToolCalls: 2,
+      rejectedToolsList: [
+        'Bash: ./node_modules/vitest/vitest.mjs run',
+        'Bash: node node_modules/.bin/vitest run',
+      ],
+    });
+    const scan = buildClaudeLogScan({
+      metrics,
+      runId: '456',
+      workflow: 'claude-job',
+      conclusion: 'success',
+      attempt: '1',
+      maxTurns: '40',
+    });
+    const tmpDir = makeTempDir();
+    const outputPath = path.join(tmpDir, 'github-output.txt');
+
+    writeGithubOutputs({ scan, outputPath, issuesDir: tmpDir });
+    const outputs = parseGitHubOutput(fs.readFileSync(outputPath, 'utf8'));
+
+    assert.equal(scan.findings[0].category, 'permission_denials');
+    assert.equal(scan.findings[0].severity, 'warning');
+    assert.equal(outputs.has_findings, 'true');
+    assert.equal(outputs.has_error_findings, 'false');
+    assert.equal(outputs.findings_summary, '');
+  });
+
   it('grades failed tool calls as error for failed or turn-limit runs and warning otherwise', () => {
     const metrics = baseMetrics({
       numTurns: 40,

@@ -1,0 +1,117 @@
+name: 'Build Automation PR Body'
+description: 'Build a rich pull request body for automation-created PRs'
+
+inputs:
+  workflow-name:
+    description: 'Workflow name to show in the automation footer'
+    required: true
+  problem:
+    description: 'Problem statement or trigger summary'
+    required: false
+    default: ''
+  trigger:
+    description: 'Trigger details when no problem statement is provided'
+    required: false
+    default: ''
+  rationale:
+    description: 'Human-readable rationale for why automation changed files'
+    required: false
+    default: ''
+  changes:
+    description: 'Optional high-level change summary'
+    required: false
+    default: ''
+  changed-files:
+    description: 'Changed files as newline, CSV, or JSON array'
+    required: false
+    default: ''
+  base-ref:
+    description: 'Base ref used as fallback for changed-file detection'
+    required: false
+    default: ''
+  evidence:
+    description: 'Additional evidence, logs, or source context'
+    required: false
+    default: ''
+  failed-jobs:
+    description: 'Failed job names or JSON'
+    required: false
+    default: ''
+  error-logs:
+    description: 'Capped error log excerpts or JSON'
+    required: false
+    default: ''
+  affected-files:
+    description: 'Affected files from source evidence'
+    required: false
+    default: ''
+  review-notes:
+    description: 'Reviewer notes or repository policy reminders'
+    required: false
+    default: ''
+  source-run-url:
+    description: 'Source workflow run URL'
+    required: false
+    default: ''
+  source-pr-url:
+    description: 'Source pull request URL'
+    required: false
+    default: ''
+  source-issue-url:
+    description: 'Source issue URL'
+    required: false
+    default: ''
+  closing-issues:
+    description: 'Issue numbers to render as Closes lines'
+    required: false
+    default: ''
+  execution-file:
+    description: 'Claude/ZAI execution JSON or JSONL file'
+    required: false
+    default: ''
+  structured-output:
+    description: 'Structured model output JSON'
+    required: false
+    default: ''
+  claude-last-output:
+    description: 'Capped final Claude/ZAI output excerpt'
+    required: false
+    default: ''
+  footer:
+    description: 'Override automation footer text'
+    required: false
+    default: ''
+
+outputs:
+  body:
+    description: 'Rich pull request body'
+    value: ${{ steps.body.outputs.body }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build rich PR body
+      id: body
+      shell: bash
+      env:
+        AFFECTED_FILES: ${{ inputs.affected-files }}
+        BASE_REF: ${{ inputs.base-ref }}
+        CHANGED_FILES: ${{ inputs.changed-files }}
+        CHANGES: ${{ inputs.changes }}
+        CLAUDE_LAST_OUTPUT: ${{ inputs.claude-last-output }}
+        CLOSING_ISSUES: ${{ inputs.closing-issues }}
+        ERROR_LOGS: ${{ inputs.error-logs }}
+        EVIDENCE: ${{ inputs.evidence }}
+        EXECUTION_FILE: ${{ inputs.execution-file }}
+        FAILED_JOBS: ${{ inputs.failed-jobs }}
+        FOOTER: ${{ inputs.footer }}
+        PROBLEM: ${{ inputs.problem }}
+        RATIONALE: ${{ inputs.rationale }}
+        REVIEW_NOTES: ${{ inputs.review-notes }}
+        SOURCE_ISSUE_URL: ${{ inputs.source-issue-url }}
+        SOURCE_PR_URL: ${{ inputs.source-pr-url }}
+        SOURCE_RUN_URL: ${{ inputs.source-run-url }}
+        STRUCTURED_OUTPUT: ${{ inputs.structured-output }}
+        TRIGGER: ${{ inputs.trigger }}
+        WORKFLOW_NAME: ${{ inputs.workflow-name }}
+      run: node .github/workflows/scripts/build-automation-pr-body.cjs --github-output "$GITHUB_OUTPUT"

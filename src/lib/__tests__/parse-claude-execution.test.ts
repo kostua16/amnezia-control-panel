@@ -78,6 +78,64 @@ describe('parseClaudeExecution', () => {
     assert.equal(metrics.durationPerTurnMs, 1500);
   });
 
+  it('counts structured permission denial arrays when the count field is absent', () => {
+    const metrics = parseClaudeExecution({
+      executionText: JSON.stringify({
+        type: 'result',
+        is_error: false,
+        duration_ms: 1000,
+        num_turns: 8,
+        permission_denials: [
+          {
+            tool_name: 'Bash',
+            tool_input: { command: 'node node_modules/.bin/vitest run' },
+          },
+          {
+            tool_name: 'Bash',
+            tool_input: { command: './node_modules/vitest/vitest.mjs run' },
+          },
+        ],
+      }),
+      maxTurns: '40',
+    });
+
+    assert.equal(metrics.numRejectedToolCalls, 2);
+    assert.deepEqual(metrics.rejectedToolsList, [
+      'Bash: ./node_modules/vitest/vitest.mjs run',
+      'Bash: node node_modules/.bin/vitest run',
+    ]);
+  });
+
+  it('does not count noisy embedded DISALLOWED_TOOLS snippets as rejected tools', () => {
+    const metrics = parseClaudeExecution({
+      executionText: JSON.stringify({
+        type: 'result',
+        is_error: false,
+        duration_ms: 1000,
+        num_turns: 8,
+        permission_denials: [
+          {
+            tool_name: 'Bash',
+            tool_input: { command: 'node node_modules/.bin/vitest run' },
+          },
+          {
+            tool_name: 'Bash',
+            tool_input: { command: './node_modules/vitest/vitest.mjs run' },
+          },
+        ],
+      }),
+      logText:
+        'audit-fix\tAudit repository and apply targeted fixes\t2026-06-03T23:30:49Z "content": "src/lib/__tests__/parse-claude-execution.test.ts:327: DETAIL=\\"DISALLOWED_TOOLS: $DISALLOWED\\""',
+      maxTurns: '40',
+    });
+
+    assert.equal(metrics.numRejectedToolCalls, 2);
+    assert.deepEqual(metrics.rejectedToolsList, [
+      'Bash: ./node_modules/vitest/vitest.mjs run',
+      'Bash: node node_modules/.bin/vitest run',
+    ]);
+  });
+
   it('extracts result-level API errors from execution JSON without requiring logs', () => {
     const metrics = parseClaudeExecution({
       executionText: JSON.stringify({

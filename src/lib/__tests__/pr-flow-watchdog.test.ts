@@ -6,7 +6,9 @@ import { describe, it } from 'node:test';
 const require = createRequire(import.meta.url);
 const {
   buildDispatchArgs,
+  hasCurrentReadyStatus,
   runWatchdog,
+  selectStalePrs,
   selectStaleDraftPrs,
 } = require('../../../.github/workflows/scripts/watch-pr-flow.cjs');
 
@@ -19,6 +21,8 @@ type WatchPr = {
   state?: string;
   isDraft: boolean;
   labels: Label[];
+  headRefOid?: string;
+  recoveryReasons?: string[];
 };
 
 function prFixture(overrides: Partial<WatchPr> = {}): WatchPr {
@@ -135,6 +139,102 @@ describe('PR flow watchdog', () => {
     assert.deepEqual(selected, []);
   });
 
+  it('detects open non-draft PRs missing pr-flow ready on current head', () => {
+    const selected = selectStalePrs(
+      [
+        prFixture({
+          labels: [{ name: 'flow/review-pending' }],
+          headRefOid: 'abc123',
+        }),
+      ],
+      { getStatuses: () => [{ context: 'ci/test', state: 'success' }] },
+    );
+
+    assert.deepEqual(
+      selected.map((pr: WatchPr) => ({
+        number: pr.number,
+        reasons: pr.recoveryReasons,
+      })),
+      [{ number: 205, reasons: ['missing-ready-status'] }],
+    );
+  });
+
+  it('skips open non-draft PRs with current pr-flow ready status', () => {
+    const selected = selectStalePrs(
+      [
+        prFixture({
+          labels: [{ name: 'flow/review-pending' }],
+          headRefOid: 'abc123',
+        }),
+      ],
+      {
+        getStatuses: () => [
+          { context: 'pr-flow/ready', state: 'pending' },
+          { context: 'ci/test', state: 'success' },
+        ],
+      },
+    );
+
+    assert.deepEqual(selected, []);
+  });
+
+  it('recognizes ready status lists and combined status payloads', () => {
+    assert.equal(
+      hasCurrentReadyStatus([{ context: 'pr-flow/ready', state: 'success' }]),
+      true,
+    );
+    assert.equal(
+      hasCurrentReadyStatus({
+        statuses: [{ context: 'pr-flow/ready', state: 'pending' }],
+      }),
+      true,
+    );
+    assert.equal(
+      hasCurrentReadyStatus([{ context: 'pr-flow/code-review' }]),
+      false,
+    );
+  });
+
+  it('does not infer missing ready status when status reads fail', () => {
+    const summary = runWatchdog({
+      dryRun: true,
+      listPullRequests() {
+        return [
+          prFixture({
+            labels: [{ name: 'flow/review-pending' }],
+            headRefOid: 'abc123',
+          }),
+        ];
+      },
+      runJsonCommand() {
+        throw new Error('status read failed');
+      },
+    });
+
+    assert.deepEqual(summary.selected, []);
+  });
+
+  it('still recovers stale draft labels when status reads fail', () => {
+    const summary = runWatchdog({
+      dryRun: true,
+      listPullRequests() {
+        return [prFixture({ headRefOid: 'abc123' })];
+      },
+      runJsonCommand() {
+        throw new Error('status read failed');
+      },
+    });
+
+    assert.deepEqual(summary.selected, [
+      {
+        number: 205,
+        title: 'fix: sample',
+        url: 'https://github.example.test/repo/pull/205',
+        reasons: ['stale-draft'],
+      },
+    ]);
+  });
+
   it('logs selected PRs in dry-run mode without dispatching', () => {
     let dispatchCount = 0;
     const summary = runWatchdog({
@@ -153,6 +253,7 @@ describe('PR flow watchdog', () => {
         number: 205,
         title: 'fix: sample',
         url: 'https://github.example.test/repo/pull/205',
+        reasons: ['stale-draft'],
       },
     ]);
     assert.deepEqual(summary.dispatched, []);
@@ -234,6 +335,17 @@ describe('PR flow workflow invariants', () => {
     assert.equal(permissions.get('actions'), 'write');
     assert.equal(permissions.get('pull-requests'), 'write');
     assert.equal(permissions.get('issues'), 'write');
+  });
+
+  it('keeps watchdog permissions required for status recovery reads', () => {
+    const permissions = readTopLevelMapping(
+      'permissions',
+      '.github/workflows/pr-flow-watchdog.yml',
+    );
+
+    assert.equal(permissions.get('statuses'), 'read');
+    assert.equal(permissions.get('actions'), 'write');
+    assert.equal(permissions.get('pull-requests'), 'read');
   });
 
   it('keeps orchestrated workers able to wake the orchestrator', () => {

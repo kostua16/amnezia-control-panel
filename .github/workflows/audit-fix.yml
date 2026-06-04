@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 100
+  MAX_TURNS: 70
   NODE_VERSION: '22.x'
 
 permissions:
@@ -68,8 +68,9 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
+          claude-full-output: 'false'
           allowed-bots: 'claude[bot],github-actions[bot]'
-          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(mkdir *),Bash(rtk:*)'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(mkdir *),Bash(rtk:*)'
           prompt: |
             /gsd:audit-fix
             Run a full repository audit for technical debt, code smells, and missing tests.
@@ -84,6 +85,10 @@ jobs:
             - Prefer narrow, low-risk fixes in components, hooks, formatting helpers, API response helpers, resource monitoring, and monitoring types.
             - Broad, security-sensitive, schema, package, API route, workflow, or planning changes are allowed when needed, but they will become manual-only PRs.
             - If no worthwhile fixes are identified, make no file changes.
+            - Use project-level commands for verification: `npm test`, `npm run lint`, and targeted `npx prettier --check ...`.
+            - Do NOT execute binaries through `node_modules` paths; use package scripts or `npx` instead.
+            - Do NOT search ignored, generated, or dependency directories such as `node_modules`, `.next`, `src/generated`, or coverage output.
+            - Once required verification passes, stop and report the result instead of running alternate test entrypoints.
 
       - name: Fail on Claude soft failure
         if: always() && steps.claude_run.outputs.claude_failed == 'true'
@@ -141,6 +146,7 @@ jobs:
           body: ${{ steps.classify.outputs.body }}
           labels: ${{ steps.classify.outputs.labels }}
           draft: ${{ steps.classify.outputs.draft }}
+          require-rich-body: 'true'
 
   report-failure:
     needs: [audit-fix]

@@ -127,6 +127,7 @@ Resume file: None
 | 2026-06-03 | 260603-u1d   | PR orchestrator visibility + required aggregate status      |
 | 2026-06-03 | 260603-x6b   | Fix PR-flow ready status for manual-review PRs              |
 | 2026-06-03 | 260604-12u   | Wake PR orchestrator from dispatched workers                |
+| 2026-06-04 | 260605-56h   | Manual-only PRs still run advisory reviews                  |
 | 2026-06-04 | 260605-67p   | Maintainer approval label + `/approve` PR flow              |
 
 ---
