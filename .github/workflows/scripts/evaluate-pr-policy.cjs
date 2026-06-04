@@ -277,6 +277,7 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
   validatePolicy(policy);
 
   const labels = normalizeLabels(pr);
+  const maintainerApproved = labels.includes('maintainer-approved');
   const fileDetails = normalizeFileDetails(pr, filesPayload);
   const files = unique(fileDetails.map((file) => file.path));
   const headRefName = normalizeHeadRef(pr);
@@ -377,6 +378,14 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
     blockedReason = `blocking label present: ${blockedLabels.join(', ')}`;
   }
 
+  if (
+    maintainerApproved &&
+    !dependabotUpdate &&
+    requiredPassLabels.length === 0
+  ) {
+    requiredPassLabels = ['ai-review-passed', 'security-review-passed'];
+  }
+
   const eligible =
     !isDraft &&
     !isCrossRepository &&
@@ -402,6 +411,7 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
     is_draft: isDraft,
     head_ref_name: headRefName,
     base_ref_name: baseRefName,
+    maintainer_approved: maintainerApproved,
     required_pass_labels: requiredPassLabels,
     labels,
     blocking_labels_present: blockedLabels,

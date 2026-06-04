@@ -197,6 +197,34 @@ describe('audit-safe PR policy', () => {
     assert.equal(result.eligible, false);
   });
 
+  it('exposes maintainer approval and requires review labels for approved manual PRs', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'claude-audit-fix-123',
+        labels: ['maintainer-approved'],
+      }),
+      policy,
+    );
+
+    assert.equal(result.pr_class, 'audit-manual-fix');
+    assert.equal(result.manual_only, true);
+    assert.equal(result.maintainer_approved, true);
+    assert.equal(result.eligible, false);
+    assert.deepEqual(result.required_pass_labels, [
+      'ai-review-passed',
+      'security-review-passed',
+    ]);
+  });
+
+  it('defaults maintainer approval to false when the label is absent', () => {
+    const result = evaluatePrPolicy(
+      pr({ headRefName: 'claude-auto-fix-ci-main-123' }),
+      policy,
+    );
+
+    assert.equal(result.maintainer_approved, false);
+  });
+
   it('preserves existing CI auto-fix policy', () => {
     const result = evaluatePrPolicy(
       pr({ headRefName: 'claude-auto-fix-ci-main-123' }),

@@ -189,6 +189,10 @@
       "color": "5319e7",
       "description": "Maintainer explicitly approved issue auto-fix execution"
     },
+    "maintainer-approved": {
+      "color": "0e8a16",
+      "description": "Maintainer approved the current PR head for finalization"
+    },
     "antigravity-review-passed": {
       "color": "0e8a16",
       "description": "Antigravity AI code review found no blocking issues"

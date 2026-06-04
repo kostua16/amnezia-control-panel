@@ -46,11 +46,18 @@ function readWorkflowList(parentKey: string, childKey: string) {
 
   assert.notEqual(parentIndex, -1, `Missing ${parentKey}`);
   const parentIndent = leadingSpaces(lines[parentIndex]);
-  const childIndex = lines.findIndex((line, index) => {
-    if (index <= parentIndex || !line.trim()) return false;
+  let childIndex = -1;
+
+  for (let index = parentIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.trim()) continue;
     const indent = leadingSpaces(line);
-    return indent > parentIndent && line.trim() === `${childKey}:`;
-  });
+    if (indent <= parentIndent) break;
+    if (line.trim() === `${childKey}:`) {
+      childIndex = index;
+      break;
+    }
+  }
 
   assert.notEqual(childIndex, -1, `Missing ${parentKey}.${childKey}`);
   const childIndent = leadingSpaces(lines[childIndex]);
@@ -203,6 +210,22 @@ describe('PR flow workflow invariants', () => {
     ]);
   });
 
+  it('keeps maintainer approval PR comments wired through PR flow', () => {
+    const workflow = readWorkflow('.github/workflows/pr-flow.yml');
+
+    assert.match(workflow, /issue_comment:\s*\n\s+types: \[created\]/);
+    assert.match(workflow, /--mode pr-flow-approve/);
+    assert.match(workflow, /names: maintainer-approved/);
+    assert.match(
+      workflow,
+      /gh issue edit "\$PR_NUMBER" --add-label "maintainer-approved"/,
+    );
+    assert.match(
+      workflow,
+      /github\.event_name != 'issue_comment' \|\| steps\.approve\.outputs\.should_run == 'true'/,
+    );
+  });
+
   it('keeps permissions required for check reads and worker dispatch', () => {
     const permissions = readTopLevelMapping('permissions');
 
@@ -244,6 +267,21 @@ describe('PR flow workflow invariants', () => {
     const workflow = readWorkflow('.github/workflows/pr-flow.yml');
 
     assert.match(workflow, /workflows:\s*\[[^\]]*'PR Finalizer'[^\]]*\]/);
+  });
+
+  it('keeps PR Finalizer maintainer approval scoped to manual gating', () => {
+    const workflow = readWorkflow('.github/workflows/pr-finalizer.yml');
+
+    assert.match(
+      workflow,
+      /maintainer_approved=\$\(jq -r '\.maintainer_approved \/\/ false'/,
+    );
+    assert.match(workflow, /hard_blocking_labels_arr=\(\)/);
+    assert.match(workflow, /needs-review\) manual_review_labels_arr/);
+    assert.match(
+      workflow,
+      /\[ "\$policy_eligible" != "true" \] && \[ "\$maintainer_approved" != "true" \]/,
+    );
   });
 
   it('allows explicit bots only for orchestrated Claude worker runs', () => {

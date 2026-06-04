@@ -57,6 +57,7 @@
       "deepseek-review-passed",
       "deepseek-review-concerns",
       "planning-draft-open",
+      "maintainer-approved",
       "antigravity-review-passed",
       "antigravity-review-concerns"
     ]

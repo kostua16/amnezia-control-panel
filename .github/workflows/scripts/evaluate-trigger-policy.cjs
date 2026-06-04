@@ -38,6 +38,12 @@ const association =
   '';
 const isMaintainer = policy.maintainerAssociations.includes(association);
 
+function hasStandaloneCommand(body, command) {
+  return String(body ?? '')
+    .split(/\r?\n/)
+    .some((line) => line.trim() === command);
+}
+
 if (mode === 'claude') {
   const triggered =
     (eventName === 'issue_comment' && commentBody.includes('@claude')) ||
@@ -173,6 +179,34 @@ if (mode === 'fix-issue') {
           : labelTriggeredFix
             ? 'label'
             : null,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
+if (mode === 'pr-flow-approve') {
+  const isPrComment = Boolean(event.issue?.pull_request);
+  const wantsApproval = hasStandaloneCommand(commentBody, '/approve');
+  const commentTriggered =
+    eventName === 'issue_comment' &&
+    isPrComment &&
+    wantsApproval &&
+    isMaintainer;
+  const prNumber = event.issue?.number ?? null;
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: commentTriggered,
+        triggered:
+          eventName === 'issue_comment' && isPrComment && wantsApproval,
+        trusted: isMaintainer,
+        author_association: association,
+        pr_number: commentTriggered ? prNumber : null,
       },
       null,
       2,
