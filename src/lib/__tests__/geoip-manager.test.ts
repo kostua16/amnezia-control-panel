@@ -1,10 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  matchesCIDR,
-  readVarint,
-  varintSize,
-} from '../geoip-manager';
+import { matchesCIDR, readVarint, varintSize } from '../geoip-manager';
 
 // --- readVarint ---
 

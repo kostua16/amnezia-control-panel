@@ -200,7 +200,7 @@ runs:
         max-turns: ${{ inputs.max-turns }}
         track-progress: ${{ inputs.track-progress }}
         allowed-bots: ${{ inputs.allowed-bots }}
-        allowed-tools: ${{ inputs.allowed-tools }}
+        allowed-tools: '${{ inputs.allowed-tools }},Agent,TaskCreate,TaskUpdate,TaskGet,TaskList'
         system-prompt: ${{ inputs.system-prompt }}
         json-schema: ${{ inputs.json-schema }}
         haiku-model: ${{ inputs.haiku-model }}
