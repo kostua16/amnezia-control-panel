@@ -94,7 +94,7 @@ pr-improve.yml
 
 pr-finalizer.yml
   -> dispatch-only worker controlled by pr-flow.yml
-  -> revalidates required checks, review labels, policy, and head SHA
+  -> revalidates configured CI checks, review labels, policy, and head SHA
   -> approves and enables auto-merge only for eligible trusted PRs
 ```
 
@@ -127,6 +127,13 @@ and to avoid double dispatching stale workers.
 Branch protection setup is external repository state. After the first
 orchestrator run creates `pr-flow/ready`, require exactly that context if PR-flow
 completion should block merges.
+
+`pr-finalizer.yml` does not use GitHub branch-protection required checks for its
+own merge decision. It reads all PR checks, filters them through
+`.github/pr-flow.json`, and validates only the configured CI jobs such as
+`CI / Lint`, `CI / Type Check`, `CI / Test`, and `CI / Build`. This keeps
+`pr-flow/ready` from becoming a circular prerequisite for the finalizer that
+sets `pr-flow/ready`.
 
 Manual-review markers such as `needs-review` and manual-only policy paths still
 run advisory Code Review and Security Review after CI is green. Once those
