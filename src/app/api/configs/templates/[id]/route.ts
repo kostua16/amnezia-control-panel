@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
   getTemplate,
   updateTemplate,
   deleteTemplate,
 } from '@/lib/config-templates';
+import { error, success, validationError } from '@/lib/api-response';
 
 const paramsSchema = z.object({
   id: z.coerce.number().int().positive(),
@@ -28,19 +29,13 @@ export async function GET(
     const template = await getTemplate(id);
 
     if (!template) {
-      return NextResponse.json(
-        { success: false, error: 'Template not found' },
-        { status: 404 },
-      );
+      return error('Template not found', 404);
     }
 
-    return NextResponse.json({ success: true, data: template });
+    return success(template);
   } catch (err) {
     console.error('[api/configs/templates/:id] GET error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch template' },
-      { status: 500 },
-    );
+    return error('Failed to fetch template');
   }
 }
 
@@ -54,17 +49,12 @@ export async function PATCH(
     const parsed = updateTemplateSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError =
-        parsed.error.issues[0]?.message ?? 'Invalid request body';
-      return NextResponse.json(
-        { success: false, error: firstError },
-        { status: 422 },
-      );
+      return validationError(parsed.error);
     }
 
     const template = await updateTemplate(id, parsed.data);
 
-    return NextResponse.json({ success: true, data: template });
+    return success(template);
   } catch (err) {
     console.error('[api/configs/templates/:id] PATCH error:', err);
 
@@ -72,7 +62,7 @@ export async function PATCH(
       err instanceof Error ? err.message : 'Failed to update template';
     const status = message.includes('not found') ? 404 : 500;
 
-    return NextResponse.json({ success: false, error: message }, { status });
+    return error(message, status);
   }
 }
 
@@ -85,7 +75,7 @@ export async function DELETE(
 
     await deleteTemplate(id);
 
-    return NextResponse.json({ success: true, data: null });
+    return success(null);
   } catch (err) {
     console.error('[api/configs/templates/:id] DELETE error:', err);
 
@@ -97,6 +87,6 @@ export async function DELETE(
         ? 403
         : 500;
 
-    return NextResponse.json({ success: false, error: message }, { status });
+    return error(message, status);
   }
 }
