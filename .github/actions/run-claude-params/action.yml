@@ -38,6 +38,12 @@ outputs:
   claude_failure_reason:
     description: 'Human-readable Claude failure reason'
     value: ${{ steps.claude-health.outputs.reason }}
+  claude_soft_success:
+    description: 'true when Claude succeeded but the underlying action reported a recoverable wrapper/probe failure'
+    value: ${{ steps.claude-health.outputs.soft_success }}
+  claude_soft_success_reason:
+    description: 'Human-readable reason for a recoverable action-level soft success'
+    value: ${{ steps.claude-health.outputs.soft_success_reason }}
   claude_num_turns:
     description: 'Claude num_turns from execution output, when available'
     value: ${{ steps.claude-health.outputs.num_turns }}
@@ -785,6 +791,10 @@ runs:
         ATTEMPT1_OUTCOME: ${{ steps.claude-run-1.outcome }}
         ATTEMPT2_OUTCOME: ${{ steps.claude-run-2.outcome || '' }}
         ATTEMPT3_OUTCOME: ${{ steps.claude-run-3.outcome || '' }}
+        CHECK1_SOFT_SUCCESS: ${{ steps.check-429-1.outputs.soft_success || 'false' }}
+        CHECK1_SOFT_SUCCESS_REASON: ${{ steps.check-429-1.outputs.soft_success_reason || '' }}
+        CHECK2_SOFT_SUCCESS: ${{ steps.check-429-2.outputs.soft_success || 'false' }}
+        CHECK2_SOFT_SUCCESS_REASON: ${{ steps.check-429-2.outputs.soft_success_reason || '' }}
         SCAN_NUM_TURNS: ${{ steps.scan-logs.outputs.num_turns }}
         SCAN_IS_ERROR: ${{ steps.scan-logs.outputs.is_error }}
         SCAN_HAS_ERROR_FINDINGS: ${{ steps.scan-logs.outputs.has_error_findings }}
@@ -829,6 +839,25 @@ runs:
         echo "num_turns=$SCAN_NUM_TURNS" >> "$GITHUB_OUTPUT"
         echo "is_error=$SCAN_IS_ERROR" >> "$GITHUB_OUTPUT"
         echo "used_attempt=$LAST_ATTEMPT" >> "$GITHUB_OUTPUT"
+        echo "soft_success=false" >> "$GITHUB_OUTPUT"
+        echo "soft_success_reason=" >> "$GITHUB_OUTPUT"
+
+        SOFT_SUCCESS_VAR="CHECK${LAST_ATTEMPT}_SOFT_SUCCESS"
+        SOFT_SUCCESS_REASON_VAR="CHECK${LAST_ATTEMPT}_SOFT_SUCCESS_REASON"
+        SOFT_SUCCESS="${!SOFT_SUCCESS_VAR}"
+        SOFT_SUCCESS="${SOFT_SUCCESS:-false}"
+        SOFT_SUCCESS_REASON="${!SOFT_SUCCESS_REASON_VAR}"
+        SOFT_SUCCESS_REASON="${SOFT_SUCCESS_REASON:-}"
+
+        # Rule 2a: The action failed after Claude produced a successful result.
+        # Keep this fail-closed: require turns, is_error=false, and no error findings.
+        if [[ "$OUTCOME" == "failure" && "$SOFT_SUCCESS" == "true" && "$SCAN_IS_ERROR" == "false" && "$SCAN_NUM_TURNS" != "" && "$SCAN_NUM_TURNS" != "null" && "$SCAN_NUM_TURNS" != "0" && "$SCAN_HAS_ERROR_FINDINGS" != "true" ]]; then
+          echo "failed=false" >> "$GITHUB_OUTPUT"
+          echo "reason=" >> "$GITHUB_OUTPUT"
+          echo "soft_success=true" >> "$GITHUB_OUTPUT"
+          echo "soft_success_reason=$SOFT_SUCCESS_REASON" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
 
         # Rule 2: Final attempt outcome is failure
         if [[ "$OUTCOME" == "failure" ]]; then
@@ -886,7 +915,7 @@ runs:
     # Belt-and-suspenders: fail job if an early attempt failed and was not retryable
     # (later attempts are skipped, so no Claude step naturally fails the job).
     - name: Fail on non-retryable error
-      if: ${{ (steps.claude-run-1.outcome == 'failure' && steps.check-429-1.outputs.should_retry != 'true') || (steps.claude-run-2.outcome == 'failure' && steps.check-429-2.outputs.should_retry != 'true') }}
+      if: ${{ (steps.claude-run-1.outcome == 'failure' && steps.check-429-1.outputs.should_retry != 'true' && steps.check-429-1.outputs.soft_success != 'true') || (steps.claude-run-2.outcome == 'failure' && steps.check-429-2.outputs.should_retry != 'true' && steps.check-429-2.outputs.soft_success != 'true') }}
       shell: bash
       run: |
         echo "::error::Claude Code failed with a non-retryable error. Not retrying."
