@@ -56,6 +56,7 @@ type Policy = {
   };
   should_analyze: boolean;
   manual_only: boolean;
+  maintainer_approved: boolean;
   blocked_reason?: string;
   blocking_labels_present: string[];
 };
@@ -197,6 +198,7 @@ function policyFixture(overrides: Partial<Policy> = {}): Policy {
     dependabot: null,
     should_analyze: false,
     manual_only: false,
+    maintainer_approved: false,
     blocking_labels_present: [],
     ...overrides,
   };
@@ -517,6 +519,49 @@ describe('makeDecision', () => {
     assert.ok(decision.labelsToAdd.includes('flow/manual-only'));
   });
 
+  it('dispatches code review for maintainer-approved manual-only PRs missing review labels', () => {
+    const decision = decide({
+      pr: prFixture({
+        headRefName: 'claude-workflow-optimize-181',
+        labels: ['maintainer-approved'],
+        files: ['.github/workflows/pr-finalizer.yml'],
+      }),
+      policy: policyFixture({
+        manual_only: true,
+        maintainer_approved: true,
+        should_analyze: true,
+      }),
+    });
+
+    assert.equal(decision.state, 'flow/review-pending');
+    assert.equal(decision.dispatch?.key, 'codeReview');
+    assert.ok(!decision.labelsToAdd.includes('flow/manual-only'));
+  });
+
+  it('dispatches finalizer for maintainer-approved manual-only PRs after review labels', () => {
+    const decision = decide({
+      pr: prFixture({
+        headRefName: 'claude-workflow-optimize-181',
+        labels: [
+          'maintainer-approved',
+          'ai-review-passed',
+          'security-review-passed',
+          'flow/manual-only',
+        ],
+        files: ['.github/workflows/pr-finalizer.yml'],
+      }),
+      policy: policyFixture({
+        manual_only: true,
+        maintainer_approved: true,
+      }),
+    });
+
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch?.key, 'finalizer');
+    assert.ok(decision.labelsToRemove.includes('flow/manual-only'));
+    assert.ok(!decision.desiredLabels.includes('flow/manual-only'));
+  });
+
   it('treats needs-review as manual-only after advisory reviews pass', () => {
     const decision = decide({
       pr: prFixture({
@@ -538,6 +583,21 @@ describe('makeDecision', () => {
     assert.equal(decision.dispatch, null);
   });
 
+  it('lets maintainer approval override needs-review manual gating only', () => {
+    const decision = decide({
+      pr: prFixture({
+        labels: ['maintainer-approved', 'needs-review'],
+      }),
+      policy: policyFixture({
+        maintainer_approved: true,
+        blocking_labels_present: ['needs-review'],
+      }),
+    });
+
+    assert.equal(decision.state, 'flow/review-pending');
+    assert.equal(decision.dispatch?.key, 'codeReview');
+  });
+
   it('dispatches advisory review for needs-review PRs before manual completion', () => {
     const decision = decide({
       pr: prFixture({
@@ -553,6 +613,59 @@ describe('makeDecision', () => {
 
     assert.equal(decision.state, 'flow/review-pending');
     assert.equal(decision.dispatch?.key, 'codeReview');
+  });
+
+  it('keeps hard blocking labels blocking after maintainer approval', () => {
+    const decision = decide({
+      pr: prFixture({
+        labels: ['maintainer-approved', 'do-not-merge'],
+      }),
+      policy: policyFixture({
+        maintainer_approved: true,
+        blocking_labels_present: ['do-not-merge'],
+      }),
+    });
+
+    assert.equal(decision.state, 'flow/review-blocked');
+    assert.equal(decision.dispatch, null);
+    assert.equal(decision.reason, 'Blocking labels are present: do-not-merge.');
+  });
+
+  it('keeps pending checks ahead of maintainer-approved manual-only flow', () => {
+    const decision = decide({
+      pr: prFixture({
+        labels: ['maintainer-approved'],
+      }),
+      policy: policyFixture({
+        manual_only: true,
+        maintainer_approved: true,
+      }),
+      checks: pendingChecks(),
+    });
+
+    assert.equal(decision.state, 'flow/checks-pending');
+    assert.equal(decision.dispatch, null);
+  });
+
+  it('keeps failing checks ahead of maintainer-approved manual-only flow', () => {
+    const decision = decide({
+      pr: prFixture({
+        labels: ['maintainer-approved'],
+      }),
+      policy: policyFixture({
+        manual_only: true,
+        maintainer_approved: true,
+      }),
+      checkStatus: {
+        status: 'failed',
+        failing: ['Lint'],
+        pending: [],
+        missing: [],
+      },
+    });
+
+    assert.equal(decision.state, 'flow/checks-failed');
+    assert.equal(decision.dispatch, null);
   });
 
   it('dispatches dependency review before finalizer for Dependabot package PRs', () => {

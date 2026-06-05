@@ -109,6 +109,7 @@ jobs:
         run: |
           policy_eligible=$(jq -r '.eligible' /tmp/policy-eval.json)
           manual_only=$(jq -r '.manual_only' /tmp/policy-eval.json)
+          maintainer_approved=$(jq -r '.maintainer_approved // false' /tmp/policy-eval.json)
           blocked_reason=$(jq -r '.blocked_reason // ""' /tmp/policy-eval.json)
           same_repo=$(jq -r '.same_repo' /tmp/policy-eval.json)
           head_ref=$(jq -r '.head_ref_name // ""' /tmp/policy-eval.json)
@@ -116,6 +117,15 @@ jobs:
           mapfile -t required_labels_arr < <(jq -r '.required_pass_labels[]?' /tmp/policy-eval.json)
           mapfile -t present_labels_arr < <(jq -r '.labels[]?' /tmp/policy-eval.json)
           mapfile -t blocking_labels_arr < <(jq -r '.blocking_labels_present[]?' /tmp/policy-eval.json)
+
+          hard_blocking_labels_arr=()
+          manual_review_labels_arr=()
+          for blocking_label in "${blocking_labels_arr[@]}"; do
+            case "$blocking_label" in
+              needs-review) manual_review_labels_arr+=("$blocking_label") ;;
+              *) hard_blocking_labels_arr+=("$blocking_label") ;;
+            esac
+          done
 
           join_labels() {
             local IFS=', '
@@ -146,18 +156,24 @@ jobs:
           if [ "$is_draft" = "true" ]; then
             decision="awaiting_checks"
             summary="PR is still draft."
-          elif [ "${#blocking_labels_arr[@]}" -gt 0 ]; then
+          elif [ "${#hard_blocking_labels_arr[@]}" -gt 0 ]; then
             decision="blocked"
-            summary="Blocking labels are present: $(join_labels "${blocking_labels_arr[@]}")"
+            summary="Blocking labels are present: $(join_labels "${hard_blocking_labels_arr[@]}")"
+          elif [ "$maintainer_approved" != "true" ] && [ "${#manual_review_labels_arr[@]}" -gt 0 ]; then
+            decision="manual_only"
+            summary="Manual review is required by label: $(join_labels "${manual_review_labels_arr[@]}")"
           elif [ -z "$head_ref" ]; then
             decision="blocked"
             summary="PR metadata is incomplete; skipping auto-finalization."
-          elif [ "$manual_only" = "true" ]; then
+          elif [ "$maintainer_approved" != "true" ] && [ "$manual_only" = "true" ]; then
             decision="manual_only"
             summary="${blocked_reason:-PR is manual-only by policy.}"
-          elif [ "$same_repo" != "true" ] || [ "$policy_eligible" != "true" ]; then
+          elif [ "$same_repo" != "true" ]; then
             decision="manual_only"
             summary="${blocked_reason:-PR is outside the same-repo trusted scope.}"
+          elif [ "$policy_eligible" != "true" ] && [ "$maintainer_approved" != "true" ]; then
+            decision="manual_only"
+            summary="${blocked_reason:-PR needs maintainer approval or a trusted auto-finalization policy.}"
           elif [ "${#missing_labels_arr[@]}" -gt 0 ]; then
             decision="awaiting_checks"
             summary="Waiting on review signals: $(join_labels "${missing_labels_arr[@]}")"

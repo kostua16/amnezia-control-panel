@@ -214,6 +214,10 @@ function resolvePrNumber(eventName, event, explicitPrNumber) {
   const explicit = toNumber(explicitPrNumber);
   if (explicit) return explicit;
 
+  if (eventName === 'issue_comment' && event.issue?.pull_request) {
+    return toNumber(event.issue?.number);
+  }
+
   if (eventName === 'pull_request_target' || eventName === 'pull_request') {
     return toNumber(event.pull_request?.number);
   }
@@ -310,6 +314,7 @@ function emptyPolicy() {
     dependabot: null,
     should_analyze: false,
     manual_only: false,
+    maintainer_approved: false,
     blocking_labels_present: [],
   };
 }
@@ -1363,6 +1368,7 @@ function makeDecision(context) {
   const improveWorker = workers.prImprove ?? {};
   const finalizerWorker = workers.finalizer ?? {};
   const policyBlockingLabels = policy.blocking_labels_present ?? [];
+  const maintainerApproved = Boolean(policy.maintainer_approved);
   const { hard: hardBlockingLabels, manualReview: manualReviewLabels } =
     splitBlockingLabels(policyBlockingLabels);
   const manualOnly = policy.manual_only || manualReviewLabels.length > 0;
@@ -1440,7 +1446,7 @@ function makeDecision(context) {
     }
   }
 
-  if (manualOnly) {
+  if (manualOnly && !maintainerApproved) {
     return finish('flow/manual-only', manualOnlyReason);
   }
 
@@ -1480,7 +1486,8 @@ function makeDecision(context) {
   const finalizerAlreadyDispatched = labels.includes(
     'flow/finalizer-dispatched',
   );
-  const manualOnlyLabels = policy.manual_only ? ['flow/manual-only'] : [];
+  const manualOnlyLabels =
+    manualOnly && !maintainerApproved ? ['flow/manual-only'] : [];
 
   if (finalizerRuns.active || finalizerAlreadyDispatched) {
     return finish(
