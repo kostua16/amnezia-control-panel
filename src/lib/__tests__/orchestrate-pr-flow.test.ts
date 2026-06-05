@@ -13,6 +13,9 @@ const {
   renderFlowComment,
   resolvePrNumber,
 } = require('../../../.github/workflows/scripts/orchestrate-pr-flow.cjs');
+const {
+  filterRequiredChecks,
+} = require('../../../.github/workflows/scripts/filter-required-pr-checks.cjs');
 
 const requiredCheckNames = ['Lint', 'Type Check', 'Test', 'Build'];
 const headSha = 'abc123def456';
@@ -43,6 +46,7 @@ type Pr = {
   headSha: string;
   baseRefName: string;
   authorLogin: string;
+  autoMergeRequest: Record<string, unknown> | null;
   labels: string[];
   files: string[];
   isCrossRepository: boolean;
@@ -186,6 +190,7 @@ function prFixture(overrides: Partial<Pr> = {}): Pr {
     headSha,
     baseRefName: 'main',
     authorLogin: 'maintainer',
+    autoMergeRequest: null,
     labels: [],
     files: ['src/app.ts'],
     isCrossRepository: false,
@@ -264,6 +269,67 @@ function decide(overrides: DecisionOverrides = {}) {
     config,
   });
 }
+
+describe('filterRequiredChecks', () => {
+  it('ignores pr-flow aggregate statuses when configured CI checks passed', () => {
+    const filtered = filterRequiredChecks(config, [
+      ...greenChecks(),
+      {
+        name: 'pr-flow/ready',
+        workflow: '',
+        bucket: 'pending',
+        state: 'pending',
+      },
+    ]);
+    const decision = decide({
+      pr: prFixture({
+        labels: ['ai-review-passed', 'security-review-passed'],
+      }),
+      checks: filtered,
+    });
+
+    assert.deepEqual(
+      filtered.map((check: Check) => check.name),
+      requiredCheckNames,
+    );
+    assert.ok(filtered.every((check: Check) => check.bucket === 'pass'));
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch?.key, 'finalizer');
+  });
+
+  it('synthesizes pending entries for missing configured CI checks', () => {
+    const filtered = filterRequiredChecks(
+      config,
+      greenChecks().filter((check) => check.name !== 'Build'),
+    );
+    const decision = decide({ checks: filtered });
+    const buildCheck = filtered.find((check: Check) => check.name === 'Build');
+
+    assert.ok(buildCheck);
+    assert.equal(buildCheck.bucket, 'pending');
+    assert.equal(decision.state, 'flow/checks-pending');
+    assert.equal(decision.dispatch, null);
+  });
+
+  it('preserves failing configured CI checks', () => {
+    const filtered = filterRequiredChecks(config, [
+      ...greenChecks().filter((check) => check.name !== 'Test'),
+      {
+        name: 'Test',
+        workflow: 'CI',
+        bucket: 'fail',
+        state: 'failure',
+      },
+    ]);
+    const decision = decide({ checks: filtered });
+    const testCheck = filtered.find((check: Check) => check.name === 'Test');
+
+    assert.ok(testCheck);
+    assert.equal(testCheck.bucket, 'fail');
+    assert.equal(decision.state, 'flow/checks-failed');
+    assert.equal(decision.dispatch, null);
+  });
+});
 
 describe('makeDecision', () => {
   it('skips closed or merged PRs without dispatching workers', () => {
@@ -455,6 +521,57 @@ describe('makeDecision', () => {
 
     assert.equal(decision.state, 'flow/finalizer-dispatched');
     assert.equal(decision.dispatch?.key, 'finalizer');
+  });
+
+  it('re-dispatches finalizer when a prior success did not enable auto-merge', () => {
+    const decision = decide({
+      pr: prFixture({
+        labels: [
+          'ai-review-passed',
+          'security-review-passed',
+          'flow/finalizer-dispatched',
+        ],
+      }),
+      workerRuns: {
+        finalizer: [
+          {
+            displayTitle: `PR #181 @ ${headSha}`,
+            status: 'completed',
+            conclusion: 'success',
+            createdAt: '2026-06-03T16:00:00Z',
+          },
+        ],
+      },
+    });
+
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch?.key, 'finalizer');
+  });
+
+  it('does not re-dispatch finalizer after auto-merge is enabled', () => {
+    const decision = decide({
+      pr: prFixture({
+        labels: [
+          'ai-review-passed',
+          'security-review-passed',
+          'flow/finalizer-dispatched',
+        ],
+        autoMergeRequest: { enabledAt: '2026-06-03T16:00:00Z' },
+      }),
+      workerRuns: {
+        finalizer: [
+          {
+            displayTitle: `PR #181 @ ${headSha}`,
+            status: 'completed',
+            conclusion: 'success',
+            createdAt: '2026-06-03T16:00:00Z',
+          },
+        ],
+      },
+    });
+
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch, null);
   });
 
   it('does not dispatch finalizer while one human review signal is missing', () => {
@@ -829,6 +946,7 @@ describe('buildFlowVisibility', () => {
         'security-review-passed',
         'flow/finalizer-dispatched',
       ],
+      autoMergeRequest: { enabledAt: '2026-06-03T16:00:00Z' },
     });
     const workerRuns = {
       finalizer: [
@@ -858,6 +976,45 @@ describe('buildFlowVisibility', () => {
     assert.equal(
       visibility.workers.finalizer.targetUrl,
       workerRuns.finalizer[0].url,
+    );
+  });
+
+  it('keeps aggregate pending when finalizer finished without auto-merge', () => {
+    const pr = prFixture({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/finalizer-dispatched',
+      ],
+    });
+    const workerRuns = {
+      finalizer: [
+        {
+          displayTitle: `PR #181 @ ${headSha}`,
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: '2026-06-03T16:00:00Z',
+          url: 'https://github.example.test/run/finalizer',
+        },
+      ],
+    };
+    const decision = decide({ pr, workerRuns });
+    const visibility = buildFlowVisibility({
+      pr,
+      config,
+      policy: policyFixture(),
+      decision,
+      workerRuns,
+      eventName: 'workflow_run',
+      event: workflowRunEvent({ workflow_name: 'PR Finalizer' }),
+      currentRunUrl: 'https://github.example.test/run/orchestrator',
+    });
+
+    assert.equal(visibility.aggregate.state, 'pending');
+    assert.equal(visibility.workers.finalizer.state, 'pending');
+    assert.equal(
+      visibility.workers.finalizer.description,
+      'Finalizer was dispatched.',
     );
   });
 
@@ -961,6 +1118,7 @@ describe('buildFlowVisibility', () => {
         'security-review-passed',
         'flow/finalizer-dispatched',
       ],
+      autoMergeRequest: { enabledAt: '2026-06-03T16:00:00Z' },
     });
     const policy = policyFixture({ should_analyze: true });
     const workerRuns = {

@@ -250,6 +250,7 @@ function normalizePr(pr) {
     headSha: pr.headRefOid ?? pr.head?.sha ?? '',
     baseRefName: pr.baseRefName ?? pr.base?.ref ?? 'main',
     authorLogin: pr.author?.login ?? pr.user?.login ?? null,
+    autoMergeRequest: pr.autoMergeRequest ?? null,
     labels: normalizeLabels(pr.labels),
     files: normalizeFiles(pr.files),
     isCrossRepository: Boolean(pr.isCrossRepository),
@@ -704,6 +705,7 @@ function buildFlowVisibility({
   const finalizerAlreadyDispatched = labels.includes(
     'flow/finalizer-dispatched',
   );
+  const autoMergeEnabled = Boolean(pr.autoMergeRequest);
   const closedOrMerged =
     String(pr.state).toUpperCase() !== 'OPEN' || pr.mergedAt;
   const policyBlockingLabels = policy.blocking_labels_present ?? [];
@@ -1004,7 +1006,7 @@ function buildFlowVisibility({
       finalizerRuns,
       'Finalizer is running.',
     );
-  } else if (workerRunSucceeded(finalizerRuns)) {
+  } else if (workerRunSucceeded(finalizerRuns) && autoMergeEnabled) {
     statuses.finalizer = successStatus(
       'finalizer',
       'Finalizer completed.',
@@ -1020,6 +1022,12 @@ function buildFlowVisibility({
     statuses.finalizer = waitingStatus(
       'finalizer',
       'Finalizer was dispatched.',
+    );
+  } else if (workerRunSucceeded(finalizerRuns)) {
+    statuses.finalizer = waitingStatus(
+      'finalizer',
+      'Finalizer completed without enabling auto-merge; waiting to retry.',
+      getWorkerTargetUrl(finalizerRuns, currentRunUrl),
     );
   } else if (finalizerAlreadyDispatched) {
     statuses.finalizer = waitingStatus(
@@ -1486,10 +1494,14 @@ function makeDecision(context) {
   const finalizerAlreadyDispatched = labels.includes(
     'flow/finalizer-dispatched',
   );
+  const autoMergeEnabled = Boolean(pr.autoMergeRequest);
   const manualOnlyLabels =
     manualOnly && !maintainerApproved ? ['flow/manual-only'] : [];
 
-  if (finalizerRuns.active || finalizerAlreadyDispatched) {
+  if (
+    finalizerRuns.active ||
+    (finalizerAlreadyDispatched && autoMergeEnabled)
+  ) {
     return finish(
       'flow/finalizer-dispatched',
       'Finalizer already dispatched for this head SHA.',
@@ -1597,7 +1609,7 @@ function fetchPullRequest(prNumber) {
       'view',
       String(prNumber),
       '--json',
-      'number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository',
+      'number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository,autoMergeRequest',
     ],
     null,
     { allowedFailurePattern: PR_NOT_FOUND_PATTERN },

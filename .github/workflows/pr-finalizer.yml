@@ -93,7 +93,11 @@ jobs:
             --policy-file .github/workflows/policy.json \
             --pr-file /tmp/pr.json \
             > /tmp/policy-eval.json
-          gh pr checks "$PR_NUMBER" --required --json name,state,bucket,link,workflow 2>/dev/null > /tmp/pr-checks.json || echo "[]" > /tmp/pr-checks.json
+          gh pr checks "$PR_NUMBER" --json name,state,bucket,link,workflow 2>/dev/null > /tmp/pr-checks-all.json || echo "[]" > /tmp/pr-checks-all.json
+          node .github/workflows/scripts/filter-required-pr-checks.cjs \
+            --config-file .github/pr-flow.json \
+            --checks-file /tmp/pr-checks-all.json \
+            > /tmp/pr-checks.json
           {
             echo "head_ref=$(jq -r '.head_ref_name' /tmp/policy-eval.json)"
             echo "same_repo=$(jq -r '.same_repo' /tmp/policy-eval.json)"
@@ -146,8 +150,8 @@ jobs:
             fi
           done
 
-          failing_required=$(jq '[.[] | select(((.bucket // "") | ascii_downcase) == "fail" or ((.bucket // "") | ascii_downcase) == "cancel")] | length' /tmp/pr-checks.json)
-          pending_required=$(jq '[.[] | select(((.bucket // "") | ascii_downcase) == "pending")] | length' /tmp/pr-checks.json)
+          failing_required=$(jq '[.[] | select((((.bucket // "") | ascii_downcase) == "fail") or (((.bucket // "") | ascii_downcase) == "cancel") or (((.state // "") | ascii_downcase) == "failure"))] | length' /tmp/pr-checks.json)
+          pending_required=$(jq '[.[] | select((((.bucket // "") | ascii_downcase) == "pending") or (((.state // "") | ascii_downcase) != "success" and ((.bucket // "") | ascii_downcase) != "pass"))] | length' /tmp/pr-checks.json)
           total_checks=$(jq 'length' /tmp/pr-checks.json)
 
           decision="manual_only"
