@@ -137,9 +137,10 @@ Plans:
 - [ ] **Phase 13.4: Claude+GSD planning automation** -- trusted improvement analysis, draft planning PRs, and roadmap intake artifacts
 
 **Improvement intake from PR automation**
-<!-- AUTO-13X-INTAKE-START -->
+<!-- AUTO-PR-IMPROVE-INTAKE-START -->
 <!-- PR-IMPROVE:182 --> - PR #182: fix(audit): address autonomous audit findings -- 13.2 x2, 13.3 x1, 13.4 x1. Quick artifact: `.planning/quick/260603-pr182-workflow-improve/260603-pr182-PLAN.md`.
-<!-- AUTO-13X-INTAKE-END -->
+<!-- PR-IMPROVE:237 --> - PR #237: [codex] fix PR finalizer auto-merge stall -- pr237.1 x1, pr237.2 x1, pr237.3 x1, pr237.4 x1. Quick artifact: `.planning/quick/260605-pr237-workflow-improve/260605-pr237-PLAN.md`.
+<!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
 **Goal:** Centralize workflow trust policy, maintainer-only triggers, and manual-only file/path rules so write-capable automation has one authoritative policy surface.
