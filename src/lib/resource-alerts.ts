@@ -17,6 +17,27 @@ const RESOURCE_THRESHOLDS: ResourceThreshold[] = [
   { metric: 'disk', warningPercent: 90, criticalPercent: 95, label: 'Disk' },
 ];
 
+/**
+ * Determine severity for a resource metric value against its threshold.
+ * Returns CRITICAL if value >= critical, WARNING if >= warning, or null if within normal range.
+ */
+export function classifyResourceSeverity(
+  metric: string,
+  value: number,
+): { severity: AlertSeverity | null; label: string } {
+  const threshold = RESOURCE_THRESHOLDS.find((t) => t.metric === metric);
+  if (!threshold) return { severity: null, label: metric };
+
+  let severity: AlertSeverity | null = null;
+  if (value >= threshold.criticalPercent) {
+    severity = 'CRITICAL';
+  } else if (value >= threshold.warningPercent) {
+    severity = 'WARNING';
+  }
+
+  return { severity, label: threshold.label };
+}
+
 /** How often to check resources (ms) */
 export const RESOURCE_CHECK_INTERVAL_MS = 60 * 1000; // 60 seconds
 
@@ -56,17 +77,14 @@ export async function checkResourceThresholds(): Promise<ResourceCheckResult> {
   for (const threshold of RESOURCE_THRESHOLDS) {
     const value = metricValues[threshold.metric] ?? 0;
 
-    let severity: AlertSeverity | null = null;
-
-    if (value >= threshold.criticalPercent) {
-      severity = 'CRITICAL';
-    } else if (value >= threshold.warningPercent) {
-      severity = 'WARNING';
-    }
+    const { severity, label } = classifyResourceSeverity(
+      threshold.metric,
+      value,
+    );
 
     results.checks.push({
       metric: threshold.metric,
-      label: threshold.label,
+      label,
       value,
       warningThreshold: threshold.warningPercent,
       criticalThreshold: threshold.criticalPercent,

@@ -123,8 +123,14 @@ export class ServiceMonitor {
       }
     };
 
-    check();
-    this.intervalId = setInterval(check, this.checkIntervalMs);
+    check().catch(() => {
+      /* swallow — check() logs its own errors internally */
+    });
+    this.intervalId = setInterval(() => {
+      check().catch(() => {
+        /* swallow — prevents unhandled promise rejection from setInterval */
+      });
+    }, this.checkIntervalMs);
   }
 
   /**
