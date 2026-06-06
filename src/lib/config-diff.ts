@@ -6,6 +6,110 @@ import type {
   ConfigDiffLine,
 } from '@/types/config-push';
 
+// ─── Generic Section Diff Builder ────────────────────────
+
+/**
+ * Build a diff section by comparing current vs next arrays using pluggable
+ * key extraction, formatting, and equality functions.
+ *
+ * This eliminates duplicated diff logic across chain nodes, peers, and rules.
+ */
+function buildSectionDiff<T>(
+  label: string,
+  current: T[],
+  next: T[],
+  getKey: (item: T) => string,
+  format: (item: T) => string,
+  equals: (a: T, b: T) => boolean,
+): ConfigDiffSection {
+  const lines: ConfigDiffLine[] = [];
+  const currentByKey = new Map(current.map((item) => [getKey(item), item]));
+  const nextByKey = new Map(next.map((item) => [getKey(item), item]));
+  let added = 0;
+  let removed = 0;
+  let unchanged = 0;
+
+  for (const item of next) {
+    const existing = currentByKey.get(getKey(item));
+    if (!existing) {
+      lines.push({ type: 'added', content: format(item) });
+      added++;
+    } else if (equals(existing, item)) {
+      lines.push({ type: 'unchanged', content: format(item) });
+      unchanged++;
+    } else {
+      lines.push({ type: 'removed', content: format(existing) });
+      lines.push({ type: 'added', content: format(item) });
+      added++;
+      removed++;
+    }
+  }
+
+  for (const item of current) {
+    if (!nextByKey.has(getKey(item))) {
+      lines.push({ type: 'removed', content: format(item) });
+      removed++;
+    }
+  }
+
+  return {
+    label,
+    lines,
+    summary: { added, removed, unchanged },
+  };
+}
+
+// ─── Specific Formatters & Equality Helpers ──────────────
+
+type ChainNode = PanelSyncPayload['chainNodes'][number];
+type Peer = PanelSyncPayload['wireguardPeers'][number];
+type Rule = PanelSyncPayload['routingRules'][number];
+
+function formatChainNode(n: ChainNode): string {
+  return `${n.role} ${n.protocol}: ${n.label} (${n.hostname}:${n.port})`;
+}
+
+function formatPeer(p: Peer): string {
+  const shortKey =
+    p.publicKey.length > 12
+      ? `${p.publicKey.substring(0, 12)}...`
+      : p.publicKey;
+  return `Peer ${shortKey} -> ${p.endpoint} [${p.allowedIPs}]`;
+}
+
+function formatRule(r: Rule): string {
+  return `${r.type}/${r.value} -> ${r.outboundTag} (priority ${r.priority})`;
+}
+
+function chainNodeEquals(a: ChainNode, b: ChainNode): boolean {
+  return (
+    a.label === b.label &&
+    a.serverId === b.serverId &&
+    a.role === b.role &&
+    a.protocol === b.protocol &&
+    a.hostname === b.hostname &&
+    a.port === b.port
+  );
+}
+
+function peerEquals(a: Peer, b: Peer): boolean {
+  return (
+    a.publicKey === b.publicKey &&
+    a.allowedIPs === b.allowedIPs &&
+    a.endpoint === b.endpoint &&
+    a.persistentKeepalive === b.persistentKeepalive
+  );
+}
+
+function ruleEquals(a: Rule, b: Rule): boolean {
+  return (
+    a.type === b.type &&
+    a.value === b.value &&
+    a.outboundTag === b.outboundTag &&
+    a.priority === b.priority
+  );
+}
+
 // ─── computeConfigDiff ─────────────────────────────────
 
 /**
@@ -26,28 +130,32 @@ export async function computeConfigDiff(
     ? (cachedConfig.config as unknown as PanelSyncPayload)
     : null;
 
-  const sections: ConfigDiffSection[] = [];
-
-  // Section 1: Chain Nodes — compare by label
-  sections.push(
-    buildChainNodesDiff(currentConfig?.chainNodes ?? [], newConfig.chainNodes),
-  );
-
-  // Section 2: WireGuard Peers — compare by publicKey
-  sections.push(
-    buildWireGuardPeersDiff(
+  const sections: ConfigDiffSection[] = [
+    buildSectionDiff(
+      'Chain Nodes',
+      currentConfig?.chainNodes ?? [],
+      newConfig.chainNodes,
+      (n) => n.label,
+      formatChainNode,
+      chainNodeEquals,
+    ),
+    buildSectionDiff(
+      'WireGuard Peers',
       currentConfig?.wireguardPeers ?? [],
       newConfig.wireguardPeers,
+      (p) => p.publicKey,
+      formatPeer,
+      peerEquals,
     ),
-  );
-
-  // Section 3: Routing Rules — compare by composite key
-  sections.push(
-    buildRoutingRulesDiff(
+    buildSectionDiff(
+      'Routing Rules',
       currentConfig?.routingRules ?? [],
       newConfig.routingRules,
+      (r) => `${r.type}:${r.value}:${r.outboundTag}:${r.priority}`,
+      formatRule,
+      ruleEquals,
     ),
-  );
+  ];
 
   const hasChanges = sections.some(
     (s) => s.summary.added > 0 || s.summary.removed > 0,
@@ -63,197 +171,6 @@ export async function computeConfigDiff(
       : null,
     newConfigFormatted: JSON.stringify(newConfig, null, 2),
   };
-}
-
-// ─── Section builders ─────────────────────────────────
-
-function buildChainNodesDiff(
-  current: PanelSyncPayload['chainNodes'],
-  next: PanelSyncPayload['chainNodes'],
-): ConfigDiffSection {
-  const lines: ConfigDiffLine[] = [];
-  const currentByKey = new Map(current.map((n) => [n.label, n]));
-  const nextByKey = new Map(next.map((n) => [n.label, n]));
-  let added = 0;
-  let removed = 0;
-  let unchanged = 0;
-
-  // Process new nodes — added or unchanged
-  for (const node of next) {
-    const existing = currentByKey.get(node.label);
-    if (!existing) {
-      lines.push({ type: 'added', content: formatChainNode(node) });
-      added++;
-    } else if (chainNodeEquals(existing, node)) {
-      lines.push({ type: 'unchanged', content: formatChainNode(node) });
-      unchanged++;
-    } else {
-      // Changed — show removal of old + addition of new
-      lines.push({ type: 'removed', content: formatChainNode(existing) });
-      lines.push({ type: 'added', content: formatChainNode(node) });
-      added++;
-      removed++;
-    }
-  }
-
-  // Nodes in current but not in new — removed
-  for (const node of current) {
-    if (!nextByKey.has(node.label)) {
-      lines.push({ type: 'removed', content: formatChainNode(node) });
-      removed++;
-    }
-  }
-
-  return {
-    label: 'Chain Nodes',
-    lines,
-    summary: { added, removed, unchanged },
-  };
-}
-
-function buildWireGuardPeersDiff(
-  current: PanelSyncPayload['wireguardPeers'],
-  next: PanelSyncPayload['wireguardPeers'],
-): ConfigDiffSection {
-  const lines: ConfigDiffLine[] = [];
-  const currentByKey = new Map(current.map((p) => [p.publicKey, p]));
-  const nextByKey = new Map(next.map((p) => [p.publicKey, p]));
-  let added = 0;
-  let removed = 0;
-  let unchanged = 0;
-
-  for (const peer of next) {
-    const existing = currentByKey.get(peer.publicKey);
-    if (!existing) {
-      lines.push({ type: 'added', content: formatPeer(peer) });
-      added++;
-    } else if (peerEquals(existing, peer)) {
-      lines.push({ type: 'unchanged', content: formatPeer(peer) });
-      unchanged++;
-    } else {
-      lines.push({ type: 'removed', content: formatPeer(existing) });
-      lines.push({ type: 'added', content: formatPeer(peer) });
-      added++;
-      removed++;
-    }
-  }
-
-  for (const peer of current) {
-    if (!nextByKey.has(peer.publicKey)) {
-      lines.push({ type: 'removed', content: formatPeer(peer) });
-      removed++;
-    }
-  }
-
-  return {
-    label: 'WireGuard Peers',
-    lines,
-    summary: { added, removed, unchanged },
-  };
-}
-
-function buildRoutingRulesDiff(
-  current: PanelSyncPayload['routingRules'],
-  next: PanelSyncPayload['routingRules'],
-): ConfigDiffSection {
-  const lines: ConfigDiffLine[] = [];
-  const currentByKey = new Map(current.map((r) => [ruleKey(r), r]));
-  const nextByKey = new Map(next.map((r) => [ruleKey(r), r]));
-  let added = 0;
-  let removed = 0;
-  let unchanged = 0;
-
-  for (const rule of next) {
-    const existing = currentByKey.get(ruleKey(rule));
-    if (!existing) {
-      lines.push({ type: 'added', content: formatRule(rule) });
-      added++;
-    } else if (ruleEquals(existing, rule)) {
-      lines.push({ type: 'unchanged', content: formatRule(rule) });
-      unchanged++;
-    } else {
-      // Changed — show removal of old + addition of new
-      lines.push({ type: 'removed', content: formatRule(existing) });
-      lines.push({ type: 'added', content: formatRule(rule) });
-      added++;
-      removed++;
-    }
-  }
-
-  for (const rule of current) {
-    if (!nextByKey.has(ruleKey(rule))) {
-      lines.push({ type: 'removed', content: formatRule(rule) });
-      removed++;
-    }
-  }
-
-  return {
-    label: 'Routing Rules',
-    lines,
-    summary: { added, removed, unchanged },
-  };
-}
-
-// ─── Formatters ────────────────────────────────────────
-
-function formatChainNode(n: PanelSyncPayload['chainNodes'][number]): string {
-  return `${n.role} ${n.protocol}: ${n.label} (${n.hostname}:${n.port})`;
-}
-
-function formatPeer(p: PanelSyncPayload['wireguardPeers'][number]): string {
-  const shortKey =
-    p.publicKey.length > 12
-      ? `${p.publicKey.substring(0, 12)}...`
-      : p.publicKey;
-  return `Peer ${shortKey} -> ${p.endpoint} [${p.allowedIPs}]`;
-}
-
-function formatRule(r: PanelSyncPayload['routingRules'][number]): string {
-  return `${r.type}/${r.value} -> ${r.outboundTag} (priority ${r.priority})`;
-}
-
-// ─── Equality helpers ──────────────────────────────────
-
-function chainNodeEquals(
-  a: PanelSyncPayload['chainNodes'][number],
-  b: PanelSyncPayload['chainNodes'][number],
-): boolean {
-  return (
-    a.label === b.label &&
-    a.serverId === b.serverId &&
-    a.role === b.role &&
-    a.protocol === b.protocol &&
-    a.hostname === b.hostname &&
-    a.port === b.port
-  );
-}
-
-function peerEquals(
-  a: PanelSyncPayload['wireguardPeers'][number],
-  b: PanelSyncPayload['wireguardPeers'][number],
-): boolean {
-  return (
-    a.publicKey === b.publicKey &&
-    a.allowedIPs === b.allowedIPs &&
-    a.endpoint === b.endpoint &&
-    a.persistentKeepalive === b.persistentKeepalive
-  );
-}
-
-function ruleEquals(
-  a: PanelSyncPayload['routingRules'][number],
-  b: PanelSyncPayload['routingRules'][number],
-): boolean {
-  return (
-    a.type === b.type &&
-    a.value === b.value &&
-    a.outboundTag === b.outboundTag &&
-    a.priority === b.priority
-  );
-}
-
-function ruleKey(r: PanelSyncPayload['routingRules'][number]): string {
-  return `${r.type}:${r.value}:${r.outboundTag}:${r.priority}`;
 }
 
 // ─── formatDiffForDisplay ─────────────────────────────

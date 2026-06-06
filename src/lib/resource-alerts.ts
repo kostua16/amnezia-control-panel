@@ -4,18 +4,33 @@ import { createAlert } from '@/lib/alert-service';
 import type { AlertSeverity } from '@/generated/prisma/enums';
 
 /** Resource threshold configuration */
-interface ResourceThreshold {
+export interface ResourceThreshold {
   metric: string;
   warningPercent: number;
   criticalPercent: number;
   label: string;
 }
 
-const RESOURCE_THRESHOLDS: ResourceThreshold[] = [
+export const RESOURCE_THRESHOLDS: ResourceThreshold[] = [
   { metric: 'cpu', warningPercent: 80, criticalPercent: 90, label: 'CPU' },
   { metric: 'memory', warningPercent: 80, criticalPercent: 90, label: 'RAM' },
   { metric: 'disk', warningPercent: 90, criticalPercent: 95, label: 'Disk' },
 ];
+
+/**
+ * Classify a metric value against warning/critical thresholds.
+ * Returns 'CRITICAL' if value >= critical, 'WARNING' if >= warning,
+ * or null if within normal range.
+ */
+export function classifySeverity(
+  value: number,
+  warningPercent: number,
+  criticalPercent: number,
+): AlertSeverity | null {
+  if (value >= criticalPercent) return 'CRITICAL';
+  if (value >= warningPercent) return 'WARNING';
+  return null;
+}
 
 /** How often to check resources (ms) */
 export const RESOURCE_CHECK_INTERVAL_MS = 60 * 1000; // 60 seconds
@@ -56,13 +71,11 @@ export async function checkResourceThresholds(): Promise<ResourceCheckResult> {
   for (const threshold of RESOURCE_THRESHOLDS) {
     const value = metricValues[threshold.metric] ?? 0;
 
-    let severity: AlertSeverity | null = null;
-
-    if (value >= threshold.criticalPercent) {
-      severity = 'CRITICAL';
-    } else if (value >= threshold.warningPercent) {
-      severity = 'WARNING';
-    }
+    const severity = classifySeverity(
+      value,
+      threshold.warningPercent,
+      threshold.criticalPercent,
+    );
 
     results.checks.push({
       metric: threshold.metric,
