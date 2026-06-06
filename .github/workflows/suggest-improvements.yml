@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 100
+  MAX_TURNS: 50
   NODE_VERSION: '22.x'
 
 permissions:
@@ -22,7 +22,7 @@ permissions:
 jobs:
   suggest-improvements:
     runs-on: [self-hosted, big]
-    timeout-minutes: 45
+    timeout-minutes: 20
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
       claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
