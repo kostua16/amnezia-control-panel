@@ -53,10 +53,12 @@ export function initWebSocketServer(
 
 /**
  * Broadcast an event to all connected clients.
- * Silently no-ops when WebSocket is not initialized (e.g., in tests or CLI usage).
+ * No-ops when WebSocket is not initialized (e.g., in tests or CLI usage).
  */
 export function broadcastEvent(event: string, data: unknown): void {
-  if (!ioInstance) return;
+  if (!ioInstance) {
+    return;
+  }
   ioInstance.emit(event, data);
 }
 

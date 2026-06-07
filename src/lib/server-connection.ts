@@ -8,6 +8,16 @@ import type {
 
 const execFileAsync = promisify(execFile);
 
+// ─── Hostname Validation ─────────────────────────────────
+
+/** Reject hostnames that could allow command injection via shell metacharacters. */
+const SAFE_HOSTNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
+
+function isValidHostname(hostname: string): boolean {
+  if (!hostname || hostname.length > 253) return false;
+  return SAFE_HOSTNAME_RE.test(hostname);
+}
+
 // ─── Connection Pool ──────────────────────────────────────
 
 interface ConnectionPoolEntry {
@@ -67,15 +77,24 @@ export async function testConnection(
   const startTime = Date.now();
 
   try {
+    // Sanitize hostname to prevent command injection
+    if (!isValidHostname(server.hostname)) {
+      return {
+        success: false,
+        latencyMs: null,
+        message: `Invalid hostname: ${server.hostname}`,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
     // Use ping as a basic reachability check (cross-platform stub).
     // In production, replace with a proper SSH/TCP connection test.
     const isWindows = process.platform === 'win32';
-    const pingCmd = isWindows ? 'ping' : 'ping';
     const pingArgs = isWindows
       ? ['-n', '1', '-w', '3000', server.hostname]
       : ['-c', '1', '-W', '3', server.hostname];
 
-    await execFileAsync(pingCmd, pingArgs, { timeout: 5000 });
+    await execFileAsync('ping', pingArgs, { timeout: 5000 });
     const latencyMs = Date.now() - startTime;
 
     setPoolEntry(server.id, 'connected', latencyMs);
