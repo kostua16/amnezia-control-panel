@@ -2,8 +2,8 @@ import { prisma } from '@/lib/prisma';
 import { createAlert } from '@/lib/alert-service';
 import type { AlertSeverity } from '@/generated/prisma/enums';
 
-/** Quota alert thresholds in percent */
-const QUOTA_THRESHOLDS = [
+/** Quota alert thresholds in percent, ordered by percent ascending */
+export const QUOTA_THRESHOLDS = [
   { percent: 80, severity: 'WARNING' as AlertSeverity },
   { percent: 90, severity: 'WARNING' as AlertSeverity },
   { percent: 100, severity: 'CRITICAL' as AlertSeverity },
@@ -136,4 +136,21 @@ async function getUserUsagePercent(
 
   const totalBytes = (traffic._sum.bytesIn ?? 0) + (traffic._sum.bytesOut ?? 0);
   return quotaBytes > 0 ? Math.round((totalBytes / quotaBytes) * 100) : 0;
+}
+
+/**
+ * Determine the highest-matching quota threshold severity for a usage percent.
+ * Returns the severity of the highest exceeded threshold, or null if none.
+ * Pure function — no side effects, suitable for unit testing.
+ */
+export function classifyQuotaSeverity(
+  usagePercent: number,
+): AlertSeverity | null {
+  let result: AlertSeverity | null = null;
+  for (const t of QUOTA_THRESHOLDS) {
+    if (usagePercent >= t.percent) {
+      result = t.severity;
+    }
+  }
+  return result;
 }
