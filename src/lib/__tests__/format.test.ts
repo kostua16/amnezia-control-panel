@@ -44,4 +44,16 @@ describe('formatBytes', () => {
   it('returns "0 B" for Infinity', () => {
     assert.strictEqual(formatBytes(Infinity), '0 B');
   });
+
+  it('handles fractional bytes (0 < bytes < 1) without undefined unit', () => {
+    const result = formatBytes(0.5);
+    assert.ok(result.endsWith(' B'), `Expected B unit, got: ${result}`);
+    assert.ok(!result.includes('undefined'), `Got undefined in: ${result}`);
+  });
+
+  it('handles very small positive bytes', () => {
+    const result = formatBytes(0.001);
+    assert.ok(result.endsWith(' B'), `Expected B unit, got: ${result}`);
+    assert.ok(!result.includes('undefined'), `Got undefined in: ${result}`);
+  });
 });

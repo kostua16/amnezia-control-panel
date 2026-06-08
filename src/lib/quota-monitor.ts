@@ -59,7 +59,6 @@ export async function checkUserQuotas(): Promise<{
     for (const threshold of QUOTA_THRESHOLDS) {
       if (usagePercent >= threshold.percent) {
         const created = await checkQuotaThreshold(
-          user.id,
           user.username,
           usagePercent,
           threshold.percent,
@@ -87,7 +86,6 @@ export async function checkUserQuotas(): Promise<{
  * Prevents duplicate alerts within the same quota period.
  */
 async function checkQuotaThreshold(
-  _userId: number,
   username: string,
   usagePercent: number,
   thresholdPercent: number,
