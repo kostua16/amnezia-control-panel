@@ -17,6 +17,20 @@ const RESOURCE_THRESHOLDS: ResourceThreshold[] = [
   { metric: 'disk', warningPercent: 90, criticalPercent: 95, label: 'Disk' },
 ];
 
+/**
+ * Classify a metric value against warning/critical thresholds.
+ * Pure function — no side effects, easy to test.
+ */
+export function classifyResourceSeverity(
+  value: number,
+  warningPercent: number,
+  criticalPercent: number,
+): AlertSeverity | null {
+  if (value >= criticalPercent) return 'CRITICAL';
+  if (value >= warningPercent) return 'WARNING';
+  return null;
+}
+
 /** How often to check resources (ms) */
 export const RESOURCE_CHECK_INTERVAL_MS = 60 * 1000; // 60 seconds
 
@@ -56,13 +70,11 @@ export async function checkResourceThresholds(): Promise<ResourceCheckResult> {
   for (const threshold of RESOURCE_THRESHOLDS) {
     const value = metricValues[threshold.metric] ?? 0;
 
-    let severity: AlertSeverity | null = null;
-
-    if (value >= threshold.criticalPercent) {
-      severity = 'CRITICAL';
-    } else if (value >= threshold.warningPercent) {
-      severity = 'WARNING';
-    }
+    const severity = classifyResourceSeverity(
+      value,
+      threshold.warningPercent,
+      threshold.criticalPercent,
+    );
 
     results.checks.push({
       metric: threshold.metric,

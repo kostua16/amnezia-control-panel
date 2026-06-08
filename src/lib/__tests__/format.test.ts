@@ -44,4 +44,22 @@ describe('formatBytes', () => {
   it('returns "0 B" for Infinity', () => {
     assert.strictEqual(formatBytes(Infinity), '0 B');
   });
+
+  it('returns "0 B" for -0', () => {
+    assert.strictEqual(formatBytes(-0), '0 B');
+  });
+
+  it('returns "0 B" for negative zero', () => {
+    assert.strictEqual(Object.is(formatBytes(-0), '0 B'), true);
+  });
+
+  it('handles boundary just below 1 KB (1023 bytes)', () => {
+    assert.strictEqual(formatBytes(1023), '1023 B');
+  });
+
+  it('handles fractional values just above 1 KB', () => {
+    const result = formatBytes(1025);
+    assert.ok(result.startsWith('1.0'), `Expected ~1.0 KB, got: ${result}`);
+    assert.ok(result.endsWith('KB'), `Expected KB unit, got: ${result}`);
+  });
 });
