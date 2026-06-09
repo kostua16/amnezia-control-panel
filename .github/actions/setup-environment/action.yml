@@ -124,9 +124,15 @@ runs:
           exit 1
         fi
 
-        # `gh auth status` prints masked token metadata into workflow logs.
-        login="$(gh api --hostname "$host" user --jq '.login')"
-        echo "gh authenticated as ${login} on ${host}"
+        # `gh api user` fails for GitHub App / integration tokens used by
+        # several workflows, while `gh auth status` succeeds but includes token
+        # metadata that we do not want in logs.
+        auth_status="$(gh auth status -h "$host" 2>&1)"
+        printf '%s\n' "$auth_status" | sed \
+          -e '/^[[:space:]]*Token:/d' \
+          -e '/^[[:space:]]*Token scopes:/d' \
+          -e '/^[[:space:]]*-[[:space:]]*Token:/d' \
+          -e '/^[[:space:]]*-[[:space:]]*Token scopes:/d'
 
     # Previous GitHub-hosted cache retained for audit only. It restored from
     # remote GitHub/Azure storage too slowly on self-hosted runners.
