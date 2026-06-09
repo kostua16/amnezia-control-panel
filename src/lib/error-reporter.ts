@@ -17,7 +17,7 @@ interface ErrorPattern {
 
 const ERROR_PATTERNS: ErrorPattern[] = [
   {
-    patterns: ['timeout', 'etimedout', 'abort_err'],
+    patterns: ['timeout', 'etimedout', 'abort_err', 'econnrefused'],
     type: 'connection_timeout',
     message: (panelName) => `Connection to ${panelName} timed out`,
     recommendation: 'Check Tailscale status on the remote panel',
@@ -37,7 +37,7 @@ const ERROR_PATTERNS: ErrorPattern[] = [
     knownFix: 'Re-enter API key on the panel edit page',
   },
   {
-    patterns: ['invalid', 'malformed', 'validation failed', 'econnrefused'],
+    patterns: ['invalid', 'malformed', 'validation failed'],
     type: 'invalid_config',
     message: (panelName) => `Configuration validation failed for ${panelName}`,
     recommendation: 'Check chain configuration for invalid values',

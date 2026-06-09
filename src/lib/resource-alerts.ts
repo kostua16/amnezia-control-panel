@@ -23,6 +23,21 @@ export const RESOURCE_CHECK_INTERVAL_MS = 60 * 1000; // 60 seconds
 /** Duplicate alert suppression window (ms) */
 const DUPLICATE_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
+/**
+ * Classify a metric value against warning/critical thresholds.
+ * Returns 'CRITICAL' if value >= criticalPercent, 'WARNING' if >= warningPercent,
+ * or null if below all thresholds.
+ */
+export function classifyResourceMetric(
+  value: number,
+  warningPercent: number,
+  criticalPercent: number,
+): AlertSeverity | null {
+  if (value >= criticalPercent) return 'CRITICAL';
+  if (value >= warningPercent) return 'WARNING';
+  return null;
+}
+
 export interface ResourceCheckResult {
   checks: Array<{
     metric: string;
@@ -56,13 +71,11 @@ export async function checkResourceThresholds(): Promise<ResourceCheckResult> {
   for (const threshold of RESOURCE_THRESHOLDS) {
     const value = metricValues[threshold.metric] ?? 0;
 
-    let severity: AlertSeverity | null = null;
-
-    if (value >= threshold.criticalPercent) {
-      severity = 'CRITICAL';
-    } else if (value >= threshold.warningPercent) {
-      severity = 'WARNING';
-    }
+    const severity = classifyResourceMetric(
+      value,
+      threshold.warningPercent,
+      threshold.criticalPercent,
+    );
 
     results.checks.push({
       metric: threshold.metric,

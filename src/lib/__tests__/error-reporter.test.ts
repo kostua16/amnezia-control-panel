@@ -49,8 +49,14 @@ describe('enrichError', () => {
     assert.equal(result.knownFix, null);
   });
 
+  it('classifies ECONNREFUSED as connection_timeout', () => {
+    const result = enrichError('ECONNREFUSED on port 443', 'Panel8');
+    assert.equal(result.type, 'connection_timeout');
+    assert.ok(result.recommendation.includes('Tailscale'));
+  });
+
   it('preserves raw error in output', () => {
-    const raw = 'ECONNREFUSED on port 443';
+    const raw = 'Unknown raw error detail';
     const result = enrichError(raw, 'Panel8');
     assert.equal(result.rawError, raw);
   });

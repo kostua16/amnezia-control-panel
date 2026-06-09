@@ -87,19 +87,18 @@ export async function checkUserQuotas(): Promise<{
  * Prevents duplicate alerts within the same quota period.
  */
 async function checkQuotaThreshold(
-  _userId: number,
+  userId: number,
   username: string,
   usagePercent: number,
   thresholdPercent: number,
   severity: AlertSeverity,
 ): Promise<boolean> {
-  const alertType = `quota_${thresholdPercent}%`;
+  const alertType = `quota_${thresholdPercent}%_user${userId}`;
 
   // Check for a recent alert of the same type to prevent duplicates
   const recentAlert = await prisma.alert.findFirst({
     where: {
       type: alertType,
-      message: { contains: username },
       createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }, // Within last hour
     },
     orderBy: { createdAt: 'desc' },
