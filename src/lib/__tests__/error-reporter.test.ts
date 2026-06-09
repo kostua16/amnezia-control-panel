@@ -59,4 +59,24 @@ describe('enrichError', () => {
     const result = enrichError('TIMEOUT occurred', 'Panel9');
     assert.equal(result.type, 'connection_timeout');
   });
+
+  it('classifies ECONNREFUSED as invalid_config', () => {
+    const result = enrichError('ECONNREFUSED on port 443', 'Panel10');
+    assert.equal(result.type, 'invalid_config');
+  });
+
+  it('classifies 403 as auth_failure', () => {
+    const result = enrichError('HTTP 403 Forbidden', 'Panel11');
+    assert.equal(result.type, 'auth_failure');
+  });
+
+  it('classifies command not found as service_error', () => {
+    const result = enrichError('wg: command not found', 'Panel12');
+    assert.equal(result.type, 'service_error');
+  });
+
+  it('classifies Docker container not found as docker_error', () => {
+    const result = enrichError('Docker container not found: 3x-ui', 'Panel13');
+    assert.equal(result.type, 'docker_error');
+  });
 });

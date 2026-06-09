@@ -81,6 +81,14 @@ describe('calculateNodePositions', () => {
         CANVAS_PADDING + NODE_HEIGHT + VERTICAL_GAP,
       );
     });
+
+    it('handles a single node in split topology', () => {
+      const nodes = makeNodes(1);
+      const positions = calculateNodePositions(nodes, 'split');
+      assert.strictEqual(positions.length, 1);
+      assert.strictEqual(positions[0].x, CANVAS_PADDING);
+      assert.strictEqual(positions[0].y, CANVAS_PADDING);
+    });
   });
 
   describe('mesh topology', () => {
