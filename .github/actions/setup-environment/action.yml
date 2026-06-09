@@ -119,7 +119,14 @@ runs:
         gh --version
 
         host="${GITHUB_SERVER_URL#https://}"
-        gh auth status -h "$host"
+        if [[ "${{ steps.setup_gh.outputs.auth }}" != "true" ]]; then
+          echo "gh authentication was not configured for ${host}. Aborting." >&2
+          exit 1
+        fi
+
+        # `gh auth status` prints masked token metadata into workflow logs.
+        login="$(gh api --hostname "$host" user --jq '.login')"
+        echo "gh authenticated as ${login} on ${host}"
 
     # Previous GitHub-hosted cache retained for audit only. It restored from
     # remote GitHub/Azure storage too slowly on self-hosted runners.
