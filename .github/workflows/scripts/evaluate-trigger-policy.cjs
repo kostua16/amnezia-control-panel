@@ -15,6 +15,7 @@ const mode = getArg('--mode');
 const policyFile = getArg('--policy-file', '.github/workflows/policy.json');
 const eventFile = getArg('--event-path', process.env.GITHUB_EVENT_PATH);
 const eventName = getArg('--event-name', process.env.GITHUB_EVENT_NAME);
+const sourcePrFile = getArg('--source-pr-file');
 
 if (!mode) {
   throw new Error('--mode is required');
@@ -263,6 +264,55 @@ if (mode === 'planning-intake-repair') {
             ? 'workflow_dispatch'
             : null,
         planning_pr_number: planningPrNumber,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
+if (mode === 'fix-pr') {
+  const workflowRun = event.workflow_run ?? {};
+  const sourcePr = sourcePrFile ? readJson(sourcePrFile) : {};
+  const labels = Array.isArray(sourcePr.labels)
+    ? sourcePr.labels
+        .map((label) =>
+          typeof label === 'string' ? label : String(label?.name ?? ''),
+        )
+        .filter(Boolean)
+    : [];
+  const headRefName =
+    sourcePr.headRefName ??
+    sourcePr.head?.ref ??
+    workflowRun.head_branch ??
+    workflowRun.headBranch ??
+    '';
+  const automationPrefixes = [
+    ...(policy.trustedAutomationBranchPrefixes ?? []),
+    ...(policy.manualOnlyBranchPrefixes ?? []),
+  ];
+  const hasAutomationBranchPrefix = automationPrefixes.some((prefix) =>
+    headRefName.startsWith(prefix),
+  );
+  const hasAutoFixLabel = labels.includes('auto-fix');
+  const shouldRun = !hasAutomationBranchPrefix && !hasAutoFixLabel;
+  let reason = null;
+
+  if (hasAutoFixLabel) {
+    reason = 'source PR already has the auto-fix label';
+  } else if (hasAutomationBranchPrefix) {
+    reason = `source PR branch ${headRefName} already matches an automation prefix`;
+  }
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: shouldRun,
+        head_ref_name: headRefName,
+        labels,
+        reason,
       },
       null,
       2,

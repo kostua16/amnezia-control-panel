@@ -45,6 +45,39 @@ function runApprovePolicy(event: unknown, eventName = 'issue_comment') {
   };
 }
 
+function runFixPrPolicy(event: unknown, sourcePr: unknown) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trigger-policy-'));
+  const eventPath = path.join(tempDir, 'event.json');
+  const sourcePrPath = path.join(tempDir, 'source-pr.json');
+  fs.writeFileSync(eventPath, JSON.stringify(event));
+  fs.writeFileSync(sourcePrPath, JSON.stringify(sourcePr));
+
+  const output = execFileSync(
+    process.execPath,
+    [
+      scriptPath,
+      '--mode',
+      'fix-pr',
+      '--policy-file',
+      policyPath,
+      '--event-path',
+      eventPath,
+      '--event-name',
+      'workflow_run',
+      '--source-pr-file',
+      sourcePrPath,
+    ],
+    { encoding: 'utf8' },
+  );
+
+  return JSON.parse(output) as {
+    should_run: boolean;
+    head_ref_name: string;
+    labels: string[];
+    reason: string | null;
+  };
+}
+
 function prComment(body: string, authorAssociation = 'MEMBER') {
   return {
     issue: {
@@ -102,5 +135,60 @@ describe('trigger policy', () => {
       runApprovePolicy(prComment('please /approve this')).should_run,
       false,
     );
+  });
+
+  it('skips PR auto-fix for source PRs already labeled auto-fix', () => {
+    const result = runFixPrPolicy(
+      {
+        workflow_run: {
+          head_branch: 'codex/260609-quiet-gh-auth-log',
+        },
+      },
+      {
+        headRefName: 'codex/260609-quiet-gh-auth-log',
+        labels: [{ name: 'auto-fix' }, { name: 'needs-review' }],
+      },
+    );
+
+    assert.equal(result.should_run, false);
+    assert.equal(result.head_ref_name, 'codex/260609-quiet-gh-auth-log');
+    assert.equal(result.reason, 'source PR already has the auto-fix label');
+  });
+
+  it('skips PR auto-fix for generated automation branches', () => {
+    const result = runFixPrPolicy(
+      {
+        workflow_run: {
+          head_branch: 'claude-audit-fix-27142639323',
+        },
+      },
+      {
+        headRefName: 'claude-audit-fix-27142639323',
+        labels: [{ name: 'needs-review' }],
+      },
+    );
+
+    assert.equal(result.should_run, false);
+    assert.equal(
+      result.reason,
+      'source PR branch claude-audit-fix-27142639323 already matches an automation prefix',
+    );
+  });
+
+  it('allows PR auto-fix for non-automation source PRs', () => {
+    const result = runFixPrPolicy(
+      {
+        workflow_run: {
+          head_branch: 'feature/human-pr',
+        },
+      },
+      {
+        headRefName: 'feature/human-pr',
+        labels: [{ name: 'bug' }],
+      },
+    );
+
+    assert.equal(result.should_run, true);
+    assert.equal(result.reason, null);
   });
 });
