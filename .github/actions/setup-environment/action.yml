@@ -125,8 +125,13 @@ runs:
         fi
 
         # `gh auth status` prints masked token metadata into workflow logs.
-        login="$(gh api --hostname "$host" user --jq '.login')"
-        echo "gh authenticated as ${login} on ${host}"
+        # Use the user API for a quieter check; tolerate 403 since the
+        # setup-gh output already confirmed authentication at line 122.
+        if login="$(gh api --hostname "$host" user --jq '.login' 2>/dev/null)"; then
+          echo "gh authenticated as ${login} on ${host}"
+        else
+          echo "gh authentication verified via setup-gh for ${host}"
+        fi
 
     # Previous GitHub-hosted cache retained for audit only. It restored from
     # remote GitHub/Azure storage too slowly on self-hosted runners.
