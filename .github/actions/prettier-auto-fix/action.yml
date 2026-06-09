@@ -3,16 +3,16 @@ description: Detect Prettier-only CI failures and apply formatting fix without A
 
 inputs:
   run-id:
-    description: "The CI workflow run ID to inspect"
+    description: 'The CI workflow run ID to inspect'
     required: true
   github-token:
-    description: "GitHub token for API access"
+    description: 'GitHub token for API access'
     required: true
   node-version:
-    description: "Node.js version"
-    default: "22.x"
+    description: 'Node.js version'
+    default: '22.x'
   prettier-glob:
-    description: "Glob pattern for prettier --write"
+    description: 'Glob pattern for prettier --write'
     default: 'src/**/*.{ts,tsx,css}'
 
 outputs:
@@ -68,6 +68,7 @@ runs:
       shell: bash
       run: |
         COUNT_BEFORE=$(git diff --name-only | wc -l)
-        npx prettier --write ${{ inputs.prettier-glob }}
+        # Quote the glob so Prettier expands recursive patterns instead of Bash.
+        npx prettier --write "${{ inputs.prettier-glob }}"
         COUNT_AFTER=$(git diff --name-only | wc -l)
         echo "::notice::Formatted files changed: $COUNT_AFTER (was $COUNT_BEFORE)"
