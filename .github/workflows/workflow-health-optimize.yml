@@ -280,8 +280,30 @@ jobs:
             - Do NOT refactor to shared actions — separate task
             - Do NOT change files outside `.github/workflows/`
 
+      - name: Detect exact duplicate optimization PR
+        id: duplicate
+        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/find-duplicate-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --title-prefix "ci(workflows): hourly optimization - " \
+            --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Log duplicate optimization result
+        if: steps.duplicate.outputs.duplicate_found == 'true'
+        run: |
+          echo "Skipping duplicate optimization PR."
+          echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
+          echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+
       - uses: ./.github/actions/commit-and-push
         id: push
+        if: steps.duplicate.outputs.duplicate_found != 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): hourly optimization pass'
