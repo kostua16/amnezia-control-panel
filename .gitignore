@@ -99,4 +99,4 @@ __pycache__/
 
 
 #OMO
-.omo/run-continuation/*.json
+.omo/run-continuation/*.jsongraphify-out/cost.json

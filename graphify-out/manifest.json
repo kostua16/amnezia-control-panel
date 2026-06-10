@@ -1,0 +1,1467 @@
+{
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(auth)/layout.tsx": {
+    "mtime": 1778876414.838849,
+    "ast_hash": "4d2ada62d60ef91a56cde26ea4ad4601",
+    "semantic_hash": "4d2ada62d60ef91a56cde26ea4ad4601"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(auth)/login/page.tsx": {
+    "mtime": 1779123407.2444692,
+    "ast_hash": "78a0c42a5a5467b00dbf6e3771673ff3",
+    "semantic_hash": "78a0c42a5a5467b00dbf6e3771673ff3"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/config/page.tsx": {
+    "mtime": 1778876414.839084,
+    "ast_hash": "5c6a177b321b49b5c4ff653c77bcc057",
+    "semantic_hash": "5c6a177b321b49b5c4ff653c77bcc057"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/dashboard/page.tsx": {
+    "mtime": 1778876414.8391817,
+    "ast_hash": "c9c8e680081f0c02a3224c8417359854",
+    "semantic_hash": "c9c8e680081f0c02a3224c8417359854"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/layout.tsx": {
+    "mtime": 1778876414.839236,
+    "ast_hash": "a5a151aa6e3418e61e025e189d697f10",
+    "semantic_hash": "a5a151aa6e3418e61e025e189d697f10"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/monitoring/page.tsx": {
+    "mtime": 1778876414.8393264,
+    "ast_hash": "f763e5fc8d9786053fe17a74476d6a72",
+    "semantic_hash": "f763e5fc8d9786053fe17a74476d6a72"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/panels/page.tsx": {
+    "mtime": 1778876414.8394237,
+    "ast_hash": "0822f6d6de9952397cd1480b88431e5e",
+    "semantic_hash": "0822f6d6de9952397cd1480b88431e5e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/panels/push/page.tsx": {
+    "mtime": 1780124416.7482162,
+    "ast_hash": "0a00908770f2bd95b1041fcbbe580cf9",
+    "semantic_hash": "0a00908770f2bd95b1041fcbbe580cf9"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/servers/page.tsx": {
+    "mtime": 1778876414.839633,
+    "ast_hash": "71c460e4c70765ce808c5077983142cd",
+    "semantic_hash": "71c460e4c70765ce808c5077983142cd"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/services/page.tsx": {
+    "mtime": 1778876414.8397574,
+    "ast_hash": "37fdbfa58d4ad7ba2182f2eeb5a84ca1",
+    "semantic_hash": "37fdbfa58d4ad7ba2182f2eeb5a84ca1"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/settings/page.tsx": {
+    "mtime": 1778876414.8398724,
+    "ast_hash": "71add0149c408bb1544799a15ac98548",
+    "semantic_hash": "71add0149c408bb1544799a15ac98548"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/templates/page.tsx": {
+    "mtime": 1779123407.2793465,
+    "ast_hash": "84fe6afab038ec1f44cbdbd4473d311d",
+    "semantic_hash": "84fe6afab038ec1f44cbdbd4473d311d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/(dashboard)/users/page.tsx": {
+    "mtime": 1778876414.8400595,
+    "ast_hash": "1ee7a53817cf1170beed2d566c1db754",
+    "semantic_hash": "1ee7a53817cf1170beed2d566c1db754"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/alerts/[id]/route.ts": {
+    "mtime": 1778876414.8402436,
+    "ast_hash": "5582c56140ab72a973a56fbaf24849e2",
+    "semantic_hash": "5582c56140ab72a973a56fbaf24849e2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/alerts/quota-check/route.ts": {
+    "mtime": 1779123407.2902763,
+    "ast_hash": "0cad1d6dc87a3ac2e8736d8e6c2e1576",
+    "semantic_hash": "0cad1d6dc87a3ac2e8736d8e6c2e1576"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/alerts/read-all/route.ts": {
+    "mtime": 1778876414.8404336,
+    "ast_hash": "de6f663a8ddab0b6d79e616cbcc894cf",
+    "semantic_hash": "de6f663a8ddab0b6d79e616cbcc894cf"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/alerts/resource-check/route.ts": {
+    "mtime": 1779123407.2939851,
+    "ast_hash": "831dcaa5a2c80787a18d3179620dfc18",
+    "semantic_hash": "831dcaa5a2c80787a18d3179620dfc18"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/alerts/route.ts": {
+    "mtime": 1779123407.3001003,
+    "ast_hash": "8a4ab829e329dc174a044022463217e4",
+    "semantic_hash": "8a4ab829e329dc174a044022463217e4"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/auth/login/route.ts": {
+    "mtime": 1778876414.8407311,
+    "ast_hash": "dd1f185e4ce7e89de96678edcdaffde8",
+    "semantic_hash": "dd1f185e4ce7e89de96678edcdaffde8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/auth/logout/route.ts": {
+    "mtime": 1778876414.8408241,
+    "ast_hash": "bc08028f18909e470e3ebef0cbd641a0",
+    "semantic_hash": "bc08028f18909e470e3ebef0cbd641a0"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/auth/me/route.ts": {
+    "mtime": 1778876414.8409307,
+    "ast_hash": "b93c42585829830f5a44af6486b012fa",
+    "semantic_hash": "b93c42585829830f5a44af6486b012fa"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/chain-presets/[id]/route.ts": {
+    "mtime": 1781106425.110497,
+    "ast_hash": "d289f851455bf77a00666732b12afc0e",
+    "semantic_hash": "d289f851455bf77a00666732b12afc0e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/chain-presets/apply/route.ts": {
+    "mtime": 1779123407.317529,
+    "ast_hash": "ab5eea98a2ae24f97d6e1c62cfbc510c",
+    "semantic_hash": "ab5eea98a2ae24f97d6e1c62cfbc510c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/chain-presets/route.ts": {
+    "mtime": 1779123407.3221211,
+    "ast_hash": "3a27e9afd3a663abbe33a14c91638b6c",
+    "semantic_hash": "3a27e9afd3a663abbe33a14c91638b6c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/chain-presets/seed/route.ts": {
+    "mtime": 1778876414.8413296,
+    "ast_hash": "937c113f0f1d9260745f20c4c2dc9a93",
+    "semantic_hash": "937c113f0f1d9260745f20c4c2dc9a93"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/chains/[id]/status/route.ts": {
+    "mtime": 1778876414.8415005,
+    "ast_hash": "c03386dce80ad07bfa4bf65998f194ef",
+    "semantic_hash": "c03386dce80ad07bfa4bf65998f194ef"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/chains/apply/route.ts": {
+    "mtime": 1781123216.494655,
+    "ast_hash": "f6c3e688cb473de3e1f63dee155fc2f0",
+    "semantic_hash": "f6c3e688cb473de3e1f63dee155fc2f0"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/chains/templates/route.ts": {
+    "mtime": 1778876414.8417253,
+    "ast_hash": "79b7b0ecbbf8d63d7c0b37a8350cf6b2",
+    "semantic_hash": "79b7b0ecbbf8d63d7c0b37a8350cf6b2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/configs/export/route.ts": {
+    "mtime": 1779123407.3461509,
+    "ast_hash": "9fb617fb45a0ca0472cc88016d563e46",
+    "semantic_hash": "9fb617fb45a0ca0472cc88016d563e46"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/configs/generate/route.ts": {
+    "mtime": 1781106425.110853,
+    "ast_hash": "625878757156b09742c0a51f426d9812",
+    "semantic_hash": "625878757156b09742c0a51f426d9812"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/configs/import/route.ts": {
+    "mtime": 1779123407.3531797,
+    "ast_hash": "aa646abba1dfdfddc0ffc62adcb57315",
+    "semantic_hash": "aa646abba1dfdfddc0ffc62adcb57315"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/configs/presets/route.ts": {
+    "mtime": 1779123407.356503,
+    "ast_hash": "a2e375b27823b9897f9cf5005c6cbdd9",
+    "semantic_hash": "a2e375b27823b9897f9cf5005c6cbdd9"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/configs/templates/[id]/route.ts": {
+    "mtime": 1781106425.111073,
+    "ast_hash": "99c196a3cfc6f81c723e9b2627aed768",
+    "semantic_hash": "99c196a3cfc6f81c723e9b2627aed768"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/configs/templates/route.ts": {
+    "mtime": 1779123407.3650148,
+    "ast_hash": "6fddd73d6979b7d6d6df7304071b6e19",
+    "semantic_hash": "6fddd73d6979b7d6d6df7304071b6e19"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/dashboard/stats/route.ts": {
+    "mtime": 1780124416.7485301,
+    "ast_hash": "700092c32f6bcab528d138e94d70c5af",
+    "semantic_hash": "700092c32f6bcab528d138e94d70c5af"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/geoip/refresh/route.ts": {
+    "mtime": 1779123407.3711824,
+    "ast_hash": "ad69a9d734650622d3a2917f024ada1d",
+    "semantic_hash": "ad69a9d734650622d3a2917f024ada1d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/geoip/status/route.ts": {
+    "mtime": 1778876414.8426917,
+    "ast_hash": "305d665a7ffe90c4ac690a6b555a34b2",
+    "semantic_hash": "305d665a7ffe90c4ac690a6b555a34b2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/health/route.ts": {
+    "mtime": 1779018964.566837,
+    "ast_hash": "0cf7082532e5048c50a4e570698c832e",
+    "semantic_hash": "0cf7082532e5048c50a4e570698c832e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/monitoring/resources/route.ts": {
+    "mtime": 1780441815.1376176,
+    "ast_hash": "9545616be064f8ce5b1c6351dfa638e8",
+    "semantic_hash": "9545616be064f8ce5b1c6351dfa638e8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/[id]/route.ts": {
+    "mtime": 1781123147.769512,
+    "ast_hash": "c97d1f417d2c022a228e76765beab25a",
+    "semantic_hash": "c97d1f417d2c022a228e76765beab25a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/[id]/status/route.ts": {
+    "mtime": 1779123407.3894029,
+    "ast_hash": "879874c7eda5325373b4bd3efd8d2396",
+    "semantic_hash": "879874c7eda5325373b4bd3efd8d2396"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/[id]/test/route.ts": {
+    "mtime": 1779123407.3953016,
+    "ast_hash": "ecb23a9d2c8235ab0ff6e3076f39fa7d",
+    "semantic_hash": "ecb23a9d2c8235ab0ff6e3076f39fa7d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/diff/route.ts": {
+    "mtime": 1779218999.481345,
+    "ast_hash": "e621a77c16e4ee4d29333ab98330271b",
+    "semantic_hash": "e621a77c16e4ee4d29333ab98330271b"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/push/chain-config/route.ts": {
+    "mtime": 1781123201.9098783,
+    "ast_hash": "892edbebcf02c558f14812c7d38e6909",
+    "semantic_hash": "892edbebcf02c558f14812c7d38e6909"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/push/route.ts": {
+    "mtime": 1781123188.2380784,
+    "ast_hash": "382dc4b9c22b57b846f361d9ca4c9d3a",
+    "semantic_hash": "382dc4b9c22b57b846f361d9ca4c9d3a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/push/status/route.ts": {
+    "mtime": 1778876414.843706,
+    "ast_hash": "86c4ff769a3fdc6be4e504fdaa25b011",
+    "semantic_hash": "86c4ff769a3fdc6be4e504fdaa25b011"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/rollback/route.ts": {
+    "mtime": 1781123229.7064338,
+    "ast_hash": "8a1031750c564228f73311f134dbb4c2",
+    "semantic_hash": "8a1031750c564228f73311f134dbb4c2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/route.ts": {
+    "mtime": 1781123131.1690931,
+    "ast_hash": "5f66306d6ba0725b330b5ff2ab5493aa",
+    "semantic_hash": "5f66306d6ba0725b330b5ff2ab5493aa"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/panels/status/route.ts": {
+    "mtime": 1779123407.4407034,
+    "ast_hash": "e62aeb0b95fb462c2f975d568a0d3745",
+    "semantic_hash": "e62aeb0b95fb462c2f975d568a0d3745"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/apply/route.ts": {
+    "mtime": 1781123272.5651636,
+    "ast_hash": "824394096ce2a8f4228f75c31267c8a3",
+    "semantic_hash": "824394096ce2a8f4228f75c31267c8a3"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/geo-resolve/route.ts": {
+    "mtime": 1779123407.450272,
+    "ast_hash": "799eb0eaa3d536fcbc676f25b8e80afd",
+    "semantic_hash": "799eb0eaa3d536fcbc676f25b8e80afd"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/geo/[id]/route.ts": {
+    "mtime": 1781123357.4424174,
+    "ast_hash": "4582563a94c91fe9f3f9d53ab99af7d7",
+    "semantic_hash": "4582563a94c91fe9f3f9d53ab99af7d7"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/geo/reorder/route.ts": {
+    "mtime": 1781123393.5163476,
+    "ast_hash": "e735059aebf378df4bb6d840f24737ce",
+    "semantic_hash": "e735059aebf378df4bb6d840f24737ce"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/geo/route.ts": {
+    "mtime": 1781123333.2509477,
+    "ast_hash": "e62686d601b54a4b03007bfb713bd38d",
+    "semantic_hash": "e62686d601b54a4b03007bfb713bd38d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/geoip-lookup/route.ts": {
+    "mtime": 1779123407.4814377,
+    "ast_hash": "82239ac5f2c0247a39902b4459d7aa21",
+    "semantic_hash": "82239ac5f2c0247a39902b4459d7aa21"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/import/route.ts": {
+    "mtime": 1779123407.4854345,
+    "ast_hash": "c1c879bc49a453d4495bf0da2889d081",
+    "semantic_hash": "c1c879bc49a453d4495bf0da2889d081"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/rules/[id]/route.ts": {
+    "mtime": 1781123303.7716877,
+    "ast_hash": "a54d458bdf00c81d0bc3656d3f8ee977",
+    "semantic_hash": "a54d458bdf00c81d0bc3656d3f8ee977"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/rules/batch/route.ts": {
+    "mtime": 1781123407.6678843,
+    "ast_hash": "f8450bf81e7351333a7147c640dac7fb",
+    "semantic_hash": "f8450bf81e7351333a7147c640dac7fb"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/rules/reorder/route.ts": {
+    "mtime": 1781123381.3349388,
+    "ast_hash": "ea63aaad6634ec884f0e2b3538070796",
+    "semantic_hash": "ea63aaad6634ec884f0e2b3538070796"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/rules/route.ts": {
+    "mtime": 1781123286.2399378,
+    "ast_hash": "c02491f35b12b9f18178c205fcb858d2",
+    "semantic_hash": "c02491f35b12b9f18178c205fcb858d2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/templates/[id]/route.ts": {
+    "mtime": 1779123407.5099502,
+    "ast_hash": "df606f68cb5f523b2ca9dfed1c733693",
+    "semantic_hash": "df606f68cb5f523b2ca9dfed1c733693"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/templates/route.ts": {
+    "mtime": 1778876414.8458447,
+    "ast_hash": "19abf3d2fccc6f36e153278a990f4659",
+    "semantic_hash": "19abf3d2fccc6f36e153278a990f4659"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/templates/seed/route.ts": {
+    "mtime": 1778876414.8459592,
+    "ast_hash": "11d627e37592db1fab0f90cbd59d1ab8",
+    "semantic_hash": "11d627e37592db1fab0f90cbd59d1ab8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/whitelist/[id]/route.ts": {
+    "mtime": 1779123407.5194223,
+    "ast_hash": "d94e160761f9f39bce07552dd3689c65",
+    "semantic_hash": "d94e160761f9f39bce07552dd3689c65"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/routing/whitelist/route.ts": {
+    "mtime": 1779123407.5239842,
+    "ast_hash": "b1b5c0814d44d682eb1d652ca98c0ca6",
+    "semantic_hash": "b1b5c0814d44d682eb1d652ca98c0ca6"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/servers/[id]/config/route.ts": {
+    "mtime": 1781123443.3060586,
+    "ast_hash": "fa9ede2b624b6ccaa404c0de6fabfe76",
+    "semantic_hash": "fa9ede2b624b6ccaa404c0de6fabfe76"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/servers/[id]/route.ts": {
+    "mtime": 1781123118.6034224,
+    "ast_hash": "7be4bbd8383ad1613392d17e32613912",
+    "semantic_hash": "7be4bbd8383ad1613392d17e32613912"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/servers/[id]/tailnet/route.ts": {
+    "mtime": 1781123457.7411394,
+    "ast_hash": "2574bb72a3ca1d3060e0549e4ce71812",
+    "semantic_hash": "2574bb72a3ca1d3060e0549e4ce71812"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/servers/[id]/test/route.ts": {
+    "mtime": 1778876414.8467593,
+    "ast_hash": "d060327aba98729f95d281bd97bda09e",
+    "semantic_hash": "d060327aba98729f95d281bd97bda09e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/servers/route.ts": {
+    "mtime": 1781123102.9751377,
+    "ast_hash": "2babcc45b996bf211a0164706e87933c",
+    "semantic_hash": "2babcc45b996bf211a0164706e87933c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/services/3x-ui/install/route.ts": {
+    "mtime": 1778876414.847032,
+    "ast_hash": "51e2cdd3ba224442e5b1d8b85298087e",
+    "semantic_hash": "51e2cdd3ba224442e5b1d8b85298087e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/services/3x-ui/uninstall/route.ts": {
+    "mtime": 1778876414.8471537,
+    "ast_hash": "619e28b9e5314e1e76be2392bfa7c886",
+    "semantic_hash": "619e28b9e5314e1e76be2392bfa7c886"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/services/[service]/status/route.ts": {
+    "mtime": 1779123407.5599208,
+    "ast_hash": "95c6ae77b8645200185f78b782ea670d",
+    "semantic_hash": "95c6ae77b8645200185f78b782ea670d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/services/awg/install/route.ts": {
+    "mtime": 1778876414.8475113,
+    "ast_hash": "8c9226b8b3ebb161365be79b802152ac",
+    "semantic_hash": "8c9226b8b3ebb161365be79b802152ac"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/services/awg/uninstall/route.ts": {
+    "mtime": 1778876414.8476236,
+    "ast_hash": "e4971b03836a4403ca3c7c97ae770124",
+    "semantic_hash": "e4971b03836a4403ca3c7c97ae770124"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/stats/traffic/route.ts": {
+    "mtime": 1780441815.1380885,
+    "ast_hash": "2ace5849ecebb93b6dbc4e74f1cba538",
+    "semantic_hash": "2ace5849ecebb93b6dbc4e74f1cba538"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/stats/traffic/users/route.ts": {
+    "mtime": 1780478911.1012022,
+    "ast_hash": "74c7898afb4aec5004968776482ce12c",
+    "semantic_hash": "74c7898afb4aec5004968776482ce12c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/sync/apply/route.ts": {
+    "mtime": 1781123259.1944993,
+    "ast_hash": "70f3f2bdf71e773eeeaf9cd579e9471b",
+    "semantic_hash": "70f3f2bdf71e773eeeaf9cd579e9471b"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/sync/receive/route.ts": {
+    "mtime": 1781123244.7525861,
+    "ast_hash": "6498c0f8ca05f6fd92e18e7f1e93a08f",
+    "semantic_hash": "6498c0f8ca05f6fd92e18e7f1e93a08f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/sync/route.ts": {
+    "mtime": 1778876414.8483043,
+    "ast_hash": "99be18cf4cd493c420bb13e3e899d0cb",
+    "semantic_hash": "99be18cf4cd493c420bb13e3e899d0cb"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/sync/status/route.ts": {
+    "mtime": 1779123407.598811,
+    "ast_hash": "d13727daf1994fb3eae3f098115b86a8",
+    "semantic_hash": "d13727daf1994fb3eae3f098115b86a8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/tailscale/nodes/route.ts": {
+    "mtime": 1778876414.8485854,
+    "ast_hash": "9e092bc0bdb0099e5f1a954a5dcbc2fe",
+    "semantic_hash": "9e092bc0bdb0099e5f1a954a5dcbc2fe"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/tailscale/setup/advertise/route.ts": {
+    "mtime": 1779123407.604711,
+    "ast_hash": "b972218772fb6a0c17ab35802e48b74a",
+    "semantic_hash": "b972218772fb6a0c17ab35802e48b74a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/tailscale/setup/verify/route.ts": {
+    "mtime": 1779219022.3205345,
+    "ast_hash": "056d13ade169cba23b1929d1f8834094",
+    "semantic_hash": "056d13ade169cba23b1929d1f8834094"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/tailscale/status/route.ts": {
+    "mtime": 1779219022.493235,
+    "ast_hash": "0ceb598afc41db1658e5e2718db12314",
+    "semantic_hash": "0ceb598afc41db1658e5e2718db12314"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/users/[id]/block/route.ts": {
+    "mtime": 1781123047.420666,
+    "ast_hash": "41023ae41dd43964ff7bff284dc99881",
+    "semantic_hash": "41023ae41dd43964ff7bff284dc99881"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/users/[id]/quota/route.ts": {
+    "mtime": 1781123075.232032,
+    "ast_hash": "436dd63710ec0adc8abe8364b5e9d083",
+    "semantic_hash": "436dd63710ec0adc8abe8364b5e9d083"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/users/[id]/route.ts": {
+    "mtime": 1781123033.7810974,
+    "ast_hash": "9b994cc806c009cb6eb5cc40e24d49ee",
+    "semantic_hash": "9b994cc806c009cb6eb5cc40e24d49ee"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/users/[id]/speed/route.ts": {
+    "mtime": 1781123089.746366,
+    "ast_hash": "4d9b41340a3b4a628b7801dd6586f2fc",
+    "semantic_hash": "4d9b41340a3b4a628b7801dd6586f2fc"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/users/[id]/unblock/route.ts": {
+    "mtime": 1781123062.138254,
+    "ast_hash": "d41274e378a75193c7a02e283071965c",
+    "semantic_hash": "d41274e378a75193c7a02e283071965c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/api/users/route.ts": {
+    "mtime": 1781123017.3941627,
+    "ast_hash": "e8278e6af6d080ff309937167af1ac10",
+    "semantic_hash": "e8278e6af6d080ff309937167af1ac10"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/layout.tsx": {
+    "mtime": 1780124416.7494993,
+    "ast_hash": "423c5b0ec56a82a2c60fe95d2cb968c5",
+    "semantic_hash": "423c5b0ec56a82a2c60fe95d2cb968c5"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/page.tsx": {
+    "mtime": 1778876414.849959,
+    "ast_hash": "ce774ed9c243edcdbd0639edcc6ae838",
+    "semantic_hash": "ce774ed9c243edcdbd0639edcc6ae838"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/auth-guard.tsx": {
+    "mtime": 1778876414.8500686,
+    "ast_hash": "25c0a9c0b79f4064fdc5a95074a28c03",
+    "semantic_hash": "25c0a9c0b79f4064fdc5a95074a28c03"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/chains/chain-builder.tsx": {
+    "mtime": 1779123407.692995,
+    "ast_hash": "b9d5951c3cb7d0ae58f061c479c41b08",
+    "semantic_hash": "b9d5951c3cb7d0ae58f061c479c41b08"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/chains/chain-flow-editor.tsx": {
+    "mtime": 1780124416.7499154,
+    "ast_hash": "1c0ffac611a35e2c44a81a73ca4761d7",
+    "semantic_hash": "1c0ffac611a35e2c44a81a73ca4761d7"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/chains/chain-flow-node.tsx": {
+    "mtime": 1779123407.7188182,
+    "ast_hash": "ed8fb04a572b9ca470648645fc9663b6",
+    "semantic_hash": "ed8fb04a572b9ca470648645fc9663b6"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/chains/chain-node-routing-drawer.tsx": {
+    "mtime": 1780124416.7502706,
+    "ast_hash": "de124cde3716a655d9c663e6bc447808",
+    "semantic_hash": "de124cde3716a655d9c663e6bc447808"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/chains/chain-node.tsx": {
+    "mtime": 1779123407.7805207,
+    "ast_hash": "05740278297014063d5272c0b5aa8970",
+    "semantic_hash": "05740278297014063d5272c0b5aa8970"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/chains/chain-templates-list.tsx": {
+    "mtime": 1779123407.7860453,
+    "ast_hash": "6214e65ab990693c7647e6f397f8a101",
+    "semantic_hash": "6214e65ab990693c7647e6f397f8a101"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/chains/chain-visualization.tsx": {
+    "mtime": 1779219023.0698936,
+    "ast_hash": "f713e3ba0a75ecef564421c229d5cdd7",
+    "semantic_hash": "f713e3ba0a75ecef564421c229d5cdd7"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/chains/panel-group-node.tsx": {
+    "mtime": 1779123407.8017118,
+    "ast_hash": "ec9fa7821606f2da4fe1604dd5df785a",
+    "semantic_hash": "ec9fa7821606f2da4fe1604dd5df785a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/config/config-list.tsx": {
+    "mtime": 1780124416.7506194,
+    "ast_hash": "e23a9bbccfe5d48969e781118b86ef80",
+    "semantic_hash": "e23a9bbccfe5d48969e781118b86ef80"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/alert-banner.tsx": {
+    "mtime": 1779123407.823564,
+    "ast_hash": "76ce5c011512bf82136ccaadc339c1e4",
+    "semantic_hash": "76ce5c011512bf82136ccaadc339c1e4"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/empty-panel-cta.tsx": {
+    "mtime": 1778876414.8513196,
+    "ast_hash": "d58ec98663ce52a2d8710eaf1f565a9d",
+    "semantic_hash": "d58ec98663ce52a2d8710eaf1f565a9d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/fleet-health-strip.tsx": {
+    "mtime": 1779123407.8290942,
+    "ast_hash": "a3ae1e8d160b4b38a603f7b049625508",
+    "semantic_hash": "a3ae1e8d160b4b38a603f7b049625508"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/metrics-cards.tsx": {
+    "mtime": 1779218999.6050012,
+    "ast_hash": "91b1483fb1120e71f7ad86a1c99182b0",
+    "semantic_hash": "91b1483fb1120e71f7ad86a1c99182b0"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/multi-panel-section.tsx": {
+    "mtime": 1778876414.8515043,
+    "ast_hash": "b5b995ef2e5ceaf2e0db15c098f6c8f9",
+    "semantic_hash": "b5b995ef2e5ceaf2e0db15c098f6c8f9"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/panel-card-expanded.tsx": {
+    "mtime": 1780124416.7508428,
+    "ast_hash": "468c2f931b349a37c19df34cf308d492",
+    "semantic_hash": "468c2f931b349a37c19df34cf308d492"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/panel-card.tsx": {
+    "mtime": 1778876414.851625,
+    "ast_hash": "1c86d633cac817766c251a1d2600e57f",
+    "semantic_hash": "1c86d633cac817766c251a1d2600e57f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/resource-monitor.tsx": {
+    "mtime": 1778876414.8516843,
+    "ast_hash": "bafb7d2087ac19d6b3e26079509aea53",
+    "semantic_hash": "bafb7d2087ac19d6b3e26079509aea53"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/traffic-chart.tsx": {
+    "mtime": 1779218999.7155733,
+    "ast_hash": "db382e1a1edcfd20a1c837565026db2a",
+    "semantic_hash": "db382e1a1edcfd20a1c837565026db2a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/dashboard/traffic-stats.tsx": {
+    "mtime": 1779218999.8330004,
+    "ast_hash": "ff9f61c1ef93ddd375e0a75ed0dc35ef",
+    "semantic_hash": "ff9f61c1ef93ddd375e0a75ed0dc35ef"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/layout/dashboard-layout.tsx": {
+    "mtime": 1779218999.9466634,
+    "ast_hash": "0ac75c4652d3f466da6c56a031326f13",
+    "semantic_hash": "0ac75c4652d3f466da6c56a031326f13"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/layout/error-boundary.tsx": {
+    "mtime": 1779123407.8934796,
+    "ast_hash": "fb87cf4209985442fca48c409ea73813",
+    "semantic_hash": "fb87cf4209985442fca48c409ea73813"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/layout/header.tsx": {
+    "mtime": 1778876414.8521087,
+    "ast_hash": "fab9c7a1a37774b4ff4ac790fcac7673",
+    "semantic_hash": "fab9c7a1a37774b4ff4ac790fcac7673"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/layout/loading-spinner.tsx": {
+    "mtime": 1779123407.9073124,
+    "ast_hash": "52043bd905a73889d64af95cba771f6b",
+    "semantic_hash": "52043bd905a73889d64af95cba771f6b"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/layout/sidebar.tsx": {
+    "mtime": 1779123407.9302537,
+    "ast_hash": "905d9a60775b8bb1cf7f67a8ce6a966d",
+    "semantic_hash": "905d9a60775b8bb1cf7f67a8ce6a966d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/panels/add-panel-form.tsx": {
+    "mtime": 1779123407.951325,
+    "ast_hash": "5a5953da7bfa1ca19b43a6f27ac73c2d",
+    "semantic_hash": "5a5953da7bfa1ca19b43a6f27ac73c2d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/panels/edit-panel-form.tsx": {
+    "mtime": 1779123407.9585233,
+    "ast_hash": "d05aa9a1b526633407c9ee2ace9dc65c",
+    "semantic_hash": "d05aa9a1b526633407c9ee2ace9dc65c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/panels/panel-details-drawer.tsx": {
+    "mtime": 1779123407.9640844,
+    "ast_hash": "3ba8334100e0fa934c9418ed3384bf41",
+    "semantic_hash": "3ba8334100e0fa934c9418ed3384bf41"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/panels/panel-list.tsx": {
+    "mtime": 1780124416.751069,
+    "ast_hash": "21398f2accea4f081e59705b63afeba0",
+    "semantic_hash": "21398f2accea4f081e59705b63afeba0"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/panels/panel-status-badge.tsx": {
+    "mtime": 1779123407.9772935,
+    "ast_hash": "e35af366a240447ec0eff7176bb3d82f",
+    "semantic_hash": "e35af366a240447ec0eff7176bb3d82f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/providers.tsx": {
+    "mtime": 1779123407.9807682,
+    "ast_hash": "d7539d012a419dcb2af1cf04176df6d4",
+    "semantic_hash": "d7539d012a419dcb2af1cf04176df6d4"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/push/chain-template-selector.tsx": {
+    "mtime": 1779219009.8741834,
+    "ast_hash": "ac5955aad979ae4b3a573eea6e96a20c",
+    "semantic_hash": "ac5955aad979ae4b3a573eea6e96a20c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/push/config-diff-view.tsx": {
+    "mtime": 1779123407.9913495,
+    "ast_hash": "33e6c324b758208cd00b3dcbf4d7cc45",
+    "semantic_hash": "33e6c324b758208cd00b3dcbf4d7cc45"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/push/error-recommendation.tsx": {
+    "mtime": 1779219052.225915,
+    "ast_hash": "0aa641b2ebd06758e3723e55a0db409e",
+    "semantic_hash": "0aa641b2ebd06758e3723e55a0db409e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/push/panel-selector.tsx": {
+    "mtime": 1779123408.0010936,
+    "ast_hash": "aff23de8f750f1d89f42fca14efb1059",
+    "semantic_hash": "aff23de8f750f1d89f42fca14efb1059"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/push/push-progress-tracker.tsx": {
+    "mtime": 1779123408.0049095,
+    "ast_hash": "dbb54436598d13c99a7c774b834b81d3",
+    "semantic_hash": "dbb54436598d13c99a7c774b834b81d3"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/push/push-result-summary.tsx": {
+    "mtime": 1779219052.3454225,
+    "ast_hash": "c452f4935daba8c715e170f365f32149",
+    "semantic_hash": "c452f4935daba8c715e170f365f32149"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/push/push-wizard.tsx": {
+    "mtime": 1780124416.751496,
+    "ast_hash": "248906eb6a4509db7946493ea9aa04d3",
+    "semantic_hash": "248906eb6a4509db7946493ea9aa04d3"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/create-routing-rule-form.tsx": {
+    "mtime": 1779123408.034509,
+    "ast_hash": "3187adfd1170b11d8a91e2c6eb91ec64",
+    "semantic_hash": "3187adfd1170b11d8a91e2c6eb91ec64"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/empty-state-starter.tsx": {
+    "mtime": 1779123408.03664,
+    "ast_hash": "75114ceed98d86f2a9980914a2d2cfdf",
+    "semantic_hash": "75114ceed98d86f2a9980914a2d2cfdf"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/geo-rule-drawer.tsx": {
+    "mtime": 1779220046.7849023,
+    "ast_hash": "74d9cd0284d95f33b026fc2cd5bb929b",
+    "semantic_hash": "74d9cd0284d95f33b026fc2cd5bb929b"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/geo-rules-list.tsx": {
+    "mtime": 1780124416.7517529,
+    "ast_hash": "17797e84d6f8e91f62524a88f1e325d6",
+    "semantic_hash": "17797e84d6f8e91f62524a88f1e325d6"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/geoip-status-badge.tsx": {
+    "mtime": 1780124416.7520018,
+    "ast_hash": "a041c5f65a2c1ef74dc722fea38b55d7",
+    "semantic_hash": "a041c5f65a2c1ef74dc722fea38b55d7"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/routing-rules-list.tsx": {
+    "mtime": 1780124416.7522402,
+    "ast_hash": "3d21695d21fa9355d2ccb52e2fc7bee4",
+    "semantic_hash": "3d21695d21fa9355d2ccb52e2fc7bee4"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/routing-rules-tabs.tsx": {
+    "mtime": 1779123408.1358557,
+    "ast_hash": "5810342ab502b3d216629ffa639c0009",
+    "semantic_hash": "5810342ab502b3d216629ffa639c0009"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/template-apply-drawer.tsx": {
+    "mtime": 1780124416.7525227,
+    "ast_hash": "c24706d682f099740a608cb7cedf84b6",
+    "semantic_hash": "c24706d682f099740a608cb7cedf84b6"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/template-gallery.tsx": {
+    "mtime": 1779219936.148628,
+    "ast_hash": "104954eb9546f948df8ccb8406046d5d",
+    "semantic_hash": "104954eb9546f948df8ccb8406046d5d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/routing/whitelist-manager.tsx": {
+    "mtime": 1780124416.752839,
+    "ast_hash": "ce57d764137944dd304f49992758d9e3",
+    "semantic_hash": "ce57d764137944dd304f49992758d9e3"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/servers/add-server-form.tsx": {
+    "mtime": 1779123408.1615644,
+    "ast_hash": "d909dfcaffb5ce81a5627745c13f4d07",
+    "semantic_hash": "d909dfcaffb5ce81a5627745c13f4d07"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/servers/server-config.tsx": {
+    "mtime": 1780478911.1017,
+    "ast_hash": "78658d35aeb7ef535bf22f1f70d77ade",
+    "semantic_hash": "78658d35aeb7ef535bf22f1f70d77ade"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/servers/server-list.tsx": {
+    "mtime": 1780124416.75332,
+    "ast_hash": "d0b98b24d6a7f0bc1f0ae96f1bee09ec",
+    "semantic_hash": "d0b98b24d6a7f0bc1f0ae96f1bee09ec"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/services/configuration-display.tsx": {
+    "mtime": 1779123408.1827898,
+    "ast_hash": "0f375c2b0f0b475d326a4221761c87f5",
+    "semantic_hash": "0f375c2b0f0b475d326a4221761c87f5"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/services/service-status.tsx": {
+    "mtime": 1779123408.1862102,
+    "ast_hash": "5c9f319d3e857463a3e009ef6931ff0a",
+    "semantic_hash": "5c9f319d3e857463a3e009ef6931ff0a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/templates/chain-presets-grid.tsx": {
+    "mtime": 1779219960.058006,
+    "ast_hash": "35272d19f8a9dc13aa9d5caa3cc545bc",
+    "semantic_hash": "35272d19f8a9dc13aa9d5caa3cc545bc"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/templates/protocol-templates-grid.tsx": {
+    "mtime": 1779219971.8780866,
+    "ast_hash": "49a0114e0e00209c457e6444d3b98aa5",
+    "semantic_hash": "49a0114e0e00209c457e6444d3b98aa5"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/templates/routing-presets-grid.tsx": {
+    "mtime": 1779219985.302167,
+    "ast_hash": "0e8f7dca8c10d8cf13b6840d04712658",
+    "semantic_hash": "0e8f7dca8c10d8cf13b6840d04712658"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/templates/save-template-dialog.tsx": {
+    "mtime": 1779220057.3893712,
+    "ast_hash": "2563833a572fba41e89df0646a02a418",
+    "semantic_hash": "2563833a572fba41e89df0646a02a418"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/templates/server-presets-grid.tsx": {
+    "mtime": 1780124416.753582,
+    "ast_hash": "8f0287ed32c81e936046f3b393821dc8",
+    "semantic_hash": "8f0287ed32c81e936046f3b393821dc8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/templates/template-gallery-page.tsx": {
+    "mtime": 1779123408.2126222,
+    "ast_hash": "c1c44b52ff74f8960507a6efcba7ecb8",
+    "semantic_hash": "c1c44b52ff74f8960507a6efcba7ecb8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/templates/template-preview-modal.tsx": {
+    "mtime": 1779123408.219994,
+    "ast_hash": "402c2c8835f1022900c995d1074fc863",
+    "semantic_hash": "402c2c8835f1022900c995d1074fc863"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/ui/button.tsx": {
+    "mtime": 1778876414.8555577,
+    "ast_hash": "3c51287808b0b89ba994d593d154596c",
+    "semantic_hash": "3c51287808b0b89ba994d593d154596c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/ui/card.tsx": {
+    "mtime": 1778876414.855639,
+    "ast_hash": "e0c5e8d4b942a90b64ebb5d514ca9eeb",
+    "semantic_hash": "e0c5e8d4b942a90b64ebb5d514ca9eeb"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/ui/collapsible.tsx": {
+    "mtime": 1778876414.855722,
+    "ast_hash": "15ec927773309de4253abba0e4702da2",
+    "semantic_hash": "15ec927773309de4253abba0e4702da2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/ui/dialog.tsx": {
+    "mtime": 1778876414.855806,
+    "ast_hash": "89cdf9813eb8658a271afd78dd9a614c",
+    "semantic_hash": "89cdf9813eb8658a271afd78dd9a614c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/ui/input.tsx": {
+    "mtime": 1778876414.8558798,
+    "ast_hash": "c8b3b0ba60d883ae6659f26d8fcb6a32",
+    "semantic_hash": "c8b3b0ba60d883ae6659f26d8fcb6a32"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/create-user-form.tsx": {
+    "mtime": 1779123408.2427225,
+    "ast_hash": "b9e8d956282c9b4fc5e22112b02c8e5a",
+    "semantic_hash": "b9e8d956282c9b4fc5e22112b02c8e5a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/create-user-modal.tsx": {
+    "mtime": 1779123408.2465892,
+    "ast_hash": "4596a22a31bcd56fbaada7a7a05c463f",
+    "semantic_hash": "4596a22a31bcd56fbaada7a7a05c463f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/edit-user-form.tsx": {
+    "mtime": 1779123408.2668853,
+    "ast_hash": "b7997d53b045a5616523f52f2f39b095",
+    "semantic_hash": "b7997d53b045a5616523f52f2f39b095"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/edit-user-modal.tsx": {
+    "mtime": 1779123408.27692,
+    "ast_hash": "2bcb9517cb757248ab9e80e1dbcfc8cd",
+    "semantic_hash": "2bcb9517cb757248ab9e80e1dbcfc8cd"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/user-empty-state.tsx": {
+    "mtime": 1779123408.2792282,
+    "ast_hash": "9ade3c14ef2951e5db9fcc63b0f463b8",
+    "semantic_hash": "9ade3c14ef2951e5db9fcc63b0f463b8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/user-list.tsx": {
+    "mtime": 1780124416.753951,
+    "ast_hash": "91af2c828bce69a97b67d192d3c862d9",
+    "semantic_hash": "91af2c828bce69a97b67d192d3c862d9"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/user-quota-form.tsx": {
+    "mtime": 1778876414.85658,
+    "ast_hash": "c140f886de2cba667d89460de030876f",
+    "semantic_hash": "c140f886de2cba667d89460de030876f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/user-quota-modal.tsx": {
+    "mtime": 1779123408.296305,
+    "ast_hash": "792c3a6d9ef9757d89564e57afc83b40",
+    "semantic_hash": "792c3a6d9ef9757d89564e57afc83b40"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/user-service-badge.tsx": {
+    "mtime": 1779123408.298254,
+    "ast_hash": "e2184ae8f3343426aed26b9af418b30f",
+    "semantic_hash": "e2184ae8f3343426aed26b9af418b30f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/user-speed-form.tsx": {
+    "mtime": 1779123408.3019373,
+    "ast_hash": "da74b8787c956a261c2c2d1358ed0735",
+    "semantic_hash": "da74b8787c956a261c2c2d1358ed0735"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/user-status-badge.tsx": {
+    "mtime": 1778876414.856902,
+    "ast_hash": "cee28b8c5bcafe80e0bdd5aaca1aaed7",
+    "semantic_hash": "cee28b8c5bcafe80e0bdd5aaca1aaed7"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/components/users/user-table-skeleton.tsx": {
+    "mtime": 1779123408.305452,
+    "ast_hash": "6ed24894e888d9c2953621337a077f34",
+    "semantic_hash": "6ed24894e888d9c2953621337a077f34"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-alerts.ts": {
+    "mtime": 1779123408.3109374,
+    "ast_hash": "9625524756be8b4bbbc79a3598c3d00c",
+    "semantic_hash": "9625524756be8b4bbbc79a3598c3d00c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-chain-status.ts": {
+    "mtime": 1780124416.754294,
+    "ast_hash": "fd2f1893c4998254af06a1da2f8a54b2",
+    "semantic_hash": "fd2f1893c4998254af06a1da2f8a54b2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-dashboard-stats.ts": {
+    "mtime": 1779123408.318009,
+    "ast_hash": "df22f477462786380f08e41a64c845c9",
+    "semantic_hash": "df22f477462786380f08e41a64c845c9"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-multi-panel-status.ts": {
+    "mtime": 1778876414.8573563,
+    "ast_hash": "e5096aa27d23179e2fff6aad8fba86e9",
+    "semantic_hash": "e5096aa27d23179e2fff6aad8fba86e9"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-service-status.ts": {
+    "mtime": 1779123408.3219616,
+    "ast_hash": "cbdd406b74414fdf3380fc2d162f2c1e",
+    "semantic_hash": "cbdd406b74414fdf3380fc2d162f2c1e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-system-resources.ts": {
+    "mtime": 1778876414.8574796,
+    "ast_hash": "25db4ebc3833ad9b99cd3f839d83bf5d",
+    "semantic_hash": "25db4ebc3833ad9b99cd3f839d83bf5d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-top-user-traffic.ts": {
+    "mtime": 1779123408.325139,
+    "ast_hash": "cf4efe0f5848c39728b791f9be568cc6",
+    "semantic_hash": "cf4efe0f5848c39728b791f9be568cc6"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-traffic-stats.ts": {
+    "mtime": 1779123408.3269267,
+    "ast_hash": "2a011440acf55f0f96cdc7163ee0fca8",
+    "semantic_hash": "2a011440acf55f0f96cdc7163ee0fca8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-users.ts": {
+    "mtime": 1778876414.8576827,
+    "ast_hash": "531755f68d420efb384979db1e32294d",
+    "semantic_hash": "531755f68d420efb384979db1e32294d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/hooks/use-websocket.ts": {
+    "mtime": 1780617137.323229,
+    "ast_hash": "2dce9e545958670419161491bbe81970",
+    "semantic_hash": "2dce9e545958670419161491bbe81970"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/api-response.test.ts": {
+    "mtime": 1780478911.1018167,
+    "ast_hash": "0f3efb4ea317904b49eb100186ca2515",
+    "semantic_hash": "0f3efb4ea317904b49eb100186ca2515"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/audit-safe-policy.test.ts": {
+    "mtime": 1781106425.1114306,
+    "ast_hash": "27be111c855097950852c4463f09fd0e",
+    "semantic_hash": "27be111c855097950852c4463f09fd0e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/build-automation-pr-body.test.ts": {
+    "mtime": 1780617137.3254068,
+    "ast_hash": "5a9b0b9e7c8e085258798f1ea0ef456d",
+    "semantic_hash": "5a9b0b9e7c8e085258798f1ea0ef456d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/build-metrics.test.ts": {
+    "mtime": 1780482552.3622482,
+    "ast_hash": "f5a4e009839c63e0e55f0bbf618d8ce1",
+    "semantic_hash": "f5a4e009839c63e0e55f0bbf618d8ce1"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/build-server-panel-map.test.ts": {
+    "mtime": 1780478911.1020746,
+    "ast_hash": "ad9a54a72ea0ebd9ddc3e8f5d7aa16ba",
+    "semantic_hash": "ad9a54a72ea0ebd9ddc3e8f5d7aa16ba"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/chain-flow-utils.test.ts": {
+    "mtime": 1780529450.269875,
+    "ast_hash": "d0b4c34620bc6f27276a4e23d6a290de",
+    "semantic_hash": "d0b4c34620bc6f27276a4e23d6a290de"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/chain-layout.test.ts": {
+    "mtime": 1781113970.3947656,
+    "ast_hash": "b09ec5f1cd1deb137c2b48c473d48f52",
+    "semantic_hash": "b09ec5f1cd1deb137c2b48c473d48f52"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/chain-presets.test.ts": {
+    "mtime": 1781113970.3950171,
+    "ast_hash": "022e3388e3c95cc5a7fc156e6f11215c",
+    "semantic_hash": "022e3388e3c95cc5a7fc156e6f11215c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/chain-router.test.ts": {
+    "mtime": 1780478911.103009,
+    "ast_hash": "db4107e5a4bb6828cffe24739fd2d5e6",
+    "semantic_hash": "db4107e5a4bb6828cffe24739fd2d5e6"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/classify-claude-retry.test.ts": {
+    "mtime": 1781106425.1118512,
+    "ast_hash": "52083b7588afa74dea546e372a265f05",
+    "semantic_hash": "52083b7588afa74dea546e372a265f05"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/config-applier.test.ts": {
+    "mtime": 1779123408.3493097,
+    "ast_hash": "2bd0c69410ba83ae3f73dd514129032f",
+    "semantic_hash": "2bd0c69410ba83ae3f73dd514129032f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/config-diff.test.ts": {
+    "mtime": 1780617137.3265893,
+    "ast_hash": "eedf3966169555f4e5bb94fb598a46ef",
+    "semantic_hash": "eedf3966169555f4e5bb94fb598a46ef"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/config-presets.test.ts": {
+    "mtime": 1781106425.1120262,
+    "ast_hash": "5b15035e27e1a96b79bcd0498bc40d0e",
+    "semantic_hash": "5b15035e27e1a96b79bcd0498bc40d0e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/constants.test.ts": {
+    "mtime": 1781113970.3953242,
+    "ast_hash": "a2f988c4d9cccf9a6cb10d523bc6ff83",
+    "semantic_hash": "a2f988c4d9cccf9a6cb10d523bc6ff83"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/error-reporter.test.ts": {
+    "mtime": 1781113970.3958113,
+    "ast_hash": "fd83c2fb2bb8a381966a64bdf14c5289",
+    "semantic_hash": "fd83c2fb2bb8a381966a64bdf14c5289"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/find-duplicate-automation-pr.test.ts": {
+    "mtime": 1781106425.112236,
+    "ast_hash": "8708e09e6572c1ce94aeb58fb4e966bc",
+    "semantic_hash": "8708e09e6572c1ce94aeb58fb4e966bc"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/fix-issue-workflow.test.ts": {
+    "mtime": 1781106425.11253,
+    "ast_hash": "49797685b82d03c311d2f6b31e5540a3",
+    "semantic_hash": "49797685b82d03c311d2f6b31e5540a3"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/format.test.ts": {
+    "mtime": 1781113970.396074,
+    "ast_hash": "70c50837f6af1c99255ec840b103543c",
+    "semantic_hash": "70c50837f6af1c99255ec840b103543c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/geo-routing.test.ts": {
+    "mtime": 1780478911.1034117,
+    "ast_hash": "b84559f033bf0dcbf0e597c304022248",
+    "semantic_hash": "b84559f033bf0dcbf0e597c304022248"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/geoip-manager.test.ts": {
+    "mtime": 1780615511.374137,
+    "ast_hash": "c318bd08d94165d8ed9ce346ceeb7d60",
+    "semantic_hash": "c318bd08d94165d8ed9ce346ceeb7d60"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/hmac.test.ts": {
+    "mtime": 1780478911.1035244,
+    "ast_hash": "7b746307682a204b16ce401491016155",
+    "semantic_hash": "7b746307682a204b16ce401491016155"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/navigation.test.ts": {
+    "mtime": 1781113970.3963058,
+    "ast_hash": "68ba384d52e5cb976c632d0fb0292db6",
+    "semantic_hash": "68ba384d52e5cb976c632d0fb0292db6"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/orchestrate-pr-flow.test.ts": {
+    "mtime": 1781106425.1131558,
+    "ast_hash": "5ad792c477a3e32d72065990195c9931",
+    "semantic_hash": "5ad792c477a3e32d72065990195c9931"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/panel-health-checker.test.ts": {
+    "mtime": 1781113970.396847,
+    "ast_hash": "e88dc33e05fb8b6f00cebe415994b056",
+    "semantic_hash": "e88dc33e05fb8b6f00cebe415994b056"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/panel-sync-client.test.ts": {
+    "mtime": 1780478911.1043165,
+    "ast_hash": "cbf8c9e05a793aadc49bb65453c47969",
+    "semantic_hash": "cbf8c9e05a793aadc49bb65453c47969"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/parse-claude-execution.test.ts": {
+    "mtime": 1780615511.3751447,
+    "ast_hash": "bbcd198306f8736e1c20a2287625ccac",
+    "semantic_hash": "bbcd198306f8736e1c20a2287625ccac"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/pr-flow-watchdog.test.ts": {
+    "mtime": 1781106425.1137044,
+    "ast_hash": "2c61cc77f5906f8609009979eabba638",
+    "semantic_hash": "2c61cc77f5906f8609009979eabba638"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/protocol-templates.test.ts": {
+    "mtime": 1781106425.1138628,
+    "ast_hash": "5e8a3a6bbec16759b53dc94957f884ba",
+    "semantic_hash": "5e8a3a6bbec16759b53dc94957f884ba"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/quota-monitor.test.ts": {
+    "mtime": 1781113970.3970413,
+    "ast_hash": "b3e88a2170dfc35cb01f49e014ed1d80",
+    "semantic_hash": "b3e88a2170dfc35cb01f49e014ed1d80"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/repair-planning-intake.test.ts": {
+    "mtime": 1780494827.8123288,
+    "ast_hash": "8800e7fe01aa7824cdee8dba3a805626",
+    "semantic_hash": "8800e7fe01aa7824cdee8dba3a805626"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/resource-alerts.test.ts": {
+    "mtime": 1781113970.3976114,
+    "ast_hash": "51384ae597d60f5ee42f8e7f27797377",
+    "semantic_hash": "51384ae597d60f5ee42f8e7f27797377"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/rule-enforcement.test.ts": {
+    "mtime": 1781106425.1140559,
+    "ast_hash": "d88641469847e4d44d6e54a0a52238b2",
+    "semantic_hash": "d88641469847e4d44d6e54a0a52238b2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/run-claude-params-turn-budget.test.ts": {
+    "mtime": 1781106425.1155505,
+    "ast_hash": "30ac9b6997b91efea6aa9750d5236b30",
+    "semantic_hash": "30ac9b6997b91efea6aa9750d5236b30"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/scan-claude-logs.test.ts": {
+    "mtime": 1780615511.3757865,
+    "ast_hash": "0eb2c62380d10bb2d1a2f462b1a86217",
+    "semantic_hash": "0eb2c62380d10bb2d1a2f462b1a86217"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/server-connection.test.ts": {
+    "mtime": 1781113970.3978205,
+    "ast_hash": "ff758c6996c92a30a55ad1a8701c798c",
+    "semantic_hash": "ff758c6996c92a30a55ad1a8701c798c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/transport-resolver.test.ts": {
+    "mtime": 1781113970.39862,
+    "ast_hash": "0509b5725ffa7daa705204cf0e2dc5c1",
+    "semantic_hash": "0509b5725ffa7daa705204cf0e2dc5c1"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/trigger-policy.test.ts": {
+    "mtime": 1781106425.1159434,
+    "ast_hash": "514d13f24aee9abad7ddfb6f72069476",
+    "semantic_hash": "514d13f24aee9abad7ddfb6f72069476"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/upsert-planning-pr.test.ts": {
+    "mtime": 1780494827.8130357,
+    "ast_hash": "f79f457f85e567281504d0ffe768b90f",
+    "semantic_hash": "f79f457f85e567281504d0ffe768b90f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/upsert-pull-request-action.test.ts": {
+    "mtime": 1781106425.1163218,
+    "ast_hash": "143f627e9fcc3066c5b56a175287b293",
+    "semantic_hash": "143f627e9fcc3066c5b56a175287b293"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/workflow-gh-auth-policy.test.ts": {
+    "mtime": 1781112189.5735521,
+    "ast_hash": "e148151ca4079e920f28847c2b0577bc",
+    "semantic_hash": "e148151ca4079e920f28847c2b0577bc"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/workflow-run-timings.test.ts": {
+    "mtime": 1780493143.1190553,
+    "ast_hash": "30366bd14d0122aa13c69bb42ff64067",
+    "semantic_hash": "30366bd14d0122aa13c69bb42ff64067"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/__tests__/workflow-triggers.test.ts": {
+    "mtime": 1781106425.1168053,
+    "ast_hash": "1b15835f064ca660e47d47052e1b5fcf",
+    "semantic_hash": "1b15835f064ca660e47d47052e1b5fcf"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/alert-service.ts": {
+    "mtime": 1779123408.367813,
+    "ast_hash": "beb3e7f01428f7bbd30dd8b66a31ea22",
+    "semantic_hash": "beb3e7f01428f7bbd30dd8b66a31ea22"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/api-response.ts": {
+    "mtime": 1780441815.1385107,
+    "ast_hash": "6a712129650adb5687db0814302c9321",
+    "semantic_hash": "6a712129650adb5687db0814302c9321"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/audit-log.ts": {
+    "mtime": 1781122991.396538,
+    "ast_hash": "867c6be03cb2d0cc6361faf46e29c61a",
+    "semantic_hash": "867c6be03cb2d0cc6361faf46e29c61a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/auth-store.ts": {
+    "mtime": 1779123408.374945,
+    "ast_hash": "6018a323fa96374ffb7e2d8df8b4b3c2",
+    "semantic_hash": "6018a323fa96374ffb7e2d8df8b4b3c2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/auth.ts": {
+    "mtime": 1778876414.858629,
+    "ast_hash": "d5ff666230b0f16d3cefb4466929880f",
+    "semantic_hash": "d5ff666230b0f16d3cefb4466929880f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/build-server-panel-map.ts": {
+    "mtime": 1779123408.3992572,
+    "ast_hash": "eed8a2f74cc72406bd9b353d99b4c048",
+    "semantic_hash": "eed8a2f74cc72406bd9b353d99b4c048"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/chain-flow-utils.ts": {
+    "mtime": 1780529450.271395,
+    "ast_hash": "6d550df6cea4b8402bd68fad30fe3ca1",
+    "semantic_hash": "6d550df6cea4b8402bd68fad30fe3ca1"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/chain-layout.ts": {
+    "mtime": 1780478911.105369,
+    "ast_hash": "3e1ff3f57cce50a0d62f8648b684ef4f",
+    "semantic_hash": "3e1ff3f57cce50a0d62f8648b684ef4f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/chain-presets.ts": {
+    "mtime": 1779123408.4189606,
+    "ast_hash": "d3229e440d94693d7ccc7f541f4319ee",
+    "semantic_hash": "d3229e440d94693d7ccc7f541f4319ee"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/chain-router.ts": {
+    "mtime": 1779123408.4274566,
+    "ast_hash": "497bec3a9a41f40df3ef6ac0d4089ff3",
+    "semantic_hash": "497bec3a9a41f40df3ef6ac0d4089ff3"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/chain-templates.ts": {
+    "mtime": 1778876414.8590546,
+    "ast_hash": "a55c439f9dd66bf850ccb3a6aa65eb32",
+    "semantic_hash": "a55c439f9dd66bf850ccb3a6aa65eb32"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/config-applier.ts": {
+    "mtime": 1779123408.438395,
+    "ast_hash": "6f3f7cbf08dbf42a7af133aa65243092",
+    "semantic_hash": "6f3f7cbf08dbf42a7af133aa65243092"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/config-diff.ts": {
+    "mtime": 1780617137.3286595,
+    "ast_hash": "845ff634bc6d322168cc74106ea5308c",
+    "semantic_hash": "845ff634bc6d322168cc74106ea5308c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/config-export.ts": {
+    "mtime": 1778876414.8592749,
+    "ast_hash": "2681f9badd1ca5407506aff5d4291562",
+    "semantic_hash": "2681f9badd1ca5407506aff5d4291562"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/config-generator.ts": {
+    "mtime": 1779123408.458456,
+    "ast_hash": "39ac1f3eb2d39b48c6e7500fdd9b642e",
+    "semantic_hash": "39ac1f3eb2d39b48c6e7500fdd9b642e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/config-import.ts": {
+    "mtime": 1779123408.4624422,
+    "ast_hash": "3b97c8492caae9be6843eddb9c261ae7",
+    "semantic_hash": "3b97c8492caae9be6843eddb9c261ae7"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/config-presets.ts": {
+    "mtime": 1778876414.8594737,
+    "ast_hash": "0e26ff419173c84605850e21e31c1ffe",
+    "semantic_hash": "0e26ff419173c84605850e21e31c1ffe"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/config-templates.ts": {
+    "mtime": 1779123408.469499,
+    "ast_hash": "a8520bcb243fefc17028aea69440af31",
+    "semantic_hash": "a8520bcb243fefc17028aea69440af31"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/constants.ts": {
+    "mtime": 1778876414.8596513,
+    "ast_hash": "dfa5a6c173f8bd8c1aee41c0afaf6d3f",
+    "semantic_hash": "dfa5a6c173f8bd8c1aee41c0afaf6d3f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/error-reporter.ts": {
+    "mtime": 1781113970.399294,
+    "ast_hash": "c1468863c01ce9cad3d70e00f20fb9d9",
+    "semantic_hash": "c1468863c01ce9cad3d70e00f20fb9d9"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/format.ts": {
+    "mtime": 1781113970.3997715,
+    "ast_hash": "94b1a2c3353fee67cbfe4c848969d14d",
+    "semantic_hash": "94b1a2c3353fee67cbfe4c848969d14d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/geo-routing.ts": {
+    "mtime": 1779123408.4828222,
+    "ast_hash": "a23e526a87f4653c2e61fc5a5215b1b2",
+    "semantic_hash": "a23e526a87f4653c2e61fc5a5215b1b2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/geo-rule-migration.ts": {
+    "mtime": 1779123408.4846396,
+    "ast_hash": "7378aebf30f7fd103306e08af3d2fb5e",
+    "semantic_hash": "7378aebf30f7fd103306e08af3d2fb5e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/geo-starter-rules.ts": {
+    "mtime": 1778876414.8599849,
+    "ast_hash": "e0319abbbca67431a35bdf17800ea8b2",
+    "semantic_hash": "e0319abbbca67431a35bdf17800ea8b2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/geoip-manager.ts": {
+    "mtime": 1780615511.3762646,
+    "ast_hash": "66cc6195ef49cd9eb7a4d8a56c5f7735",
+    "semantic_hash": "66cc6195ef49cd9eb7a4d8a56c5f7735"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/hmac.ts": {
+    "mtime": 1779123408.4993799,
+    "ast_hash": "96608521e46a2bd9b2b3824bfc3a9ab1",
+    "semantic_hash": "96608521e46a2bd9b2b3824bfc3a9ab1"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/navigation.ts": {
+    "mtime": 1778876414.8602114,
+    "ast_hash": "6e179401c83cb5af8bbe9b1fd1991473",
+    "semantic_hash": "6e179401c83cb5af8bbe9b1fd1991473"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/panel-health-checker.ts": {
+    "mtime": 1780615511.3768241,
+    "ast_hash": "1b58a6c35fe92e664f5c7b18184eb91b",
+    "semantic_hash": "1b58a6c35fe92e664f5c7b18184eb91b"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/panel-sync-client.ts": {
+    "mtime": 1779123408.5133903,
+    "ast_hash": "e16c278e2c994be595dbf8691ae52d71",
+    "semantic_hash": "e16c278e2c994be595dbf8691ae52d71"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/prisma.ts": {
+    "mtime": 1778876414.860425,
+    "ast_hash": "09a29d7fd34f77e99a31e28d0ad6595a",
+    "semantic_hash": "09a29d7fd34f77e99a31e28d0ad6595a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/protocol-templates.ts": {
+    "mtime": 1779123408.518582,
+    "ast_hash": "497d0606eb30909507e284104408e544",
+    "semantic_hash": "497d0606eb30909507e284104408e544"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/quota-monitor.ts": {
+    "mtime": 1781113970.399969,
+    "ast_hash": "8b0cb122297c2d3e2084fe7306fc2f3f",
+    "semantic_hash": "8b0cb122297c2d3e2084fe7306fc2f3f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/real-time-broadcaster.ts": {
+    "mtime": 1780441815.1402397,
+    "ast_hash": "98ed7bef72b1c57fb83fd0a0291154cb",
+    "semantic_hash": "98ed7bef72b1c57fb83fd0a0291154cb"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/resource-alerts.ts": {
+    "mtime": 1781113970.4004068,
+    "ast_hash": "f5268ed9a233d84e667590199aaa4ec8",
+    "semantic_hash": "f5268ed9a233d84e667590199aaa4ec8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/resource-monitor.ts": {
+    "mtime": 1780441815.1418705,
+    "ast_hash": "c3146d04d2c7bc66e60d393b1ca88725",
+    "semantic_hash": "c3146d04d2c7bc66e60d393b1ca88725"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/rollback-manager.ts": {
+    "mtime": 1779123427.6634548,
+    "ast_hash": "6349001fccfc407d9b0d018e3f67e68c",
+    "semantic_hash": "6349001fccfc407d9b0d018e3f67e68c"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/routing-rule-templates.ts": {
+    "mtime": 1781131276.7086272,
+    "ast_hash": "7522001486fbda8fdb941b90827a242f",
+    "semantic_hash": "7522001486fbda8fdb941b90827a242f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/rule-enforcement.ts": {
+    "mtime": 1779123408.5495243,
+    "ast_hash": "698d52f5f0787bfb9ddc7965dcbec03e",
+    "semantic_hash": "698d52f5f0787bfb9ddc7965dcbec03e"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/seed.ts": {
+    "mtime": 1780441815.1424298,
+    "ast_hash": "4d13bc8ee90fedb7eddb2db3dd3cb161",
+    "semantic_hash": "4d13bc8ee90fedb7eddb2db3dd3cb161"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/server-connection.ts": {
+    "mtime": 1781113970.400792,
+    "ast_hash": "d7341e373f2275664b36ca923d6647ca",
+    "semantic_hash": "d7341e373f2275664b36ca923d6647ca"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/service-monitor.ts": {
+    "mtime": 1781113970.401139,
+    "ast_hash": "eaa368e51ff260d9c8c6ab36b3a923bd",
+    "semantic_hash": "eaa368e51ff260d9c8c6ab36b3a923bd"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/tailscale.ts": {
+    "mtime": 1779123408.5659149,
+    "ast_hash": "df5b65d0af78088adebc040f74f99010",
+    "semantic_hash": "df5b65d0af78088adebc040f74f99010"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/transport-resolver.ts": {
+    "mtime": 1780478911.107197,
+    "ast_hash": "d71e69518cfabdc1435fc67df4632afe",
+    "semantic_hash": "d71e69518cfabdc1435fc67df4632afe"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/user-sync.ts": {
+    "mtime": 1778876414.8614416,
+    "ast_hash": "ce9b5ed52424b50ac53336ac5e061d9a",
+    "semantic_hash": "ce9b5ed52424b50ac53336ac5e061d9a"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/vpn-services.ts": {
+    "mtime": 1781123321.619911,
+    "ast_hash": "5a3294b0581a9d95475fe4681fc25a5f",
+    "semantic_hash": "5a3294b0581a9d95475fe4681fc25a5f"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/lib/websocket.ts": {
+    "mtime": 1779134132.3312304,
+    "ast_hash": "613d990ed52de95f79a11f147414437b",
+    "semantic_hash": "613d990ed52de95f79a11f147414437b"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/middleware.ts": {
+    "mtime": 1781123003.414467,
+    "ast_hash": "9d053aec14fa4cdc10f06cff08bf3c75",
+    "semantic_hash": "9d053aec14fa4cdc10f06cff08bf3c75"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/alert.ts": {
+    "mtime": 1778876414.861772,
+    "ast_hash": "c3cb409958c2b192b8244d10aba8418b",
+    "semantic_hash": "c3cb409958c2b192b8244d10aba8418b"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/api.ts": {
+    "mtime": 1778876414.8618412,
+    "ast_hash": "b8da934ec29f33685ff3e430a40be5a2",
+    "semantic_hash": "b8da934ec29f33685ff3e430a40be5a2"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/auth.ts": {
+    "mtime": 1778876414.8619077,
+    "ast_hash": "b1db5fd9fb14b723ab507bb8548d1836",
+    "semantic_hash": "b1db5fd9fb14b723ab507bb8548d1836"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/chain-flow.ts": {
+    "mtime": 1779051311.775394,
+    "ast_hash": "668f74b17d32438a4ea8e19dfd8856ba",
+    "semantic_hash": "668f74b17d32438a4ea8e19dfd8856ba"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/chain-preset.ts": {
+    "mtime": 1778876414.862154,
+    "ast_hash": "4b2b25724839453b857ab10463d470e1",
+    "semantic_hash": "4b2b25724839453b857ab10463d470e1"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/chain.ts": {
+    "mtime": 1778876414.862227,
+    "ast_hash": "2ed5a5048a7219d5642628e88e36ede7",
+    "semantic_hash": "2ed5a5048a7219d5642628e88e36ede7"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/config-push.ts": {
+    "mtime": 1779123408.5946746,
+    "ast_hash": "ef9a687a9befb7818e19e396c4c98eda",
+    "semantic_hash": "ef9a687a9befb7818e19e396c4c98eda"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/config.ts": {
+    "mtime": 1778876414.8623726,
+    "ast_hash": "d0fb837de2587f7f54b3480ab06a1770",
+    "semantic_hash": "d0fb837de2587f7f54b3480ab06a1770"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/configuration.ts": {
+    "mtime": 1778876414.8624442,
+    "ast_hash": "4300cc04aa336e2df91c0e1297e44478",
+    "semantic_hash": "4300cc04aa336e2df91c0e1297e44478"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/geo-routing.ts": {
+    "mtime": 1778876414.862514,
+    "ast_hash": "b06909d9180236e33bc628b11029114b",
+    "semantic_hash": "b06909d9180236e33bc628b11029114b"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/global.d.ts": {
+    "mtime": 1778969753.986153,
+    "ast_hash": "efad3355eedd411e040fdd26b0cbca39",
+    "semantic_hash": "efad3355eedd411e040fdd26b0cbca39"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/index.ts": {
+    "mtime": 1778876414.8626468,
+    "ast_hash": "a41bfdc9e2d503322494241502f5ea47",
+    "semantic_hash": "a41bfdc9e2d503322494241502f5ea47"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/monitoring.ts": {
+    "mtime": 1778876414.862714,
+    "ast_hash": "ee5440399776b6b8847eb84c93c437fe",
+    "semantic_hash": "ee5440399776b6b8847eb84c93c437fe"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/multi-panel-dashboard.ts": {
+    "mtime": 1778876414.862785,
+    "ast_hash": "f17ea4e16d82c6daf9f3b651b479ebdc",
+    "semantic_hash": "f17ea4e16d82c6daf9f3b651b479ebdc"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/panel-sync.ts": {
+    "mtime": 1778876414.862855,
+    "ast_hash": "9e21ac910058a63c541d525f165567b5",
+    "semantic_hash": "9e21ac910058a63c541d525f165567b5"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/remote-panel.ts": {
+    "mtime": 1779123408.6062653,
+    "ast_hash": "db5621fb73241fb2334d8214bfe385c7",
+    "semantic_hash": "db5621fb73241fb2334d8214bfe385c7"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/routing-rule-template.ts": {
+    "mtime": 1778876414.8629913,
+    "ast_hash": "66a7254310c834aa7e146859912f3dd8",
+    "semantic_hash": "66a7254310c834aa7e146859912f3dd8"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/routing.ts": {
+    "mtime": 1778876414.8630555,
+    "ast_hash": "d21dc766445ddffe3b223009495a841d",
+    "semantic_hash": "d21dc766445ddffe3b223009495a841d"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/server.ts": {
+    "mtime": 1778876414.86312,
+    "ast_hash": "dd2d3f57ec99919219a0fd0565be9074",
+    "semantic_hash": "dd2d3f57ec99919219a0fd0565be9074"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/service.ts": {
+    "mtime": 1778876414.863187,
+    "ast_hash": "2f43196516fd88f1880ce6cc3a0af156",
+    "semantic_hash": "2f43196516fd88f1880ce6cc3a0af156"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/tailscale.ts": {
+    "mtime": 1778876414.8632543,
+    "ast_hash": "7453774ea412a5e3be7d671b9f48c8a5",
+    "semantic_hash": "7453774ea412a5e3be7d671b9f48c8a5"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/user.ts": {
+    "mtime": 1778876414.8633165,
+    "ast_hash": "bbecdbfda9265c690fb438fad9dd9295",
+    "semantic_hash": "bbecdbfda9265c690fb438fad9dd9295"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/types/whitelist.ts": {
+    "mtime": 1778876414.8633847,
+    "ast_hash": "0a168132d79c9c200a9ea4440aab6839",
+    "semantic_hash": "0a168132d79c9c200a9ea4440aab6839"
+  },
+  "/Users/kostua16/Documents/Projects/amnezia-control-panel/src/app/fonts/OFL.txt": {
+    "mtime": 1780124416.7489443,
+    "ast_hash": "563d13575f813953c3151e1ecce3b76f",
+    "semantic_hash": "563d13575f813953c3151e1ecce3b76f"
+  }
+}
