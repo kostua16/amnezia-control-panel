@@ -49,4 +49,23 @@ describe('run-claude-params turn budget prompt', () => {
       ) ?? [];
     assert.equal(allowedToolReferences.length, 3);
   });
+
+  it('normalizes successful execution after action probe failure as soft success', () => {
+    const action = fs.readFileSync(
+      path.join(process.cwd(), '.github/actions/run-claude-params/action.yml'),
+      'utf8',
+    );
+
+    assert.match(action, /claude_soft_success:/);
+    assert.match(action, /claude_soft_success_reason:/);
+    assert.match(action, /CHECK1_SOFT_SUCCESS:/);
+    assert.match(action, /CHECK2_SOFT_SUCCESS:/);
+    assert.match(action, /SOFT_SUCCESS="\$\{!SOFT_SUCCESS_VAR\}"/);
+    assert.match(
+      action,
+      /SCAN_IS_ERROR" == "false" && "\$SCAN_NUM_TURNS" != "" && "\$SCAN_NUM_TURNS" != "null" && "\$SCAN_NUM_TURNS" != "0"/,
+    );
+    assert.match(action, /steps\.check-429-1\.outputs\.soft_success != 'true'/);
+    assert.match(action, /steps\.check-429-2\.outputs\.soft_success != 'true'/);
+  });
 });

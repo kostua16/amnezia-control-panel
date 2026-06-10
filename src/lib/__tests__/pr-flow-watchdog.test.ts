@@ -327,6 +327,17 @@ describe('PR flow workflow invariants', () => {
     );
   });
 
+  it('gates pull_request_target label churn before expensive PR flow steps', () => {
+    const workflow = readWorkflow('.github/workflows/pr-flow.yml');
+
+    assert.match(workflow, /--mode pr-flow-pull-request-target/);
+    assert.match(workflow, /--config-file \.github\/pr-flow\.json/);
+    assert.match(
+      workflow,
+      /github\.event_name != 'pull_request_target' \|\|\s+steps\.pr_event\.outputs\.should_run == 'true'/,
+    );
+  });
+
   it('keeps permissions required for check reads and worker dispatch', () => {
     const permissions = readTopLevelMapping('permissions');
 
