@@ -127,7 +127,8 @@ runs:
         # `gh api user` fails for GitHub App / integration tokens used by
         # several workflows, while `gh auth status` succeeds but includes token
         # metadata that we do not want in logs.
-        auth_status="$(gh auth status -h "$host" 2>&1)"
+        # tolerate non-zero exit — auth was already verified by setup-gh above
+        auth_status="$(gh auth status -h "$host" 2>&1)" || true
         printf '%s\n' "$auth_status" | sed \
           -e '/^[[:space:]]*Token:/d' \
           -e '/^[[:space:]]*Token scopes:/d' \
