@@ -31,6 +31,25 @@ describe('run-claude-params turn budget prompt', () => {
     assert.equal(bufferInstructions.length, 3);
   });
 
+  it('strips the inline comment tool when PR context is absent', () => {
+    const action = fs.readFileSync(
+      path.join(process.cwd(), '.github/actions/run-claude-params/action.yml'),
+      'utf8',
+    );
+
+    assert.match(action, /- name: Resolve allowed tools/);
+    assert.match(
+      action,
+      /if \[\[ -z "\$\{PR_NUMBER:-\}" && "\$tools" == \*"\$inline_comment_tool"\* \]\]; then/,
+    );
+
+    const allowedToolReferences =
+      action.match(
+        /--allowedTools '\$\{\{ steps\.resolve_allowed_tools\.outputs\.tools \}\}'/g,
+      ) ?? [];
+    assert.equal(allowedToolReferences.length, 3);
+  });
+
   it('normalizes successful execution after action probe failure as soft success', () => {
     const action = fs.readFileSync(
       path.join(process.cwd(), '.github/actions/run-claude-params/action.yml'),
