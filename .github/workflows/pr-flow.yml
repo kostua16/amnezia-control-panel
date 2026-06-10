@@ -45,9 +45,19 @@ concurrency:
 jobs:
   orchestrate:
     if: >-
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.pull_requests[0].number ||
-      startsWith(github.event.workflow_run.display_title, 'PR #')
+      (
+        github.event_name != 'workflow_run' ||
+        github.event.workflow_run.pull_requests[0].number ||
+        startsWith(github.event.workflow_run.display_title, 'PR #')
+      ) &&
+      (
+        github.event_name != 'pull_request_target' ||
+        (
+          github.event.action != 'labeled' &&
+          github.event.action != 'unlabeled'
+        ) ||
+        github.event.pull_request.draft != true
+      )
     runs-on: self-hosted
     timeout-minutes: 5
     steps:

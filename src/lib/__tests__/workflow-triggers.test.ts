@@ -19,6 +19,11 @@ type Workflow = {
     pull_request?: PullRequestTrigger;
     pull_request_target?: PullRequestTrigger;
   };
+  jobs?: {
+    orchestrate?: {
+      if?: string;
+    };
+  };
 };
 
 const repoRoot = path.resolve(
@@ -45,5 +50,14 @@ describe('workflow trigger policy', () => {
     const types = workflow.on?.pull_request_target?.types ?? [];
 
     assert.ok(types.includes('ready_for_review'));
+  });
+
+  it('skips label-triggered PR flow jobs while the PR is still draft', () => {
+    const workflow = readWorkflow('pr-flow.yml');
+    const guard = workflow.jobs?.orchestrate?.if ?? '';
+
+    assert.match(guard, /github\.event\.action != 'labeled'/);
+    assert.match(guard, /github\.event\.action != 'unlabeled'/);
+    assert.match(guard, /github\.event\.pull_request\.draft != true/);
   });
 });
