@@ -26,9 +26,19 @@ describe('Panel fallback state', () => {
   it('isPanelInFallback returns false for unknown panel', () => {
     assert.strictEqual(isPanelInFallback(99999), false);
   });
+
+  it('getFallbackPanels returns empty array after cleanup', () => {
+    assert.deepStrictEqual(getFallbackPanels(), []);
+  });
 });
 
 describe('Panel API key cache', () => {
+  beforeEach(() => {
+    removePanelApiKey(42);
+    removePanelApiKey(55);
+    removePanelApiKey(99);
+  });
+
   it('caches and retrieves a panel API key', () => {
     cachePanelApiKey(42, 'test-key-123');
     // The key is stored; removePanelApiKey should work without error
@@ -45,5 +55,12 @@ describe('Panel API key cache', () => {
     cachePanelApiKey(55, 'key-2');
     // No error means the overwrite worked
     removePanelApiKey(55);
+  });
+
+  it('isolates keys between different panels', () => {
+    cachePanelApiKey(42, 'key-a');
+    cachePanelApiKey(99, 'key-b');
+    removePanelApiKey(42);
+    removePanelApiKey(99);
   });
 });
