@@ -33,11 +33,65 @@ permissions:
   actions: write
   issues: write
 jobs:
-  fix:
+  evaluate:
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
-      toJSON(github.event.workflow_run.pull_requests) != '[]' &&
-      !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-')
+      toJSON(github.event.workflow_run.pull_requests) != '[]'
+    runs-on: self-hosted
+    outputs:
+      should_run: ${{ steps.policy.outputs.should_run }}
+      reason: ${{ steps.policy.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read source PR metadata
+        id: source-pr
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = Number(
+              context.payload.workflow_run?.pull_requests?.[0]?.number ?? 0,
+            );
+            if (!prNumber) {
+              core.setFailed('workflow_run did not include a source PR number');
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            const outputPath = `${process.env.RUNNER_TEMP}/fix-pr-source-pr.json`;
+            require('fs').writeFileSync(outputPath, JSON.stringify(pr));
+            core.setOutput('path', outputPath);
+
+      - name: Evaluate PR auto-fix policy
+        id: policy
+        shell: bash
+        run: |
+          result=$(node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode fix-pr \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --source-pr-file "${{ steps.source-pr.outputs.path }}")
+          echo "$result"
+          echo "should_run=$(jq -r '.should_run' <<<"$result")" >> "$GITHUB_OUTPUT"
+          echo "reason=$(jq -r '.reason // \"\"' <<<"$result")" >> "$GITHUB_OUTPUT"
+
+      - name: Log skip reason
+        if: steps.policy.outputs.should_run != 'true'
+        shell: bash
+        run: |
+          echo "Skipping PR auto-fix: ${{ steps.policy.outputs.reason || 'policy declined run' }}"
+
+  fix:
+    needs: [evaluate]
+    if: |
+      needs.evaluate.outputs.should_run == 'true'
     uses: ./.github/workflows/_auto-fix-ci.yml
     with:
       mode: pr
@@ -48,8 +102,11 @@ jobs:
     secrets: inherit
 
   report-failure:
-    needs: [fix]
-    if: failure() && needs.fix.result == 'failure'
+    needs: [evaluate, fix]
+    if: |
+      failure() &&
+      needs.evaluate.outputs.should_run == 'true' &&
+      needs.fix.result == 'failure'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
