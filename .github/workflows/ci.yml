@@ -63,7 +63,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: 'true'
           generate-prisma: 'true'
-          cache-nextjs: 'true'
       - name: Build and measure
         id: build-metrics
         run: |
@@ -77,7 +76,7 @@ jobs:
           node .github/workflows/scripts/build-metrics.cjs write \
             --size-bytes "$SIZE" \
             --duration-seconds "$DURATION" \
-            --next-cache-enabled true \
+            --next-cache-enabled false \
             --output-dir "$RUNNER_TEMP"
         env:
           NEXT_TELEMETRY_DISABLED: '1'
