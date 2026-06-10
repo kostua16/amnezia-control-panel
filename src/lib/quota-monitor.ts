@@ -3,7 +3,7 @@ import { createAlert } from '@/lib/alert-service';
 import type { AlertSeverity } from '@/generated/prisma/enums';
 
 /** Quota alert thresholds in percent */
-const QUOTA_THRESHOLDS = [
+export const QUOTA_THRESHOLDS = [
   { percent: 80, severity: 'WARNING' as AlertSeverity },
   { percent: 90, severity: 'WARNING' as AlertSeverity },
   { percent: 100, severity: 'CRITICAL' as AlertSeverity },
@@ -11,6 +11,16 @@ const QUOTA_THRESHOLDS = [
 
 /** How often to check quotas (ms) */
 export const QUOTA_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Determine which quota thresholds are exceeded by a usage percentage.
+ * Returns thresholds in ascending order (80 → 90 → 100).
+ */
+export function getExceededQuotaThresholds(
+  usagePercent: number,
+): Array<{ percent: number; severity: AlertSeverity }> {
+  return QUOTA_THRESHOLDS.filter((t) => usagePercent >= t.percent);
+}
 
 /**
  * Check all users against their traffic quotas.

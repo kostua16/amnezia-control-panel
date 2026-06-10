@@ -59,4 +59,36 @@ describe('enrichError', () => {
     const result = enrichError('TIMEOUT occurred', 'Panel9');
     assert.equal(result.type, 'connection_timeout');
   });
+
+  it('returns structured result for empty rawError', () => {
+    const result = enrichError('', 'Panel10');
+    assert.equal(result.type, 'unknown');
+    assert.ok(result.message.includes('Panel10'));
+    assert.equal(result.rawError, '');
+    assert.equal(result.knownFix, null);
+    assert.ok(result.recommendation.length > 0);
+  });
+
+  it('always includes all required fields', () => {
+    const cases = [
+      'ETIMEDOUT',
+      '403 Forbidden',
+      'validation failed',
+      'docker container not found',
+      'service not found',
+      'random gibberish',
+    ];
+    for (const raw of cases) {
+      const result = enrichError(raw, 'TestPanel');
+      assert.ok('type' in result, `Missing type for: ${raw}`);
+      assert.ok('message' in result, `Missing message for: ${raw}`);
+      assert.ok(
+        'recommendation' in result,
+        `Missing recommendation for: ${raw}`,
+      );
+      assert.ok('knownFix' in result, `Missing knownFix for: ${raw}`);
+      assert.ok('rawError' in result, `Missing rawError for: ${raw}`);
+      assert.equal(result.rawError, raw);
+    }
+  });
 });
