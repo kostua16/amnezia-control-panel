@@ -28,7 +28,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: 'true'
           generate-prisma: 'true'
-          install-rtk: 'true'
           cache-nextjs: 'true'
 
       - name: Build and measure PR
