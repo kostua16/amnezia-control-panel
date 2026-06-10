@@ -23,10 +23,11 @@ permissions:
 jobs:
   authorize:
     runs-on: self-hosted
+    timeout-minutes: 10
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -48,7 +49,7 @@ jobs:
   fix:
     needs: [authorize]
     runs-on: [self-hosted, big]
-    timeout-minutes: 20
+    timeout-minutes: 10
     if: needs.authorize.outputs.should-run == 'true'
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
@@ -60,7 +61,7 @@ jobs:
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 1
           token: ${{ secrets.GH_PAT }}
@@ -211,8 +212,9 @@ jobs:
     needs: [fix]
     if: failure()
     runs-on: self-hosted
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:

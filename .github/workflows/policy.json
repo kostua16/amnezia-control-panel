@@ -200,6 +200,62 @@
     "antigravity-review-concerns": {
       "color": "b60205",
       "description": "Antigravity AI code review found blocking concerns"
+    },
+    "size/XS": {
+      "color": "c2e0c6",
+      "description": "Pull request changes 20 lines or fewer"
+    },
+    "size/S": {
+      "color": "c2e0c6",
+      "description": "Pull request changes 100 lines or fewer"
+    },
+    "size/M": {
+      "color": "bfd4f2",
+      "description": "Pull request changes 300 lines or fewer"
+    },
+    "size/L": {
+      "color": "fbca04",
+      "description": "Pull request changes 800 lines or fewer"
+    },
+    "size/XL": {
+      "color": "d93f0b",
+      "description": "Pull request changes more than 800 lines"
+    },
+    "area/workflows": {
+      "color": "5319e7",
+      "description": "Changes GitHub Actions workflows or actions"
+    },
+    "area/planning": {
+      "color": "1d76db",
+      "description": "Changes GSD planning artifacts"
+    },
+    "area/docs": {
+      "color": "0075ca",
+      "description": "Changes documentation"
+    },
+    "area/frontend": {
+      "color": "0e8a16",
+      "description": "Changes frontend app or components"
+    },
+    "area/backend": {
+      "color": "d93f0b",
+      "description": "Changes backend routes or server libraries"
+    },
+    "area/database": {
+      "color": "b60205",
+      "description": "Changes database schema, migrations, or Prisma code"
+    },
+    "area/tests": {
+      "color": "bfd4f2",
+      "description": "Changes tests"
+    },
+    "area/dependencies": {
+      "color": "0366d6",
+      "description": "Changes package manifests or lockfiles"
+    },
+    "area/docker": {
+      "color": "0052cc",
+      "description": "Changes Docker or container files"
     }
   }
 }

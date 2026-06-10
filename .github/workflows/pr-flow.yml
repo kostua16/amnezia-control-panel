@@ -59,9 +59,9 @@ jobs:
         github.event.pull_request.draft != true
       )
     runs-on: self-hosted
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Evaluate pull_request_target trigger
         id: pr_event

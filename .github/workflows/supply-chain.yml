@@ -1,0 +1,48 @@
+name: Supply Chain Policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/**'
+      - 'package-lock.json'
+      - 'package.json'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/**'
+      - 'package-lock.json'
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          setup-bun: 'false'
+          require-gh-auth: 'false'
+
+      - name: Verify pinned workflow actions
+        run: node .github/workflows/scripts/workflow-governance-check.cjs
+
+      - name: Verify npm lockfile provenance
+        run: npm audit signatures
+        continue-on-error: true
+
+      - name: Verify lockfile is npm v3+
+        run: |
+          set -euo pipefail
+          node -e "const lock=require('./package-lock.json'); if ((lock.lockfileVersion || 0) < 3) { throw new Error('package-lock.json must use lockfileVersion >= 3'); }"

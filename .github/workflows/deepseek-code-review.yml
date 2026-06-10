@@ -38,6 +38,7 @@ jobs:
   resolve-pr:
     if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
     runs-on: self-hosted
+    timeout-minutes: 10
     outputs:
       should-run: ${{ steps.resolve.outputs.should_run }}
       pr-number: ${{ steps.resolve.outputs.pr_number }}
@@ -45,7 +46,7 @@ jobs:
       base-ref: ${{ steps.resolve.outputs.base_ref }}
       key-available: ${{ steps.check-key.outputs.available }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -54,7 +55,7 @@ jobs:
 
       - name: Resolve PR context
         id: resolve
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
           script: |
             const eventName = context.eventName;
@@ -116,10 +117,10 @@ jobs:
     needs: [resolve-pr]
     if: needs.resolve-pr.outputs.should-run == 'true' && needs.resolve-pr.outputs.key-available == 'true'
     runs-on: [self-hosted, big]
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
           fetch-depth: 0
@@ -182,7 +183,7 @@ jobs:
             Do NOT approve the PR, request changes, or edit PR labels yourself. The workflow handles review signals.
 
       - name: Apply review signal
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         env:
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
           STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}

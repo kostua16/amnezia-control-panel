@@ -38,15 +38,16 @@ jobs:
       github.event.workflow_run.conclusion == 'failure' &&
       toJSON(github.event.workflow_run.pull_requests) != '[]'
     runs-on: self-hosted
+    timeout-minutes: 10
     outputs:
       should_run: ${{ steps.policy.outputs.should_run }}
       reason: ${{ steps.policy.outputs.reason }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Read source PR metadata
         id: source-pr
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -108,8 +109,9 @@ jobs:
       needs.evaluate.outputs.should_run == 'true' &&
       needs.fix.result == 'failure'
     runs-on: self-hosted
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:

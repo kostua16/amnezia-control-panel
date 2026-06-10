@@ -48,8 +48,9 @@ jobs:
     needs: [fix]
     if: failure() && needs.fix.result == 'failure'
     runs-on: self-hosted
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:

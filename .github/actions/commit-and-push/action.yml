@@ -1,13 +1,13 @@
-name: "Commit and Push"
-description: "git add + commit + push with retry (3 attempts, 5s backoff)"
+name: 'Commit and Push'
+description: 'git add + commit + push with retry (3 attempts, 5s backoff)'
 
 inputs:
   branch-name:
-    description: "Target branch to push to"
+    description: 'Target branch to push to'
     required: true
   commit-message:
-    description: "Commit message"
-    default: "fix(ci): auto-fix CI failures"
+    description: 'Commit message'
+    default: 'fix(ci): auto-fix CI failures'
 
 outputs:
   pushed:

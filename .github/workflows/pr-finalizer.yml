@@ -44,8 +44,9 @@ jobs:
       github.event_name != 'workflow_run' ||
       toJSON(github.event.workflow_run.pull_requests) != '[]'
     runs-on: self-hosted
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -242,7 +243,7 @@ jobs:
 
       - name: Upsert finalizer status comment
         if: steps.resolve.outputs.pr_number != '' && steps.metadata.outputs.decision_ready == 'true' && steps.decision.outputs.dry_run != 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           DECISION: ${{ steps.decision.outputs.decision }}
@@ -316,8 +317,9 @@ jobs:
     needs: [finalize]
     if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
     runs-on: self-hosted
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:
