@@ -104,11 +104,12 @@ runs:
 
           if [[ "$ALLOW_UPDATE" == "true" ]]; then
             gh pr edit "$pr_number" --title "$PR_TITLE" --body "$PR_BODY" >/dev/null
-            if [[ "${#label_args[@]}" -gt 0 ]]; then
-              gh pr edit "$pr_number" "${label_args[@]}" >/dev/null 2>&1 || true
-            fi
             if [[ "$PR_DRAFT" == "false" && "$is_draft" == "true" ]]; then
               gh pr ready "$pr_number" >/dev/null 2>&1 || true
+              is_draft="false"
+            fi
+            if [[ "${#label_args[@]}" -gt 0 && ! ( "$PR_DRAFT" == "true" && "$is_draft" == "true" ) ]]; then
+              gh pr edit "$pr_number" "${label_args[@]}" >/dev/null 2>&1 || true
             fi
             updated="true"
           else
@@ -127,7 +128,13 @@ runs:
           create_args+=(--draft)
         fi
 
-        if [[ "${#label_args[@]}" -gt 0 ]]; then
+        if [[ "$PR_DRAFT" == "true" && "${#label_args[@]}" -gt 0 ]]; then
+          echo "::notice::Deferring label application for draft PR creation to avoid duplicate labeled workflow triggers."
+          if ! gh "${create_args[@]}" >/dev/null 2>&1; then
+            echo "::error::Pull request creation failed"
+            exit 1
+          fi
+        elif [[ "${#label_args[@]}" -gt 0 ]]; then
           label_err=$(gh "${create_args[@]}" "${label_args[@]}" 2>&1) && create_rc=0 || create_rc=$?
           if [[ "$create_rc" -ne 0 ]]; then
             echo "::warning::PR creation with labels failed: ${label_err%%$'\n'*}. Retrying without labels."
