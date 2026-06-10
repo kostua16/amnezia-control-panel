@@ -518,6 +518,16 @@ v1.0 audit remediation: 5 requirements (PROJ-*, GAPL-*) mapped to Phases 12.1-12
 v1.1 audit gap closure: 15 requirements (CPUSH-*, CHAIN-01, VISED-03, GEO-03, GEO-04, TSCL-*) -- **12.5-12.7** initial delivery; **12.8-12.12** close closure-audit gaps (contracts, push UX, transport, verification)
 **Nyquist:** No `*-VALIDATION.md` under `12.*` yet -- optional `/gsd-validate-phase` backlog
 
+## Improvement Intake: Architectural Review (2026-06-10)
+
+Source: `/gsd:explore` deep architectural review. Artifact: `.planning/quick/260610-arch-review-improvements/260610-PLAN.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 1 | **GeoIP lookup optimization** — Replace O(n) CIDR linear scan with sorted table + binary search (O(log n)) | High (Perf) | `src/lib/geoip-manager.ts` | Proposed |
+| 2 | **API route handler abstraction** — `withHandler(schema, handler)` wrapper to eliminate duplicated try/catch + Zod + P2002 boilerplate across ~30 route files | Medium (DRY) | `src/lib/api-handler.ts` (new), `src/app/api/**/*.ts` | Proposed |
+| 3 | **Broadcaster query optimization** — Add time-range filter to `trafficLog.aggregate()`, reduce user count queries | Medium (Perf) | `src/lib/real-time-broadcaster.ts` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-05-03 - Phase 12.14 planned: 3 plans (2 waves) for 12.6 and 12.7 VERIFICATION artifacts + REQUIREMENTS.md reconciliation*
+*Last updated: 2026-06-10 - Added architectural review improvement intake (3 proposals from deep codebase audit)*
