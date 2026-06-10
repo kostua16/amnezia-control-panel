@@ -348,6 +348,13 @@ describe('PR flow workflow invariants', () => {
     assert.equal(permissions.get('issues'), 'write');
   });
 
+  it('keeps the orchestrator off the self-hosted runner pool', () => {
+    const workflow = readWorkflow('.github/workflows/pr-flow.yml');
+
+    assert.match(workflow, /runs-on:\s+ubuntu-latest/);
+    assert.doesNotMatch(workflow, /runs-on:\s+self-hosted/);
+  });
+
   it('keeps watchdog permissions required for status recovery reads', () => {
     const permissions = readTopLevelMapping(
       'permissions',
