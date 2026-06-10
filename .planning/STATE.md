@@ -92,7 +92,18 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+8 items captured from review of unpushed commits (2026-06-10):
+
+| # | Area | Title | Severity |
+|---|------|-------|----------|
+| 1 | database | Refactor audit-log.ts to use Prisma model layer | Hard |
+| 2 | api | Replace 3x-ui HTTP REST calls with direct shell access | Hard |
+| 3 | api | Restrict XUI_BASE_URL to localhost/127.0.0.1 | Judgement |
+| 4 | api | Stream rulite import instead of fs.readFileSync | Judgement |
+| 5 | api | Wire importFromRulite() into routing import API | Gap |
+| 6 | api | Add audit logging to routing import endpoint | Gap |
+| 7 | tooling | Fix supply-chain.yml npm audit signatures integrity | Minor |
+| 8 | tooling | Fix dependabot.yml invalid review-automated key | Minor |
 
 ### Blockers/Concerns
 
