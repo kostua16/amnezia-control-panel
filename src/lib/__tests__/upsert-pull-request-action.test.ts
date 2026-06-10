@@ -17,18 +17,46 @@ function readAction(): string {
   return fs.readFileSync(actionPath, 'utf8');
 }
 
-describe('upsert pull request action', () => {
+describe('upsert-pull-request action', () => {
+  it('creates PRs before applying labels and uses add-label for edits', () => {
+    const action = readAction();
+
+    assert.match(action, /edit_label_args=\(\)/);
+    assert.match(action, /edit_label_args\+=\(--add-label "\$label"\)/);
+    assert.match(
+      action,
+      /gh pr edit "\$pr_number" "\$\{edit_label_args\[@\]\}" >/,
+    );
+    assert.doesNotMatch(
+      action,
+      /gh "\$\{create_args\[@\]\}" "\$\{create_label_args\[@\]\}"/,
+    );
+    assert.doesNotMatch(
+      action,
+      /gh "\$\{create_args\[@\]\}" "\$\{edit_label_args\[@\]\}"/,
+    );
+    assert.match(
+      action,
+      /Pull request created without applying one or more labels/,
+    );
+  });
+
   it('defers labels while a pull request remains draft', () => {
     const action = readAction();
 
     assert.ok(
       action.includes(
-        'if [[ "${#label_args[@]}" -gt 0 && ! ( "$PR_DRAFT" == "true" && "$is_draft" == "true" ) ]]; then',
+        'if [[ "${#edit_label_args[@]}" -gt 0 && ! ( "$PR_DRAFT" == "true" && "$is_draft" == "true" ) ]]; then',
       ),
     );
     assert.match(
       action,
       /Deferring label application for draft PR creation to avoid duplicate labeled workflow triggers\./,
+    );
+    assert.ok(
+      action.includes(
+        'if [[ "$PR_DRAFT" == "false" && "${#edit_label_args[@]}" -gt 0 ]]; then',
+      ),
     );
   });
 

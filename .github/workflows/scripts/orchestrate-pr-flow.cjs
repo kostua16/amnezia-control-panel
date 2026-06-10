@@ -1577,13 +1577,20 @@ function syncLabels(prNumber, decision) {
   }
 }
 
+function getWorkerDispatchRef(pr) {
+  return pr.isCrossRepository || !pr.headRefName
+    ? pr.baseRefName
+    : pr.headRefName;
+}
+
 function dispatchWorker(pr, dispatch) {
+  const dispatchRef = getWorkerDispatchRef(pr);
   const args = [
     'workflow',
     'run',
     dispatch.workflow,
     '--ref',
-    pr.baseRefName,
+    dispatchRef,
     '-f',
     `pr_number=${pr.number}`,
     '-f',
@@ -1884,7 +1891,9 @@ if (require.main === module) {
 module.exports = {
   buildFlowVisibility,
   collectCheckEvidence,
+  dispatchWorker,
   decisionWithDispatchError,
+  getWorkerDispatchRef,
   getLabelsForDecision,
   getRequiredCheckStatus,
   makeDecision,

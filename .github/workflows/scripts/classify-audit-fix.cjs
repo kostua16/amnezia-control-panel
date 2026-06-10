@@ -70,9 +70,39 @@ function collectGitDiff() {
   return [...tracked, ...untracked];
 }
 
-function buildBody({ eligible, reason, runId, fileDetails }) {
+function buildSourceRunUrl({ runId, repository, serverUrl }) {
+  const normalizedRunId = String(runId || '').trim();
+  const normalizedRepository = String(repository || '').trim();
+  const normalizedServerUrl = String(serverUrl || '')
+    .trim()
+    .replace(/\/$/, '');
+
+  if (
+    !normalizedRunId ||
+    normalizedRunId === 'local' ||
+    !normalizedRepository ||
+    !normalizedServerUrl
+  ) {
+    return '';
+  }
+
+  return `${normalizedServerUrl}/${normalizedRepository}/actions/runs/${normalizedRunId}`;
+}
+
+function buildBody({
+  eligible,
+  reason,
+  runId,
+  fileDetails,
+  repository,
+  serverUrl,
+}) {
   const lane = eligible ? 'safe auto-merge candidate' : 'manual review';
   const files = fileDetails.map((file) => file.path).join('\n');
+  const sourceRunUrl = buildSourceRunUrl({ runId, repository, serverUrl });
+  const sourceRunEvidence = sourceRunUrl
+    ? `Source run: ${sourceRunUrl}`
+    : `Run ID: ${runId}`;
   const reviewNotes = eligible
     ? 'This PR matched the audit-safe policy and may be auto-merged after CI, AI review, and security review pass.'
     : `This PR is intentionally manual-only under repository policy. Reason: ${reason}.`;
@@ -81,11 +111,14 @@ function buildBody({ eligible, reason, runId, fileDetails }) {
     workflowName: 'audit-fix',
     problem:
       'Autonomous audit-fix found audit findings and produced reviewable changes.',
-    trigger: `Audit fix run ID: ${runId}`,
+    trigger: sourceRunUrl
+      ? `Audit fix source run: [${runId}](${sourceRunUrl})`
+      : `Audit fix run ID: ${runId}`,
     rationale: `Classification: ${lane}. Policy reason: ${reason}.`,
     changedFiles: files,
+    sourceRunUrl,
     evidence: [
-      `Run ID: ${runId}`,
+      sourceRunEvidence,
       `Classification: ${lane}`,
       `Reason: ${reason}`,
     ].join('\n'),
@@ -93,7 +126,14 @@ function buildBody({ eligible, reason, runId, fileDetails }) {
   });
 }
 
-function classifyAuditFix({ mode, policy, runId, fileDetails }) {
+function classifyAuditFix({
+  mode,
+  policy,
+  runId,
+  fileDetails,
+  repository,
+  serverUrl,
+}) {
   const auditSafe = policy.auditSafe ?? {};
   const manualPrefix = auditSafe.manualBranchPrefix ?? 'claude-audit-fix-';
   const safePrefix = auditSafe.safeBranchPrefix ?? 'claude-audit-safe-fix-';
@@ -122,7 +162,14 @@ function classifyAuditFix({ mode, policy, runId, fileDetails }) {
     draft: eligible ? 'false' : 'true',
     labels: labels.join(','),
     title: 'fix(audit): address autonomous audit findings',
-    body: buildBody({ eligible, reason, runId, fileDetails }),
+    body: buildBody({
+      eligible,
+      reason,
+      runId,
+      fileDetails,
+      repository,
+      serverUrl,
+    }),
     audit_safe: safeEvaluation,
   };
 }
@@ -141,6 +188,8 @@ function runCli() {
           policy,
           runId,
           fileDetails: collectGitDiff(),
+          repository: process.env.GITHUB_REPOSITORY,
+          serverUrl: process.env.GITHUB_SERVER_URL,
         }),
         null,
         2,
@@ -168,6 +217,8 @@ function runCli() {
             reason: `classifier failed: ${reason}`,
             runId,
             fileDetails: [],
+            repository: process.env.GITHUB_REPOSITORY,
+            serverUrl: process.env.GITHUB_SERVER_URL,
           }),
         },
         null,
@@ -179,6 +230,7 @@ function runCli() {
 
 module.exports = {
   buildBody,
+  buildSourceRunUrl,
   classifyAuditFix,
   collectGitDiff,
   countFileLines,
