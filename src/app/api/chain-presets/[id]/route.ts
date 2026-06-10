@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getChainPreset, deleteChainPreset } from '@/lib/chain-presets';
+import { error, success } from '@/lib/api-response';
 
 const paramsSchema = z.object({
   id: z.coerce.number().int().positive(),
@@ -16,19 +17,13 @@ export async function GET(
     const preset = await getChainPreset(id);
 
     if (!preset) {
-      return NextResponse.json(
-        { success: false, error: 'Chain preset not found' },
-        { status: 404 },
-      );
+      return error('Chain preset not found', 404);
     }
 
-    return NextResponse.json({ success: true, data: preset });
+    return success(preset);
   } catch (err) {
     console.error('[api/chain-presets/:id] GET error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch chain preset' },
-      { status: 500 },
-    );
+    return error('Failed to fetch chain preset');
   }
 }
 
@@ -41,7 +36,7 @@ export async function DELETE(
 
     await deleteChainPreset(id);
 
-    return NextResponse.json({ success: true, data: null });
+    return success(null);
   } catch (err) {
     console.error('[api/chain-presets/:id] DELETE error:', err);
 
@@ -53,6 +48,6 @@ export async function DELETE(
         ? 403
         : 500;
 
-    return NextResponse.json({ success: false, error: message }, { status });
+    return error(message, status);
   }
 }
