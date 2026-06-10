@@ -13,6 +13,7 @@ function readJson(filePath) {
 
 const mode = getArg('--mode');
 const policyFile = getArg('--policy-file', '.github/workflows/policy.json');
+const configFile = getArg('--config-file', '.github/pr-flow.json');
 const eventFile = getArg('--event-path', process.env.GITHUB_EVENT_PATH);
 const eventName = getArg('--event-name', process.env.GITHUB_EVENT_NAME);
 const sourcePrFile = getArg('--source-pr-file');
@@ -43,6 +44,30 @@ function hasStandaloneCommand(body, command) {
   return String(body ?? '')
     .split(/\r?\n/)
     .some((line) => line.trim() === command);
+}
+
+function addLabels(target, values) {
+  for (const value of values ?? []) {
+    if (typeof value === 'string' && value.length > 0) {
+      target.add(value);
+    }
+  }
+}
+
+function getPrFlowRelevantLabels(policyConfig, flowConfig) {
+  const labels = new Set();
+  addLabels(labels, policyConfig.blockingLabels);
+  addLabels(labels, policyConfig.improveSkipLabels);
+  addLabels(labels, flowConfig.resetOnHeadChange?.labels);
+
+  for (const worker of Object.values(flowConfig.workers ?? {})) {
+    addLabels(labels, worker.passLabels);
+    addLabels(labels, worker.blockLabels);
+    addLabels(labels, worker.successLabels);
+    addLabels(labels, worker.skipLabels);
+  }
+
+  return Array.from(labels).sort();
 }
 
 if (mode === 'claude') {
@@ -208,6 +233,49 @@ if (mode === 'pr-flow-approve') {
         trusted: isMaintainer,
         author_association: association,
         pr_number: commentTriggered ? prNumber : null,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
+if (mode === 'pr-flow-pull-request-target') {
+  const config = readJson(configFile);
+  const action = event.action ?? '';
+  const labelName = event.label?.name ?? '';
+  const alwaysRunActions = new Set([
+    'opened',
+    'synchronize',
+    'reopened',
+    'ready_for_review',
+    'converted_to_draft',
+  ]);
+  const labelActions = new Set(['labeled', 'unlabeled']);
+  const relevantLabels = getPrFlowRelevantLabels(policy, config);
+  const labelRelevant =
+    labelActions.has(action) && relevantLabels.includes(labelName);
+  const shouldRun =
+    eventName === 'pull_request_target' &&
+    (alwaysRunActions.has(action) || labelRelevant);
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: shouldRun,
+        triggered: eventName === 'pull_request_target',
+        action,
+        label: labelName || null,
+        relevant_label: labelRelevant,
+        reason: alwaysRunActions.has(action)
+          ? `pull_request_target ${action} always runs PR flow`
+          : labelRelevant
+            ? `label ${labelName} affects PR flow`
+            : labelActions.has(action)
+              ? `label ${labelName} does not affect PR flow`
+              : `pull_request_target ${action} is ignored by PR flow`,
       },
       null,
       2,
