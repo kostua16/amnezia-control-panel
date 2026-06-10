@@ -53,7 +53,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Evaluate pull_request_target trigger
+        id: pr_event
+        if: github.event_name == 'pull_request_target'
+        shell: bash
+        run: |
+          node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode pr-flow-pull-request-target \
+            --policy-file .github/workflows/policy.json \
+            --config-file .github/pr-flow.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            > /tmp/pr-flow-event-policy.json
+          echo "should_run=$(jq -r '.should_run' /tmp/pr-flow-event-policy.json)" >> "$GITHUB_OUTPUT"
+
       - uses: ./.github/actions/setup-environment
+        if: >-
+          github.event_name != 'pull_request_target' ||
+          steps.pr_event.outputs.should_run == 'true'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: 'false'
@@ -91,7 +108,9 @@ jobs:
           gh issue comment "$PR_NUMBER" --body "Maintainer approval recorded by @$APPROVER. PR flow will continue after required checks and review signals pass."
 
       - name: Orchestrate PR flow
-        if: github.event_name != 'issue_comment' || steps.approve.outputs.should_run == 'true'
+        if: >-
+          (github.event_name != 'issue_comment' || steps.approve.outputs.should_run == 'true') &&
+          (github.event_name != 'pull_request_target' || steps.pr_event.outputs.should_run == 'true')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.approve.outputs.pr_number || github.event.inputs.pr_number || '' }}
