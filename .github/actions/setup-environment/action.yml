@@ -14,6 +14,12 @@ inputs:
   bun-version:
     description: 'Bun version'
     default: '1.3.14'
+  setup-node:
+    description: 'Install or restore Node.js with actions/setup-node'
+    default: 'true'
+  setup-bun:
+    description: 'Install or restore Bun with oven-sh/setup-bun'
+    default: 'true'
   install-deps:
     description: 'Run npm ci with cache'
     default: 'false'
@@ -70,7 +76,8 @@ runs:
           echo "Available disk space after cleanup: ${available_mb} MB"
         fi
 
-    - uses: actions/setup-node@v5
+    - if: inputs.setup-node == 'true'
+      uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
         # Disabled because GitHub/Azure npm cache restores from self-hosted
@@ -80,7 +87,8 @@ runs:
         # cache: ${{ inputs.install-deps == 'true' && 'npm' || '' }}
         package-manager-cache: false
 
-    - uses: oven-sh/setup-bun@v2
+    - if: inputs.setup-bun == 'true'
+      uses: oven-sh/setup-bun@v2
       with:
         bun-version: ${{ inputs.bun-version }}
 
