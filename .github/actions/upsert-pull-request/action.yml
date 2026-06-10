@@ -104,11 +104,12 @@ runs:
 
           if [[ "$ALLOW_UPDATE" == "true" ]]; then
             gh pr edit "$pr_number" --title "$PR_TITLE" --body "$PR_BODY" >/dev/null
-            if [[ "${#edit_label_args[@]}" -gt 0 ]]; then
-              gh pr edit "$pr_number" "${edit_label_args[@]}" >/dev/null 2>&1 || true
-            fi
             if [[ "$PR_DRAFT" == "false" && "$is_draft" == "true" ]]; then
               gh pr ready "$pr_number" >/dev/null 2>&1 || true
+              is_draft="false"
+            fi
+            if [[ "${#edit_label_args[@]}" -gt 0 && ! ( "$PR_DRAFT" == "true" && "$is_draft" == "true" ) ]]; then
+              gh pr edit "$pr_number" "${edit_label_args[@]}" >/dev/null 2>&1 || true
             fi
             updated="true"
           else
@@ -132,6 +133,10 @@ runs:
           exit 1
         fi
 
+        if [[ "$PR_DRAFT" == "true" && "${#edit_label_args[@]}" -gt 0 ]]; then
+          echo "::notice::Deferring label application for draft PR creation to avoid duplicate labeled workflow triggers."
+        fi
+
         created_json=$(gh pr list \
           --state open \
           --base "$BASE_BRANCH" \
@@ -147,7 +152,7 @@ runs:
         pr_number=$(jq -r '.[0].number' <<<"$created_json")
         pr_url=$(jq -r '.[0].url' <<<"$created_json")
 
-        if [[ "${#edit_label_args[@]}" -gt 0 ]]; then
+        if [[ "$PR_DRAFT" == "false" && "${#edit_label_args[@]}" -gt 0 ]]; then
           gh pr edit "$pr_number" "${edit_label_args[@]}" >/dev/null 2>&1 || \
             echo "::warning::Pull request created without applying one or more labels"
         fi
