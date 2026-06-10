@@ -29,6 +29,9 @@ inputs:
   install-rtk:
     description: 'Install RTK (Rust Token Killer) binary with cache; project hooks are committed'
     default: 'false'
+  require-gh-auth:
+    description: 'Fail the action when setup-gh authentication or verification fails'
+    default: 'true'
   gsd-version:
     description: 'Pinned @opengsd/gsd-core version used when project-local GSD assets are missing'
     default: '1.2.0'
@@ -91,6 +94,7 @@ runs:
 
     - id: setup_gh
       uses: kostua16/setup-gh@v1.0.3
+      continue-on-error: ${{ inputs.require-gh-auth != 'true' }}
       with:
         gh-version: ${{ inputs.gh-version }}
         cli-token: ${{ inputs.github-token }}
@@ -107,6 +111,7 @@ runs:
         command -v gh >/dev/null 2>&1 && echo "gh(after setup-gh)=$(command -v gh)" || echo "gh(after setup-gh)=<not found>"
 
     - name: Verify gh authenticated
+      if: inputs.require-gh-auth == 'true'
       shell: bash
       run: |
         set -euo pipefail
