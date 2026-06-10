@@ -208,8 +208,8 @@ jobs:
             });
 
   claude-security-review:
-    needs: [resolve-pr, claude-main-review]
-    if: needs.resolve-pr.outputs.should-run == 'true' && needs.claude-main-review.result == 'success'
+    needs: [resolve-pr]
+    if: needs.resolve-pr.outputs.should-run == 'true'
     runs-on: [self-hosted, big]
     timeout-minutes: 20
     steps:
