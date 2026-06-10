@@ -42,6 +42,10 @@ CI
   -> fix-branch.yml (direct push failure path)
   -> pr-flow.yml (wakes orchestrator after CI settles)
 
+fix-pr.yml
+  -> fetches the source PR metadata before calling _auto-fix-ci
+  -> skips recursive child PR creation when the failing PR is already automation-authored
+
 pr-flow-watchdog.yml
   -> scheduled/manual stale-state recovery
   -> dispatches pr-flow.yml for open non-draft PRs still labeled flow/draft
@@ -118,6 +122,11 @@ as a useful backup for native CI and other visible runs, but `GITHUB_TOKEN`
 dispatch chains should not rely on `workflow_run` alone for progression.
 `pr-flow-watchdog.yml` also wakes open non-draft PRs that are still labeled
 `flow/draft` or whose current head SHA has no `pr-flow/ready` status.
+
+`fix-pr.yml` also treats automation-authored PRs as a stop point for the CI
+auto-fix lane. If the failing source PR already has the `auto-fix` label or is
+already on a generated automation branch, the workflow logs the reason and
+skips opening a second child PR against that branch.
 
 The worker run-name contract is part of the orchestration API: worker run names
 must include `PR #<number> @ <head_sha>`. `orchestrate-pr-flow.cjs` uses that

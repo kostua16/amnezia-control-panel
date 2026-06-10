@@ -24,7 +24,10 @@ const RESOURCE_THRESHOLDS: ThresholdConfig[] = [
 function classifySeverity(
   metric: string,
   value: number,
-): { severity: 'WARNING' | 'CRITICAL' | null; threshold: ThresholdConfig | undefined } {
+): {
+  severity: 'WARNING' | 'CRITICAL' | null;
+  threshold: ThresholdConfig | undefined;
+} {
   const threshold = RESOURCE_THRESHOLDS.find((t) => t.metric === metric);
   if (!threshold) return { severity: null, threshold: undefined };
 
