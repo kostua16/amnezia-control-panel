@@ -104,8 +104,11 @@ export class ServiceMonitor {
         const health = checkServiceStatus(serviceKey);
         const previous = lastStatuses[serviceKey];
 
-        // Detect transition from online -> offline
-        if (previous === 'online' && health.status === 'offline') {
+        if (previous === undefined) {
+          // First check: report initial status regardless.
+          await this.onStatusChange(health);
+        } else if (previous === 'online' && health.status === 'offline') {
+          // Detect transition from online -> offline
           if (this.autoRestart) {
             const restarted = restartService(serviceKey);
             if (restarted) {
@@ -116,6 +119,9 @@ export class ServiceMonitor {
               }
             }
           }
+          await this.onStatusChange(health);
+        } else if (previous !== health.status) {
+          // Report any other status change (e.g. offline -> online)
           await this.onStatusChange(health);
         }
 

@@ -3,7 +3,7 @@ import { createAlert } from '@/lib/alert-service';
 import type { AlertSeverity } from '@/generated/prisma/enums';
 
 /** Quota alert thresholds in percent */
-const QUOTA_THRESHOLDS = [
+export const QUOTA_THRESHOLDS = [
   { percent: 80, severity: 'WARNING' as AlertSeverity },
   { percent: 90, severity: 'WARNING' as AlertSeverity },
   { percent: 100, severity: 'CRITICAL' as AlertSeverity },
@@ -11,6 +11,16 @@ const QUOTA_THRESHOLDS = [
 
 /** How often to check quotas (ms) */
 export const QUOTA_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Determine which quota thresholds are exceeded by a usage percentage.
+ * Returns thresholds in ascending order (80, 90, 100).
+ */
+export function getExceededQuotaThresholds(
+  usagePercent: number,
+): Array<{ percent: number; severity: AlertSeverity }> {
+  return QUOTA_THRESHOLDS.filter((t) => usagePercent >= t.percent);
+}
 
 /**
  * Check all users against their traffic quotas.
@@ -56,25 +66,23 @@ export async function checkUserQuotas(): Promise<{
 
     const usagePercent = await getUserUsagePercent(user.id, quota.quotaBytes);
 
-    for (const threshold of QUOTA_THRESHOLDS) {
-      if (usagePercent >= threshold.percent) {
-        const created = await checkQuotaThreshold(
-          user.id,
-          user.username,
-          usagePercent,
-          threshold.percent,
-          threshold.severity,
-        );
+    for (const threshold of getExceededQuotaThresholds(usagePercent)) {
+      const created = await checkQuotaThreshold(
+        user.id,
+        user.username,
+        usagePercent,
+        threshold.percent,
+        threshold.severity,
+      );
 
-        if (created) {
-          results.alertsCreated++;
-          results.details.push({
-            userId: user.id,
-            username: user.username,
-            percent: usagePercent,
-            severity: threshold.severity,
-          });
-        }
+      if (created) {
+        results.alertsCreated++;
+        results.details.push({
+          userId: user.id,
+          username: user.username,
+          percent: usagePercent,
+          severity: threshold.severity,
+        });
       }
     }
   }
@@ -87,19 +95,18 @@ export async function checkUserQuotas(): Promise<{
  * Prevents duplicate alerts within the same quota period.
  */
 async function checkQuotaThreshold(
-  _userId: number,
+  userId: number,
   username: string,
   usagePercent: number,
   thresholdPercent: number,
   severity: AlertSeverity,
 ): Promise<boolean> {
-  const alertType = `quota_${thresholdPercent}%`;
+  const alertType = `quota_${thresholdPercent}%_user${userId}`;
 
   // Check for a recent alert of the same type to prevent duplicates
   const recentAlert = await prisma.alert.findFirst({
     where: {
       type: alertType,
-      message: { contains: username },
       createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }, // Within last hour
     },
     orderBy: { createdAt: 'desc' },
