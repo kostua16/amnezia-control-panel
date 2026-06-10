@@ -338,6 +338,15 @@ describe('PR flow workflow invariants', () => {
     );
   });
 
+  it('keeps non-relevant label events from canceling an in-flight orchestrator run', () => {
+    const workflow = readWorkflow('.github/workflows/pr-flow.yml');
+
+    assert.match(
+      workflow,
+      /cancel-in-progress:\s+\$\{\{\s+github\.event_name != 'pull_request_target' \|\| \(github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\)\s+\}\}/,
+    );
+  });
+
   it('keeps permissions required for check reads and worker dispatch', () => {
     const permissions = readTopLevelMapping('permissions');
 
