@@ -101,3 +101,6 @@ __pycache__/
 #OMO
 .omo/run-continuation/*.json
 graphify-out/**/cost.json
+graphify-out/cache/
+graphify-out/cache/
+
