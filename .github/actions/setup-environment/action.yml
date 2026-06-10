@@ -119,7 +119,20 @@ runs:
         gh --version
 
         host="${GITHUB_SERVER_URL#https://}"
-        gh auth status -h "$host"
+        if [[ "${{ steps.setup_gh.outputs.auth }}" != "true" ]]; then
+          echo "gh authentication was not configured for ${host}. Aborting." >&2
+          exit 1
+        fi
+
+        # `gh api user` fails for GitHub App / integration tokens used by
+        # several workflows, while `gh auth status` succeeds but includes token
+        # metadata that we do not want in logs.
+        auth_status="$(gh auth status -h "$host" 2>&1)"
+        printf '%s\n' "$auth_status" | sed \
+          -e '/^[[:space:]]*Token:/d' \
+          -e '/^[[:space:]]*Token scopes:/d' \
+          -e '/^[[:space:]]*-[[:space:]]*Token:/d' \
+          -e '/^[[:space:]]*-[[:space:]]*Token scopes:/d'
 
     # Previous GitHub-hosted cache retained for audit only. It restored from
     # remote GitHub/Azure storage too slowly on self-hosted runners.
