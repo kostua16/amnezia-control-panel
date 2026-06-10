@@ -1,6 +1,8 @@
 # Amnezia Control Panel
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app). See `CLAUDE.md` for project goals and stack.
+Unified admin panel for managing [Amnezia AWG2](https://amnezia.org/) (AmneziaVPN WireGuard) and [3x-ui](https://github.com/MHSanaei/3x-ui) (Xray panel) on the same VPN server. Single administrator manages users across both systems, configures VPN services, controls routing, monitors traffic and health — all from one interface.
+
+**Stack:** Next.js 16 + React 19 + TypeScript + Prisma ORM + SQLite + Socket.IO (WebSocket). Tailwind CSS for styling.
 
 ## Documentation
 
@@ -9,32 +11,16 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3333](http://localhost:3333) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit it.
+The landing page redirects to `/dashboard`. Default dev port is **3333** (override with `npm run dev -- --port 8000` or `PORT=8000 npm run dev`).
 
-This project self-hosts [Geist](https://vercel.com/font) via [`next/font/local`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts): variable `.woff2` files are committed under `src/app/fonts/` (Geist v1.7.1, SIL OFL) so builds do not fetch fonts from Google at compile time.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This project self-hosts [Geist](https://vercel.com/font) via [`next/font/local`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts): variable `.woff2` files are committed under `src/app/fonts/` (Geist v1.7.1, SIL OFL) so builds do not fetch fonts from external CDNs at compile time.
 
 ## Deploy with Docker
 
@@ -91,8 +77,6 @@ docker run -d \
   amnezia-control-panel
 ```
 
-## Deploy on Vercel
+## Other deployment
 
-Alternatively, you can deploy using the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme).
-
-Check out the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This project can also be deployed to any platform that supports Node.js. See the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for options. The Docker method above is recommended for production.
