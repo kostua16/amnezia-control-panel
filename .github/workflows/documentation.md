@@ -227,7 +227,7 @@ Always manual-only:
 
 `setup-environment`:
 
-- installs or reuses GitHub CLI through `kostua16/setup-gh@v1.0.2`
+- installs or reuses GitHub CLI through `kostua16/setup-gh@v1.0.4`; its `auth` output is true only when `gh auth status --hostname` succeeds for the configured host
 - switches later `gh` commands to the provided `github-token`, so callers can move between `GITHUB_TOKEN` bot/comment identity and `GH_PAT` commit/PR/workflow-trigger identity
 - skips GSD install when `.claude/gsd-install-state.json` is present
 - falls back to pinned `@opengsd/get-shit-done-redux` version `1.1.0` only if that file is missing
