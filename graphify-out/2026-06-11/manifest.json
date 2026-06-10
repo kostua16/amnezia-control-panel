@@ -1463,17 +1463,5 @@
     "mtime": 1780124416.7489443,
     "ast_hash": "563d13575f813953c3151e1ecce3b76f",
     "semantic_hash": "563d13575f813953c3151e1ecce3b76f"
-  },
-  "docs/adding-a-panel.md": {
-    "md5": "82c3dcc81ab1b320ece9476d9e50dbe5",
-    "status": "processed"
-  },
-  "docs/adding-a-server.md": {
-    "md5": "69e42ee894d3447c9d5ade7799e62f23",
-    "status": "processed"
-  },
-  "docs/migrate-to-falcondev-cache-server.md": {
-    "md5": "867385025ac145d286aadbd8cce434e4",
-    "status": "processed"
   }
 }
