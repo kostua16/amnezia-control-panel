@@ -4,7 +4,7 @@
 
 - **v1.0** -- Phases 1.1-10.4 (shipped 2026-04-29)
 - **v1.1 Multi-Panel Chain Routing** -- Phases 11.1-11.8 (shipped 2026-05-01) [archive](.planning/milestones/v1.1-ROADMAP.md)
-- **Post-v1.1 audit remediation** -- Phases 12.1-12.12 (in progress; closure audit: `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md`)
+- **Post-v1.1 audit remediation** -- Phases 12.1-12.15 (complete; closure audit: `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md`)
 - **Developer automation governance** -- Phases 13.1-13.4 (planned)
 
 ## Phases
@@ -79,7 +79,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 </details>
 
-### Current Milestone: Audit gap closure (Phases 12.1-12.12)
+### Current Milestone: Audit gap closure (Phases 12.1-12.15)
 
 **Closure audit:** `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md` (supersedes "all 12.x complete" until 12.8-12.12 ship). **Nyquist `*-VALIDATION.md` for 12.x:** backlog -- run `/gsd-validate-phase` when required.
 
@@ -97,7 +97,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12.12: 12.x verification artifacts** -- PROJ-AUTH-01 evidence; `12.1-`, `12.4-`, `12.6-`, `12.7-`, `12.11-VERIFICATION.md`; `REQUIREMENTS.md` 7 checkboxes reconciled (2026-05-02)
 - [x] **Phase 12.13: Verification artifacts (12.1, 12.4)** ~~PROJ-AUTH-01, GAPL-01, GAPL-02 evidence; create `12.1-VERIFICATION.md` and `12.4-VERIFICATION.md`~~ ✅ 2026-05-03
 - [x] **Phase 12.14: Verification artifacts (12.6, 12.7)** -- GEO-03, GEO-04, TSCL-01-03 evidence; create `12.6-VERIFICATION.md` and `12.7-VERIFICATION.md` (2026-05-03)
-- [ ] **Phase 12.15: Requirements reconciliation & middleware hardening** -- 15+ checkboxes, traceability table, middleware matcher `/panels/:path*` + `/templates/:path*`
+- [x] **Phase 12.15: Requirements reconciliation & middleware hardening** -- 15+ checkboxes, traceability table, middleware matcher `/panels/:path*` + `/templates/:path*`
 
 ### Phase 12.13: Verification artifacts (12.1, 12.4)
 **Goal:** Create VERIFICATION.md for phases 12.1 and 12.4 with structured evidence for PROJ-AUTH-01, GAPL-01, GAPL-02.
@@ -115,19 +115,19 @@ Plans:
 **Depends on:** None (documentation, code already shipped)
 **Requirements:** GEO-03, GEO-04, TSCL-01, TSCL-02, TSCL-03
 **Gap closure:** Closes BLOCKER-1 (remaining), upgrades GEO-03/04 from partial to satisfied
-**Plans:** 3 plans (2 waves) -- Planned 2026-05-03
+**Plans:** 3 plans (2 waves) -- Complete 2026-05-03
 
 Plans:
-- [ ] 12.14-01-PLAN.md -- Create 12.6-VERIFICATION.md with GEO-03 and GEO-04 evidence (Wave 1)
-- [ ] 12.14-02-PLAN.md -- Create 12.7-VERIFICATION.md with TSCL-01-03 meta-verification evidence (Wave 1)
-- [ ] 12.14-03-PLAN.md -- Reconcile REQUIREMENTS.md checkboxes and traceability for GEO-03/04, TSCL-01-03; update v12.x-MILESTONE-AUDIT.md (Wave 2)
+- [x] 12.14-01-PLAN.md -- Create 12.6-VERIFICATION.md with GEO-03 and GEO-04 evidence (Wave 1)
+- [x] 12.14-02-PLAN.md -- Create 12.7-VERIFICATION.md with TSCL-01-03 meta-verification evidence (Wave 1)
+- [x] 12.14-03-PLAN.md -- Reconcile REQUIREMENTS.md checkboxes and traceability for GEO-03/04, TSCL-01-03; update v12.x-MILESTONE-AUDIT.md (Wave 2)
 
 ### Phase 12.15: Requirements reconciliation & middleware hardening
 **Goal:** Reconcile 15+ unchecked REQUIREMENTS.md checkboxes with verified evidence; update stale traceability entries; harden middleware matcher.
 **Depends on:** Phase 12.13, Phase 12.14 (VERIFICATION.md must exist before reconciliation)
 **Requirements:** GAPL-01, CHAIN-01 (traceability fix); PROJ-AUTH-01 (verification closure)
 **Gap closure:** Closes WARNING-1 (middleware matcher), FLOW-6 (verification closure), and REQUIREMENTS.md checkbox debt
-**Plans:** TBD (`/gsd-plan-phase 12.15`)
+**Plans:** Verified against codebase (2026-06-11)
 
 ### Next Milestone: Developer automation governance (Phases 13.1-13.4)
 
