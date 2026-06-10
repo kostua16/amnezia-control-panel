@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const updateSpeedSchema = z.object({
   speedLimitKbps: z.number().int().min(0),
@@ -96,6 +97,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       where: { id: userId },
       data: { speedLimitKbps },
       select: { id: true, speedLimitKbps: true },
+    });
+
+    await writeAuditLog({
+      action: 'user.speed.update',
+      resource: 'user',
+      resourceId: userId,
+      metadata: { username: user.username, speedLimitKbps },
     });
 
     return NextResponse.json({

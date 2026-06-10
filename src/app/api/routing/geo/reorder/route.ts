@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const reorderItemSchema = z.object({
   id: z.number().int().positive(),
@@ -55,6 +56,12 @@ export async function POST(request: NextRequest) {
         }),
       ),
     );
+
+    await writeAuditLog({
+      action: 'routing.geo.reorder',
+      resource: 'geoRoutingRule',
+      metadata: { updated: rules.length, rules },
+    });
 
     return NextResponse.json({
       success: true,

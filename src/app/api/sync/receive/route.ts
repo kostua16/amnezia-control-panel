@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
 import { storePreviousConfig } from '@/lib/rollback-manager';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const panelSyncPayloadSchema = z.object({
   configVersion: z.number().int().positive(),
@@ -105,6 +106,16 @@ export async function POST(request: NextRequest) {
       existingConfig &&
       existingConfig.configVersion === configData.configVersion
     ) {
+      await writeAuditLog({
+        action: 'sync.receive.idempotent',
+        resource: 'cachedPanelConfig',
+        resourceId: matchedPanel.id,
+        metadata: {
+          panelId: matchedPanel.id,
+          configVersion: configData.configVersion,
+        },
+      });
+
       return NextResponse.json({
         success: true,
         data: {
@@ -140,6 +151,17 @@ export async function POST(request: NextRequest) {
         },
       });
     }
+
+    await writeAuditLog({
+      action: 'sync.receive',
+      resource: 'cachedPanelConfig',
+      resourceId: matchedPanel.id,
+      metadata: {
+        panelId: matchedPanel.id,
+        configVersion: configData.configVersion,
+        panelRole: configData.panelRole,
+      },
+    });
 
     // 8. Return success
     return NextResponse.json({

@@ -98,7 +98,9 @@ export const config = {
     '/services/:path*',
     '/config/:path*',
     '/monitoring/:path*',
+    '/panels/:path*',
     '/servers/:path*',
     '/settings/:path*',
+    '/templates/:path*',
   ],
 };

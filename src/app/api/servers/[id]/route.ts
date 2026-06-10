@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -145,6 +146,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       },
     });
 
+    await writeAuditLog({
+      action: 'server.update',
+      resource: 'server',
+      resourceId: serverId,
+      metadata: {
+        name: server.name,
+        hostname: server.hostname,
+        changedFields: Object.keys(updateData).filter(
+          (field) => field !== 'apiKeyHash',
+        ),
+        apiKeyChanged: apiKey !== undefined,
+      },
+    });
+
     return NextResponse.json({ success: true, data: serverResponse(server) });
   } catch (err) {
     console.error('[api/servers/:id PUT] Error:', err);
@@ -190,6 +205,13 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     }
 
     await prisma.server.delete({ where: { id: serverId } });
+
+    await writeAuditLog({
+      action: 'server.delete',
+      resource: 'server',
+      resourceId: serverId,
+      metadata: { name: existing.name, hostname: existing.hostname },
+    });
 
     return NextResponse.json({ success: true, data: { id: serverId } });
   } catch (err) {

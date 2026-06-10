@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const validProtocols = [
   'ANY',
@@ -114,6 +115,19 @@ export async function POST(request: NextRequest) {
       data: {
         ...ruleData,
         userId,
+      },
+    });
+
+    await writeAuditLog({
+      action: 'routing.rule.create',
+      resource: 'routingRule',
+      resourceId: rule.id,
+      metadata: {
+        protocol: rule.protocol,
+        destination: rule.destination,
+        action: rule.action,
+        priority: rule.priority,
+        userId: rule.userId,
       },
     });
 

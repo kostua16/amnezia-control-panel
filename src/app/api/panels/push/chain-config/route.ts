@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getTemplateById } from '@/lib/chain-templates';
 import { prisma } from '@/lib/prisma';
 import { resolvePanelTransport } from '@/lib/transport-resolver';
+import { writeAuditLog } from '@/lib/audit-log';
 import type {
   ChainConfig,
   WireGuardPeerConfig,
@@ -391,6 +392,17 @@ export async function POST(request: NextRequest) {
       xrayRoutingRules,
       generatedAt: new Date().toISOString(),
     };
+
+    await writeAuditLog({
+      action: 'chain.config.generate',
+      resource: 'chainConfig',
+      resourceId: template.id,
+      metadata: {
+        templateId: template.id,
+        panelIds,
+        nodeCount: resolvedNodes.length,
+      },
+    });
 
     return NextResponse.json({ success: true, data: chainConfig });
   } catch (err) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const updateQuotaSchema = z.object({
   quotaBytes: z.number().int().min(0).optional(),
@@ -149,6 +150,17 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     await prisma.user.update({
       where: { id: userId },
       data: { trafficQuotaBytes: resolvedQuotaBytes },
+    });
+
+    await writeAuditLog({
+      action: 'user.quota.update',
+      resource: 'user',
+      resourceId: userId,
+      metadata: {
+        username: user.username,
+        quotaBytes: resolvedQuotaBytes,
+        period: resolvedPeriod,
+      },
     });
 
     return NextResponse.json({

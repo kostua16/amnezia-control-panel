@@ -5,6 +5,7 @@ import { generateChainConfig, applyChainConfig } from '@/lib/chain-router';
 import { getTemplateById } from '@/lib/chain-templates';
 import { cachePanelApiKey } from '@/lib/panel-health-checker';
 import { resolvePanelTransport } from '@/lib/transport-resolver';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const applyChainSchema = z.object({
   templateId: z.string().min(1, 'Template ID is required'),
@@ -171,6 +172,19 @@ export async function POST(request: NextRequest) {
       undefined,
       panelCredentials,
     );
+
+    await writeAuditLog({
+      action: 'chain.apply',
+      resource: 'chainConfig',
+      resourceId: chainConfig.templateId,
+      outcome: applyResult.success ? 'success' : 'failure',
+      metadata: {
+        templateId: chainConfig.templateId,
+        nodeCount: chainConfig.nodes.length,
+        appliedTo: applyResult.appliedTo,
+        errors: applyResult.errors,
+      },
+    });
 
     return NextResponse.json({
       success: applyResult.success,

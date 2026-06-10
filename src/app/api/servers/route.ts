@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const createServerSchema = z.object({
   name: z
@@ -93,6 +94,13 @@ export async function POST(request: NextRequest) {
           },
         },
       },
+    });
+
+    await writeAuditLog({
+      action: 'server.create',
+      resource: 'server',
+      resourceId: server.id,
+      metadata: { name: server.name, hostname: server.hostname, port },
     });
 
     return NextResponse.json(
