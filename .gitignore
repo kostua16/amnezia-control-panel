@@ -96,3 +96,7 @@ agent-reports/
 # Python
 __pycache__/
 *.pyc
+
+
+#OMO
+.omo/run-continuation/*.json
