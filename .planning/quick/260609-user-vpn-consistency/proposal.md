@@ -1,0 +1,90 @@
+# Quick Task 260609: User Creation DB↔VPN Consistency — Compensating Actions for Partial Failures
+
+## Problem
+
+`src/app/api/users/route.ts` (POST handler, lines 105-246) creates users in two non-transactional phases:
+
+1. **Phase 1 (lines 157-163):** Prisma creates the User + UserProtocol records in the DB
+2. **Phase 2 (lines 172-200):** VPN services are called for each protocol (AWG, 3x-ui)
+
+If Phase 2 fails (VPN service unreachable, command timeout, CLI error), the DB record **persists** with an incomplete VPN config. The code acknowledges this at line 165: "Failures are logged but do not roll back the DB record."
+
+The response includes `vpnServiceStatus` and `vpnAllSuccess` fields, so the admin can see partial failure. But there is **no automatic retry or reconciliation**. The orphaned record sits in the DB with `isActive: true` but no working VPN configuration.
+
+The `user-sync.ts` system *could* reconcile this, but it only checks block/unblock state — not whether the VPN service actually has a peer/inbound for the user. It also runs on-demand, not triggered by creation failures.
+
+**Impact:** At scale (50 users), admins creating users in batch would need to manually check and re-sync any that failed. The user appears "active" in the panel but can't connect to VPN.
+
+## Solution
+
+Add a compensating action: when VPN service creation fails during user creation, schedule a reconciliation attempt. Two options:
+
+**Option A (Recommended): Background retry via alert + sync trigger**
+- On VPN creation failure, create a WARNING alert describing the partial failure
+- Trigger `syncUser(userId)` immediately as a retry
+- If retry fails, the alert remains visible and the user is marked with a warning badge in the UI
+
+**Option B: Mark user as "pending provisioning"**
+- Add a `provisioningStatus` field to User model (`PROVISIONED | PARTIAL | FAILED`)
+- On partial failure, set status to `PARTIAL`
+- Background job (or on-demand sync) retries provisioning for PARTIAL users
+- Admin UI shows provisioning status
+
+Option A is simpler (no schema change) and leverages existing alert + sync infrastructure. Option B is more robust for batch provisioning.
+
+## Scope (Option A)
+
+### 1. Create alert on VPN creation failure
+
+- **files**: `src/app/api/users/route.ts`
+- **action**:
+  - After the VPN service loop (line 200), if `!allVpnSuccess`:
+    - Import `alert-service.ts` and create a WARNING alert: `User "${username}" created but VPN provisioning incomplete: ${failedServices.join(', ')}`
+    - Log the alert ID in the response for traceability
+- **verify**: Create user with VPN service down → alert appears in alert list with correct detail
+- **done**: Partial VPN failure generates a visible alert
+
+### 2. Trigger syncUser retry on failure
+
+- **files**: `src/app/api/users/route.ts`
+- **action**:
+  - After creating the alert, call `syncUser(user.id)` as an immediate retry attempt
+  - `syncUser` already handles block/unblock; extend it to also verify VPN peer existence (future enhancement)
+  - If retry succeeds, resolve the alert (mark as read)
+  - If retry fails, alert stays visible
+- **verify**: Create user with VPN temporarily down → VPN comes back up → sync user → alert auto-resolves
+- **done**: Automatic retry on VPN creation failure
+
+### 3. Add provisioning warning badge to user list
+
+- **files**: `src/components/users/user-list.tsx`
+- **action**:
+  - In the API response for user list, include `vpnAllSuccess` status (already computed for individual users, just not persisted/listed)
+  - Show a small warning icon next to users with partial provisioning
+  - Add "Re-sync" button per user that calls `syncUser` endpoint
+- **verify**: User with partial VPN shows warning icon; re-sync button triggers reconciliation
+- **done**: Admin has visibility and manual remediation for partially-provisioned users
+
+## Acceptance Criteria
+
+- [ ] VPN creation failure during user creation generates a WARNING alert
+- [ ] Automatic `syncUser()` retry triggered on failure
+- [ ] Successful retry resolves the alert automatically
+- [ ] User list shows warning badge for partially-provisioned users
+- [ ] No schema changes required (Option A)
+- [ ] TypeScript compiles; existing tests pass
+
+## Risk
+
+- Low-medium — the retry mechanism is additive. If it fails, the system degrades to current behavior (manual sync).
+- `syncUser` currently only reconciles block/unblock state, not VPN peer existence. This is a known limitation documented in the code. The retry may not fix all failure modes until syncUser is enhanced with actual VPN status queries (deferred until real CLI commands are wired).
+
+## Estimated Effort
+
+1-2 focused sessions
+
+## Relationship to Existing Proposals
+
+- **260609-vpn-service-adapter** (this batch) — the VPN adapter pattern would simplify the retry logic, but is not a prerequisite
+- **260602-d4p** (broadcaster/traffic) — unrelated surface
+- The `user-sync.ts` partial reconciliation is a known limitation noted in its source comments; this proposal provides a concrete path to improve it incrementally
