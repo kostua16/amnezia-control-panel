@@ -251,6 +251,8 @@ describe('audit-fix classifier', () => {
       policy,
       runId: '123',
       fileDetails: [file('src/lib/resource-monitor.ts')],
+      repository: 'kostua16/amnezia-control-panel',
+      serverUrl: 'https://github.com',
     });
 
     assert.equal(result.eligible, true);
@@ -260,6 +262,10 @@ describe('audit-fix classifier', () => {
     assert.match(
       result.body,
       /This PR matched the audit-safe policy and may be auto-merged/,
+    );
+    assert.match(
+      result.body,
+      /https:\/\/github\.com\/kostua16\/amnezia-control-panel\/actions\/runs\/123/,
     );
     validateRichBody(result.body);
   });
