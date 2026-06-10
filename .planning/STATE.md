@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: verifying
-stopped_at: context exhaustion at 77% (2026-05-03)
-last_updated: '2026-06-10T09:35:00Z'
-last_activity: 2026-06-10 -- Audit fix PR source-run links
+status: complete
+stopped_at: null
+last_updated: '2026-06-11T12:00:00Z'
+last_activity: 2026-06-11 -- Phase 12.15 complete, v1.1 milestone 100%
 progress:
-  total_phases: 23
-  completed_phases: 20
-  total_plans: 53
-  completed_plans: 51
-  percent: 96
+  total_phases: 24
+  completed_phases: 24
+  total_plans: 57
+  completed_plans: 57
+  percent: 100
 ---
 
 # Amnezia Control Panel - Project State
@@ -26,12 +26,12 @@ progress:
 
 ## Current Position
 
-Phase: 12.15 of 12.15 (Requirements reconciliation & middleware hardening) -- PLANNED
-Plan: 0 of 0 in current phase (planned)
-Status: 12.14 complete (GEO-03/04 + TSCL-01-03 verified, audit 19/20)
-Last activity: 2026-06-10 -- Audit fix PR source-run links
+Phase: 12.15 of 12.15 (Requirements reconciliation & middleware hardening) -- COMPLETE
+Plan: 1 of 1 in current phase (complete)
+Status: 12.15 complete — all 28 Pending requirements verified against codebase, all marked Done
+Last activity: 2026-06-11 -- Phase 12.15 reconciliation + VPN CLI wiring + audit closure + CI/CD 13.1-13.4
 
-Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
+Progress: [██████████] 100% (v1.1 COMPLETE)
 
 ## Performance Metrics
 
@@ -110,8 +110,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-03T10:04:26.496Z
-Stopped at: context exhaustion at 77% (2026-05-03)
+Last session: 2026-06-11T12:00:00Z
+Stopped at: null
 Resume file: None
 
 ## Quick Tasks Completed
@@ -130,8 +130,9 @@ Resume file: None
 | 2026-06-04 | 260605-56h   | Manual-only PRs still run advisory reviews                  |
 | 2026-06-04 | 260605-67p   | Maintainer approval label + `/approve` PR flow              |
 | 2026-06-10 | 260610-r8l   | Audit-fix PR bodies include source-run links                |
+| 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-10 - Audit fix PR source-run links (quick 260610-r8l)_
+_Last updated: 2026-06-11 - Phase 12.15 complete, v1.1 milestone 100% (REQUIREMENTS.md reconciled + VPN CLI wiring + audit closure + CI/CD 13.1-13.4)_
