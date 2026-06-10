@@ -91,6 +91,8 @@ function classifyClaudeRetry({
       isRateLimited: true,
       shouldRetry: true,
       retryReason: 'rate_limited',
+      softSuccess: false,
+      softSuccessReason: '',
       annotation: 'warning',
       message: `Attempt ${normalizedAttempt} failed and ${detail}. ${retrySuffix}`,
     };
@@ -105,10 +107,26 @@ function classifyClaudeRetry({
       isRateLimited: false,
       shouldRetry: true,
       retryReason: 'missing_structured_output',
+      softSuccess: false,
+      softSuccessReason: '',
       annotation: 'warning',
       message: finalRetry
         ? `Attempt ${normalizedAttempt} produced a successful execution result but no structured output. Retrying final attempt because --json-schema was requested.`
         : `Attempt ${normalizedAttempt} produced a successful execution result but no structured output. Retrying once because --json-schema was requested.`,
+    };
+  }
+
+  if (normalizedHttpCode === '200' && hasSuccessfulResult(executionText)) {
+    return {
+      httpCode: normalizedHttpCode,
+      isRateLimited: false,
+      shouldRetry: false,
+      retryReason: 'successful_result_after_action_probe',
+      softSuccess: true,
+      softSuccessReason:
+        'Claude completed successfully, but the action API probe returned HTTP 200',
+      annotation: 'warning',
+      message: `Attempt ${normalizedAttempt} produced a successful execution result, but the action API probe returned HTTP 200. Treating as soft success.`,
     };
   }
 
@@ -117,6 +135,8 @@ function classifyClaudeRetry({
     isRateLimited: false,
     shouldRetry: false,
     retryReason: 'non_retryable',
+    softSuccess: false,
+    softSuccessReason: '',
     annotation: 'error',
     message: finalRetry
       ? `Attempt ${normalizedAttempt} failed with non-retryable error (API probe returned HTTP ${normalizedHttpCode}). Skipping final retry.`
@@ -130,6 +150,8 @@ function writeGithubOutputs(result, outputPath) {
     `is_rate_limited=${result.isRateLimited ? 'true' : 'false'}`,
     `should_retry=${result.shouldRetry ? 'true' : 'false'}`,
     `retry_reason=${result.retryReason}`,
+    `soft_success=${result.softSuccess ? 'true' : 'false'}`,
+    `soft_success_reason=${result.softSuccessReason || ''}`,
   ];
   const output = `${lines.join('\n')}\n`;
   if (outputPath) fs.appendFileSync(outputPath, output);

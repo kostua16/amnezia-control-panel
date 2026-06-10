@@ -38,6 +38,12 @@ outputs:
   claude_failure_reason:
     description: "Human-readable Claude failure reason"
     value: ${{ steps.run.outputs.claude_failure_reason }}
+  claude_soft_success:
+    description: "true when Claude succeeded but the underlying action reported a recoverable wrapper/probe failure"
+    value: ${{ steps.run.outputs.claude_soft_success }}
+  claude_soft_success_reason:
+    description: "Human-readable reason for a recoverable action-level soft success"
+    value: ${{ steps.run.outputs.claude_soft_success_reason }}
   claude_num_turns:
     description: "Claude num_turns from execution output"
     value: ${{ steps.run.outputs.claude_num_turns }}

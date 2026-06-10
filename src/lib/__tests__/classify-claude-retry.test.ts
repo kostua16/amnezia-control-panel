@@ -68,6 +68,27 @@ describe('classifyClaudeRetry', () => {
     assert.equal(result.retryReason, 'missing_structured_output');
   });
 
+  it('treats HTTP 200 probe failures after successful execution as soft success', () => {
+    const result = classifyClaudeRetry({
+      httpCode: '200',
+      attempt: '1',
+      executionText: JSON.stringify({
+        type: 'result',
+        is_error: false,
+        subtype: 'success',
+        num_turns: 17,
+      }),
+    });
+
+    assert.equal(result.httpCode, '200');
+    assert.equal(result.isRateLimited, false);
+    assert.equal(result.shouldRetry, false);
+    assert.equal(result.retryReason, 'successful_result_after_action_probe');
+    assert.equal(result.softSuccess, true);
+    assert.match(result.softSuccessReason, /Claude completed successfully/);
+    assert.match(result.message, /soft success/);
+  });
+
   it('does not retry non-retryable failures', () => {
     const result = classifyClaudeRetry({
       httpCode: '200',
@@ -83,6 +104,7 @@ describe('classifyClaudeRetry', () => {
     assert.equal(result.isRateLimited, false);
     assert.equal(result.shouldRetry, false);
     assert.equal(result.retryReason, 'non_retryable');
+    assert.equal(result.softSuccess, false);
     assert.match(result.message, /non-retryable/);
   });
 });

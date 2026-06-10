@@ -119,6 +119,10 @@ runs:
         gh --version
 
         host="${GITHUB_SERVER_URL#https://}"
+        if [[ "${{ steps.setup_gh.outputs.auth }}" != "true" ]]; then
+          echo "gh authentication was not configured for ${host}. Aborting." >&2
+          exit 1
+        fi
 
         # `gh api user` fails for GitHub App / integration tokens used by
         # several workflows, while `gh auth status` succeeds but includes token
