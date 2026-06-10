@@ -21,6 +21,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: 'true'
+          require-gh-auth: 'false'
       - run: npm run lint
       - run: npm run format:check
 
@@ -35,6 +36,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: 'true'
           generate-prisma: 'true'
+          require-gh-auth: 'false'
       - run: npx tsc --noEmit
 
   test:
@@ -49,6 +51,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: 'true'
           generate-prisma: 'true'
+          require-gh-auth: 'false'
       - run: npm test
 
   build:
@@ -63,6 +66,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: 'true'
           generate-prisma: 'true'
+          require-gh-auth: 'false'
       - name: Build and measure
         id: build-metrics
         run: |

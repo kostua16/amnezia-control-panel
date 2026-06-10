@@ -29,6 +29,7 @@ jobs:
           install-deps: 'true'
           generate-prisma: 'true'
           cache-nextjs: 'true'
+          require-gh-auth: 'false'
 
       - name: Build and measure PR
         id: pr-build
@@ -72,6 +73,24 @@ jobs:
           MAIN_RUN_URL: ${{ steps.main-baseline.outputs.main_run_url }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          post_comment() {
+            local body="$1"
+            local attempt
+
+            for attempt in 1 2 3; do
+              if gh pr comment "$PR_NUMBER" --body "$body"; then
+                return 0
+              fi
+
+              if [ "$attempt" -lt 3 ]; then
+                sleep 5
+              fi
+            done
+
+            echo "::warning::Failed to post Performance Check comment after 3 attempts; keeping metrics job green."
+            return 0
+          }
+
           PR_SIZE_MB=$(echo "scale=2; $PR_SIZE / 1048576" | bc)
 
           if [ "$BASELINE_FOUND" != "true" ] || [ -z "$MAIN_SIZE" ] || [ -z "$MAIN_DURATION" ]; then
@@ -84,7 +103,7 @@ jobs:
 
           > **Note:** Main baseline metrics unavailable. Comparison skipped.
           > ${BASELINE_REASON:-No build metrics artifact found.}"
-            gh pr comment "$PR_NUMBER" --body "$BODY"
+            post_comment "$BODY"
             exit 0
           fi
 
@@ -123,4 +142,4 @@ jobs:
           > **Warning:** Build time increased by ${TIME_DIFF}%. Consider investigating."
           fi
 
-          gh pr comment "$PR_NUMBER" --body "$BODY"
+          post_comment "$BODY"
