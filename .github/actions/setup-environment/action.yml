@@ -93,7 +93,7 @@ runs:
         command -v gh >/dev/null 2>&1 && echo "gh(before setup-gh)=$(command -v gh)" || echo "gh(before setup-gh)=<not found>"
 
     - id: setup_gh
-      uses: kostua16/setup-gh@v1.0.3
+      uses: kostua16/setup-gh@v1.0.4
       continue-on-error: ${{ inputs.require-gh-auth != 'true' }}
       with:
         gh-version: ${{ inputs.gh-version }}
