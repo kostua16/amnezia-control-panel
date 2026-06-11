@@ -45,10 +45,11 @@ concurrency:
 jobs:
   classify-trigger:
     runs-on: self-hosted
+    timeout-minutes: 5
     outputs:
       should_run: ${{ steps.classify.outputs.should_run }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         if: github.event_name == 'pull_request_target'
 
       - name: Classify PR flow trigger
