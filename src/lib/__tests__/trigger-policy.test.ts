@@ -211,6 +211,26 @@ describe('trigger policy', () => {
     );
   });
 
+  it('skips PR auto-fix for generated Codex branches', () => {
+    const result = runFixPrPolicy(
+      {
+        workflow_run: {
+          head_branch: 'codex/260611-draft-pr-label-backfill',
+        },
+      },
+      {
+        headRefName: 'codex/260611-draft-pr-label-backfill',
+        labels: [{ name: 'needs-review' }],
+      },
+    );
+
+    assert.equal(result.should_run, false);
+    assert.equal(
+      result.reason,
+      'source PR branch codex/260611-draft-pr-label-backfill already matches an automation prefix',
+    );
+  });
+
   it('allows PR auto-fix for non-automation source PRs', () => {
     const result = runFixPrPolicy(
       {
