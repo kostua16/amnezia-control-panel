@@ -32,6 +32,11 @@ permissions:
   pull-requests: write
   actions: write
   issues: write
+
+concurrency:
+  group: fix-pr-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
 jobs:
   evaluate:
     if: |
