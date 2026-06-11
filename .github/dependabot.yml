@@ -13,7 +13,7 @@ updates:
       include: 'scope'
     labels:
       - 'dependencies'
-      - 'github-actions'
+      - 'area/workflows'
       - 'needs-review'
     review-automated: true
     groups:
