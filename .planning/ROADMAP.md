@@ -528,6 +528,16 @@ Source: `/gsd:explore` deep architectural review. Artifact: `.planning/quick/260
 | 2 | **API route handler abstraction** — `withHandler(schema, handler)` wrapper to eliminate duplicated try/catch + Zod + P2002 boilerplate across ~30 route files | Medium (DRY) | `src/lib/api-handler.ts` (new), `src/app/api/**/*.ts` | Proposed |
 | 3 | **Broadcaster query optimization** — Add time-range filter to `trafficLog.aggregate()`, reduce user count queries | Medium (Perf) | `src/lib/real-time-broadcaster.ts` | Proposed |
 
+## Improvement Intake: Deep Architectural Review (2026-06-11)
+
+Source: `/gsd:explore` second-pass review (non-duplicative). Artifact: `.planning/quick/260611-arch-review-deep/260611-PLAN.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 4 | **Transaction boundaries for user lifecycle** — Wrap POST/PUT/DELETE multi-step DB+VPN writes in `prisma.$transaction()` to prevent partial-failure inconsistency | High (Consistency) | `src/app/api/users/route.ts`, `src/app/api/users/[id]/route.ts` | Proposed |
+| 5 | **Decompose vpn-services.ts** — Split 791-line god file into `vpn/cli-executor`, `vpn/validation`, `vpn/awg-service`, `vpn/xui-service`, `vpn/types` (all under 200 lines) | Medium (Maintainability) | `src/lib/vpn-services.ts` → `src/lib/vpn/*.ts` | Proposed |
+| 6 | **Composite index on TrafficLog** — Add `@@index([userId, timestamp])` so traffic stats queries use a single index scan instead of choosing between two single-column indexes | Medium (Perf) | `prisma/schema.prisma` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
 *Last updated: 2026-06-11 - v1.1 milestone completed (Phases 11.1-12.15 folded into single milestone)*
