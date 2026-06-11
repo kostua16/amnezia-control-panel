@@ -10,7 +10,8 @@ const AWG_SERVICE_TYPE = 'AWG';
 const THREE_XUI_SERVICE_TYPE = 'THREE_XUI';
 const WIREGUARD_KEY_PATTERN = /^[A-Za-z0-9+/]{43}=$/;
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]+$/;
-const IPV4_PREFIX_PATTERN = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.$/;
+const IPV4_PREFIX_PATTERN =
+  /^(?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.$/;
 const ADDRESS_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}\/(?:3[0-2]|[12]?\d)$/;
 const ALLOWED_IPS_PATTERN = /^[0-9a-fA-F:.,/\s]+$/;
 const XUI_BASE_URL_PATTERN = /^https?:\/\/[^\s"'`<>]+$/;
@@ -109,7 +110,9 @@ function validateAddress(value: string): void {
 
   const [ip] = value.split('/');
   const octets = ip.split('.').map(Number);
-  if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+  if (
+    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+  ) {
     throw new Error(`AWG address contains an invalid IPv4 octet: ${value}`);
   }
 }
@@ -144,7 +147,10 @@ function awgPeerAllowedIps(address: string): string {
 }
 
 function xuiBaseUrl(): string {
-  const baseUrl = env('XUI_BASE_URL', 'http://127.0.0.1:2053').replace(/\/$/, '');
+  const baseUrl = env('XUI_BASE_URL', 'http://127.0.0.1:2053').replace(
+    /\/$/,
+    '',
+  );
   if (!XUI_BASE_URL_PATTERN.test(baseUrl)) {
     throw new Error(`XUI_BASE_URL is not a safe http(s) URL: ${baseUrl}`);
   }
@@ -182,7 +188,8 @@ function redactArgs(args: string[]): string[] {
       return '<redacted>';
     }
     if (/^(cookie|authorization):/i.test(arg)) return '<redacted-header>';
-    if (arg.includes('password=') || arg.includes('Cookie:')) return '<redacted>';
+    if (arg.includes('password=') || arg.includes('Cookie:'))
+      return '<redacted>';
     return arg;
   });
 }
@@ -280,8 +287,13 @@ function runCliWithInput(
   });
 }
 
-function ok(message: string, config?: Record<string, unknown>): VpnServiceResult {
-  return config ? { success: true, message, config } : { success: true, message };
+function ok(
+  message: string,
+  config?: Record<string, unknown>,
+): VpnServiceResult {
+  return config
+    ? { success: true, message, config }
+    : { success: true, message };
 }
 
 function fail(message: string): VpnServiceResult {
@@ -294,14 +306,15 @@ async function findProtocolConfig(
   username: string,
   serviceType: typeof AWG_SERVICE_TYPE | typeof THREE_XUI_SERVICE_TYPE,
 ): Promise<Record<string, unknown> | null> {
-  const protocol: UserProtocolConfig | null = await prisma.userProtocol.findFirst({
-    where: {
-      serviceType,
-      isActive: true,
-      user: { username },
-    },
-    select: { config: true },
-  });
+  const protocol: UserProtocolConfig | null =
+    await prisma.userProtocol.findFirst({
+      where: {
+        serviceType,
+        isActive: true,
+        user: { username },
+      },
+      select: { config: true },
+    });
 
   if (!protocol || !protocol.config || typeof protocol.config !== 'object') {
     return null;
@@ -330,7 +343,12 @@ async function generateAwgKeyPair(): Promise<{
   validateWireGuardKey(privateKey, 'Generated AWG private key');
 
   const publicKey = (
-    await runCliWithInput(awgBinary(), ['pubkey'], `${privateKey}\n`, 'AWG:pubkey')
+    await runCliWithInput(
+      awgBinary(),
+      ['pubkey'],
+      `${privateKey}\n`,
+      'AWG:pubkey',
+    )
   ).stdout.trim();
   validateWireGuardKey(publicKey, 'Generated AWG public key');
 
@@ -387,7 +405,10 @@ async function addAwgPeer(
   await runCli(command, args, `AWG:addPeer(${username})`);
 }
 
-async function removeAwgPeer(username: string, publicKey: string): Promise<void> {
+async function removeAwgPeer(
+  username: string,
+  publicKey: string,
+): Promise<void> {
   validateWireGuardKey(publicKey, 'AWG peer public key');
 
   const { command, args } = withOptionalSudo([
@@ -505,7 +526,9 @@ export async function blockAwgUser(
     sanitizeUsername(username);
     const config = await getAwgConfig(username);
     await removeAwgPeer(username, config.publicKey!);
-    return ok(`Blocked AWG peer ${username} by removing it from ${awgInterface()}`);
+    return ok(
+      `Blocked AWG peer ${username} by removing it from ${awgInterface()}`,
+    );
   } catch (err) {
     return fail(getErrorMessage(err));
   }
@@ -584,7 +607,9 @@ function parseXuiResponse(raw: string, action: string): XuiApiResponse {
     return parsed;
   } catch (err) {
     if (err instanceof SyntaxError) {
-      throw new Error(`${action} returned non-JSON output: ${raw.slice(0, 200)}`);
+      throw new Error(
+        `${action} returned non-JSON output: ${raw.slice(0, 200)}`,
+      );
     }
     throw err;
   }
@@ -684,10 +709,15 @@ export async function createThreeXuiUser(
     const subId = randomUUID().replace(/-/g, '').slice(0, 16);
     const client = buildXuiClient(username, uuid, true, subId);
 
-    await xuiApi(`createClient(${username})`, 'POST', '/panel/api/inbounds/addClient', {
-      id: inboundId,
-      settings: JSON.stringify({ clients: [client] }),
-    });
+    await xuiApi(
+      `createClient(${username})`,
+      'POST',
+      '/panel/api/inbounds/addClient',
+      {
+        id: inboundId,
+        settings: JSON.stringify({ clients: [client] }),
+      },
+    );
 
     const config: ThreeXuiUserConfig = {
       uuid,
@@ -698,7 +728,10 @@ export async function createThreeXuiUser(
       subId,
     };
 
-    return ok(`Created 3x-ui client ${username} on inbound ${inboundId}`, config) as
+    return ok(
+      `Created 3x-ui client ${username} on inbound ${inboundId}`,
+      config,
+    ) as
       | VpnServiceResult
       | (VpnServiceResult & { config?: ThreeXuiUserConfig });
   } catch (err) {

@@ -523,7 +523,9 @@ function extractCountryCodesFromRuliteText(
 }
 
 function extractRuliteSectionCode(line: string): string | null {
-  const normalized = line.replace(/^[#;/\s\[]+/, '').replace(/[\]\s:=-].*$/, '');
+  const normalized = line
+    .replace(/^[#;/\s\[]+/, '')
+    .replace(/[\]\s:=-].*$/, '');
   const geoipPrefixMatch = line.match(/geoip:([a-z]{2})(?:\b|[^a-z-])/i);
   return normalizeCountryCode(geoipPrefixMatch?.[1] ?? normalized);
 }
