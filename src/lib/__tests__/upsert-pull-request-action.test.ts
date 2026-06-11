@@ -21,19 +21,15 @@ describe('upsert-pull-request action', () => {
   it('creates PRs before applying labels and uses add-label for edits', () => {
     const action = readAction();
 
-    assert.match(action, /edit_label_args=\(\)/);
-    assert.match(action, /edit_label_args\+=\(--add-label "\$label"\)/);
+    assert.match(action, /missing_label_args=\(\)/);
+    assert.match(action, /missing_label_args\+=\(--add-label "\$label"\)/);
     assert.match(
       action,
-      /gh pr edit "\$pr_number" "\$\{edit_label_args\[@\]\}" >/,
+      /gh pr edit "\$pr_number" "\$\{missing_label_args\[@\]\}" >/,
     );
     assert.doesNotMatch(
       action,
-      /gh "\$\{create_args\[@\]\}" "\$\{create_label_args\[@\]\}"/,
-    );
-    assert.doesNotMatch(
-      action,
-      /gh "\$\{create_args\[@\]\}" "\$\{edit_label_args\[@\]\}"/,
+      /gh "\$\{create_args\[@\]\}" "\$\{missing_label_args\[@\]\}"/,
     );
     assert.match(
       action,
@@ -41,22 +37,17 @@ describe('upsert-pull-request action', () => {
     );
   });
 
-  it('defers labels while a pull request remains draft', () => {
+  it('applies missing labels regardless of draft status', () => {
     const action = readAction();
 
-    assert.ok(
-      action.includes(
-        'if [[ "${#edit_label_args[@]}" -gt 0 && ! ( "$PR_DRAFT" == "true" && "$is_draft" == "true" ) ]]; then',
-      ),
-    );
+    assert.match(action, /build_missing_label_args\(\)/);
     assert.match(
       action,
-      /Deferring label application for draft PR creation to avoid duplicate labeled workflow triggers\./,
+      /if \[\[ "\$\{#missing_label_args\[@\]\}" -gt 0 \]\]; then/,
     );
-    assert.ok(
-      action.includes(
-        'if [[ "$PR_DRAFT" == "false" && "${#edit_label_args[@]}" -gt 0 ]]; then',
-      ),
+    assert.doesNotMatch(
+      action,
+      /Deferring label application for draft PR creation/,
     );
   });
 
