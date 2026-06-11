@@ -70,6 +70,13 @@ function getPrFlowRelevantLabels(policyConfig, flowConfig) {
   return Array.from(labels).sort();
 }
 
+function isBotAccount(user = {}) {
+  const login = String(user.login ?? '');
+  const type = String(user.type ?? '');
+
+  return type === 'Bot' || /\[bot\]$/.test(login);
+}
+
 if (mode === 'claude') {
   const triggered =
     (eventName === 'issue_comment' && commentBody.includes('@claude')) ||
@@ -364,13 +371,20 @@ if (mode === 'fix-pr') {
     headRefName.startsWith(prefix),
   );
   const hasAutoFixLabel = labels.includes('auto-fix');
-  const shouldRun = !hasAutomationBranchPrefix && !hasAutoFixLabel;
+  const sourcePrAuthor = sourcePr.user ?? {};
+  const sourcePrAuthorLogin = String(sourcePrAuthor.login ?? '');
+  const sourcePrAuthorType = String(sourcePrAuthor.type ?? '');
+  const hasBotAuthor = isBotAccount(sourcePrAuthor);
+  const shouldRun =
+    !hasAutomationBranchPrefix && !hasAutoFixLabel && !hasBotAuthor;
   let reason = null;
 
   if (hasAutoFixLabel) {
     reason = 'source PR already has the auto-fix label';
   } else if (hasAutomationBranchPrefix) {
     reason = `source PR branch ${headRefName} already matches an automation prefix`;
+  } else if (hasBotAuthor) {
+    reason = `source PR author ${sourcePrAuthorLogin || 'unknown'} (${sourcePrAuthorType || 'unknown'}) is a bot and fix-pr skips bot-authored PRs`;
   }
 
   process.stdout.write(
@@ -380,6 +394,8 @@ if (mode === 'fix-pr') {
         should_run: shouldRun,
         head_ref_name: headRefName,
         labels,
+        source_pr_author_login: sourcePrAuthorLogin || null,
+        source_pr_author_type: sourcePrAuthorType || null,
         reason,
       },
       null,
