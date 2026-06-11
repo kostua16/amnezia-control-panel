@@ -5,6 +5,10 @@ inputs:
   branch-name:
     description: 'Branch name to create or reset'
     required: true
+  github-token:
+    description: 'GitHub token used for follow-up branch fetches in downstream automation steps'
+    required: false
+    default: ''
   user-name:
     description: 'Git user.name for automation commits'
     required: false
@@ -25,6 +29,7 @@ runs:
     - name: Setup git identity
       uses: ./.github/actions/setup-bot-git
       with:
+        github-token: ${{ inputs.github-token }}
         user-name: ${{ inputs.user-name }}
         user-email: ${{ inputs.user-email }}
 
