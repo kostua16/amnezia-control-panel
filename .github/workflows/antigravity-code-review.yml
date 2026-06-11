@@ -34,7 +34,7 @@ jobs:
       trusted: ${{ steps.gate.outputs.trusted }}
       pr-number: ${{ steps.gate.outputs.pr_number }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -61,7 +61,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           fetch-depth: 0
 
@@ -114,7 +114,7 @@ jobs:
         if: steps.check-secrets.outputs.missing != 'true'
         env:
           REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const output = process.env.REVIEW_OUTPUT;
@@ -130,7 +130,7 @@ jobs:
         if: steps.check-secrets.outputs.missing != 'true'
         env:
           REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const prNum = parseInt(`${{ steps.pr-info.outputs.pr_num }}`);

@@ -43,11 +43,11 @@ jobs:
       should_run: ${{ steps.policy.outputs.should_run }}
       reason: ${{ steps.policy.outputs.reason }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Read source PR metadata
         id: source-pr
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -111,7 +111,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - uses: ./.github/actions/setup-environment
         with:

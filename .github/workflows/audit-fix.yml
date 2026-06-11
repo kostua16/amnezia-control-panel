@@ -40,7 +40,7 @@ jobs:
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
@@ -158,7 +158,7 @@ jobs:
       issues: write
       actions: write
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - uses: ./.github/actions/setup-environment
         with:
