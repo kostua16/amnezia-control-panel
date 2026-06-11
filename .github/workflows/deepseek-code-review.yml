@@ -46,7 +46,7 @@ jobs:
       base-ref: ${{ steps.resolve.outputs.base_ref }}
       key-available: ${{ steps.check-key.outputs.available }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -55,7 +55,7 @@ jobs:
 
       - name: Resolve PR context
         id: resolve
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const eventName = context.eventName;
@@ -120,7 +120,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
           fetch-depth: 0
@@ -183,7 +183,7 @@ jobs:
             Do NOT approve the PR, request changes, or edit PR labels yourself. The workflow handles review signals.
 
       - name: Apply review signal
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
           STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}

@@ -46,7 +46,7 @@ jobs:
       targets: ${{ steps.collect.outputs.targets }}
       count: ${{ steps.collect.outputs.count }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -54,7 +54,7 @@ jobs:
 
       - name: Collect PR targets
         id: collect
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             let targets = [];
@@ -76,7 +76,7 @@ jobs:
     env:
       NODE_VERSION: '22.x'
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
@@ -220,7 +220,7 @@ jobs:
 
       - name: Upsert source PR improvement comment
         if: steps.metadata.outputs.should_analyze == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           PR_NUMBER: ${{ matrix.pr-number }}
           STRUCTURED_OUTPUT: ${{ steps.analyze.outputs.structured_output }}
@@ -284,7 +284,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -310,7 +310,7 @@ jobs:
       issues: write
       actions: write
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - uses: ./.github/actions/setup-environment
         with:

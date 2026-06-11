@@ -36,7 +36,7 @@ jobs:
       should-run: ${{ steps.gate.outputs.should_run }}
       planning-pr-number: ${{ steps.gate.outputs.planning_pr_number }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -65,7 +65,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout trusted repair script
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
@@ -100,7 +100,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout planning branch
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           ref: ${{ steps.resolve.outputs.head_branch }}
           fetch-depth: 0
@@ -129,7 +129,7 @@ jobs:
           commit-message: 'docs(planning): repair milestone namespace for PR #${{ steps.resolve.outputs.source_pr_number }}'
 
       - name: Upsert repair status comment
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           PR_NUMBER: ${{ needs.authorize.outputs.planning-pr-number }}
           SOURCE_PR_NUMBER: ${{ steps.resolve.outputs.source_pr_number }}

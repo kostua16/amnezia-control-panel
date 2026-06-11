@@ -29,7 +29,7 @@ jobs:
       has-problems: ${{ steps.collect.outputs.has_problems }}
       runs-data: ${{ steps.collect.outputs.runs_data }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -38,7 +38,7 @@ jobs:
 
       - name: Collect workflow runs from past hour
         id: collect
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const { parseClaudeExecution } = require('./.github/workflows/scripts/parse-claude-execution.cjs');
@@ -213,7 +213,7 @@ jobs:
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
@@ -348,7 +348,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - uses: ./.github/actions/setup-environment
         with:
