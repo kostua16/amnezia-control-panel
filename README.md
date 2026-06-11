@@ -8,6 +8,7 @@ Unified admin panel for managing [Amnezia AWG2](https://amnezia.org/) (AmneziaVP
 
 - **[Adding a server](docs/adding-a-server.md)** — Servers tab walkthrough, including where the **API key** comes from and how **Test Connection** behaves.
 - **[Adding a panel](docs/adding-a-panel.md)** — Panels tab walkthrough, **shared API key** with the remote instance, sync headers, and **Test Connection** behavior.
+- **[GSD Commands and Workflows](docs/GSD-HOWTO.md)** — Cheatsheet for GSD commands, daily workflows, and project-specific examples.
 
 ## Getting Started
 
