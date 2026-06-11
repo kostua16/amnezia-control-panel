@@ -330,13 +330,35 @@ describe('PR flow workflow invariants', () => {
   it('gates pull_request_target label churn before expensive PR flow steps', () => {
     const workflow = readWorkflow('.github/workflows/pr-flow.yml');
 
-    assert.match(workflow, /classify-trigger:\s*\n\s+runs-on:\s+self-hosted/);
+    assert.match(workflow, /classify-trigger:\s*\n\s+if:\s+>-\s*\n/);
+    assert.match(workflow, /classify-trigger:[\s\S]*?runs-on:\s+self-hosted/);
     assert.match(
       workflow,
       /orchestrate:\s*\n\s+needs:\s+classify-trigger\s*\n\s+if:\s+>-\s*\n\s+needs\.classify-trigger\.outputs\.should_run == 'true'/,
     );
     assert.match(workflow, /--mode pr-flow-pull-request-target/);
     assert.match(workflow, /--config-file \.github\/pr-flow\.json/);
+  });
+
+  it('keeps workflow_run PR fallback before claiming a runner', () => {
+    const workflow = readWorkflow('.github/workflows/pr-flow.yml');
+
+    assert.doesNotMatch(
+      workflow,
+      /contains\(toJSON\(github\.event\.workflow_run\), '"display_title":"PR #'\)/,
+    );
+    assert.match(
+      workflow,
+      /classify-trigger:\s*\n\s+if:\s+>-\s*\n\s+github\.event_name != 'workflow_run' \|\|\s*\n\s+toJSON\(github\.event\.workflow_run\.pull_requests\) != '\[\]' \|\|\s*\n\s+startsWith\(github\.event\.workflow_run\.display_title \|\| '', 'PR #'\)/,
+    );
+    assert.match(
+      workflow,
+      /run-name: "PR Orchestrator \$\{\{[\s\S]*github\.event\.workflow_run\.pull_requests\[0\]\.number && format\('PR #\{0\}', github\.event\.workflow_run\.pull_requests\[0\]\.number\)[\s\S]*startsWith\(github\.event\.workflow_run\.display_title \|\| '', 'PR #'\) && github\.event\.workflow_run\.display_title/,
+    );
+    assert.match(
+      workflow,
+      /group: pr-flow-\$\{\{[\s\S]*github\.event\.workflow_run\.pull_requests\[0\]\.number \|\| github\.event\.workflow_run\.display_title \|\| github\.event\.workflow_run\.head_branch/,
+    );
   });
 
   it('keeps non-relevant label events from canceling an in-flight orchestrator run', () => {

@@ -1,6 +1,6 @@
 name: PR Orchestrator
 
-run-name: "PR Orchestrator ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.event.issue.number && format('PR #{0}', github.event.issue.number) || github.event.inputs.pr_number || github.event.workflow_run.display_title || github.run_id }}"
+run-name: "PR Orchestrator ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.event.issue.number && format('PR #{0}', github.event.issue.number) || github.event.inputs.pr_number || github.event.workflow_run.pull_requests[0].number && format('PR #{0}', github.event.workflow_run.pull_requests[0].number) || startsWith(github.event.workflow_run.display_title || '', 'PR #') && github.event.workflow_run.display_title || github.event.workflow_run.head_branch || github.run_id }}"
 
 on:
   issue_comment:
@@ -39,11 +39,15 @@ permissions:
   actions: write
 
 concurrency:
-  group: pr-flow-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch || github.run_id }}
+  group: pr-flow-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.display_title || github.event.workflow_run.head_branch || github.run_id }}
   cancel-in-progress: ${{ github.event_name != 'pull_request_target' || (github.event.action != 'labeled' && github.event.action != 'unlabeled') }}
 
 jobs:
   classify-trigger:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      toJSON(github.event.workflow_run.pull_requests) != '[]' ||
+      startsWith(github.event.workflow_run.display_title || '', 'PR #')
     runs-on: self-hosted
     timeout-minutes: 5
     outputs:
@@ -74,11 +78,6 @@ jobs:
     needs: classify-trigger
     if: >-
       needs.classify-trigger.outputs.should_run == 'true' &&
-      (
-        github.event_name != 'workflow_run' ||
-        github.event.workflow_run.pull_requests[0].number ||
-        startsWith(github.event.workflow_run.display_title, 'PR #')
-      ) &&
       (
         github.event_name != 'pull_request_target' ||
         (

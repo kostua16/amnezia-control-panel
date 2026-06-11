@@ -132,6 +132,9 @@ The worker run-name contract is part of the orchestration API: worker run names
 must include `PR #<number> @ <head_sha>`. `orchestrate-pr-flow.cjs` uses that
 pattern to match active or completed dispatch runs back to the current PR head
 and to avoid double dispatching stale workers.
+`pr-flow.yml` also uses the same `PR #` display-title prefix to keep
+PR-related `workflow_run` wakeups when GitHub omits `pull_requests` from the
+event payload, while still skipping issue-only runs before setup.
 
 Branch protection setup is external repository state. After the first
 orchestrator run creates `pr-flow/ready`, require exactly that context if PR-flow
