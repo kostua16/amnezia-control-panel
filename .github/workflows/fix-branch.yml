@@ -29,6 +29,11 @@ permissions:
   pull-requests: write
   actions: write
   issues: write
+
+concurrency:
+  group: fix-branch-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
 jobs:
   fix:
     if: |
