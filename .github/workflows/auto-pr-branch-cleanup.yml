@@ -1,0 +1,85 @@
+name: Auto PR Branch Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  delete-generated-branch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Delete closed automation branch
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed('pull_request payload missing');
+              return;
+            }
+
+            const policyPath = path.join(
+              process.env.GITHUB_WORKSPACE,
+              '.github',
+              'workflows',
+              'policy.json',
+            );
+            const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
+            const headRef = pr.head?.ref || '';
+            const prefixes = [
+              ...(policy.trustedAutomationBranchPrefixes ?? []),
+              ...(policy.manualOnlyBranchPrefixes ?? []),
+              ...(policy.cleanupBranchPrefixes ?? []),
+              ...(policy.planningBranchPrefix ? [policy.planningBranchPrefix] : []),
+              ...(policy.auditSafe?.safeBranchPrefix
+                ? [policy.auditSafe.safeBranchPrefix]
+                : []),
+              ...(policy.auditSafe?.manualBranchPrefix
+                ? [policy.auditSafe.manualBranchPrefix]
+                : []),
+              ...(policy.dependabot?.manualOnlyBranchPrefixes ?? []),
+            ].filter(Boolean);
+            const uniquePrefixes = [...new Set(prefixes)];
+
+            if (!headRef) {
+              core.info('No head ref found on the closed pull request.');
+              return;
+            }
+
+            if (!uniquePrefixes.some((prefix) => headRef.startsWith(prefix))) {
+              core.info(
+                `Branch ${headRef} is not in the automation cleanup allow-list.`,
+              );
+              return;
+            }
+
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${headRef}`,
+              });
+              core.notice(
+                `Deleted closed automation branch ${headRef} from PR #${pr.number}.`,
+              );
+            } catch (error) {
+              if (error.status === 404 || error.status === 422) {
+                core.info(
+                  `Branch ${headRef} was already absent or could not be deleted: ${error.message}`,
+                );
+                return;
+              }
+
+              throw error;
+            }
