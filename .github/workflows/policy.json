@@ -9,6 +9,7 @@
     "claude-planning-pr-",
     "claude-audit-fix-"
   ],
+  "cleanupBranchPrefixes": ["codex/", "claude/", "dependabot/"],
   "planningBranchPrefix": "claude-planning-pr-",
   "fixApprovalLabel": "auto-fix-approved",
   "blockingLabels": [
