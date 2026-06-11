@@ -28,6 +28,13 @@ jobs:
           require-gh-auth: 'false'
       - run: npm run lint
       - run: npm run format:check
+      - name: Block Prisma unsafe raw SQL
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --fixed-strings "\$queryRawUnsafe" src/; then
+            echo "::error::Use Prisma tagged template \$queryRaw instead of \$queryRawUnsafe."
+            exit 1
+          fi
 
   typecheck:
     name: Type Check
@@ -56,20 +63,6 @@ jobs:
           generate-prisma: 'true'
           require-gh-auth: 'false'
       - run: npm test
-
-  unsafe-sql-guard:
-    name: Unsafe SQL Guard
-    runs-on: self-hosted
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
-      - name: Block Prisma unsafe raw SQL
-        run: |
-          set -euo pipefail
-          if grep -R --line-number --fixed-strings "\$queryRawUnsafe" src/; then
-            echo "::error::Use Prisma tagged template \$queryRaw instead of \$queryRawUnsafe."
-            exit 1
-          fi
 
   build:
     name: Build
