@@ -8,15 +8,9 @@ Unified admin control panel for managing Amnezia AWG2 (AmneziaVPN WireGuard) and
 
 One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui, no context switching between separate management interfaces.
 
-## Current Milestone: v1.1 Multi-Panel Chain Routing
+## Completed: v1.1 Multi-Panel Chain Routing + Audit Remediation (shipped 2026-06-11)
 
-**Goal:** Поддержка цепочек серверов через несколько admin-панелей с geo-routing по IP/host/geo, Tailscale как transport, и шаблоны предконфигурации.
-
-**Target features:**
-- Multi-panel chain routing с central push конфигурации на промежуточные панели
-- Hybrid model — центральная панель координирует, локальные панели автономны
-- Tailscale subnet router интеграция как transport между панелями
-- Templates — VPN-протоколы, серверные пресеты, routing presets
+**Phases 11.1-12.15** — Multi-panel chain routing with Tailscale transport, geo-routing, visual chain editor, pre-configuration templates, multi-panel dashboard, and full audit remediation (JWT enforcement, Socket.IO, sync contracts, push UX, verification artifacts, requirements reconciliation).
 
 ## Requirements
 
@@ -35,13 +29,11 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 - ✓ Real-time WebSocket updates — v1.0
 - ✓ Alert system (service failures, quota thresholds, resource thresholds) — v1.0
 
-### Active
-
-- [ ] Multi-panel chain registration and management
-- [ ] Central push of chain configuration to remote panels
-- [ ] Geo-routing across chained servers (IP/host/geo based)
-- [ ] Tailscale subnet router integration
-- [ ] Pre-configuration templates (VPN, server, routing)
+- ✓ Multi-panel chain registration and management — v1.1
+- ✓ Central push of chain configuration to remote panels — v1.1
+- ✓ Geo-routing across chained servers (IP/host/geo based) — v1.1
+- ✓ Tailscale subnet router integration — v1.1
+- ✓ Pre-configuration templates (VPN, server, routing) — v1.1
 
 ### Out of Scope
 
@@ -61,7 +53,9 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 - **State**: Zustand (client) + React Query (server state)
 - **Real-time**: Socket.io WebSocket for dashboard updates
 - **VPN integration**: Stubbed CLI commands in `src/lib/vpn-services.ts` — need real `amneziawg` and `xui` tools on deployment server
-- **v1.1 focus**: Multi-panel chain routing, Tailscale subnet router, pre-configuration templates
+- **v1.1 focus**: Multi-panel chain routing, Tailscale subnet router, pre-configuration templates — **SHIPPED 2026-06-11**
+- **v1.1 audit**: JWT enforcement, Socket.IO, sync contracts, push UX, verification artifacts, requirements reconciliation — **SHIPPED 2026-06-11**
+- **Next**: Developer automation governance (Phases 13.1-13.4)
 
 ## Key Decisions
 
@@ -103,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-04-29 after v1.1 milestone start*
+*Last updated: 2026-06-11 after v1.1 milestone completion (Phases 11.1-12.15)*
