@@ -147,6 +147,38 @@ function normalizeEcosystemName(value) {
   return String(value ?? 'unknown').replace(/-/g, '_');
 }
 
+function summarizeSemverUpdateTypes(types) {
+  const normalized = unique(
+    types
+      .map((value) =>
+        String(value ?? '')
+          .toLowerCase()
+          .trim(),
+      )
+      .filter(Boolean),
+  );
+
+  if (normalized.length === 0) return 'unknown';
+  if (normalized.includes('major')) return 'major';
+  if (normalized.some((value) => !['patch', 'minor', 'same'].includes(value))) {
+    return 'unknown';
+  }
+  if (normalized.includes('minor')) return 'minor';
+  if (normalized.includes('patch')) return 'patch';
+  if (normalized.every((value) => value === 'same')) return 'same';
+  return 'unknown';
+}
+
+function parseDependabotUpdateTypesFromBody(body) {
+  if (!body) return [];
+
+  return [
+    ...body.matchAll(
+      /update-type:\s+version-update:semver-(major|minor|patch)\b/gi,
+    ),
+  ].map((match) => match[1].toLowerCase());
+}
+
 function parseDependabotUpdate(pr, headRefName) {
   const authorLogin = normalizeAuthorLogin(pr);
   const isDependabot =
@@ -159,12 +191,15 @@ function parseDependabotUpdate(pr, headRefName) {
   const [, rawEcosystem = 'unknown'] = headRefName.split('/');
   const ecosystem = normalizeEcosystemName(rawEcosystem);
   const title = pr.title ?? '';
+  const body = pr.body ?? '';
   const semverMatch = title.match(
     / from (\d+\.\d+\.\d+(?:[-+][^\s]+)?) to (\d+\.\d+\.\d+(?:[-+][^\s]+)?)/i,
   );
-  let updateType = 'unknown';
+  let updateType = summarizeSemverUpdateTypes(
+    parseDependabotUpdateTypesFromBody(body),
+  );
 
-  if (semverMatch) {
+  if (updateType === 'unknown' && semverMatch) {
     const from = semverMatch[1].split(/[+-]/)[0].split('.').map(Number);
     const to = semverMatch[2].split(/[+-]/)[0].split('.').map(Number);
 

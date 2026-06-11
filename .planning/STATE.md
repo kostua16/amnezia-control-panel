@@ -142,6 +142,7 @@ Resume file: None
 | 2026-06-11 | 260611-7py   | PR-flow preflight uses self-hosted runner                   |
 | 2026-06-11 | 260611-7y7   | Merge main into PR #291                                     |
 | 2026-06-11 | 260611-85f   | Remove invalid Dependabot config keys                       |
+| 2026-06-11 | 260611-cfw   | Grouped Dependabot patch/minor PRs infer body update types  |
 | 2026-06-11 | 260611-8f6   | Fix PR-flow workflow governance failures                    |
 | 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 

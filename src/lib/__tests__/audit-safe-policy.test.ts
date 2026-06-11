@@ -20,11 +20,17 @@ function file(path: string, additions = 5, deletions = 1) {
 
 function pr({
   headRefName,
+  title = 'fix(audit): address autonomous audit findings',
+  body = '',
+  authorLogin = 'github-actions[bot]',
   labels = [],
   files = [file('src/lib/resource-monitor.ts')],
   isDraft = false,
 }: {
   headRefName: string;
+  title?: string;
+  body?: string;
+  authorLogin?: string;
   labels?: string[];
   files?: Array<
     | string
@@ -39,11 +45,12 @@ function pr({
 }) {
   return {
     number: 1,
-    title: 'fix(audit): address autonomous audit findings',
+    title,
+    body,
     isDraft,
     headRefName,
     baseRefName: 'main',
-    author: { login: 'github-actions[bot]' },
+    author: { login: authorLogin },
     labels: labels.map((name) => ({ name })),
     files,
     isCrossRepository: false,
@@ -241,6 +248,40 @@ describe('audit-safe PR policy', () => {
       'ai-review-passed',
       'security-review-passed',
     ]);
+  });
+
+  it('treats grouped Dependabot patch/minor PRs as supported when the body metadata proves it', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        title:
+          'chore(deps-dev): bump the development-dependencies group with 5 updates',
+        body: [
+          'updated-dependencies:',
+          '- dependency-name: eslint-config-next',
+          '  update-type: version-update:semver-patch',
+          '  dependency-group: development-dependencies',
+          '- dependency-name: prettier',
+          '  update-type: version-update:semver-patch',
+          '  dependency-group: development-dependencies',
+          '- dependency-name: tsx',
+          '  update-type: version-update:semver-minor',
+          '  dependency-group: development-dependencies',
+        ].join('\n'),
+        headRefName:
+          'dependabot/npm_and_yarn/development-dependencies-5368b70e96',
+        authorLogin: 'dependabot[bot]',
+        labels: ['deps-review-passed'],
+        files: [file('package.json'), file('package-lock.json', 20, 20)],
+      }),
+      policy,
+    );
+
+    assert.equal(result.pr_class, 'dependabot');
+    assert.equal(result.manual_only, false);
+    assert.equal(result.eligible, true);
+    assert.equal(result.dependabot?.updateType, 'minor');
+    assert.equal(result.dependabot?.supported, true);
+    assert.deepEqual(result.required_pass_labels, ['deps-review-passed']);
   });
 });
 
