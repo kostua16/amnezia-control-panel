@@ -189,6 +189,12 @@ inputs:
   additional-permissions:
     description: "Additional GitHub permissions for the App token (e.g. 'issues: write')"
     default: ''
+  plugins:
+    description: 'Newline-separated list of Claude Code plugin names to install (e.g. code-review@claude-code-plugins)'
+    default: ''
+  plugin-marketplaces:
+    description: 'Newline-separated list of Claude Code plugin marketplace Git URLs to install from'
+    default: ''
   github-token:
     description: 'GitHub token for issue reporting and log download'
     default: '${{ github.token }}'
@@ -312,6 +318,8 @@ runs:
         track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
+        plugins: ${{ inputs.plugins }}
+        plugin_marketplaces: ${{ inputs.plugin-marketplaces }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
@@ -399,6 +407,8 @@ runs:
         track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
+        plugins: ${{ inputs.plugins }}
+        plugin_marketplaces: ${{ inputs.plugin-marketplaces }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
@@ -484,6 +494,8 @@ runs:
         track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
+        plugins: ${{ inputs.plugins }}
+        plugin_marketplaces: ${{ inputs.plugin-marketplaces }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}

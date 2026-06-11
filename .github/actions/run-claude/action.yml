@@ -176,6 +176,14 @@ inputs:
     description: 'Additional GitHub permissions for the App token'
     required: false
     default: ''
+  plugins:
+    description: 'Newline-separated list of Claude Code plugin names to install'
+    required: false
+    default: ''
+  plugin-marketplaces:
+    description: 'Newline-separated list of Claude Code plugin marketplace Git URLs'
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
@@ -200,3 +208,5 @@ runs:
         claude-debug: ${{ inputs.claude-debug }}
         claude-full-output: ${{ inputs.claude-full-output }}
         additional-permissions: ${{ inputs.additional-permissions }}
+        plugins: ${{ inputs.plugins }}
+        plugin-marketplaces: ${{ inputs.plugin-marketplaces }}
