@@ -23,6 +23,12 @@ inputs:
   install-deps:
     description: 'Run npm ci with cache'
     default: 'false'
+  minimum-disk-space-mb:
+    description: 'Prune temp/docker/local-cache data when available disk drops below this threshold'
+    default: '2048'
+  local-cache-entries-to-keep:
+    description: 'Maximum number of repo-local maxnowack/local-cache entries to keep when pruning'
+    default: '8'
   generate-prisma:
     description: 'Run npx prisma generate'
     default: 'false'
@@ -60,19 +66,58 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        REQUIRED_MB=1024
-        available_kb=$(df --output=avail / | tail -1 | tr -d ' ')
-        available_mb=$((available_kb / 1024))
+        REQUIRED_MB="${{ inputs.minimum-disk-space-mb }}"
+        LOCAL_CACHE_KEEP="${{ inputs.local-cache-entries-to-keep }}"
+
+        get_available_mb() {
+          local available_kb
+          available_kb=$(df --output=avail / | tail -1 | tr -d ' ')
+          echo $((available_kb / 1024))
+        }
+
+        cleanup_general() {
+          npm cache clean --force 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP"/* 2>/dev/null || true
+          docker system prune -af --volumes 2>/dev/null || true
+        }
+
+        prune_local_cache() {
+          local tool_cache_root repo_cache_root
+          tool_cache_root="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+          repo_cache_root="${tool_cache_root}/${GITHUB_REPOSITORY}"
+
+          if [[ ! "$LOCAL_CACHE_KEEP" =~ ^[0-9]+$ ]] || [ "$LOCAL_CACHE_KEEP" -lt 1 ]; then
+            echo "Skipping local-cache pruning because local-cache-entries-to-keep is invalid: ${LOCAL_CACHE_KEEP}"
+            return
+          fi
+
+          if [ ! -d "$repo_cache_root" ]; then
+            echo "No repo-local cache directory found at ${repo_cache_root}"
+            return
+          fi
+
+          mapfile -t cache_dirs < <(find "$repo_cache_root" -mindepth 1 -maxdepth 1 -type d -exec ls -dt {} + 2>/dev/null || true)
+          if [ "${#cache_dirs[@]}" -le "$LOCAL_CACHE_KEEP" ]; then
+            echo "Repo-local cache entries within limit (${#cache_dirs[@]} <= ${LOCAL_CACHE_KEEP})"
+            return
+          fi
+
+          echo "Pruning repo-local cache entries in ${repo_cache_root} (keeping newest ${LOCAL_CACHE_KEEP})"
+          for ((i = LOCAL_CACHE_KEEP; i < ${#cache_dirs[@]}; i++)); do
+            echo "Removing stale local-cache entry: ${cache_dirs[$i]}"
+            rm -rf -- "${cache_dirs[$i]}" || true
+          done
+        }
+
+        available_mb=$(get_available_mb)
         echo "Available disk space: ${available_mb} MB"
 
         if [ "$available_mb" -lt "$REQUIRED_MB" ]; then
           echo "Low disk space (${available_mb} MB < ${REQUIRED_MB} MB). Cleaning..."
-          npm cache clean --force 2>/dev/null || true
-          rm -rf "$RUNNER_TEMP"/* 2>/dev/null || true
-          docker system prune -af --volumes 2>/dev/null || true
+          cleanup_general
+          prune_local_cache
 
-          available_kb=$(df --output=avail / | tail -1 | tr -d ' ')
-          available_mb=$((available_kb / 1024))
+          available_mb=$(get_available_mb)
           echo "Available disk space after cleanup: ${available_mb} MB"
         fi
 
