@@ -82,19 +82,29 @@ runs:
       run: |
         set -euo pipefail
 
-        edit_label_args=()
-        if [[ -n "$PR_LABELS" ]]; then
+        missing_label_args=()
+        build_missing_label_args() {
+          local pr_json="$1"
+          missing_label_args=()
+          if [[ -z "$PR_LABELS" ]]; then
+            return
+          fi
+
           while IFS= read -r label; do
             [[ -z "$label" ]] && continue
-            edit_label_args+=(--add-label "$label")
+            if ! jq -e --arg label "$label" \
+              '.[0].labels // [] | map(.name) | index($label) != null' \
+              <<<"$pr_json" >/dev/null; then
+              missing_label_args+=(--add-label "$label")
+            fi
           done < <(printf '%s\n' "$PR_LABELS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        fi
+        }
 
         existing_json=$(gh pr list \
           --state open \
           --base "$BASE_BRANCH" \
           --head "$HEAD_BRANCH" \
-          --json number,url,isDraft \
+          --json number,url,isDraft,labels \
           --limit 1)
 
         if [[ "$(jq 'length' <<<"$existing_json")" -gt 0 ]]; then
@@ -108,8 +118,9 @@ runs:
               gh pr ready "$pr_number" >/dev/null 2>&1 || true
               is_draft="false"
             fi
-            if [[ "${#edit_label_args[@]}" -gt 0 && ! ( "$PR_DRAFT" == "true" && "$is_draft" == "true" ) ]]; then
-              gh pr edit "$pr_number" "${edit_label_args[@]}" >/dev/null 2>&1 || true
+            build_missing_label_args "$existing_json"
+            if [[ "${#missing_label_args[@]}" -gt 0 ]]; then
+              gh pr edit "$pr_number" "${missing_label_args[@]}" >/dev/null 2>&1 || true
             fi
             updated="true"
           else
@@ -133,15 +144,11 @@ runs:
           exit 1
         fi
 
-        if [[ "$PR_DRAFT" == "true" && "${#edit_label_args[@]}" -gt 0 ]]; then
-          echo "::notice::Deferring label application for draft PR creation to avoid duplicate labeled workflow triggers."
-        fi
-
         created_json=$(gh pr list \
           --state open \
           --base "$BASE_BRANCH" \
           --head "$HEAD_BRANCH" \
-          --json number,url \
+          --json number,url,labels \
           --limit 1)
 
         if [[ "$(jq 'length' <<<"$created_json")" -eq 0 ]]; then
@@ -152,8 +159,9 @@ runs:
         pr_number=$(jq -r '.[0].number' <<<"$created_json")
         pr_url=$(jq -r '.[0].url' <<<"$created_json")
 
-        if [[ "$PR_DRAFT" == "false" && "${#edit_label_args[@]}" -gt 0 ]]; then
-          gh pr edit "$pr_number" "${edit_label_args[@]}" >/dev/null 2>&1 || \
+        build_missing_label_args "$created_json"
+        if [[ "${#missing_label_args[@]}" -gt 0 ]]; then
+          gh pr edit "$pr_number" "${missing_label_args[@]}" >/dev/null 2>&1 || \
             echo "::warning::Pull request created without applying one or more labels"
         fi
 
