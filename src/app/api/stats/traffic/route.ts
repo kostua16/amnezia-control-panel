@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { success, error } from '@/lib/api-response';
 
@@ -34,47 +35,41 @@ export async function GET(request: NextRequest) {
 
     const { userId, period, startDate, endDate } = parsed.data;
 
-    // Build parameterized query — truncExpr is safe (from fixed map),
-    // user values are bound via Prisma.sql tagged template.
+    // Build parameterized query using Prisma tagged template.
+    // truncExpr comes from a fixed map (not user input), so Prisma.raw is safe.
+    // User values are bound as parameters via Prisma.sql interpolation.
     const truncExpr = TRUNC_EXPRS[period];
-    const conditions: string[] = [];
-    const p: unknown[] = [];
+    const conditions: Prisma.Sql[] = [];
 
     if (userId) {
-      conditions.push(`userId = ?`);
-      p.push(userId);
+      conditions.push(Prisma.sql`userId = ${userId}`);
     }
     if (startDate) {
       const sd = new Date(startDate);
       if (!isNaN(sd.getTime())) {
-        conditions.push(`timestamp >= ?`);
-        p.push(sd.toISOString());
+        conditions.push(Prisma.sql`timestamp >= ${sd.toISOString()}`);
       }
     }
     if (endDate) {
       const ed = new Date(endDate);
       if (!isNaN(ed.getTime())) {
-        conditions.push(`timestamp <= ?`);
-        p.push(ed.toISOString());
+        conditions.push(Prisma.sql`timestamp <= ${ed.toISOString()}`);
       }
     }
 
     const whereClause =
-      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      conditions.length > 0
+        ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
+        : Prisma.empty;
 
-    // Prisma.sql only allows ? placeholders via tagged template interpolation.
-    // Build the final query with Prisma.join for the parameter list.
-    // Since truncExpr and whereClause are server-controlled (not user input),
-    // and all user values are bound as parameters, this is safe.
     const bucketsRaw: Array<{
       bucket: string;
       bytesIn: bigint;
       bytesOut: bigint;
       userCount: bigint;
-    }> = await prisma.$queryRawUnsafe(
-      `SELECT ${truncExpr} as bucket, SUM(bytesIn) as "bytesIn", SUM(bytesOut) as "bytesOut", COUNT(DISTINCT userId) as "userCount" FROM traffic_logs ${whereClause} GROUP BY bucket ORDER BY bucket ASC`,
-      ...p,
-    );
+    }> = await prisma.$queryRaw`
+      SELECT ${Prisma.raw(truncExpr)} as bucket, SUM(bytesIn) as "bytesIn", SUM(bytesOut) as "bytesOut", COUNT(DISTINCT userId) as "userCount" FROM traffic_logs ${whereClause} GROUP BY bucket ORDER BY bucket ASC
+    `;
 
     const buckets = bucketsRaw.map((row) => ({
       timestamp: row.bucket,
