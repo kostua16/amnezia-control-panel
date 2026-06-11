@@ -60,4 +60,24 @@ describe('workflow trigger policy', () => {
     assert.match(guard, /github\.event\.action != 'unlabeled'/);
     assert.match(guard, /github\.event\.pull_request\.draft != true/);
   });
+
+  it('classifies PR label triggers before allocating the orchestrator runner', () => {
+    const workflowPath = path.join(
+      repoRoot,
+      '.github/workflows',
+      'pr-flow.yml',
+    );
+    const workflow = fs.readFileSync(workflowPath, 'utf8');
+
+    assert.match(workflow, /classify-trigger:\s*\n\s+runs-on:\s+self-hosted/);
+    assert.match(
+      workflow,
+      /should_run:\s+\$\{\{\s*steps\.classify\.outputs\.should_run\s*\}\}/,
+    );
+    assert.match(workflow, /needs:\s+classify-trigger/);
+    assert.match(
+      workflow,
+      /needs\.classify-trigger\.outputs\.should_run == 'true'/,
+    );
+  });
 });

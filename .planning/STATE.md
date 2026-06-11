@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: complete
 stopped_at: null
-last_updated: '2026-06-11T14:00:00Z'
-last_activity: 2026-06-11 -- v1.1 milestone completed and archived (Phases 11.1-12.15)
+last_updated: '2026-06-11T01:05:09Z'
+last_activity: 2026-06-11 -- Fix PR #291 workflow governance
 progress:
   total_phases: 24
   completed_phases: 24
@@ -27,7 +27,7 @@ progress:
 
 Phase: All v1.1 phases complete (11.1-12.15)
 Status: Milestone v1.1 archived 2026-06-11
-Last activity: 2026-06-11 -- v1.1 milestone completion (Phases 11.1-11.8 + audit remediation 12.1-12.15 folded into single archive)
+Last activity: 2026-06-11 -- Fix PR #291 workflow governance
 
 Progress: [██████████] 100% (v1.1 COMPLETE & ARCHIVED)
 
@@ -92,16 +92,16 @@ Recent decisions affecting current work:
 
 8 items captured from review of unpushed commits (2026-06-10):
 
-| # | Area | Title | Severity |
-|---|------|-------|----------|
-| 1 | database | Refactor audit-log.ts to use Prisma model layer | Hard |
-| 2 | api | Replace 3x-ui HTTP REST calls with direct shell access | Hard |
-| 3 | api | Restrict XUI_BASE_URL to localhost/127.0.0.1 | Judgement |
-| 4 | api | Stream rulite import instead of fs.readFileSync | Judgement |
-| 5 | api | Wire importFromRulite() into routing import API | Gap |
-| 6 | api | Add audit logging to routing import endpoint | Gap |
-| 7 | tooling | Fix supply-chain.yml npm audit signatures integrity | Minor |
-| 8 | tooling | Fix dependabot.yml invalid review-automated key | Minor |
+| #   | Area     | Title                                                  | Severity  |
+| --- | -------- | ------------------------------------------------------ | --------- |
+| 1   | database | Refactor audit-log.ts to use Prisma model layer        | Hard      |
+| 2   | api      | Replace 3x-ui HTTP REST calls with direct shell access | Hard      |
+| 3   | api      | Restrict XUI_BASE_URL to localhost/127.0.0.1           | Judgement |
+| 4   | api      | Stream rulite import instead of fs.readFileSync        | Judgement |
+| 5   | api      | Wire importFromRulite() into routing import API        | Gap       |
+| 6   | api      | Add audit logging to routing import endpoint           | Gap       |
+| 7   | tooling  | Fix supply-chain.yml npm audit signatures integrity    | Minor     |
+| 8   | tooling  | Fix dependabot.yml invalid review-automated key        | Minor     |
 
 ### Blockers/Concerns
 
@@ -139,9 +139,13 @@ Resume file: None
 | 2026-06-04 | 260605-56h   | Manual-only PRs still run advisory reviews                  |
 | 2026-06-04 | 260605-67p   | Maintainer approval label + `/approve` PR flow              |
 | 2026-06-10 | 260610-r8l   | Audit-fix PR bodies include source-run links                |
+| 2026-06-11 | 260611-7py   | PR-flow preflight uses self-hosted runner                   |
+| 2026-06-11 | 260611-7y7   | Merge main into PR #291                                     |
+| 2026-06-11 | 260611-85f   | Remove invalid Dependabot config keys                       |
+| 2026-06-11 | 260611-8f6   | Fix PR-flow workflow governance failures                    |
 | 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-11 - v1.1 milestone completed and archived (Phases 11.1-12.15)_
+_Last updated: 2026-06-11 - Fix PR #291 workflow governance (quick 260611-8f6)_
