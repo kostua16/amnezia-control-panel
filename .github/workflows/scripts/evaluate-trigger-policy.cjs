@@ -366,6 +366,7 @@ if (mode === 'fix-pr') {
   const automationPrefixes = [
     ...(policy.trustedAutomationBranchPrefixes ?? []),
     ...(policy.manualOnlyBranchPrefixes ?? []),
+    ...(policy.cleanupBranchPrefixes ?? []),
   ];
   const hasAutomationBranchPrefix = automationPrefixes.some((prefix) =>
     headRefName.startsWith(prefix),
