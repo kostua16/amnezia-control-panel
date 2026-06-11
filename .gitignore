@@ -100,6 +100,13 @@ __pycache__/
 
 #OMO
 .omo/run-continuation/*.json
+.omo/boulder.json
+.omo/plans/
+.omo/notepads/
+.omo/drafts/
+.omo/cache/
+
+# Graphify
 graphify-out/**/cost.json
 **/graphify-out/cache/
 graphify-out/cache/
