@@ -33,7 +33,11 @@ export function checkServiceStatus(serviceKey: ServiceKey): ServiceHealth {
       status: result === 'active' ? 'online' : 'offline',
       timestamp: new Date().toISOString(),
     };
-  } catch {
+  } catch (err) {
+    console.error(
+      `[service-monitor] Failed to check status of ${systemdName}:`,
+      err,
+    );
     return {
       service: serviceKey,
       systemdName,
@@ -63,7 +67,8 @@ export function restartService(serviceKey: ServiceKey): boolean {
       timeout: 15000,
     });
     return true;
-  } catch {
+  } catch (err) {
+    console.error(`[service-monitor] Failed to restart ${systemdName}:`, err);
     return false;
   }
 }

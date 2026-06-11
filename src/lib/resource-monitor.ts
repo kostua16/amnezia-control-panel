@@ -98,7 +98,8 @@ function getDiskUsage(): {
       free: freeKb * 1024,
       percent,
     };
-  } catch {
+  } catch (err) {
+    console.error('[resource-monitor] Failed to read disk usage:', err);
     return { total: 0, used: 0, free: 0, percent: 0 };
   }
 }

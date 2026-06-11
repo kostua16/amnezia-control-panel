@@ -12,8 +12,13 @@ import { resolvePanelTransport } from '../transport-resolver';
 
 let mockGetNodeIP: ReturnType<typeof mock.fn>;
 let mockIsReachable: ReturnType<typeof mock.fn>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let setDeps: (deps: any) => void;
+
+interface TransportDeps {
+  getNodeIP: (hostname?: string) => Promise<string | null>;
+  isReachable: (hostname: string) => Promise<boolean>;
+}
+
+let setDeps: (deps: TransportDeps) => void;
 let resetDeps: () => void;
 
 beforeEach(async () => {
@@ -29,8 +34,8 @@ beforeEach(async () => {
   resetDeps = (resolver as any).__resetDeps;
 
   setDeps({
-    getNodeIP: mockGetNodeIP,
-    isReachable: mockIsReachable,
+    getNodeIP: mockGetNodeIP as unknown as TransportDeps['getNodeIP'],
+    isReachable: mockIsReachable as unknown as TransportDeps['isReachable'],
   });
 });
 

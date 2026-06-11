@@ -173,16 +173,18 @@ export function ChainFlowEditor({
         unassignedNodeIds.push(node.id);
         continue;
       }
-      if (!panelGroups.has(panelId)) {
+      let group = panelGroups.get(panelId);
+      if (!group) {
         const panel = panels?.find((p) => p.id === panelId);
-        panelGroups.set(panelId, {
+        group = {
           panelId,
           panelName: panel?.name ?? `Panel ${panelId}`,
           isActive: panel?.isActive ?? false,
           nodeIds: [],
-        });
+        };
+        panelGroups.set(panelId, group);
       }
-      panelGroups.get(panelId)!.nodeIds.push(node.id);
+      group.nodeIds.push(node.id);
     }
 
     // Generate chain nodes with parentId assignments

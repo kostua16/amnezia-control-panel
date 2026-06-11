@@ -168,12 +168,18 @@ export function PushWizard({ panels }: PushWizardProps) {
     setPushError(null);
 
     try {
+      // Guard: should not be reachable when no template is selected (button is disabled)
+      if (!selectedTemplate) {
+        setPushError('No template selected');
+        return;
+      }
+
       // Generate ChainConfig from template + panel mapping
       const configRes = await fetch('/api/panels/push/chain-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          templateId: selectedTemplate!.id,
+          templateId: selectedTemplate.id,
           panelMapping,
         }),
       });
