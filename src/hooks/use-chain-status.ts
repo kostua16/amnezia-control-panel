@@ -46,24 +46,35 @@ export function useChainStatus(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const isFetchingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchStatus = useCallback(async () => {
-    if (!chainId || !enabled) return;
+    if (!chainId || !enabled || isFetchingRef.current) return;
 
+    isFetchingRef.current = true;
     setIsLoading(true);
     setError(null);
 
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const response = await fetch(`/api/chains/${chainId}/status`);
+      const response = await fetch(`/api/chains/${chainId}/status`, {
+        signal: controller.signal,
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       const data = await response.json();
       setStatus(data);
     } catch (err) {
+      if (controller.signal.aborted) return;
       const message = err instanceof Error ? err.message : 'Unknown error';
       setError(message);
     } finally {
+      isFetchingRef.current = false;
       setIsLoading(false);
     }
   }, [chainId, enabled]);
@@ -88,6 +99,7 @@ export function useChainStatus(
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
+      abortRef.current?.abort();
     };
   }, [chainId, pollInterval, enabled, fetchStatus]);
 

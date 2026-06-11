@@ -61,7 +61,7 @@ export async function checkUserQuotas(): Promise<{
 
   for (const user of usersWithQuotas) {
     // quotas is an array (one-to-many relation in Prisma)
-    const quota = user.quotas[0];
+    const quota = user.quotas.at(0);
     if (!quota || quota.quotaBytes <= 0) continue;
 
     const usagePercent = await getUserUsagePercent(user.id, quota.quotaBytes);
