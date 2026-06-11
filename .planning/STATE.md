@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: complete
 stopped_at: null
-last_updated: '2026-06-11T00:46:36Z'
-last_activity: 2026-06-11 -- Merge origin/main into PR #291
+last_updated: '2026-06-11T00:53:11Z'
+last_activity: 2026-06-11 -- Fix Dependabot config on PR #291
 progress:
   total_phases: 24
   completed_phases: 24
@@ -27,7 +27,7 @@ progress:
 
 Phase: All v1.1 phases complete (11.1-12.15)
 Status: Milestone v1.1 archived 2026-06-11
-Last activity: 2026-06-11 -- Merge origin/main into PR #291
+Last activity: 2026-06-11 -- Fix Dependabot config on PR #291
 
 Progress: [██████████] 100% (v1.1 COMPLETE & ARCHIVED)
 
@@ -141,9 +141,10 @@ Resume file: None
 | 2026-06-10 | 260610-r8l   | Audit-fix PR bodies include source-run links                |
 | 2026-06-11 | 260611-7py   | PR-flow preflight uses self-hosted runner                   |
 | 2026-06-11 | 260611-7y7   | Merge main into PR #291                                     |
+| 2026-06-11 | 260611-85f   | Remove invalid Dependabot config keys                       |
 | 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-11 - Merge origin/main into PR #291 (quick 260611-7y7)_
+_Last updated: 2026-06-11 - Fix Dependabot config on PR #291 (quick 260611-85f)_

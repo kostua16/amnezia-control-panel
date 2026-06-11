@@ -15,7 +15,6 @@ updates:
       - 'dependencies'
       - 'github-actions'
       - 'needs-review'
-    review-automated: true
     groups:
       github-actions:
         patterns:
@@ -45,4 +44,3 @@ updates:
         update-types:
           - 'patch'
           - 'minor'
-    review-automated: true
