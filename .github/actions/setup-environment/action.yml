@@ -82,7 +82,7 @@ runs:
         }
 
         prune_local_cache() {
-          local tool_cache_root repo_cache_root
+          local tool_cache_root repo_cache_root remaining_cache_count last_remaining_index available_mb
           tool_cache_root="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
           repo_cache_root="${tool_cache_root}/${GITHUB_REPOSITORY}"
 
@@ -97,16 +97,48 @@ runs:
           fi
 
           mapfile -t cache_dirs < <(find "$repo_cache_root" -mindepth 1 -maxdepth 1 -type d -exec ls -dt {} + 2>/dev/null || true)
-          if [ "${#cache_dirs[@]}" -le "$LOCAL_CACHE_KEEP" ]; then
-            echo "Repo-local cache entries within limit (${#cache_dirs[@]} <= ${LOCAL_CACHE_KEEP})"
+          remaining_cache_count=${#cache_dirs[@]}
+          if [ "$remaining_cache_count" -eq 0 ]; then
+            echo "No repo-local cache entries found at ${repo_cache_root}"
             return
           fi
 
-          echo "Pruning repo-local cache entries in ${repo_cache_root} (keeping newest ${LOCAL_CACHE_KEEP})"
-          for ((i = LOCAL_CACHE_KEEP; i < ${#cache_dirs[@]}; i++)); do
-            echo "Removing stale local-cache entry: ${cache_dirs[$i]}"
+          if [ "$remaining_cache_count" -le "$LOCAL_CACHE_KEEP" ]; then
+            echo "Repo-local cache entries within limit (${remaining_cache_count} <= ${LOCAL_CACHE_KEEP})"
+          else
+            echo "Pruning repo-local cache entries in ${repo_cache_root} (keeping newest ${LOCAL_CACHE_KEEP})"
+            for ((i = LOCAL_CACHE_KEEP; i < remaining_cache_count; i++)); do
+              echo "Removing stale local-cache entry: ${cache_dirs[$i]}"
+              rm -rf -- "${cache_dirs[$i]}" || true
+            done
+            remaining_cache_count=$LOCAL_CACHE_KEEP
+          fi
+
+          available_mb=$(get_available_mb)
+          if [ "$available_mb" -ge "$REQUIRED_MB" ]; then
+            return
+          fi
+
+          last_remaining_index=$((remaining_cache_count - 1))
+          if [ "$last_remaining_index" -lt 0 ]; then
+            echo "No repo-local cache entries remain for emergency pruning"
+            return
+          fi
+
+          echo "Disk still below threshold after standard local-cache pruning (${available_mb} MB < ${REQUIRED_MB} MB). Removing oldest remaining repo-local cache entries."
+          for ((i = last_remaining_index; i >= 0; i--)); do
+            available_mb=$(get_available_mb)
+            if [ "$available_mb" -ge "$REQUIRED_MB" ]; then
+              break
+            fi
+            echo "Removing emergency local-cache entry: ${cache_dirs[$i]}"
             rm -rf -- "${cache_dirs[$i]}" || true
           done
+
+          available_mb=$(get_available_mb)
+          if [ "$available_mb" -lt "$REQUIRED_MB" ]; then
+            echo "Disk space remains below threshold after emergency local-cache pruning: ${available_mb} MB < ${REQUIRED_MB} MB"
+          fi
         }
 
         available_mb=$(get_available_mb)
