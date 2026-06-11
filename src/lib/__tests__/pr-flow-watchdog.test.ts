@@ -357,6 +357,17 @@ describe('PR flow workflow invariants', () => {
     assert.equal(permissions.get('issues'), 'write');
   });
 
+  it('keeps PR Policy permissions required for labels and statuses', () => {
+    const permissions = readTopLevelMapping(
+      'permissions',
+      '.github/workflows/pr-policy.yml',
+    );
+
+    assert.equal(permissions.get('issues'), 'write');
+    assert.equal(permissions.get('pull-requests'), 'write');
+    assert.equal(permissions.get('statuses'), 'write');
+  });
+
   it('keeps watchdog permissions required for status recovery reads', () => {
     const permissions = readTopLevelMapping(
       'permissions',
