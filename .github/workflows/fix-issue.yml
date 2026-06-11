@@ -95,6 +95,7 @@ jobs:
         uses: ./.github/actions/prepare-automation-branch
         with:
           branch-name: claude-fix-issue-${{ github.event.issue.number }}-${{ github.run_id }}
+          github-token: ${{ secrets.GH_PAT }}
 
       - id: claude_run
         uses: ./.github/actions/run-zai

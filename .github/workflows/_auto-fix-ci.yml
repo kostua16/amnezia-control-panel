@@ -102,6 +102,7 @@ jobs:
         uses: ./.github/actions/prepare-automation-branch
         with:
           branch-name: ${{ steps.branch-name.outputs.branch_name }}
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Collect CI failure context
         id: failure

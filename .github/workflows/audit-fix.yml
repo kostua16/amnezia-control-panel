@@ -59,6 +59,7 @@ jobs:
         uses: ./.github/actions/prepare-automation-branch
         with:
           branch-name: claude-audit-work-${{ github.run_id }}
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Audit repository and apply targeted fixes
         id: claude_run

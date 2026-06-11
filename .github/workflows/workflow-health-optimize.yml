@@ -231,6 +231,7 @@ jobs:
         uses: ./.github/actions/prepare-automation-branch
         with:
           branch-name: claude-workflow-optimize-${{ github.run_id }}
+          github-token: ${{ secrets.GH_PAT }}
 
       - id: claude_run
         uses: ./.github/actions/run-zai

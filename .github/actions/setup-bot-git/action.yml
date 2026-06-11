@@ -10,6 +10,10 @@ inputs:
     description: 'Git user.email for automation commits'
     required: false
     default: 'claude[bot]@users.noreply.github.com'
+  github-token:
+    description: 'GitHub token used to answer HTTPS credential prompts in child git processes'
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -22,3 +26,27 @@ runs:
       run: |
         git config --global user.email "$USER_EMAIL"
         git config --global user.name "$USER_NAME"
+
+    - name: Configure git HTTPS auth fallback
+      if: ${{ inputs.github-token != '' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN_VALUE: ${{ inputs.github-token }}
+      run: |
+        askpass_path="${RUNNER_TEMP:-/tmp}/github-askpass.sh"
+        cat > "$askpass_path" <<'EOF'
+        #!/usr/bin/env bash
+        case "${1:-}" in
+          *Username*) printf '%s\n' "${GITHUB_GIT_USERNAME:-x-access-token}" ;;
+          *Password*) printf '%s\n' "${GITHUB_GIT_PASSWORD:-}" ;;
+          *) printf '%s\n' "${GITHUB_GIT_PASSWORD:-}" ;;
+        esac
+        EOF
+        chmod 0700 "$askpass_path"
+
+        {
+          echo "GIT_ASKPASS=$askpass_path"
+          echo "GIT_TERMINAL_PROMPT=0"
+          echo "GITHUB_GIT_USERNAME=x-access-token"
+          echo "GITHUB_GIT_PASSWORD=$GITHUB_TOKEN_VALUE"
+        } >> "$GITHUB_ENV"
