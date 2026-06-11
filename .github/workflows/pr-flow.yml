@@ -44,7 +44,7 @@ concurrency:
 
 jobs:
   classify-trigger:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       should_run: ${{ steps.classify.outputs.should_run }}
     steps:

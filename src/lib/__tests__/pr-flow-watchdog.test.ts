@@ -330,7 +330,7 @@ describe('PR flow workflow invariants', () => {
   it('gates pull_request_target label churn before expensive PR flow steps', () => {
     const workflow = readWorkflow('.github/workflows/pr-flow.yml');
 
-    assert.match(workflow, /classify-trigger:\s*\n\s+runs-on:\s+ubuntu-latest/);
+    assert.match(workflow, /classify-trigger:\s*\n\s+runs-on:\s+self-hosted/);
     assert.match(
       workflow,
       /orchestrate:\s*\n\s+needs:\s+classify-trigger\s*\n\s+if:\s+>-\s*\n\s+needs\.classify-trigger\.outputs\.should_run == 'true'/,

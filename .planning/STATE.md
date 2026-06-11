@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: verifying
 stopped_at: context exhaustion at 77% (2026-05-03)
-last_updated: '2026-06-10T09:35:00Z'
-last_activity: 2026-06-10 -- Audit fix PR source-run links
+last_updated: '2026-06-11T00:36:46Z'
+last_activity: 2026-06-11 -- PR #291 PR-flow preflight self-hosted runner
 progress:
   total_phases: 23
   completed_phases: 20
@@ -29,7 +29,7 @@ progress:
 Phase: 12.15 of 12.15 (Requirements reconciliation & middleware hardening) -- PLANNED
 Plan: 0 of 0 in current phase (planned)
 Status: 12.14 complete (GEO-03/04 + TSCL-01-03 verified, audit 19/20)
-Last activity: 2026-06-10 -- Audit fix PR source-run links
+Last activity: 2026-06-11 -- PR #291 PR-flow preflight self-hosted runner
 
 Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
 
@@ -130,8 +130,9 @@ Resume file: None
 | 2026-06-04 | 260605-56h   | Manual-only PRs still run advisory reviews                  |
 | 2026-06-04 | 260605-67p   | Maintainer approval label + `/approve` PR flow              |
 | 2026-06-10 | 260610-r8l   | Audit-fix PR bodies include source-run links                |
+| 2026-06-11 | 260611-7py   | PR-flow preflight uses self-hosted runner                   |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-10 - Audit fix PR source-run links (quick 260610-r8l)_
+_Last updated: 2026-06-11 - PR #291 PR-flow preflight self-hosted runner (quick 260611-7py)_

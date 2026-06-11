@@ -69,7 +69,7 @@ describe('workflow trigger policy', () => {
     );
     const workflow = fs.readFileSync(workflowPath, 'utf8');
 
-    assert.match(workflow, /classify-trigger:\s*\n\s+runs-on:\s+ubuntu-latest/);
+    assert.match(workflow, /classify-trigger:\s*\n\s+runs-on:\s+self-hosted/);
     assert.match(
       workflow,
       /should_run:\s+\$\{\{\s*steps\.classify\.outputs\.should_run\s*\}\}/,
