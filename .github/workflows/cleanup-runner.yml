@@ -13,9 +13,17 @@ on:
         type: boolean
         default: true
 
+permissions:
+  contents: read
+
+concurrency:
+  group: cleanup-self-hosted-runner
+  cancel-in-progress: false
+
 jobs:
   cleanup:
     runs-on: self-hosted
+    timeout-minutes: 10
     steps:
       - name: Disk Space Before Cleanup
         run: df -h

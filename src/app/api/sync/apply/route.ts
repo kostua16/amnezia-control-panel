@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
+import { writeAuditLog } from '@/lib/audit-log';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
@@ -302,6 +303,19 @@ export async function POST(request: NextRequest) {
     }
 
     // 8. Return result
+    await writeAuditLog({
+      action: 'sync.apply',
+      resource: 'cachedPanelConfig',
+      resourceId: matchedPanel.id,
+      outcome: applyResult.success ? 'success' : 'failure',
+      metadata: {
+        panelId: matchedPanel.id,
+        service,
+        configVersion: cachedConfig.configVersion,
+        message: applyResult.message,
+      },
+    });
+
     if (applyResult.success) {
       return NextResponse.json({
         success: true,

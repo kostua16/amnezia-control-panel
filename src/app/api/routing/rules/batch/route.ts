@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 // ─── POST: Batch create rules ──────────────────────────────
 
@@ -69,6 +70,12 @@ export async function POST(request: NextRequest) {
       rules.map((rule) => prisma.routingRule.create({ data: rule })),
     );
 
+    await writeAuditLog({
+      action: 'routing.rule.batch_create',
+      resource: 'routingRule',
+      metadata: { created: created.length, ids: created.map((r) => r.id) },
+    });
+
     return NextResponse.json(
       { success: true, data: { created: created.length, rules: created } },
       { status: 201 },
@@ -106,6 +113,12 @@ export async function DELETE(request: NextRequest) {
 
     const result = await prisma.routingRule.deleteMany({
       where: { id: { in: ids } },
+    });
+
+    await writeAuditLog({
+      action: 'routing.rule.batch_delete',
+      resource: 'routingRule',
+      metadata: { requestedIds: ids, deleted: result.count },
     });
 
     return NextResponse.json({

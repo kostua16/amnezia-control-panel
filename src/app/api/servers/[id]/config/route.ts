@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -174,6 +175,19 @@ export async function PUT(request: NextRequest, context: RouteContext) {
             config: true,
           },
         },
+      },
+    });
+
+    await writeAuditLog({
+      action: 'server.config.update',
+      resource: 'server',
+      resourceId: serverId,
+      metadata: {
+        changedFields: Object.keys(serverUpdateData).filter(
+          (field) => field !== 'apiKeyHash',
+        ),
+        apiKeyChanged: apiKey !== undefined,
+        serviceOverrideCount: serviceOverrides?.length ?? 0,
       },
     });
 

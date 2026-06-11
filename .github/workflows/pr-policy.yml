@@ -1,0 +1,142 @@
+name: PR Policy
+
+# SECURITY NOTE
+# This workflow uses pull_request_target only to read PR metadata and apply labels/status.
+# It does not check out or execute pull-request head code.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+  statuses: write
+
+concurrency:
+  group: pr-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label-and-validate:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          setup-node: 'false'
+          setup-bun: 'false'
+
+      - name: Ensure PR policy labels exist
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+
+      - name: Apply PR labels and policy status
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed('pull_request payload missing');
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = pr.number;
+            const sizeLabels = ['size/XS', 'size/S', 'size/M', 'size/L', 'size/XL'];
+            const areaLabels = [
+              'area/workflows', 'area/planning', 'area/docs', 'area/frontend',
+              'area/backend', 'area/database', 'area/tests', 'area/dependencies', 'area/docker'
+            ];
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: issue_number,
+              per_page: 100
+            });
+            const filenames = files.map((file) => file.filename);
+            const changedLines = files.reduce((sum, file) => sum + file.additions + file.deletions, 0);
+
+            const labels = new Set();
+            if (changedLines <= 20) labels.add('size/XS');
+            else if (changedLines <= 100) labels.add('size/S');
+            else if (changedLines <= 300) labels.add('size/M');
+            else if (changedLines <= 800) labels.add('size/L');
+            else labels.add('size/XL');
+
+            for (const filename of filenames) {
+              if (filename.startsWith('.github/')) labels.add('area/workflows');
+              if (filename.startsWith('.planning/')) labels.add('area/planning');
+              if (filename.startsWith('docs/') || filename === 'README.md') labels.add('area/docs');
+              if (filename.startsWith('src/app/') || filename.startsWith('src/components/')) labels.add('area/frontend');
+              if (filename.startsWith('src/lib/') || filename.startsWith('src/app/api/')) labels.add('area/backend');
+              if (filename.startsWith('prisma/')) labels.add('area/database');
+              if (filename.includes('__tests__') || filename.endsWith('.test.ts') || filename.endsWith('.test.tsx')) labels.add('area/tests');
+              if (filename === 'package.json' || filename === 'package-lock.json') labels.add('area/dependencies');
+              if (filename === 'Dockerfile' || filename === 'docker-compose.yml' || filename.startsWith('docker/')) labels.add('area/docker');
+            }
+
+            const manualOnly = filenames.some((filename) => filename.startsWith('.github/') || filename.startsWith('.planning/'));
+            const securitySensitiveTest = filenames.some((filename) =>
+              /(__tests__\/.*(hmac|auth|sync|server|panel|user|config).*\.test\.ts$|src\/lib\/(hmac|auth|auth-store|prisma|panel-|server-|user-|config-).*)/.test(filename)
+            );
+            if (manualOnly || securitySensitiveTest) labels.add('needs-review');
+
+            const titlePattern = /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|security|planning)(\([^)]+\))?!?: .+/;
+            const badReasons = [];
+            if (!titlePattern.test(pr.title || '')) {
+              badReasons.push('PR title must use Conventional Commit format, e.g. `feat(scope): summary`.');
+            }
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner,
+              repo,
+              pull_number: issue_number,
+              per_page: 100
+            });
+            const badCommits = commits
+              .map((commit) => commit.commit.message.split('\n')[0])
+              .filter((subject) => !titlePattern.test(subject) && !subject.startsWith('Merge '));
+            if (badCommits.length > 0) {
+              badReasons.push(`Non-conventional commit subjects: ${badCommits.slice(0, 5).join('; ')}`);
+            }
+
+            const existingLabels = (await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100
+            })).map((label) => label.name);
+
+            for (const label of [...sizeLabels, ...areaLabels]) {
+              if (existingLabels.includes(label) && !labels.has(label)) {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name: label }).catch((error) => {
+                  if (error.status !== 404) throw error;
+                });
+              }
+            }
+
+            if (labels.size > 0) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [...labels] });
+            }
+
+            const state = badReasons.length === 0 ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner,
+              repo,
+              sha: pr.head.sha,
+              state,
+              context: 'pr-policy/conventional-commits',
+              description: badReasons.length === 0 ? 'PR title and commits follow policy' : badReasons[0].slice(0, 140)
+            });
+
+            if (badReasons.length > 0) {
+              core.setFailed(badReasons.join('\n'));
+            }

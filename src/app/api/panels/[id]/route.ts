@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -111,6 +112,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       data: updateData,
     });
 
+    await writeAuditLog({
+      action: 'panel.update',
+      resource: 'remotePanel',
+      resourceId: panelId,
+      metadata: {
+        name: updated.name,
+        panelUrl: updated.panelUrl,
+        changedFields: Object.keys(updateData).filter(
+          (field) => field !== 'apiKeyHash',
+        ),
+        apiKeyChanged: apiKey !== undefined,
+      },
+    });
+
     return NextResponse.json({ success: true, data: panelResponse(updated) });
   } catch (err) {
     console.error('[api/panels/:id PUT] Error:', err);
@@ -156,6 +171,13 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     }
 
     await prisma.remotePanel.delete({ where: { id: panelId } });
+
+    await writeAuditLog({
+      action: 'panel.delete',
+      resource: 'remotePanel',
+      resourceId: panelId,
+      metadata: { name: existing.name, panelUrl: existing.panelUrl },
+    });
 
     return NextResponse.json({ success: true, data: { id: panelId } });
   } catch (err) {

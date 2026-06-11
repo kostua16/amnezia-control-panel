@@ -6,6 +6,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  actions: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -16,7 +20,7 @@ jobs:
     runs-on: [self-hosted, big]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -30,7 +34,7 @@ jobs:
     runs-on: [self-hosted, big]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -43,9 +47,8 @@ jobs:
     name: Test
     runs-on: [self-hosted, big]
     timeout-minutes: 10
-    needs: [typecheck]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -54,13 +57,27 @@ jobs:
           require-gh-auth: 'false'
       - run: npm test
 
+  unsafe-sql-guard:
+    name: Unsafe SQL Guard
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - name: Block Prisma unsafe raw SQL
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --fixed-strings "\$queryRawUnsafe" src/; then
+            echo "::error::Use Prisma tagged template \$queryRaw instead of \$queryRawUnsafe."
+            exit 1
+          fi
+
   build:
     name: Build
     runs-on: [self-hosted, big]
-    timeout-minutes: 15
+    timeout-minutes: 10
     needs: [typecheck]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -86,7 +103,7 @@ jobs:
           NEXT_TELEMETRY_DISABLED: '1'
       - name: Upload build metrics artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ${{ steps.build-metrics.outputs.artifact_name }}
           path: ${{ steps.build-metrics.outputs.metrics_file }}

@@ -28,12 +28,13 @@ concurrency:
 jobs:
   authorize:
     runs-on: self-hosted
+    timeout-minutes: 10
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
       trusted: ${{ steps.gate.outputs.trusted }}
       pr-number: ${{ steps.gate.outputs.pr_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -57,10 +58,10 @@ jobs:
     needs: [authorize]
     if: needs.authorize.outputs.should-run == 'true' && needs.authorize.outputs.trusted == 'true'
     runs-on: [self-hosted, big]
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 0
 
@@ -95,7 +96,7 @@ jobs:
       - name: Run Gemini CLI for Review
         id: run-gemini
         if: steps.check-secrets.outputs.missing != 'true'
-        uses: google-github-actions/run-gemini-cli@v0
+        uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489
         timeout-minutes: 10
         env:
           GEMINI_CLI_TRUST_WORKSPACE: 'true'
@@ -113,7 +114,7 @@ jobs:
         if: steps.check-secrets.outputs.missing != 'true'
         env:
           REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         with:
           script: |
             const output = process.env.REVIEW_OUTPUT;
@@ -129,7 +130,7 @@ jobs:
         if: steps.check-secrets.outputs.missing != 'true'
         env:
           REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         with:
           script: |
             const prNum = parseInt(`${{ steps.pr-info.outputs.pr_num }}`);

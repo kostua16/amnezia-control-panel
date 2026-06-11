@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { applyRoutingRules, applyAllRules } from '@/lib/rule-enforcement';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const applyBodySchema = z.object({
   userId: z.number().int().positive().optional(),
@@ -25,6 +26,18 @@ export async function POST(request: NextRequest) {
     const result = parsed.data.userId
       ? await applyRoutingRules(parsed.data.userId)
       : await applyAllRules();
+
+    await writeAuditLog({
+      action: 'routing.apply',
+      resource: 'routingRule',
+      resourceId: parsed.data.userId ?? 'all',
+      outcome: result.success ? 'success' : 'failure',
+      metadata: {
+        userId: parsed.data.userId ?? null,
+        appliedCount: result.appliedCount,
+        errors: result.errors,
+      },
+    });
 
     if (!result.success) {
       return NextResponse.json(

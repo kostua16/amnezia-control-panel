@@ -33,7 +33,7 @@ jobs:
       categorized: ${{ steps.categorize.outputs.categorized }}
       rate-limited: ${{ steps.categorize.outputs.rate_limited }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -42,7 +42,7 @@ jobs:
 
       - name: Fetch and categorize open issues
         id: categorize
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
           script: |
             const EXEMPT_LABELS = ['keep-open', 'backlog', 'in-progress', 'fixed'];
@@ -329,7 +329,7 @@ jobs:
   analyze-and-act:
     name: Analyze & Act
     runs-on: [self-hosted, big]
-    timeout-minutes: 30
+    timeout-minutes: 10
     needs: [collect-issues]
     if: needs.collect-issues.outputs.has-actionable == 'true'
     outputs:
@@ -342,7 +342,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GH_PAT }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           token: ${{ secrets.GH_PAT }}
 
@@ -472,8 +472,9 @@ jobs:
     needs: [collect-issues, analyze-and-act]
     if: failure()
     runs-on: self-hosted
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:

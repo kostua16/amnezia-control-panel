@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 import {
   createAwgUser,
   createThreeXuiUser,
@@ -251,6 +252,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       },
     });
 
+    await writeAuditLog({
+      action: 'user.update',
+      resource: 'user',
+      resourceId: userId,
+      metadata: {
+        username: existing.username,
+        changedFields: Object.keys(updateData).filter(
+          (field) => field !== 'passwordHash',
+        ),
+        passwordChanged: Boolean(newPassword),
+        servicesChanged: services !== undefined,
+        vpnResults,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -339,6 +355,17 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     // Delete user from DB (cascade handles UserProtocol, UserQuota, TrafficLog)
     await prisma.user.delete({
       where: { id: userId },
+    });
+
+    await writeAuditLog({
+      action: 'user.delete',
+      resource: 'user',
+      resourceId: userId,
+      metadata: {
+        username: user.username,
+        assignedServices: user.protocols.map((p) => p.serviceType),
+        vpnResults,
+      },
     });
 
     return NextResponse.json({

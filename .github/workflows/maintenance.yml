@@ -21,7 +21,7 @@ permissions:
 jobs:
   maintenance:
     runs-on: [self-hosted, big]
-    timeout-minutes: 30
+    timeout-minutes: 10
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
       claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
@@ -31,7 +31,7 @@ jobs:
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
       - id: checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 0
 
@@ -90,12 +90,13 @@ jobs:
     needs: [maintenance]
     if: failure()
     runs-on: self-hosted
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
       actions: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:

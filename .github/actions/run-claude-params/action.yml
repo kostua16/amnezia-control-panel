@@ -189,6 +189,12 @@ inputs:
   additional-permissions:
     description: "Additional GitHub permissions for the App token (e.g. 'issues: write')"
     default: ''
+  plugins:
+    description: 'Newline-separated list of Claude Code plugin names to install (e.g. code-review@claude-code-plugins)'
+    default: ''
+  plugin-marketplaces:
+    description: 'Newline-separated list of Claude Code plugin marketplace Git URLs to install from'
+    default: ''
   github-token:
     description: 'GitHub token for issue reporting and log download'
     default: '${{ github.token }}'
@@ -291,7 +297,7 @@ runs:
     - name: Run Claude Code (attempt 1)
       id: claude-run-1
       continue-on-error: true
-      uses: anthropics/claude-code-action@v1
+      uses: anthropics/claude-code-action@b2532c6eeaeae7a645f37943ed5a7e51870d1d90
       env:
         DISABLE_TELEMETRY: '1'
         API_TIMEOUT_MS: ${{ inputs.api-timeout }}
@@ -312,6 +318,8 @@ runs:
         track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
+        plugins: ${{ inputs.plugins }}
+        plugin_marketplaces: ${{ inputs.plugin-marketplaces }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
@@ -378,7 +386,7 @@ runs:
       id: claude-run-2
       if: ${{ steps.check-429-1.outputs.should_retry == 'true' }}
       continue-on-error: true
-      uses: anthropics/claude-code-action@v1
+      uses: anthropics/claude-code-action@b2532c6eeaeae7a645f37943ed5a7e51870d1d90
       env:
         DISABLE_TELEMETRY: '1'
         API_TIMEOUT_MS: ${{ inputs.api-timeout }}
@@ -399,6 +407,8 @@ runs:
         track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
+        plugins: ${{ inputs.plugins }}
+        plugin_marketplaces: ${{ inputs.plugin-marketplaces }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
@@ -463,7 +473,7 @@ runs:
     - name: Run Claude Code (attempt 3)
       id: claude-run-3
       if: ${{ steps.check-429-2.outputs.should_retry == 'true' }}
-      uses: anthropics/claude-code-action@v1
+      uses: anthropics/claude-code-action@b2532c6eeaeae7a645f37943ed5a7e51870d1d90
       env:
         DISABLE_TELEMETRY: '1'
         API_TIMEOUT_MS: ${{ inputs.api-timeout }}
@@ -484,6 +494,8 @@ runs:
         track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
+        plugins: ${{ inputs.plugins }}
+        plugin_marketplaces: ${{ inputs.plugin-marketplaces }}
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
@@ -689,7 +701,7 @@ runs:
 
     - name: report-claude-issues
       if: always() && steps.scan-logs.outputs.has_findings == 'true'
-      uses: actions/github-script@v8
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
       env:
         ISSUES_FILE: ${{ steps.scan-logs.outputs.claude_issues_file }}
       with:

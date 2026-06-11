@@ -365,3 +365,19 @@ model CachedPanelConfig {
   @@unique([panelId])
   @@map("cached_panel_configs")
 }
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  action     String
+  resource   String
+  resourceId String?
+  actor      String   @default("admin")
+  outcome    String   @default("success")
+  metadata   String?
+  createdAt  DateTime @default(now())
+
+  @@index([action])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

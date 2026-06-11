@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const createPanelSchema = z.object({
   name: z
@@ -61,6 +62,13 @@ export async function POST(request: NextRequest) {
 
     const panel = await prisma.remotePanel.create({
       data: { name, panelUrl, apiKeyHash },
+    });
+
+    await writeAuditLog({
+      action: 'panel.create',
+      resource: 'remotePanel',
+      resourceId: panel.id,
+      metadata: { name: panel.name, panelUrl: panel.panelUrl },
     });
 
     return NextResponse.json(

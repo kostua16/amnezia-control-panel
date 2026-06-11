@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const geoTargetSchema = z
   .object({
@@ -164,6 +165,18 @@ export async function PUT(
       data: updateData,
     });
 
+    await writeAuditLog({
+      action: 'routing.geo.update',
+      resource: 'geoRoutingRule',
+      resourceId: ruleId,
+      metadata: {
+        name: rule.name,
+        changedFields: Object.keys(updateData),
+        action: rule.action,
+        priority: rule.priority,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       data: mapToGeoRoutingRule(rule),
@@ -202,6 +215,17 @@ export async function DELETE(
     }
 
     await prisma.geoRoutingRule.delete({ where: { id: ruleId } });
+
+    await writeAuditLog({
+      action: 'routing.geo.delete',
+      resource: 'geoRoutingRule',
+      resourceId: ruleId,
+      metadata: {
+        name: existing.name,
+        matchType: existing.matchType,
+        action: existing.action,
+      },
+    });
 
     return NextResponse.json({ success: true, data: { id: ruleId } });
   } catch (err) {

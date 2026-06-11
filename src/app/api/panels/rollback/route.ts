@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { rollbackPanelConfigWithPush } from '@/lib/rollback-manager';
+import { writeAuditLog } from '@/lib/audit-log';
 
 // ─── Request Validation ──────────────────────────────────
 
@@ -39,6 +40,17 @@ export async function POST(request: NextRequest) {
 
     // Execute rollback with re-push
     const result = await rollbackPanelConfigWithPush(panelId, apiKey);
+
+    await writeAuditLog({
+      action: 'panel.rollback',
+      resource: 'remotePanel',
+      resourceId: panelId,
+      outcome: result.success ? 'success' : 'failure',
+      metadata: {
+        configVersion: result.configVersion ?? null,
+        error: result.error?.message ?? null,
+      },
+    });
 
     if (result.success) {
       return NextResponse.json({

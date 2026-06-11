@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: verifying
-stopped_at: context exhaustion at 77% (2026-05-03)
-last_updated: '2026-06-11T00:36:46Z'
-last_activity: 2026-06-11 -- PR #291 PR-flow preflight self-hosted runner
+status: complete
+stopped_at: null
+last_updated: '2026-06-11T00:46:36Z'
+last_activity: 2026-06-11 -- Merge origin/main into PR #291
 progress:
-  total_phases: 23
-  completed_phases: 20
-  total_plans: 53
-  completed_plans: 51
-  percent: 96
+  total_phases: 24
+  completed_phases: 24
+  total_plans: 57
+  completed_plans: 57
+  percent: 100
 ---
 
 # Amnezia Control Panel - Project State
@@ -20,18 +20,16 @@ progress:
 
 **Project**: Amnezia Control Panel
 **Core Value**: One panel, both VPN systems -- users synchronized between Amnezia AWG and 3x-ui, no context switching
-**Current Focus**: v1.1 Multi-Panel Chain Routing
-**Current Position**: Phase 12.7 of 12.7 (Audit Remediation) -- COMPLETE
-**Audit Remediation**: Phase 12.1-12.7 complete
+**Current Focus**: v1.1 COMPLETED — Next: Developer automation governance (Phases 13.1-13.4)
+**Current Position**: Milestone v1.1 archived
 
 ## Current Position
 
-Phase: 12.15 of 12.15 (Requirements reconciliation & middleware hardening) -- PLANNED
-Plan: 0 of 0 in current phase (planned)
-Status: 12.14 complete (GEO-03/04 + TSCL-01-03 verified, audit 19/20)
-Last activity: 2026-06-11 -- PR #291 PR-flow preflight self-hosted runner
+Phase: All v1.1 phases complete (11.1-12.15)
+Status: Milestone v1.1 archived 2026-06-11
+Last activity: 2026-06-11 -- Merge origin/main into PR #291
 
-Progress: [█████████] 100% (v1.1 complete; audit remediation in progress)
+Progress: [██████████] 100% (v1.1 COMPLETE & ARCHIVED)
 
 ## Performance Metrics
 
@@ -92,7 +90,18 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+8 items captured from review of unpushed commits (2026-06-10):
+
+| #   | Area     | Title                                                  | Severity  |
+| --- | -------- | ------------------------------------------------------ | --------- |
+| 1   | database | Refactor audit-log.ts to use Prisma model layer        | Hard      |
+| 2   | api      | Replace 3x-ui HTTP REST calls with direct shell access | Hard      |
+| 3   | api      | Restrict XUI_BASE_URL to localhost/127.0.0.1           | Judgement |
+| 4   | api      | Stream rulite import instead of fs.readFileSync        | Judgement |
+| 5   | api      | Wire importFromRulite() into routing import API        | Gap       |
+| 6   | api      | Add audit logging to routing import endpoint           | Gap       |
+| 7   | tooling  | Fix supply-chain.yml npm audit signatures integrity    | Minor     |
+| 8   | tooling  | Fix dependabot.yml invalid review-automated key        | Minor     |
 
 ### Blockers/Concerns
 
@@ -110,8 +119,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-03T10:04:26.496Z
-Stopped at: context exhaustion at 77% (2026-05-03)
+Last session: 2026-06-11T12:00:00Z
+Stopped at: null
 Resume file: None
 
 ## Quick Tasks Completed
@@ -131,8 +140,10 @@ Resume file: None
 | 2026-06-04 | 260605-67p   | Maintainer approval label + `/approve` PR flow              |
 | 2026-06-10 | 260610-r8l   | Audit-fix PR bodies include source-run links                |
 | 2026-06-11 | 260611-7py   | PR-flow preflight uses self-hosted runner                   |
+| 2026-06-11 | 260611-7y7   | Merge main into PR #291                                     |
+| 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-11 - PR #291 PR-flow preflight self-hosted runner (quick 260611-7py)_
+_Last updated: 2026-06-11 - Merge origin/main into PR #291 (quick 260611-7y7)_

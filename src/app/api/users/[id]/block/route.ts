@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 import { blockAwgUser, blockThreeXuiUser } from '@/lib/vpn-services';
 
 interface RouteContext {
@@ -75,6 +76,13 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { isBlocked: true },
+    });
+
+    await writeAuditLog({
+      action: 'user.block',
+      resource: 'user',
+      resourceId: userId,
+      metadata: { username: user.username, vpnResults },
     });
 
     return NextResponse.json({

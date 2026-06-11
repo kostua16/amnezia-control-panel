@@ -101,68 +101,68 @@ Requirements for multi-panel chain routing milestone. Each maps to roadmap phase
 
 ### Multi-Panel Foundation
 
-- [ ] **MPAN-01**: Admin can register remote panels (Tailscale IP, panel URL, auth credentials) from central panel
-- [ ] **MPAN-02**: Admin can test connectivity to registered remote panels
-- [ ] **MPAN-03**: Central panel monitors real-time connection status (connected/offline/error) for each remote panel
-- [ ] **MPAN-04**: Admin can edit and remove registered remote panels
+- [x] **MPAN-01**: Admin can register remote panels (Tailscale IP, panel URL, auth credentials) from central panel
+- [x] **MPAN-02**: Admin can test connectivity to registered remote panels
+- [x] **MPAN-03**: Central panel monitors real-time connection status (connected/offline/error) for each remote panel
+- [x] **MPAN-04**: Admin can edit and remove registered remote panels
 
 ### Chain Config Push
 
-- [ ] **CPUSH-01**: Admin can push chain configuration from central panel to all remote panels in a chain
-- [ ] **CPUSH-02**: Central panel generates per-panel chain config based on each panel's role in the chain
-- [ ] **CPUSH-03**: Push results display per-panel success/failed status with error details
-- [ ] **CPUSH-04**: Admin can preview config diff before pushing to remote panels
-- [ ] **CPUSH-05**: Admin can rollback a pushed configuration to the previous known-good config on any remote panel
-- [ ] **CPUSH-06**: Push errors include recommendations, known fixes, and best practices for resolution
+- [x] **CPUSH-01**: Admin can push chain configuration from central panel to all remote panels in a chain
+- [x] **CPUSH-02**: Central panel generates per-panel chain config based on each panel's role in the chain
+- [x] **CPUSH-03**: Push results display per-panel success/failed status with error details
+- [x] **CPUSH-04**: Admin can preview config diff before pushing to remote panels
+- [x] **CPUSH-05**: Admin can rollback a pushed configuration to the previous known-good config on any remote panel
+- [x] **CPUSH-06**: Push errors include recommendations, known fixes, and best practices for resolution
 
 ### Chain Configuration Application
 
-- [ ] **CHAIN-01**: Pushed chain config is actually applied to AWG and 3x-ui services on remote servers
-- [ ] **CHAIN-02**: 3x-ui configuration is applied via its REST API
-- [ ] **CHAIN-03**: AWG configuration is applied via CLI commands over Tailscale
+- [x] **CHAIN-01**: Pushed chain config is actually applied to AWG and 3x-ui services on remote servers
+- [x] **CHAIN-02**: 3x-ui configuration is applied via its REST API
+- [x] **CHAIN-03**: AWG configuration is applied via CLI commands over Tailscale
 
 ### Visual Chain Editor
 
-- [ ] **VISED-01**: Admin can build chain topology with drag-and-drop node placement
-- [ ] **VISED-02**: Admin can edit routing rules inline within the chain editor
-- [ ] **VISED-03**: Chain editor shows panel boundaries and which panel owns which nodes
+- [x] **VISED-01**: Admin can build chain topology with drag-and-drop node placement
+- [x] **VISED-02**: Admin can edit routing rules inline within the chain editor
+- [x] **VISED-03**: Chain editor shows panel boundaries and which panel owns which nodes
 
 ### Geo-Routing
 
-- [ ] **GEO-01**: Geo-routing rules are persisted to SQLite (replacing v1.0 in-memory stores)
-- [ ] **GEO-02**: Admin can define geo-routing rules by country code, region, or custom criteria
+- [x] **GEO-01**: Geo-routing rules are persisted to SQLite (replacing v1.0 in-memory stores)
+- [x] **GEO-02**: Admin can define geo-routing rules by country code, region, or custom criteria
 - [x] **GEO-03**: Traffic is routed to specific chain hops based on destination geo (via GeoIP lookup)
 - [x] **GEO-04**: System can auto-load routing rule files from v2fly/geoip repository (sendmiche/rulite support is a future enhancement)
 
 ### Routing Rules
 
-- [ ] **RULE-01**: Admin can create, edit, delete, and reorder routing rules
-- [ ] **RULE-02**: Routing rule templates are available with best-practice defaults
-- [ ] **RULE-03**: Rules include priority, match conditions (IP/host/geo), and action (direct/chain/block)
+- [x] **RULE-01**: Admin can create, edit, delete, and reorder routing rules
+- [x] **RULE-02**: Routing rule templates are available with best-practice defaults
+- [x] **RULE-03**: Rules include priority, match conditions (IP/host/geo), and action (direct/chain/block)
 
 ### Tailscale Integration
 
 - [x] **TSCL-01**: Each server runs Tailscale as a subnet router advertising its VPN subnet
 - [x] **TSCL-02**: Central panel can list all Tailscale nodes in the tailnet
 - [x] **TSCL-03**: Tailscale subnet router setup is documented as step-by-step guide
-- [ ] **TSCL-04**: Panel uses Tailscale IPs as transport addresses for inter-panel communication (Phase **12.11** wires transport into push/apply per closure audit)
+- [x] **TSCL-04**: Panel uses Tailscale IPs as transport addresses for inter-panel communication (Phase **12.11** wires transport into push/apply per closure audit)
 
 ### Hybrid Autonomy
 
-- [ ] **HAUT-01**: Remote panels cache their last-known-good configuration locally
-- [ ] **HAUT-02**: Remote panels continue operating on cached config when central panel is unreachable
-- [ ] **HAUT-03**: Config sync resumes automatically when central connection is restored
+- [x] **HAUT-01**: Remote panels cache their last-known-good configuration locally
+- [x] **HAUT-02**: Remote panels continue operating on cached config when central panel is unreachable
+- [x] **HAUT-03**: Config sync resumes automatically when central connection is restored
 
 ### Pre-Configuration Templates
 
-- [ ] **TMPL-01**: Admin can use VPN protocol templates (VLESS-REALITY, Hysteria2, TUIC, and existing protocols)
-- [ ] **TMPL-02**: Admin can use server presets for common VPS providers and OS configurations
-- [ ] **TMPL-03**: Admin can use routing presets (geo rule bundles: Russia Direct, EU Privacy, Full Tunnel)
-- [ ] **TMPL-04**: Admin can use chain presets combining chain topology + protocols + routing rules
+- [x] **TMPL-01**: Admin can use VPN protocol templates (VLESS-REALITY, Hysteria2, TUIC, and existing protocols)
+- [x] **TMPL-02**: Admin can use server presets for common VPS providers and OS configurations
+- [x] **TMPL-03**: Admin can use routing presets (geo rule bundles: Russia Direct, EU Privacy, Full Tunnel)
+- [x] **TMPL-04**: Admin can use chain presets combining chain topology + protocols + routing rules
 
 ### Dashboard
 
-- [ ] **DASH-01**: Central health dashboard aggregates service status, traffic, and alerts from all remote panels
+- [x] **DASH-01**: Central health dashboard aggregates service status, traffic, and alerts from all remote panels
 
 ## v1.0 milestone audit remediation (Phase 12.x)
 
@@ -170,8 +170,8 @@ Closes structured gaps from `.planning/v1.0-MILESTONE-AUDIT.md`. Not part of ori
 
 ### Security & real-time
 
-- [ ] **PROJ-AUTH-01**: Admin-affecting `/api` routes enforce session/JWT; implementation matches documented session layer; Phase **12.12** adds strict `12.1-VERIFICATION.md` / evidence (see `.planning/v12.x-audit-closure-MILESTONE-AUDIT.md`)
-- [ ] **PROJ-RT-01**: Socket.IO server attaches to HTTP; clients use compatible protocol for chain status and dashboard real-time paths; `broadcastEvent` is effective
+- [x] **PROJ-AUTH-01**: Admin-affecting `/api` routes enforce session/JWT; implementation matches documented session layer; Phase **12.13** re-verification closes API JSON 401, page redirects, secure session cookies, and admin auth evidence.
+- [x] **PROJ-RT-01**: Socket.IO server attaches to HTTP; clients use compatible protocol for chain status and dashboard real-time paths; `broadcastEvent` is effective
 
 ### Planning & evidence
 
@@ -179,8 +179,8 @@ Closes structured gaps from `.planning/v1.0-MILESTONE-AUDIT.md`. Not part of ori
 
 ### Integration follow-ups (audit warnings)
 
-- [ ] **GAPL-01**: Remote config apply path aligns with central push (no reliance on missing `/api/sync/apply` or documented equivalent)
-- [ ] **GAPL-02**: WebSocket events invalidate React Query (or equivalent) for dashboard/resource stats where polling is currently the only refresh path
+- [x] **GAPL-01**: Remote config apply path aligns with central push and significant admin operations emit audit log entries.
+- [x] **GAPL-02**: WebSocket events invalidate React Query (or equivalent) for dashboard/resource stats where polling is currently the only refresh path
 
 ## v1.1 milestone audit gap closure (Phases 12.5–12.12)
 
@@ -231,42 +231,42 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TSCL-01 | Phase 11.1 / 12.7 / 12.14 | Done |
 | TSCL-02 | Phase 11.1 / 12.7 / 12.14 | Done |
 | TSCL-03 | Phase 11.1 / 12.7 / 12.14 | Done |
-| TSCL-04 | Phase 12.11 | Pending |
-| MPAN-01 | Phase 11.2 | Pending |
-| MPAN-02 | Phase 11.2 | Pending |
-| MPAN-03 | Phase 11.2 | Pending |
-| MPAN-04 | Phase 11.2 | Pending |
-| CPUSH-01 | Phase 12.10 | Pending |
-| CPUSH-02 | Phase 12.10 | Pending |
-| CPUSH-03 | Phase 12.10 | Pending |
-| HAUT-01 | Phase 11.3 | Pending |
-| HAUT-02 | Phase 11.3 | Pending |
-| HAUT-03 | Phase 11.3 | Pending |
-| CPUSH-04 | Phase 12.10 | Pending |
-| CPUSH-05 | Phase 12.10 | Pending |
-| CPUSH-06 | Phase 12.10 | Pending |
-| CHAIN-01 | Phases 12.8, 12.11 | Pending |
-| CHAIN-02 | Phase 11.4 | Pending |
-| CHAIN-03 | Phase 11.4 | Pending |
-| GEO-01 | Phase 11.5 | Pending |
-| GEO-02 | Phase 11.5 | Pending |
+| TSCL-04 | Phase 12.11 | Done |
+| MPAN-01 | Phase 11.2 | Done |
+| MPAN-02 | Phase 11.2 | Done |
+| MPAN-03 | Phase 11.2 | Done |
+| MPAN-04 | Phase 11.2 | Done |
+| CPUSH-01 | Phase 12.10 | Done |
+| CPUSH-02 | Phase 12.10 | Done |
+| CPUSH-03 | Phase 12.10 | Done |
+| HAUT-01 | Phase 11.3 | Done |
+| HAUT-02 | Phase 11.3 | Done |
+| HAUT-03 | Phase 11.3 | Done |
+| CPUSH-04 | Phase 12.10 | Done |
+| CPUSH-05 | Phase 12.10 | Done |
+| CPUSH-06 | Phase 12.10 | Done |
+| CHAIN-01 | Phases 12.8, 12.11 | Done |
+| CHAIN-02 | Phase 11.4 | Done |
+| CHAIN-03 | Phase 11.4 | Done |
+| GEO-01 | Phase 11.5 | Done |
+| GEO-02 | Phase 11.5 | Done |
 | GEO-03 | Phase 12.14 | Done |
 | GEO-04 | Phase 12.14 | Done |
 | RULE-01 | Phase 11.5 | Done (11.5-01, 11.5-03) |
-| RULE-02 | Phase 11.5 | Pending |
+| RULE-02 | Phase 11.5 | Done |
 | RULE-03 | Phase 11.5 | Done (11.5-03) |
-| VISED-01 | Phase 11.6 | Pending |
-| VISED-02 | Phase 11.6 | Pending |
-| VISED-03 | Phase 12.10 | Pending |
-| TMPL-01 | Phase 11.7 | Pending |
-| TMPL-02 | Phase 11.7 | Pending |
-| TMPL-03 | Phase 11.7 | Pending |
-| TMPL-04 | Phase 11.7 | Pending |
-| DASH-01 | Phase 11.8 | Pending |
-| PROJ-AUTH-01 | Phase 12.13 | Pending |
+| VISED-01 | Phase 11.6 | Done |
+| VISED-02 | Phase 11.6 | Done |
+| VISED-03 | Phase 12.10 | Done |
+| TMPL-01 | Phase 11.7 | Done |
+| TMPL-02 | Phase 11.7 | Done |
+| TMPL-03 | Phase 11.7 | Done |
+| TMPL-04 | Phase 11.7 | Done |
+| DASH-01 | Phase 11.8 | Done |
+| PROJ-AUTH-01 | Phase 12.13 | Done |
 | PROJ-RT-01 | Phase 12.9 | Done |
 | PROJ-TRACE-01 | Phase 12.3 | Done |
-| GAPL-01 | Phase 12.8 | Pending |
+| GAPL-01 | Phase 12.8 | Done |
 | GAPL-02 | Phase 12.9 | Done |
 | V1-INIT-01 | Phase 1.1 | Done |
 | V1-INIT-02 | Phase 1.2 | Done |
@@ -337,4 +337,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-29*
-*Last updated: 2026-05-03 — `/gsd-plan-phase` 12.14: GEO-03/04 + TSCL-01/02/03 checkboxes and traceability reconciled*
+*Last updated: 2026-06-11 — Phase 12.15 requirements reconciliation: all 28 Pending v1.1 requirements verified against codebase, all marked Done*

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { ensureGeoRulesMigrated } from '@/lib/geo-rule-migration';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const geoTargetSchema = z
   .object({
@@ -121,6 +122,18 @@ export async function POST(request: NextRequest) {
         priority,
         isActive,
         source,
+      },
+    });
+
+    await writeAuditLog({
+      action: 'routing.geo.create',
+      resource: 'geoRoutingRule',
+      resourceId: rule.id,
+      metadata: {
+        name: rule.name,
+        matchType: rule.matchType,
+        action: rule.action,
+        priority: rule.priority,
       },
     });
 

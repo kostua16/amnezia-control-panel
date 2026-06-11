@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 import { createAwgUser, createThreeXuiUser } from '@/lib/vpn-services';
 import type { VpnServiceResult } from '@/lib/vpn-services';
 
@@ -201,6 +202,19 @@ export async function POST(request: NextRequest) {
 
     const allVpnSuccess =
       vpnResults.length > 0 && vpnResults.every((r) => r.success);
+
+    await writeAuditLog({
+      action: 'user.create',
+      resource: 'user',
+      resourceId: user.id,
+      metadata: {
+        username: user.username,
+        assignedServices: user.protocols.map((p) => p.serviceType),
+        trafficQuotaBytes: user.trafficQuotaBytes,
+        speedLimitKbps: user.speedLimitKbps,
+        vpnResults,
+      },
+    });
 
     return NextResponse.json(
       {

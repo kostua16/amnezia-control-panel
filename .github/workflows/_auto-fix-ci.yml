@@ -58,7 +58,7 @@ env:
 jobs:
   fix:
     runs-on: [self-hosted, big]
-    timeout-minutes: 20
+    timeout-minutes: 10
     outputs:
       pr-number: ${{ steps.pr-context.outputs.pr_number }}
       pushed: ${{ steps.push.outputs.pushed }}
@@ -69,7 +69,7 @@ jobs:
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           ref: ${{ inputs.head-branch }}
           fetch-depth: 1
@@ -228,7 +228,7 @@ jobs:
       - name: Find related failure issues
         id: failure-issues
         if: steps.push.outputs.pushed == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         env:
           BRANCH: ${{ inputs.head-branch }}
         with:

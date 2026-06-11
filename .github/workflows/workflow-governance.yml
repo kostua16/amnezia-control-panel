@@ -1,0 +1,44 @@
+name: Workflow Governance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/**'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-governance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governance:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          setup-bun: 'false'
+          require-gh-auth: 'false'
+
+      - name: Validate workflow governance policy
+        run: node .github/workflows/scripts/workflow-governance-check.cjs
+
+      - name: Upload governance report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: workflow-governance-report
+          path: ${{ runner.temp }}/workflow-governance-report.md
+          if-no-files-found: warn
+          retention-days: 14

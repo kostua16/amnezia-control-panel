@@ -1,0 +1,149 @@
+name: Claude GSD Planning
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'Phase identifier to plan or refresh (for example 13.4)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Analyze without pushing a planning PR'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+concurrency:
+  group: gsd-planning-${{ github.event.inputs.phase || github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  MAX_TURNS: '60'
+  NODE_VERSION: '22.x'
+
+jobs:
+  authorize:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    outputs:
+      should-run: ${{ steps.resolve.outputs.should_run }}
+      phase: ${{ steps.resolve.outputs.phase }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Resolve planning trigger
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body || '' }}
+          INPUT_PHASE: ${{ github.event.inputs.phase || '' }}
+          AUTHOR_ASSOCIATION: ${{ github.event.comment.author_association || '' }}
+        run: |
+          set -euo pipefail
+          should_run=false
+          phase="$INPUT_PHASE"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            should_run=true
+          elif printf '%s' "$COMMENT_BODY" | grep -Eq '^/gsd-plan([[:space:]]+[0-9]+(\.[0-9]+)?)?'; then
+            case "$AUTHOR_ASSOCIATION" in OWNER|MEMBER|COLLABORATOR) should_run=true ;; esac
+            phase=$(printf '%s' "$COMMENT_BODY" | sed -nE 's|^/gsd-plan[[:space:]]+([0-9]+(\.[0-9]+)?).*|\1|p' | head -1)
+          fi
+          if [ -z "$phase" ]; then phase="13"; fi
+          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+          echo "phase=$phase" >> "$GITHUB_OUTPUT"
+
+  plan:
+    needs: [authorize]
+    if: needs.authorize.outputs.should-run == 'true'
+    runs-on: [self-hosted, big]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-gsd: 'true'
+          install-rtk: 'true'
+
+      - uses: ./.github/actions/setup-bot-git
+
+      - name: Prepare GSD planning branch
+        id: branch
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-planning-pr-${{ needs.authorize.outputs.phase }}-${{ github.run_id }}
+
+      - name: Refresh GSD phase plan
+        id: claude_run
+        uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          max-turns: ${{ env.MAX_TURNS }}
+          track-progress: 'false'
+          allowed-bots: 'github-actions[bot],claude[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(rtk:*)'
+          prompt: |
+            /gsd:plan-phase
+            Refresh planning artifacts for phase `${{ needs.authorize.outputs.phase }}`.
+
+            Scope:
+            - Edit only `.planning/**` planning artifacts.
+            - Keep generated planning PRs draft/manual-only.
+            - Preserve existing phase intake markers.
+            - Update phase tracking status, acceptance criteria, and verification checklist when missing.
+            - Do not modify application source, package manifests, or workflow logic.
+            - Do not commit or push; the workflow handles that.
+
+      - uses: ./.github/actions/commit-and-push
+        id: push
+        if: (github.event.inputs.dry_run || 'false') != 'true'
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'docs(planning): refresh GSD phase ${{ needs.authorize.outputs.phase }}'
+
+      - name: Build planning PR body
+        id: pr-body
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/build-automation-pr-body
+        with:
+          workflow-name: gsd-planning
+          problem: 'Claude GSD planning automation refreshed phase `${{ needs.authorize.outputs.phase }}` tracking artifacts.'
+          source-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          base-ref: main
+          changed-files: ${{ steps.claude_run.outputs.claude_changed_files_list }}
+          execution-file: ${{ steps.claude_run.outputs.last_execution_file }}
+          structured-output: ${{ steps.claude_run.outputs.structured_output }}
+          claude-last-output: ${{ steps.claude_run.outputs.claude_last_output }}
+          review-notes: 'Draft planning PR. Planning changes are manual-only under workflow policy.'
+
+      - name: Create GSD planning PR
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/upsert-pull-request
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'planning: refresh GSD phase ${{ needs.authorize.outputs.phase }}'
+          body: ${{ steps.pr-body.outputs.body }}
+          labels: planning-draft-open,needs-review
+          draft: 'true'
+          require-rich-body: 'true'

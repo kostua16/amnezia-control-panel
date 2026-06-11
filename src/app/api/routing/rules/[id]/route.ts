@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { writeAuditLog } from '@/lib/audit-log';
 
 const validProtocols = [
   'ANY',
@@ -151,6 +152,19 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       },
     });
 
+    await writeAuditLog({
+      action: 'routing.rule.update',
+      resource: 'routingRule',
+      resourceId: ruleId,
+      metadata: {
+        changedFields: Object.keys(ruleData).concat(
+          userId !== undefined ? ['userId'] : [],
+        ),
+        destination: rule.destination,
+        action: rule.action,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -208,6 +222,17 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
     await prisma.routingRule.delete({
       where: { id: ruleId },
+    });
+
+    await writeAuditLog({
+      action: 'routing.rule.delete',
+      resource: 'routingRule',
+      resourceId: ruleId,
+      metadata: {
+        destination: existing.destination,
+        action: existing.action,
+        userId: existing.userId,
+      },
     });
 
     return NextResponse.json({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { pushConfigToAllPanels } from '@/lib/panel-sync-client';
 import { cachePanelApiKey } from '@/lib/panel-health-checker';
+import { writeAuditLog } from '@/lib/audit-log';
 
 // ─── Request Validation ─────────────────────────────────
 
@@ -81,6 +82,18 @@ export async function POST(request: NextRequest) {
       chainConfig,
       panelApiKeysMap,
     );
+
+    await writeAuditLog({
+      action: 'panel.push',
+      resource: 'remotePanel',
+      outcome: pushAllResult.failed === 0 ? 'success' : 'failure',
+      metadata: {
+        templateId: chainConfig.templateId,
+        totalPanels: pushAllResult.totalPanels,
+        succeeded: pushAllResult.succeeded,
+        failed: pushAllResult.failed,
+      },
+    });
 
     return NextResponse.json({ success: true, data: pushAllResult });
   } catch (err) {

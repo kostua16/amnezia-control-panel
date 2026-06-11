@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getNodeIP, isReachable } from '@/lib/tailscale';
+import { writeAuditLog } from '@/lib/audit-log';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -91,6 +92,13 @@ export async function GET(_request: Request, context: RouteContext) {
           tailnetIP: resolvedIP,
           tailnetHostname: hostnameUsed,
         },
+      });
+
+      await writeAuditLog({
+        action: 'server.tailnet.cache',
+        resource: 'server',
+        resourceId: serverId,
+        metadata: { hostname: server.hostname, source },
       });
     }
 

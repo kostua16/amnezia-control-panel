@@ -41,11 +41,12 @@ concurrency:
 jobs:
   collect-targets:
     runs-on: self-hosted
+    timeout-minutes: 15
     outputs:
       targets: ${{ steps.collect.outputs.targets }}
       count: ${{ steps.collect.outputs.count }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -53,7 +54,7 @@ jobs:
 
       - name: Collect PR targets
         id: collect
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
           script: |
             let targets = [];
@@ -67,6 +68,7 @@ jobs:
     needs: [collect-targets]
     if: needs.collect-targets.outputs.count != '0'
     runs-on: [self-hosted, big]
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -74,7 +76,7 @@ jobs:
     env:
       NODE_VERSION: '22.x'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
@@ -218,7 +220,7 @@ jobs:
 
       - name: Upsert source PR improvement comment
         if: steps.metadata.outputs.should_analyze == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         env:
           PR_NUMBER: ${{ matrix.pr-number }}
           STRUCTURED_OUTPUT: ${{ steps.analyze.outputs.structured_output }}
@@ -280,8 +282,9 @@ jobs:
     needs: [collect-targets, improve]
     if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
     runs-on: self-hosted
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -301,12 +304,13 @@ jobs:
     needs: [collect-targets, improve]
     if: failure()
     runs-on: self-hosted
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
       actions: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - uses: ./.github/actions/setup-environment
         with:
