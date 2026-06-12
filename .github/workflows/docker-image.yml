@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   REGISTRY: ghcr.io
@@ -32,24 +33,162 @@ jobs:
     steps:
       - name: Decide Docker image action
         id: classify
-        shell: bash
-        run: |
-          set -euo pipefail
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const relevantGlobs = [
+              'Dockerfile',
+              '.dockerignore',
+              'docker-compose*.yml',
+              'docker-entrypoint.sh',
+              'package.json',
+              'package-lock.json',
+              'next.config.*',
+              'tsconfig.json',
+              'postcss.config.*',
+              'tailwind.config.*',
+              'prisma.config.*',
+              'src/**',
+              'app/**',
+              'pages/**',
+              'components/**',
+              'lib/**',
+              'styles/**',
+              'public/**',
+              'prisma/**',
+              'server.mjs',
+              'instrumentation.ts',
+              'middleware.*',
+            ];
 
-          should_publish=false
-          should_validate=false
+            function escapeRegex(value) {
+              return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+            }
 
-          case "${GITHUB_EVENT_NAME}:${GITHUB_REF}" in
-            push:refs/heads/main|push:refs/tags/v*.*.*|workflow_dispatch:refs/heads/main|workflow_dispatch:refs/tags/v*.*.*)
-              should_publish=true
-              ;;
-            pull_request:*|workflow_dispatch:*)
-              should_validate=true
-              ;;
-          esac
+            function globToRegExp(glob) {
+              let regex = '^';
+              for (let index = 0; index < glob.length; index += 1) {
+                const char = glob[index];
+                const next = glob[index + 1];
+                if (char === '*' && next === '*') {
+                  regex += '.*';
+                  index += 1;
+                } else if (char === '*') {
+                  regex += '[^/]*';
+                } else {
+                  regex += escapeRegex(char);
+                }
+              }
+              return new RegExp(`${regex}$`);
+            }
 
-          printf 'should_publish=%s\n' "$should_publish" >> "$GITHUB_OUTPUT"
-          printf 'should_validate=%s\n' "$should_validate" >> "$GITHUB_OUTPUT"
+            const relevantPatterns = relevantGlobs.map(globToRegExp);
+
+            function matchesRelevantPath(filePath) {
+              return relevantPatterns.some((pattern) => pattern.test(filePath));
+            }
+
+            function collectFileNames(files) {
+              const names = new Set();
+              for (const file of files) {
+                if (file?.filename) names.add(file.filename);
+                if (file?.previous_filename) names.add(file.previous_filename);
+              }
+              return [...names].sort();
+            }
+
+            async function listPullRequestFiles(prNumber) {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                per_page: 100,
+              });
+              return collectFileNames(files);
+            }
+
+            async function listMainPushFiles() {
+              const before = context.payload.before;
+              const after = context.payload.after;
+              if (!before || /^0+$/.test(before) || !after) {
+                throw new Error('push payload did not include a comparable before/after range');
+              }
+
+              const comparison = await github.rest.repos.compareCommitsWithBasehead({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                basehead: `${before}...${after}`,
+                per_page: 100,
+              });
+              const files = comparison.data.files ?? [];
+              if (files.length >= 300) {
+                throw new Error('compare API returned the maximum file list; changed files may be truncated');
+              }
+              return collectFileNames(files);
+            }
+
+            let shouldPublish = false;
+            let shouldValidate = false;
+            let changedFiles = [];
+            let relevantFiles = [];
+            let reason = 'Docker image workflow is not required for this ref.';
+            const eventName = context.eventName;
+            const ref = context.ref;
+            const isVersionTagRef = /^refs\/tags\/v[^/]*\.[^/]*\.[^/]*$/.test(ref);
+
+            if (eventName === 'workflow_dispatch') {
+              if (ref === 'refs/heads/main' || isVersionTagRef) {
+                shouldPublish = true;
+                reason = 'Manual dispatch on a publish ref preserves explicit operator intent.';
+              } else {
+                shouldValidate = true;
+                reason = 'Manual dispatch on a non-publish ref preserves explicit operator intent.';
+              }
+            } else if (eventName === 'push' && isVersionTagRef) {
+              shouldPublish = true;
+              reason = 'Version tags always publish Docker images.';
+            } else if (eventName === 'push' && ref === 'refs/heads/main') {
+              try {
+                changedFiles = await listMainPushFiles();
+                relevantFiles = changedFiles.filter(matchesRelevantPath);
+                shouldPublish = relevantFiles.length > 0;
+                reason = shouldPublish
+                  ? 'Main push touched Docker-relevant paths.'
+                  : 'Main push did not touch Docker-relevant paths.';
+              } catch (error) {
+                shouldPublish = true;
+                reason = `Unable to determine changed files for main push; publishing fail-open. ${error.message}`;
+                core.warning(reason);
+              }
+            } else if (eventName === 'pull_request') {
+              try {
+                changedFiles = await listPullRequestFiles(context.payload.pull_request.number);
+                relevantFiles = changedFiles.filter(matchesRelevantPath);
+                shouldValidate = relevantFiles.length > 0;
+                reason = shouldValidate
+                  ? 'Pull request touched Docker-relevant paths.'
+                  : 'Pull request did not touch Docker-relevant paths.';
+              } catch (error) {
+                shouldValidate = true;
+                reason = `Unable to determine changed files for pull request; validating fail-open. ${error.message}`;
+                core.warning(reason);
+              }
+            }
+
+            core.setOutput('should_publish', String(shouldPublish));
+            core.setOutput('should_validate', String(shouldValidate));
+
+            const matched = relevantFiles.length > 0 ? relevantFiles.join(', ') : 'none';
+            core.info(
+              `Docker image decision: publish=${shouldPublish}, validate=${shouldValidate}. ${reason} Matched paths: ${matched}`,
+            );
+
+            await core.summary
+              .addHeading('Docker Image Decision', 3)
+              .addRaw(`publish=${shouldPublish}, validate=${shouldValidate}. ${reason}`)
+              .addBreak()
+              .addRaw(`Matched paths: ${matched}`)
+              .write();
 
   docker-build:
     name: Docker Build

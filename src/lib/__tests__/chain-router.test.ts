@@ -9,6 +9,7 @@ import type { Server } from '@/types/server';
 
 const mockGetNodeIP = mock.fn(async (_hostname?: string) => null);
 const mockIsReachable = mock.fn(async (_hostname: string) => true);
+let originalConsoleError: typeof console.error;
 
 function makeChainConfig(): ChainConfig {
   return {
@@ -70,10 +71,13 @@ describe('applyChainConfig', () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
+    originalConsoleError = console.error;
+    console.error = mock.fn<typeof console.error>();
     globalThis.fetch = originalFetch;
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    console.error = originalConsoleError;
   });
 
   it('uses panelUrl from credentials map instead of http://hostname:port', async () => {
@@ -268,6 +272,8 @@ describe('applyChainConfig', () => {
 
 describe('generateChainConfig', () => {
   beforeEach(() => {
+    originalConsoleError = console.error;
+    console.error = mock.fn<typeof console.error>();
     mockGetNodeIP.mock.resetCalls();
     mockIsReachable.mock.resetCalls();
     mockGetNodeIP.mock.mockImplementation(async (_hostname?: string) => null);
@@ -277,6 +283,7 @@ describe('generateChainConfig', () => {
 
   afterEach(() => {
     __resetDeps();
+    console.error = originalConsoleError;
   });
 
   function makeServers(): Server[] {
