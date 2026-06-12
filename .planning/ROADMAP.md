@@ -143,6 +143,7 @@ Plans:
 <!-- AUTO-PR-IMPROVE-INTAKE-START -->
 <!-- PR-IMPROVE:182 --> - PR #182: fix(audit): address autonomous audit findings -- 13.2 x2, 13.3 x1, 13.4 x1. Quick artifact: `.planning/quick/260603-pr182-workflow-improve/260603-pr182-PLAN.md`.
 <!-- PR-IMPROVE:237 --> - PR #237: [codex] fix PR finalizer auto-merge stall -- pr237.1 x1, pr237.2 x1, pr237.3 x1, pr237.4 x1. Quick artifact: `.planning/quick/260605-pr237-workflow-improve/260605-pr237-PLAN.md`.
+<!-- PR-IMPROVE:352 --> - PR #352: fix: resolve #347 - Security: esbuild RCE + arbitrary file read (HIGH) and postcss XSS (moderate) -- pr352.1 x1, pr352.2 x1, pr352.3 x1, pr352.4 x1. Quick artifact: `.planning/quick/260612-pr352-workflow-improve/260612-pr352-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
