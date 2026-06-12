@@ -435,6 +435,12 @@ describe('PR flow workflow invariants', () => {
     assert.match(workflow, /workflows:\s*\[[^\]]*'PR Finalizer'[^\]]*\]/);
   });
 
+  it('wakes the orchestrator when PR Policy completes', () => {
+    const workflow = readWorkflow('.github/workflows/pr-flow.yml');
+
+    assert.match(workflow, /workflows:\s*\[[^\]]*'PR Policy'[^\]]*\]/);
+  });
+
   it('keeps PR Finalizer maintainer approval scoped to manual gating', () => {
     const workflow = readWorkflow('.github/workflows/pr-finalizer.yml');
 
