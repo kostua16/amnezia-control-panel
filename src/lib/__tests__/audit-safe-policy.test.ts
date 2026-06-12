@@ -142,6 +142,13 @@ describe('audit-safe PR policy', () => {
           file('src/components/dashboard/traffic-stats.tsx'),
           file('src/hooks/use-alerts.ts'),
           file('src/lib/resource-monitor.ts'),
+          file('src/lib/resource-alerts.ts'),
+          file('src/lib/quota-monitor.ts'),
+          file('src/lib/usage-colors.ts'),
+          file('src/types/api.ts'),
+          file('src/types/monitoring.ts'),
+          file('src/components/dashboard/panel-card-expanded.tsx'),
+          file('src/hooks/use-chain-status.ts'),
         ],
       }),
       policy,
@@ -149,7 +156,7 @@ describe('audit-safe PR policy', () => {
 
     assert.equal(result.manual_only, true);
     assert.equal(result.eligible, false);
-    assert.match(result.blocked_reason ?? '', /file count 4 exceeds limit 3/);
+    assert.match(result.blocked_reason ?? '', /file count 11 exceeds limit 10/);
   });
 
   it('blocks safe audit PRs that exceed changed-line limits', () => {
@@ -157,7 +164,7 @@ describe('audit-safe PR policy', () => {
       pr({
         headRefName: 'claude-audit-safe-fix-123',
         labels: ['ai-review-passed', 'security-review-passed'],
-        files: [file('src/lib/resource-monitor.ts', 100, 21)],
+        files: [file('src/lib/resource-monitor.ts', 300, 101)],
       }),
       policy,
     );
@@ -166,7 +173,7 @@ describe('audit-safe PR policy', () => {
     assert.equal(result.eligible, false);
     assert.match(
       result.blocked_reason ?? '',
-      /changed lines 121 exceed limit 120/,
+      /changed lines 401 exceed limit 400/,
     );
   });
 
@@ -177,7 +184,7 @@ describe('audit-safe PR policy', () => {
         labels: ['ai-review-passed', 'security-review-passed'],
         files: [
           file('src/lib/resource-monitor.ts'),
-          file('src/lib/unreviewed-helper.ts'),
+          file('src/app/dashboard/page.tsx'),
         ],
       }),
       policy,
@@ -496,8 +503,8 @@ describe('audit-fix classifier', () => {
       fileDetails: [
         {
           path: 'src/lib/resource-monitor.ts',
-          additions: 100,
-          deletions: 21,
+          additions: 300,
+          deletions: 101,
           changedLinesKnown: true,
         },
       ],
@@ -507,7 +514,7 @@ describe('audit-fix classifier', () => {
     assert.equal(result.branch_name, 'claude-audit-fix-123');
     assert.equal(result.draft, 'true');
     assert.equal(result.labels, 'auto-fix,needs-review');
-    assert.match(result.reason, /changed lines 121 exceed limit 120/);
+    assert.match(result.reason, /changed lines 401 exceed limit 400/);
   });
 
   it('routes unknown changed-line counts to the manual branch lane', () => {

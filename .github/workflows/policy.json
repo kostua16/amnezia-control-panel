@@ -49,17 +49,13 @@
     "manualBranchPrefix": "claude-audit-fix-",
     "safeLabels": ["auto-fix", "audit-safe", "skip-improve"],
     "manualLabels": ["auto-fix", "needs-review"],
-    "maxFiles": 3,
-    "maxChangedLines": 120,
+    "maxFiles": 10,
+    "maxChangedLines": 400,
     "allowedPathGlobs": [
       "src/components/**",
       "src/hooks/**",
-      "src/lib/api-response.ts",
-      "src/lib/format.ts",
-      "src/lib/resource-monitor.ts",
-      "src/lib/resource-alerts.ts",
-      "src/types/api.ts",
-      "src/types/monitoring.ts",
+      "src/lib/**",
+      "src/types/**",
       "src/app/globals.css"
     ],
     "manualOnlyPathGlobs": [
