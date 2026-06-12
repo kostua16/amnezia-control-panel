@@ -3,18 +3,7 @@
 import { Cpu, MemoryStick, HardDrive } from 'lucide-react';
 import { clsx } from 'clsx';
 import { TrafficChart } from '@/components/dashboard/traffic-chart';
-
-function getUsageColor(percent: number): string {
-  if (percent >= 90) return 'bg-red-500';
-  if (percent >= 70) return 'bg-yellow-500';
-  return 'bg-green-500';
-}
-
-function getUsageTextColor(percent: number): string {
-  if (percent >= 90) return 'text-red-500';
-  if (percent >= 70) return 'text-yellow-500';
-  return 'text-green-500';
-}
+import { getUsageColor, getUsageTextColor } from '@/lib/usage-colors';
 
 interface ResourceBarProps {
   label: string;
