@@ -260,12 +260,31 @@ if (mode === 'pr-flow-pull-request-target') {
     'converted_to_draft',
   ]);
   const labelActions = new Set(['labeled', 'unlabeled']);
+  const senderIsBot = labelActions.has(action) && isBotAccount(event.sender);
   const relevantLabels = getPrFlowRelevantLabels(policy, config);
   const labelRelevant =
-    labelActions.has(action) && relevantLabels.includes(labelName);
+    labelActions.has(action) &&
+    relevantLabels.includes(labelName) &&
+    !senderIsBot;
   const shouldRun =
     eventName === 'pull_request_target' &&
     (alwaysRunActions.has(action) || labelRelevant);
+
+  const reason = (() => {
+    if (alwaysRunActions.has(action)) {
+      return `pull_request_target ${action} always runs PR flow`;
+    }
+    if (senderIsBot) {
+      return `label ${labelName} applied by bot; orchestrator re-evaluates on workflow_run completion`;
+    }
+    if (labelRelevant) {
+      return `label ${labelName} affects PR flow`;
+    }
+    if (labelActions.has(action)) {
+      return `label ${labelName} does not affect PR flow`;
+    }
+    return `pull_request_target ${action} is ignored by PR flow`;
+  })();
 
   process.stdout.write(
     JSON.stringify(
@@ -276,13 +295,8 @@ if (mode === 'pr-flow-pull-request-target') {
         action,
         label: labelName || null,
         relevant_label: labelRelevant,
-        reason: alwaysRunActions.has(action)
-          ? `pull_request_target ${action} always runs PR flow`
-          : labelRelevant
-            ? `label ${labelName} affects PR flow`
-            : labelActions.has(action)
-              ? `label ${labelName} does not affect PR flow`
-              : `pull_request_target ${action} is ignored by PR flow`,
+        sender_is_bot: senderIsBot || null,
+        reason,
       },
       null,
       2,
