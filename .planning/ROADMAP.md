@@ -538,6 +538,16 @@ Source: `/gsd:explore` second-pass review (non-duplicative). Artifact: `.plannin
 | 5 | **Decompose vpn-services.ts** — Split 791-line god file into `vpn/cli-executor`, `vpn/validation`, `vpn/awg-service`, `vpn/xui-service`, `vpn/types` (all under 200 lines) | Medium (Maintainability) | `src/lib/vpn-services.ts` → `src/lib/vpn/*.ts` | Proposed |
 | 6 | **Composite index on TrafficLog** — Add `@@index([userId, timestamp])` so traffic stats queries use a single index scan instead of choosing between two single-column indexes | Medium (Perf) | `prisma/schema.prisma` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 3 (2026-06-12)
+
+Source: `/gsd:explore` third-pass review (non-duplicative). Artifact: `.planning/quick/260612-arch-review/260612-PLAN.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 7 | **Audit log raw SQL → Prisma model** — Remove raw `CREATE TABLE IF NOT EXISTS` + `$executeRaw` in `audit-log.ts`; use `prisma.auditLog.create()` against the existing model/migration, eliminating dead-code dual schema | Medium (Consistency) | `src/lib/audit-log.ts` | Proposed |
+| 8 | **Extract bcrypt hashing utility** — Replace 5+ repeated `await import('bcryptjs'); bcrypt.hash(...)` inline patterns with a `hashSecret()`/`verifySecret()` utility in `lib/crypto.ts` | Low-Medium (DRY) | `src/lib/crypto.ts` (new), 5 route files | Proposed |
+| 9 | **Async service-monitor** — Replace `execFileSync` (sync, blocks event loop up to 15s) with `execFileAsync` in `service-monitor.ts`, matching the async pattern already used in `vpn-services.ts` | Medium (Perf) | `src/lib/service-monitor.ts` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-06-11 - v1.1 milestone completed (Phases 11.1-12.15 folded into single milestone)*
+*Last updated: 2026-06-12 - Added improvement intake #3 (proposals 7-9: audit-log Prisma, bcrypt utility, async service-monitor)*
