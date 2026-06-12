@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const policy = require('../../../.github/workflows/policy.json');
@@ -16,6 +19,13 @@ const {
 
 function file(path: string, additions = 5, deletions = 1) {
   return { path, additions, deletions };
+}
+
+function tempExecutionFile(result: string) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-fix-classifier-'));
+  const filePath = path.join(dir, 'execution.jsonl');
+  fs.writeFileSync(filePath, `${JSON.stringify({ type: 'result', result })}\n`);
+  return filePath;
 }
 
 function pr({
@@ -308,6 +318,31 @@ describe('audit-fix classifier', () => {
       result.body,
       /https:\/\/github\.com\/kostua16\/amnezia-control-panel\/actions\/runs\/123/,
     );
+    validateRichBody(result.body);
+  });
+
+  it('uses captured execution rationale in the PR body when available', () => {
+    const executionFile = tempExecutionFile(
+      'Extracted duplicated usage color helpers into a shared library module and added coverage for the shared thresholds.',
+    );
+
+    const result = classifyAuditFix({
+      mode: 'auto',
+      policy,
+      runId: '123',
+      fileDetails: [file('src/lib/resource-monitor.ts')],
+      executionFile,
+    });
+
+    assert.match(
+      result.body,
+      /Extracted duplicated usage color helpers into a shared library module/,
+    );
+    assert.doesNotMatch(
+      result.body,
+      /## Why Automation Changed This\nClassification:/,
+    );
+    assert.match(result.body, /Classification: safe auto-merge candidate/);
     validateRichBody(result.body);
   });
 
