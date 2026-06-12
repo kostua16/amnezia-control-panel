@@ -1,0 +1,76 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, it } from 'node:test';
+
+function readRepoFile(repoPath: string) {
+  return fs.readFileSync(path.join(process.cwd(), repoPath), 'utf8');
+}
+
+describe('GSD planning workflow automation', () => {
+  it('runs the planning executor four times per day and caps scheduled imports to one plan', () => {
+    const workflow = readRepoFile('.github/workflows/gsd-planning-execute.yml');
+
+    assert.match(workflow, /cron: '0 \*\/6 \* \* \*'/);
+    assert.match(workflow, /group: gsd-planning-execute-main/);
+    assert.match(workflow, /max_plans=1/);
+    assert.match(
+      workflow,
+      /collect-gsd-planning-intake\.cjs[\s\S]*--max-plans "\$max_plans"/,
+    );
+    assert.match(workflow, /\/gsd:execute-phase 999 --wave/);
+    assert.match(workflow, /labels: auto-fix,gsd-plan-execution,skip-improve/);
+    assert.match(workflow, /draft: 'false'/);
+    assert.match(workflow, /<!-- gsd-planning-source-sha256:/);
+  });
+
+  it('creates planning intake PRs as non-drafts with the intake label', () => {
+    for (const workflowPath of [
+      '.github/workflows/gsd-planning.yml',
+      '.github/workflows/suggest-improvements.yml',
+    ]) {
+      const workflow = readRepoFile(workflowPath);
+
+      assert.match(workflow, /labels: planning-intake-open/, workflowPath);
+      assert.match(workflow, /draft: 'false'/, workflowPath);
+      assert.doesNotMatch(
+        workflow,
+        /labels: planning-draft-open,needs-review/,
+        workflowPath,
+      );
+      assert.doesNotMatch(workflow, /draft: 'true'/, workflowPath);
+    }
+  });
+
+  it('keeps PR Improve planning PRs ready for auto-merge instead of draft-only', () => {
+    const script = readRepoFile(
+      '.github/workflows/scripts/upsert-planning-pr.cjs',
+    );
+    const workflow = readRepoFile('.github/workflows/pr-improve.yml');
+
+    assert.match(script, /planning-intake-open/);
+    assert.doesNotMatch(script, /'--draft'/);
+    assert.match(
+      workflow,
+      /names: skip-improve,planning-intake-open,planning-draft-open/,
+    );
+    assert.match(workflow, /labels: \['planning-intake-open'\]/);
+  });
+
+  it('pushes branches that are already ahead after GSD creates commits', () => {
+    const action = readRepoFile('.github/actions/commit-and-push/action.yml');
+
+    assert.match(action, /commit_created=false/);
+    assert.match(action, /origin\/HEAD\.\.HEAD/);
+    assert.match(action, /Branch is not ahead of origin\/\$BRANCH/);
+  });
+
+  it('labels trusted planning and risky GSD execution consistently in PR Policy', () => {
+    const workflow = readRepoFile('.github/workflows/pr-policy.yml');
+
+    assert.match(workflow, /policy\.trustedPlanning\?\.branchPrefixes/);
+    assert.match(workflow, /trustedPlanning/);
+    assert.match(workflow, /gsdExecutionSafe/);
+    assert.match(workflow, /isGsdExecution && !gsdExecutionSafe/);
+  });
+});

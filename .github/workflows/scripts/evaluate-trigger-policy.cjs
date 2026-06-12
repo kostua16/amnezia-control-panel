@@ -365,8 +365,12 @@ if (mode === 'fix-pr') {
     '';
   const automationPrefixes = [
     ...(policy.trustedAutomationBranchPrefixes ?? []),
+    ...(policy.trustedPlanning?.branchPrefixes ?? []),
     ...(policy.manualOnlyBranchPrefixes ?? []),
     ...(policy.cleanupBranchPrefixes ?? []),
+    ...(policy.gsdExecution?.branchPrefix
+      ? [policy.gsdExecution.branchPrefix]
+      : []),
   ];
   const hasAutomationBranchPrefix = automationPrefixes.some((prefix) =>
     headRefName.startsWith(prefix),

@@ -1,0 +1,242 @@
+name: GSD Planning Execute
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Select and validate intake without writing, executing, or opening a PR'
+        required: false
+        default: true
+        type: boolean
+      candidate_path:
+        description: 'Optional merged .planning/quick artifact path to execute'
+        required: false
+        default: ''
+        type: string
+      max_plans:
+        description: 'Maximum artifacts to import; scheduled runs are capped at 1'
+        required: false
+        default: '1'
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: gsd-planning-execute-main
+  cancel-in-progress: false
+
+env:
+  MAX_TURNS: '80'
+  NODE_VERSION: '22.x'
+
+jobs:
+  execute:
+    runs-on: [self-hosted, big]
+    timeout-minutes: 60
+    outputs:
+      claude_failed: ${{ steps.gsd.outputs.claude_failed }}
+      claude_failure_reason: ${{ steps.gsd.outputs.claude_failure_reason }}
+      claude_num_turns: ${{ steps.gsd.outputs.claude_num_turns }}
+      claude_is_error: ${{ steps.gsd.outputs.claude_is_error }}
+      claude_used_attempt: ${{ steps.gsd.outputs.claude_used_attempt }}
+      claude_metrics_json: ${{ steps.gsd.outputs.claude_metrics_json }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
+
+      - name: Ensure execution labels exist
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+          names: auto-fix,needs-review,skip-improve,gsd-plan-execution
+
+      - name: Prepare GSD execution branch
+        id: branch
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-gsd-planning-execute-${{ github.run_id }}
+          github-token: ${{ secrets.GH_PAT }}
+
+      - name: Collect open execution PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list \
+            --state open \
+            --label gsd-plan-execution \
+            --json number,title,body,headRefName \
+            > /tmp/gsd-planning-open-prs.json
+
+      - name: Import merged planning artifact
+        id: intake
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          CANDIDATE_PATH: ${{ github.event.inputs.candidate_path || '' }}
+          INPUT_MAX_PLANS: ${{ github.event.inputs.max_plans || '1' }}
+        run: |
+          set -euo pipefail
+          max_plans="$INPUT_MAX_PLANS"
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            max_plans=1
+          fi
+          if ! [[ "$max_plans" =~ ^[0-9]+$ ]] || [ "$max_plans" -lt 1 ]; then
+            max_plans=1
+          fi
+
+          write=false
+          if [ "$DRY_RUN" != "true" ]; then
+            write=true
+          fi
+
+          node .github/workflows/scripts/collect-gsd-planning-intake.cjs \
+            --open-prs-file /tmp/gsd-planning-open-prs.json \
+            --candidate-path "$CANDIDATE_PATH" \
+            --max-plans "$max_plans" \
+            --write "$write" \
+            > /tmp/gsd-planning-intake.json
+
+          cat /tmp/gsd-planning-intake.json
+
+          {
+            echo "has_candidate=$(jq -r '.has_candidate' /tmp/gsd-planning-intake.json)"
+            echo "selected_count=$(jq -r '.selected_count' /tmp/gsd-planning-intake.json)"
+            echo "plan_path=$(jq -r '.selected[0].plan_path // empty' /tmp/gsd-planning-intake.json)"
+            echo "wave=$(jq -r '.selected[0].wave // empty' /tmp/gsd-planning-intake.json)"
+            echo "source_path=$(jq -r '.selected[0].path // empty' /tmp/gsd-planning-intake.json)"
+            echo "source_hash=$(jq -r '.selected[0].hash // empty' /tmp/gsd-planning-intake.json)"
+            echo "source_title=$(jq -r '.selected[0].title // empty' /tmp/gsd-planning-intake.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log no candidate
+        if: steps.intake.outputs.has_candidate != 'true'
+        run: echo "No eligible merged GSD planning artifact found."
+
+      - name: Validate imported plan
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        env:
+          PLAN_PATH: ${{ steps.intake.outputs.plan_path }}
+        run: |
+          node .claude/get-shit-done/bin/gsd-tools.cjs frontmatter validate "$PLAN_PATH" --schema plan
+          node .claude/get-shit-done/bin/gsd-tools.cjs verify plan-structure "$PLAN_PATH"
+
+      - name: Execute imported GSD plan
+        id: gsd
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          model: 'sonnet'
+          max-turns: ${{ env.MAX_TURNS }}
+          track-progress: 'true'
+          allowed-bots: 'github-actions,github-actions[bot],claude[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
+          prompt: |
+            /gsd:execute-phase 999 --wave ${{ steps.intake.outputs.wave }} --no-transition
+
+            Execute exactly the imported GSD planning queue plan:
+            - Plan: `${{ steps.intake.outputs.plan_path }}`
+            - Source artifact: `${{ steps.intake.outputs.source_path }}`
+            - Source SHA-256: `${{ steps.intake.outputs.source_hash }}`
+
+            Hard rules:
+            - Execute only Wave `${{ steps.intake.outputs.wave }}` from Phase 999.
+            - Keep implementation scoped to the imported source artifact.
+            - Do not process other Phase 999 waves.
+            - Do not open, approve, merge, or comment on pull requests.
+            - Do not push. The workflow handles branch push and PR creation.
+
+      - name: Fail on GSD soft failure
+        if: always() && steps.gsd.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::GSD execution soft failure: ${{ steps.gsd.outputs.claude_failure_reason }}"
+          exit 1
+
+      - uses: ./.github/actions/commit-and-push
+        id: push
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'feat(gsd): execute planning intake'
+
+      - name: Build execution PR body
+        id: pr-body
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/build-automation-pr-body
+        with:
+          workflow-name: gsd-planning-execute
+          problem: 'GSD planning executor imported and executed a merged planning artifact.'
+          source-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          base-ref: main
+          changed-files: ${{ steps.gsd.outputs.claude_changed_files_list }}
+          execution-file: ${{ steps.gsd.outputs.last_execution_file }}
+          structured-output: ${{ steps.gsd.outputs.structured_output }}
+          claude-last-output: ${{ steps.gsd.outputs.claude_last_output }}
+          review-notes: |
+            GSD planning execution PR.
+            Source artifact: `${{ steps.intake.outputs.source_path }}`
+            Imported plan: `${{ steps.intake.outputs.plan_path }}`
+            <!-- gsd-planning-source-sha256: ${{ steps.intake.outputs.source_hash }} -->
+
+      - name: Create GSD planning execution PR
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/upsert-pull-request
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'feat(gsd): execute planning intake - ${{ steps.intake.outputs.source_title }}'
+          body: ${{ steps.pr-body.outputs.body }}
+          labels: auto-fix,gsd-plan-execution,skip-improve
+          draft: 'false'
+          require-rich-body: 'true'
+
+  report-failure:
+    needs: [execute]
+    if: failure()
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: ./.github/actions/report-failure
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: issue
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: '[gsd-planning-execute] Planning execution workflow failed'
+          labels: auto-fix,ci-failure
+          ensure-labels: auto-fix,ci-failure
+          dispatch-triage: 'true'
+          claude-step-outcome: ${{ needs.execute.result }}
+          claude-turns: ${{ needs.execute.outputs.claude_num_turns }}
+          claude-is-error: ${{ needs.execute.outputs.claude_is_error }}
+          claude-used-attempt: ${{ needs.execute.outputs.claude_used_attempt }}
+          claude-failure-reason: ${{ needs.execute.outputs.claude_failure_reason }}
+          claude-metrics-json: ${{ needs.execute.outputs.claude_metrics_json }}

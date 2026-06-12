@@ -93,7 +93,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           policy-file: .github/workflows/policy.json
-          names: skip-improve,planning-draft-open
+          names: skip-improve,planning-intake-open,planning-draft-open
 
       - name: Fetch PR metadata and evaluate policy
         id: metadata
@@ -240,8 +240,9 @@ jobs:
               `- Phase suggestions: ${(analysis.phase_suggestions || []).length}`,
               `- Quick artifact: \`${process.env.QUICK_ARTIFACT_PATH || ''}\``,
               process.env.PLANNING_PR_URL
-                ? `- Draft planning PR: ${process.env.PLANNING_PR_URL}`
-                : '- Draft planning PR: not created'
+                ? `- Planning intake PR: ${process.env.PLANNING_PR_URL}`
+                : '- Planning intake PR: not created',
+              '- Execution: merge the planning PR; the GSD planning executor imports merged artifacts four times per day.'
             ].join('\n');
 
             const comments = await github.paginate(github.rest.issues.listComments, {
@@ -275,7 +276,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
-              labels: ['planning-draft-open']
+              labels: ['planning-intake-open']
             });
 
   wake-orchestrator:

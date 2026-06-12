@@ -114,6 +114,7 @@ const config = {
       'deps-review-manual',
       'deps-review-blocked',
       'planning-draft-open',
+      'planning-intake-open',
     ],
   },
   checks: {
@@ -168,7 +169,7 @@ const config = {
       workflow: 'pr-improve.yml',
       inputs: { dry_run: 'false' },
       required: false,
-      successLabels: ['planning-draft-open'],
+      successLabels: ['planning-intake-open', 'planning-draft-open'],
       skipLabels: ['skip-improve'],
     },
     finalizer: {

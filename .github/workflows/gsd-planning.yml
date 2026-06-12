@@ -108,7 +108,7 @@ jobs:
 
             Scope:
             - Edit only `.planning/**` planning artifacts.
-            - Keep generated planning PRs draft/manual-only.
+            - Keep generated planning PRs limited to planning artifacts so PR flow can auto-merge them after CI plus core/security review.
             - Preserve existing phase intake markers.
             - Update phase tracking status, acceptance criteria, and verification checklist when missing.
             - Do not modify application source, package manifests, or workflow logic.
@@ -134,7 +134,7 @@ jobs:
           execution-file: ${{ steps.claude_run.outputs.last_execution_file }}
           structured-output: ${{ steps.claude_run.outputs.structured_output }}
           claude-last-output: ${{ steps.claude_run.outputs.claude_last_output }}
-          review-notes: 'Draft planning PR. Planning changes are manual-only under workflow policy.'
+          review-notes: 'Planning intake PR. Merge is automated after CI, PR Policy, core review, and security review pass; merged artifacts are picked up by the 4x/day GSD planning executor.'
 
       - name: Create GSD planning PR
         if: steps.push.outputs.pushed == 'true'
@@ -145,6 +145,6 @@ jobs:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           title: 'planning: refresh GSD phase ${{ needs.authorize.outputs.phase }}'
           body: ${{ steps.pr-body.outputs.body }}
-          labels: planning-draft-open,needs-review
-          draft: 'true'
+          labels: planning-intake-open
+          draft: 'false'
           require-rich-body: 'true'

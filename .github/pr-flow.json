@@ -57,6 +57,7 @@
       "deepseek-review-passed",
       "deepseek-review-concerns",
       "planning-draft-open",
+      "planning-intake-open",
       "maintainer-approved",
       "antigravity-review-passed",
       "antigravity-review-concerns"
@@ -126,7 +127,7 @@
         "dry_run": "false"
       },
       "required": false,
-      "successLabels": ["planning-draft-open"],
+      "successLabels": ["planning-intake-open", "planning-draft-open"],
       "skipLabels": ["skip-improve"]
     },
     "finalizer": {

@@ -260,6 +260,131 @@ describe('audit-safe PR policy', () => {
     ]);
   });
 
+  it('allows trusted planning PRs that only touch planning artifacts', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'claude-workflow-optimize-123',
+        labels: ['ai-review-passed', 'security-review-passed'],
+        files: [file('.planning/quick/260612-arch-review/260612-PLAN.md')],
+      }),
+      policy,
+    );
+
+    assert.equal(result.pr_class, 'trusted-planning');
+    assert.equal(result.manual_only, false);
+    assert.equal(result.eligible, true);
+    assert.deepEqual(result.required_pass_labels, [
+      'ai-review-passed',
+      'security-review-passed',
+    ]);
+  });
+
+  it('keeps trusted planning PRs waiting when review labels are missing', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'claude-planning-pr-237',
+        files: [
+          file(
+            '.planning/quick/260605-pr237-workflow-improve/260605-pr237-PLAN.md',
+          ),
+        ],
+      }),
+      policy,
+    );
+
+    assert.equal(result.pr_class, 'trusted-planning');
+    assert.equal(result.manual_only, false);
+    assert.equal(result.eligible, true);
+    assert.deepEqual(result.required_pass_labels, [
+      'ai-review-passed',
+      'security-review-passed',
+    ]);
+  });
+
+  it('blocks trusted planning PRs that touch workflow files', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'claude-workflow-optimize-123',
+        labels: ['ai-review-passed', 'security-review-passed'],
+        files: [
+          file('.planning/quick/260612-arch-review/260612-PLAN.md'),
+          file('.github/workflows/ci.yml'),
+        ],
+      }),
+      policy,
+    );
+
+    assert.equal(result.pr_class, 'trusted-planning');
+    assert.equal(result.manual_only, true);
+    assert.equal(result.eligible, false);
+    assert.match(
+      result.blocked_reason ?? '',
+      /outside the planning allow list/,
+    );
+  });
+
+  it('keeps ordinary planning path edits manual-only', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'feature/planning-note',
+        labels: ['ai-review-passed', 'security-review-passed'],
+        files: [file('.planning/quick/manual/proposal.md')],
+      }),
+      policy,
+    );
+
+    assert.equal(result.pr_class, 'other');
+    assert.equal(result.manual_only, true);
+    assert.equal(result.eligible, false);
+    assert.match(
+      result.blocked_reason ?? '',
+      /manual-only workflow or planning paths/,
+    );
+  });
+
+  it('allows safe GSD planning execution PRs after review labels', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'claude-gsd-planning-execute-123',
+        labels: ['ai-review-passed', 'security-review-passed'],
+        files: [
+          file(
+            '.planning/phases/999-gh-planning-execution-queue/999-001-PLAN.md',
+          ),
+          file('src/lib/format.ts'),
+        ],
+      }),
+      policy,
+    );
+
+    assert.equal(result.pr_class, 'gsd-planning-execution');
+    assert.equal(result.manual_only, false);
+    assert.equal(result.eligible, true);
+    assert.equal(result.gsd_execution?.eligible, true);
+  });
+
+  it('keeps risky GSD planning execution PRs manual-only', () => {
+    const result = evaluatePrPolicy(
+      pr({
+        headRefName: 'claude-gsd-planning-execute-123',
+        labels: ['ai-review-passed', 'security-review-passed'],
+        files: [
+          file(
+            '.planning/phases/999-gh-planning-execution-queue/999-001-PLAN.md',
+          ),
+          file('.github/workflows/ci.yml'),
+        ],
+      }),
+      policy,
+    );
+
+    assert.equal(result.pr_class, 'gsd-planning-execution');
+    assert.equal(result.manual_only, true);
+    assert.equal(result.eligible, false);
+    assert.equal(result.gsd_execution?.eligible, false);
+    assert.match(result.blocked_reason ?? '', /manual-only paths/);
+  });
+
   it('treats grouped Dependabot patch/minor PRs as supported when the body metadata proves it', () => {
     const result = evaluatePrPolicy(
       pr({

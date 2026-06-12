@@ -7,9 +7,10 @@
   - manual `workflow_dispatch` by phase id
   - maintainer `/gsd-plan [phase]` issue comment trigger
   - project-local GSD and RTK setup
-  - draft planning PR creation on `claude-planning-pr-*` branches
-  - `planning-draft-open` and `needs-review` labels for manual planning review
-- Existing `.github/workflows/pr-improve.yml` remains the PR-diff improvement intake workflow and continues to create draft planning PRs for qualifying PRs.
+  - non-draft planning PR creation on trusted planning branches
+  - `planning-intake-open` labels for reviewed planning intake
+  - scheduled Phase 999 execution queue import from merged `.planning/quick/**` artifacts
+- Existing `.github/workflows/pr-improve.yml` remains the PR-diff improvement intake workflow and creates reviewed planning intake PRs for qualifying PRs.
 
 ## Evidence
 
@@ -18,5 +19,5 @@
 
 ## Notes
 
-- Planning PRs remain manual-only through `.github/workflows/policy.json` branch/path policy.
+- Planning PRs are auto-merge eligible through `.github/workflows/policy.json` trusted-planning policy after CI plus core/security review pass.
 - Phase plan `CONTEXT.md` was requested but no 13.4 context file exists in `.planning/phases/13.4-claude-gsd-planning-automation/`.

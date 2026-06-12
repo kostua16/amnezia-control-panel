@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       planning_pr_number:
-        description: 'Draft planning PR number to repair'
+        description: 'Planning intake PR number to repair'
         required: true
         type: string
 

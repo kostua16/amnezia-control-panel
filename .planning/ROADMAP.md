@@ -136,7 +136,8 @@ Plans:
 - [ ] **Phase 13.1: Workflow governance hardening** -- central policy, maintainer-only triggers, explicit manual-only workflow/planning paths
 - [ ] **Phase 13.2: CI and supply-chain correctness** -- deterministic release notes, pinned bootstrap tooling, hard failures for push/build regressions
 - [ ] **Phase 13.3: PR finalizer and approval policy** -- signal-only reviews, trusted auto-approval, and controlled auto-merge
-- [ ] **Phase 13.4: Claude+GSD planning automation** -- trusted improvement analysis, draft planning PRs, and roadmap intake artifacts
+- [ ] **Phase 13.4: Claude+GSD planning automation** -- trusted improvement analysis, auto-merged planning intake PRs, and GSD execution queue artifacts
+- [ ] **Phase 999: GH planning execution queue** -- imported merged planning artifacts executed by scheduled GSD automation
 
 **Improvement intake from PR automation**
 <!-- AUTO-PR-IMPROVE-INTAKE-START -->
@@ -163,10 +164,16 @@ Plans:
 **Plans:** Seeded in `.planning/phases/13.3-pr-finalizer-approval-policy/13.3-PLAN.md`
 
 ### Phase 13.4: Claude+GSD planning automation
-**Goal:** Turn qualifying PRs into planning intake artifacts and draft roadmap follow-up PRs without executing untrusted PR code in a write-capable context.
+**Goal:** Turn qualifying PRs into planning intake artifacts, auto-merge those artifacts after review signals, and queue merged artifacts for scheduled GSD execution.
 **Depends on:** Phase 13.1, Phase 13.3
 **Requirements:** Trusted planning automation and roadmap intake capture
 **Plans:** Seeded in `.planning/phases/13.4-claude-gsd-planning-automation/13.4-PLAN.md`
+
+### Phase 999: GH planning execution queue
+**Goal:** Store canonical execution plans imported from merged `.planning/quick/**` artifacts.
+**Depends on:** Phase 13.4
+**Requirements:** One imported artifact per wave so the scheduled executor can process up to four plans per day.
+**Plans:** Generated in `.planning/phases/999-gh-planning-execution-queue/`
 
 ## Phase Details
 

@@ -11,7 +11,7 @@ inputs:
 
 outputs:
   pushed:
-    description: "'true' if a commit was created and pushed"
+    description: "'true' if a commit was created or the branch was already ahead and pushed"
     value: ${{ steps.push.outputs.pushed }}
 
 runs:
@@ -25,12 +25,33 @@ runs:
         MSG: ${{ inputs.commit-message }}
       run: |
         git add -A
-        if git diff --cached --quiet; then
-          echo "No staged changes to commit — skipping push"
+        commit_created=false
+        if ! git diff --cached --quiet; then
+          git commit -m "$MSG"
+          commit_created=true
+        else
+          echo "No staged changes to commit"
+        fi
+
+        git fetch origin "$BRANCH" --depth=1 || true
+        if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
+          ahead_count=$(git rev-list --count "origin/$BRANCH..HEAD")
+        elif git rev-parse --verify origin/HEAD >/dev/null 2>&1; then
+          ahead_count=$(git rev-list --count "origin/HEAD..HEAD")
+        elif git rev-parse --verify origin/main >/dev/null 2>&1; then
+          ahead_count=$(git rev-list --count "origin/main..HEAD")
+        elif [ "$commit_created" = true ]; then
+          ahead_count=$(git rev-list --count HEAD)
+        else
+          ahead_count=0
+        fi
+
+        if [ "$ahead_count" -eq 0 ]; then
+          echo "Branch is not ahead of origin/$BRANCH — skipping push"
           echo "pushed=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
-        git commit -m "$MSG"
+
         PUSHED=false
         for i in 1 2 3; do
           if git push origin "HEAD:$BRANCH"; then

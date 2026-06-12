@@ -8,6 +8,7 @@ import { describe, it } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const {
+  buildPlanningPrBody,
   getPhaseDisplayId,
   normalizePhaseSuggestions,
   renderQuickPlan,
@@ -255,5 +256,34 @@ describe('upsert-planning-pr', () => {
     assert.match(summary, /- pr192\.x mapping: pr192\.4 x1/);
     assert.doesNotMatch(plan, /13\.x|13\.[1-4]/);
     assert.doesNotMatch(summary, /13\.x|13\.[1-4]/);
+  });
+
+  it('renders planning PR bodies with the merge-to-execute lifecycle', () => {
+    const phaseSuggestions = normalizePhaseSuggestions(
+      [
+        {
+          bucket: 'planning-automation',
+          title: 'Execute merged planning artifacts',
+          rationale: 'Planning intake should become implementation work.',
+          owner: 'maintainer',
+        },
+      ],
+      237,
+    );
+    const body = buildPlanningPrBody({
+      sourcePrNumber: 237,
+      sourcePrUrl: 'https://github.com/kostua16/amnezia-control-panel/pull/237',
+      summary: 'sample',
+      quickArtifactPath:
+        '.planning/quick/260605-pr237-workflow-improve/260605-pr237-PLAN.md',
+      phaseSuggestions,
+    });
+
+    assert.match(body, /auto-merge eligible after CI, PR Policy, core review/);
+    assert.match(
+      body,
+      /GSD planning executor imports merged artifacts four times per day/,
+    );
+    assert.doesNotMatch(body, /draft PR|manual-only/i);
   });
 });
