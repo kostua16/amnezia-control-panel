@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: complete
 stopped_at: null
-last_updated: '2026-06-12T19:00:02Z'
-last_activity: 2026-06-12 -- Convert graphify output to local cache
+last_updated: '2026-06-13T00:14:03Z'
+last_activity: 2026-06-12 -- Implement managed private GHCR deployment scripts and docs
 progress:
   total_phases: 24
   completed_phases: 24
@@ -27,7 +27,7 @@ progress:
 
 Phase: All v1.1 phases complete (11.1-12.15)
 Status: Milestone v1.1 archived 2026-06-11
-Last activity: 2026-06-11 -- Implement GHCR Docker image publishing workflow
+Last activity: 2026-06-12 -- Implement managed private GHCR deployment scripts and docs
 
 Progress: [██████████] 100% (v1.1 COMPLETE & ARCHIVED)
 
@@ -147,9 +147,10 @@ Resume file: None
 | 2026-06-11 | 260612-1up   | GHCR Docker image workflow publishes amd64 image            |
 | 2026-06-12 | 260612-aap   | Auto PR audit automation runs as scheduled GitHub workflow  |
 | 2026-06-12 | 260612-x6c   | graphify-out is ignored local cache with PR policy guard    |
+| 2026-06-12 | 260612-vxj   | Managed private GHCR deployment helper and server agent     |
 | 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-12 - Convert graphify output to local cache (quick 260612-x6c)_
+_Last updated: 2026-06-12 - Implement managed private GHCR deployment scripts and docs (quick 260612-vxj)_
