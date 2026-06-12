@@ -46,21 +46,36 @@ docker compose up -d
 
 ### Environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `JWT_SECRET` | **(required)** | Secret for signing JWT tokens — generate with `openssl rand -hex 32` |
-| `ADMIN_PASSWORD` | **(required)** | Initial admin password |
-| `PORT` | `3333` | Host port mapping |
-| `DATABASE_URL` | `file:/app/data/prisma/dev.db` | SQLite database path |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3333` | Public URL of the panel |
+| Variable              | Default                        | Description                                                          |
+| --------------------- | ------------------------------ | -------------------------------------------------------------------- |
+| `JWT_SECRET`          | **(required)**                 | Secret for signing JWT tokens — generate with `openssl rand -hex 32` |
+| `ADMIN_PASSWORD`      | **(required)**                 | Initial admin password                                               |
+| `PORT`                | `3333`                         | Host port mapping                                                    |
+| `DATABASE_URL`        | `file:/app/data/prisma/dev.db` | SQLite database path                                                 |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3333`        | Public URL of the panel                                              |
+
+### Published image
+
+The `Docker Image` GitHub Actions workflow publishes the production image to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/kostua16/amnezia-control-panel:latest
+```
+
+Published tags:
+
+- `latest`, `main`, and `sha-*` from the `main` branch
+- `1.2.3`, `1.2`, and `sha-*` from release tags like `v1.2.3`
+
+The first workflow publish creates the GHCR package. Package visibility is managed in the GitHub Packages settings for `ghcr.io/kostua16/amnezia-control-panel`.
 
 ### Volumes
 
-| Volume | Mount | Purpose |
-|---|---|---|
-| `db-data` | `/app/data/prisma` | SQLite database persistence |
-| `geoip-data` | `/app/data/geoip` | GeoIP database cache |
-| `log-data` | `/app/logs` | Application logs |
+| Volume       | Mount              | Purpose                     |
+| ------------ | ------------------ | --------------------------- |
+| `db-data`    | `/app/data/prisma` | SQLite database persistence |
+| `geoip-data` | `/app/data/geoip`  | GeoIP database cache        |
+| `log-data`   | `/app/logs`        | Application logs            |
 
 ### Build manually
 
@@ -76,6 +91,21 @@ docker run -d \
   -v amnezia-db:/app/data/prisma \
   -v amnezia-geoip:/app/data/geoip \
   amnezia-control-panel
+```
+
+### Run the published image
+
+```bash
+docker run -d \
+  --name amnezia-control-panel \
+  -p 3333:3333 \
+  -e JWT_SECRET="$(openssl rand -hex 32)" \
+  -e ADMIN_PASSWORD="your-secure-password" \
+  -e DATABASE_URL="file:/app/data/prisma/dev.db" \
+  -v amnezia-db:/app/data/prisma \
+  -v amnezia-geoip:/app/data/geoip \
+  -v amnezia-logs:/app/logs \
+  ghcr.io/kostua16/amnezia-control-panel:latest
 ```
 
 ## Other deployment

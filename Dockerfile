@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # ─── Stage 1: Dependencies ────────────────────────────────────────────────────
 # Install both prod + dev dependencies; native modules (better-sqlite3) are built
 # here so the builder stage can reuse the cache.
@@ -8,7 +10,7 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
 
 # ─── Stage 2: Builder ─────────────────────────────────────────────────────────
 FROM deps AS builder
