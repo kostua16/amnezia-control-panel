@@ -5,9 +5,11 @@ import { describe, it } from 'node:test';
 const require = createRequire(import.meta.url);
 const {
   extractPatchFromGitDiff,
-  findExactDuplicatePullRequest,
+  findDuplicatePullRequest,
   hasExactDuplicate,
+  hasEquivalentDuplicate,
   normalizePatch,
+  normalizeSubstantivePatch,
   sortedFilePatches,
 } = require('../../../.github/workflows/scripts/find-duplicate-automation-pr.cjs');
 
@@ -50,6 +52,22 @@ describe('find-duplicate-automation-pr', () => {
     );
   });
 
+  it('keeps only substantive diff lines when comparing semantic duplicates', () => {
+    assert.equal(
+      normalizeSubstantivePatch(
+        [
+          '@@ -47,7 +47,8 @@ concurrency:',
+          '+  # Keep only the newest PR state.',
+          '-  cancel-in-progress: old-value',
+          '+  cancel-in-progress: true',
+        ].join('\n'),
+      ),
+      ['-  cancel-in-progress: old-value', '+  cancel-in-progress: true'].join(
+        '\n',
+      ),
+    );
+  });
+
   it('matches exact duplicates only when paths and patches are identical', () => {
     const localFiles = [
       {
@@ -79,11 +97,56 @@ describe('find-duplicate-automation-pr', () => {
     );
   });
 
-  it('returns the first pull request whose files exactly match the local diff', () => {
+  it('matches equivalent duplicates when differences are comment-only', () => {
     const localFiles = [
       {
-        path: '.github/workflows/ci.yml',
-        patch: '@@ -1 +1 @@\n-needs: [lint, typecheck]\n+needs: [typecheck]',
+        path: '.github/workflows/pr-flow.yml',
+        patch:
+          '@@ -47,7 +47,7 @@ concurrency:\n-  cancel-in-progress: ${{ old }}\n+  cancel-in-progress: true',
+      },
+    ];
+
+    assert.equal(
+      hasEquivalentDuplicate(localFiles, [
+        {
+          filename: '.github/workflows/pr-flow.yml',
+          patch: [
+            '@@ -47,7 +47,8 @@ concurrency:',
+            '+  # Keep only the newest PR state.',
+            '-  cancel-in-progress: ${{ old }}',
+            '+  cancel-in-progress: true',
+          ].join('\n'),
+        },
+      ]),
+      true,
+    );
+  });
+
+  it('does not treat comment-only-only diffs as equivalent duplicates', () => {
+    const localFiles = [
+      {
+        path: '.github/workflows/pr-flow.yml',
+        patch: '@@ -47,7 +47,8 @@ concurrency:\n+  # Local comment only',
+      },
+    ];
+
+    assert.equal(
+      hasEquivalentDuplicate(localFiles, [
+        {
+          filename: '.github/workflows/pr-flow.yml',
+          patch: '@@ -47,7 +47,8 @@ concurrency:\n+  # Remote comment only',
+        },
+      ]),
+      false,
+    );
+  });
+
+  it('returns the first pull request whose files are an exact or equivalent duplicate', () => {
+    const localFiles = [
+      {
+        path: '.github/workflows/pr-flow.yml',
+        patch:
+          '@@ -47,7 +47,7 @@ concurrency:\n-  cancel-in-progress: ${{ old }}\n+  cancel-in-progress: true',
       },
     ];
     const pullRequests = [
@@ -101,9 +164,13 @@ describe('find-duplicate-automation-pr', () => {
         254,
         [
           {
-            filename: '.github/workflows/ci.yml',
-            patch:
-              '@@ -1 +1 @@\n-needs: [lint, typecheck]\n+needs: [typecheck]',
+            filename: '.github/workflows/pr-flow.yml',
+            patch: [
+              '@@ -47,7 +47,8 @@ concurrency:',
+              '+  # Keep only the newest PR state.',
+              '-  cancel-in-progress: ${{ old }}',
+              '+  cancel-in-progress: true',
+            ].join('\n'),
           },
         ],
       ],
@@ -118,13 +185,14 @@ describe('find-duplicate-automation-pr', () => {
       ],
     ]);
 
-    const duplicate = findExactDuplicatePullRequest(
+    const duplicate = findDuplicatePullRequest(
       localFiles,
       pullRequests,
       (pullRequest: { number: number }) =>
         filesByPr.get(pullRequest.number) ?? [],
     );
 
-    assert.equal(duplicate?.number, 254);
+    assert.equal(duplicate?.pullRequest.number, 254);
+    assert.equal(duplicate?.matchKind, 'equivalent');
   });
 });

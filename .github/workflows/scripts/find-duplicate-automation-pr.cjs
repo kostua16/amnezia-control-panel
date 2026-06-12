@@ -48,6 +48,34 @@ function normalizePatch(patch) {
     .trim();
 }
 
+function isCommentOnlyContent(content) {
+  const trimmed = String(content || '').trim();
+  if (!trimmed) return true;
+
+  return (
+    trimmed.startsWith('#') ||
+    trimmed.startsWith('//') ||
+    trimmed === '/*' ||
+    trimmed === '*/' ||
+    trimmed.startsWith('*') ||
+    trimmed.startsWith('<!--') ||
+    /^--(\s|$)/.test(trimmed)
+  );
+}
+
+function normalizeSubstantivePatch(patch) {
+  return String(patch || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((line) => {
+      if (!line || line.startsWith('@@')) return false;
+      if (!line.startsWith('+') && !line.startsWith('-')) return false;
+      return !isCommentOnlyContent(line.slice(1));
+    })
+    .join('\n')
+    .trim();
+}
+
 function normalizeFilePatch(file) {
   const path = String(file?.path ?? file?.filename ?? '').trim();
   if (!path) return null;
@@ -118,15 +146,57 @@ function hasExactDuplicate(localFiles, remoteFiles) {
   );
 }
 
-function findExactDuplicatePullRequest(localFiles, pullRequests, getFiles) {
+function hasEquivalentDuplicate(localFiles, remoteFiles) {
+  if (!localFiles.length || localFiles.length !== remoteFiles.length) {
+    return false;
+  }
+
+  const local = sortedFilePatches(localFiles);
+  const remote = sortedFilePatches(remoteFiles);
+
+  const localSubstantive = local.map((file) => ({
+    path: file.path,
+    patch: normalizeSubstantivePatch(file.patch),
+  }));
+  const remoteSubstantive = remote.map((file) => ({
+    path: file.path,
+    patch: normalizeSubstantivePatch(file.patch),
+  }));
+
+  if (localSubstantive.every((file) => !file.patch)) {
+    return false;
+  }
+
+  return localSubstantive.every(
+    (file, index) =>
+      file.path === remoteSubstantive[index]?.path &&
+      file.patch === remoteSubstantive[index]?.patch,
+  );
+}
+
+function findDuplicatePullRequest(localFiles, pullRequests, getFiles) {
+  let equivalentDuplicate = null;
+
   for (const pullRequest of pullRequests) {
     const remoteFiles = getFiles(pullRequest);
     if (hasExactDuplicate(localFiles, remoteFiles)) {
-      return pullRequest;
+      return {
+        matchKind: 'exact',
+        pullRequest,
+      };
+    }
+    if (
+      !equivalentDuplicate &&
+      hasEquivalentDuplicate(localFiles, remoteFiles)
+    ) {
+      equivalentDuplicate = {
+        matchKind: 'equivalent',
+        pullRequest,
+      };
     }
   }
 
-  return null;
+  return equivalentDuplicate;
 }
 
 function run() {
@@ -178,7 +248,7 @@ function run() {
       return true;
     });
 
-    const duplicate = findExactDuplicatePullRequest(
+    const duplicate = findDuplicatePullRequest(
       localFiles,
       candidates,
       (pullRequest) => {
@@ -194,11 +264,17 @@ function run() {
     );
 
     if (duplicate) {
+      const duplicatePullRequest = duplicate.pullRequest;
       result.duplicate_found = 'true';
-      result.duplicate_pr_number = String(duplicate.number);
-      result.duplicate_pr_url = String(duplicate.url || '');
-      result.duplicate_pr_branch = String(duplicate.headRefName || '');
-      result.duplicate_reason = `Exact duplicate diff already exists in PR #${duplicate.number}.`;
+      result.duplicate_pr_number = String(duplicatePullRequest.number);
+      result.duplicate_pr_url = String(duplicatePullRequest.url || '');
+      result.duplicate_pr_branch = String(
+        duplicatePullRequest.headRefName || '',
+      );
+      result.duplicate_reason =
+        duplicate.matchKind === 'exact'
+          ? `Exact duplicate diff already exists in PR #${duplicatePullRequest.number}.`
+          : `Equivalent duplicate diff already exists in PR #${duplicatePullRequest.number}; differences are comment-only.`;
     } else {
       result.duplicate_reason = 'No exact duplicate open pull request found.';
     }
@@ -217,9 +293,11 @@ function run() {
 module.exports = {
   collectLocalFilePatches,
   extractPatchFromGitDiff,
-  findExactDuplicatePullRequest,
+  findDuplicatePullRequest,
   hasExactDuplicate,
+  hasEquivalentDuplicate,
   normalizePatch,
+  normalizeSubstantivePatch,
   sortedFilePatches,
 };
 
