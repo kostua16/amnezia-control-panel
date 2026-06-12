@@ -8,6 +8,18 @@ function readRepoFile(relativePath: string): string {
 }
 
 describe('workflow disk pruning policy', () => {
+  it('precreates the repo-local cache root before local-cache restore fallback runs', () => {
+    const action = readRepoFile('.github/actions/setup-environment/action.yml');
+
+    assert.match(action, /ensure_repo_local_cache_root\(\)/);
+    assert.match(
+      action,
+      /Skipping repo-local cache root creation because GITHUB_REPOSITORY is unset/,
+    );
+    assert.match(action, /mkdir -p "\$repo_cache_root"/);
+    assert.match(action, /Ensured repo-local cache root exists at/);
+  });
+
   it('keeps pruning repo-local caches when the runner remains below the free-space floor', () => {
     const action = readRepoFile('.github/actions/setup-environment/action.yml');
 

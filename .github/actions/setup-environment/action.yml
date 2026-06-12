@@ -81,6 +81,23 @@ runs:
           docker system prune -af --volumes 2>/dev/null || true
         }
 
+        ensure_repo_local_cache_root() {
+          local tool_cache_root repo_cache_root
+          tool_cache_root="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+
+          if [ -z "${GITHUB_REPOSITORY:-}" ]; then
+            echo "Skipping repo-local cache root creation because GITHUB_REPOSITORY is unset"
+            return
+          fi
+
+          repo_cache_root="${tool_cache_root}/${GITHUB_REPOSITORY}"
+          if mkdir -p "$repo_cache_root"; then
+            echo "Ensured repo-local cache root exists at ${repo_cache_root}"
+          else
+            echo "Failed to create repo-local cache root at ${repo_cache_root}; continuing without precreating it"
+          fi
+        }
+
         prune_local_cache() {
           local tool_cache_root repo_cache_root remaining_cache_count last_remaining_index available_mb
           tool_cache_root="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
@@ -140,6 +157,8 @@ runs:
             echo "Disk space remains below threshold after emergency local-cache pruning: ${available_mb} MB < ${REQUIRED_MB} MB"
           fi
         }
+
+        ensure_repo_local_cache_root
 
         available_mb=$(get_available_mb)
         echo "Available disk space: ${available_mb} MB"
