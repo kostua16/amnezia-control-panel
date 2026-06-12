@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: complete
 stopped_at: null
-last_updated: '2026-06-13T00:14:03Z'
-last_activity: 2026-06-12 -- Implement managed private GHCR deployment scripts and docs
+last_updated: '2026-06-12T20:01:55Z'
+last_activity: 2026-06-12 -- Loosen audit-safe auto-approval criteria
 progress:
   total_phases: 24
   completed_phases: 24
@@ -27,7 +27,7 @@ progress:
 
 Phase: All v1.1 phases complete (11.1-12.15)
 Status: Milestone v1.1 archived 2026-06-11
-Last activity: 2026-06-12 -- Implement managed private GHCR deployment scripts and docs
+Last activity: 2026-06-12 -- Loosen audit-safe auto-approval criteria
 
 Progress: [██████████] 100% (v1.1 COMPLETE & ARCHIVED)
 
@@ -148,9 +148,10 @@ Resume file: None
 | 2026-06-12 | 260612-aap   | Auto PR audit automation runs as scheduled GitHub workflow  |
 | 2026-06-12 | 260612-x6c   | graphify-out is ignored local cache with PR policy guard    |
 | 2026-06-12 | 260612-vxj   | Managed private GHCR deployment helper and server agent     |
+| 2026-06-12 | 260613-1cb   | Audit-safe auto-approval allows 10 files / 400 lines        |
 | 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-12 - Implement managed private GHCR deployment scripts and docs (quick 260612-vxj)_
+_Last updated: 2026-06-12 - Loosen audit-safe auto-approval criteria (quick 260613-1cb)_
