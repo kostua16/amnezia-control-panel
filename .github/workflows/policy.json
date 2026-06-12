@@ -43,6 +43,7 @@
   ],
   "improveSkipLabels": ["skip-improve"],
   "manualOnlyPathGlobs": [".github/**", ".planning/**"],
+  "generatedStatePathGlobs": ["graphify-out/**"],
   "auditSafe": {
     "safeBranchPrefix": "claude-audit-safe-fix-",
     "manualBranchPrefix": "claude-audit-fix-",

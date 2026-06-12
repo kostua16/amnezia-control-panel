@@ -106,6 +106,4 @@ __pycache__/
 .omo/cache/
 
 # Graphify
-graphify-out/**/cost.json
-**/graphify-out/cache/
-graphify-out/cache/
+graphify-out/

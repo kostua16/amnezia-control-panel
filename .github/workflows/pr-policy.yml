@@ -113,6 +113,7 @@ jobs:
               !filenames.some((filename) =>
                 matchesAny(filename, policy.gsdExecution?.manualOnlyPathGlobs || [])
               );
+            const generatedStateFiles = filenames.filter((filename) => filename.startsWith('graphify-out/'));
 
             const labels = new Set();
             if (changedLines <= 20) labels.add('size/XS');
@@ -139,7 +140,7 @@ jobs:
             const securitySensitiveTest = filenames.some((filename) =>
               /(__tests__\/.*(hmac|auth|sync|server|panel|user|config).*\.test\.ts$|src\/lib\/(hmac|auth|auth-store|prisma|panel-|server-|user-|config-).*)/.test(filename)
             );
-            if (manualOnly || securitySensitiveTest || (isGsdExecution && !gsdExecutionSafe)) labels.add('needs-review');
+            if (manualOnly || securitySensitiveTest || (isGsdExecution && !gsdExecutionSafe) || generatedStateFiles.length > 0) labels.add('needs-review');
 
             const titlePattern = /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|security|planning)(\([^)]+\))?!?: .+/;
             const badReasons = [];
@@ -189,6 +190,22 @@ jobs:
               description: badReasons.length === 0 ? 'PR title and commits follow policy' : badReasons[0].slice(0, 140)
             });
 
-            if (badReasons.length > 0) {
-              core.setFailed(badReasons.join('\n'));
+            const generatedStateReasons = [];
+            if (generatedStateFiles.length > 0) {
+              generatedStateReasons.push(`Generated graphify state is local cache and must not be committed: ${generatedStateFiles.slice(0, 5).join(', ')}`);
+            }
+
+            const generatedState = generatedStateReasons.length === 0 ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner,
+              repo,
+              sha: pr.head.sha,
+              state: generatedState,
+              context: 'pr-policy/generated-state',
+              description: generatedStateReasons.length === 0 ? 'No generated graphify state in PR' : generatedStateReasons[0].slice(0, 140)
+            });
+
+            const failureReasons = [...badReasons, ...generatedStateReasons];
+            if (failureReasons.length > 0) {
+              core.setFailed(failureReasons.join('\n'));
             }

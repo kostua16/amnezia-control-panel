@@ -51,6 +51,29 @@ test('fix-pr skips bot-authored source PRs before invoking auto-fix', () => {
   const result = runFixPrPolicy({
     event: {
       workflow_run: {
+        head_branch: 'feature/bot-fix',
+      },
+    },
+    sourcePr: {
+      head: { ref: 'feature/bot-fix' },
+      user: {
+        login: 'dependabot[bot]',
+        type: 'Bot',
+      },
+      labels: [],
+    },
+  });
+
+  assert.equal(result.should_run, false);
+  assert.equal(result.source_pr_author_login, 'dependabot[bot]');
+  assert.equal(result.source_pr_author_type, 'Bot');
+  assert.match(result.reason, /skips bot-authored PRs/);
+});
+
+test('fix-pr skips source PRs from automation branch prefixes first', () => {
+  const result = runFixPrPolicy({
+    event: {
+      workflow_run: {
         head_branch: 'dependabot/npm_and_yarn/eslint-10.4.1',
       },
     },
@@ -65,9 +88,7 @@ test('fix-pr skips bot-authored source PRs before invoking auto-fix', () => {
   });
 
   assert.equal(result.should_run, false);
-  assert.equal(result.source_pr_author_login, 'dependabot[bot]');
-  assert.equal(result.source_pr_author_type, 'Bot');
-  assert.match(result.reason, /skips bot-authored PRs/);
+  assert.match(result.reason, /already matches an automation prefix/);
 });
 
 test('fix-pr still runs for human-authored source PRs without guard labels', () => {
