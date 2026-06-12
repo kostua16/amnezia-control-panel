@@ -52,17 +52,13 @@ concurrency:
 
 jobs:
   classify-trigger:
-    if: >-
-      github.event_name != 'workflow_run' ||
-      toJSON(github.event.workflow_run.pull_requests) != '[]' ||
-      startsWith(github.event.workflow_run.display_title || '', 'PR #')
+    if: github.event_name == 'pull_request_target'
     runs-on: self-hosted
     timeout-minutes: 5
     outputs:
       should_run: ${{ steps.classify.outputs.should_run }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-        if: github.event_name == 'pull_request_target'
 
       - name: Classify PR flow trigger
         id: classify
@@ -85,7 +81,13 @@ jobs:
   orchestrate:
     needs: classify-trigger
     if: >-
-      needs.classify-trigger.outputs.should_run == 'true' &&
+      always() &&
+      (needs.classify-trigger.result == 'skipped' || needs.classify-trigger.outputs.should_run == 'true') &&
+      (
+        github.event_name != 'workflow_run' ||
+        toJSON(github.event.workflow_run.pull_requests) != '[]' ||
+        startsWith(github.event.workflow_run.display_title || '', 'PR #')
+      ) &&
       (
         github.event_name != 'pull_request_target' ||
         (
