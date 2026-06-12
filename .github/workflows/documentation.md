@@ -6,13 +6,13 @@ Setup guide for installing this repository's GitHub workflow stack on a new repo
 
 Settings -> Secrets and variables -> Actions -> **New repository secret**
 
-| Secret             | Used by                                                                                                                                                                                     | Description                                                                                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ZAI_API_KEY`      | `claude`, `triage`, `code-review`, `dependency-review`, `release-notes`, `maintenance`, `fix-pr`, `fix-branch`, `pr-improve`, `workflow-health-optimize`                                    | API key for the Claude-compatible coding workflows (Z.AI provider)                                                                                              |
-| `GEMINI_API_KEY`   | `antigravity`, `antigravity-code-review`                                                                                                                                                    | API key for the Antigravity CLI agent workflows                                                                                                                 |
-| `AV_API_KEY`       | `antigravity`, `antigravity-code-review`                                                                                                                                                    | Alternative API key for the Antigravity CLI agent workflows                                                                                                     |
-| `DEEPSEEK_API_KEY` | `deepseek`, `deepseek-code-review`                                                                                                                                                          | API key for DeepSeek coding workflows (Anthropic-compatible endpoint). Optional — workflows skip gracefully when not set.                                       |
-| `GH_PAT`           | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve`, `audit-fix`, `suggest-improvements`, `docs-drift`, `maintenance`, `_auto-fix-ci` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
+| Secret             | Used by                                                                                                                                                                                                       | Description                                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ZAI_API_KEY`      | `claude`, `triage`, `code-review`, `dependency-review`, `release-notes`, `maintenance`, `fix-pr`, `fix-branch`, `pr-improve`, `workflow-health-optimize`, `audit-auto-prs`                                    | API key for the Claude-compatible coding workflows (Z.AI provider)                                                                                              |
+| `GEMINI_API_KEY`   | `antigravity`, `antigravity-code-review`                                                                                                                                                                      | API key for the Antigravity CLI agent workflows                                                                                                                 |
+| `AV_API_KEY`       | `antigravity`, `antigravity-code-review`                                                                                                                                                                      | Alternative API key for the Antigravity CLI agent workflows                                                                                                     |
+| `DEEPSEEK_API_KEY` | `deepseek`, `deepseek-code-review`                                                                                                                                                                            | API key for DeepSeek coding workflows (Anthropic-compatible endpoint). Optional — workflows skip gracefully when not set.                                       |
+| `GH_PAT`           | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve`, `audit-fix`, `audit-auto-prs`, `suggest-improvements`, `docs-drift`, `maintenance`, `_auto-fix-ci` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
 
 `GITHUB_TOKEN` is automatic and is sufficient for read/comment/approve operations that do not need recursive workflow triggering.
 
@@ -49,6 +49,12 @@ fix-pr.yml
 pr-flow-watchdog.yml
   -> scheduled/manual stale-state recovery
   -> dispatches pr-flow.yml for open non-draft PRs still labeled flow/draft
+
+audit-auto-prs.yml
+  -> scheduled/manual audit of automation-created open PRs
+  -> gathers exact PR/run/check/diff evidence before grouping duplicates or repeated patterns
+  -> opens a ready-for-review manual-only systemic-fix PR only when the audit produced a narrow repo change
+  -> writes no-change, duplicate-suppressed, and human-disposition audit reports to the workflow run summary
 
 pull_request_target lifecycle events
   -> pr-flow.yml
