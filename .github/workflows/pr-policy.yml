@@ -154,7 +154,9 @@ jobs:
               pull_number: issue_number,
               per_page: 100
             });
-            const badCommits = commits
+            const automationBranchPrefixes = policy.cleanupBranchPrefixes || [];
+            const isAutomationBranch = automationBranchPrefixes.some((prefix) => headRef.startsWith(prefix));
+            const badCommits = isAutomationBranch ? [] : commits
               .map((commit) => commit.commit.message.split('\n')[0])
               .filter((subject) => !titlePattern.test(subject) && !subject.startsWith('Merge '));
             if (badCommits.length > 0) {
