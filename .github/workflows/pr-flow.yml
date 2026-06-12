@@ -16,7 +16,14 @@ on:
       - unlabeled
   workflow_run:
     workflows:
-      ['CI', 'Code Review', 'Dependency Review', 'PR Improve', 'PR Finalizer']
+      [
+        'CI',
+        'PR Policy',
+        'Code Review',
+        'Dependency Review',
+        'PR Improve',
+        'PR Finalizer',
+      ]
     types: [completed]
   workflow_dispatch:
     inputs:
