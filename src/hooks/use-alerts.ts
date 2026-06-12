@@ -58,7 +58,8 @@ export function useAlerts(params?: AlertsParams) {
 
   // Invalidate alerts query when a new alert arrives via WebSocket
   useEffect(() => {
-    if (lastEvent['alert:new']) {
+    const alertData = lastEvent['alert:new'];
+    if (alertData != null && alertData !== false) {
       queryClient.invalidateQueries({ queryKey: ['alerts'] });
       queryClient.invalidateQueries({ queryKey: ['alerts-unread-count'] });
     }
@@ -83,7 +84,8 @@ export function useAlertUnreadCount() {
 
   // Invalidate unread count when a new alert arrives
   useEffect(() => {
-    if (lastEvent['alert:new']) {
+    const alertData = lastEvent['alert:new'];
+    if (alertData != null && alertData !== false) {
       queryClient.invalidateQueries({ queryKey: ['alerts-unread-count'] });
     }
   }, [lastEvent, queryClient]);
