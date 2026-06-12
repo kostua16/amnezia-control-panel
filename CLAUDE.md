@@ -251,13 +251,14 @@ Overall average: **60-90% token reduction** on common development operations.
 
 ## graphify
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+This project can maintain a local graphify knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships. The directory is ignored generated state, not source.
 
 When the user types `/graphify`, invoke the `skill` tool with `skill: "graphify"` before doing anything else.
 
 Rules:
+
 - For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are local cache and must never be staged or committed.
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- After modifying code, run `graphify update .` or rely on local graphify hooks/watch to keep the graph current (AST-only, no API cost). Fresh checkouts may need `graphify update .` before graph queries are available.

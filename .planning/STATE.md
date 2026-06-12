@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: milestone
 status: complete
 stopped_at: null
-last_updated: '2026-06-12T17:26:17Z'
-last_activity: 2026-06-12 -- Convert auto PR audit automation to GitHub workflow
+last_updated: '2026-06-12T19:00:02Z'
+last_activity: 2026-06-12 -- Convert graphify output to local cache
 progress:
   total_phases: 24
   completed_phases: 24
@@ -146,9 +146,10 @@ Resume file: None
 | 2026-06-11 | 260611-8f6   | Fix PR-flow workflow governance failures                    |
 | 2026-06-11 | 260612-1up   | GHCR Docker image workflow publishes amd64 image            |
 | 2026-06-12 | 260612-aap   | Auto PR audit automation runs as scheduled GitHub workflow  |
+| 2026-06-12 | 260612-x6c   | graphify-out is ignored local cache with PR policy guard    |
 | 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-12 - Convert auto PR audit automation to GitHub workflow (quick 260612-aap)_
+_Last updated: 2026-06-12 - Convert graphify output to local cache (quick 260612-x6c)_

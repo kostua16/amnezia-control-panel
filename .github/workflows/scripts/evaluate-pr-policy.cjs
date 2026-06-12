@@ -340,10 +340,31 @@ function evaluateGsdExecutionPolicy(fileDetails, policy) {
   };
 }
 
+function evaluateGeneratedStatePolicy(files, policy) {
+  const generatedStatePathGlobs = policy.generatedStatePathGlobs ?? [];
+  const matchedGeneratedStatePaths = files.filter((file) =>
+    matchesAny(file, generatedStatePathGlobs),
+  );
+  const reason =
+    matchedGeneratedStatePaths.length > 0
+      ? `generated graphify state is a local cache and must not be committed: ${matchedGeneratedStatePaths.join(', ')}`
+      : null;
+
+  return {
+    eligible: reason === null,
+    reason,
+    matched_generated_state_paths: matchedGeneratedStatePaths,
+  };
+}
+
 function validatePolicy(policy) {
   validateSupportedGlobs(
     'manualOnlyPathGlobs',
     policy.manualOnlyPathGlobs ?? [],
+  );
+  validateSupportedGlobs(
+    'generatedStatePathGlobs',
+    policy.generatedStatePathGlobs ?? [],
   );
   validateSupportedGlobs(
     'improveQualifyingGlobs',
@@ -400,6 +421,7 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
   const matchedImprovePaths = files.filter((file) =>
     matchesAny(file, policy.improveQualifyingGlobs),
   );
+  const generatedStateEvaluation = evaluateGeneratedStatePolicy(files, policy);
   const dependabotUpdate = parseDependabotUpdate(pr, headRefName);
   const auditSafeConfig = policy.auditSafe ?? {};
   const trustedPlanningConfig = policy.trustedPlanning ?? {};
@@ -520,7 +542,14 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
     (isTrustedPlanningBranch && trustedPlanningAllowed) ||
     (isGsdExecutionBranch && gsdExecutionEvaluation?.eligible);
 
-  if (!manualOnly && matchedManualPaths.length > 0 && !hasManualPathExemption) {
+  if (!manualOnly && !generatedStateEvaluation.eligible) {
+    manualOnly = true;
+    blockedReason = generatedStateEvaluation.reason;
+  } else if (
+    !manualOnly &&
+    matchedManualPaths.length > 0 &&
+    !hasManualPathExemption
+  ) {
     manualOnly = true;
     blockedReason =
       'changed files include manual-only workflow or planning paths';
@@ -571,6 +600,7 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
     blocking_labels_present: blockedLabels,
     matched_manual_paths: matchedManualPaths,
     matched_improve_paths: matchedImprovePaths,
+    generated_state: generatedStateEvaluation,
     dependabot: dependabotUpdate,
     audit_safe: auditSafeEvaluation,
     gsd_execution: gsdExecutionEvaluation,
@@ -598,6 +628,7 @@ function runCli() {
 module.exports = {
   evaluateAuditSafePolicy,
   evaluateGsdExecutionPolicy,
+  evaluateGeneratedStatePolicy,
   evaluatePrPolicy,
   getArg,
   globToRegExp,
