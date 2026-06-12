@@ -25,7 +25,7 @@ jobs:
           setup-node: 'false'
           setup-bun: 'false'
 
-      - name: Check PR size
+      - name: Sync large PR warning
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -35,10 +35,7 @@ jobs:
           FILES: ${{ github.event.pull_request.changed_files }}
         run: |
           TOTAL=$((ADDITIONS + DELETIONS))
-
-          if [ "$TOTAL" -gt 500 ]; then
-            gh pr comment "$PR_NUMBER" --body "> **Large PR** ($TOTAL lines across $FILES files)
-          >
-          > Consider splitting into smaller, focused PRs for easier review."
-            gh pr edit "$PR_NUMBER" --add-label "large-pr" 2>/dev/null || true
-          fi
+          node .github/workflows/scripts/upsert-pr-size-comment.cjs \
+            --pr "$PR_NUMBER" \
+            --total "$TOTAL" \
+            --files "$FILES"
