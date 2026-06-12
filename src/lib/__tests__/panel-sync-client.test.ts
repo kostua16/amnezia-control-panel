@@ -13,12 +13,17 @@ import type { PanelSyncPayload } from '@/types/panel-sync';
 
 const mockGetNodeIP = mock.fn(async () => null);
 const mockIsReachable = mock.fn(async () => true);
+let originalConsoleError: typeof console.error;
 
 beforeEach(() => {
+  originalConsoleError = console.error;
+  console.error = mock.fn<typeof console.error>();
+
   __setDeps({ getNodeIP: mockGetNodeIP, isReachable: mockIsReachable });
 });
 afterEach(() => {
   __resetDeps();
+  console.error = originalConsoleError;
 });
 
 // ─── Test Fixtures ──────────────────────────────────────

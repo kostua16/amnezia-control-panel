@@ -12,6 +12,7 @@ import { resolvePanelTransport } from '../transport-resolver';
 
 let mockGetNodeIP: ReturnType<typeof mock.fn>;
 let mockIsReachable: ReturnType<typeof mock.fn>;
+let originalConsoleError: typeof console.error;
 
 interface TransportDeps {
   getNodeIP: (hostname?: string) => Promise<string | null>;
@@ -22,6 +23,9 @@ let setDeps: (deps: TransportDeps) => void;
 let resetDeps: () => void;
 
 beforeEach(async () => {
+  originalConsoleError = console.error;
+  console.error = mock.fn<typeof console.error>();
+
   mockGetNodeIP = mock.fn(async (_hostname?: string) => null);
 
   mockIsReachable = mock.fn(async (_hostname: string) => true);
@@ -141,4 +145,5 @@ describe('transport-resolver failure paths', () => {
 
 afterEach(() => {
   resetDeps();
+  console.error = originalConsoleError;
 });
