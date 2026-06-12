@@ -116,6 +116,12 @@ appear as native PR checks for the head SHA. `pr-flow.yml` bridges that gap by
 writing commit statuses directly to the PR head SHA and by updating the sticky
 `<!-- pr-flow-orchestration -->` PR comment.
 
+The sticky PR Flow comment also renders state-specific next steps and relevant
+operator controls. It is rebuilt on each orchestrator run, including worker
+wakeups, so labels such as `skip-improve`, `needs-review`, `do-not-merge`, and
+`maintainer-approved`, plus PR comments such as `/approve` and `/review`, are
+reflected in the guidance as the PR moves through the flow.
+
 Worker completion also explicitly wakes `pr-flow.yml` with `workflow_dispatch`
 when the worker was orchestrator-dispatched. The `workflow_run` trigger remains
 as a useful backup for native CI and other visible runs, but `GITHUB_TOKEN`
