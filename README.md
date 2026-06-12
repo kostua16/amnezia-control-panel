@@ -8,6 +8,7 @@ Unified admin panel for managing [Amnezia AWG2](https://amnezia.org/) (AmneziaVP
 
 - **[Adding a server](docs/adding-a-server.md)** — Servers tab walkthrough, including where the **API key** comes from and how **Test Connection** behaves.
 - **[Adding a panel](docs/adding-a-panel.md)** — Panels tab walkthrough, **shared API key** with the remote instance, sync headers, and **Test Connection** behavior.
+- **[Private GHCR deployment](docs/private-ghcr-deploy.md)** — Multi-server bootstrap from the private GitHub Container Registry image, with self-care and auto-upgrades.
 - **[GSD Commands and Workflows](docs/GSD-HOWTO.md)** — Cheatsheet for GSD commands, daily workflows, and project-specific examples.
 
 ## Getting Started
@@ -68,6 +69,20 @@ Published tags:
 - `1.2.3`, `1.2`, and `sha-*` from release tags like `v1.2.3`
 
 The first workflow publish creates the GHCR package. Package visibility is managed in the GitHub Packages settings for `ghcr.io/kostua16/amnezia-control-panel`.
+
+### Managed private deployment
+
+For personal servers, use the first-party deployment helper instead of manually installing Docker and logging in:
+
+```bash
+scripts/deploy-server.sh config init
+scripts/deploy-server.sh server add vpn-1 203.0.113.10 --user root
+scripts/deploy-server.sh install
+```
+
+The helper stores reusable server inventory in `~/.config/amnezia-control-panel/deploy.yaml`, stores local reusable secrets in the OS credential store, installs `/usr/local/bin/acp-agent` on each server, and enables systemd timers for health repair, image/script upgrades, and cleanup by default.
+
+See [Private GHCR deployment](docs/private-ghcr-deploy.md) for CentOS Stream 9 / RHEL 9-family support, token requirements, upgrade commands, rollback behavior, and service details.
 
 ### Volumes
 
