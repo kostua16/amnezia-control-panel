@@ -102,6 +102,9 @@ jobs:
         env:
           AUDIT_FIX_MODE: ${{ github.event.inputs.lane || 'auto' }}
           RUN_ID: ${{ github.run_id }}
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude_run.outputs.last_execution_file }}
+          CLAUDE_STRUCTURED_OUTPUT: ${{ steps.claude_run.outputs.structured_output }}
+          CLAUDE_LAST_OUTPUT: ${{ steps.claude_run.outputs.claude_last_output }}
         run: |
           # PR Finalizer independently re-validates audit-safe policy from PR file metadata.
           node .github/workflows/scripts/classify-audit-fix.cjs \

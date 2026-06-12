@@ -96,16 +96,23 @@ function buildBody({
   fileDetails,
   repository,
   serverUrl,
+  executionFile,
+  structuredOutput,
+  claudeLastOutput,
 }) {
   const lane = eligible ? 'safe auto-merge candidate' : 'manual review';
   const files = fileDetails.map((file) => file.path).join('\n');
   const sourceRunUrl = buildSourceRunUrl({ runId, repository, serverUrl });
-  const sourceRunEvidence = sourceRunUrl
-    ? `Source run: ${sourceRunUrl}`
-    : `Run ID: ${runId}`;
   const reviewNotes = eligible
     ? 'This PR matched the audit-safe policy and may be auto-merged after CI, AI review, and security review pass.'
     : `This PR is intentionally manual-only under repository policy. Reason: ${reason}.`;
+  const evidence = [
+    sourceRunUrl ? '' : `Run ID: ${runId}`,
+    `Classification: ${lane}`,
+    `Reason: ${reason}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   return buildAutomationPrBody({
     workflowName: 'audit-fix',
@@ -114,14 +121,12 @@ function buildBody({
     trigger: sourceRunUrl
       ? `Audit fix source run: [${runId}](${sourceRunUrl})`
       : `Audit fix run ID: ${runId}`,
-    rationale: `Classification: ${lane}. Policy reason: ${reason}.`,
     changedFiles: files,
     sourceRunUrl,
-    evidence: [
-      sourceRunEvidence,
-      `Classification: ${lane}`,
-      `Reason: ${reason}`,
-    ].join('\n'),
+    evidence,
+    executionFile,
+    structuredOutput,
+    claudeLastOutput,
     reviewNotes,
   });
 }
@@ -133,6 +138,9 @@ function classifyAuditFix({
   fileDetails,
   repository,
   serverUrl,
+  executionFile,
+  structuredOutput,
+  claudeLastOutput,
 }) {
   const auditSafe = policy.auditSafe ?? {};
   const manualPrefix = auditSafe.manualBranchPrefix ?? 'claude-audit-fix-';
@@ -169,6 +177,9 @@ function classifyAuditFix({
       fileDetails,
       repository,
       serverUrl,
+      executionFile,
+      structuredOutput,
+      claudeLastOutput,
     }),
     audit_safe: safeEvaluation,
   };
@@ -190,6 +201,9 @@ function runCli() {
           fileDetails: collectGitDiff(),
           repository: process.env.GITHUB_REPOSITORY,
           serverUrl: process.env.GITHUB_SERVER_URL,
+          executionFile: process.env.CLAUDE_EXECUTION_FILE,
+          structuredOutput: process.env.CLAUDE_STRUCTURED_OUTPUT,
+          claudeLastOutput: process.env.CLAUDE_LAST_OUTPUT,
         }),
         null,
         2,
@@ -219,6 +233,9 @@ function runCli() {
             fileDetails: [],
             repository: process.env.GITHUB_REPOSITORY,
             serverUrl: process.env.GITHUB_SERVER_URL,
+            executionFile: process.env.CLAUDE_EXECUTION_FILE,
+            structuredOutput: process.env.CLAUDE_STRUCTURED_OUTPUT,
+            claudeLastOutput: process.env.CLAUDE_LAST_OUTPUT,
           }),
         },
         null,
