@@ -1,16 +1,16 @@
 # Graph Report - amnezia-control-panel  (2026-06-12)
 
 ## Corpus Check
-- 2300 files · ~1,886,818 words
+- 2311 files · ~1,889,913 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 27574 nodes · 29120 edges · 2430 communities (2078 shown, 352 thin omitted)
+- 27623 nodes · 29171 edges · 2449 communities (2094 shown, 355 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 564 edges (avg confidence: 0.74)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `8054758f`
+- Built from commit: `548f476a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -2301,6 +2301,24 @@
 - [[_COMMUNITY_Community 2427|Community 2427]]
 - [[_COMMUNITY_Community 2428|Community 2428]]
 - [[_COMMUNITY_Community 2429|Community 2429]]
+- [[_COMMUNITY_Community 2430|Community 2430]]
+- [[_COMMUNITY_Community 2431|Community 2431]]
+- [[_COMMUNITY_Community 2432|Community 2432]]
+- [[_COMMUNITY_Community 2433|Community 2433]]
+- [[_COMMUNITY_Community 2434|Community 2434]]
+- [[_COMMUNITY_Community 2435|Community 2435]]
+- [[_COMMUNITY_Community 2436|Community 2436]]
+- [[_COMMUNITY_Community 2437|Community 2437]]
+- [[_COMMUNITY_Community 2438|Community 2438]]
+- [[_COMMUNITY_Community 2439|Community 2439]]
+- [[_COMMUNITY_Community 2440|Community 2440]]
+- [[_COMMUNITY_Community 2441|Community 2441]]
+- [[_COMMUNITY_Community 2442|Community 2442]]
+- [[_COMMUNITY_Community 2443|Community 2443]]
+- [[_COMMUNITY_Community 2444|Community 2444]]
+- [[_COMMUNITY_Community 2445|Community 2445]]
+- [[_COMMUNITY_Community 2446|Community 2446]]
+- [[_COMMUNITY_Community 2447|Community 2447]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `📋 All Prompts` - 121 edges
@@ -2329,19 +2347,19 @@
 ## Import Cycles
 - 1-file cycle: `.claude/skills/mcp-builder/scripts/evaluation.py -> .claude/skills/mcp-builder/scripts/evaluation.py`
 
-## Communities (2430 total, 352 thin omitted)
+## Communities (2449 total, 355 thin omitted)
 
 ### Community 0 - "Audit Log Rules"
-Cohesion: 0.03
-Nodes (77): batchCreateRuleSchema, batchDeleteSchema, DELETE(), POST(), PUT(), RouteContext, updateConfigSchema, createGeoRuleSchema (+69 more)
+Cohesion: 0.04
+Nodes (68): batchCreateRuleSchema, batchDeleteSchema, DELETE(), POST(), PUT(), RouteContext, updateConfigSchema, createGeoRuleSchema (+60 more)
 
 ### Community 1 - "Chain Presets"
 Cohesion: 0.08
 Nodes (35): paramsSchema, createSchema, GET(), POST(), POST(), importSchema, BUILTIN_CHAIN_PRESETS, ChainPresetDef (+27 more)
 
 ### Community 2 - "Fleet Health Panel"
-Cohesion: 0.10
-Nodes (20): EmptyPanelCTA(), FleetHealthStrip(), FleetHealthStripProps, FleetHealthSummary, MultiPanelSection(), getUsageColor(), getUsageTextColor(), PanelCardExpanded() (+12 more)
+Cohesion: 0.11
+Nodes (19): EmptyPanelCTA(), FleetHealthStrip(), FleetHealthStripProps, FleetHealthSummary, MultiPanelSection(), PanelCardExpanded(), formatTimeAgo(), PanelCard() (+11 more)
 
 ### Community 3 - "Dashboard Stats Hooks"
 Cohesion: 0.06
@@ -2360,8 +2378,8 @@ Cohesion: 0.08
 Nodes (67): POST(), RouteContext, serviceTypeEnum, updateUserSchema, syncAllUsers(), SyncReport, syncUser(), addAwgPeer() (+59 more)
 
 ### Community 7 - "Alert Management"
-Cohesion: 0.06
-Nodes (62): alertSeverityEnum, createAlertSchema, GET(), listAlertsSchema, POST(), generateConfigSchema, POST(), PATCH() (+54 more)
+Cohesion: 0.05
+Nodes (61): alertSeverityEnum, createAlertSchema, GET(), listAlertsSchema, POST(), generateConfigSchema, POST(), PATCH() (+53 more)
 
 ### Community 8 - "Config List Templates"
 Cohesion: 0.03
@@ -2382,19 +2400,19 @@ Nodes (23): SERVICE_MAP, ServiceHealth, ServiceKey, ServiceMonitor, {
 
 ### Community 10 - "Panel UI Components"
 Cohesion: 0.05
-Nodes (58): topologyOptions, ConfigImportReport, ConfigList(), ConfigPresetItem, ConfigTemplateItem, getUsageColor(), getUsageTextColor(), ResourceBar() (+50 more)
+Nodes (51): topologyOptions, ConfigImportReport, ConfigList(), ConfigPresetItem, ConfigTemplateItem, ServiceStatusData, useAllServiceStatuses(), useServiceStatus() (+43 more)
 
 ### Community 11 - "Geo Rules Monitoring"
 Cohesion: 0.07
-Nodes (26): MetricCardProps, MetricsCards(), formatBytes(), ResourceMonitor(), TrafficChart(), TrafficChartProps, formatBytes(), Period (+18 more)
+Nodes (31): MetricCardProps, MetricsCards(), PanelCardExpandedProps, ResourceBar(), ResourceBarProps, ResourceBar(), ResourceBarProps, ResourceMonitor() (+23 more)
 
 ### Community 12 - "App Layout WebSocket"
-Cohesion: 0.08
-Nodes (24): register(), AlertSeverity, broadcastFallbackStatusChange(), consecutiveFailures, fallbackPanels, getFallbackPanels(), getPanelStatus(), isPanelInFallback() (+16 more)
+Cohesion: 0.06
+Nodes (37): register(), createAlert(), AlertSeverity, broadcastFallbackStatusChange(), consecutiveFailures, fallbackPanels, getFallbackPanels(), getPanelStatus() (+29 more)
 
 ### Community 13 - "Auth Guard Alerts"
 Cohesion: 0.09
-Nodes (17): AuthGuard(), AuthGuardProps, DashboardLayout(), DashboardLayoutProps, ErrorBoundary, ErrorBoundaryProps, ErrorBoundaryState, Header() (+9 more)
+Nodes (16): AuthGuard(), AuthGuardProps, DashboardLayout(), DashboardLayoutProps, ErrorBoundary, ErrorBoundaryProps, ErrorBoundaryState, Header() (+8 more)
 
 ### Community 14 - "User Sync VPN"
 Cohesion: 0.03
@@ -2410,11 +2428,11 @@ Nodes (37): ABC, Any, Anthropic, Any, Path, create_connection(), MCPConnection, 
 
 ### Community 17 - "User Edit Forms"
 Cohesion: 0.05
-Nodes (37): AddPanelForm(), AddPanelFormProps, FormErrors, EditPanelForm(), EditPanelFormProps, FormErrors, AddServerForm(), AddServerFormProps (+29 more)
+Nodes (43): AddPanelForm(), AddPanelFormProps, FormErrors, EditPanelForm(), EditPanelFormProps, FormErrors, AddServerForm(), AddServerFormProps (+35 more)
 
 ### Community 18 - "Chain Config Apply"
-Cohesion: 0.10
-Nodes (25): applyChainSchema, chainConfigRequestSchema, generateWireGuardPeers(), generateXrayRoutingRules(), POST(), applyChainConfig(), ChainApplyResult, generateChainConfig() (+17 more)
+Cohesion: 0.06
+Nodes (44): applyBodySchema, applyChainSchema, chainConfigRequestSchema, generateWireGuardPeers(), generateXrayRoutingRules(), POST(), POST(), resolveBodySchema (+36 more)
 
 ### Community 19 - "Chain Visualization"
 Cohesion: 0.06
@@ -2430,19 +2448,19 @@ Nodes (42): BM25, detect_domain(), get_cip_brief(), _load_csv(), Load CSV and re
 
 ### Community 22 - "Chain Node Routing"
 Cohesion: 0.06
-Nodes (34): AutoSaveStatus, ChainNodeRoutingDrawer(), ChainNodeRoutingDrawerProps, GEO_ACTION_OPTIONS, GeoFormErrors, MATCH_TYPE_OPTIONS, PROTOCOL_OPTIONS, REGION_OPTIONS (+26 more)
+Nodes (36): AutoSaveStatus, ChainNodeRoutingDrawer(), ChainNodeRoutingDrawerProps, GEO_ACTION_OPTIONS, GeoFormErrors, MATCH_TYPE_OPTIONS, PROTOCOL_OPTIONS, REGION_OPTIONS (+28 more)
 
 ### Community 23 - "Config Diff Push"
-Cohesion: 0.07
-Nodes (34): geistMono, geistSans, metadata, Providers(), ProvidersProps, WebSocketContext, WebSocketContextValue, WS_EVENTS (+26 more)
+Cohesion: 0.14
+Nodes (19): ConfigDiffView(), ConfigDiffViewProps, ERROR_TYPE_COLORS, ErrorRecommendation(), ErrorRecommendationProps, PushProgressTracker(), PushProgressTrackerProps, PushResultSummary() (+11 more)
 
 ### Community 24 - "Panel Management"
 Cohesion: 0.06
 Nodes (47): Enum, calculate_compression_ratio(), estimate_tokens(), evaluate_compression(), evaluate_response(), EvaluationReport, extract_decisions(), extract_facts() (+39 more)
 
 ### Community 25 - "Alert Auth Types"
-Cohesion: 0.06
-Nodes (45): ChainBuilderProps, clearStaleConnections(), connectionPool, ConnectionPoolEntry, execFileAsync, executeOnServer(), getCachedStatus(), getPoolEntry() (+37 more)
+Cohesion: 0.07
+Nodes (39): ChainBuilderProps, clearStaleConnections(), connectionPool, ConnectionPoolEntry, execFileAsync, executeOnServer(), getCachedStatus(), getPoolEntry() (+31 more)
 
 ### Community 26 - "Server Connection Pool"
 Cohesion: 0.04
@@ -2461,20 +2479,20 @@ Cohesion: 0.04
 Nodes (48): Alternatives Considered, Applicable ASVS Categories, Architectural Responsibility Map, Architecture Patterns, Assumptions Log, Claude's Discretion, Code Examples, Common Pitfalls (+40 more)
 
 ### Community 30 - "Config Export Import"
-Cohesion: 0.05
-Nodes (43): GET(), serviceTypeEnum, buildExport(), exportAllConfigs(), exportConfigsByService(), importConfigs(), importConfigurationList(), importTemplateList() (+35 more)
+Cohesion: 0.07
+Nodes (30): GET(), serviceTypeEnum, buildExport(), exportAllConfigs(), exportConfigsByService(), getProtocolTemplate(), getProtocolTemplates(), PROTOCOL_TEMPLATES (+22 more)
 
 ### Community 31 - "Panel Sync Client"
-Cohesion: 0.10
-Nodes (32): applyThreeXuiRules(), applyWireguardConfig(), execFileAsync, runCommand(), syncApplyPayloadSchema, applyAwgConfig(), applyPanelConfig(), applyThreeXuiConfig() (+24 more)
+Cohesion: 0.08
+Nodes (40): applyThreeXuiRules(), applyWireguardConfig(), execFileAsync, runCommand(), syncApplyPayloadSchema, applyAwgConfig(), applyPanelConfig(), applyThreeXuiConfig() (+32 more)
 
 ### Community 32 - "Routing Rule Form"
 Cohesion: 0.04
 Nodes (48): 10. Multi-Platform OSINT Chains, 11. Confidence Ratings, 12.1 User Analysis Tools, 12.2 Investigation Workflow, 12.3 Google Dork Patterns, 12.4 Key Signals, 12. Reddit Investigation, 13.1 Tool Inventory (+40 more)
 
 ### Community 33 - "Geo Routing"
-Cohesion: 0.10
-Nodes (20): GeoRoutingResult, GEO_STARTER_RULES, EmptyStateStarter(), EmptyStateStarterProps, ACTION_OPTIONS, FormErrors, GeoRuleDrawer(), GeoRuleDrawerProps (+12 more)
+Cohesion: 0.11
+Nodes (19): GeoRoutingResult, GEO_STARTER_RULES, EmptyStateStarter(), EmptyStateStarterProps, ACTION_OPTIONS, FormErrors, GeoRuleDrawer(), GeoRuleDrawerProps (+11 more)
 
 ### Community 34 - "Config Apply HMAC"
 Cohesion: 0.04
@@ -2579,7 +2597,7 @@ Cohesion: 0.32
 Nodes (4): buildServerPanelMap(), extractHostname(), PanelInfo, ServerInfo
 
 ### Community 58 - "Audit Safe Policy"
-Cohesion: 0.25
+Cohesion: 0.22
 Nodes (5): {
   classifyAuditFix,
 }, {
@@ -2594,7 +2612,7 @@ Nodes (43): 1. Video Summarization, 2. Educational Content, 3. Action Detection,
 
 ### Community 60 - "Community 60"
 Cohesion: 0.08
-Nodes (25): Process multiple repositories with repomix., Configuration for repomix execution., RepomixBatchProcessor, RepomixConfig, Test RepomixBatchProcessor class., Test processor initialization., Test checking if repomix is installed (success)., Test checking if repomix is installed (failure). (+17 more)
+Nodes (20): Configuration for repomix execution., RepomixConfig, Test RepomixBatchProcessor class., Test processor initialization., Test checking if repomix is installed (success)., Test checking if repomix is installed (failure)., Test checking if repomix is not found., Test getting file extension for style. (+12 more)
 
 ### Community 61 - "App Constants"
 Cohesion: 0.52
@@ -2782,7 +2800,7 @@ Nodes (36): Main(), Track-Failure(), Track-Skipped(), Track-Success(), Update-Ph
 
 ### Community 119 - "Community 119"
 Cohesion: 0.05
-Nodes (36): Coverage, Improvement Intake: Architectural Review (2026-06-10), Improvement Intake: Deep Architectural Review (2026-06-11), Milestones, Next Milestone: Developer automation governance (Phases 13.1-13.4), Phase 11.1: Tailscale Foundation, Phase 11.2: Remote Panel Registration, Phase 11.3: Panel Sync Protocol & Hybrid Autonomy (+28 more)
+Nodes (37): Coverage, Improvement Intake: Architectural Review (2026-06-10), Improvement Intake: Architectural Review Pass 3 (2026-06-12), Improvement Intake: Deep Architectural Review (2026-06-11), Milestones, Next Milestone: Developer automation governance (Phases 13.1-13.4), Phase 11.1: Tailscale Foundation, Phase 11.2: Remote Panel Registration (+29 more)
 
 ### Community 120 - "Community 120"
 Cohesion: 0.05
@@ -2893,8 +2911,8 @@ Cohesion: 0.06
 Nodes (33): API Route Stubs, command: "npx eslint --fix $FILE 2>/dev/null || true", Create VERIFICATION.md, Final Artifact Status, hooks:, hooks:, - matcher: "Write|Edit", MVP Mode Verification (+25 more)
 
 ### Community 147 - "Community 147"
-Cohesion: 0.25
-Nodes (13): useWebSocketContext(), AlertBanner(), AlertItem(), formatTimeAgo(), severityConfig, AlertsParams, AlertsResponse, useAlerts() (+5 more)
+Cohesion: 0.09
+Nodes (28): geistMono, geistSans, metadata, Providers(), ProvidersProps, useWebSocketContext(), WebSocketContext, WebSocketContextValue (+20 more)
 
 ### Community 148 - "Community 148"
 Cohesion: 0.06
@@ -3161,8 +3179,8 @@ Cohesion: 0.07
 Nodes (26): Additional Resources, Basic Usage, Bug Investigation, Check Installation, Code Review Preparation, Command Line Reference, Comment Removal, Common Use Cases (+18 more)
 
 ### Community 214 - "Community 214"
-Cohesion: 0.07
-Nodes (27): default, description, items, type, default, description, maximum, minimum (+19 more)
+Cohesion: 0.20
+Nodes (10): default, description, enum, type, mode, validation, additionalProperties, description (+2 more)
 
 ### Community 215 - "Community 215"
 Cohesion: 0.13
@@ -3273,8 +3291,8 @@ Cohesion: 0.08
 Nodes (24): Common Imports Cheatsheet, 🔧 Common Patterns, 📚 Complete Examples, 🎨 Component Patterns, Core Principles, 📊 Data Fetching, 📁 File Organization, Frontend Development Guidelines (+16 more)
 
 ### Community 242 - "Community 242"
-Cohesion: 0.24
-Nodes (12): checkResourceThresholds(), classifyResourceSeverity(), createResourceAlert(), RESOURCE_THRESHOLDS, ResourceCheckResult, ResourceThreshold, CachedResources, getAverageLoad() (+4 more)
+Cohesion: 0.11
+Nodes (17): Acceptance Criteria, Acceptance Criteria, Acceptance Criteria, Affected Files, Affected Files, Affected Files, Architectural Review: Third-Pass Non-Duplicative Findings, Problem (+9 more)
 
 ### Community 243 - "Community 243"
 Cohesion: 0.08
@@ -3321,8 +3339,8 @@ Cohesion: 0.08
 Nodes (25): additionalProperties, description, properties, type, default, description, type, default (+17 more)
 
 ### Community 254 - "Community 254"
-Cohesion: 0.08
-Nodes (25): default, description, type, default, description, type, default, description (+17 more)
+Cohesion: 0.09
+Nodes (22): default, description, type, default, description, type, default, description (+14 more)
 
 ### Community 255 - "Community 255"
 Cohesion: 0.08
@@ -3413,8 +3431,8 @@ Cohesion: 0.14
 Nodes (13): Document, Add a single comment to comments.xml., Add a single comment to commentsExtended.xml., Add a single comment to commentsIds.xml., Add a single comment to commentsExtensible.xml., Generate XML for comment range start., Generate XML for comment range end with reference run.          Note: w:rsidR is, Generate XML for comment reference run.          Note: w:rsidR is automatically (+5 more)
 
 ### Community 277 - "Community 277"
-Cohesion: 0.14
-Nodes (13): main(), Initialize Shopify projects., Prompt user for input.          Args:             message: Prompt message, Prompt user to select from options.          Args:             message: Prompt m, Check if Shopify CLI is installed.          Returns:             True if install, Create shopify.app.toml configuration file.          Args:             project_d, Create shopify.extension.toml configuration file.          Args:             pro, Create README.md file.          Args:             project_dir: Project directory (+5 more)
+Cohesion: 0.15
+Nodes (12): main(), Initialize Shopify projects., Prompt user for input.          Args:             message: Prompt message, Prompt user to select from options.          Args:             message: Prompt m, Check if Shopify CLI is installed.          Returns:             True if install, Create shopify.extension.toml configuration file.          Args:             pro, Create README.md file.          Args:             project_dir: Project directory, Initialize Shopify app project. (+4 more)
 
 ### Community 278 - "Community 278"
 Cohesion: 0.15
@@ -3537,8 +3555,8 @@ Cohesion: 0.09
 Nodes (14): Tests for document_converter.py, Test API key finding logic., Test finding API key from environment., Test when no API key is available., Test project root finding., Test finding project root with .git directory., Test MIME type detection., Test image MIME types. (+6 more)
 
 ### Community 308 - "Community 308"
-Cohesion: 0.09
-Nodes (12): Test path validation with non-existent path., Test path validation with file instead of directory., Test workspace analysis for pnpm workspaces., Test package discovery., Test turbo.json generation., Test root package.json update., Test file writing in dry-run mode., Test pnpm-workspace.yaml parsing. (+4 more)
+Cohesion: 0.10
+Nodes (11): Test path validation with non-existent path., Test path validation with file instead of directory., Test package discovery., Test root package.json update., Test file writing in dry-run mode., Test full migration process in dry-run mode., Test pnpm-workspace.yaml parsing., Test migration fails for non-workspace monorepo. (+3 more)
 
 ### Community 309 - "Community 309"
 Cohesion: 0.09
@@ -3649,16 +3667,16 @@ Cohesion: 0.10
 Nodes (21): default, description, items, type, default, description, items, type (+13 more)
 
 ### Community 336 - "Community 336"
-Cohesion: 0.10
-Nodes (21): default, description, type, default, description, type, default, description (+13 more)
+Cohesion: 0.22
+Nodes (9): default, description, type, properties, dateFormat, reportsDir, default, description (+1 more)
 
 ### Community 337 - "Community 337"
 Cohesion: 0.10
 Nodes (21): additionalProperties, default, description, properties, type, default, description, maximum (+13 more)
 
 ### Community 338 - "Community 338"
-Cohesion: 0.10
-Nodes (21): properties, type, default, description, items, type, gate, hardVerbs (+13 more)
+Cohesion: 0.11
+Nodes (18): properties, type, default, description, items, type, gate, hardVerbs (+10 more)
 
 ### Community 339 - "Community 339"
 Cohesion: 0.10
@@ -4134,7 +4152,7 @@ Nodes (17): Approach, [Bug Fix] Implementation Plan, Changes Required, Context L
 
 ### Community 457 - "Community 457"
 Cohesion: 0.11
-Nodes (15): MigrationManager, Manages database migrations for MongoDB and PostgreSQL., Test connection with unsupported database type., Test migration generation., Test migration generation in dry-run mode., Test getting pending migrations., Test applying MongoDB migration., Test applying migration in dry-run mode. (+7 more)
+Nodes (10): Test connection with unsupported database type., Test migration generation in dry-run mode., Test applying MongoDB migration., Test applying migration in dry-run mode., Test rolling back PostgreSQL migration., Test rollback with non-existent migration., Test MigrationManager class., Test manager initialization. (+2 more)
 
 ### Community 458 - "Community 458"
 Cohesion: 0.11
@@ -4197,8 +4215,8 @@ Cohesion: 0.20
 Nodes (16): Any, check_ffmpeg(), get_media_info(), load_env_files(), main(), optimize_audio(), optimize_image(), optimize_video() (+8 more)
 
 ### Community 473 - "Community 473"
-Cohesion: 0.14
-Nodes (10): Path, EnvLoader, Initialize batch processor.          Args:             config: Repomix configura, Process a single repository with repomix.          Args:             repo_path:, Build repomix command with configuration options.          Args:             rep, Get file extension for output style.          Args:             style: Output st, Process multiple repositories.          Args:             repositories: List of, Load environment variables from multiple .env file locations. (+2 more)
+Cohesion: 0.28
+Nodes (6): Path, EnvLoader, Initialize batch processor.          Args:             config: Repomix configura, Load environment variables from multiple .env file locations., Load environment variables from .env files in order of precedence.          Orde, Parse a .env file and return key-value pairs.          Args:             path: P
 
 ### Community 474 - "Community 474"
 Cohesion: 0.12
@@ -4302,7 +4320,7 @@ Nodes (17): description, type, description, type, description, type, additionalP
 
 ### Community 499 - "Community 499"
 Cohesion: 0.12
-Nodes (17): pattern, type, description, items, maxItems, type, keywords, requires (+9 more)
+Nodes (17): pattern, type, description, items, maxItems, type, keywords, related (+9 more)
 
 ### Community 500 - "Community 500"
 Cohesion: 0.12
@@ -4533,8 +4551,8 @@ Cohesion: 0.12
 Nodes (15): 1. Multi-Panel Chain Registration and Management, 2. Central Push of Chain Configuration to Remote Panels, 3. Geo-Routing Across Chained Servers, 4. Tailscale Subnet Router Integration, 5. Pre-Configuration Templates, Anti-Features, Complexity Assessment, Detailed Feature Breakdown (+7 more)
 
 ### Community 557 - "Community 557"
-Cohesion: 0.12
-Nodes (16): default, description, minimum, type, default, description, minimum, type (+8 more)
+Cohesion: 0.11
+Nodes (19): default, description, minimum, type, default, description, minimum, type (+11 more)
 
 ### Community 558 - "Community 558"
 Cohesion: 0.12
@@ -4545,8 +4563,8 @@ Cohesion: 0.17
 Nodes (10): collect_images(), main(), Collect image files from paths., Test image collection functionality., Test collecting a single image file., Test collecting images from directory., Test recursive image collection., Test that only image files are collected. (+2 more)
 
 ### Community 560 - "Community 560"
-Cohesion: 0.13
-Nodes (10): main(), Migration, Disconnect from database., Create migrations tracking table/collection if not exists., Generate new migration file.          Args:             name: Migration name, Get list of pending migrations.          Returns:             List of pending Mi, Apply migration.          Args:             migration: Migration to apply, Rollback migration.          Args:             migration_id: Migration ID to rol (+2 more)
+Cohesion: 0.15
+Nodes (9): main(), Migration, Create migrations tracking table/collection if not exists., Generate new migration file.          Args:             name: Migration name, Get list of pending migrations.          Returns:             List of pending Mi, Apply migration.          Args:             migration: Migration to apply, Rollback migration.          Args:             migration_id: Migration ID to rol, Represents a database migration. (+1 more)
 
 ### Community 561 - "Community 561"
 Cohesion: 0.15
@@ -5161,8 +5179,8 @@ Cohesion: 0.14
 Nodes (13): Casual Conversational, Edgy Provocative, Integration, Luxe Minimalist, Pre-Built Style Definitions, Professional Authoritative, Style Application Prompt, Style Dimensions Framework (+5 more)
 
 ### Community 714 - "Community 714"
-Cohesion: 0.14
-Nodes (14): default, description, type, default, description, items, type, branchPattern (+6 more)
+Cohesion: 0.22
+Nodes (9): default, description, type, branchPattern, resolution, additionalProperties, description, properties (+1 more)
 
 ### Community 715 - "Community 715"
 Cohesion: 0.22
@@ -5453,8 +5471,8 @@ Cohesion: 0.15
 Nodes (13): additionalProperties, description, properties, type, locale, responseLanguage, thinkingLanguage, default (+5 more)
 
 ### Community 787 - "Community 787"
-Cohesion: 0.15
-Nodes (13): quietHoursEnd, quietHoursStart, timezone, default, description, type, default, description (+5 more)
+Cohesion: 0.12
+Nodes (16): quietHoursEnd, quietHoursStart, schedule, timezone, default, description, type, default (+8 more)
 
 ### Community 788 - "Community 788"
 Cohesion: 0.54
@@ -5871,6 +5889,10 @@ Nodes (11): Automatic Updates Required, Documentation Triggers, File Organizatio
 ### Community 891 - "Community 891"
 Cohesion: 0.29
 Nodes (11): captureOne(), compressIfNeeded(), getBrowser(), getPage(), main(), outputError(), outputJSON(), parseArgs() (+3 more)
+
+### Community 892 - "Community 892"
+Cohesion: 0.17
+Nodes (7): MigrationManager, Disconnect from database., Manages database migrations for MongoDB and PostgreSQL., Initialize migration manager.          Args:             db_type: Database type, Test migration generation., Test getting pending migrations., Test PostgreSQL connection.
 
 ### Community 893 - "Community 893"
 Cohesion: 0.17
@@ -6545,8 +6567,8 @@ Cohesion: 0.17
 Nodes (11): Amnezia Control Panel, Build manually, Deploy with Docker, Documentation, Environment variables, Getting Started, Other deployment, Published image (+3 more)
 
 ### Community 1062 - "Community 1062"
-Cohesion: 0.14
-Nodes (13): API integrations, Best practices, Data processing, Error handling, Example tool patterns, Implementing tools, Overview, System operations (+5 more)
+Cohesion: 0.20
+Nodes (9): Best practices, Error handling, Implementing tools, Overview, Testing tools, Tool definition structure, Tool discovery and updates, Tool name conflicts (+1 more)
 
 ### Community 1063 - "Community 1063"
 Cohesion: 0.20
@@ -6901,8 +6923,8 @@ Cohesion: 0.22
 Nodes (8): description, name, scripts, test, version, author, keywords, license
 
 ### Community 1152 - "Community 1152"
-Cohesion: 0.33
-Nodes (6): Path, EnvLoader, Load environment variables from multiple sources in priority order., Load environment variables from .env file.          Args:             filepath:, Get list of .env file paths in priority order.          Priority: process.env >, Load configuration from environment variables.          Priority: process.env >
+Cohesion: 0.25
+Nodes (7): Path, EnvLoader, Create shopify.app.toml configuration file.          Args:             project_d, Load environment variables from multiple sources in priority order., Load environment variables from .env file.          Args:             filepath:, Get list of .env file paths in priority order.          Priority: process.env >, Load configuration from environment variables.          Priority: process.env >
 
 ### Community 1153 - "Community 1153"
 Cohesion: 0.25
@@ -8873,8 +8895,8 @@ Cohesion: 0.33
 Nodes (6): 📖 Description, 📌 Details, 🖼️ Generated Images, Image 1, No. 48: Infographic / Edu Visual - High-Fashion Zootopia Miniature Visualization, 📝 Prompt
 
 ### Community 1651 - "Community 1651"
-Cohesion: 0.12
-Nodes (19): applyBodySchema, POST(), resolveBodySchema, classifyDomesticForeign(), evaluateGeoRules(), evaluateGeoRulesFromDB(), lookupGeoIP(), matchesTarget() (+11 more)
+Cohesion: 0.15
+Nodes (9): Process multiple repositories with repomix., Process a single repository with repomix.          Args:             repo_path:, Build repomix command with configuration options.          Args:             rep, Get file extension for output style.          Args:             style: Output st, Process multiple repositories.          Args:             repositories: List of, RepomixBatchProcessor, Test building command with verbose flag., Test processing repository successfully. (+1 more)
 
 ### Community 1652 - "Community 1652"
 Cohesion: 0.33
@@ -9057,8 +9079,8 @@ Cohesion: 0.33
 Nodes (6): 📖 Description, 📌 Details, 🖼️ Generated Images, Image 1, No. 3: Profile / Avatar - Hyper-Realistic Gym Mirror Selfie Prompt (iPhone 17 Pro Simulation), 📝 Prompt
 
 ### Community 1697 - "Community 1697"
-Cohesion: 0.33
-Nodes (6): 📖 Description, 📌 Details, 🖼️ Generated Images, Image 1, No. 111: E-commerce Main Image - Luxury Korean Hanbok Product Mockup (Symmetrical Flat Lay), 📝 Prompt
+Cohesion: 0.38
+Nodes (8): applyPreset(), getPreset(), getPresets(), getPresetsByServiceType(), PRESETS, applyPresetSchema, GET(), POST()
 
 ### Community 1698 - "Community 1698"
 Cohesion: 0.33
@@ -9969,8 +9991,8 @@ Cohesion: 0.50
 Nodes (4): additionalProperties, description, type, hooks
 
 ### Community 1933 - "Community 1933"
-Cohesion: 0.50
-Nodes (4): related, description, maxItems, type
+Cohesion: 0.29
+Nodes (6): Current Focus, Debug Session: Docker Image Workflow Compatibility, Eliminated, Evidence, Resolution, Symptoms
 
 ### Community 1934 - "Community 1934"
 Cohesion: 0.50
@@ -10100,15 +10122,71 @@ Nodes (6): 📖 Description, 📌 Details, 🖼️ Generated Images, Image 1, No
 Cohesion: 0.50
 Nodes (3): GHCR Docker Image Publishing Workflow, Goal, Tasks
 
+### Community 2430 - "Community 2430"
+Cohesion: 0.48
+Nodes (5): importConfigs(), importConfigurationList(), importTemplateList(), POST(), ConfigImportReport
+
+### Community 2431 - "Community 2431"
+Cohesion: 0.33
+Nodes (6): 📖 Description, 📌 Details, 🖼️ Generated Images, Image 1, No. 50: YouTube Thumbnail - Talk-Show Style Celebrity Interview Photo, 📝 Prompt
+
+### Community 2432 - "Community 2432"
+Cohesion: 0.33
+Nodes (6): default, description, maximum, minimum, type, maxQuestions
+
+### Community 2433 - "Community 2433"
+Cohesion: 0.33
+Nodes (6): default, description, maximum, minimum, type, minQuestions
+
+### Community 2434 - "Community 2434"
+Cohesion: 0.40
+Nodes (4): Completed, Dedupe Repeated Large PR Comments In PR Size Guard, Root Cause, Verification
+
+### Community 2435 - "Community 2435"
+Cohesion: 0.40
+Nodes (4): Completed, Raise Workflow Health Optimize Timeout, Root Cause, Verification
+
+### Community 2436 - "Community 2436"
+Cohesion: 0.40
+Nodes (5): default, description, items, type, focusAreas
+
+### Community 2437 - "Community 2437"
+Cohesion: 0.40
+Nodes (5): default, description, items, type, order
+
+### Community 2438 - "Community 2438"
+Cohesion: 0.50
+Nodes (3): Goal, Tasks, Wake PR Flow After PR Policy
+
+### Community 2439 - "Community 2439"
+Cohesion: 0.50
+Nodes (4): API integrations, Data processing, Example tool patterns, System operations
+
+### Community 2440 - "Community 2440"
+Cohesion: 0.50
+Nodes (4): default, description, type, issuePrefix
+
+### Community 2441 - "Community 2441"
+Cohesion: 0.50
+Nodes (4): default, description, type, namingFormat
+
+### Community 2442 - "Community 2442"
+Cohesion: 0.50
+Nodes (4): additionalProperties, description, type, plan
+
+### Community 2443 - "Community 2443"
+Cohesion: 0.50
+Nodes (4): requires, description, maxItems, type
+
 ## Knowledge Gaps
-- **17275 isolated node(s):** `$schema`, `codingLevel`, `statusline`, `statuslineColors`, `privacyBlock` (+17270 more)
+- **17305 isolated node(s):** `$schema`, `codingLevel`, `statusline`, `statuslineColors`, `privacyBlock` (+17300 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **352 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **355 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `📋 All Prompts` connect `Community 1187` to `Community 2050`, `Community 1068`, `Community 1620`, `Community 1621`, `Community 1622`, `Community 1623`, `Community 1624`, `Community 1625`, `Community 1626`, `Community 1627`, `Community 1628`, `Community 1629`, `Community 1630`, `Community 1631`, `Community 1632`, `Community 1633`, `Community 1634`, `Community 1635`, `Community 1636`, `Community 1637`, `Community 1638`, `Community 1639`, `Community 1640`, `Community 1642`, `Community 1643`, `Community 1644`, `Community 620`, `Community 1646`, `Community 1647`, `Community 1648`, `Community 1649`, `Community 1650`, `Community 1652`, `Community 1653`, `Community 1654`, `Community 1655`, `Community 1656`, `Community 1657`, `Community 1658`, `Community 1659`, `Community 1660`, `Community 1661`, `Community 1662`, `Community 1663`, `Community 1664`, `Community 1665`, `Community 1666`, `Community 1667`, `Community 1669`, `Community 1670`, `Community 1671`, `Community 1672`, `Community 1673`, `Community 1674`, `Community 1675`, `Community 1676`, `Community 1677`, `Community 1678`, `Community 1679`, `Community 1681`, `Community 1682`, `Community 1683`, `Community 1684`, `Community 1685`, `Community 1686`, `Community 1175`, `Community 1176`, `Community 1177`, `Community 1178`, `Community 1691`, `Community 1692`, `Community 1693`, `Community 1694`, `Community 1695`, `Community 1696`, `Community 1697`, `Community 1698`, `Community 1699`, `Community 1188`, `Community 1189`, `Community 1190`, `Community 1191`, `Community 1192`, `Community 1193`, `Community 1194`, `Community 1701`, `Community 1700`, `Community 2233`, `Community 1306`, `Community 1307`, `Community 1687`, `Community 1179`, `Community 1688`, `Community 1180`, `Community 1689`, `Community 1690`, `Community 1182`, `Community 1183`, `Community 1184`, `Community 329`, `Community 1185`, `Community 1186`, `Community 1440`, `Community 1441`, `Community 1442`, `Community 1444`, `Community 1446`, `Community 1447`, `Community 1448`, `Community 1450`, `Community 1451`, `Community 1452`, `Community 1453`, `Community 1454`, `Community 1455`, `Community 1456`, `Community 1457`, `Community 1458`, `Community 1459`?**
+- **Why does `📋 All Prompts` connect `Community 1187` to `Community 2050`, `Community 1068`, `Community 1620`, `Community 1621`, `Community 1622`, `Community 1623`, `Community 1624`, `Community 1625`, `Community 1626`, `Community 1627`, `Community 1628`, `Community 1629`, `Community 1630`, `Community 1631`, `Community 1632`, `Community 1633`, `Community 1634`, `Community 1635`, `Community 1636`, `Community 1637`, `Community 1638`, `Community 1639`, `Community 1640`, `Community 1642`, `Community 1643`, `Community 1644`, `Community 620`, `Community 1646`, `Community 1647`, `Community 1648`, `Community 1649`, `Community 1650`, `Community 1652`, `Community 1653`, `Community 1654`, `Community 1655`, `Community 1656`, `Community 1657`, `Community 1658`, `Community 1659`, `Community 1660`, `Community 1661`, `Community 1662`, `Community 1663`, `Community 1664`, `Community 1665`, `Community 1666`, `Community 1667`, `Community 1669`, `Community 1670`, `Community 1671`, `Community 1672`, `Community 1673`, `Community 1674`, `Community 1675`, `Community 1676`, `Community 1677`, `Community 1678`, `Community 1679`, `Community 1681`, `Community 1682`, `Community 1683`, `Community 1684`, `Community 1685`, `Community 1686`, `Community 1175`, `Community 1176`, `Community 1177`, `Community 1178`, `Community 1691`, `Community 1692`, `Community 1693`, `Community 1694`, `Community 1695`, `Community 1696`, `Community 1179`, `Community 1698`, `Community 1699`, `Community 1188`, `Community 1189`, `Community 1190`, `Community 1191`, `Community 1192`, `Community 1193`, `Community 1194`, `Community 1701`, `Community 1700`, `Community 2233`, `Community 1306`, `Community 1307`, `Community 1687`, `Community 1688`, `Community 1180`, `Community 1689`, `Community 1690`, `Community 1182`, `Community 1183`, `Community 1184`, `Community 329`, `Community 1185`, `Community 1186`, `Community 2431`, `Community 1440`, `Community 1441`, `Community 1442`, `Community 1444`, `Community 1446`, `Community 1447`, `Community 1448`, `Community 1450`, `Community 1451`, `Community 1452`, `Community 1453`, `Community 1454`, `Community 1455`, `Community 1456`, `Community 1457`, `Community 1458`, `Community 1459`?**
   _High betweenness centrality (0.002) - this node is a cross-community bridge._
 - **Why does `No. 4: Profile / Avatar - Avatar Girl Studio Portrait Transformation Prompt` connect `Community 1700` to `Community 1187`?**
   _High betweenness centrality (0.000) - this node is a cross-community bridge._
@@ -10119,6 +10197,6 @@ _Questions this graph is uniquely positioned to answer:_
 - **Are the 33 inferred relationships involving `TailwindConfigGenerator` (e.g. with `TestTailwindConfigGenerator` and `.test_add_breakpoints()`) actually correct?**
   _`TailwindConfigGenerator` has 33 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `$schema`, `codingLevel`, `statusline` to the rest of the system?**
-  _18523 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _18553 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Audit Log Rules` be split into smaller, more focused modules?**
-  _Cohesion score 0.03324348607367475 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.03568977350720659 - nodes in this community are weakly interconnected._
