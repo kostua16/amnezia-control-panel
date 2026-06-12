@@ -24,7 +24,7 @@ concurrency:
 jobs:
   classify:
     name: Classify Ref
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 5
     outputs:
       should_publish: ${{ steps.classify.outputs.should_publish }}
@@ -55,7 +55,7 @@ jobs:
     name: Docker Build
     needs: classify
     if: needs.classify.outputs.should_validate == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, big]
     timeout-minutes: 30
     steps:
       - name: Check out repository
@@ -88,7 +88,7 @@ jobs:
     name: Publish GHCR Image
     needs: classify
     if: needs.classify.outputs.should_publish == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, big]
     timeout-minutes: 30
     permissions:
       contents: read

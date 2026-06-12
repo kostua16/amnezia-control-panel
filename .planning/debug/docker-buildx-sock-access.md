@@ -1,37 +1,36 @@
 ---
 status: resolved
-trigger: "Docker Image workflow fails on Buildx setup because the selected runner cannot access /var/run/docker.sock"
+trigger: "Docker Image workflow failed on Buildx setup, then failed on unsupported attestations in a user-owned private repository"
 created: 2026-06-12
 updated: 2026-06-12
 ---
 
-# Debug Session: Docker Buildx Socket Access
+# Debug Session: Docker Image Workflow Compatibility
 
 ## Symptoms
 
-- **Expected:** The Docker Image workflow validates PR builds and publishes from `main` without runner-level Docker permission failures or unsupported provenance features.
-- **Actual:** PR runs `27385471965` and `27385738416` fail in `Set up Docker Buildx` before any image build starts. The first `main` publish run `27387434301` later reaches image push successfully, then fails in `Generate artifact attestation`.
+- **Expected:** The Docker Image workflow validates PR builds and publishes from `main` while staying on the repo's self-hosted runners and without unsupported provenance features.
+- **Actual:** Earlier PR runs `27385471965` and `27385738416` failed in `Set up Docker Buildx` before any image build started. After the runner image was fixed, the first `main` publish run `27387434301` reached image push successfully, then failed in `Generate artifact attestation`.
 - **Errors:**
   - `permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock`
   - `ERROR: failed to initialize builder ... permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`
   - `Failed to persist attestation: Feature not available for user-owned private repositories`
-- **Timeline:** First observed on 2026-06-12 after PR #323 introduced `.github/workflows/docker-image.yml` and reproduced on its second PR run before the workflow merged to `main`.
-- **Reproduction:** Trigger `.github/workflows/docker-image.yml` on a pull request; the `docker-build` job lands on `[self-hosted, big]` and fails during `docker/setup-buildx-action`.
+- **Timeline:** First observed on 2026-06-12 after PR #323 introduced `.github/workflows/docker-image.yml`. The Docker socket issue was later fixed in the self-hosted runner image, leaving attestation support as the remaining deterministic failure on `main`.
+- **Reproduction:** Trigger `.github/workflows/docker-image.yml` on `main` in this user-owned private repository; the publish job reaches `Generate artifact attestation` and GitHub rejects the feature.
 
 ## Evidence
 
-- Failed PR run `27385471965` logged the socket permission error during `Docker Build / Set up Docker Buildx`.
-- Failed PR run `27385738416` reproduced the same error on the same step after a follow-up commit.
-- `main` now contains `.github/workflows/docker-image.yml` with `docker-build` and `publish` both pinned to `[self-hosted, big]`.
-- The first post-merge push run `27387434301` spent multiple minutes queued on `Publish GHCR Image`, which is consistent with the workflow depending on a limited self-hosted runner pool.
-- That same `main` run eventually reached `Generate artifact attestation` and failed with `Feature not available for user-owned private repositories`.
+- Earlier PR runs `27385471965` and `27385738416` logged the Docker socket permission error during `Docker Build / Set up Docker Buildx`.
+- The self-hosted runner image has since been fixed to provide Docker socket access, so those failures are no longer treated as a workflow-level defect.
+- `main` contains `.github/workflows/docker-image.yml` with Docker jobs intentionally pinned to `self-hosted` and `[self-hosted, big]`.
+- `main` run `27387434301` reached `Generate artifact attestation` and failed with `Feature not available for user-owned private repositories`, proving the remaining defect is GitHub feature incompatibility rather than runner selection.
 
 ## Current Focus
 
-- hypothesis: The workflow combines two incompatible assumptions for this repository: self-hosted Docker availability is inconsistent across runners, and GitHub artifact attestations are unsupported for user-owned private repositories.
-- next_action: Monitor the follow-up GitHub Actions run after the runner migration lands.
-- test: Re-run the Docker Image workflow on GitHub-hosted Ubuntu runners.
-- expecting: Buildx starts cleanly, PR validation builds complete, main publish runs no longer wait on the self-hosted `big` pool, and attestation is skipped where GitHub does not support it.
+- hypothesis: The workflow should stay on self-hosted runners, and the only remaining compatibility defect is that GitHub artifact attestations are unsupported for user-owned private repositories.
+- next_action: Re-run the Docker Image workflow after restoring the self-hosted labels and keeping only the attestation guard.
+- test: Re-run the PR Docker Image workflow on the fixed self-hosted runner image.
+- expecting: Buildx starts cleanly on self-hosted runners, PR validation completes, and publish skips attestation where GitHub does not support it.
 
 ## Eliminated
 
@@ -39,9 +38,9 @@ updated: 2026-06-12
 
 ## Resolution
 
-root_cause: `.github/workflows/docker-image.yml` scheduled both `docker-build` and `publish` on `[self-hosted, big]`, but the observed runner pool could not access `/var/run/docker.sock` during `docker/setup-buildx-action` on PR validation runs. Even when a different self-hosted runner succeeded, the publish job still failed because `actions/attest` is not available for user-owned private repositories.
+root_cause: The remaining workflow defect is that `actions/attest` is not available for user-owned private repositories. The earlier Docker socket failure was runner-image specific and has since been fixed outside the workflow.
 
-fix: Moved all Docker Image jobs to `ubuntu-24.04` so Buildx and Docker daemon access come from GitHub-hosted runners, added a guard that skips `actions/attest` for user-owned private repositories, and added regression coverage for both workflow invariants.
+fix: Restored the intended self-hosted runner labels, kept a guard that skips `actions/attest` for user-owned private repositories, and updated regression coverage so it enforces self-hosted runner usage plus the attestation skip.
 
 verification: `npm run lint`; `npm run format:check`; `node --test src/lib/__tests__/docker-image-workflow.test.ts`; `node .github/workflows/scripts/workflow-governance-check.cjs`; `/Users/kostua16/go/bin/actionlint .github/workflows/docker-image.yml`
 
