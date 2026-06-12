@@ -14,6 +14,7 @@ Recommended protection for `main`:
   - `PR Policy / label-and-validate`
   - `Workflow Governance / governance` for `.github/**` changes
   - `Supply Chain Policy / validate` for `.github/**` and package manifest changes
+  - `Docker Image / Docker Build` for Docker image build validation
 - Require branches to be up to date before merge when GitHub queueing is unavailable.
 - Restrict who can push to matching branches: repository maintainers and automation tokens only.
 - Do not allow bypassing required pull requests except repository owners for emergency recovery.
