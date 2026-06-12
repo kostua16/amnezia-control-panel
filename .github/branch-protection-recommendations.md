@@ -9,7 +9,6 @@ Recommended protection for `main`:
   - `CI / Lint`
   - `CI / Type Check`
   - `CI / Test`
-  - `CI / Unsafe SQL Guard`
   - `CI / Build`
   - `PR Policy / label-and-validate`
   - `Workflow Governance / governance` for `.github/**` changes
