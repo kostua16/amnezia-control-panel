@@ -201,7 +201,7 @@ jobs:
   optimize:
     name: Analyze & Optimize Workflows
     runs-on: [self-hosted, big]
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs: [collect-runs]
     if: needs.collect-runs.outputs.has-problems == 'true'
     outputs:
