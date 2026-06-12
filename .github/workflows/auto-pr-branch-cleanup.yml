@@ -39,9 +39,13 @@ jobs:
             const headRef = pr.head?.ref || '';
             const prefixes = [
               ...(policy.trustedAutomationBranchPrefixes ?? []),
+              ...(policy.trustedPlanning?.branchPrefixes ?? []),
               ...(policy.manualOnlyBranchPrefixes ?? []),
               ...(policy.cleanupBranchPrefixes ?? []),
               ...(policy.planningBranchPrefix ? [policy.planningBranchPrefix] : []),
+              ...(policy.gsdExecution?.branchPrefix
+                ? [policy.gsdExecution.branchPrefix]
+                : []),
               ...(policy.auditSafe?.safeBranchPrefix
                 ? [policy.auditSafe.safeBranchPrefix]
                 : []),

@@ -31,7 +31,7 @@ Use `GITHUB_TOKEN` for:
 Use `GH_PAT` for:
 
 - automation-created branches and commits
-- draft planning PR branches from `pr-improve`
+- planning intake and GSD execution branches from `pr-improve`, `suggest-improvements`, and `gsd-planning-execute`
 - issue triage/fix flows that create or push automation artifacts
 
 ## Workflow Map
@@ -99,8 +99,13 @@ antigravity-code-review.yml
 
 pr-improve.yml
   -> dispatch-only worker controlled by pr-flow.yml
-  -> creates or updates claude-planning-pr-<pr-number> draft PRs
+  -> creates or updates claude-planning-pr-<pr-number> planning intake PRs
   -> updates ROADMAP.md intake and source-PR namespaced quick artifacts
+
+gsd-planning-execute.yml
+  -> scheduled/manual worker that runs four times per day
+  -> imports one merged .planning/quick artifact into Phase 999 per run
+  -> executes the imported GSD wave and opens a non-draft implementation PR
 
 pr-finalizer.yml
   -> dispatch-only worker controlled by pr-flow.yml
@@ -191,7 +196,9 @@ The following labels are enforced or created automatically by the workflow stack
 | `deps-review-manual`          | Dependency PR needs manual review                       |
 | `deps-review-blocked`         | Dependency PR is blocked from auto-merge                |
 | `skip-improve`                | Skip the Claude+GSD improvement analysis flow           |
-| `planning-draft-open`         | A draft planning PR exists for follow-up work           |
+| `planning-intake-open`        | A planning intake PR exists for follow-up work          |
+| `planning-draft-open`         | Legacy alias for existing planning intake PRs           |
+| `gsd-plan-execution`          | GSD automation is executing merged planning intake      |
 | `flow/draft`                  | PR flow is paused while the PR is draft                 |
 | `flow/checks-pending`         | PR flow is waiting for required PR checks               |
 | `flow/checks-failed`          | PR flow is blocked by failed required PR checks         |
@@ -216,16 +223,17 @@ Auto-finalization candidates:
 
 - `claude-auto-fix-ci-*`
 - `claude-fix-issue-*`
+- `claude-workflow-optimize-*` and `claude-planning-pr-*` when the diff stays under `.planning/**` and review signals pass
+- `claude-gsd-planning-execute-*` when the diff stays within the GSD execution safety limits and review signals pass
 - `claude-audit-safe-fix-*` when the diff stays within the audit-safe limits and review signals pass
 - `dependabot/npm*` and `dependabot/npm_and_yarn/*` when the update is proven to be patch/minor and dependency review passes
 
 Always manual-only:
 
-- `claude-workflow-optimize-*`
 - `claude-audit-fix-*`
-- `claude-planning-pr-*`
 - any PR touching `.github/**`
-- any PR touching `.planning/**`
+- any non-trusted PR touching `.planning/**`
+- any GSD execution PR touching workflows, package manifests, Prisma/generated code, or more than the GSD execution size limits
 - any audit-fix PR touching API routes, auth, sync, API key, panel/server/user config, Prisma/generated code, package manifests, scripts, or more than the audit-safe size limits
 - any Dependabot GitHub Actions update
 - any dependency PR labeled `deps-review-manual` or `deps-review-blocked`
@@ -237,6 +245,9 @@ Always manual-only:
 | `claude-auto-fix-ci-main-12345` touching `src/**`, green checks, `ai-review-passed`, `security-review-passed`                                      | Finalizer approves and enables squash auto-merge                             |
 | `claude-auto-fix-ci-main-12345` touching `.github/workflows/ci.yml`                                                                                | Reviews run after CI; finalizer leaves it manual-only                        |
 | `claude-fix-issue-*` missing `security-review-passed`                                                                                              | Finalizer waits for review signals                                           |
+| `claude-workflow-optimize-*` touching only `.planning/**`, green checks, `ai-review-passed`, `security-review-passed`                              | Finalizer approves and enables squash auto-merge                             |
+| `claude-gsd-planning-execute-*` touching Phase 999 queue and bounded `src/**` changes                                                              | Finalizer approves and enables squash auto-merge after reviews               |
+| `claude-gsd-planning-execute-*` touching `.github/**` or package manifests                                                                         | Reviews run after CI; finalizer leaves it manual-only                        |
 | `claude-audit-safe-fix-*` touching a small component/hook/resource-monitor diff, green checks, `ai-review-passed`, `security-review-passed`        | Finalizer approves and enables squash auto-merge                             |
 | `claude-audit-safe-fix-*` touching `src/app/api/**`, auth/sync/config paths, Prisma, packages, workflows, or more than 3 files / 120 changed lines | Reviews run after CI; finalizer leaves it manual-only                        |
 | `claude-audit-fix-*` from a broad autonomous audit                                                                                                 | Reviews run after CI; finalizer leaves it manual-only                        |

@@ -64,6 +64,10 @@ function matchesAny(pathValue, globs) {
   return globs.some((glob) => globToRegExp(glob).test(pathValue));
 }
 
+function startsWithAny(value, prefixes) {
+  return (prefixes ?? []).some((prefix) => value.startsWith(prefix));
+}
+
 function normalizeLabels(pr) {
   const raw = pr.labels?.nodes ?? pr.labels ?? pr.labelNames ?? [];
 
@@ -286,6 +290,56 @@ function evaluateAuditSafePolicy(fileDetails, policy) {
   };
 }
 
+function evaluateGsdExecutionPolicy(fileDetails, policy) {
+  const gsdExecution = policy.gsdExecution ?? {};
+  const allowedPathGlobs = gsdExecution.safeAllowedPathGlobs ?? [];
+  const manualOnlyPathGlobs = gsdExecution.manualOnlyPathGlobs ?? [];
+  const maxFiles = Number(gsdExecution.maxFiles ?? 0);
+  const maxChangedLines = Number(gsdExecution.maxChangedLines ?? 0);
+  const files = fileDetails.map((file) => file.path);
+  const matchedManualPaths = files.filter((file) =>
+    matchesAny(file, manualOnlyPathGlobs),
+  );
+  const disallowedPaths = files.filter(
+    (file) => !matchesAny(file, allowedPathGlobs),
+  );
+  const unknownLinePaths = fileDetails
+    .filter((file) => countChangedLines(file) === null)
+    .map((file) => file.path);
+  const totalChangedLines = fileDetails.reduce((sum, file) => {
+    const changedLines = countChangedLines(file);
+    return sum + (changedLines ?? 0);
+  }, 0);
+
+  let reason = null;
+
+  if (fileDetails.length === 0) {
+    reason = 'gsd execution changed files are unavailable';
+  } else if (maxFiles > 0 && fileDetails.length > maxFiles) {
+    reason = `gsd execution changed file count ${fileDetails.length} exceeds limit ${maxFiles}`;
+  } else if (unknownLinePaths.length > 0) {
+    reason = `gsd execution changed line counts unavailable for: ${unknownLinePaths.join(', ')}`;
+  } else if (maxChangedLines > 0 && totalChangedLines > maxChangedLines) {
+    reason = `gsd execution changed lines ${totalChangedLines} exceed limit ${maxChangedLines}`;
+  } else if (matchedManualPaths.length > 0) {
+    reason = `gsd execution diff touches manual-only paths: ${matchedManualPaths.join(', ')}`;
+  } else if (disallowedPaths.length > 0) {
+    reason = `gsd execution diff touches paths outside safe allow list: ${disallowedPaths.join(', ')}`;
+  }
+
+  return {
+    eligible: reason === null,
+    reason,
+    changed_files_count: fileDetails.length,
+    total_changed_lines: totalChangedLines,
+    max_files: maxFiles,
+    max_changed_lines: maxChangedLines,
+    matched_manual_paths: matchedManualPaths,
+    disallowed_paths: disallowedPaths,
+    unknown_line_paths: unknownLinePaths,
+  };
+}
+
 function validatePolicy(policy) {
   validateSupportedGlobs(
     'manualOnlyPathGlobs',
@@ -304,6 +358,24 @@ function validatePolicy(policy) {
     validateSupportedGlobs(
       'auditSafe.manualOnlyPathGlobs',
       policy.auditSafe.manualOnlyPathGlobs ?? [],
+    );
+  }
+
+  if (policy.trustedPlanning) {
+    validateSupportedGlobs(
+      'trustedPlanning.allowedPathGlobs',
+      policy.trustedPlanning.allowedPathGlobs ?? [],
+    );
+  }
+
+  if (policy.gsdExecution) {
+    validateSupportedGlobs(
+      'gsdExecution.safeAllowedPathGlobs',
+      policy.gsdExecution.safeAllowedPathGlobs ?? [],
+    );
+    validateSupportedGlobs(
+      'gsdExecution.manualOnlyPathGlobs',
+      policy.gsdExecution.manualOnlyPathGlobs ?? [],
     );
   }
 }
@@ -330,7 +402,21 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
   );
   const dependabotUpdate = parseDependabotUpdate(pr, headRefName);
   const auditSafeConfig = policy.auditSafe ?? {};
-  const isPlanningBranch = headRefName.startsWith(policy.planningBranchPrefix);
+  const trustedPlanningConfig = policy.trustedPlanning ?? {};
+  const trustedPlanningPrefixes = trustedPlanningConfig.branchPrefixes ?? [
+    policy.planningBranchPrefix,
+  ];
+  const gsdExecutionConfig = policy.gsdExecution ?? {};
+  const isTrustedPlanningBranch = startsWithAny(
+    headRefName,
+    trustedPlanningPrefixes,
+  );
+  const isPlanningBranch =
+    isTrustedPlanningBranch ||
+    headRefName.startsWith(policy.planningBranchPrefix);
+  const isGsdExecutionBranch =
+    gsdExecutionConfig.branchPrefix &&
+    headRefName.startsWith(gsdExecutionConfig.branchPrefix);
   const isAuditSafeBranch =
     auditSafeConfig.safeBranchPrefix &&
     headRefName.startsWith(auditSafeConfig.safeBranchPrefix);
@@ -352,11 +438,29 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
   let blockedReason = null;
   let requiredPassLabels = [];
   let auditSafeEvaluation = null;
+  let gsdExecutionEvaluation = null;
+  const trustedPlanningAllowed =
+    files.length > 0 &&
+    files.every((file) =>
+      matchesAny(file, trustedPlanningConfig.allowedPathGlobs ?? []),
+    );
 
-  if (isPlanningBranch) {
+  if (isTrustedPlanningBranch) {
+    prClass = 'trusted-planning';
+    requiredPassLabels = trustedPlanningConfig.requiredPassLabels ?? [
+      'ai-review-passed',
+      'security-review-passed',
+    ];
+
+    if (!trustedPlanningAllowed) {
+      manualOnly = true;
+      blockedReason =
+        'trusted planning branch touched paths outside the planning allow list';
+    }
+  } else if (isPlanningBranch) {
     prClass = 'planning';
     manualOnly = true;
-    blockedReason = 'planning branches are always human-reviewed';
+    blockedReason = 'planning branch is not in the trusted planning policy';
   } else if (isAuditSafeBranch) {
     prClass = 'audit-safe-fix';
     requiredPassLabels = ['ai-review-passed', 'security-review-passed'];
@@ -374,6 +478,15 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
     prClass = 'workflow-manual';
     manualOnly = true;
     blockedReason = 'branch prefix is manual-only by policy';
+  } else if (isGsdExecutionBranch) {
+    prClass = 'gsd-planning-execution';
+    requiredPassLabels = ['ai-review-passed', 'security-review-passed'];
+    gsdExecutionEvaluation = evaluateGsdExecutionPolicy(fileDetails, policy);
+
+    if (!gsdExecutionEvaluation.eligible) {
+      manualOnly = true;
+      blockedReason = gsdExecutionEvaluation.reason;
+    }
   } else if (isTrustedAutomation) {
     prClass = 'automation-fix';
     requiredPassLabels = ['ai-review-passed', 'security-review-passed'];
@@ -403,7 +516,11 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
     }
   }
 
-  if (!manualOnly && matchedManualPaths.length > 0) {
+  const hasManualPathExemption =
+    (isTrustedPlanningBranch && trustedPlanningAllowed) ||
+    (isGsdExecutionBranch && gsdExecutionEvaluation?.eligible);
+
+  if (!manualOnly && matchedManualPaths.length > 0 && !hasManualPathExemption) {
     manualOnly = true;
     blockedReason =
       'changed files include manual-only workflow or planning paths';
@@ -428,6 +545,8 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
     blockedLabels.length === 0 &&
     (isTrustedAutomation ||
       Boolean(isAuditSafeBranch) ||
+      (isTrustedPlanningBranch && trustedPlanningAllowed) ||
+      (isGsdExecutionBranch && gsdExecutionEvaluation?.eligible) ||
       (dependabotUpdate && dependabotUpdate.supported));
 
   const shouldAnalyze =
@@ -454,6 +573,7 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
     matched_improve_paths: matchedImprovePaths,
     dependabot: dependabotUpdate,
     audit_safe: auditSafeEvaluation,
+    gsd_execution: gsdExecutionEvaluation,
   };
 }
 
@@ -477,6 +597,7 @@ function runCli() {
 
 module.exports = {
   evaluateAuditSafePolicy,
+  evaluateGsdExecutionPolicy,
   evaluatePrPolicy,
   getArg,
   globToRegExp,

@@ -290,7 +290,8 @@ function buildPlanningPrBody({
       '',
       `${namespace}.x mapping: ${summarizePhaseSuggestions(phaseSuggestions, sourcePrNumber)}`,
       '',
-      'This draft PR is intentionally manual-only and should never be auto-approved or auto-merged.',
+      'This planning intake PR is auto-merge eligible after CI, PR Policy, core review, and security review pass.',
+      'After merge, the GSD planning executor imports merged artifacts four times per day and opens implementation PRs.',
     ].join('\n') + '\n'
   );
 }
@@ -507,7 +508,7 @@ function main() {
         '--body-file',
         bodyFile,
         '--add-label',
-        'planning-draft-open',
+        'planning-intake-open',
       ],
       { capture: false },
     );
@@ -523,9 +524,8 @@ function main() {
       `planning: workflow improvement follow-ups for PR #${sourcePrNumber}`,
       '--body-file',
       bodyFile,
-      '--draft',
       '--label',
-      'planning-draft-open',
+      'planning-intake-open',
     ]);
   }
 

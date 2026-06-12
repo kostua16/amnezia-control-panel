@@ -20,4 +20,4 @@ Recommended protection for `main`:
 - Do not allow bypassing required pull requests except repository owners for emergency recovery.
 - Require signed commits if all active automation identities support signing.
 
-Repository ruleset note: workflow and planning paths are manual-only by policy. Changes under `.github/**` or `.planning/**` should keep the `needs-review` label until a maintainer reviews the generated planning or workflow PR.
+Repository ruleset note: workflow paths remain manual-only by policy. Planning paths are auto-merge eligible only on trusted planning branches when the diff stays under `.planning/**` and CI plus core/security review pass; ordinary `.planning/**` edits should keep `needs-review`.

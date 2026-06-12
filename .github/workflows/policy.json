@@ -4,13 +4,34 @@
     "claude-auto-fix-ci-",
     "claude-fix-issue-"
   ],
-  "manualOnlyBranchPrefixes": [
-    "claude-workflow-optimize-",
-    "claude-planning-pr-",
-    "claude-audit-fix-"
-  ],
+  "manualOnlyBranchPrefixes": ["claude-audit-fix-"],
   "cleanupBranchPrefixes": ["codex/", "claude/", "dependabot/"],
   "planningBranchPrefix": "claude-planning-pr-",
+  "trustedPlanning": {
+    "branchPrefixes": ["claude-workflow-optimize-", "claude-planning-pr-"],
+    "allowedPathGlobs": [".planning/**"],
+    "requiredPassLabels": ["ai-review-passed", "security-review-passed"]
+  },
+  "gsdExecution": {
+    "branchPrefix": "claude-gsd-planning-execute-",
+    "safeAllowedPathGlobs": [
+      ".planning/phases/999-gh-planning-execution-queue/**",
+      "docs/**",
+      "README.md",
+      "scripts/**",
+      "src/**"
+    ],
+    "manualOnlyPathGlobs": [
+      ".github/**",
+      "package.json",
+      "package-lock.json",
+      "prisma/**",
+      "src/generated/**",
+      "next.config.*"
+    ],
+    "maxFiles": 6,
+    "maxChangedLines": 300
+  },
   "fixApprovalLabel": "auto-fix-approved",
   "blockingLabels": [
     "do-not-merge",
@@ -132,7 +153,15 @@
     },
     "planning-draft-open": {
       "color": "1d76db",
-      "description": "A draft planning PR exists for follow-up roadmap work"
+      "description": "Legacy alias for an open planning intake PR"
+    },
+    "planning-intake-open": {
+      "color": "1d76db",
+      "description": "A planning intake PR exists for follow-up roadmap work"
+    },
+    "gsd-plan-execution": {
+      "color": "0e8a16",
+      "description": "GSD automation is executing a merged planning intake artifact"
     },
     "needs-review": {
       "color": "fbca04",
