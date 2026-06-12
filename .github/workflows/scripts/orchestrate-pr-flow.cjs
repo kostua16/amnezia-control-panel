@@ -52,6 +52,15 @@ const STATUS_WORKER_LABELS = {
   finalizer: 'Finalizer',
 };
 
+const GUIDANCE_BLOCKING_LABELS = [
+  'do-not-merge',
+  'ai-review-concerns',
+  'security-review-concerns',
+  'deps-review-manual',
+  'deps-review-blocked',
+  'antigravity-review-concerns',
+];
+
 const MANUAL_REVIEW_LABELS = new Set(['needs-review']);
 
 const COMMENT_MARKER = '<!-- pr-flow-orchestration -->';
@@ -1124,6 +1133,190 @@ function buildFlowVisibility({
   };
 }
 
+function formatInlineLabels(labels) {
+  return labels.map((label) => `\`${label}\``).join(', ');
+}
+
+function pushUnique(items, item) {
+  if (item && !items.includes(item)) {
+    items.push(item);
+  }
+}
+
+function buildFlowGuidance({
+  pr,
+  decision,
+  visibility,
+  dispatchOutcome = null,
+}) {
+  const nextSteps = [];
+  const controls = [];
+  const labels = normalizeLabels(pr.labels);
+  const activeBlockingLabels = GUIDANCE_BLOCKING_LABELS.filter((label) =>
+    labels.includes(label),
+  );
+  const state = decision.state ?? 'none';
+  const checkStatus = decision.checkStatus ?? {};
+  const finalizerStatus = visibility.workers?.finalizer?.displayState ?? '';
+
+  const addNext = (item) => pushUnique(nextSteps, item);
+  const addControl = (item) => pushUnique(controls, item);
+  const addStopControl = () =>
+    addControl('Add `do-not-merge` to block PR Finalizer and auto-merge.');
+
+  if (String(pr.state).toUpperCase() !== 'OPEN' || pr.mergedAt) {
+    addNext(
+      'No PR Flow action is needed; this PR is closed or already merged.',
+    );
+    return { nextSteps, controls };
+  }
+
+  if (dispatchOutcome?.ok === false) {
+    addNext(
+      `Inspect the failed ${decision.dispatch?.key ?? 'worker'} dispatch, then rerun PR Orchestrator.`,
+    );
+    addStopControl();
+  }
+
+  switch (state) {
+    case 'flow/draft':
+      addNext(
+        'Mark the PR ready for review when it should enter CI and PR Flow.',
+      );
+      addNext('This comment updates after PR Flow runs on the ready PR.');
+      addStopControl();
+      break;
+
+    case 'flow/checks-pending':
+      addNext(
+        'Wait for required checks to finish; PR Flow updates after CI or PR Policy completes.',
+      );
+      addNext(
+        'If the state looks stale, run the PR Orchestrator workflow for this PR.',
+      );
+      addStopControl();
+      break;
+
+    case 'flow/checks-failed': {
+      const failing =
+        checkStatus.failing?.length > 0
+          ? formatInlineLabels(checkStatus.failing)
+          : 'the failing required checks';
+      addNext(`Fix ${failing}, then push updates or rerun the failed jobs.`);
+      addNext('PR Flow updates after the required checks complete again.');
+      addStopControl();
+      break;
+    }
+
+    case 'flow/checks-unavailable':
+      addNext(
+        'Inspect the PR Flow run for the check-read error before trusting this state.',
+      );
+      addNext(
+        'Rerun the required checks or PR Orchestrator if GitHub check data is stale.',
+      );
+      addStopControl();
+      break;
+
+    case 'flow/review-pending':
+      addNext(
+        'Wait for the active review worker to finish; PR Flow updates after review labels change.',
+      );
+      addNext(
+        'Comment `/review` to manually rerun Code Review if the signal is stale.',
+      );
+      addControl('Comment `/review` on this PR to rerun Code Review.');
+      addControl('Add `needs-review` when the PR should stay human-reviewed.');
+      addStopControl();
+      break;
+
+    case 'flow/review-blocked':
+      if (activeBlockingLabels.length > 0) {
+        addNext(
+          `Address active concern/block labels: ${formatInlineLabels(activeBlockingLabels)}.`,
+        );
+      } else {
+        addNext('Address the review or policy blocker named in the reason.');
+      }
+      addNext(
+        'After resolving feedback, rerun review if needed and let PR Flow refresh.',
+      );
+      addControl('Comment `/review` to rerun Code Review after fixes.');
+      addControl(
+        'Remove concern/block labels only after their findings are resolved.',
+      );
+      addControl('Add `needs-review` to require a human merge decision.');
+      addStopControl();
+      break;
+
+    case 'flow/review-failed':
+      addNext('Inspect the failed review worker run, then rerun the worker.');
+      addNext('Comment `/review` to manually rerun Code Review.');
+      addControl('Comment `/review` on this PR to rerun Code Review.');
+      addStopControl();
+      break;
+
+    case 'flow/improve-pending':
+      addNext(
+        'Wait for PR Improve to finish; it labels `planning-draft-open` when follow-up planning is created.',
+      );
+      addNext(
+        'Add `skip-improve` if this optional improvement intake should be skipped.',
+      );
+      addControl('Add `skip-improve` to skip optional PR Improve intake.');
+      addStopControl();
+      break;
+
+    case 'flow/improve-failed':
+      addNext('Inspect or rerun PR Improve, or skip the optional intake.');
+      addNext('Add `skip-improve` to let PR Flow continue without PR Improve.');
+      addControl('Add `skip-improve` to skip optional PR Improve intake.');
+      addStopControl();
+      break;
+
+    case 'flow/manual-only':
+      addNext('Human review is required before merge or follow-up automation.');
+      addNext(
+        'Comment `/approve` to record `maintainer-approved` for this head if PR Flow should continue.',
+      );
+      addNext(
+        'Merge manually when ready; PR Finalizer stays off for manual-only policy.',
+      );
+      addControl(
+        'Comment `/approve` to add `maintainer-approved` for this head.',
+      );
+      addControl(
+        'Keep or add `needs-review` when a human merge decision is required.',
+      );
+      addStopControl();
+      break;
+
+    case 'flow/finalizer-dispatched':
+      if (finalizerStatus === 'success') {
+        addNext('No PR Flow action is needed; PR Finalizer completed.');
+      } else {
+        addNext('Wait for PR Finalizer to finish; it wakes PR Flow afterward.');
+        addNext(
+          'If finalization stalls, inspect the PR Finalizer run or comment.',
+        );
+      }
+      addStopControl();
+      break;
+
+    default:
+      addNext(
+        'Watch `pr-flow/ready`; this comment updates when PR Flow reruns.',
+      );
+      addStopControl();
+      break;
+  }
+
+  return {
+    nextSteps: nextSteps.slice(0, 3),
+    controls,
+  };
+}
+
 function renderFlowComment({
   pr,
   decision,
@@ -1142,6 +1335,16 @@ function renderFlowComment({
       ? `- Dispatch: ${decision.dispatch?.key ?? 'none'} succeeded`
       : `- Dispatch: ${decision.dispatch?.key ?? 'none'} failed: ${dispatchOutcome.error}`
     : `- Dispatch: ${decision.dispatch?.key ?? 'none'}`;
+  const guidance = buildFlowGuidance({
+    pr,
+    decision,
+    visibility,
+    dispatchOutcome,
+  });
+  const nextStepLines = guidance.nextSteps.map((item) => `- ${item}`);
+  const controlLines = guidance.controls.map((item) => `- ${item}`);
+  const controlsSection =
+    controlLines.length > 0 ? ['### Controls', '', ...controlLines, ''] : [];
 
   return [
     COMMENT_MARKER,
@@ -1153,6 +1356,11 @@ function renderFlowComment({
     `- Reason: ${decision.reason}`,
     dispatchLine,
     '',
+    '### Next steps',
+    '',
+    ...nextStepLines,
+    '',
+    ...controlsSection,
     '| Worker | Status | Details | Link |',
     '| --- | --- | --- | --- |',
     ...statusLines,
@@ -1889,6 +2097,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildFlowGuidance,
   buildFlowVisibility,
   collectCheckEvidence,
   dispatchWorker,
