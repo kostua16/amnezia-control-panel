@@ -7,6 +7,7 @@ import { Loader2, Clock } from 'lucide-react';
 import { useTrafficStats } from '@/hooks/use-traffic-stats';
 import { useTopUserTraffic } from '@/hooks/use-top-user-traffic';
 import { TrafficChart } from './traffic-chart';
+import { formatBytes } from '@/lib/format';
 
 type Period = 'hourly' | 'daily' | 'weekly' | 'monthly';
 
@@ -16,15 +17,6 @@ const periods: { value: Period; label: string }[] = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'monthly', label: 'Monthly' },
 ];
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const k = 1024;
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const value = bytes / Math.pow(k, i);
-  return `${value.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
-}
 
 export function TrafficStats() {
   const [period, setPeriod] = useState<Period>('daily');

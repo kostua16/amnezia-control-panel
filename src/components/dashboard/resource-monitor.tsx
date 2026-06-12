@@ -4,27 +4,8 @@ import { Cpu, MemoryStick, HardDrive, Loader2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSystemResources } from '@/hooks/use-system-resources';
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const k = 1024;
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const value = bytes / Math.pow(k, i);
-  return `${value.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
-function getUsageColor(percent: number): string {
-  if (percent >= 90) return 'bg-red-500';
-  if (percent >= 70) return 'bg-yellow-500';
-  return 'bg-green-500';
-}
-
-function getUsageTextColor(percent: number): string {
-  if (percent >= 90) return 'text-red-500';
-  if (percent >= 70) return 'text-yellow-500';
-  return 'text-green-500';
-}
+import { formatBytes } from '@/lib/format';
+import { getUsageColor, getUsageTextColor } from '@/lib/usage-colors';
 
 interface ResourceBarProps {
   label: string;
