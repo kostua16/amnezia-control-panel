@@ -1,0 +1,422 @@
+name: Monitor Amnezia Control Panel GitHub Runs
+
+on:
+  schedule:
+    - cron: '56 * * * *' # Hourly at :56 UTC
+  workflow_dispatch:
+    inputs:
+      fallback_lookback_hours:
+        description: 'Fallback lookback when no previous completed monitor run exists'
+        required: false
+        type: string
+        default: '2'
+      recent_problem_hours:
+        description: 'Include recent failed or slow runs from this many hours'
+        required: false
+        type: string
+        default: '24'
+      slow_threshold_seconds:
+        description: 'Run duration threshold treated as slow'
+        required: false
+        type: string
+        default: '300'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  MAX_TURNS: 80
+  MONITOR_WORKFLOW_FILE: monitor-amnezia-control-panel-github-runs.yml
+  NODE_VERSION: '22.x'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  monitor-runs:
+    name: Monitor GitHub Actions Runs
+    runs-on: [self-hosted, big]
+    timeout-minutes: 25
+    outputs:
+      claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
+      claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
+      claude_num_turns: ${{ steps.claude_run.outputs.claude_num_turns }}
+      claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
+      claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
+      claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'true'
+          generate-prisma: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
+
+      - name: Prepare monitor branch
+        id: branch
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-workflow-optimize-github-runs-${{ github.run_id }}
+          github-token: ${{ secrets.GH_PAT }}
+
+      - name: Resolve monitor window
+        id: window
+        shell: bash
+        env:
+          FALLBACK_LOOKBACK_HOURS: ${{ github.event.inputs.fallback_lookback_hours || '2' }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          RECENT_PROBLEM_HOURS: ${{ github.event.inputs.recent_problem_hours || '24' }}
+          SLOW_THRESHOLD_SECONDS: ${{ github.event.inputs.slow_threshold_seconds || '300' }}
+        run: |
+          set -euo pipefail
+
+          if runs_json="$(gh run list \
+            --workflow "$MONITOR_WORKFLOW_FILE" \
+            --limit 30 \
+            --json databaseId,status,conclusion,createdAt,startedAt,updatedAt,url)"; then
+            :
+          else
+            echo "::warning::Could not list previous monitor workflow runs; using fallback lookback."
+            runs_json="[]"
+          fi
+
+          RUNS_JSON="$runs_json" node <<'NODE'
+          const fs = require('fs');
+
+          function positiveNumber(name, fallback) {
+            const value = Number(process.env[name] || fallback);
+            return Number.isFinite(value) && value > 0 ? value : fallback;
+          }
+
+          const runs = JSON.parse(process.env.RUNS_JSON || '[]');
+          const currentRunId = Number(process.env.GITHUB_RUN_ID || 0);
+          const fallbackHours = positiveNumber('FALLBACK_LOOKBACK_HOURS', 2);
+          const recentProblemHours = positiveNumber('RECENT_PROBLEM_HOURS', 24);
+          const slowThresholdSeconds = positiveNumber('SLOW_THRESHOLD_SECONDS', 300);
+          const now = new Date();
+
+          const completed = runs
+            .filter((run) => run.status === 'completed')
+            .filter((run) => Number(run.databaseId) !== currentRunId)
+            .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+
+          const previous = completed[0] || null;
+          const monitorSince = previous
+            ? previous.updatedAt
+            : new Date(now.getTime() - fallbackHours * 60 * 60 * 1000).toISOString();
+          const recentProblemSince = new Date(
+            now.getTime() - recentProblemHours * 60 * 60 * 1000,
+          ).toISOString();
+          const source = previous ? 'previous-completed-run' : 'fallback-lookback';
+          const summary = [
+            `monitor since ${monitorSince} (${source})`,
+            `recent problem since ${recentProblemSince}`,
+            `slow threshold ${slowThresholdSeconds}s`,
+          ].join('; ');
+
+          const outputs = {
+            monitor_since: monitorSince,
+            monitor_since_source: source,
+            previous_run_url: previous?.url || '',
+            recent_problem_since: recentProblemSince,
+            slow_threshold_seconds: String(slowThresholdSeconds),
+            window_summary: summary,
+          };
+
+          for (const [key, value] of Object.entries(outputs)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
+          }
+          NODE
+
+      - name: Monitor runs and apply narrow fixes
+        id: claude_run
+        continue-on-error: true
+        uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          max-turns: '${{ env.MAX_TURNS }}'
+          track-progress: 'true'
+          claude-full-output: 'false'
+          allowed-bots: 'claude[bot],github-actions[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(rtk:*),Bash(gh:*),Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(actionlint:*),Bash(shellcheck:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(sed:*),Bash(awk:*),Bash(date:*)'
+          prompt: |
+            /gsd:debug
+
+            REPO: ${{ github.repository }}
+            CURRENT_MONITOR_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            MONITOR_WORKFLOW: ${{ github.workflow }}
+            MONITOR_SINCE: ${{ steps.window.outputs.monitor_since }}
+            MONITOR_SINCE_SOURCE: ${{ steps.window.outputs.monitor_since_source }}
+            PREVIOUS_MONITOR_RUN: ${{ steps.window.outputs.previous_run_url }}
+            RECENT_PROBLEM_SINCE: ${{ steps.window.outputs.recent_problem_since }}
+            SLOW_THRESHOLD_SECONDS: ${{ steps.window.outputs.slow_threshold_seconds }}
+
+            ## Task
+
+            Monitor the current amnezia-control-panel project GitHub Actions runs that completed since MONITOR_SINCE, plus any still-relevant recent failed or slow runs since RECENT_PROBLEM_SINCE. Inspect exact GitHub run data and failed logs before drawing conclusions. Analyze failures, flaky behavior, bottlenecks, run duration regressions, queue/setup time, repeated warnings, and opportunities to improve CI speed or reliability.
+
+            ## Required GitHub Evidence
+
+            - Use `rtk gh run list` to list completed runs in the monitor window. Include fields: databaseId, name, workflowName, status, conclusion, createdAt, startedAt, updatedAt, url, headBranch, headSha, event, displayTitle.
+            - Use `rtk gh run list` again for recent failed or slow candidates since RECENT_PROBLEM_SINCE.
+            - For each failed run you treat as actionable, inspect `rtk gh run view <run-id> --json ... --verbose` and exact failed logs with `rtk proxy gh run view <run-id> --log-failed`. If failed-step logs are incomplete, use `rtk proxy gh run view <run-id> --log`.
+            - For each slow run you treat as actionable, inspect job and step timing via `rtk gh run view <run-id> --json jobs,url,name,conclusion,createdAt,startedAt,updatedAt`.
+            - Do not infer root cause from run names or conclusions alone.
+
+            ## Rules
+
+            - Follow repository AGENTS.md/CLAUDE.md instructions.
+            - Start edits through the GSD command already present in this prompt.
+            - Use RTK-prefixed commands for shell work. Use `rtk proxy gh ...` when exact logs are needed without filtering.
+            - Do not touch unrelated dirty files.
+            - Prefer shared workflow/helper fixes over one-off duplication.
+            - Apply only narrow, evidence-backed, safe improvements. If the evidence is ambiguous, make no file changes and report what was inspected.
+            - Do not migrate or read `$CODEX_HOME/automations/...` memory files; this workflow uses GitHub run history as its memory.
+            - Do not commit, push, merge, or open a PR. The workflow handles those steps.
+
+            ## Verification Requirements
+
+            If you change JS/CJS/TS/TSX files, run `npm run lint` and targeted `npx prettier --check <changed files>`.
+            If you change workflow or action YAML, run `actionlint -config-file .github/actionlint.yaml` and targeted `npx prettier --check <changed files>`.
+            If you change shell scripts, run `shellcheck <changed files>`.
+            Run any additional local verification directly relevant to the fix.
+
+            ## Expected Final Output
+
+            If you made changes, summarize:
+            - runs inspected and exact failing/slow evidence
+            - root cause
+            - changed files
+            - verification commands and results
+
+            If there is no actionable change, produce a concise report of runs inspected, status, durations, and why no PR should be created.
+
+      - name: Write monitor summary
+        if: always()
+        shell: bash
+        env:
+          CHANGED_FILES: ${{ steps.claude_run.outputs.claude_changed_files_list }}
+          CLAUDE_LAST_OUTPUT: ${{ steps.claude_run.outputs.claude_last_output }}
+          WINDOW_SUMMARY: ${{ steps.window.outputs.window_summary }}
+        run: |
+          {
+            echo "## GitHub Runs Monitor"
+            echo
+            echo "- Window: ${WINDOW_SUMMARY:-unknown}"
+            echo "- Changed files: ${CHANGED_FILES:-none}"
+            echo
+            echo "### ZAI Output"
+            if [ -n "${CLAUDE_LAST_OUTPUT:-}" ]; then
+              printf '%s\n' "$CLAUDE_LAST_OUTPUT"
+            else
+              echo "(no output captured)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on ZAI failure
+        if: steps.claude_run.outcome == 'failure' || steps.claude_run.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::ZAI failure: ${{ steps.claude_run.outputs.claude_failure_reason || 'run-zai step failed' }}"
+          exit 1
+
+      - name: Verify changed files
+        shell: bash
+        env:
+          CHANGED_FILES: ${{ steps.claude_run.outputs.claude_changed_files_list }}
+        run: |
+          set -euo pipefail
+
+          node <<'NODE' > /tmp/monitor-changed-files.txt
+          const raw = process.env.CHANGED_FILES || '';
+          let files = [];
+
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              files = parsed;
+            }
+          } catch {}
+
+          if (files.length === 0) {
+            files = raw.split(/\r?\n|,/);
+          }
+
+          files = [...new Set(files.map((file) => String(file).trim()).filter(Boolean))];
+          process.stdout.write(files.join('\n'));
+          NODE
+
+          if [ ! -s /tmp/monitor-changed-files.txt ]; then
+            echo "No changed files to verify."
+            exit 0
+          fi
+
+          js_ts_files=()
+          prettier_targets=()
+          shell_files=()
+          workflow_or_action_yaml_changed=false
+
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            [ -f "$file" ] || continue
+
+            case "$file" in
+              *.js|*.cjs|*.ts|*.tsx)
+                js_ts_files+=("$file")
+                prettier_targets+=("$file")
+                ;;
+              .github/workflows/*.yml|.github/workflows/*.yaml|.github/actions/*.yml|.github/actions/*.yaml|*.md)
+                prettier_targets+=("$file")
+                ;;
+            esac
+
+            case "$file" in
+              .github/workflows/*.yml|.github/workflows/*.yaml|.github/actions/*.yml|.github/actions/*.yaml)
+                workflow_or_action_yaml_changed=true
+                ;;
+            esac
+
+            case "$file" in
+              *.sh)
+                shell_files+=("$file")
+                ;;
+            esac
+          done < /tmp/monitor-changed-files.txt
+
+          if [ "${#js_ts_files[@]}" -gt 0 ]; then
+            npm run lint
+          fi
+
+          if [ "${#prettier_targets[@]}" -gt 0 ]; then
+            npx prettier --check "${prettier_targets[@]}"
+          fi
+
+          if [ "$workflow_or_action_yaml_changed" = true ]; then
+            if ! command -v actionlint >/dev/null 2>&1; then
+              echo "::error::actionlint is required for workflow/action YAML changes"
+              exit 1
+            fi
+            actionlint -config-file .github/actionlint.yaml
+          fi
+
+          if [ "${#shell_files[@]}" -gt 0 ]; then
+            if ! command -v shellcheck >/dev/null 2>&1; then
+              echo "::error::shellcheck is required for shell script changes"
+              exit 1
+            fi
+            shellcheck "${shell_files[@]}"
+          fi
+
+      - name: Detect exact duplicate monitor PR
+        id: duplicate
+        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/find-duplicate-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --title-prefix "fix(ci): monitored GitHub run finding - " \
+            --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Log duplicate monitor result
+        if: steps.duplicate.outputs.duplicate_found == 'true'
+        run: |
+          echo "Skipping duplicate monitor PR."
+          echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
+          echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+
+      - uses: ./.github/actions/commit-and-push
+        id: push
+        if: steps.duplicate.outputs.duplicate_found != 'true'
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'fix(ci): address monitored GitHub run finding'
+
+      - name: Log no-changes result
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.push.outputs.pushed != 'true'
+        run: echo "No actionable monitored GitHub run fix was produced."
+
+      - name: Build monitor PR body
+        id: pr-body
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/build-automation-pr-body
+        with:
+          workflow-name: monitor-amnezia-control-panel-github-runs
+          problem: 'Scheduled GitHub Actions run monitoring found an actionable failed, flaky, or slow workflow issue.'
+          source-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          base-ref: main
+          changed-files: ${{ steps.claude_run.outputs.claude_changed_files_list }}
+          rationale: ${{ steps.claude_run.outputs.claude_last_output }}
+          evidence: |
+            Monitor window:
+            - Since: ${{ steps.window.outputs.monitor_since }}
+            - Source: ${{ steps.window.outputs.monitor_since_source }}
+            - Previous monitor run: ${{ steps.window.outputs.previous_run_url }}
+            - Recent problem since: ${{ steps.window.outputs.recent_problem_since }}
+            - Slow threshold seconds: ${{ steps.window.outputs.slow_threshold_seconds }}
+          execution-file: ${{ steps.claude_run.outputs.last_execution_file }}
+          structured-output: ${{ steps.claude_run.outputs.structured_output }}
+          claude-last-output: ${{ steps.claude_run.outputs.claude_last_output }}
+          review-notes: 'Ready-for-review automation PR. Confirm the listed GitHub run/log evidence supports the change before merging.'
+
+      - name: Create monitor PR
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/upsert-pull-request
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'fix(ci): monitored GitHub run finding - ${{ github.run_id }}'
+          body: ${{ steps.pr-body.outputs.body }}
+          labels: auto-fix,needs-review
+          draft: 'false'
+          require-rich-body: 'true'
+
+  report-failure:
+    needs: [monitor-runs]
+    if: failure()
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: ./.github/actions/report-failure
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: issue
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: '[github-runs-monitor] GitHub runs monitor failed'
+          labels: auto-fix,ci-failure
+          ensure-labels: auto-fix,ci-failure
+          dispatch-triage: 'true'
+          claude-step-outcome: ${{ needs.monitor-runs.result }}
+          claude-turns: ${{ needs.monitor-runs.outputs.claude_num_turns }}
+          claude-is-error: ${{ needs.monitor-runs.outputs.claude_is_error }}
+          claude-used-attempt: ${{ needs.monitor-runs.outputs.claude_used_attempt }}
+          claude-failure-reason: ${{ needs.monitor-runs.outputs.claude_failure_reason }}
+          claude-metrics-json: ${{ needs.monitor-runs.outputs.claude_metrics_json }}

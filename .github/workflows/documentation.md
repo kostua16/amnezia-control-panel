@@ -6,13 +6,13 @@ Setup guide for installing this repository's GitHub workflow stack on a new repo
 
 Settings -> Secrets and variables -> Actions -> **New repository secret**
 
-| Secret             | Used by                                                                                                                                                                                                       | Description                                                                                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ZAI_API_KEY`      | `claude`, `triage`, `code-review`, `dependency-review`, `release-notes`, `maintenance`, `fix-pr`, `fix-branch`, `pr-improve`, `workflow-health-optimize`, `audit-auto-prs`                                    | API key for the Claude-compatible coding workflows (Z.AI provider)                                                                                              |
-| `GEMINI_API_KEY`   | `antigravity`, `antigravity-code-review`                                                                                                                                                                      | API key for the Antigravity CLI agent workflows                                                                                                                 |
-| `AV_API_KEY`       | `antigravity`, `antigravity-code-review`                                                                                                                                                                      | Alternative API key for the Antigravity CLI agent workflows                                                                                                     |
-| `DEEPSEEK_API_KEY` | `deepseek`, `deepseek-code-review`                                                                                                                                                                            | API key for DeepSeek coding workflows (Anthropic-compatible endpoint). Optional — workflows skip gracefully when not set.                                       |
-| `GH_PAT`           | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve`, `audit-fix`, `audit-auto-prs`, `suggest-improvements`, `docs-drift`, `maintenance`, `_auto-fix-ci` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
+| Secret             | Used by                                                                                                                                                                                                                                                    | Description                                                                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ZAI_API_KEY`      | `claude`, `triage`, `code-review`, `dependency-review`, `release-notes`, `maintenance`, `fix-pr`, `fix-branch`, `pr-improve`, `workflow-health-optimize`, `audit-auto-prs`, `monitor-amnezia-control-panel-github-runs`                                    | API key for the Claude-compatible coding workflows (Z.AI provider)                                                                                              |
+| `GEMINI_API_KEY`   | `antigravity`, `antigravity-code-review`                                                                                                                                                                                                                   | API key for the Antigravity CLI agent workflows                                                                                                                 |
+| `AV_API_KEY`       | `antigravity`, `antigravity-code-review`                                                                                                                                                                                                                   | Alternative API key for the Antigravity CLI agent workflows                                                                                                     |
+| `DEEPSEEK_API_KEY` | `deepseek`, `deepseek-code-review`                                                                                                                                                                                                                         | API key for DeepSeek coding workflows (Anthropic-compatible endpoint). Optional — workflows skip gracefully when not set.                                       |
+| `GH_PAT`           | `triage`, `fix-issue`, `issue-catch-up`, `fix-pr`, `fix-branch`, `workflow-health-optimize`, `pr-improve`, `audit-fix`, `audit-auto-prs`, `monitor-amnezia-control-panel-github-runs`, `suggest-improvements`, `docs-drift`, `maintenance`, `_auto-fix-ci` | Push-capable Personal Access Token used when a workflow must push branches, create PRs, or create automation artifacts that should trigger downstream workflows |
 
 `GITHUB_TOKEN` is automatic and is sufficient for read/comment/approve operations that do not need recursive workflow triggering.
 
@@ -106,6 +106,14 @@ pr-finalizer.yml
   -> dispatch-only worker controlled by pr-flow.yml
   -> revalidates configured CI checks, review labels, policy, and head SHA
   -> approves and enables auto-merge only for eligible trusted PRs
+
+workflow-health-optimize.yml
+  -> hourly compact workflow-run collector and workflow YAML optimizer
+  -> creates draft manual-only workflow optimization PRs when provided run evidence supports a narrow YAML change
+
+monitor-amnezia-control-panel-github-runs.yml
+  -> hourly run-zai monitor for completed, failed, flaky, or slow GitHub Actions runs
+  -> inspects live run data and logs with gh, applies narrow safe fixes, and opens ready-for-review manual-only PRs when useful
 ```
 
 ## PR Flow Visibility
