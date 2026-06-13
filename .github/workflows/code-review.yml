@@ -56,6 +56,8 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           node-version: ${{ env.NODE_VERSION }}
+          # Runs actions/github-script (a Node action); Bun is unused here.
+          setup-bun: 'false'
 
       - name: Resolve PR context
         id: resolve
@@ -346,6 +348,10 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           node-version: ${{ env.NODE_VERSION }}
+          # Only runs `gh workflow run`; Node and Bun are unused here.
+          # setup-gh provides gh without Node (verified by pr-policy.yml).
+          setup-node: 'false'
+          setup-bun: 'false'
 
       - name: Wake PR Orchestrator
         env:
