@@ -36,7 +36,12 @@ env:
 
 jobs:
   resolve-pr:
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (
+        github.event.issue.pull_request != null &&
+        contains(github.event.comment.body, '/deepseek-review')
+      )
     runs-on: self-hosted
     timeout-minutes: 10
     outputs:

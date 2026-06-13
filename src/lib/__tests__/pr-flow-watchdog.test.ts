@@ -349,7 +349,11 @@ describe('PR flow workflow invariants', () => {
     );
     assert.match(
       workflow,
-      /classify-trigger:\s*\n\s+if:\s+>-\s*\n\s+github\.event_name != 'workflow_run' \|\|\s*\n\s+toJSON\(github\.event\.workflow_run\.pull_requests\) != '\[\]' \|\|\s*\n\s+startsWith\(github\.event\.workflow_run\.display_title \|\| '', 'PR #'\)/,
+      /classify-trigger:\s*\n\s+if:\s+>-\s*\n\s+\(\s*\n\s+github\.event_name != 'workflow_run' \|\|\s*\n\s+toJSON\(github\.event\.workflow_run\.pull_requests\) != '\[\]' \|\|\s*\n\s+startsWith\(github\.event\.workflow_run\.display_title \|\| '', 'PR #'\)/,
+    );
+    assert.match(
+      workflow,
+      /github\.event_name != 'issue_comment' \|\|\s*\n\s+\(\s*\n\s+github\.event\.issue\.pull_request != null &&\s*\n\s+contains\(github\.event\.comment\.body, '\/approve'\)/,
     );
     assert.match(
       workflow,
