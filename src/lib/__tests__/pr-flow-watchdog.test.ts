@@ -435,9 +435,30 @@ describe('PR flow workflow invariants', () => {
       'write',
       'pr-finalizer.yml',
     );
+    assert.equal(
+      finalizerPermissions.get('checks'),
+      'read',
+      'pr-finalizer.yml',
+    );
     assert.match(
       finalizer,
       /needs\.finalize\.outputs\.decision == 'approve_and_enable_automerge'/,
+      'pr-finalizer.yml',
+    );
+    assert.match(finalizer, /checks_read_error=""/, 'pr-finalizer.yml');
+    assert.match(
+      finalizer,
+      /CHECKS_READ_ERROR: \$\{\{ steps\.metadata\.outputs\.checks_read_error \}\}/,
+      'pr-finalizer.yml',
+    );
+    assert.match(
+      finalizer,
+      /\[ -n "\$CHECKS_READ_ERROR" \]/,
+      'pr-finalizer.yml',
+    );
+    assert.doesNotMatch(
+      finalizer,
+      /gh pr checks[^\n]*2>\/dev\/null[^\n]*\|\| echo "\[\]"/,
       'pr-finalizer.yml',
     );
     assert.match(finalizer, dispatchCommand, 'pr-finalizer.yml');
