@@ -45,11 +45,12 @@ describe('workflow trigger policy', () => {
     assert.ok(!types.includes('ready_for_review'));
   });
 
-  it('keeps draft-to-ready transitions in the lightweight PR orchestrator', () => {
+  it('excludes ready_for_review to reduce cascade cancellation surface', () => {
     const workflow = readWorkflow('pr-flow.yml');
     const types = workflow.on?.pull_request_target?.types ?? [];
 
-    assert.ok(types.includes('ready_for_review'));
+    assert.ok(!types.includes('ready_for_review'));
+    assert.ok(!types.includes('converted_to_draft'));
   });
 
   it('skips label-triggered PR flow jobs while the PR is still draft', () => {

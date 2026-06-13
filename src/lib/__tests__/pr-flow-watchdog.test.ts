@@ -297,15 +297,13 @@ describe('PR flow watchdog', () => {
 });
 
 describe('PR flow workflow invariants', () => {
-  it('keeps draft-to-ready orchestration wired on pull_request_target', () => {
+  it('keeps pull_request_target types reduced to avoid cascade cancellation', () => {
     const types = readWorkflowList('pull_request_target', 'types');
 
     assert.deepEqual(types, [
       'opened',
       'synchronize',
       'reopened',
-      'ready_for_review',
-      'converted_to_draft',
       'labeled',
       'unlabeled',
     ]);
@@ -361,12 +359,12 @@ describe('PR flow workflow invariants', () => {
     );
   });
 
-  it('keeps non-relevant label events from canceling an in-flight orchestrator run', () => {
+  it('prevents pull_request_target events from cancelling each other', () => {
     const workflow = readWorkflow('.github/workflows/pr-flow.yml');
 
     assert.match(
       workflow,
-      /cancel-in-progress:\s+\$\{\{\s+github\.event_name != 'pull_request_target' \|\| \(github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\)\s+\}\}/,
+      /cancel-in-progress:\s+\$\{\{\s+github\.event_name != 'pull_request_target'\s+\}\}/,
     );
   });
 
