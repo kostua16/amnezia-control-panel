@@ -271,20 +271,27 @@ function parseEvents(executionText) {
         toolStack.push(toolInfo);
       }
 
-      if (
-        node.type === 'tool_result' &&
-        (node.is_error === true ||
-          node.isError === true ||
-          /(^|\b)error\b/i.test(String(node.content || '')))
-      ) {
-        metrics.numFailedToolCalls += 1;
+      if (node.type === 'tool_result') {
         const toolInfo =
           toolsById.get(node.tool_use_id) || toolStack[toolStack.length - 1];
-        addFailedToolSample(
-          metrics,
-          toolInfo,
-          textFromToolResultContent(node.content),
-        );
+        // Content-regex heuristic is unreliable for Read tools: successfully
+        // reading a file that happens to contain "error" text (e.g. workflow
+        // YAML with `claude-is-error`, `::error::`) should not be classified
+        // as a tool failure.  Rely solely on the SDK's is_error/isError flag.
+        const isReadTool = (toolInfo?.tool || '') === 'Read';
+        const isSdkError =
+          node.is_error === true || node.isError === true;
+        const isContentError =
+          !isReadTool &&
+          /(^|\b)error\b/i.test(String(node.content || ''));
+        if (isSdkError || isContentError) {
+          metrics.numFailedToolCalls += 1;
+          addFailedToolSample(
+            metrics,
+            toolInfo,
+            textFromToolResultContent(node.content),
+          );
+        }
       }
     });
   }
@@ -334,19 +341,22 @@ function parseLogToolMetrics(logText) {
     }
     if (/"type"\s*:\s*"tool_result"/.test(line)) {
       const block = lines.slice(index, index + 20).join('\n');
-      if (/"is_error"\s*:\s*true/.test(block) || /\bError:/.test(block)) {
+      const toolUseId = block.match(/"tool_use_id"\s*:\s*"([^"]+)"/)?.[1];
+      const resolvedTool =
+        toolsById.get(toolUseId) || lastTool || {};
+      // Same Read-tool guard as in parseEvents: skip content-regex heuristic
+      // for Read tools since file content may legitimately contain "Error:".
+      const isReadTool = (resolvedTool.tool || '') === 'Read';
+      const isSdkError = /"is_error"\s*:\s*true/.test(block);
+      const isContentError = !isReadTool && /\bError:/.test(block);
+      if (isSdkError || isContentError) {
         metrics.numFailedToolCalls += 1;
-        const toolUseId = block.match(/"tool_use_id"\s*:\s*"([^"]+)"/)?.[1];
         const content =
           block.match(/"content"\s*:\s*"([^"]+)"/)?.[1] ||
           block.match(/"tool_use_result"\s*:\s*"([^"]+)"/)?.[1] ||
           block.match(/(Error:[^\n]+)/)?.[1] ||
           'Tool call failed';
-        addFailedToolSample(
-          metrics,
-          toolsById.get(toolUseId) || lastTool || {},
-          content,
-        );
+        addFailedToolSample(metrics, resolvedTool, content);
       }
     }
   }
