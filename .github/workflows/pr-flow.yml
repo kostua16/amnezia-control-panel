@@ -10,8 +10,6 @@ on:
       - opened
       - synchronize
       - reopened
-      - ready_for_review
-      - converted_to_draft
       - labeled
       - unlabeled
   workflow_run:
@@ -47,8 +45,10 @@ permissions:
 
 concurrency:
   group: pr-flow-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.display_title || github.event.workflow_run.head_branch || github.run_id }}
-  # Label churn must not cancel an in-flight orchestration run; only meaningful PR events cancel older runs.
-  cancel-in-progress: ${{ github.event_name != 'pull_request_target' || (github.event.action != 'labeled' && github.event.action != 'unlabeled') }}
+  # pull_request_target events must not cancel each other — GitHub's cancel races when
+  # multiple activity types fire at once (opened + synchronize + labeled), cascading into
+  # zero surviving runs.  Dedup is handled by classify-trigger instead.
+  cancel-in-progress: ${{ github.event_name != 'pull_request_target' }}
 
 jobs:
   classify-trigger:
