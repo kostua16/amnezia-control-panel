@@ -555,6 +555,16 @@ Source: `/gsd:explore` third-pass review (non-duplicative). Artifact: `.planning
 | 8 | **Extract bcrypt hashing utility** — Replace 5+ repeated `await import('bcryptjs'); bcrypt.hash(...)` inline patterns with a `hashSecret()`/`verifySecret()` utility in `lib/crypto.ts` | Low-Medium (DRY) | `src/lib/crypto.ts` (new), 5 route files | Proposed |
 | 9 | **Async service-monitor** — Replace `execFileSync` (sync, blocks event loop up to 15s) with `execFileAsync` in `service-monitor.ts`, matching the async pattern already used in `vpn-services.ts` | Medium (Perf) | `src/lib/service-monitor.ts` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 4 (2026-06-13)
+
+Source: `/gsd:explore` fourth-pass review (non-duplicative). Artifact: `.planning/quick/260613-arch-review/260613-PLAN.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 10 | **Deduplicate chain config generation** — `generateWireGuardPeers` and `generateXrayRoutingRules` are each implemented twice (chain-router.ts + chain-config/route.ts) with behavioral drift: mesh topology uses `direct` vs `mesh_balancer`, split topology omits geoip rules in one copy, linear priorities differ (0 vs per-node). Extract into shared `chain-config-generator.ts`; resolve drift per topology | High (Correctness) | `src/lib/chain-router.ts`, `src/app/api/panels/push/chain-config/route.ts` → `src/lib/chain-config-generator.ts` (new) | Proposed |
+| 11 | **Config-applier shared push helper** — `applyAwgConfig()` and `applyThreeXuiConfig()` share ~80% identical code (fetch + HMAC signing + timeout + error handling + 404 handling). Extract `pushToRemotePanel()` helper; thin wrappers per service | Medium (DRY) | `src/lib/config-applier.ts` | Proposed |
+| 12 | **Resource-monitor async conversion** — Extends proposal 9 scope: `execFileSync('df', ...)` and `execFileSync('powershell', ...)` in `resource-monitor.ts` block the event loop up to 5s. Convert to `execFileAsync` matching vpn-services.ts pattern | Medium (Perf) | `src/lib/resource-monitor.ts` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-06-12 - Added improvement intake #3 (proposals 7-9: audit-log Prisma, bcrypt utility, async service-monitor)*
+*Last updated: 2026-06-13 - Added improvement intake #4 (proposals 10-12: chain config dedup, config-applier DRY, resource-monitor async)*
