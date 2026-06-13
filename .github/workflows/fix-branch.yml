@@ -35,12 +35,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  fix:
+  evaluate:
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
       toJSON(github.event.workflow_run.pull_requests) == '[]' &&
       (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'develop') &&
       !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-')
+    runs-on: self-hosted
+    timeout-minutes: 10
+    outputs:
+      should_run: ${{ steps.policy.outputs.should_run }}
+      reason: ${{ steps.policy.outputs.reason }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Evaluate branch auto-fix policy
+        id: policy
+        shell: bash
+        run: |
+          result=$(node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode fix-branch \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME")
+          echo "$result"
+          echo "should_run=$(jq -r '.should_run' <<<"$result")" >> "$GITHUB_OUTPUT"
+          echo "reason=$(jq -r '.reason // ""' <<<"$result")" >> "$GITHUB_OUTPUT"
+
+      - name: Log skip reason
+        if: steps.policy.outputs.should_run != 'true'
+        shell: bash
+        run: |
+          echo "Skipping branch auto-fix: ${{ steps.policy.outputs.reason || 'policy declined run' }}"
+
+  fix:
+    needs: [evaluate]
+    if: needs.evaluate.outputs.should_run == 'true'
     uses: ./.github/workflows/_auto-fix-ci.yml
     with:
       mode: branch
@@ -50,8 +80,11 @@ jobs:
     secrets: inherit
 
   report-failure:
-    needs: [fix]
-    if: failure() && needs.fix.result == 'failure'
+    needs: [evaluate, fix]
+    if: |
+      failure() &&
+      needs.evaluate.outputs.should_run == 'true' &&
+      needs.fix.result == 'failure'
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
