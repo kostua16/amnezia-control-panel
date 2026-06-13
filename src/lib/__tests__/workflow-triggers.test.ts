@@ -19,6 +19,10 @@ type Workflow = {
     pull_request?: PullRequestTrigger;
     pull_request_target?: PullRequestTrigger;
   };
+  concurrency?: {
+    group?: string;
+    'cancel-in-progress'?: boolean | string;
+  };
   jobs?: {
     orchestrate?: {
       if?: string;
@@ -79,5 +83,19 @@ describe('workflow trigger policy', () => {
       workflow,
       /needs\.classify-trigger\.outputs\.should_run == 'true'/,
     );
+  });
+
+  it('keeps non-review comments from cancelling active code-review runs', () => {
+    const workflow = readWorkflow('code-review.yml');
+    const group = workflow.concurrency?.group ?? '';
+
+    assert.match(group, /github\.event_name == 'issue_comment'/);
+    assert.match(
+      group,
+      /!contains\(github\.event\.comment\.body, '\/review'\)/,
+    );
+    assert.match(group, /code-review-ignored-\{0\}/);
+    assert.match(group, /code-review-\{0\}/);
+    assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
   });
 });
