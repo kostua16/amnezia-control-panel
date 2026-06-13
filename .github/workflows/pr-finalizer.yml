@@ -45,6 +45,8 @@ jobs:
       toJSON(github.event.workflow_run.pull_requests) != '[]'
     runs-on: self-hosted
     timeout-minutes: 15
+    outputs:
+      decision: ${{ steps.decision.outputs.decision }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
@@ -315,7 +317,11 @@ jobs:
 
   wake-orchestrator:
     needs: [finalize]
-    if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
+    if: >-
+      always() &&
+      github.event.inputs.orchestrated == 'true' &&
+      github.event.inputs.pr_number != '' &&
+      needs.finalize.outputs.decision == 'approve_and_enable_automerge'
     runs-on: self-hosted
     timeout-minutes: 15
     steps:
