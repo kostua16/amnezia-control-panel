@@ -114,7 +114,7 @@ jobs:
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('base_ref', context.payload.inputs?.base_ref || pr.base.ref);
 
-  claude-main-review:
+  claude-combined-review:
     needs: [resolve-pr]
     if: needs.resolve-pr.outputs.should-run == 'true'
     runs-on: [self-hosted, big]
@@ -139,110 +139,9 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           policy-file: .github/workflows/policy.json
-          names: ai-review-passed,ai-review-concerns
+          names: ai-review-passed,ai-review-concerns,security-review-passed,security-review-concerns
 
-      - name: Main Claude review
-        id: review
-        uses: ./.github/actions/run-zai
-        with:
-          api-key: ${{ secrets.ZAI_API_KEY }}
-          max-turns: '${{ env.MAX_TURNS }}'
-          track-progress: 'true'
-          allowed-bots: ${{ github.event.inputs.orchestrated == 'true' && 'github-actions,github-actions[bot],claude[bot]' || '' }}
-          json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","concerns"]},"summary":{"type":"string"},"blocking_findings_count":{"type":"integer","minimum":0}},"required":["verdict","summary","blocking_findings_count"],"additionalProperties":false}'
-          allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *),Bash(rtk:*)'
-          prompt: |
-            /gsd:code-review
-            REPO: ${{ github.repository }}
-            PR NUMBER: '${{ needs.resolve-pr.outputs.pr-number }}'
-
-            Review this pull request for:
-            - Code quality and best practices
-            - Potential bugs or logic issues
-            - Performance considerations
-            - Adherence to project coding conventions
-            - Test coverage (unit and integration)
-            - Documentation for new features
-            - Breaking changes
-
-            ## Diff Hygiene
-            - Lines prefixed `-` are REMOVED, lines prefixed `+` are ADDED.
-            - Only flag issues on `+` lines. Never treat a `-` line as current code.
-            - If uncertain, read the file at HEAD (`git show HEAD:<path>`) before posting.
-
-            ## Cross-Module Accuracy
-            - Before claiming code violates a contract from another module, trace the
-              actual call path. Only flag if the code actually participates in that contract.
-            - A top-level CLI exit handler is not subject to an in-process router's no-throw rule.
-
-            Post actionable findings as inline review comments.
-            If the PR touches UI components, also check layout, accessibility, and responsiveness.
-
-            After finishing, return JSON only:
-            - verdict: "passed" if no blocking issues remain, otherwise "concerns"
-            - summary: one short sentence
-            - blocking_findings_count: integer
-
-            Do NOT approve the PR, request changes, or edit PR labels yourself. The workflow handles review signals.
-
-      - name: Apply main review signal
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
-        env:
-          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
-          STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
-        with:
-          script: |
-            const review = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
-            const issueNumber = Number(process.env.PR_NUMBER);
-            const addLabel = review.verdict === 'passed' ? 'ai-review-passed' : 'ai-review-concerns';
-            const removeLabel = review.verdict === 'passed' ? 'ai-review-concerns' : 'ai-review-passed';
-
-            try {
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                name: removeLabel
-              });
-            } catch (error) {
-              if (error.status !== 404) throw error;
-            }
-
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              labels: [addLabel]
-            });
-
-  claude-security-review:
-    needs: [resolve-pr]
-    if: needs.resolve-pr.outputs.should-run == 'true'
-    runs-on: [self-hosted, big]
-    timeout-minutes: 10
-    steps:
-      - name: Checkout PR head
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-        with:
-          ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
-          fetch-depth: 0
-
-      - uses: ./.github/actions/setup-environment
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          node-version: ${{ env.NODE_VERSION }}
-          install-deps: 'true'
-          install-gsd: 'true'
-          install-rtk: 'true'
-
-      - name: Ensure security labels exist
-        uses: ./.github/actions/ensure-workflow-labels
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          policy-file: .github/workflows/policy.json
-          names: security-review-passed,security-review-concerns
-
-      - name: Security review
+      - name: Combined Claude review
         id: review
         uses: ./.github/actions/run-zai
         with:
@@ -251,21 +150,35 @@ jobs:
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           allowed-bots: ${{ github.event.inputs.orchestrated == 'true' && 'github-actions,github-actions[bot],claude[bot]' || '' }}
-          json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","concerns"]},"summary":{"type":"string"},"highest_severity":{"type":"string","enum":["none","low","medium","high","critical"]}},"required":["verdict","summary","highest_severity"],"additionalProperties":false}'
+          json-schema: '{"type":"object","properties":{"code_review":{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","concerns"]},"summary":{"type":"string"},"blocking_findings_count":{"type":"integer","minimum":0}},"required":["verdict","summary","blocking_findings_count"],"additionalProperties":false},"security_review":{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","concerns"]},"summary":{"type":"string"},"highest_severity":{"type":"string","enum":["none","low","medium","high","critical"]}},"required":["verdict","summary","highest_severity"],"additionalProperties":false},"reviewed_files":{"type":"array","items":{"type":"string"}}},"required":["code_review","security_review","reviewed_files"],"additionalProperties":false}'
           allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *),Bash(rtk:*)'
           prompt: |
-            /gsd:secure-phase
+            /gsd:code-review
             REPO: ${{ github.repository }}
             PR NUMBER: '${{ needs.resolve-pr.outputs.pr-number }}'
 
-            ## Diff Hygiene
-            - Lines prefixed `-` are REMOVED, lines prefixed `+` are ADDED.
-            - Only flag issues on `+` lines. Never treat a `-` line as current code.
-            - If uncertain, read the file at HEAD (`git show HEAD:<path>`) before posting.
+            Review this pull request once, using one shared pass over PR metadata,
+            changed files, and diff. First gather:
+            - PR title, body, base/head refs, and author
+            - The changed file list
+            - The full relevant diff, expanding to file-at-HEAD reads when needed
 
+            Return reviewed_files as the changed-file manifest you actually considered.
+
+            ## General Code Review
+            Review for:
+            - Code quality and best practices
+            - Potential bugs or logic issues
+            - Performance considerations
+            - Adherence to project coding conventions
+            - Test coverage (unit and integration)
+            - Documentation for new features
+            - Breaking changes
+
+            ## Security Review
             Perform a STRIDE + OWASP security review of changed files:
 
-            ## STRIDE Analysis
+            ### STRIDE Analysis
             - Spoofing: Authentication/identity bypass risks
             - Tampering: Data modification without authorization
             - Repudiation: Actions that cannot be audited
@@ -273,17 +186,22 @@ jobs:
             - Denial of Service: Resource exhaustion vectors
             - Elevation of Privilege: Privilege escalation paths
 
-            ## OWASP Top 10
+            ### OWASP Top 10
             - SQL Injection, XSS, CSRF
             - Broken Authentication & Access Control
             - Sensitive Data Exposure, Security Misconfiguration
             - SSRF, Unsafe Deserialization
             - Known vulnerabilities in dependencies
 
-            ## Additional Checks
+            ### Additional Security Checks
             - Hardcoded secrets or credentials
             - Insecure cryptographic practices
             - Race conditions or TOCTOU issues
+
+            ## Diff Hygiene
+            - Lines prefixed `-` are REMOVED, lines prefixed `+` are ADDED.
+            - Only flag issues on `+` lines. Never treat a `-` line as current code.
+            - If uncertain, read the file at HEAD (`git show HEAD:<path>`) before posting.
 
             ## Cross-Module Accuracy
             - Before claiming code violates a contract from another module, trace the
@@ -296,20 +214,25 @@ jobs:
               exploit path viable in this deployment model.
             - Crypto hashes used for non-security purposes (directory naming, cache keys)
               are NOT insecure-crypto findings. Only flag crypto used for auth/integrity.
-            - If you cannot describe a realistic attack scenario given project architecture, 
+            - If you cannot describe a realistic attack scenario given project architecture,
               do not post the finding.
 
-            Rate severity as none, low, medium, high, or critical.
-            Post actionable inline comments with remediation steps.
+            Post actionable findings as inline review comments.
+            If the PR touches UI components, also check layout, accessibility, and responsiveness.
+            Rate security severity as none, low, medium, high, or critical.
 
             After finishing, return JSON only:
-            - verdict: "passed" if the highest severity is none or low, otherwise "concerns"
-            - summary: one short sentence
-            - highest_severity: one of none, low, medium, high, critical
+            - code_review.verdict: "passed" if no blocking code-review issues remain, otherwise "concerns"
+            - code_review.summary: one short sentence
+            - code_review.blocking_findings_count: integer
+            - security_review.verdict: "passed" if highest severity is none or low, otherwise "concerns"
+            - security_review.summary: one short sentence
+            - security_review.highest_severity: one of none, low, medium, high, critical
+            - reviewed_files: array of reviewed changed-file paths
 
-            Do NOT approve the PR, request changes, or edit PR labels yourself. The workflow handles security signals.
+            Do NOT approve the PR, request changes, or edit PR labels yourself. The workflow handles review signals.
 
-      - name: Apply security review signal
+      - name: Apply review signals
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
@@ -318,31 +241,49 @@ jobs:
           script: |
             const review = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
             const issueNumber = Number(process.env.PR_NUMBER);
-            const addLabel =
-              review.verdict === 'passed' ? 'security-review-passed' : 'security-review-concerns';
-            const removeLabel =
-              review.verdict === 'passed' ? 'security-review-concerns' : 'security-review-passed';
+            const labelPairs = [
+              {
+                review: review.code_review || {},
+                passed: 'ai-review-passed',
+                concerns: 'ai-review-concerns'
+              },
+              {
+                review: review.security_review || {},
+                passed: 'security-review-passed',
+                concerns: 'security-review-concerns'
+              }
+            ];
 
-            try {
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                name: removeLabel
-              });
-            } catch (error) {
-              if (error.status !== 404) throw error;
+            const labelsToAdd = [];
+            const labelsToRemove = [];
+            for (const pair of labelPairs) {
+              const passed = pair.review.verdict === 'passed';
+              labelsToAdd.push(passed ? pair.passed : pair.concerns);
+              labelsToRemove.push(passed ? pair.concerns : pair.passed);
+            }
+
+            for (const name of labelsToRemove) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  name
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
             }
 
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
-              labels: [addLabel]
+              labels: labelsToAdd
             });
 
   wake-orchestrator:
-    needs: [resolve-pr, claude-main-review, claude-security-review]
+    needs: [resolve-pr, claude-combined-review]
     if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
     runs-on: self-hosted
     timeout-minutes: 10
