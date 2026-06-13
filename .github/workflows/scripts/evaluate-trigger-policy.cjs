@@ -424,4 +424,52 @@ if (mode === 'fix-pr') {
   process.exit(0);
 }
 
+if (mode === 'fix-branch') {
+  const workflowRun = event.workflow_run ?? {};
+  const headBranch = workflowRun.head_branch ?? workflowRun.headBranch ?? '';
+  const actor = workflowRun.actor ?? event.sender ?? {};
+  const actorLogin = String(actor.login ?? '');
+  const actorType = String(actor.type ?? '');
+  const actorAssociation = String(actor.author_association ?? '');
+  const isBot = isBotAccount(actor);
+  const isTrustedActor =
+    isBot ||
+    policy.maintainerAssociations.includes(actorAssociation) ||
+    actorAssociation === 'OWNER' ||
+    actorAssociation === 'MEMBER';
+  const allowedBranches = ['main', 'develop'];
+  const isAllowedBranch = allowedBranches.includes(headBranch);
+  const isAutoFixBranch = String(headBranch).startsWith('claude-auto-fix-ci-');
+  const shouldRun =
+    isAllowedBranch &&
+    !isAutoFixBranch &&
+    isTrustedActor &&
+    workflowRun.conclusion === 'failure';
+  let reason = null;
+  if (!isAllowedBranch) {
+    reason = `branch ${headBranch} is not in allowed list (${allowedBranches.join(', ')})`;
+  } else if (isAutoFixBranch) {
+    reason = `branch ${headBranch} is an auto-fix branch`;
+  } else if (!isTrustedActor) {
+    reason = `triggering actor ${actorLogin} (${actorAssociation}) is not a trusted maintainer`;
+  }
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: shouldRun,
+        head_branch: headBranch,
+        actor_login: actorLogin,
+        actor_type: actorType,
+        actor_association: actorAssociation,
+        reason,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 throw new Error(`Unsupported mode "${mode}"`);

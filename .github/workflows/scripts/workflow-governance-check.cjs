@@ -109,6 +109,11 @@ function main() {
             `${rel}:${block.startLine} job '${block.name}' has no timeout-minutes`,
           );
         }
+        if (/secrets: inherit/.test(body)) {
+          warnings.push(
+            `${rel}:${block.startLine} job '${block.name}' uses secrets: inherit — ensure the reusable workflow has minimal permissions`,
+          );
+        }
       }
     }
   }
