@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jwtVerify } from 'jose';
+import { jwtVerify, type JWTPayload } from 'jose';
+
+/**
+ * Claims embedded in the auth-token JWT. The middleware is the single source
+ * of truth for what a session contains; route handlers read these from request
+ * headers instead of re-decoding the token on every authenticated call.
+ */
+interface AuthClaims extends JWTPayload {
+  userId: string;
+  username: string;
+}
 
 /**
  * Public API routes that skip JWT verification.
@@ -35,6 +45,19 @@ function getJwtSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+/**
+ * Forward the decoded JWT claims to downstream handlers as request headers.
+ * Because the headers are set here — after signature verification — any
+ * client-supplied `x-user-id` / `x-user-name` values are overwritten, so route
+ * handlers can trust them without re-decoding the token.
+ */
+function withClaims(request: NextRequest, payload: AuthClaims): NextResponse {
+  const headers = new Headers(request.headers);
+  headers.set('x-user-id', payload.userId);
+  headers.set('x-user-name', payload.username);
+  return NextResponse.next({ request: { headers } });
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -62,8 +85,8 @@ export async function middleware(request: NextRequest) {
 
     try {
       const secret = getJwtSecret();
-      await jwtVerify(token, secret);
-      return NextResponse.next();
+      const { payload } = await jwtVerify<AuthClaims>(token, secret);
+      return withClaims(request, payload);
     } catch {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -79,8 +102,8 @@ export async function middleware(request: NextRequest) {
 
   try {
     const secret = getJwtSecret();
-    await jwtVerify(token, secret);
-    return NextResponse.next();
+    const { payload } = await jwtVerify<AuthClaims>(token, secret);
+    return withClaims(request, payload);
   } catch {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('expired', 'true');

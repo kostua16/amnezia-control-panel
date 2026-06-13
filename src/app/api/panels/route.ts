@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
 import { apiHandler } from '@/lib/api-handler';
@@ -45,7 +46,6 @@ export const POST = apiHandler(async (request: NextRequest) => {
 
   const { name, panelUrl, apiKey } = parsed.data;
 
-  const bcrypt = await import('bcryptjs');
   const apiKeyHash = await bcrypt.hash(apiKey, 10);
 
   const panel = await prisma.remotePanel.create({
