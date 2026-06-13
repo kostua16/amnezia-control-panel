@@ -15,6 +15,9 @@ import { NextRequest } from 'next/server';
 
 /** Base origin used to build absolute URLs; value is arbitrary for unit tests. */
 const BASE_URL = 'http://localhost';
+type NextRequestInit = NonNullable<
+  ConstructorParameters<typeof NextRequest>[1]
+>;
 
 /** Build an absolute URL for a route path with optional query parameters. */
 export function buildUrl(
@@ -48,7 +51,7 @@ export function jsonRequest(
   } = {},
 ): NextRequest {
   const { method = 'POST', body, headers = {} } = options;
-  const init: RequestInit = {
+  const init: NextRequestInit = {
     method,
     headers: { 'content-type': 'application/json', ...headers },
   };
@@ -89,7 +92,42 @@ export const deleteRequest = (
 ) => jsonRequest(path, { method: 'DELETE', body, headers });
 
 /** Parsed response shape returned by {@link readJson}. */
-export interface ParsedResponse<T = unknown> {
+export interface TestJsonDataItem {
+  [key: string]: unknown;
+  assignedServices: string[];
+  hostname: string;
+  matchType: string;
+  target: { countryCode: string };
+  username: string;
+}
+
+export interface TestJsonData {
+  [index: number]: TestJsonDataItem;
+  [key: string]: unknown;
+  action: string;
+  applied: boolean;
+  configVersion: number;
+  generatedAt: string;
+  id: number;
+  length: number;
+  nodes: Array<{ hostname: string }>;
+  target: { countryCode: string };
+  templateId: string;
+  wireguardPeers: unknown[];
+  xrayRoutingRules: unknown[];
+}
+
+export interface TestJsonBody {
+  [key: string]: unknown;
+  data: TestJsonData;
+  details: unknown;
+  error: string;
+  pagination: { total: number; totalPages: number };
+  success: boolean;
+  user: { username: string };
+}
+
+export interface ParsedResponse<T = TestJsonBody> {
   status: number;
   body: T;
 }
@@ -99,7 +137,7 @@ export interface ParsedResponse<T = unknown> {
  * Centralizes the `const res = …; const body = await res.json()` pair that
  * otherwise repeats in every assertion.
  */
-export async function readJson<T = unknown>(
+export async function readJson<T = TestJsonBody>(
   res: Response,
 ): Promise<ParsedResponse<T>> {
   const body = (await res.json()) as T;

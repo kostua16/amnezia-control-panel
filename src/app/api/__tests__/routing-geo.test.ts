@@ -2,11 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { prisma } from '@/lib/prisma';
 import { GET, POST } from '../routing/geo/route';
-import {
-  getRequest,
-  postRequest,
-  readJson,
-} from '@/lib/__tests__/helpers/test-server';
+import { postRequest, readJson } from '@/lib/__tests__/helpers/test-server';
 
 const PATH = '/api/routing/geo';
 
@@ -58,7 +54,7 @@ describe('GET /api/routing/geo', () => {
       ruleRow({ id: 2, priority: 5, name: 'Allow EU', countryCode: 'EU' }),
     ]) as never;
 
-    const { status, body } = await readJson(await GET(getRequest(PATH)));
+    const { status, body } = await readJson(await GET());
     assert.strictEqual(status, 200);
     assert.strictEqual(body.success, true);
     assert.strictEqual(body.data.length, 2);
