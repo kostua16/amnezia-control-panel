@@ -524,7 +524,10 @@ describe('makeDecision', () => {
     assert.equal(decision.dispatch?.key, 'finalizer');
   });
 
-  it('re-dispatches finalizer when a prior success did not enable auto-merge', () => {
+  it('does not re-dispatch finalizer when a prior success did not enable auto-merge', () => {
+    // The finalizer already completed. Re-dispatching would cycle: each
+    // completed finalizer re-wakes this orchestrator via workflow_run, so the
+    // orchestrator must stop once the finalizer has run for the head SHA.
     const decision = decide({
       pr: prFixture({
         labels: [
@@ -546,7 +549,11 @@ describe('makeDecision', () => {
     });
 
     assert.equal(decision.state, 'flow/finalizer-dispatched');
-    assert.equal(decision.dispatch?.key, 'finalizer');
+    assert.equal(decision.dispatch, null);
+    assert.equal(
+      decision.reason,
+      'Finalizer completed without enabling auto-merge; manual merge required.',
+    );
   });
 
   it('does not re-dispatch finalizer after auto-merge is enabled', () => {
@@ -1015,7 +1022,7 @@ describe('buildFlowVisibility', () => {
     assert.equal(visibility.workers.finalizer.state, 'pending');
     assert.equal(
       visibility.workers.finalizer.description,
-      'Finalizer was dispatched.',
+      'Finalizer completed without enabling auto-merge; waiting to retry.',
     );
   });
 
