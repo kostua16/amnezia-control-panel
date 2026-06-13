@@ -47,6 +47,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       decision: ${{ steps.decision.outputs.decision }}
+      apply_status: ${{ steps.apply.outputs.status || 'not_attempted' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
@@ -321,7 +322,8 @@ jobs:
       always() &&
       github.event.inputs.orchestrated == 'true' &&
       github.event.inputs.pr_number != '' &&
-      needs.finalize.outputs.decision == 'approve_and_enable_automerge'
+      needs.finalize.outputs.decision == 'approve_and_enable_automerge' &&
+      needs.finalize.outputs.apply_status == 'success'
     runs-on: self-hosted
     timeout-minutes: 15
     steps:

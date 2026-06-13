@@ -1703,19 +1703,22 @@ function makeDecision(context) {
     'flow/finalizer-dispatched',
   );
   const autoMergeEnabled = Boolean(pr.autoMergeRequest);
+  const finalizerCompleted =
+    workerRunSucceeded(finalizerRuns) || workerRunFailed(finalizerRuns);
   const manualOnlyLabels =
     manualOnly && !maintainerApproved ? ['flow/manual-only'] : [];
 
   if (
     finalizerRuns.active ||
-    (finalizerAlreadyDispatched && autoMergeEnabled)
+    (finalizerAlreadyDispatched && autoMergeEnabled) ||
+    (finalizerAlreadyDispatched && finalizerCompleted)
   ) {
-    return finish(
-      'flow/finalizer-dispatched',
-      'Finalizer already dispatched for this head SHA.',
-      null,
-      manualOnlyLabels,
-    );
+    const reason = finalizerCompleted
+      ? autoMergeEnabled
+        ? 'Finalizer completed and auto-merge is enabled.'
+        : 'Finalizer completed without enabling auto-merge; manual merge required.'
+      : 'Finalizer already dispatched for this head SHA.';
+    return finish('flow/finalizer-dispatched', reason, null, manualOnlyLabels);
   }
 
   return finish(
