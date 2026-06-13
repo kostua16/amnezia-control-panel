@@ -9,6 +9,19 @@ import { postRequest, readJson } from '@/lib/__tests__/helpers/test-server';
 const PATH = '/api/sync/receive';
 const API_KEY = 'test-panel-api-key';
 
+type SyncErrorBody = {
+  success?: boolean;
+  error: string;
+};
+
+type SyncSuccessBody = {
+  success: boolean;
+  data: {
+    applied: boolean;
+    configVersion: number;
+  };
+};
+
 // Save originals; restore after each test so stubs never leak.
 const orig = {
   findMany: prisma.remotePanel.findMany,
@@ -76,7 +89,7 @@ afterEach(restore);
 
 describe('POST /api/sync/receive', () => {
   it('rejects a request missing auth headers with 401', async () => {
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<SyncErrorBody>(
       await POST(postRequest(PATH, validPayload())),
     );
     assert.strictEqual(status, 401);
@@ -85,7 +98,7 @@ describe('POST /api/sync/receive', () => {
 
   it('rejects an API key that matches no active panel with 401', async () => {
     prisma.remotePanel.findMany = (async () => []) as never;
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<SyncErrorBody>(
       await POST(
         postRequest(PATH, validPayload(), {
           'X-API-Key': 'wrong-key',
@@ -99,7 +112,7 @@ describe('POST /api/sync/receive', () => {
 
   it('rejects a payload with a valid key but bad signature with 401', async () => {
     prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<SyncErrorBody>(
       await POST(
         postRequest(PATH, validPayload(), {
           'X-API-Key': API_KEY,
@@ -114,7 +127,7 @@ describe('POST /api/sync/receive', () => {
   it('rejects a structurally invalid payload with 400 after key match', async () => {
     prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
     const bad = { ...validPayload(), configVersion: 'not-a-number' };
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<SyncErrorBody>(
       await POST(
         postRequest(PATH, bad, {
           'X-API-Key': API_KEY,
@@ -139,7 +152,7 @@ describe('POST /api/sync/receive', () => {
 
     const payload = validPayload();
     const signature = signPayload(payload, API_KEY);
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<SyncSuccessBody>(
       await POST(
         postRequest(PATH, payload, {
           'X-API-Key': API_KEY,

@@ -9,6 +9,22 @@ import {
   readJson,
 } from '@/lib/__tests__/helpers/test-server';
 
+type UserListBody = {
+  data: Array<{
+    username: string;
+    assignedServices: string[];
+  }>;
+  pagination: {
+    total: number;
+    totalPages: number;
+  };
+};
+
+type UserErrorBody = {
+  success: boolean;
+  error: string;
+};
+
 /**
  * DB-path tests for /api/users (the validation paths live in users.test.ts).
  * Prisma model methods are stubbed by direct assignment on the shared singleton
@@ -56,7 +72,7 @@ describe('GET /api/users — list (mocked DB)', () => {
     prisma.user.findMany = (async () => [fakeUser()]) as never;
     prisma.user.count = (async () => 1) as never;
 
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<UserListBody>(
       await GET(getRequest('/api/users', { page: 1, limit: 10 })),
     );
     assert.strictEqual(status, 200);
@@ -92,7 +108,7 @@ describe('POST /api/users — duplicate handling (mocked DB)', () => {
       );
     }) as never;
 
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<UserErrorBody>(
       await POST(
         postRequest('/api/users', {
           username: 'duplicate-user',

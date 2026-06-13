@@ -91,43 +91,7 @@ export const deleteRequest = (
   headers?: Record<string, string>,
 ) => jsonRequest(path, { method: 'DELETE', body, headers });
 
-/** Parsed response shape returned by {@link readJson}. */
-export interface TestJsonDataItem {
-  [key: string]: unknown;
-  assignedServices: string[];
-  hostname: string;
-  matchType: string;
-  target: { countryCode: string };
-  username: string;
-}
-
-export interface TestJsonData {
-  [index: number]: TestJsonDataItem;
-  [key: string]: unknown;
-  action: string;
-  applied: boolean;
-  configVersion: number;
-  generatedAt: string;
-  id: number;
-  length: number;
-  nodes: Array<{ hostname: string }>;
-  target: { countryCode: string };
-  templateId: string;
-  wireguardPeers: unknown[];
-  xrayRoutingRules: unknown[];
-}
-
-export interface TestJsonBody {
-  [key: string]: unknown;
-  data: TestJsonData;
-  details: unknown;
-  error: string;
-  pagination: { total: number; totalPages: number };
-  success: boolean;
-  user: { username: string };
-}
-
-export interface ParsedResponse<T = TestJsonBody> {
+export interface ParsedResponse<T = unknown> {
   status: number;
   body: T;
 }
@@ -137,7 +101,7 @@ export interface ParsedResponse<T = TestJsonBody> {
  * Centralizes the `const res = …; const body = await res.json()` pair that
  * otherwise repeats in every assertion.
  */
-export async function readJson<T = TestJsonBody>(
+export async function readJson<T = unknown>(
   res: Response,
 ): Promise<ParsedResponse<T>> {
   const body = (await res.json()) as T;

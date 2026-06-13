@@ -6,6 +6,27 @@ import { postRequest, readJson } from '@/lib/__tests__/helpers/test-server';
 
 const PATH = '/api/routing/geo';
 
+type GeoRule = {
+  id: number;
+  action: string;
+  matchType: string;
+  target: { countryCode: string };
+};
+
+type GeoListBody = {
+  success: boolean;
+  data: GeoRule[];
+};
+
+type GeoErrorBody = {
+  error: string;
+};
+
+type GeoCreateBody = {
+  success: boolean;
+  data: GeoRule;
+};
+
 const orig = {
   count: prisma.geoRoutingRule.count,
   findMany: prisma.geoRoutingRule.findMany,
@@ -54,7 +75,7 @@ describe('GET /api/routing/geo', () => {
       ruleRow({ id: 2, priority: 5, name: 'Allow EU', countryCode: 'EU' }),
     ]) as never;
 
-    const { status, body } = await readJson(await GET());
+    const { status, body } = await readJson<GeoListBody>(await GET());
     assert.strictEqual(status, 200);
     assert.strictEqual(body.success, true);
     assert.strictEqual(body.data.length, 2);
@@ -66,7 +87,7 @@ describe('GET /api/routing/geo', () => {
 
 describe('POST /api/routing/geo — validation', () => {
   it('rejects a rule with no target field with 422', async () => {
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<GeoErrorBody>(
       await POST(
         postRequest(PATH, { name: 'Bad', target: {}, action: 'BLOCK' }),
       ),
@@ -99,7 +120,7 @@ describe('POST /api/routing/geo — create', () => {
       return ruleRow({ ...args.data, id: 42 } as never);
     }) as never;
 
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<GeoCreateBody>(
       await POST(
         postRequest(PATH, {
           name: 'Block RU',

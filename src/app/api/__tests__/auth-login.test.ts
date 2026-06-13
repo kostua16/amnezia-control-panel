@@ -16,6 +16,15 @@ type AdminRow = {
   password: string;
 };
 
+type LoginErrorBody = {
+  details?: unknown;
+  error: string;
+};
+
+type LoginSuccessBody = {
+  user: { username: string };
+};
+
 // Save originals so stubs never leak across files in the same worker.
 const originalFindUnique = prisma.admin.findUnique;
 
@@ -36,7 +45,7 @@ afterEach(() => {
 
 describe('POST /api/auth/login', () => {
   it('rejects missing fields with 422', async () => {
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<LoginErrorBody>(
       await POST(postRequest(LOGIN_PATH, { username: '' })),
     );
     assert.strictEqual(status, 422);
@@ -44,7 +53,7 @@ describe('POST /api/auth/login', () => {
   });
 
   it('rejects an unknown user with 401', async () => {
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<LoginErrorBody>(
       await POST(
         postRequest(LOGIN_PATH, {
           username: 'ghost',
@@ -71,7 +80,7 @@ describe('POST /api/auth/login', () => {
             : null,
       )) as never;
 
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<LoginErrorBody>(
       await POST(
         postRequest(LOGIN_PATH, {
           username: 'realadmin',
@@ -98,7 +107,7 @@ describe('POST /api/auth/login', () => {
     const res = await POST(
       postRequest(LOGIN_PATH, { username: 'realadmin', password }),
     );
-    const body = await res.json();
+    const body = (await res.json()) as LoginSuccessBody;
     assert.strictEqual(res.status, 200);
     assert.strictEqual(body.user.username, 'realadmin');
 

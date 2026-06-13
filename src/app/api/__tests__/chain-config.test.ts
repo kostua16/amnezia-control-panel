@@ -6,6 +6,22 @@ import { postRequest, readJson } from '@/lib/__tests__/helpers/test-server';
 
 const PATH = '/api/panels/push/chain-config';
 
+type ChainConfigErrorBody = {
+  success?: boolean;
+  error: string;
+};
+
+type ChainConfigSuccessBody = {
+  success: boolean;
+  data: {
+    templateId: string;
+    nodes: Array<{ hostname: string }>;
+    wireguardPeers: unknown[];
+    xrayRoutingRules: unknown[];
+    generatedAt: string;
+  };
+};
+
 const orig = {
   remoteFindMany: prisma.remotePanel.findMany,
   serviceFindFirst: prisma.service.findFirst,
@@ -41,7 +57,7 @@ afterEach(() => {
 
 describe('POST /api/panels/push/chain-config — validation', () => {
   it('rejects a body missing templateId with 422', async () => {
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<ChainConfigErrorBody>(
       await POST(postRequest(PATH, { panelMapping: { 0: 1 } })),
     );
     assert.strictEqual(status, 422);
@@ -49,7 +65,7 @@ describe('POST /api/panels/push/chain-config — validation', () => {
   });
 
   it('rejects an unknown templateId with 404', async () => {
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<ChainConfigErrorBody>(
       await POST(
         postRequest(PATH, { templateId: 'no-such-template', panelMapping: {} }),
       ),
@@ -60,7 +76,7 @@ describe('POST /api/panels/push/chain-config — validation', () => {
 
   it('rejects duplicate panel assignments within the mapping with 422', async () => {
     prisma.remotePanel.findMany = (async () => activePanels([1])) as never;
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<ChainConfigErrorBody>(
       await POST(
         postRequest(PATH, {
           templateId: '2hop-linear',
@@ -81,7 +97,7 @@ describe('POST /api/panels/push/chain-config — generation', () => {
     prisma.remotePanel.findMany = (async () => activePanels([1, 2])) as never;
     prisma.service.findFirst = (async () => null) as never;
 
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<ChainConfigSuccessBody>(
       await POST(
         postRequest(PATH, {
           templateId: '2hop-linear',
@@ -104,7 +120,7 @@ describe('POST /api/panels/push/chain-config — generation', () => {
       activePanels([1, 2, 3])) as never;
     prisma.service.findFirst = (async () => null) as never;
 
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<ChainConfigSuccessBody>(
       await POST(
         postRequest(PATH, {
           templateId: 'mesh-redundant',
@@ -121,7 +137,7 @@ describe('POST /api/panels/push/chain-config — generation', () => {
     prisma.remotePanel.findMany = (async () => activePanels([7, 8])) as never;
     prisma.service.findFirst = (async () => null) as never;
 
-    const { status, body } = await readJson(
+    const { status, body } = await readJson<ChainConfigSuccessBody>(
       await POST(
         postRequest(PATH, {
           templateId: '2hop-linear',
@@ -131,7 +147,7 @@ describe('POST /api/panels/push/chain-config — generation', () => {
     );
     assert.strictEqual(status, 200);
     // hostnames derive from the panelUrl hosts (10.0.0.7 / 10.0.0.8).
-    const hosts = body.data.nodes.map((n: { hostname: string }) => n.hostname);
+    const hosts = body.data.nodes.map((n) => n.hostname);
     assert.ok(hosts.includes('10.0.0.7'));
     assert.ok(hosts.includes('10.0.0.8'));
   });
