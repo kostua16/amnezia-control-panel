@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
+import { apiHandler } from '@/lib/api-handler';
+import { validationError } from '@/lib/api-response';
 
 const createServerSchema = z.object({
   name: z
@@ -16,131 +18,97 @@ const createServerSchema = z.object({
   apiKey: z.string().min(1, 'API key is required'),
 });
 
-export async function GET() {
-  try {
-    const servers = await prisma.server.findMany({
-      include: {
-        services: {
-          select: {
-            id: true,
-            type: true,
-            status: true,
-            port: true,
-          },
+export const GET = apiHandler(async () => {
+  const servers = await prisma.server.findMany({
+    include: {
+      services: {
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          port: true,
         },
       },
-      orderBy: { createdAt: 'asc' },
-    });
+    },
+    orderBy: { createdAt: 'asc' },
+  });
 
-    const data = servers.map((server) => ({
-      id: server.id,
-      name: server.name,
-      hostname: server.hostname,
-      port: server.port,
-      isActive: server.isActive,
-      services: server.services.map((s) => ({
-        id: s.id,
-        type: s.type,
-        status: s.status,
-        port: s.port,
-      })),
-      createdAt: server.createdAt.toISOString(),
-    }));
+  const data = servers.map((server) => ({
+    id: server.id,
+    name: server.name,
+    hostname: server.hostname,
+    port: server.port,
+    isActive: server.isActive,
+    services: server.services.map((s) => ({
+      id: s.id,
+      type: s.type,
+      status: s.status,
+      port: s.port,
+    })),
+    createdAt: server.createdAt.toISOString(),
+  }));
 
-    return NextResponse.json({ success: true, data });
-  } catch (err) {
-    console.error('[api/servers] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch servers' },
-      { status: 500 },
-    );
+  return NextResponse.json({ success: true, data });
+}, 'api/servers');
+
+export const POST = apiHandler(async (request: NextRequest) => {
+  const body = await request.json();
+  const parsed = createServerSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return validationError(parsed.error);
   }
-}
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const parsed = createServerSchema.safeParse(body);
+  const { name, hostname, port, apiKey } = parsed.data;
 
-    if (!parsed.success) {
-      const firstError =
-        parsed.error.issues[0]?.message ?? 'Invalid request body';
-      return NextResponse.json(
-        { success: false, error: firstError },
-        { status: 422 },
-      );
-    }
+  // Hash the API key before storing
+  const bcrypt = await import('bcryptjs');
+  const apiKeyHash = await bcrypt.hash(apiKey, 10);
 
-    const { name, hostname, port, apiKey } = parsed.data;
+  const server = await prisma.server.create({
+    data: {
+      name,
+      hostname,
+      port,
+      apiKeyHash,
+    },
+    include: {
+      services: {
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          port: true,
+        },
+      },
+    },
+  });
 
-    // Hash the API key before storing
-    const bcrypt = await import('bcryptjs');
-    const apiKeyHash = await bcrypt.hash(apiKey, 10);
+  await writeAuditLog({
+    action: 'server.create',
+    resource: 'server',
+    resourceId: server.id,
+    metadata: { name: server.name, hostname: server.hostname, port },
+  });
 
-    const server = await prisma.server.create({
+  return NextResponse.json(
+    {
+      success: true,
       data: {
-        name,
-        hostname,
-        port,
-        apiKeyHash,
+        id: server.id,
+        name: server.name,
+        hostname: server.hostname,
+        port: server.port,
+        isActive: server.isActive,
+        services: server.services.map((s) => ({
+          id: s.id,
+          type: s.type,
+          status: s.status,
+          port: s.port,
+        })),
+        createdAt: server.createdAt.toISOString(),
       },
-      include: {
-        services: {
-          select: {
-            id: true,
-            type: true,
-            status: true,
-            port: true,
-          },
-        },
-      },
-    });
-
-    await writeAuditLog({
-      action: 'server.create',
-      resource: 'server',
-      resourceId: server.id,
-      metadata: { name: server.name, hostname: server.hostname, port },
-    });
-
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          id: server.id,
-          name: server.name,
-          hostname: server.hostname,
-          port: server.port,
-          isActive: server.isActive,
-          services: server.services.map((s) => ({
-            id: s.id,
-            type: s.type,
-            status: s.status,
-            port: s.port,
-          })),
-          createdAt: server.createdAt.toISOString(),
-        },
-      },
-      { status: 201 },
-    );
-  } catch (err) {
-    console.error('[api/servers POST] Error:', err);
-
-    if (
-      err &&
-      typeof err === 'object' &&
-      'code' in err &&
-      (err as { code: string }).code === 'P2002'
-    ) {
-      return NextResponse.json(
-        { success: false, error: 'Server hostname already exists' },
-        { status: 409 },
-      );
-    }
-
-    return NextResponse.json(
-      { success: false, error: 'Failed to create server' },
-      { status: 500 },
-    );
-  }
-}
+    },
+    { status: 201 },
+  );
+}, 'api/servers');
