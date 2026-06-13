@@ -31,6 +31,12 @@ env:
 
 jobs:
   authorize:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        startsWith(github.event.comment.body, '/gsd-plan')
+      )
     runs-on: self-hosted
     timeout-minutes: 10
     outputs:

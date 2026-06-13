@@ -21,6 +21,37 @@ concurrency:
 
 jobs:
   authorize:
+    if: >-
+      (
+        github.event_name == 'issue_comment' &&
+        (
+          contains(github.event.comment.body, '@gemini') ||
+          contains(github.event.comment.body, '@antigravity')
+        )
+      ) ||
+      (
+        github.event_name == 'pull_request_review_comment' &&
+        (
+          contains(github.event.comment.body, '@gemini') ||
+          contains(github.event.comment.body, '@antigravity')
+        )
+      ) ||
+      (
+        github.event_name == 'pull_request_review' &&
+        (
+          contains(github.event.review.body, '@gemini') ||
+          contains(github.event.review.body, '@antigravity')
+        )
+      ) ||
+      (
+        github.event_name == 'issues' &&
+        (
+          contains(github.event.issue.title, '@gemini') ||
+          contains(github.event.issue.title, '@antigravity') ||
+          contains(github.event.issue.body, '@gemini') ||
+          contains(github.event.issue.body, '@antigravity')
+        )
+      )
     runs-on: self-hosted
     timeout-minutes: 10
     outputs:

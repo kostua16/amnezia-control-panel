@@ -40,6 +40,21 @@ function readWorkflow(fileName: string): Workflow {
   return yaml.load(fs.readFileSync(workflowPath, 'utf8')) as Workflow;
 }
 
+function readWorkflowText(fileName: string): string {
+  return fs.readFileSync(
+    path.join(repoRoot, '.github/workflows', fileName),
+    'utf8',
+  );
+}
+
+function expectGuard(fileName: string, patterns: RegExp[]) {
+  const workflow = readWorkflowText(fileName);
+
+  for (const pattern of patterns) {
+    assert.match(workflow, pattern, fileName);
+  }
+}
+
 describe('workflow trigger policy', () => {
   it('does not rerun heavy CI when a draft PR is marked ready', () => {
     const workflow = readWorkflow('ci.yml');
@@ -66,12 +81,7 @@ describe('workflow trigger policy', () => {
   });
 
   it('classifies PR label triggers before allocating the orchestrator runner', () => {
-    const workflowPath = path.join(
-      repoRoot,
-      '.github/workflows',
-      'pr-flow.yml',
-    );
-    const workflow = fs.readFileSync(workflowPath, 'utf8');
+    const workflow = readWorkflowText('pr-flow.yml');
 
     assert.match(workflow, /classify-trigger:[\s\S]*?runs-on:\s+self-hosted/);
     assert.match(
@@ -97,5 +107,75 @@ describe('workflow trigger policy', () => {
     assert.match(group, /code-review-ignored-\{0\}/);
     assert.match(group, /code-review-\{0\}/);
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
+  });
+
+  it('prefilters standalone AI mention workflows before runner checkout', () => {
+    expectGuard('claude.yml', [
+      /authorize:[\s\S]*?if: >-/,
+      /contains\(github\.event\.comment\.body, '@claude'\)/,
+      /contains\(github\.event\.review\.body, '@claude'\)/,
+      /contains\(github\.event\.issue\.title, '@claude'\)/,
+      /contains\(github\.event\.issue\.body, '@claude'\)/,
+    ]);
+    expectGuard('deepseek.yml', [
+      /authorize:[\s\S]*?if: >-/,
+      /contains\(github\.event\.comment\.body, '@deepseek'\)/,
+      /contains\(github\.event\.review\.body, '@deepseek'\)/,
+      /contains\(github\.event\.issue\.title, '@deepseek'\)/,
+      /contains\(github\.event\.issue\.body, '@deepseek'\)/,
+    ]);
+    expectGuard('antigravity.yml', [
+      /authorize:[\s\S]*?if: >-/,
+      /contains\(github\.event\.comment\.body, '@gemini'\)/,
+      /contains\(github\.event\.comment\.body, '@antigravity'\)/,
+      /contains\(github\.event\.review\.body, '@gemini'\)/,
+      /contains\(github\.event\.review\.body, '@antigravity'\)/,
+      /contains\(github\.event\.issue\.title, '@gemini'\)/,
+      /contains\(github\.event\.issue\.body, '@antigravity'\)/,
+    ]);
+  });
+
+  it('prefilters issue command workflows before runner checkout', () => {
+    expectGuard('fix-issue.yml', [
+      /authorize:[\s\S]*?if: >-/,
+      /github\.event\.issue\.pull_request == null/,
+      /contains\(github\.event\.comment\.body, '\/fix'\)/,
+      /github\.event\.label\.name == 'auto-fix-approved'/,
+    ]);
+    expectGuard('approve-auto-fix.yml', [
+      /authorize:[\s\S]*?if: >-/,
+      /github\.event\.issue\.pull_request == null/,
+      /contains\(github\.event\.comment\.body, '\/approve-auto-fix'\)/,
+    ]);
+    expectGuard('gsd-planning.yml', [
+      /authorize:[\s\S]*?if: >-/,
+      /github\.event_name == 'workflow_dispatch'/,
+      /startsWith\(github\.event\.comment\.body, '\/gsd-plan'\)/,
+    ]);
+  });
+
+  it('prefilters review and orchestrator issue comments before resolver setup', () => {
+    expectGuard('code-review.yml', [
+      /resolve-pr:[\s\S]*?if: >-/,
+      /github\.event\.issue\.pull_request != null/,
+      /contains\(github\.event\.comment\.body, '\/review'\)/,
+    ]);
+    expectGuard('deepseek-code-review.yml', [
+      /resolve-pr:[\s\S]*?if: >-/,
+      /github\.event\.issue\.pull_request != null/,
+      /contains\(github\.event\.comment\.body, '\/deepseek-review'\)/,
+    ]);
+    expectGuard('antigravity-code-review.yml', [
+      /authorize:[\s\S]*?if: >-/,
+      /github\.event_name == 'workflow_dispatch'/,
+      /github\.event\.issue\.pull_request != null/,
+      /contains\(github\.event\.comment\.body, '\/gemini-review'\)/,
+    ]);
+    expectGuard('pr-flow.yml', [
+      /classify-trigger:[\s\S]*?if: >-/,
+      /github\.event\.issue\.pull_request != null/,
+      /contains\(github\.event\.comment\.body, '\/approve'\)/,
+      /node \.github\/workflows\/scripts\/evaluate-trigger-policy\.cjs[\s\S]*?--mode pr-flow-approve/,
+    ]);
   });
 });
