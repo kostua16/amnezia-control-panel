@@ -403,30 +403,44 @@ describe('PR flow workflow invariants', () => {
   });
 
   it('keeps orchestrated workers able to wake the orchestrator', () => {
-    const workerWorkflows = [
+    const unconditionalWorkerWorkflows = [
       'code-review.yml',
       'dependency-review.yml',
       'pr-improve.yml',
-      'pr-finalizer.yml',
     ];
+    const baseWakeCondition =
+      /if:\s*always\(\) && github\.event\.inputs\.orchestrated == 'true' && github\.event\.inputs\.pr_number != ''/;
+    const dispatchCommand =
+      /gh workflow run pr-flow\.yml\s+\\\n\s+--ref main\s+\\\n\s+-f pr_number="\$PR_NUMBER"\s+\\\n\s+-f dry_run=false/;
 
-    for (const workflowName of workerWorkflows) {
+    for (const workflowName of unconditionalWorkerWorkflows) {
       const workflowPath = `.github/workflows/${workflowName}`;
       const workflow = readWorkflow(workflowPath);
       const permissions = readTopLevelMapping('permissions', workflowPath);
 
       assert.equal(permissions.get('actions'), 'write', workflowName);
-      assert.match(
-        workflow,
-        /if:\s*always\(\) && github\.event\.inputs\.orchestrated == 'true' && github\.event\.inputs\.pr_number != ''/,
-        workflowName,
-      );
-      assert.match(
-        workflow,
-        /gh workflow run pr-flow\.yml\s+\\\n\s+--ref main\s+\\\n\s+-f pr_number="\$PR_NUMBER"\s+\\\n\s+-f dry_run=false/,
-        workflowName,
-      );
+      assert.match(workflow, baseWakeCondition, workflowName);
+      assert.match(workflow, dispatchCommand, workflowName);
     }
+
+    // PR Finalizer only re-wakes on approval to prevent rate-limit exhaustion
+    const finalizerPath = '.github/workflows/pr-finalizer.yml';
+    const finalizer = readWorkflow(finalizerPath);
+    const finalizerPermissions = readTopLevelMapping(
+      'permissions',
+      finalizerPath,
+    );
+    assert.equal(
+      finalizerPermissions.get('actions'),
+      'write',
+      'pr-finalizer.yml',
+    );
+    assert.match(
+      finalizer,
+      /needs\.finalize\.outputs\.decision == 'approve_and_enable_automerge'/,
+      'pr-finalizer.yml',
+    );
+    assert.match(finalizer, dispatchCommand, 'pr-finalizer.yml');
   });
 
   it('wakes the orchestrator when PR Finalizer completes', () => {
