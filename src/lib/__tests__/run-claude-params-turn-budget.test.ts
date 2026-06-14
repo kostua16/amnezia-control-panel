@@ -68,4 +68,107 @@ describe('run-claude-params turn budget prompt', () => {
     assert.match(action, /steps\.check-429-1\.outputs\.soft_success != 'true'/);
     assert.match(action, /steps\.check-429-2\.outputs\.soft_success != 'true'/);
   });
+
+  it('derives PR context from the github event and gates the inline-comment helper on allow-post-inline', () => {
+    const action = fs.readFileSync(
+      path.join(process.cwd(), '.github/actions/run-claude-params/action.yml'),
+      'utf8',
+    );
+
+    // Guard now resolves PR_NUMBER from the event so the inline-comment tool is
+    // only stripped when there is genuinely no PR to comment on.
+    assert.match(
+      action,
+      /PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \|\| github\.event\.inputs\.pr_number/,
+    );
+
+    // allow-post-inline input is declared with a false default.
+    assert.match(action, /allow-post-inline:\n    description: 'When true/);
+    assert.match(
+      action,
+      /ALLOW_POST_INLINE: \$\{\{ inputs\.allow-post-inline \}\}/,
+    );
+
+    // Helper is appended to allowed-tools only when allow-post-inline is true.
+    assert.match(
+      action,
+      /Bash\(\.\/\.github\/workflows\/scripts\/post-pr-inline-comment\.sh:\*\)/,
+    );
+    assert.match(action, /if \[\[ "\$ALLOW_POST_INLINE" == "true" \]\]; then/);
+
+    // Guidance is produced by a dedicated step and injected into all prompts.
+    assert.match(action, /id: resolve_inline_guidance/);
+    const guidanceRefs =
+      action.match(
+        /steps\.resolve_inline_guidance\.outputs\.inline_guidance/g,
+      ) ?? [];
+    assert.equal(guidanceRefs.length, 3);
+    assert.match(action, /Post actionable findings as inline review comments/);
+  });
+
+  it('ships an allowlisted post-pr-inline-comment.sh helper', () => {
+    const helper = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        '.github/workflows/scripts/post-pr-inline-comment.sh',
+      ),
+      'utf8',
+    );
+
+    // Flags mirror the GitHub create-review-comment fields (underscore names,
+    // matching the create_inline_comment MCP tool), plus --pr. No positional
+    // <pr_number> and no hyphenated --start-line / --commit-id variants.
+    for (const flag of [
+      '--pr)',
+      '--path)',
+      '--line)',
+      '--body)',
+      '--start_line)',
+      '--side)',
+      '--commit_id)',
+    ]) {
+      assert.match(helper, new RegExp(flag.replace(/[()]/g, '\\$&')));
+    }
+    assert.doesNotMatch(helper, /--start-line/);
+    assert.doesNotMatch(helper, /--commit-id/);
+    assert.match(helper, /PR="\$\{PR_NUMBER:-\}"/);
+
+    // Required-arg guards and a RIGHT-side default for added (+) lines.
+    assert.match(helper, /--path is required/);
+    assert.match(helper, /--line is required/);
+    assert.match(helper, /--body is required/);
+    assert.match(helper, /SIDE="RIGHT"/);
+    // Numeric guards: PR/LINE are interpolated into the API path / jq args, so
+    // they must be positive integers (closes path-traversal + jq-syntax escapes).
+    assert.match(helper, /--pr must be a positive integer/);
+    assert.match(helper, /--line must be a positive integer/);
+    assert.match(helper, /--start_line must be a positive integer/);
+    // --side LEFT requires an explicit --commit_id (head-SHA default is RIGHT-only).
+    assert.match(helper, /--side LEFT requires an explicit --commit_id/);
+    // Falls back to the PR head SHA when --commit_id is omitted.
+    assert.match(helper, /gh pr view "\$PR" --repo "\$REPO" --json headRefOid/);
+
+    // Idempotent upsert: list existing comments, PATCH an existing one or POST
+    // a new one, scoped to helper-owned comments via the ownership marker.
+    assert.match(helper, /<!-- pr-inline-comment -->/);
+    // Injection-safe lookup: values reach jq as data (--arg/--argjson), never
+    // string-interpolated into a --jq program; --paginate so the dedup scan reads
+    // every page (a PR can carry >100 comments).
+    assert.match(
+      helper,
+      /gh api "repos\/\$\{REPO\}\/pulls\/\$\{PR\}\/comments" --paginate/,
+    );
+    assert.match(
+      helper,
+      /jq -r --arg path "\$FILE_PATH" --argjson line "\$LINE" --arg marker "\$MARKER"/,
+    );
+    assert.match(
+      helper,
+      /gh api -X PATCH "repos\/\$\{REPO\}\/pulls\/comments\/\$\{existing_id\}"/,
+    );
+    assert.match(helper, /body="\$BODY_WITH_MARKER"/);
+    // Prints the resulting comment URL on both update and create paths.
+    const urlPrints = helper.match(/--jq '\.html_url'/g) ?? [];
+    assert.equal(urlPrints.length, 2);
+  });
 });

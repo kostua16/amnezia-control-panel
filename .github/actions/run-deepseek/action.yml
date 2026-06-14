@@ -192,6 +192,10 @@ inputs:
     description: 'GitHub token for DeepSeek GitHub operations, log scanning, and issue reporting'
     required: false
     default: '${{ github.token }}'
+  allow-post-inline:
+    description: 'Forwarded to run-claude-params; when true, enable inline PR comment posting via the allowlisted helper.'
+    required: false
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -218,3 +222,4 @@ runs:
         claude-full-output: ${{ inputs.claude-full-output }}
         additional-permissions: ${{ inputs.additional-permissions }}
         github-token: ${{ inputs.github-token }}
+        allow-post-inline: ${{ inputs.allow-post-inline }}

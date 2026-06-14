@@ -150,6 +150,7 @@ jobs:
         id: review
         uses: ./.github/actions/run-zai
         with:
+          allow-post-inline: 'true'
           api-key: ${{ secrets.ZAI_API_KEY }}
           model: 'opus'
           max-turns: '${{ env.MAX_TURNS }}'
