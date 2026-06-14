@@ -1,23 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { decodeJwt } from 'jose';
 
 export async function GET(request: NextRequest) {
-  const token = request.cookies.get('auth-token')?.value;
+  // The middleware verified the token and attached the decoded claims as
+  // request headers, so identity is read from there instead of re-decoding the
+  // JWT on every authenticated request.
+  const userId = request.headers.get('x-user-id');
+  const username = request.headers.get('x-user-name');
 
-  if (!token) {
+  if (!userId || !username) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  try {
-    // Middleware already verified the JWT; decode to extract user info
-    const payload = decodeJwt(token);
-    return NextResponse.json({
-      user: {
-        id: payload.userId as string,
-        username: payload.username as string,
-      },
-    });
-  } catch {
-    return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-  }
+  return NextResponse.json({ user: { id: userId, username } });
 }

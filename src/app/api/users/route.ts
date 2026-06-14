@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@/generated/prisma/client';
 import { writeAuditLog } from '@/lib/audit-log';
 import { createAwgUser, createThreeXuiUser } from '@/lib/vpn-services';
 import type { VpnServiceResult } from '@/lib/vpn-services';
@@ -111,12 +113,12 @@ export const POST = apiHandler(async (request: NextRequest) => {
     services,
   } = parsed.data;
 
-  // Hash the password using a simple approach (bcrypt in production)
-  const bcrypt = await import('bcryptjs');
   const passwordHash = await bcrypt.hash(password, 10);
 
-  // Build the user creation data
-  const userData: Record<string, unknown> = {
+  // Build the user creation data with Prisma's generated create-input type so
+  // schema changes (renamed/required fields) surface as compile errors instead
+  // of failing at runtime with a cryptic Prisma error.
+  const userData: Prisma.UserCreateInput = {
     username,
     passwordHash,
     displayName: displayName || null,
@@ -141,19 +143,21 @@ export const POST = apiHandler(async (request: NextRequest) => {
   }
 
   const user = await prisma.user.create({
-    data: userData as never,
+    data: userData,
     include: {
       protocols: true,
     },
   });
 
-  // Attempt VPN service creation for each assigned protocol.
-  // Failures are logged but do not roll back the DB record.
+  // Attempt VPN service creation for each assigned protocol. A protocol whose
+  // remote provisioning fails is tracked so the DB record can be reconciled to
+  // match reality instead of persisting as a healthy-looking orphan.
   const vpnResults: Array<{
     serviceType: string;
     success: boolean;
     message: string;
   }> = [];
+  const failedProtocolIds: number[] = [];
 
   for (const protocol of user.protocols) {
     let result: VpnServiceResult & { config?: Record<string, unknown> };
@@ -166,27 +170,55 @@ export const POST = apiHandler(async (request: NextRequest) => {
       continue;
     }
 
-    if (result.success && result.config) {
+    // A protocol counts as provisioned only when the remote service both
+    // succeeded and returned the per-peer config to persist. Every downstream
+    // decision — DB reconciliation, the response, allVpnSuccess — reads this
+    // one value, so the DB record and the API response can never disagree.
+    const provisioned = result.success && !!result.config;
+
+    if (provisioned) {
       // Persist VPN-specific config returned by the service.
       await prisma.userProtocol.update({
         where: { id: protocol.id },
-        data: { config: result.config as never },
+        data: { config: result.config as unknown as Prisma.InputJsonValue },
       });
     } else {
       console.warn(
         `[api/users POST] VPN service creation failed for ${username}/${protocol.serviceType}: ${result.message}`,
       );
+      failedProtocolIds.push(protocol.id);
     }
 
     vpnResults.push({
       serviceType: protocol.serviceType,
-      success: result.success,
+      success: provisioned,
       message: result.message,
     });
   }
 
   const allVpnSuccess =
     vpnResults.length > 0 && vpnResults.every((r) => r.success);
+
+  // Compensating transaction for failed provisioning: mark every protocol
+  // whose remote service could not be created as inactive. If no service
+  // succeeded at all, the user has no working VPN access and is marked inactive
+  // too. This keeps user-sync and the UI from treating broken records as live.
+  let userIsActive = user.isActive;
+  if (failedProtocolIds.length > 0) {
+    await prisma.userProtocol.updateMany({
+      where: { id: { in: failedProtocolIds } },
+      data: { isActive: false },
+    });
+
+    // No service was provisioned at all → the user has no working VPN access.
+    if (!vpnResults.some((r) => r.success)) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { isActive: false },
+      });
+      userIsActive = false;
+    }
+  }
 
   await writeAuditLog({
     action: 'user.create',
@@ -208,7 +240,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
         id: user.id,
         username: user.username,
         displayName: user.displayName,
-        isActive: user.isActive,
+        isActive: userIsActive,
         isBlocked: user.isBlocked,
         trafficQuotaBytes: user.trafficQuotaBytes,
         speedLimitKbps: user.speedLimitKbps,

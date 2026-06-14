@@ -28,6 +28,13 @@ export interface SyncReport {
  *
  * NOTE: Full VPN state reconciliation (e.g., checking actual VPN peer lists) requires
  * real VPN status query commands. Currently logs discrepancies for manual review.
+ *
+ * Only actively-provisioned protocols are reconciled (the queries below filter on
+ * isActive: true). The user-creation route marks a protocol inactive when its remote
+ * service could not be provisioned, so a partially-provisioned user is never assumed
+ * to have live VPN access for the services that failed. Do not widen this filter to
+ * "all protocols" — that would re-mask provisioning failures by attempting to unblock
+ * services that were never created.
  */
 export async function syncUser(userId: number): Promise<SyncReport> {
   const report: SyncReport = {
