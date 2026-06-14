@@ -171,7 +171,12 @@ jobs:
 
       - name: Format executed source before commit
         if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
-        run: npm run format
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only --diff-filter=d -- 'src/**/*.ts' 'src/**/*.tsx' 'src/**/*.css')
+          if [ -n "$changed" ]; then
+            npx prettier --write $changed
+          fi
 
       - uses: ./.github/actions/commit-and-push
         id: push
