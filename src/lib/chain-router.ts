@@ -7,6 +7,7 @@ import type {
 } from '@/types/chain';
 import type { Server } from '@/types/server';
 import type { GeoRoutingResult } from '@/types/geo-routing';
+import type { ServiceType } from '@/generated/prisma/enums';
 import { getTemplateById } from './chain-templates';
 import { generatePerPanelConfig } from './panel-sync-client';
 import { applyPanelConfig } from './config-applier';
@@ -35,7 +36,7 @@ export interface ChainApplyResult {
 export type ChainRouterServicePortLookup = {
   service: {
     findFirst: (args: {
-      where: { serverId: number; type: string };
+      where: { serverId: number; type: ServiceType };
       select: { port: true };
     }) => Promise<{ port: number | null } | null>;
   };
