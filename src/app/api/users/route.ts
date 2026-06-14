@@ -170,7 +170,13 @@ export const POST = apiHandler(async (request: NextRequest) => {
       continue;
     }
 
-    if (result.success && result.config) {
+    // A protocol counts as provisioned only when the remote service both
+    // succeeded and returned the per-peer config to persist. Every downstream
+    // decision — DB reconciliation, the response, allVpnSuccess — reads this
+    // one value, so the DB record and the API response can never disagree.
+    const provisioned = result.success && !!result.config;
+
+    if (provisioned) {
       // Persist VPN-specific config returned by the service.
       await prisma.userProtocol.update({
         where: { id: protocol.id },
@@ -185,7 +191,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
 
     vpnResults.push({
       serviceType: protocol.serviceType,
-      success: result.success,
+      success: provisioned,
       message: result.message,
     });
   }
