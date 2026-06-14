@@ -6,7 +6,9 @@ const { execFileSync } = require('node:child_process');
 
 const COMMENT_MARKER = '<!-- pr-size-guard -->';
 const LARGE_PR_LABEL = 'large-pr';
-const DEFAULT_THRESHOLD = 500;
+// size/XL boundary — aligns with the size buckets in .github/workflows/policy.json
+// (XS<=20 / S<=100 / M<=300 / L<=800 / XL>800). "Large PR" fires iff the PR is size/XL.
+const DEFAULT_THRESHOLD = 800;
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -15,6 +17,7 @@ function getArg(name, fallback = null) {
 }
 
 function toNumber(value) {
+  if (value == null) return null; // Number(null)===0 is a JS footgun that breaks ?? fallbacks
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -184,4 +187,5 @@ module.exports = {
   buildCommentBody,
   findExistingComment,
   shouldWarnLargePr,
+  toNumber,
 };

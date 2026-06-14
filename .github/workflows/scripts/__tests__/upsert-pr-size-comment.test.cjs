@@ -7,6 +7,7 @@ const {
   buildCommentBody,
   findExistingComment,
   shouldWarnLargePr,
+  toNumber,
 } = require('../upsert-pr-size-comment.cjs');
 
 test('buildCommentBody prefixes the sticky marker and current size evidence', () => {
@@ -47,7 +48,15 @@ test('findExistingComment ignores plain duplicate text without the marker', () =
 });
 
 test('shouldWarnLargePr only warns when the threshold is exceeded', () => {
-  assert.equal(shouldWarnLargePr(500), false);
-  assert.equal(shouldWarnLargePr(501), true);
-  assert.equal(shouldWarnLargePr(500, 100), true);
+  assert.equal(shouldWarnLargePr(800), false);
+  assert.equal(shouldWarnLargePr(801), true);
+  assert.equal(shouldWarnLargePr(800, 100), true);
+});
+
+test('toNumber returns null for null/undefined so ?? fallbacks fire correctly', () => {
+  assert.equal(toNumber(null), null);
+  assert.equal(toNumber(undefined), null);
+  assert.equal(toNumber('0'), 0);
+  assert.equal(toNumber('42'), 42);
+  assert.equal(toNumber('not-a-number'), null);
 });
