@@ -506,8 +506,6 @@ describe('generateChainConfig: WireGuard service-port lookup (DI override)', () 
 
     // Inject a Prisma override that reports a non-default WireGuard port.
     __setChainDeps({
-      getNodeIP: async () => null,
-      isReachable: async () => true,
       prisma: {
         service: {
           async findFirst() {
@@ -540,8 +538,6 @@ describe('generateChainConfig: WireGuard service-port lookup (DI override)', () 
 
     // Inject a Prisma override that reports no configured service (null result).
     __setChainDeps({
-      getNodeIP: async () => null,
-      isReachable: async () => true,
       prisma: {
         service: {
           async findFirst() {

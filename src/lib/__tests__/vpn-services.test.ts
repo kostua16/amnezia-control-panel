@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  sanitizeUsername,
   createAwgUser,
   deleteAwgUser,
   blockAwgUser,
@@ -106,18 +107,25 @@ describe('vpn-services: 3x-ui username sanitization and error wrapping', () => {
 });
 
 describe('vpn-services: valid usernames are accepted by the sanitizer', () => {
-  // A syntactically valid username passes sanitizeUsername and proceeds to the
-  // real CLI. With no `awg` binary in the test environment, key generation
-  // fails, but the failure must come from the CLI layer (not validation) and
-  // still be wrapped as a structured result — proving the sanitizer accepted
-  // the input and the error path does not leak thrown exceptions.
-  it('createAwgUser accepts a valid username and reports a non-validation failure', async () => {
-    const result = await createAwgUser('alice_01');
-    assert.equal(result.success, false);
-    assert.doesNotMatch(
-      result.message,
+  // Tests sanitizeUsername directly — deterministic, no CLI or database
+  // dependency.  Invalid inputs already covered in the rejection describe
+  // blocks above; here we prove the positive case and a negative control.
+  const VALID_USERNAMES = ['alice_01', 'bob.test-1', 'user_name.here'];
+
+  for (const username of VALID_USERNAMES) {
+    it(`sanitizeUsername accepts "${username}" without throwing`, () => {
+      assert.doesNotThrow(
+        () => sanitizeUsername(username),
+        `Valid username "${username}" must not trigger the sanitizer`,
+      );
+    });
+  }
+
+  it('sanitizeUsername rejects an invalid username as a negative control', () => {
+    assert.throws(
+      () => sanitizeUsername('bad name'),
       /invalid characters/i,
-      'A valid username must not fail at the validation step',
+      'Invalid username must still be rejected by the sanitizer',
     );
   });
 });

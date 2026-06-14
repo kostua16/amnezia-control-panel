@@ -431,21 +431,16 @@ function generateXrayRoutingRules(
 // ─── Test Helpers ────────────────────────────────────────
 
 /**
- * Inject test dependencies.
+ * Inject test dependencies for chain-router.
  *
- * `getNodeIP` and `isReachable` configure Tailscale transport resolution and
- * are implemented in transport-resolver (import its own __setDeps directly).
- * `prisma` overrides the WireGuard service-port lookup used by
- * generateChainConfig, so per-server port resolution can be exercised without
- * a live database — previously this path fell through to an opaque default.
+ * Overrides the WireGuard service-port lookup used by generateChainConfig, so
+ * per-server port resolution can be exercised without a live database.  Tailscale
+ * transport deps (getNodeIP, isReachable) are injected via transport-resolver's
+ * own __setDeps — chain-router delegates transport resolution there.
  */
 export function __setDeps(deps: {
-  getNodeIP: (hostname?: string) => Promise<string | null>;
-  isReachable: (hostname: string) => Promise<boolean>;
   prisma?: ChainRouterServicePortLookup | null;
 }): void {
-  void deps.getNodeIP;
-  void deps.isReachable;
   if (deps.prisma !== undefined) {
     _prismaOverride = deps.prisma;
   }
