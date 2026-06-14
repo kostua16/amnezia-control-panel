@@ -96,6 +96,7 @@ jobs:
         id: claude
         uses: ./.github/actions/run-zai
         with:
+          allow-post-inline: 'true'
           api-key: ${{ secrets.ZAI_API_KEY }}
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'

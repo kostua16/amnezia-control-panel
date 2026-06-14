@@ -107,6 +107,7 @@ jobs:
         id: deepseek
         uses: ./.github/actions/run-deepseek
         with:
+          allow-post-inline: 'true'
           api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'

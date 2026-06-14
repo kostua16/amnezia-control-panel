@@ -71,6 +71,7 @@ jobs:
 
       - uses: ./.github/actions/run-zai
         with:
+          allow-post-inline: 'true'
           api-key: ${{ secrets.ZAI_API_KEY }}
           model: 'haiku'
           max-turns: '${{ env.MAX_TURNS }}'

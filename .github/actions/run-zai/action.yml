@@ -200,6 +200,10 @@ inputs:
     description: 'GitHub token for Claude GitHub operations, log scanning, and issue reporting'
     required: false
     default: '${{ github.token }}'
+  allow-post-inline:
+    description: 'Forwarded to run-claude-params; when true, enable inline PR comment posting via the allowlisted helper.'
+    required: false
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -227,3 +231,4 @@ runs:
         plugins: ${{ inputs.plugins }}
         plugin-marketplaces: ${{ inputs.plugin-marketplaces }}
         github-token: ${{ inputs.github-token }}
+        allow-post-inline: ${{ inputs.allow-post-inline }}

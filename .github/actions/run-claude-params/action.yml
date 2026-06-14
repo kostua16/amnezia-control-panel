@@ -198,6 +198,9 @@ inputs:
   github-token:
     description: 'GitHub token for issue reporting and log download'
     default: '${{ github.token }}'
+  allow-post-inline:
+    description: 'When true, permit posting inline PR review comments via the allowlisted post-pr-inline-comment.sh helper and inject a one-line how-to into the task prompt. Enable on PR-review workflows.'
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -272,6 +275,12 @@ runs:
       shell: bash
       env:
         REQUESTED_ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
+        # PR-context signal resolved from the event itself so the guard only
+        # strips the inline-comment tool when there is genuinely no PR to
+        # comment on (covers pull_request events, workflow_dispatch with the
+        # pr_number input, and issue_comment on a PR-linked issue).
+        PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number || (github.event.issue.pull_request != null && github.event.issue.number) }}
+        ALLOW_POST_INLINE: ${{ inputs.allow-post-inline }}
       run: |
         tools="$REQUESTED_ALLOWED_TOOLS"
         inline_comment_tool='mcp__github_inline_comment__create_inline_comment'
@@ -287,7 +296,31 @@ runs:
           echo "Removed $inline_comment_tool from allowed tools because PR_NUMBER is unset."
         fi
 
+        # Allowlisted helper that posts one inline PR comment via gh; works on
+        # every trigger (including workflow_dispatch, where the inline-comment
+        # MCP server is not initialized).
+        if [[ "$ALLOW_POST_INLINE" == "true" ]]; then
+          helper='Bash(./.github/workflows/scripts/post-pr-inline-comment.sh:*)'
+          if [[ -n "$tools" ]]; then
+            tools="$tools,$helper"
+          else
+            tools="$helper"
+          fi
+        fi
+
         echo "tools=$tools" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve inline-comment guidance
+      id: resolve_inline_guidance
+      shell: bash
+      env:
+        ALLOW_POST_INLINE: ${{ inputs.allow-post-inline }}
+      run: |
+        if [[ "$ALLOW_POST_INLINE" == "true" ]]; then
+          printf 'inline_guidance=%s\n' 'Post actionable findings as inline review comments: prefer the `mcp__github_inline_comment__create_inline_comment` tool when it is available; otherwise post each finding via `./.github/workflows/scripts/post-pr-inline-comment.sh <pr_number> --path <path> --line <line> --body <body>` (add `--start-line <n>` for multi-line spans; the head commit SHA is resolved automatically).' >> "$GITHUB_OUTPUT"
+        else
+          echo "inline_guidance=" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Clear Claude execution output (attempt 1)
       shell: bash
@@ -326,6 +359,8 @@ runs:
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
+
+          ${{ steps.resolve_inline_guidance.outputs.inline_guidance }}
 
           AGENT TURN LIMIT — soft budget ${{ steps.turn_budget.outputs.budget }} turns; hard cap ${{ steps.turn_budget.outputs.hard_max }} turns:
             - Complete the main work within the soft working budget of ${{ steps.turn_budget.outputs.budget }} turns.
@@ -416,6 +451,8 @@ runs:
         prompt: |-
           ${{ inputs.prompt }}.
 
+          ${{ steps.resolve_inline_guidance.outputs.inline_guidance }}
+
           AGENT TURN LIMIT — soft budget ${{ steps.turn_budget.outputs.budget }} turns; hard cap ${{ steps.turn_budget.outputs.hard_max }} turns:
             - Complete the main work within the soft working budget of ${{ steps.turn_budget.outputs.budget }} turns.
             - The hard execution cap is ${{ steps.turn_budget.outputs.hard_max }} turns.
@@ -502,6 +539,8 @@ runs:
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
+
+          ${{ steps.resolve_inline_guidance.outputs.inline_guidance }}
 
           AGENT TURN LIMIT — soft budget ${{ steps.turn_budget.outputs.budget }} turns; hard cap ${{ steps.turn_budget.outputs.hard_max }} turns:
             - Complete the main work within the soft working budget of ${{ steps.turn_budget.outputs.budget }} turns.
