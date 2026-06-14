@@ -74,15 +74,32 @@ describe('GSD planning workflow automation', () => {
     assert.ok(commitIndex > validateIndex, 'validation must run before commit');
     assert.match(
       workflow,
-      /npm test > "\$RUNNER_TEMP\/gsd-planning-validation-1\.log"/,
+      /uses: \.\/\.github\/actions\/run-npm-test-validation/,
     );
-    assert.match(workflow, /name: Repair validation failures/);
-    assert.match(workflow, /name: Repair remaining validation failures/);
+    assert.doesNotMatch(
+      workflow,
+      /npm test > "\$RUNNER_TEMP\/gsd-planning-validation-/,
+    );
+    assert.match(
+      workflow,
+      /name: Repair validation failures[\s\S]*uses: \.\/\.github\/actions\/run-gsd-validation-repair/,
+    );
+    assert.match(
+      workflow,
+      /name: Repair remaining validation failures[\s\S]*uses: \.\/\.github\/actions\/run-gsd-validation-repair/,
+    );
+    assert.match(workflow, /final-pass: 'true'/);
     assert.match(
       workflow,
       /did not reach a passing npm test after two repair passes/,
     );
     assert.match(workflow, /id: final-zai/);
+    assert.match(workflow, /if \[ "\$REPAIR2_OUTCOME" = "success" \]/);
+    assert.match(workflow, /elif \[ "\$REPAIR1_OUTCOME" = "success" \]/);
+    assert.doesNotMatch(
+      workflow,
+      /steps\.repair[12]\.outcome == 'success' && steps\.repair[12]\.outputs/,
+    );
     assert.match(
       workflow,
       /changed-files: \$\{\{ steps\.final-zai\.outputs\.changed_files \}\}/,
