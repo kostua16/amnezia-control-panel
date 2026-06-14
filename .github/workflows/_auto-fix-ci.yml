@@ -212,10 +212,11 @@ jobs:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
           allowed-bots: 'claude[bot],github-actions[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(rtk:*),mcp__plugin_serena_serena__find_symbol,mcp__plugin_serena_serena__get_symbols_overview,mcp__plugin_serena_serena__find_referencing_symbols,mcp__plugin_serena_serena__find_implementations,mcp__plugin_serena_serena__find_declaration,mcp__plugin_serena_serena__search_for_pattern,mcp__plugin_serena_serena__find_file,mcp__plugin_serena_serena__list_dir,mcp__plugin_serena_serena__read_file,mcp__plugin_serena_serena__get_diagnostics_for_file,mcp__plugin_context7_context7__query-docs,mcp__plugin_context7_context7__resolve-library-id,mcp__plugin_typescript-lsp__*'
           max-turns: ${{ env.MAX_TURNS }}
           plugin-marketplaces: |-
-            anthropics/claude-plugins-official
-            juliusbrussee/caveman
+            https://github.com/anthropics/claude-plugins-official.git
+            https://github.com/juliusbrussee/caveman.git
           plugins: |-
             typescript-lsp@claude-plugins-official
             serena@claude-plugins-official

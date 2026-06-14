@@ -63,7 +63,7 @@ inputs:
     default: 'false'
   uv-version:
     description: 'Pinned uv version used when plugin flows require Python runtime'
-    default: '0.6.0'
+    default: '0.11.21'
 
 runs:
   using: 'composite'
@@ -195,7 +195,9 @@ runs:
         bun-version: ${{ inputs.bun-version }}
 
     - if: inputs.install-uv == 'true'
-      uses: astral-sh/setup-uv@v4
+      # astral-sh/setup-uv v6 tag pinned to commit SHA (Node.js 24 runtime; v4 triggers
+      # the June-16-2026 Node.js 20 deprecation and the SHA-pin governance check)
+      uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
       with:
         version: ${{ inputs.uv-version }}
 

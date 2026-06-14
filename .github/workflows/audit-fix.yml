@@ -141,8 +141,8 @@ jobs:
               }
             }
           plugin-marketplaces: |-
-            anthropics/claude-plugins-official
-            juliusbrussee/caveman
+            https://github.com/anthropics/claude-plugins-official.git
+            https://github.com/juliusbrussee/caveman.git
           plugins: |-
             typescript-lsp@claude-plugins-official
             serena@claude-plugins-official
