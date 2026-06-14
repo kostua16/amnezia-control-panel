@@ -211,6 +211,7 @@ jobs:
       claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
+      validate_blocked: ${{ steps.validate.outputs.validate-blocked }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
@@ -316,6 +317,7 @@ jobs:
             echo "Workflow invariant tests passed after optimization edits."
           else
             echo "passed=false" >> "$GITHUB_OUTPUT"
+            echo "validate-blocked=true" >> "$GITHUB_OUTPUT"
             echo "::warning::npm run test-only failed after optimization edits; skipping PR to avoid a doomed CI run."
             echo "----- npm run test-only output (tail) -----"
             tail -n 80 /tmp/optimize-test-only.log || true
@@ -361,6 +363,45 @@ jobs:
       - name: Log no-changes result
         if: steps.push.outputs.pushed != 'true'
         run: echo "No workflow improvements identified this hour."
+
+  report-blocked-gate:
+    name: Report blocked optimization gate
+    needs: [collect-runs, optimize]
+    # Runs only when optimize succeeded AND the gate actually blocked. When
+    # optimize is skipped (no problems) or the validate step is skipped (no
+    # changes / duplicate), validate_blocked is empty and this job is skipped.
+    if: needs.optimize.result == 'success' && needs.optimize.outputs.validate_blocked == 'true'
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Track blocked optimization gate
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Search by a distinctive title phrase so repeated blocks accumulate
+          # as comments on one issue instead of spawning duplicates.
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" \
+            --state open \
+            --search "in:title Optimization test gate is blocking all PRs" \
+            --json number --jq '.[0].number // empty' || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "${{ github.repository }}" \
+              --body "Test gate blocked again at $(date -u +%Y-%m-%dT%H:%M:%SZ) — no optimization PR created. **Run:** ${RUN_URL}"
+          else
+            gh issue create --repo "${{ github.repository }}" \
+              --title '[workflow-health] Optimization test gate is blocking all PRs' \
+              --body "The pre-push \`npm run test-only\` gate in \`workflow-health-optimize.yml\` rejected the AI's workflow edits, so no optimization PR was created. A single block is the gate working as designed; **repeated comments below mean the optimizer is chronically breaking workflow invariant tests and silently producing zero PRs**. First observed: ${RUN_URL}" \
+              --label auto-fix,needs-review
+          fi
 
   report-failure:
     needs: [collect-runs, optimize]
