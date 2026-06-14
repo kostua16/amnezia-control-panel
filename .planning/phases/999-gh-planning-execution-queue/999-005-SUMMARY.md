@@ -1,6 +1,6 @@
 ---
 phase: 999-gh-planning-execution-queue
-plan: 999-003
+plan: 999-005
 subsystem: api
 tags: [health, geoip, prisma, websocket, nextjs, testing]
 
@@ -46,7 +46,7 @@ duration: ~35min
 completed: 2026-06-14
 ---
 
-# Plan 999-003: Architectural Review Follow-ups Summary
+# Plan 999-005: Architectural Review Follow-ups Summary
 
 **Production health endpoint with database/GeoIP/WebSocket checks, plus GeoIP download integrity verification (validate-before-swap), from the 2026-06-07 architectural review**
 
@@ -91,4 +91,4 @@ None for Proposals 2 and 3 — executed as specified. Proposal 1 deferred by des
 - Proposal 1 needs a design decision (A/B/C) before implementation — recommend a follow-up plan.
 
 ---
-*Phase: 999-gh-planning-execution-queue* | *Plan: 999-003* | *Completed: 2026-06-14*
+*Phase: 999-gh-planning-execution-queue* | *Plan: 999-005* | *Completed: 2026-06-14*
