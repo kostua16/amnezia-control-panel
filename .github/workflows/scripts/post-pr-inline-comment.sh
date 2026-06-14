@@ -11,8 +11,8 @@ set -euo pipefail
 #   --line <n>         diff line the comment anchors to               (required)
 #   --body <text>      comment body (markdown)                        (required)
 #   --start_line <n>   first line of a multi-line span
-#   --side RIGHT|LEFT  diff side (default RIGHT = added / + lines)
-#   --commit_id <sha>  commit the comment anchors to (default: PR head SHA)
+#   --side RIGHT|LEFT  diff side (default RIGHT = added / + lines; LEFT requires --commit_id)
+#   --commit_id <sha>  commit the comment anchors to (default: PR head SHA; required for LEFT)
 #
 # Idempotent: every body gets a hidden ownership marker appended, and before
 # posting the script looks for an existing comment at the same path+line that
@@ -57,10 +57,32 @@ if [[ -z "$FILE_PATH" ]]; then echo "Error: --path is required" >&2; exit 1; fi
 if [[ -z "$LINE" ]];      then echo "Error: --line is required" >&2; exit 1; fi
 if [[ -z "$BODY" ]];      then echo "Error: --body is required" >&2; exit 1; fi
 
+# Numeric guards: PR and LINE are interpolated into the API path / jq args, so
+# they must be positive integers (rejects path-traversal and jq-syntax escapes).
+if ! [[ "$PR" =~ ^[0-9]+$ ]]; then
+  echo "Error: --pr must be a positive integer (got: '${PR}')" >&2; exit 1
+fi
+if ! [[ "$LINE" =~ ^[0-9]+$ ]]; then
+  echo "Error: --line must be a positive integer (got: '${LINE}')" >&2; exit 1
+fi
+if [[ -n "$START_LINE" ]]; then
+  if ! [[ "$START_LINE" =~ ^[0-9]+$ ]]; then
+    echo "Error: --start_line must be a positive integer (got: '${START_LINE}')" >&2; exit 1
+  fi
+fi
+
 case "$SIDE" in
   RIGHT|LEFT) ;;
   *) echo "Error: --side must be RIGHT or LEFT (got: '${SIDE}')" >&2; exit 1 ;;
 esac
+
+# The head-SHA default is only valid for the added/RIGHT side. A LEFT (base-side)
+# comment needs a commit where the base content exists, so require an explicit
+# --commit_id there instead of silently 422-ing on the head SHA.
+if [[ "$SIDE" == "LEFT" && -z "$COMMIT_ID" ]]; then
+  echo "Error: --side LEFT requires an explicit --commit_id (the default head SHA is only valid for RIGHT)" >&2
+  exit 1
+fi
 
 if [[ -z "$COMMIT_ID" ]]; then
   COMMIT_ID="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
@@ -71,12 +93,14 @@ BODY_WITH_MARKER="${BODY}
 
 ${MARKER}"
 
-# Find an existing helper-owned comment at the same path+line (must carry our
-# ownership marker, so human / other-bot comments at the same line are skipped).
+# Match only a helper-owned comment (same path+line, carrying our ownership
+# marker). Values go to jq as data (--arg/--argjson), never interpolated into the
+# jq program, so a path containing " cannot break the filter or return a wrong id.
 existing_id="$(
-  gh api "repos/${REPO}/pulls/${PR}/comments" --paginate \
-    --jq '[.[] | select(.path == "'"${FILE_PATH}"'" and (.line // 0) == '"${LINE}"' and ((.body // "") | contains("'"${MARKER}"'")))] | first | .id // empty' \
-    2>/dev/null | head -1 || true
+  gh api "repos/${REPO}/pulls/${PR}/comments?per_page=100" 2>/dev/null \
+    | jq -r --arg path "$FILE_PATH" --argjson line "$LINE" --arg marker "$MARKER" \
+        '[.[] | select(.path == $path and ((.line // 0) == $line) and ((.body // "") | contains($marker)))] | first | .id // empty' \
+    | head -1 || true
 )"
 
 if [[ -n "$existing_id" ]]; then

@@ -138,16 +138,30 @@ describe('run-claude-params turn budget prompt', () => {
     assert.match(helper, /--line is required/);
     assert.match(helper, /--body is required/);
     assert.match(helper, /SIDE="RIGHT"/);
+    // Numeric guards: PR/LINE are interpolated into the API path / jq args, so
+    // they must be positive integers (closes path-traversal + jq-syntax escapes).
+    assert.match(helper, /--pr must be a positive integer/);
+    assert.match(helper, /--line must be a positive integer/);
+    assert.match(helper, /--start_line must be a positive integer/);
+    // --side LEFT requires an explicit --commit_id (head-SHA default is RIGHT-only).
+    assert.match(helper, /--side LEFT requires an explicit --commit_id/);
     // Falls back to the PR head SHA when --commit_id is omitted.
     assert.match(helper, /gh pr view "\$PR" --repo "\$REPO" --json headRefOid/);
 
     // Idempotent upsert: list existing comments, PATCH an existing one or POST
     // a new one, scoped to helper-owned comments via the ownership marker.
     assert.match(helper, /<!-- pr-inline-comment -->/);
+    // Injection-safe lookup: values reach jq as data (--arg/--argjson), fetched
+    // as a single page; never string-interpolated into a --jq program.
     assert.match(
       helper,
-      /gh api "repos\/\$\{REPO\}\/pulls\/\$\{PR\}\/comments" --paginate/,
+      /gh api "repos\/\$\{REPO\}\/pulls\/\$\{PR\}\/comments\?per_page=100"/,
     );
+    assert.match(
+      helper,
+      /jq -r --arg path "\$FILE_PATH" --argjson line "\$LINE" --arg marker "\$MARKER"/,
+    );
+    assert.doesNotMatch(helper, /--paginate/);
     assert.match(
       helper,
       /gh api -X PATCH "repos\/\$\{REPO\}\/pulls\/comments\/\$\{existing_id\}"/,
