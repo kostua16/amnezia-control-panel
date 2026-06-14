@@ -102,7 +102,7 @@ export interface GeoIPStatus {
   error: string | null;
 }
 
-interface CachedCountry {
+export interface CachedCountry {
   countryCode: string;
   cidrs: string[];
 }
@@ -157,6 +157,141 @@ export function matchesCIDR(ipNum: number, cidr: string): boolean {
   return (ipNum & mask) === (networkNum & mask);
 }
 
+/**
+ * Minimum plausible country count for a valid geoip.dat download. The real
+ * v2fly database ships >250 countries; a corrupt, truncated, or HTML-error-page
+ * download that still parses yields far fewer and is rejected so the working
+ * database is never overwritten by bad data.
+ */
+export const MIN_COUNTRY_COUNT = 100;
+
+/**
+ * Parse a v2fly geoip.dat protobuf buffer into a fresh country map. Pure: no
+ * instance state, so a downloaded file can be validated before swapping the
+ * live database.
+ *
+ * message GeoIPList { repeated Country country_list = 1; }
+ * message Country { string iso_code = 1; repeated CIDR cidr = 2; }
+ * message CIDR { bytes ip = 1; uint32 prefix = 2; }
+ */
+export function parseGeoIPBuffer(
+  buffer: Buffer,
+): Map<string, CachedCountry> {
+  const countries = new Map<string, CachedCountry>();
+  decodeGeoIPProtobufIntoMap(buffer, countries);
+  return countries;
+}
+
+/** Decode a GeoIPList buffer into the given map (avoids a large intermediate array). */
+function decodeGeoIPProtobufIntoMap(
+  buffer: Buffer,
+  countries: Map<string, CachedCountry>,
+): void {
+  let offset = 0;
+
+  while (offset < buffer.length) {
+    const tag = readVarint(buffer, offset);
+    const fieldNumber = tag >>> 3;
+    const wireType = tag & 0x07;
+    offset += varintSize(buffer, offset);
+
+    if (fieldNumber === 1 && wireType === 2) {
+      const length = readVarint(buffer, offset);
+      offset += varintSize(buffer, offset);
+      const countryData = buffer.subarray(offset, offset + length);
+      offset += length;
+
+      const country = decodeCountryMessage(countryData);
+      if (country && country.countryCode.length === 2) {
+        const code = country.countryCode.toUpperCase();
+        countries.set(code, { countryCode: code, cidrs: country.cidrs });
+      }
+    } else if (wireType === 2) {
+      const length = readVarint(buffer, offset);
+      offset += varintSize(buffer, offset) + length;
+    } else if (wireType === 0) {
+      offset += varintSize(buffer, offset);
+    } else {
+      break;
+    }
+  }
+}
+
+function decodeCountryMessage(
+  buffer: Buffer,
+): { countryCode: string; cidrs: string[] } | null {
+  let offset = 0;
+  let countryCode = '';
+  const cidrs: string[] = [];
+
+  while (offset < buffer.length) {
+    const tag = readVarint(buffer, offset);
+    const fieldNumber = tag >>> 3;
+    const wireType = tag & 0x07;
+    offset += varintSize(buffer, offset);
+
+    if (fieldNumber === 1 && wireType === 2) {
+      const length = readVarint(buffer, offset);
+      offset += varintSize(buffer, offset);
+      countryCode = buffer.subarray(offset, offset + length).toString('utf-8');
+      offset += length;
+    } else if (fieldNumber === 2 && wireType === 2) {
+      const length = readVarint(buffer, offset);
+      offset += varintSize(buffer, offset);
+      const cidrData = buffer.subarray(offset, offset + length);
+      offset += length;
+
+      const cidr = decodeCIDRMessage(cidrData);
+      if (cidr) cidrs.push(cidr);
+    } else if (wireType === 2) {
+      const length = readVarint(buffer, offset);
+      offset += varintSize(buffer, offset) + length;
+    } else if (wireType === 0) {
+      offset += varintSize(buffer, offset);
+    } else {
+      break;
+    }
+  }
+
+  return countryCode ? { countryCode, cidrs } : null;
+}
+
+function decodeCIDRMessage(buffer: Buffer): string | null {
+  let offset = 0;
+  let ip: Buffer | null = null;
+  let prefix = 0;
+
+  while (offset < buffer.length) {
+    const tag = readVarint(buffer, offset);
+    const fieldNumber = tag >>> 3;
+    const wireType = tag & 0x07;
+    offset += varintSize(buffer, offset);
+
+    if (fieldNumber === 1 && wireType === 2) {
+      const length = readVarint(buffer, offset);
+      offset += varintSize(buffer, offset);
+      ip = buffer.subarray(offset, offset + length);
+      offset += length;
+    } else if (fieldNumber === 2 && wireType === 0) {
+      prefix = readVarint(buffer, offset);
+      offset += varintSize(buffer, offset);
+    } else if (wireType === 2) {
+      const length = readVarint(buffer, offset);
+      offset += varintSize(buffer, offset) + length;
+    } else if (wireType === 0) {
+      offset += varintSize(buffer, offset);
+    } else {
+      break;
+    }
+  }
+
+  if (!ip) return null;
+  if (ip.length !== 4) return null; // IPv4 only per D-06
+
+  const ipStr = `${ip[0]}.${ip[1]}.${ip[2]}.${ip[3]}`;
+  return `${ipStr}/${prefix}`;
+}
+
 // --- GeoIPManager singleton ---
 
 class GeoIPManager {
@@ -209,17 +344,14 @@ class GeoIPManager {
   // --- Parse v2fly geoip.dat format ---
 
   /**
-   * Parse v2fly geoip.dat protobuf binary format.
-   * message GeoIPList { repeated Country country_list = 1; }
-   * message Country { string iso_code = 1; repeated CIDR cidr = 2; }
-   * message CIDR { bytes ip = 1; uint32 prefix = 2; }
+   * Parse the on-disk geoip.dat into the live country map. Used at startup
+   * (`init`) to load an already-verified database file.
    */
   private parseDatFile(filePath: string): void {
     const buffer = fs.readFileSync(filePath);
-    this.countries.clear();
 
     try {
-      this.decodeGeoIPProtobufIntoCountries(buffer);
+      this.countries = parseGeoIPBuffer(buffer);
 
       console.log(
         `[geoip] Loaded ${this.countries.size} countries from geoip.dat`,
@@ -229,115 +361,6 @@ class GeoIPManager {
       this.status.error = `Failed to parse geoip.dat: ${err instanceof Error ? err.message : String(err)}`;
       console.error('[geoip]', this.status.error);
     }
-  }
-
-  /** Decode into `this.countries` to avoid a large intermediate array (heap pressure on big DBs). */
-  private decodeGeoIPProtobufIntoCountries(buffer: Buffer): void {
-    let offset = 0;
-
-    while (offset < buffer.length) {
-      const tag = readVarint(buffer, offset);
-      const fieldNumber = tag >>> 3;
-      const wireType = tag & 0x07;
-      offset += varintSize(buffer, offset);
-
-      if (fieldNumber === 1 && wireType === 2) {
-        const length = readVarint(buffer, offset);
-        offset += varintSize(buffer, offset);
-        const countryData = buffer.subarray(offset, offset + length);
-        offset += length;
-
-        const country = this.decodeCountryMessage(countryData);
-        if (country && country.countryCode.length === 2) {
-          const code = country.countryCode.toUpperCase();
-          this.countries.set(code, { countryCode: code, cidrs: country.cidrs });
-        }
-      } else if (wireType === 2) {
-        const length = readVarint(buffer, offset);
-        offset += varintSize(buffer, offset) + length;
-      } else if (wireType === 0) {
-        offset += varintSize(buffer, offset);
-      } else {
-        break;
-      }
-    }
-  }
-
-  private decodeCountryMessage(
-    buffer: Buffer,
-  ): { countryCode: string; cidrs: string[] } | null {
-    let offset = 0;
-    let countryCode = '';
-    const cidrs: string[] = [];
-
-    while (offset < buffer.length) {
-      const tag = readVarint(buffer, offset);
-      const fieldNumber = tag >>> 3;
-      const wireType = tag & 0x07;
-      offset += varintSize(buffer, offset);
-
-      if (fieldNumber === 1 && wireType === 2) {
-        const length = readVarint(buffer, offset);
-        offset += varintSize(buffer, offset);
-        countryCode = buffer
-          .subarray(offset, offset + length)
-          .toString('utf-8');
-        offset += length;
-      } else if (fieldNumber === 2 && wireType === 2) {
-        const length = readVarint(buffer, offset);
-        offset += varintSize(buffer, offset);
-        const cidrData = buffer.subarray(offset, offset + length);
-        offset += length;
-
-        const cidr = this.decodeCIDRMessage(cidrData);
-        if (cidr) cidrs.push(cidr);
-      } else if (wireType === 2) {
-        const length = readVarint(buffer, offset);
-        offset += varintSize(buffer, offset) + length;
-      } else if (wireType === 0) {
-        offset += varintSize(buffer, offset);
-      } else {
-        break;
-      }
-    }
-
-    return countryCode ? { countryCode, cidrs } : null;
-  }
-
-  private decodeCIDRMessage(buffer: Buffer): string | null {
-    let offset = 0;
-    let ip: Buffer | null = null;
-    let prefix = 0;
-
-    while (offset < buffer.length) {
-      const tag = readVarint(buffer, offset);
-      const fieldNumber = tag >>> 3;
-      const wireType = tag & 0x07;
-      offset += varintSize(buffer, offset);
-
-      if (fieldNumber === 1 && wireType === 2) {
-        const length = readVarint(buffer, offset);
-        offset += varintSize(buffer, offset);
-        ip = buffer.subarray(offset, offset + length);
-        offset += length;
-      } else if (fieldNumber === 2 && wireType === 0) {
-        prefix = readVarint(buffer, offset);
-        offset += varintSize(buffer, offset);
-      } else if (wireType === 2) {
-        const length = readVarint(buffer, offset);
-        offset += varintSize(buffer, offset) + length;
-      } else if (wireType === 0) {
-        offset += varintSize(buffer, offset);
-      } else {
-        break;
-      }
-    }
-
-    if (!ip) return null;
-    if (ip.length !== 4) return null; // IPv4 only per D-06
-
-    const ipStr = `${ip[0]}.${ip[1]}.${ip[2]}.${ip[3]}`;
-    return `${ipStr}/${prefix}`;
   }
 
   // --- Lookup ---
@@ -397,6 +420,15 @@ class GeoIPManager {
           if (!response.ok) continue;
           if (!response.body) continue;
 
+          // Reject HTML error pages (CDN/GitHub 200-with-HTML) before trusting the body.
+          const contentType = response.headers.get('content-type') ?? '';
+          if (contentType.toLowerCase().includes('text/html')) {
+            console.warn(
+              `[geoip] ${url} returned Content-Type '${contentType}' (likely an error page); skipping`,
+            );
+            continue;
+          }
+
           const contentLength = response.headers.get('content-length');
           const parsedLen =
             contentLength != null ? parseInt(contentLength, 10) : NaN;
@@ -427,11 +459,42 @@ class GeoIPManager {
             continue;
           }
 
+          // Validate the download BEFORE swapping the live file: parse the temp
+          // file into a fresh map and require a plausible country count. A
+          // corrupt or truncated download is rejected so the working database is
+          // preserved instead of being overwritten.
+          let parsed: Map<string, CachedCountry>;
+          try {
+            parsed = parseGeoIPBuffer(await fs.promises.readFile(tempPath));
+          } catch (parseErr) {
+            console.warn(
+              `[geoip] Downloaded file from ${url} failed to parse; keeping existing database`,
+              parseErr,
+            );
+            await fs.promises.rm(tempPath, { force: true }).catch(() => {});
+            continue;
+          }
+
+          if (parsed.size < MIN_COUNTRY_COUNT) {
+            console.warn(
+              `[geoip] Downloaded file from ${url} parsed with only ${parsed.size} countries (expected >= ${MIN_COUNTRY_COUNT}); rejecting as corrupt/truncated`,
+            );
+            await fs.promises.rm(tempPath, { force: true }).catch(() => {});
+            continue;
+          }
+
+          // Validated — adopt the parsed map and swap the file atomically.
           await fs.promises.rename(tempPath, GEOIP_FILE);
+          this.countries = parsed;
+          this.status.loaded = true;
+          this.status.fileSize = stat.size;
+          this.status.lastRefreshed = stat.mtime.toISOString();
+          this.status.stale = false;
+          this.status.error = null;
 
           downloaded = true;
           console.log(
-            `[geoip] Downloaded geoip.dat from ${url} (${stat.size} bytes)`,
+            `[geoip] Downloaded geoip.dat from ${url} (${stat.size} bytes, ${parsed.size} countries)`,
           );
           break;
         } catch (err) {
@@ -449,15 +512,10 @@ class GeoIPManager {
         };
       }
 
-      await this.loadFromFile();
-
-      if (this.status.loaded) {
-        return {
-          success: true,
-          message: `GeoIP database updated (${this.countries.size} countries)`,
-        };
-      }
-      return { success: false, message: 'Downloaded but failed to parse' };
+      return {
+        success: true,
+        message: `GeoIP database updated (${this.countries.size} countries)`,
+      };
     } finally {
       this.refreshing = false;
     }

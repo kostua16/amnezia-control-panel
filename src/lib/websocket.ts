@@ -32,6 +32,15 @@ export function getWebSocket(): SocketIOServer {
 }
 
 /**
+ * Whether the Socket.IO server has been initialized. Lets health checks report
+ * WebSocket readiness without throwing when the server is not yet running
+ * (e.g. during tests or before server.mjs attaches the instance).
+ */
+export function isWebSocketReady(): boolean {
+  return ioInstance !== null;
+}
+
+/**
  * Initialize the Socket.IO server.
  * This is called from server.mjs during startup.
  *

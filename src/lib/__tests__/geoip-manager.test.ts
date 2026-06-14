@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchesCIDR, readVarint, varintSize } from '../geoip-manager';
+import {
+  matchesCIDR,
+  MIN_COUNTRY_COUNT,
+  parseGeoIPBuffer,
+  readVarint,
+  varintSize,
+} from '../geoip-manager';
 
 // --- readVarint ---
 
@@ -146,5 +152,107 @@ describe('matchesCIDR', () => {
       matchesCIDR(ipToNum('192.168.1.128'), '192.168.1.128/25'),
       true,
     );
+  });
+});
+
+// --- parseGeoIPBuffer + download integrity ---
+
+// Minimal v2fly geoip.dat protobuf encoder for synthesizing test fixtures.
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+function encodeVarint(n: number): Buffer {
+  const bytes: number[] = [];
+  let v = n >>> 0;
+  do {
+    let b = v & 0x7f;
+    v >>>= 7;
+    if (v !== 0) b |= 0x80;
+    bytes.push(b);
+  } while (v !== 0);
+  return Buffer.from(bytes);
+}
+
+/** Length-delimited field: tag (field<<3 | 2), varint length, then payload. */
+function lenDelim(field: number, payload: Buffer): Buffer {
+  return Buffer.concat([
+    encodeVarint((field << 3) | 2),
+    encodeVarint(payload.length),
+    payload,
+  ]);
+}
+
+function cidrMessage(ip: number[], prefix: number): Buffer {
+  return Buffer.concat([
+    lenDelim(1, Buffer.from(ip)), // field 1: bytes ip
+    encodeVarint((2 << 3) | 0), // field 2 tag: uint32 prefix
+    encodeVarint(prefix),
+  ]);
+}
+
+function countryMessage(code: string): Buffer {
+  return Buffer.concat([
+    lenDelim(1, Buffer.from(code, 'utf-8')), // field 1: iso_code
+    lenDelim(2, cidrMessage([192, 168, 1, 0], 24)), // field 2: one CIDR
+  ]);
+}
+
+/** Two-letter codes so the decoder's length === 2 guard accepts them. */
+function countryCode(i: number): string {
+  return `${LETTERS[Math.floor(i / 26)]}${LETTERS[i % 26]}`;
+}
+
+function geoipListBuffer(countryCount: number): Buffer {
+  const parts: Buffer[] = [];
+  for (let i = 0; i < countryCount; i++) {
+    parts.push(lenDelim(1, countryMessage(countryCode(i))));
+  }
+  return Buffer.concat(parts);
+}
+
+describe('parseGeoIPBuffer', () => {
+  it('decodes a synthetic geoip.dat with the expected country count', () => {
+    const countries = parseGeoIPBuffer(geoipListBuffer(5));
+    assert.strictEqual(countries.size, 5);
+    assert.ok(countries.has('AA'));
+    assert.ok(countries.has('AE'));
+  });
+
+  it('stores decoded CIDRs under each country entry', () => {
+    const countries = parseGeoIPBuffer(geoipListBuffer(1));
+    const entry = countries.get('AA');
+    assert.ok(entry);
+    assert.deepStrictEqual(entry.cidrs, ['192.168.1.0/24']);
+  });
+
+  it('decodes a large database that exceeds the validation threshold', () => {
+    const countries = parseGeoIPBuffer(geoipListBuffer(150));
+    assert.strictEqual(countries.size, 150);
+    assert.ok(countries.size >= MIN_COUNTRY_COUNT);
+  });
+});
+
+describe('GeoIP download integrity threshold', () => {
+  it('MIN_COUNTRY_COUNT is a sane value below the real DB size', () => {
+    assert.ok(MIN_COUNTRY_COUNT > 0 && MIN_COUNTRY_COUNT < 250);
+  });
+
+  it('flags a truncated download (too few countries) so the live file is preserved', () => {
+    // refresh() rejects a download whose parsed country count is below the
+    // threshold. A 5-country buffer models a truncated/corrupt download.
+    const countries = parseGeoIPBuffer(geoipListBuffer(5));
+    assert.ok(countries.size < MIN_COUNTRY_COUNT);
+  });
+
+  it('flags an HTML error page so the live file is preserved', () => {
+    // A CDN 200-with-HTML body parses to essentially zero countries.
+    const html = Buffer.from(
+      '<!DOCTYPE html><html><body>404 Not Found</body></html>'.padEnd(
+        2000,
+        ' ',
+      ),
+      'utf-8',
+    );
+    const countries = parseGeoIPBuffer(html);
+    assert.ok(countries.size < MIN_COUNTRY_COUNT);
   });
 });
