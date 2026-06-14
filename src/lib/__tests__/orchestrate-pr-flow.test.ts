@@ -14,6 +14,9 @@ const {
   resolvePrNumber,
 } = require('../../../.github/workflows/scripts/orchestrate-pr-flow.cjs');
 const {
+  evaluateFinalizerDecision,
+} = require('../../../.github/workflows/scripts/evaluate-pr-finalizer-decision.cjs');
+const {
   filterRequiredChecks,
 } = require('../../../.github/workflows/scripts/filter-required-pr-checks.cjs');
 
@@ -53,6 +56,7 @@ type Pr = {
 };
 
 type Policy = {
+  eligible?: boolean;
   dependabot: null | {
     ecosystem: string;
     supported: boolean;
@@ -63,6 +67,10 @@ type Policy = {
   maintainer_approved: boolean;
   blocked_reason?: string;
   blocking_labels_present: string[];
+  same_repo?: boolean;
+  head_ref_name?: string;
+  required_pass_labels?: string[];
+  labels?: string[];
 };
 
 type WorkerRun = {
@@ -176,6 +184,22 @@ const config = {
       workflow: 'pr-finalizer.yml',
       inputs: { dry_run: 'false' },
     },
+  },
+};
+
+const finalizerConfig = {
+  ...config,
+  checks: {
+    required: [
+      {
+        workflow: 'CI',
+        names: requiredCheckNames,
+      },
+      {
+        workflow: 'PR Policy',
+        names: ['label-and-validate'],
+      },
+    ],
   },
 };
 
@@ -496,6 +520,205 @@ describe('makeDecision', () => {
     assert.equal(evidence.checkStatus.status, 'unavailable');
     assert.equal(decision.state, 'flow/checks-unavailable');
     assert.equal(decision.dispatch, null);
+  });
+
+  it('uses exact-head workflow runs when finalizer PR checks are empty', () => {
+    const evidence = collectCheckEvidence({
+      pr: prFixture(),
+      config: finalizerConfig,
+      eventName: 'workflow_dispatch',
+      event: {},
+      allowRunListFallback: true,
+      runJson(command: string, args: string[]) {
+        assert.equal(command, 'gh');
+        if (args[0] === 'pr') {
+          return { ok: true, value: [], error: null };
+        }
+        if (args[0] === 'run' && args[1] === 'list') {
+          return {
+            ok: true,
+            value: [
+              {
+                databaseId: 100,
+                workflowName: 'CI',
+                status: 'completed',
+                conclusion: 'success',
+                headSha,
+              },
+              {
+                databaseId: 200,
+                workflowName: 'PR Policy',
+                status: 'completed',
+                conclusion: 'success',
+                headSha,
+              },
+            ],
+            error: null,
+          };
+        }
+        if (args[0] === 'run' && args[1] === 'view' && args[2] === '100') {
+          return {
+            ok: true,
+            value: { workflowName: 'CI', jobs: workflowRunJobs() },
+            error: null,
+          };
+        }
+        if (args[0] === 'run' && args[1] === 'view' && args[2] === '200') {
+          return {
+            ok: true,
+            value: {
+              workflowName: 'PR Policy',
+              jobs: [
+                {
+                  name: 'label-and-validate',
+                  status: 'completed',
+                  conclusion: 'success',
+                },
+              ],
+            },
+            error: null,
+          };
+        }
+        throw new Error(`unexpected command: ${args.join(' ')}`);
+      },
+    });
+
+    assert.equal(evidence.source, 'workflow-run-jobs');
+    assert.equal(evidence.checkStatus.status, 'passed');
+  });
+
+  it('keeps finalizer unavailable when exact-head workflow jobs omit a required check', () => {
+    const evidence = collectCheckEvidence({
+      pr: prFixture(),
+      config: finalizerConfig,
+      eventName: 'workflow_dispatch',
+      event: {},
+      allowRunListFallback: true,
+      runJson(command: string, args: string[]) {
+        assert.equal(command, 'gh');
+        if (args[0] === 'pr') {
+          return { ok: true, value: [], error: null };
+        }
+        if (args[0] === 'run' && args[1] === 'list') {
+          return {
+            ok: true,
+            value: [
+              {
+                databaseId: 100,
+                workflowName: 'CI',
+                status: 'completed',
+                conclusion: 'success',
+                headSha,
+              },
+            ],
+            error: null,
+          };
+        }
+        if (args[0] === 'run' && args[1] === 'view') {
+          return {
+            ok: true,
+            value: {
+              workflowName: 'CI',
+              jobs: workflowRunJobs().filter((job) => job.name !== 'Build'),
+            },
+            error: null,
+          };
+        }
+        throw new Error(`unexpected command: ${args.join(' ')}`);
+      },
+    });
+
+    assert.equal(evidence.source, 'unavailable');
+    assert.equal(evidence.checkStatus.status, 'unavailable');
+    assert.match(evidence.checkStatus.reason ?? '', /PR Policy/);
+  });
+
+  it('lets finalizer approve when PR checks are empty but exact-head required workflows passed', () => {
+    const evidence = collectCheckEvidence({
+      pr: prFixture(),
+      config: finalizerConfig,
+      eventName: 'workflow_dispatch',
+      event: {},
+      allowRunListFallback: true,
+      runJson(command: string, args: string[]) {
+        assert.equal(command, 'gh');
+        if (args[0] === 'pr') {
+          return { ok: true, value: [], error: null };
+        }
+        if (args[0] === 'run' && args[1] === 'list') {
+          return {
+            ok: true,
+            value: [
+              {
+                databaseId: 100,
+                workflowName: 'CI',
+                status: 'completed',
+                conclusion: 'success',
+                headSha,
+              },
+              {
+                databaseId: 200,
+                workflowName: 'PR Policy',
+                status: 'completed',
+                conclusion: 'success',
+                headSha,
+              },
+            ],
+            error: null,
+          };
+        }
+        if (args[0] === 'run' && args[1] === 'view' && args[2] === '100') {
+          return {
+            ok: true,
+            value: { workflowName: 'CI', jobs: workflowRunJobs() },
+            error: null,
+          };
+        }
+        if (args[0] === 'run' && args[1] === 'view' && args[2] === '200') {
+          return {
+            ok: true,
+            value: {
+              workflowName: 'PR Policy',
+              jobs: [
+                {
+                  name: 'label-and-validate',
+                  status: 'completed',
+                  conclusion: 'success',
+                },
+              ],
+            },
+            error: null,
+          };
+        }
+        throw new Error(`unexpected command: ${args.join(' ')}`);
+      },
+    });
+    const finalizer = evaluateFinalizerDecision({
+      pr: prFixture({
+        labels: [
+          'maintainer-approved',
+          'ai-review-passed',
+          'security-review-passed',
+        ],
+      }),
+      policy: policyFixture({
+        manual_only: true,
+        maintainer_approved: true,
+        eligible: false,
+        same_repo: true,
+        head_ref_name: 'feature/pr-flow',
+        required_pass_labels: ['ai-review-passed', 'security-review-passed'],
+        labels: [
+          'maintainer-approved',
+          'ai-review-passed',
+          'security-review-passed',
+        ],
+      }),
+      checkStatus: evidence.checkStatus,
+    });
+
+    assert.equal(evidence.source, 'workflow-run-jobs');
+    assert.equal(finalizer.decision, 'approve_and_enable_automerge');
   });
 
   it('dispatches code review only for a ready human PR with green checks', () => {
