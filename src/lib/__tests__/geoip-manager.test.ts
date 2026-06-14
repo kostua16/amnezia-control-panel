@@ -262,6 +262,28 @@ describe('GeoIP download integrity threshold', () => {
 
 // --- refresh() live-file preservation integration tests ---
 
+/** Append an ignored protobuf field large enough to clear the download size
+ *  guard (>= 1000 bytes) without adding any countries. This ensures the
+ *  country-count guard (not the size guard) is the layer under test. */
+function padPastSizeGuard(buf: Buffer): Buffer {
+  const PAD = Buffer.alloc(1100);
+  return Buffer.concat([buf, lenDelim(99, PAD)]);
+}
+
+/** Build a fetch stub that serves `body` as a 200 octet-stream response.
+ *  Wraps in Uint8Array to satisfy the Response BodyInit type (bare Buffer
+ *  triggers TS2345 with stricter lib types). */
+function fetchServing(body: Buffer): () => Promise<Response> {
+  return async () =>
+    new Response(new Uint8Array(body), {
+      status: 200,
+      headers: {
+        'content-type': 'application/octet-stream',
+        'content-length': String(body.length),
+      },
+    });
+}
+
 describe('GeoIP refresh() preserves the live file on a bad download', () => {
   const geoipDir = path.join(process.cwd(), 'data', 'geoip');
   const geoipFile = path.join(geoipDir, 'geoip.dat');
@@ -271,7 +293,6 @@ describe('GeoIP refresh() preserves the live file on a bad download', () => {
   let priorContent: Buffer | null = null;
 
   before(async () => {
-    // Preserve whatever live file exists so we can restore it after the test.
     savedFetch = globalThis.fetch;
     await fs.promises.mkdir(geoipDir, { recursive: true });
     try {
@@ -279,12 +300,10 @@ describe('GeoIP refresh() preserves the live file on a bad download', () => {
     } catch {
       priorContent = null;
     }
-    // Write a known sentinel as the current live database.
     await fs.promises.writeFile(geoipFile, SENTINEL, 'utf-8');
   });
 
   after(async () => {
-    // Always restore fetch and the original file state.
     globalThis.fetch = savedFetch;
     if (priorContent !== null) {
       await fs.promises.writeFile(geoipFile, priorContent);
@@ -294,22 +313,14 @@ describe('GeoIP refresh() preserves the live file on a bad download', () => {
   });
 
   it('does not replace the live file when the download contains too few countries', async () => {
-    // A 5-country protobuf body (far below MIN_COUNTRY_COUNT) models a
-    // truncated or corrupt download.  Use application/octet-stream so the
-    // Content-Type guard does not short-circuit before the country-count check.
-    const tinyBuf = geoipListBuffer(5);
+    // 5 countries padded past the size guard so the country-count guard
+    // (< MIN_COUNTRY_COUNT) is what rejects this truncated download.
+    const tinyBuf = padPastSizeGuard(geoipListBuffer(5));
 
-    globalThis.fetch = async () =>
-      new Response(tinyBuf, {
-        status: 200,
-        headers: {
-          'content-type': 'application/octet-stream',
-          'content-length': String(tinyBuf.length),
-        },
-      });
+    globalThis.fetch = fetchServing(tinyBuf);
+    const result = await geoIPManager.refresh();
 
-    await geoIPManager.refresh();
-
+    assert.strictEqual(result.success, false, 'refresh must report failure');
     const liveContent = await fs.promises.readFile(geoipFile, 'utf-8');
     assert.strictEqual(
       liveContent,
@@ -319,24 +330,19 @@ describe('GeoIP refresh() preserves the live file on a bad download', () => {
   });
 
   it('does not replace the live file when the download is an HTML error page', async () => {
-    // Simulate a CDN returning HTML with a non-text/html Content-Type header
-    // (so it passes the Content-Type guard) but whose body parses to 0 countries.
-    const htmlBuf = Buffer.from(
-      '<!DOCTYPE html><html><body>Service Unavailable</body></html>',
-      'utf-8',
+    // HTML body padded past the size guard; still parses to 0 countries
+    // (<! byte triggers wireType-4 break in the protobuf decoder).
+    const htmlBuf = padPastSizeGuard(
+      Buffer.from(
+        '<!DOCTYPE html><html><body>Service Unavailable</body></html>',
+        'utf-8',
+      ),
     );
 
-    globalThis.fetch = async () =>
-      new Response(htmlBuf, {
-        status: 200,
-        headers: {
-          'content-type': 'application/octet-stream',
-          'content-length': String(htmlBuf.length),
-        },
-      });
+    globalThis.fetch = fetchServing(htmlBuf);
+    const result = await geoIPManager.refresh();
 
-    await geoIPManager.refresh();
-
+    assert.strictEqual(result.success, false, 'refresh must report failure');
     const liveContent = await fs.promises.readFile(geoipFile, 'utf-8');
     assert.strictEqual(
       liveContent,
