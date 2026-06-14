@@ -173,6 +173,28 @@ function collectOpenExecutionHashes(openPrsFile) {
   return hashes;
 }
 
+function collectOpenExecutionPlanSlots(openPrsFile) {
+  if (!openPrsFile || !fs.existsSync(openPrsFile)) return new Set();
+
+  const rows = JSON.parse(fs.readFileSync(openPrsFile, 'utf8'));
+  const slots = new Set();
+  // The "Imported plan:" marker emitted by build-automation-pr-body records the
+  // queue slot each open execution PR occupies. Reserve those plan numbers so a
+  // concurrent run (whose checkout of main does not yet contain the unmerged
+  // plan file) does not re-assign the same 999-NNN slot and collide on the file.
+  const markerPattern = /Imported plan:\s*[`'"]?([^\s`'"]+)/gi;
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const body = String(row.body ?? '');
+    for (const markerMatch of body.matchAll(markerPattern)) {
+      const slotMatch = markerMatch[1].match(/\b999-(\d+)-PLAN\.md\b/i);
+      if (slotMatch) slots.add(Number(slotMatch[1]));
+    }
+  }
+
+  return slots;
+}
+
 function selectCandidates({
   candidates,
   imported,
@@ -291,10 +313,19 @@ function writeSelectedPlans({
   selected,
   imported,
   queueDir = DEFAULT_QUEUE_DIR,
+  reservedPlanNumbers = new Set(),
 }) {
   ensureDir(queueDir);
+  // maxPlanNumber reflects only plan files already on main. Slots claimed by
+  // open execution PRs are absent from that checkout, so hand out the first
+  // free numbers that skip every reserved slot instead of counting up blindly.
+  const reserved = new Set(reservedPlanNumbers);
+  let nextPlanNumber = imported.maxPlanNumber + 1;
   return selected.map((candidate, index) => {
-    const planNumber = imported.maxPlanNumber + index + 1;
+    while (reserved.has(nextPlanNumber)) nextPlanNumber += 1;
+    const planNumber = nextPlanNumber;
+    reserved.add(planNumber);
+    nextPlanNumber += 1;
     const wave = imported.maxWave + index + 1;
     const planPath = path.join(
       queueDir,
@@ -320,6 +351,7 @@ function runCollector(options = {}) {
   const candidates = collectCandidates({ quickDir });
   const imported = collectImportedSources(queueDir);
   const openHashes = collectOpenExecutionHashes(options.openPrsFile);
+  const openPlanSlots = collectOpenExecutionPlanSlots(options.openPrsFile);
   const selection = selectCandidates({
     candidates,
     imported,
@@ -332,6 +364,7 @@ function runCollector(options = {}) {
         selected: selection.selected,
         imported,
         queueDir,
+        reservedPlanNumbers: openPlanSlots,
       })
     : selection.selected;
 
@@ -368,6 +401,7 @@ module.exports = {
   collectCandidates,
   collectImportedSources,
   collectOpenExecutionHashes,
+  collectOpenExecutionPlanSlots,
   isPlanningArtifact,
   renderPlan,
   runCollector,
