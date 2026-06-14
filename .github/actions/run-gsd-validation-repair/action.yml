@@ -1,0 +1,130 @@
+name: 'Run GSD validation repair'
+description: 'Repair npm test validation failures from a GSD planning execution'
+
+inputs:
+  api-key:
+    description: 'ZAI API key'
+    required: true
+  github-token:
+    description: 'GitHub token for ZAI GitHub operations'
+    required: true
+  model:
+    description: 'ZAI model alias'
+    default: 'sonnet'
+  max-turns:
+    description: 'Maximum ZAI turns'
+    required: true
+  plan-path:
+    description: 'Imported plan path'
+    required: true
+  source-path:
+    description: 'Source artifact path'
+    required: true
+  source-hash:
+    description: 'Source artifact SHA-256'
+    required: true
+  wave:
+    description: 'GSD wave number'
+    required: true
+  exit-code:
+    description: 'npm test exit code'
+    required: true
+  validation-log:
+    description: 'Captured npm test validation log tail'
+    required: true
+  final-pass:
+    description: 'Whether this is the final repair pass'
+    default: 'false'
+
+outputs:
+  claude_failed:
+    description: 'true when ZAI failed hard or produced a soft-failure execution result'
+    value: ${{ steps.repair.outputs.claude_failed }}
+  claude_failure_reason:
+    description: 'Human-readable ZAI failure reason'
+    value: ${{ steps.repair.outputs.claude_failure_reason }}
+  claude_changed_files_list:
+    description: 'Git changed files after the repair run as JSON array'
+    value: ${{ steps.repair.outputs.claude_changed_files_list }}
+  last_execution_file:
+    description: 'Execution file from the last ZAI attempt that actually ran'
+    value: ${{ steps.repair.outputs.last_execution_file }}
+  structured_output:
+    description: 'Structured output from the successful ZAI attempt'
+    value: ${{ steps.repair.outputs.structured_output }}
+  claude_last_output:
+    description: 'Sanitized capped ZAI SDK output excerpt'
+    value: ${{ steps.repair.outputs.claude_last_output }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build repair prompt
+      id: prompt
+      shell: bash
+      env:
+        PLAN_PATH: ${{ inputs.plan-path }}
+        SOURCE_PATH: ${{ inputs.source-path }}
+        SOURCE_HASH: ${{ inputs.source-hash }}
+        WAVE: ${{ inputs.wave }}
+        EXIT_CODE: ${{ inputs.exit-code }}
+        VALIDATION_LOG: ${{ inputs.validation-log }}
+        FINAL_PASS: ${{ inputs.final-pass }}
+      run: |
+        if [ "$FINAL_PASS" = "true" ]; then
+          title="Fix the remaining validation failures from the GSD planning execution before this workflow opens a PR."
+          final_rule="- This is the final repair pass. Leave the work in a state where \`npm test\` passes."
+          failure_line="\`npm test\` failed after the first repair with exit code $EXIT_CODE."
+        else
+          title="Fix the validation failures from the GSD planning execution before this workflow opens a PR."
+          final_rule=""
+          failure_line="\`npm test\` failed with exit code $EXIT_CODE."
+        fi
+
+        prompt_file="$RUNNER_TEMP/gsd-validation-repair-prompt.md"
+        {
+          echo "$title"
+          echo
+          echo "Original execution scope:"
+          echo "- Plan: \`$PLAN_PATH\`"
+          echo "- Source artifact: \`$SOURCE_PATH\`"
+          echo "- Source SHA-256: \`$SOURCE_HASH\`"
+          echo "- Wave: \`$WAVE\`"
+          echo
+          echo "Hard rules:"
+          if [ -n "$final_rule" ]; then
+            echo "$final_rule"
+          fi
+          echo "- Fix only validation fallout from the imported plan implementation."
+          echo "- Do not broaden into unrelated refactors or unrelated failing areas."
+          echo "- Do not open, approve, merge, or comment on pull requests."
+          echo "- Do not push. The workflow handles branch push and PR creation."
+          echo "- Run \`npm test\` after fixes. Typecheck, unit test, lint, and Prettier failures are unfinished work; fix them before reporting completion."
+          echo
+          echo "$failure_line"
+          echo
+          echo "Validation output follows:"
+          echo "GSD_VALIDATION_OUTPUT_BEGIN"
+          printf '%s\n' "$VALIDATION_LOG"
+          echo "GSD_VALIDATION_OUTPUT_END"
+        } > "$prompt_file"
+
+        delimiter="GSD_REPAIR_PROMPT_$(date +%s%N)"
+        {
+          echo "prompt<<$delimiter"
+          cat "$prompt_file"
+          echo "$delimiter"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Run repair
+      id: repair
+      uses: ./.github/actions/run-zai
+      with:
+        api-key: ${{ inputs.api-key }}
+        github-token: ${{ inputs.github-token }}
+        model: ${{ inputs.model }}
+        max-turns: ${{ inputs.max-turns }}
+        track-progress: 'true'
+        allowed-bots: 'github-actions,github-actions[bot],claude[bot]'
+        allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
+        prompt: ${{ steps.prompt.outputs.prompt }}

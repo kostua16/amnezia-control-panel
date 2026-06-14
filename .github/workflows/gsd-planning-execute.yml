@@ -57,6 +57,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
           install-deps: 'true'
+          generate-prisma: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
 
@@ -162,6 +163,7 @@ jobs:
             - Do not process other Phase 999 waves.
             - Do not open, approve, merge, or comment on pull requests.
             - Do not push. The workflow handles branch push and PR creation.
+            - Run `npm test` after implementation. Typecheck, unit test, lint, and Prettier failures are unfinished work; fix them before reporting completion.
 
       - name: Fail on GSD soft failure
         if: always() && steps.gsd.outputs.claude_failed == 'true'
@@ -173,10 +175,138 @@ jobs:
         if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
         run: |
           set -euo pipefail
-          changed=$(git diff --name-only --diff-filter=d -- 'src/**/*.ts' 'src/**/*.tsx' 'src/**/*.css')
-          if [ -n "$changed" ]; then
-            npx prettier --write $changed
+          mapfile -t changed < <(git diff --name-only --diff-filter=d -- 'src/**/*.ts' 'src/**/*.tsx' 'src/**/*.css')
+          if [ "${#changed[@]}" -gt 0 ]; then
+            npx prettier --write "${changed[@]}"
           fi
+
+      - name: Validate execution output
+        id: validate1
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/run-npm-test-validation
+        with:
+          attempt: '1'
+
+      - name: Repair validation failures
+        id: repair1
+        if: steps.validate1.outcome == 'failure'
+        uses: ./.github/actions/run-gsd-validation-repair
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          model: 'sonnet'
+          max-turns: ${{ env.MAX_TURNS }}
+          plan-path: ${{ steps.intake.outputs.plan_path }}
+          source-path: ${{ steps.intake.outputs.source_path }}
+          source-hash: ${{ steps.intake.outputs.source_hash }}
+          wave: ${{ steps.intake.outputs.wave }}
+          exit-code: ${{ steps.validate1.outputs.exit_code }}
+          validation-log: ${{ steps.validate1.outputs.log }}
+          final-pass: 'false'
+
+      - name: Fail on first repair soft failure
+        if: always() && steps.repair1.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::First validation repair soft failure: ${{ steps.repair1.outputs.claude_failure_reason }}"
+          exit 1
+
+      - name: Validate first repair
+        id: validate2
+        if: steps.validate1.outcome == 'failure'
+        continue-on-error: true
+        uses: ./.github/actions/run-npm-test-validation
+        with:
+          attempt: '2'
+
+      - name: Repair remaining validation failures
+        id: repair2
+        if: steps.validate2.outcome == 'failure'
+        uses: ./.github/actions/run-gsd-validation-repair
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          model: 'sonnet'
+          max-turns: ${{ env.MAX_TURNS }}
+          plan-path: ${{ steps.intake.outputs.plan_path }}
+          source-path: ${{ steps.intake.outputs.source_path }}
+          source-hash: ${{ steps.intake.outputs.source_hash }}
+          wave: ${{ steps.intake.outputs.wave }}
+          exit-code: ${{ steps.validate2.outputs.exit_code }}
+          validation-log: ${{ steps.validate2.outputs.log }}
+          final-pass: 'true'
+
+      - name: Fail on second repair soft failure
+        if: always() && steps.repair2.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::Second validation repair soft failure: ${{ steps.repair2.outputs.claude_failure_reason }}"
+          exit 1
+
+      - name: Validate second repair
+        id: validate3
+        if: steps.validate2.outcome == 'failure'
+        continue-on-error: true
+        uses: ./.github/actions/run-npm-test-validation
+        with:
+          attempt: '3'
+
+      - name: Fail on unfinished validation
+        if: always() && steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true' && steps.validate1.outcome != 'success' && steps.validate2.outcome != 'success' && steps.validate3.outcome != 'success'
+        run: |
+          echo "::error::GSD planning execution did not reach a passing npm test after two repair passes."
+          exit 1
+
+      - name: Select final ZAI output
+        id: final-zai
+        if: steps.validate1.outcome == 'success' || steps.validate2.outcome == 'success' || steps.validate3.outcome == 'success'
+        shell: bash
+        env:
+          REPAIR2_OUTCOME: ${{ steps.repair2.outcome }}
+          REPAIR2_CHANGED_FILES: ${{ steps.repair2.outputs.claude_changed_files_list }}
+          REPAIR2_EXECUTION_FILE: ${{ steps.repair2.outputs.last_execution_file }}
+          REPAIR2_STRUCTURED_OUTPUT: ${{ steps.repair2.outputs.structured_output }}
+          REPAIR2_LAST_OUTPUT: ${{ steps.repair2.outputs.claude_last_output }}
+          REPAIR1_OUTCOME: ${{ steps.repair1.outcome }}
+          REPAIR1_CHANGED_FILES: ${{ steps.repair1.outputs.claude_changed_files_list }}
+          REPAIR1_EXECUTION_FILE: ${{ steps.repair1.outputs.last_execution_file }}
+          REPAIR1_STRUCTURED_OUTPUT: ${{ steps.repair1.outputs.structured_output }}
+          REPAIR1_LAST_OUTPUT: ${{ steps.repair1.outputs.claude_last_output }}
+          GSD_CHANGED_FILES: ${{ steps.gsd.outputs.claude_changed_files_list }}
+          GSD_EXECUTION_FILE: ${{ steps.gsd.outputs.last_execution_file }}
+          GSD_STRUCTURED_OUTPUT: ${{ steps.gsd.outputs.structured_output }}
+          GSD_LAST_OUTPUT: ${{ steps.gsd.outputs.claude_last_output }}
+        run: |
+          if [ "$REPAIR2_OUTCOME" = "success" ]; then
+            final_changed_files="$REPAIR2_CHANGED_FILES"
+            final_execution_file="$REPAIR2_EXECUTION_FILE"
+            final_structured_output="$REPAIR2_STRUCTURED_OUTPUT"
+            final_last_output="$REPAIR2_LAST_OUTPUT"
+          elif [ "$REPAIR1_OUTCOME" = "success" ]; then
+            final_changed_files="$REPAIR1_CHANGED_FILES"
+            final_execution_file="$REPAIR1_EXECUTION_FILE"
+            final_structured_output="$REPAIR1_STRUCTURED_OUTPUT"
+            final_last_output="$REPAIR1_LAST_OUTPUT"
+          else
+            final_changed_files="$GSD_CHANGED_FILES"
+            final_execution_file="$GSD_EXECUTION_FILE"
+            final_structured_output="$GSD_STRUCTURED_OUTPUT"
+            final_last_output="$GSD_LAST_OUTPUT"
+          fi
+
+          write_output() {
+            local name="$1"
+            local value="$2"
+            {
+              echo "${name}<<GSD_FINAL_OUTPUT"
+              printf '%s\n' "$value"
+              echo "GSD_FINAL_OUTPUT"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          write_output changed_files "$final_changed_files"
+          write_output execution_file "$final_execution_file"
+          write_output structured_output "$final_structured_output"
+          write_output last_output "$final_last_output"
 
       - uses: ./.github/actions/commit-and-push
         id: push
@@ -194,10 +324,10 @@ jobs:
           problem: 'GSD planning executor imported and executed a merged planning artifact.'
           source-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           base-ref: main
-          changed-files: ${{ steps.gsd.outputs.claude_changed_files_list }}
-          execution-file: ${{ steps.gsd.outputs.last_execution_file }}
-          structured-output: ${{ steps.gsd.outputs.structured_output }}
-          claude-last-output: ${{ steps.gsd.outputs.claude_last_output }}
+          changed-files: ${{ steps.final-zai.outputs.changed_files }}
+          execution-file: ${{ steps.final-zai.outputs.execution_file }}
+          structured-output: ${{ steps.final-zai.outputs.structured_output }}
+          claude-last-output: ${{ steps.final-zai.outputs.last_output }}
           review-notes: |
             GSD planning execution PR.
             Source artifact: `${{ steps.intake.outputs.source_path }}`

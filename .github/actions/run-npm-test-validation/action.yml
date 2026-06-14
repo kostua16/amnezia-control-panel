@@ -1,0 +1,40 @@
+name: 'Run npm test validation'
+description: 'Run npm test for GSD planning execution and expose a capped validation log'
+
+inputs:
+  attempt:
+    description: 'Validation attempt number used in the temporary log filename'
+    required: true
+
+outputs:
+  exit_code:
+    description: 'npm test exit code'
+    value: ${{ steps.validate.outputs.exit_code }}
+  log:
+    description: 'Tail of the npm test validation log'
+    value: ${{ steps.validate.outputs.log }}
+
+runs:
+  using: composite
+  steps:
+    - name: Run npm test
+      id: validate
+      shell: bash
+      env:
+        ATTEMPT: ${{ inputs.attempt }}
+      run: |
+        set +e
+        npm test > "$RUNNER_TEMP/gsd-planning-validation-$ATTEMPT.log" 2>&1
+        status=$?
+        set -e
+
+        cat "$RUNNER_TEMP/gsd-planning-validation-$ATTEMPT.log"
+
+        {
+          echo "exit_code=$status"
+          echo "log<<GSD_VALIDATION_LOG"
+          tail -200 "$RUNNER_TEMP/gsd-planning-validation-$ATTEMPT.log"
+          echo "GSD_VALIDATION_LOG"
+        } >> "$GITHUB_OUTPUT"
+
+        exit "$status"

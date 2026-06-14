@@ -48,7 +48,7 @@ jobs:
           install-deps: 'true'
           generate-prisma: 'true'
           require-gh-auth: 'false'
-      - run: npx tsc --noEmit
+      - run: npm run typecheck
 
   test:
     name: Test
@@ -62,7 +62,7 @@ jobs:
           install-deps: 'true'
           generate-prisma: 'true'
           require-gh-auth: 'false'
-      - run: npm test
+      - run: npm run test-only
 
   build:
     name: Build
