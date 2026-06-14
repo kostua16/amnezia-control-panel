@@ -75,6 +75,71 @@ jobs:
           claude-full-output: 'false'
           allowed-bots: 'claude[bot],github-actions[bot]'
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm *),Bash(npx *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(mkdir *),Bash(rtk:*)'
+          json-schema: |
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "summary": {
+                  "type": "string"
+                },
+                "fixed_findings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "finding_id": {
+                        "type": "string"
+                      },
+                      "severity": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "details": {
+                        "type": "string"
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "manual_findings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "required": ["summary", "details"],
+                    "properties": {
+                      "finding_id": {
+                        "type": "string"
+                      },
+                      "severity": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "details": {
+                        "type": "string"
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           prompt: |
             /gsd:audit-fix
             Run a full repository audit for technical debt, code smells, and missing tests.
@@ -93,6 +158,10 @@ jobs:
             - Do NOT execute binaries through `node_modules` paths; use package scripts or `npx` instead.
             - Do NOT search ignored, generated, or dependency directories such as `node_modules`, `.next`, `src/generated`, or coverage output.
             - Once required verification passes, stop and report the result instead of running alternate test entrypoints.
+            - If you find audit findings that you cannot safely fix in this run, do not silently drop them.
+            - In the final response and structured output, list every fixed finding in `fixed_findings` and every unfixed/manual-only finding in `manual_findings`.
+            - Each `manual_findings` entry must include `finding_id`, `severity`, `summary`, `details`, and `files` so the workflow can create a follow-up GitHub issue.
+            - Also include a Markdown `### Manual-only findings` section in the final response, with one bullet per unfixed finding in the form `- **F-02 (medium):** details`.
 
       - name: Fail on Claude soft failure
         if: always() && steps.claude_run.outputs.claude_failed == 'true'
@@ -132,6 +201,14 @@ jobs:
           echo "Audit fix lane: $(jq -r '.branch_name' /tmp/audit-classification.json)"
           echo "Audit fix classification: $(jq -r '.reason' /tmp/audit-classification.json)"
 
+      - name: Detect manual audit findings
+        id: detect_manual_findings
+        env:
+          CLAUDE_STRUCTURED_OUTPUT: ${{ steps.claude_run.outputs.structured_output }}
+          CLAUDE_LAST_OUTPUT: ${{ steps.claude_run.outputs.claude_last_output }}
+          PR_BODY: ${{ steps.classify.outputs.body }}
+        run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs --report-only
+
       - uses: ./.github/actions/commit-and-push
         id: push
         with:
@@ -143,6 +220,7 @@ jobs:
         run: echo "No reviewable audit fixes identified."
 
       - name: Create audit fix PR
+        id: audit_pr
         if: steps.push.outputs.pushed == 'true'
         uses: ./.github/actions/upsert-pull-request
         with:
@@ -154,6 +232,27 @@ jobs:
           labels: ${{ steps.classify.outputs.labels }}
           draft: ${{ steps.classify.outputs.draft }}
           require-rich-body: 'true'
+
+      - name: Ensure manual finding labels
+        if: steps.detect_manual_findings.outputs.finding_count != '0'
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          policy-file: .github/workflows/policy.json
+          names: auto-fix,needs-review,audit-manual-finding
+
+      - name: Create issues for manual audit findings
+        if: steps.detect_manual_findings.outputs.finding_count != '0'
+        id: manual_findings
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          CLAUDE_STRUCTURED_OUTPUT: ${{ steps.claude_run.outputs.structured_output }}
+          CLAUDE_LAST_OUTPUT: ${{ steps.claude_run.outputs.claude_last_output }}
+          PR_BODY: ${{ steps.classify.outputs.body }}
+          CHANGED_FILES: ${{ steps.claude_run.outputs.claude_changed_files_list }}
+          SOURCE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_PR_URL: ${{ steps.audit_pr.outputs.pr_url }}
+        run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs
 
   report-failure:
     needs: [audit-fix]

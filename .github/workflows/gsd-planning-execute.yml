@@ -164,6 +164,8 @@ jobs:
             - Do not open, approve, merge, or comment on pull requests.
             - Do not push. The workflow handles branch push and PR creation.
             - Run `npm test` after implementation. Typecheck, unit test, lint, and Prettier failures are unfinished work; fix them before reporting completion.
+            - If any source artifact proposal is intentionally left out of scope, include a final `### Proposals deferred` section with one bullet per deferred proposal.
+            - Each deferred proposal bullet must include the proposal number, title, and rationale, e.g. `- **Proposal 2 (Decompose vpn-services.ts):** rationale`.
 
       - name: Fail on GSD soft failure
         if: always() && steps.gsd.outputs.claude_failed == 'true'
@@ -307,6 +309,45 @@ jobs:
           write_output execution_file "$final_execution_file"
           write_output structured_output "$final_structured_output"
           write_output last_output "$final_last_output"
+
+      - name: Detect deferred GSD proposals
+        id: detect_deferred_proposals
+        if: steps.final-zai.outcome == 'success'
+        env:
+          MANUAL_FINDING_MODE: gsd-deferred-proposals
+          CLAUDE_STRUCTURED_OUTPUT: ${{ steps.final-zai.outputs.structured_output }}
+          CLAUDE_LAST_OUTPUT: ${{ steps.final-zai.outputs.last_output }}
+          SOURCE_ARTIFACT: ${{ steps.intake.outputs.source_path }}
+          SOURCE_HASH: ${{ steps.intake.outputs.source_hash }}
+          SOURCE_TITLE: ${{ steps.intake.outputs.source_title }}
+          IMPORTED_PLAN: ${{ steps.intake.outputs.plan_path }}
+          CHANGED_FILES: ${{ steps.final-zai.outputs.changed_files }}
+        run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs --mode gsd-deferred-proposals --report-only
+
+      - name: Ensure deferred proposal labels
+        if: steps.detect_deferred_proposals.outcome == 'success' && steps.detect_deferred_proposals.outputs.finding_count != '0'
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          policy-file: .github/workflows/policy.json
+          names: needs-review,gsd-deferred-proposal,area/planning
+
+      - name: Create issues for deferred GSD proposals
+        if: steps.detect_deferred_proposals.outcome == 'success' && steps.detect_deferred_proposals.outputs.finding_count != '0'
+        id: deferred_proposals
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          MANUAL_FINDING_MODE: gsd-deferred-proposals
+          CLAUDE_STRUCTURED_OUTPUT: ${{ steps.final-zai.outputs.structured_output }}
+          CLAUDE_LAST_OUTPUT: ${{ steps.final-zai.outputs.last_output }}
+          SOURCE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_ARTIFACT: ${{ steps.intake.outputs.source_path }}
+          SOURCE_HASH: ${{ steps.intake.outputs.source_hash }}
+          SOURCE_TITLE: ${{ steps.intake.outputs.source_title }}
+          IMPORTED_PLAN: ${{ steps.intake.outputs.plan_path }}
+          CHANGED_FILES: ${{ steps.final-zai.outputs.changed_files }}
+        run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs --mode gsd-deferred-proposals
 
       - uses: ./.github/actions/commit-and-push
         id: push
