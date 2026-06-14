@@ -7,8 +7,32 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const AUDIT_MODE = 'audit-manual-findings';
+const GSD_DEFERRED_MODE = 'gsd-deferred-proposals';
 const DEFAULT_LABELS = ['auto-fix', 'needs-review', 'audit-manual-finding'];
-const MARKER_PREFIX = 'audit-manual-finding';
+const MODE_CONFIGS = {
+  [AUDIT_MODE]: {
+    labels: DEFAULT_LABELS,
+    markerPrefix: 'audit-manual-finding',
+    issueListLabel: 'audit-manual-finding',
+    reportName: 'Manual audit findings',
+    titlePrefix: '[audit]',
+    bodyHeading: 'Manual Audit Finding',
+    bodyIntro:
+      'This issue was created because the autonomous audit-fix workflow reported the finding as manual-only or unfixed. A developer should decide and implement the appropriate fix.',
+  },
+  [GSD_DEFERRED_MODE]: {
+    labels: ['needs-review', 'gsd-deferred-proposal', 'area/planning'],
+    markerPrefix: 'gsd-deferred-proposal',
+    issueListLabel: 'gsd-deferred-proposal',
+    reportName: 'GSD deferred proposals',
+    titlePrefix: '[gsd-deferred]',
+    bodyHeading: 'Deferred GSD Proposal',
+    bodyIntro:
+      'This issue was created because the GSD planning executor intentionally deferred this proposal from the selected implementation PR. A developer should decide whether and how to schedule the follow-up work.',
+  },
+};
+const MARKER_PREFIX = MODE_CONFIGS[AUDIT_MODE].markerPrefix;
 const MAX_TITLE_LENGTH = 120;
 
 function parseJsonMaybe(value) {
@@ -169,7 +193,92 @@ function parseManualFindingsFromText(value) {
   return findings;
 }
 
-function collectManualFindings({ structuredOutput, textFallback }) {
+function parseGsdDeferredProposalsFromStructuredOutput(value) {
+  const parsed = parseJsonMaybe(value);
+  const rawFindings = getNestedManualFindings(parsed);
+  if (rawFindings.length > 0) {
+    return rawFindings
+      .map((finding, index) => normalizeFinding(finding, index))
+      .filter(Boolean);
+  }
+  if (!parsed || typeof parsed !== 'object') return [];
+  for (const key of [
+    'deferred_proposals',
+    'deferredProposals',
+    'proposals_deferred',
+    'proposalsDeferred',
+  ]) {
+    if (Array.isArray(parsed[key])) {
+      return parsed[key]
+        .map((finding, index) => normalizeFinding(finding, index))
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function parseGsdDeferredProposalsFromText(value) {
+  const lines = cleanText(value).split('\n');
+  const headingIndex = lines.findIndex((line) =>
+    /^###\s+Proposals deferred\b/i.test(line.trim()),
+  );
+  if (headingIndex === -1) return [];
+
+  const findings = [];
+  let current = null;
+
+  function pushCurrent() {
+    if (!current) return;
+    const normalized = normalizeFinding(current, findings.length);
+    if (normalized) findings.push(normalized);
+    current = null;
+  }
+
+  for (const line of lines.slice(headingIndex + 1)) {
+    if (/^#{1,3}\s+\S/.test(line.trim())) break;
+    const bullet = line.match(
+      /^\s*[-*]\s+(?:\*\*)?(Proposal\s+\d+)(?:\s*\(([^)]+)\))?(?:\*\*)?:?\s*(.*)$/i,
+    );
+    if (bullet) {
+      pushCurrent();
+      current = {
+        finding_id: stripMarkdown(bullet[1]),
+        severity: 'deferred',
+        summary: stripMarkdown(bullet[2] || bullet[3] || bullet[1]),
+        details: stripMarkdown(bullet[3] || bullet[2] || ''),
+      };
+      continue;
+    }
+    if (current && line.trim()) {
+      current.details = `${current.details}\n${stripMarkdown(line)}`.trim();
+    }
+  }
+  pushCurrent();
+
+  return findings;
+}
+
+function normalizeMode(value) {
+  const mode = cleanText(value || AUDIT_MODE);
+  if (MODE_CONFIGS[mode]) return mode;
+  throw new Error(`Unsupported manual finding mode: ${mode}`);
+}
+
+function configForMode(mode) {
+  return MODE_CONFIGS[normalizeMode(mode)];
+}
+
+function collectManualFindings({
+  structuredOutput,
+  textFallback,
+  mode = AUDIT_MODE,
+}) {
+  if (normalizeMode(mode) === GSD_DEFERRED_MODE) {
+    const structured =
+      parseGsdDeferredProposalsFromStructuredOutput(structuredOutput);
+    if (structured.length > 0) return structured;
+    return parseGsdDeferredProposalsFromText(textFallback);
+  }
   const structured = parseManualFindingsFromStructuredOutput(structuredOutput);
   if (structured.length > 0) return structured;
   return parseManualFindingsFromText(textFallback);
@@ -179,16 +288,26 @@ function normalizeFingerprintPart(value) {
   return cleanText(value).toLowerCase().replace(/\s+/g, ' ');
 }
 
-function fingerprintFinding(finding) {
+function fingerprintFinding(finding, options = {}) {
   const payload = [
     normalizeFingerprintPart(finding.summary),
     finding.files.map(normalizeFingerprintPart).sort().join('|'),
-  ].join('\n');
-  return crypto.createHash('sha256').update(payload).digest('hex').slice(0, 16);
+  ];
+  if (options.fingerprintSalt) {
+    payload.unshift(
+      normalizeFingerprintPart(options.fingerprintSalt),
+      normalizeFingerprintPart(finding.findingId || ''),
+    );
+  }
+  return crypto
+    .createHash('sha256')
+    .update(payload.join('\n'))
+    .digest('hex')
+    .slice(0, 16);
 }
 
-function markerForFingerprint(fingerprint) {
-  return `<!-- ${MARKER_PREFIX}:${fingerprint} -->`;
+function markerForFingerprint(fingerprint, markerPrefix = MARKER_PREFIX) {
+  return `<!-- ${markerPrefix}:${fingerprint} -->`;
 }
 
 function truncateTitle(value) {
@@ -197,10 +316,11 @@ function truncateTitle(value) {
   return `${title.slice(0, MAX_TITLE_LENGTH - 3).trimEnd()}...`;
 }
 
-function renderIssueTitle(finding) {
+function renderIssueTitle(finding, mode = AUDIT_MODE) {
+  const config = configForMode(mode);
   const prefix = finding.findingId
-    ? `[audit] ${finding.findingId}: `
-    : '[audit] ';
+    ? `${config.titlePrefix} ${finding.findingId}: `
+    : `${config.titlePrefix} `;
   return truncateTitle(`${prefix}${finding.summary}`);
 }
 
@@ -210,22 +330,32 @@ function renderIssueBody({
   sourceRunUrl,
   sourcePrUrl,
   changedFiles,
+  sourceArtifact,
+  sourceHash,
+  importedPlan,
+  sourceTitle,
+  mode = AUDIT_MODE,
 }) {
+  const config = configForMode(mode);
   const files = finding.files.length > 0 ? finding.files : changedFiles;
   const fileSection =
     files.length > 0
       ? files.map((filePath) => `- \`${filePath}\``).join('\n')
-      : '- Not specified by the audit output.';
+      : '- Not specified by the automation output.';
   const links = [
     sourceRunUrl ? `- Source run: ${sourceRunUrl}` : '',
     sourcePrUrl ? `- Source PR: ${sourcePrUrl}` : '',
+    sourceArtifact ? `- Source artifact: \`${sourceArtifact}\`` : '',
+    importedPlan ? `- Imported plan: \`${importedPlan}\`` : '',
+    sourceHash ? `- Source SHA-256: \`${sourceHash}\`` : '',
+    sourceTitle ? `- Source title: ${sourceTitle}` : '',
   ]
     .filter(Boolean)
     .join('\n');
 
   return [
-    markerForFingerprint(fingerprint),
-    '## Manual Audit Finding',
+    markerForFingerprint(fingerprint, config.markerPrefix),
+    `## ${config.bodyHeading}`,
     '',
     `**Finding:** ${finding.findingId || 'Unnumbered'}`,
     `**Severity:** ${finding.severity}`,
@@ -244,7 +374,7 @@ function renderIssueBody({
     '',
     '## Follow-up',
     '',
-    'This issue was created because the autonomous audit-fix workflow reported the finding as manual-only or unfixed. A developer should decide and implement the appropriate fix.',
+    config.bodyIntro,
   ].join('\n');
 }
 
@@ -261,8 +391,11 @@ function parseOpenIssues(output) {
   return Array.isArray(parsed) ? parsed : [];
 }
 
-function findExistingIssue(issues, fingerprint) {
-  const marker = markerForFingerprint(fingerprint);
+function findExistingIssue(issues, fingerprint, mode = AUDIT_MODE) {
+  const marker = markerForFingerprint(
+    fingerprint,
+    configForMode(mode).markerPrefix,
+  );
   return issues.find((issue) => String(issue.body || '').includes(marker));
 }
 
@@ -275,12 +408,19 @@ function writeTempBody(body) {
 
 function upsertIssues({
   findings,
-  labels = DEFAULT_LABELS,
+  labels,
   sourceRunUrl,
   sourcePrUrl,
+  sourceArtifact,
+  sourceHash,
+  importedPlan,
+  sourceTitle,
   changedFiles = [],
+  mode = AUDIT_MODE,
   runGhCommand = runGh,
 }) {
+  const config = configForMode(mode);
+  const effectiveLabels = labels || config.labels;
   if (findings.length === 0) {
     return { findingCount: 0, createdCount: 0, updatedCount: 0 };
   }
@@ -292,7 +432,7 @@ function upsertIssues({
       '--state',
       'open',
       '--label',
-      'audit-manual-finding',
+      config.issueListLabel,
       '--json',
       'number,title,body',
       '--limit',
@@ -303,21 +443,34 @@ function upsertIssues({
   let updatedCount = 0;
 
   for (const finding of findings) {
-    const fingerprint = fingerprintFinding(finding);
-    const title = renderIssueTitle(finding);
+    const fingerprint = fingerprintFinding(finding, {
+      fingerprintSalt: sourceHash || sourceArtifact || '',
+    });
+    const title = renderIssueTitle(finding, mode);
     const body = renderIssueBody({
       finding,
       fingerprint,
       sourceRunUrl,
       sourcePrUrl,
+      sourceArtifact,
+      sourceHash,
+      importedPlan,
+      sourceTitle,
       changedFiles,
+      mode,
     });
     const bodyFile = writeTempBody(body);
-    const existing = findExistingIssue(existingIssues, fingerprint);
+    const existing = findExistingIssue(existingIssues, fingerprint, mode);
     // gh issue create accepts --label; gh issue edit only accepts --add-label/--remove-label.
     // Build per-branch flag arrays so the edit path does not pass an unsupported --label.
-    const createLabelArgs = labels.flatMap((label) => ['--label', label]);
-    const editLabelArgs = labels.flatMap((label) => ['--add-label', label]);
+    const createLabelArgs = effectiveLabels.flatMap((label) => [
+      '--label',
+      label,
+    ]);
+    const editLabelArgs = effectiveLabels.flatMap((label) => [
+      '--add-label',
+      label,
+    ]);
 
     if (existing) {
       runGhCommand([
@@ -387,6 +540,8 @@ function parseArgs(argv) {
 
 function runCli() {
   const args = parseArgs(process.argv.slice(2));
+  const mode = normalizeMode(args.mode || process.env.MANUAL_FINDING_MODE);
+  const config = configForMode(mode);
   const reportOnly = args.reportOnly === 'true';
   const textFallback =
     process.env.PR_BODY ||
@@ -396,6 +551,7 @@ function runCli() {
   const findings = collectManualFindings({
     structuredOutput: process.env.CLAUDE_STRUCTURED_OUTPUT,
     textFallback,
+    mode,
   });
 
   const result = reportOnly
@@ -408,9 +564,15 @@ function runCli() {
         requireGitHubContext(process.env, findings.length);
         return upsertIssues({
           findings,
+          labels: config.labels,
           sourceRunUrl: process.env.SOURCE_RUN_URL || '',
           sourcePrUrl: process.env.SOURCE_PR_URL || '',
+          sourceArtifact: process.env.SOURCE_ARTIFACT || '',
+          sourceHash: process.env.SOURCE_HASH || '',
+          importedPlan: process.env.IMPORTED_PLAN || '',
+          sourceTitle: process.env.SOURCE_TITLE || '',
           changedFiles: parseList(process.env.CHANGED_FILES),
+          mode,
         });
       })();
 
@@ -421,16 +583,19 @@ function runCli() {
   });
 
   process.stdout.write(
-    `Manual audit findings: ${result.findingCount}; created: ${result.createdCount}; updated: ${result.updatedCount}\n`,
+    `${config.reportName}: ${result.findingCount}; created: ${result.createdCount}; updated: ${result.updatedCount}\n`,
   );
 }
 
 module.exports = {
+  AUDIT_MODE,
+  GSD_DEFERRED_MODE,
   collectManualFindings,
   fingerprintFinding,
   markerForFingerprint,
   normalizeSeverity,
   parseList,
+  parseGsdDeferredProposalsFromText,
   parseManualFindingsFromStructuredOutput,
   parseManualFindingsFromText,
   requireGitHubContext,

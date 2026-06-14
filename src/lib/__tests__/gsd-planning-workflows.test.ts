@@ -106,6 +106,55 @@ describe('GSD planning workflow automation', () => {
     );
   });
 
+  it('creates follow-up issues for deferred GSD planning proposals', () => {
+    const workflow = readRepoFile('.github/workflows/gsd-planning-execute.yml');
+    const policy = readRepoFile('.github/workflows/policy.json');
+    const finalZaiIndex = workflow.indexOf('id: final-zai');
+    const detectIndex = workflow.indexOf('id: detect_deferred_proposals');
+    const createIndex = workflow.indexOf(
+      'name: Create issues for deferred GSD proposals',
+    );
+    const prBodyIndex = workflow.indexOf('name: Build execution PR body');
+
+    assert.match(workflow, /issues: write/);
+    assert.ok(finalZaiIndex > 0, 'final output selection must exist');
+    assert.ok(
+      detectIndex > finalZaiIndex,
+      'deferred proposal detection must run after final output selection',
+    );
+    assert.ok(
+      createIndex > detectIndex,
+      'deferred proposal issue creation must run after detection',
+    );
+    assert.ok(
+      prBodyIndex > createIndex,
+      'deferred proposal issues must be created before the execution PR body',
+    );
+    assert.match(workflow, /### Proposals deferred/);
+    assert.match(workflow, /--mode gsd-deferred-proposals --report-only/);
+    assert.match(
+      workflow,
+      /node \.github\/workflows\/scripts\/upsert-audit-manual-findings\.cjs --mode gsd-deferred-proposals/,
+    );
+    assert.match(
+      workflow,
+      /CLAUDE_STRUCTURED_OUTPUT: \$\{\{ steps\.final-zai\.outputs\.structured_output \}\}/,
+    );
+    assert.match(
+      workflow,
+      /CLAUDE_LAST_OUTPUT: \$\{\{ steps\.final-zai\.outputs\.last_output \}\}/,
+    );
+    assert.match(
+      workflow,
+      /CHANGED_FILES: \$\{\{ steps\.final-zai\.outputs\.changed_files \}\}/,
+    );
+    assert.match(
+      workflow,
+      /names: needs-review,gsd-deferred-proposal,area\/planning/,
+    );
+    assert.match(policy, /"gsd-deferred-proposal"/);
+  });
+
   it('labels trusted planning and risky GSD execution consistently in PR Policy', () => {
     const workflow = readRepoFile('.github/workflows/pr-policy.yml');
 

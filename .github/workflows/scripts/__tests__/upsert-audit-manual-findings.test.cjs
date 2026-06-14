@@ -7,10 +7,12 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  GSD_DEFERRED_MODE,
   collectManualFindings,
   fingerprintFinding,
   markerForFingerprint,
   normalizeSeverity,
+  parseGsdDeferredProposalsFromText,
   parseList,
   parseManualFindingsFromText,
   requireGitHubContext,
@@ -24,10 +26,10 @@ const scriptPath = path.join(
   'upsert-audit-manual-findings.cjs',
 );
 
-function runReportOnly(env) {
+function runReportOnly(env, args = ['--report-only']) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-report-only-'));
   const outputPath = path.join(dir, 'github-output');
-  const stdout = execFileSync(process.execPath, [scriptPath, '--report-only'], {
+  const stdout = execFileSync(process.execPath, [scriptPath, ...args], {
     encoding: 'utf8',
     env: {
       ...process.env,
@@ -47,6 +49,17 @@ const pr382ManualFindings = `
 - **F-05 (low):** Several monitoring modules use raw \`console.log\` (\`vpn-services\`, \`panel-health-checker\`, \`tailscale\`, \`user-sync\`) - a cross-cutting logger-vs-console decision.
 
 I made no other file changes.
+`;
+
+const pr386DeferredProposals = `
+### Proposals deferred (scoped out as "smallest useful" — rationale)
+
+- **Proposal 1 (transaction boundaries):** The POST handler already implements a compensating-transaction pattern. For PUT/DELETE, the external VPN CLI/HTTP calls are interleaved with DB writes and cannot live inside \`prisma.$transaction\`.
+  A clean wrap would mean restructuring the handlers and test harness.
+- **Proposal 2 (decompose \`vpn-services.ts\`):** Pure structural refactor of functions the artifact itself calls stubs "by design." High churn, low immediate value.
+
+## What Changed
+- \`prisma/schema.prisma\`
 `;
 
 function makeStructuredOutput() {
@@ -150,6 +163,136 @@ test('PR body fallback parses F-02 through F-05 from manual-only section', () =>
     ['medium', 'medium', 'low', 'low'],
   );
   assert.match(findings[0].details, /have no tests/);
+});
+
+test('GSD fallback parses Proposal 1 and Proposal 2 from deferred section', () => {
+  const findings = parseGsdDeferredProposalsFromText(pr386DeferredProposals);
+
+  assert.equal(findings.length, 2);
+  assert.deepEqual(
+    findings.map((finding) => finding.findingId),
+    ['Proposal 1', 'Proposal 2'],
+  );
+  assert.deepEqual(
+    findings.map((finding) => finding.summary),
+    ['transaction boundaries', 'decompose vpn-services.ts'],
+  );
+  assert.deepEqual(
+    findings.map((finding) => finding.severity),
+    ['deferred', 'deferred'],
+  );
+  assert.match(findings[0].details, /compensating-transaction/);
+  assert.match(findings[0].details, /restructuring the handlers/);
+});
+
+test('GSD mode creates one issue per deferred proposal with GSD labels', () => {
+  const calls = [];
+  const findings = collectManualFindings({
+    structuredOutput: '',
+    textFallback: pr386DeferredProposals,
+    mode: GSD_DEFERRED_MODE,
+  });
+
+  const result = upsertIssues({
+    findings,
+    mode: GSD_DEFERRED_MODE,
+    sourceRunUrl: 'https://example.test/run/386',
+    sourceArtifact: '.planning/quick/260611-arch-review-deep/260611-PLAN.md',
+    sourceHash:
+      '8409d0c920f97f984749b9094a2e9e9f4585154359a9139983c0d12ff3e807dc',
+    importedPlan:
+      '.planning/phases/999-gh-planning-execution-queue/999-007-PLAN.md',
+    sourceTitle: 'Architectural Review: Deep Follow-up Improvements',
+    runGhCommand(args) {
+      calls.push(args);
+      if (args[0] === 'issue' && args[1] === 'list') return '[]';
+      return '';
+    },
+  });
+
+  assert.equal(result.findingCount, 2);
+  assert.equal(result.createdCount, 2);
+  assert.equal(result.updatedCount, 0);
+  assert.equal(
+    calls.filter((args) => args[0] === 'issue' && args[1] === 'create').length,
+    2,
+  );
+  const createCall = calls.find(
+    (args) => args[0] === 'issue' && args[1] === 'create',
+  );
+  assert.deepEqual(createCall.slice(0, 4), [
+    'issue',
+    'create',
+    '--title',
+    '[gsd-deferred] Proposal 1: transaction boundaries',
+  ]);
+  assert.ok(createCall.includes('--label'), 'create path must use --label');
+  assert.ok(
+    createCall.includes('gsd-deferred-proposal'),
+    'create path must apply the deferred proposal label',
+  );
+  assert.ok(
+    !createCall.includes('--add-label'),
+    'create path must not use --add-label',
+  );
+});
+
+test('GSD mode deduplicates deferred proposals by source and marker', () => {
+  const finding = collectManualFindings({
+    structuredOutput: '',
+    textFallback: pr386DeferredProposals,
+    mode: GSD_DEFERRED_MODE,
+  })[0];
+  const sourceHash =
+    '8409d0c920f97f984749b9094a2e9e9f4585154359a9139983c0d12ff3e807dc';
+  const fingerprint = fingerprintFinding(finding, {
+    fingerprintSalt: sourceHash,
+  });
+  const existingBody = renderIssueBody({
+    finding,
+    fingerprint,
+    sourceRunUrl: 'https://example.test/runs/old',
+    sourceHash,
+    changedFiles: [],
+    mode: GSD_DEFERRED_MODE,
+  });
+  const calls = [];
+
+  const result = upsertIssues({
+    findings: [finding],
+    mode: GSD_DEFERRED_MODE,
+    sourceHash,
+    runGhCommand(args) {
+      calls.push(args);
+      if (args[0] === 'issue' && args[1] === 'list') {
+        return JSON.stringify([
+          {
+            number: 3861,
+            title: 'old title',
+            body: existingBody,
+          },
+        ]);
+      }
+      return '';
+    },
+  });
+
+  assert.equal(result.createdCount, 0);
+  assert.equal(result.updatedCount, 1);
+  assert.ok(
+    existingBody.includes(
+      markerForFingerprint(fingerprint, 'gsd-deferred-proposal'),
+    ),
+  );
+  assert.equal(
+    calls.some((args) => args[0] === 'issue' && args[1] === 'create'),
+    false,
+  );
+  const editCall = calls.find(
+    (args) => args[0] === 'issue' && args[1] === 'edit',
+  );
+  assert.ok(editCall.includes('--add-label'), 'edit path must use --add-label');
+  assert.ok(!editCall.includes('--label'), 'edit path must not use --label');
 });
 
 test('stable fingerprint deduplicates the same finding across run ids', () => {
@@ -279,6 +422,34 @@ test('report-only mode emits zero when no manual findings exist', () => {
   });
 
   assert.match(output, /^finding_count=0$/m);
+});
+
+test('GSD report-only mode counts deferred proposals and zeroes without section', () => {
+  const withDeferred = runReportOnly(
+    {
+      CLAUDE_LAST_OUTPUT: pr386DeferredProposals,
+      GH_TOKEN: '',
+      GITHUB_TOKEN: '',
+      GITHUB_REPOSITORY: '',
+    },
+    ['--mode', GSD_DEFERRED_MODE, '--report-only'],
+  );
+  assert.match(
+    withDeferred.stdout,
+    /GSD deferred proposals: 2; created: 0; updated: 0/,
+  );
+  assert.match(withDeferred.output, /^finding_count=2$/m);
+
+  const withoutDeferred = runReportOnly(
+    {
+      CLAUDE_LAST_OUTPUT: '## Done\n\nNo deferred proposals.',
+      GH_TOKEN: '',
+      GITHUB_TOKEN: '',
+      GITHUB_REPOSITORY: '',
+    },
+    ['--mode', GSD_DEFERRED_MODE, '--report-only'],
+  );
+  assert.match(withoutDeferred.output, /^finding_count=0$/m);
 });
 
 test('normalizeSeverity lowercases values and defaults empty values', () => {

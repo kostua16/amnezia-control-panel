@@ -164,6 +164,10 @@
       "color": "0e8a16",
       "description": "GSD automation is executing a merged planning intake artifact"
     },
+    "gsd-deferred-proposal": {
+      "color": "fbca04",
+      "description": "Manual follow-up issue created from a deferred GSD planning proposal"
+    },
     "needs-review": {
       "color": "fbca04",
       "description": "Manual review is required before merge or follow-up automation"
