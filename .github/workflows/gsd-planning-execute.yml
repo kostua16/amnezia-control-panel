@@ -169,6 +169,10 @@ jobs:
           echo "::error::GSD execution soft failure: ${{ steps.gsd.outputs.claude_failure_reason }}"
           exit 1
 
+      - name: Format executed source before commit
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        run: npm run format
+
       - uses: ./.github/actions/commit-and-push
         id: push
         if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
