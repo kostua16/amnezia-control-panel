@@ -57,6 +57,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
           install-deps: 'true'
+          generate-prisma: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
 
@@ -162,6 +163,7 @@ jobs:
             - Do not process other Phase 999 waves.
             - Do not open, approve, merge, or comment on pull requests.
             - Do not push. The workflow handles branch push and PR creation.
+            - Run `npm test` after implementation. Typecheck, unit test, lint, and Prettier failures are unfinished work; fix them before reporting completion.
 
       - name: Fail on GSD soft failure
         if: always() && steps.gsd.outputs.claude_failed == 'true'
@@ -177,6 +179,186 @@ jobs:
           if [ -n "$changed" ]; then
             npx prettier --write $changed
           fi
+
+      - name: Validate execution output
+        id: validate1
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm test > "$RUNNER_TEMP/gsd-planning-validation-1.log" 2>&1
+          status=$?
+          set -e
+
+          cat "$RUNNER_TEMP/gsd-planning-validation-1.log"
+
+          {
+            echo "exit_code=$status"
+            echo "log<<GSD_VALIDATION_LOG"
+            tail -200 "$RUNNER_TEMP/gsd-planning-validation-1.log"
+            echo "GSD_VALIDATION_LOG"
+          } >> "$GITHUB_OUTPUT"
+
+          exit "$status"
+
+      - name: Repair validation failures
+        id: repair1
+        if: steps.validate1.outcome == 'failure'
+        uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          model: 'sonnet'
+          max-turns: ${{ env.MAX_TURNS }}
+          track-progress: 'true'
+          allowed-bots: 'github-actions,github-actions[bot],claude[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
+          prompt: |
+            Fix the validation failures from the GSD planning execution before this workflow opens a PR.
+
+            Original execution scope:
+            - Plan: `${{ steps.intake.outputs.plan_path }}`
+            - Source artifact: `${{ steps.intake.outputs.source_path }}`
+            - Source SHA-256: `${{ steps.intake.outputs.source_hash }}`
+            - Wave: `${{ steps.intake.outputs.wave }}`
+
+            Hard rules:
+            - Fix only validation fallout from the imported plan implementation.
+            - Do not broaden into unrelated refactors or unrelated failing areas.
+            - Do not open, approve, merge, or comment on pull requests.
+            - Do not push. The workflow handles branch push and PR creation.
+            - Run `npm test` after fixes. Typecheck, unit test, lint, and Prettier failures are unfinished work; fix them before reporting completion.
+
+            `npm test` failed with exit code ${{ steps.validate1.outputs.exit_code }}.
+
+            Validation output:
+            ```text
+            ${{ steps.validate1.outputs.log }}
+            ```
+
+      - name: Fail on first repair soft failure
+        if: always() && steps.repair1.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::First validation repair soft failure: ${{ steps.repair1.outputs.claude_failure_reason }}"
+          exit 1
+
+      - name: Validate first repair
+        id: validate2
+        if: steps.validate1.outcome == 'failure'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm test > "$RUNNER_TEMP/gsd-planning-validation-2.log" 2>&1
+          status=$?
+          set -e
+
+          cat "$RUNNER_TEMP/gsd-planning-validation-2.log"
+
+          {
+            echo "exit_code=$status"
+            echo "log<<GSD_VALIDATION_LOG"
+            tail -200 "$RUNNER_TEMP/gsd-planning-validation-2.log"
+            echo "GSD_VALIDATION_LOG"
+          } >> "$GITHUB_OUTPUT"
+
+          exit "$status"
+
+      - name: Repair remaining validation failures
+        id: repair2
+        if: steps.validate2.outcome == 'failure'
+        uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          model: 'sonnet'
+          max-turns: ${{ env.MAX_TURNS }}
+          track-progress: 'true'
+          allowed-bots: 'github-actions,github-actions[bot],claude[bot]'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
+          prompt: |
+            Fix the remaining validation failures from the GSD planning execution before this workflow opens a PR.
+
+            Original execution scope:
+            - Plan: `${{ steps.intake.outputs.plan_path }}`
+            - Source artifact: `${{ steps.intake.outputs.source_path }}`
+            - Source SHA-256: `${{ steps.intake.outputs.source_hash }}`
+            - Wave: `${{ steps.intake.outputs.wave }}`
+
+            Hard rules:
+            - This is the final repair pass. Leave the work in a state where `npm test` passes.
+            - Fix only validation fallout from the imported plan implementation.
+            - Do not broaden into unrelated refactors or unrelated failing areas.
+            - Do not open, approve, merge, or comment on pull requests.
+            - Do not push. The workflow handles branch push and PR creation.
+            - Run `npm test` after fixes. Typecheck, unit test, lint, and Prettier failures are unfinished work; fix them before reporting completion.
+
+            `npm test` failed after the first repair with exit code ${{ steps.validate2.outputs.exit_code }}.
+
+            Validation output:
+            ```text
+            ${{ steps.validate2.outputs.log }}
+            ```
+
+      - name: Fail on second repair soft failure
+        if: always() && steps.repair2.outputs.claude_failed == 'true'
+        run: |
+          echo "::error::Second validation repair soft failure: ${{ steps.repair2.outputs.claude_failure_reason }}"
+          exit 1
+
+      - name: Validate second repair
+        id: validate3
+        if: steps.validate2.outcome == 'failure'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm test > "$RUNNER_TEMP/gsd-planning-validation-3.log" 2>&1
+          status=$?
+          set -e
+
+          cat "$RUNNER_TEMP/gsd-planning-validation-3.log"
+
+          {
+            echo "exit_code=$status"
+            echo "log<<GSD_VALIDATION_LOG"
+            tail -200 "$RUNNER_TEMP/gsd-planning-validation-3.log"
+            echo "GSD_VALIDATION_LOG"
+          } >> "$GITHUB_OUTPUT"
+
+          exit "$status"
+
+      - name: Fail on unfinished validation
+        if: always() && steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true' && steps.validate1.outcome != 'success' && steps.validate2.outcome != 'success' && steps.validate3.outcome != 'success'
+        run: |
+          echo "::error::GSD planning execution did not reach a passing npm test after two repair passes."
+          exit 1
+
+      - name: Select final ZAI output
+        id: final-zai
+        if: steps.validate1.outcome == 'success' || steps.validate2.outcome == 'success' || steps.validate3.outcome == 'success'
+        shell: bash
+        env:
+          FINAL_CHANGED_FILES: ${{ steps.repair2.outcome == 'success' && steps.repair2.outputs.claude_changed_files_list || steps.repair1.outcome == 'success' && steps.repair1.outputs.claude_changed_files_list || steps.gsd.outputs.claude_changed_files_list }}
+          FINAL_EXECUTION_FILE: ${{ steps.repair2.outcome == 'success' && steps.repair2.outputs.last_execution_file || steps.repair1.outcome == 'success' && steps.repair1.outputs.last_execution_file || steps.gsd.outputs.last_execution_file }}
+          FINAL_STRUCTURED_OUTPUT: ${{ steps.repair2.outcome == 'success' && steps.repair2.outputs.structured_output || steps.repair1.outcome == 'success' && steps.repair1.outputs.structured_output || steps.gsd.outputs.structured_output }}
+          FINAL_LAST_OUTPUT: ${{ steps.repair2.outcome == 'success' && steps.repair2.outputs.claude_last_output || steps.repair1.outcome == 'success' && steps.repair1.outputs.claude_last_output || steps.gsd.outputs.claude_last_output }}
+        run: |
+          write_output() {
+            local name="$1"
+            local value="$2"
+            {
+              echo "${name}<<GSD_FINAL_OUTPUT"
+              printf '%s\n' "$value"
+              echo "GSD_FINAL_OUTPUT"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          write_output changed_files "$FINAL_CHANGED_FILES"
+          write_output execution_file "$FINAL_EXECUTION_FILE"
+          write_output structured_output "$FINAL_STRUCTURED_OUTPUT"
+          write_output last_output "$FINAL_LAST_OUTPUT"
 
       - uses: ./.github/actions/commit-and-push
         id: push
@@ -194,10 +376,10 @@ jobs:
           problem: 'GSD planning executor imported and executed a merged planning artifact.'
           source-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           base-ref: main
-          changed-files: ${{ steps.gsd.outputs.claude_changed_files_list }}
-          execution-file: ${{ steps.gsd.outputs.last_execution_file }}
-          structured-output: ${{ steps.gsd.outputs.structured_output }}
-          claude-last-output: ${{ steps.gsd.outputs.claude_last_output }}
+          changed-files: ${{ steps.final-zai.outputs.changed_files }}
+          execution-file: ${{ steps.final-zai.outputs.execution_file }}
+          structured-output: ${{ steps.final-zai.outputs.structured_output }}
+          claude-last-output: ${{ steps.final-zai.outputs.last_output }}
           review-notes: |
             GSD planning execution PR.
             Source artifact: `${{ steps.intake.outputs.source_path }}`
