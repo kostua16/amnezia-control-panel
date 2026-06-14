@@ -108,6 +108,10 @@
       "color": "0e8a16",
       "description": "Autonomous audit fix stayed within the safe auto-merge policy"
     },
+    "audit-manual-finding": {
+      "color": "fbca04",
+      "description": "Manual follow-up issue created from an unfixed audit finding"
+    },
     "ci-failure": {
       "color": "d73a4a",
       "description": "CI or automation workflow failure requiring attention"
