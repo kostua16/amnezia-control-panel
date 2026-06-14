@@ -266,6 +266,7 @@ Always manual-only:
 - skips GSD install when `.claude/gsd-install-state.json` is present
 - falls back to pinned `@opengsd/get-shit-done-redux` version `1.1.0` only if that file is missing
 - installs pinned RTK version `0.35.0`
+- optionally installs `uv` (Python package runner) via `install-uv: 'true'` when profile flows need serena MCP server runtime
 
 `run-zai`:
 
@@ -275,6 +276,15 @@ Always manual-only:
 - modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
 - workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; orchestrated workers that wake `pr-flow.yml` must grant `actions: write`
 - orchestrator-dispatched `workflow_dispatch` workers run as `github-actions[bot]`, so Claude/ZAI steps must pass `allowed-bots: github-actions,github-actions[bot],claude[bot]` when `orchestrated=true`; do not use wildcard bot allowance
+- accepts `plugin-marketplaces` and `plugins` inputs (forwarded to `claude-code-action`) for installing Claude Code plugins per workflow
+- workflows are grouped into **plugin profiles** based on their purpose and turn budget:
+  - **Profile E (Engineer):** `claude`, `fix-issue`, `_auto-fix-ci`, `audit-fix`, `gsd-planning-execute` — code-editing flows with typescript-lsp, serena (read-only), context7, code-review, security-guidance, code-simplifier, frontend-design, superpowers, caveman (+ commit-commands in claude.yml only)
+  - **Profile R (Reviewer):** `code-review`, `audit-auto-prs` — review/inspect flows with typescript-lsp, serena (read-only), context7, code-review, pr-review-toolkit, security-guidance, code-simplifier
+  - **Profile P (Planner):** `gsd-planning`, `suggest-improvements`, `pr-improve`, `docs-drift` — planning/propose flows with context7, serena (read-only), caveman
+  - **Profile O (Ops):** all remaining flows (triage, release-notes, dependency-review, issue-catch-up, maintenance, workflow-health-optimize, monitor-*) — no plugins (haiku/label ops, tight budgets, or YAML-only scope)
+- serena is restricted to **read-only** by **enumerating each allowed tool by name** — `mcp__plugin_serena_serena__{find_symbol,get_symbols_overview,find_referencing_symbols,find_implementations,find_declaration,search_for_pattern,find_file,list_dir,read_file,get_diagnostics_for_file}`. The `mcp__plugin_serena_serena__*` wildcard is **intentionally NOT** used so `execute_shell_command` and all write tools (`replace_*`, `edit_*`, `write_memory`, `create_text_file`, `safe_delete_symbol`, `delete_memory`) stay blocked. context7 tools use `mcp__plugin_context7_context7__{query-docs,resolve-library-id}`; typescript-lsp tools (Profiles E + R) use the `mcp__plugin_typescript-lsp__*` prefix.
+- `pyright-lsp` and `claude-code-setup` plugins are intentionally excluded from CI (pyright: no Python app code; claude-code-setup: risk of rewriting committed `.claude/settings.json`)
+- `commit-commands` is included only in `claude.yml` (interactive @claude flows); excluded from automated flows that forbid committing
 
 `run-deepseek`:
 
