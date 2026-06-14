@@ -5,6 +5,7 @@ import {
   blockThreeXuiUser,
   unblockThreeXuiUser,
 } from '@/lib/vpn-services';
+import type { VpnServiceResult } from '@/lib/vpn-services';
 
 export interface SyncReport {
   checked: number;
@@ -16,6 +17,68 @@ export interface SyncReport {
     action: string;
     description: string;
   }>;
+}
+
+// ─── Test support: injectable sync dependencies ────────
+
+/**
+ * Narrow view of a user record used by syncUser. Only the fields the
+ * reconciliation logic reads, so tests can inject a minimal fixture instead
+ * of a full Prisma row.
+ */
+export interface SyncUser {
+  id: number;
+  username: string;
+  isActive: boolean;
+  isBlocked: boolean;
+  protocols: Array<{ serviceType: string }>;
+}
+
+/**
+ * Dependency surface for user-state reconciliation. In production the defaults
+ * read from the real database and call the real VPN services; tests inject
+ * fakes so block/unblock scenarios are deterministic without a live DB.
+ */
+export interface UserSyncDeps {
+  findUser: (userId: number) => Promise<SyncUser | null>;
+  blockAwgUser: (username: string) => Promise<VpnServiceResult>;
+  unblockAwgUser: (username: string) => Promise<VpnServiceResult>;
+  blockThreeXuiUser: (username: string) => Promise<VpnServiceResult>;
+  unblockThreeXuiUser: (username: string) => Promise<VpnServiceResult>;
+}
+
+let _deps: UserSyncDeps | null = null;
+
+/** @internal — inject mock dependencies for testing */
+export function __setDeps(deps: UserSyncDeps): void {
+  _deps = deps;
+}
+
+/** @internal — restore production dependencies */
+export function __resetDeps(): void {
+  _deps = null;
+}
+
+async function defaultFindUser(userId: number): Promise<SyncUser | null> {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      protocols: { where: { isActive: true }, select: { serviceType: true } },
+    },
+  });
+}
+
+/** Resolve the active dependency set, falling back to production defaults. */
+function resolveDeps(): UserSyncDeps {
+  return (
+    _deps ?? {
+      findUser: defaultFindUser,
+      blockAwgUser,
+      unblockAwgUser,
+      blockThreeXuiUser,
+      unblockThreeXuiUser,
+    }
+  );
 }
 
 /**
@@ -45,12 +108,8 @@ export async function syncUser(userId: number): Promise<SyncReport> {
   };
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        protocols: { where: { isActive: true }, select: { serviceType: true } },
-      },
-    });
+    const deps = resolveDeps();
+    const user = await deps.findUser(userId);
 
     if (!user) {
       report.errors.push(`User ${userId} not found in database`);
@@ -65,9 +124,9 @@ export async function syncUser(userId: number): Promise<SyncReport> {
         try {
           let result;
           if (protocol.serviceType === 'AWG') {
-            result = await blockAwgUser(user.username);
+            result = await deps.blockAwgUser(user.username);
           } else if (protocol.serviceType === 'THREE_XUI') {
-            result = await blockThreeXuiUser(user.username);
+            result = await deps.blockThreeXuiUser(user.username);
           } else {
             continue;
           }
@@ -98,9 +157,9 @@ export async function syncUser(userId: number): Promise<SyncReport> {
         try {
           let result;
           if (protocol.serviceType === 'AWG') {
-            result = await unblockAwgUser(user.username);
+            result = await deps.unblockAwgUser(user.username);
           } else if (protocol.serviceType === 'THREE_XUI') {
-            result = await unblockThreeXuiUser(user.username);
+            result = await deps.unblockThreeXuiUser(user.username);
           } else {
             continue;
           }

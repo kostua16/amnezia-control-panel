@@ -25,6 +25,29 @@ export interface ChainApplyResult {
   };
 }
 
+// ─── Test support: injectable WireGuard service-port lookup ──
+
+/**
+ * Minimal Prisma surface needed to resolve the AWG (WireGuard) service port
+ * for a server. Narrow on purpose so tests can inject a tiny mock instead of
+ * standing up a full database client, while production uses the real client.
+ */
+export type ChainRouterServicePortLookup = {
+  service: {
+    findFirst: (args: {
+      where: { serverId: number; type: string };
+      select: { port: true };
+    }) => Promise<{ port: number | null } | null>;
+  };
+};
+
+/**
+ * Test-injected override for the WireGuard service-port lookup. When set,
+ * generateChainConfig uses this instead of dynamically importing Prisma, so
+ * port resolution is testable without a live database. Cleared by __resetDeps.
+ */
+let _prismaOverride: ChainRouterServicePortLookup | null = null;
+
 /**
  * Generate a full chain configuration from a template and server selection.
  *
@@ -63,13 +86,23 @@ export async function generateChainConfig(
     serverLookup.set(s.id, s);
   }
 
-  // Resolve transport for each server in the chain
-  let prisma: Awaited<(typeof import('./prisma'))['prisma']> | null = null;
-  try {
-    const mod = await import('./prisma');
-    prisma = mod.prisma;
-  } catch {
-    // Prisma not available (e.g. test environment) -- default WireGuard port will be used
+  // Resolve transport for each server in the chain.
+  // Prefer the injected test override, otherwise load the real Prisma client.
+  // Surface import failures instead of silently defaulting the WireGuard port
+  // so a misconfigured database client is visible in production logs rather
+  // than silently diverging to the 51820 default.
+  let prisma: ChainRouterServicePortLookup | null = _prismaOverride;
+  if (!prisma) {
+    try {
+      const mod = await import('./prisma');
+      prisma = mod.prisma;
+    } catch (err) {
+      console.warn(
+        `[chain-router] Prisma client unavailable; WireGuard service port lookup disabled (defaulting to 51820). Cause: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   const resolvedNodes: Array<ChainNode & { hostname: string; port: number }> =
@@ -397,21 +430,29 @@ function generateXrayRoutingRules(
 // ─── Test Helpers ────────────────────────────────────────
 
 /**
- * Manually set dependencies for testing.
- * Exported for test mocks.
+ * Inject test dependencies.
+ *
+ * `getNodeIP` and `isReachable` configure Tailscale transport resolution and
+ * are implemented in transport-resolver (import its own __setDeps directly).
+ * `prisma` overrides the WireGuard service-port lookup used by
+ * generateChainConfig, so per-server port resolution can be exercised without
+ * a live database — previously this path fell through to an opaque default.
  */
 export function __setDeps(deps: {
   getNodeIP: (hostname?: string) => Promise<string | null>;
   isReachable: (hostname: string) => Promise<boolean>;
+  prisma?: ChainRouterServicePortLookup | null;
 }): void {
-  // This function is a test hook - implementation is in transport-resolver
-  void deps;
+  void deps.getNodeIP;
+  void deps.isReachable;
+  if (deps.prisma !== undefined) {
+    _prismaOverride = deps.prisma;
+  }
 }
 
 /**
- * Reset dependencies to original implementations.
- * Exported for test cleanup.
+ * Reset injected test dependencies. Exported for test cleanup.
  */
 export function __resetDeps(): void {
-  // This function is a test hook - implementation is in transport-resolver
+  _prismaOverride = null;
 }
