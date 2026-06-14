@@ -157,3 +157,83 @@ test('runCollector hands out sequential free slots when one is reserved', () => 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('collectOpenExecutionPlanSlots trusts the changed-files list over a stale body marker', () => {
+  // Reproduces the #375/#372 marker drift: the "Imported plan" body marker says
+  // 003, but the PR actually occupies a higher slot. The files list must win, or
+  // the next scheduled run re-assigns the real slot and collides on the plan
+  // file and overlapping source changes.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-slots-'));
+  try {
+    const file = path.join(root, 'open-prs.json');
+    writeOpenPrsFile(file, [
+      {
+        number: 375,
+        body: openPrBody(3),
+        files: [
+          {
+            path: '.planning/phases/999-gh-planning-execution-queue/999-005-PLAN.md',
+          },
+        ],
+      },
+    ]);
+
+    const slots = collectOpenExecutionPlanSlots(file);
+
+    assert.equal(slots.has(5), true);
+    assert.equal(
+      slots.has(3),
+      false,
+      'stale marker must not leak into the reserved set when files are present',
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runCollector reserves the real slot a stale-marker open PR occupies', () => {
+  // main checkout knows 001/002 only; open PRs occupy 003/004/005 but #372 and
+  // #375 carry a stale body marker that says 003. Without files-based
+  // reservation the next run would re-assign 005 and collide with #375.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    seedQueuePlan(queueDir, 1);
+    seedQueuePlan(queueDir, 2);
+    writeCandidate(quickDir, '260610-next', '# Next\n');
+    const openPrs = path.join(root, 'open-prs.json');
+    writeOpenPrsFile(openPrs, [
+      { number: 365, body: openPrBody(3) },
+      {
+        number: 372,
+        body: openPrBody(3),
+        files: [
+          {
+            path: '.planning/phases/999-gh-planning-execution-queue/999-004-PLAN.md',
+          },
+        ],
+      },
+      {
+        number: 375,
+        body: openPrBody(3),
+        files: [
+          {
+            path: '.planning/phases/999-gh-planning-execution-queue/999-005-PLAN.md',
+          },
+        ],
+      },
+    ]);
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: openPrs,
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.selected[0].plan, '999-006');
+    assert.match(result.selected[0].plan_path, /999-006-PLAN\.md$/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

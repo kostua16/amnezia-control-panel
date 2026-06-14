@@ -173,22 +173,44 @@ function collectOpenExecutionHashes(openPrsFile) {
   return hashes;
 }
 
+function planSlotFromPath(filePath) {
+  const match = String(filePath ?? '').match(/\b999-(\d+)-PLAN\.md\b/i);
+  return match ? Number(match[1]) : null;
+}
+
 function collectOpenExecutionPlanSlots(openPrsFile) {
   if (!openPrsFile || !fs.existsSync(openPrsFile)) return new Set();
 
   const rows = JSON.parse(fs.readFileSync(openPrsFile, 'utf8'));
   const slots = new Set();
-  // The "Imported plan:" marker emitted by build-automation-pr-body records the
-  // queue slot each open execution PR occupies. Reserve those plan numbers so a
-  // concurrent run (whose checkout of main does not yet contain the unmerged
-  // plan file) does not re-assign the same 999-NNN slot and collide on the file.
+  // Each open execution PR's changed-files list is the authoritative record of
+  // the 999-NNN slot it occupies. The human-readable "Imported plan:" body
+  // marker is only a fallback: older PRs carry a stale marker (it was emitted
+  // from a checkout whose plan numbering did not survive merge), so relying on
+  // the marker alone caused two PRs to claim the same slot and collide on the
+  // shared plan file and overlapping source.
   const markerPattern = /Imported plan:\s*[`'"]?([^\s`'"]+)/gi;
 
   for (const row of Array.isArray(rows) ? rows : []) {
+    let reservedFromFiles = false;
+    for (const file of Array.isArray(row.files) ? row.files : []) {
+      const slot = planSlotFromPath(
+        typeof file === 'string' ? file : file.path,
+      );
+      if (slot) {
+        slots.add(slot);
+        reservedFromFiles = true;
+      }
+    }
+
+    // The files list is authoritative for this PR; only parse the body marker
+    // when the files list is unavailable (e.g. minimal fixtures).
+    if (reservedFromFiles) continue;
+
     const body = String(row.body ?? '');
     for (const markerMatch of body.matchAll(markerPattern)) {
-      const slotMatch = markerMatch[1].match(/\b999-(\d+)-PLAN\.md\b/i);
-      if (slotMatch) slots.add(Number(slotMatch[1]));
+      const slot = planSlotFromPath(markerMatch[1]);
+      if (slot) slots.add(slot);
     }
   }
 
@@ -317,8 +339,10 @@ function writeSelectedPlans({
 }) {
   ensureDir(queueDir);
   // maxPlanNumber reflects only plan files already on main. Slots claimed by
-  // open execution PRs are absent from that checkout, so hand out the first
-  // free numbers that skip every reserved slot instead of counting up blindly.
+  // open execution PRs are absent from that checkout (their plan files are not
+  // merged yet), so reservedPlanNumbers carries the slots those PRs actually
+  // occupy (derived from their changed-files list). Hand out the first free
+  // numbers that skip every reserved slot instead of counting up blindly.
   const reserved = new Set(reservedPlanNumbers);
   let nextPlanNumber = imported.maxPlanNumber + 1;
   return selected.map((candidate, index) => {

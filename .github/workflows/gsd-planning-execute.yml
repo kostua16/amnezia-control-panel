@@ -81,7 +81,7 @@ jobs:
           gh pr list \
             --state open \
             --label gsd-plan-execution \
-            --json number,title,body,headRefName \
+            --json number,title,body,headRefName,files \
             > /tmp/gsd-planning-open-prs.json
 
       - name: Import merged planning artifact
