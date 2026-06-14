@@ -55,6 +55,21 @@ function hasSuccessfulResult(executionText) {
   return false;
 }
 
+// Detects whether the execution output carries any result node at all
+// (success or error). An empty execution file — no turns, no result — means
+// the action step died before producing any diagnostic output.
+function hasAnyResultNode(executionText) {
+  for (const value of parseJsonValues(executionText)) {
+    let found = false;
+    walk(value, (node) => {
+      if (found || node.type !== 'result') return;
+      found = true;
+    });
+    if (found) return true;
+  }
+  return false;
+}
+
 function isRateLimitOrOverloadText(value) {
   const text = String(value || '');
   return (
@@ -130,6 +145,27 @@ function classifyClaudeRetry({
     };
   }
 
+  // Abortive failure: the action step failed but captured no execution result
+  // (no turns, no error) while the API probe is healthy. That empty-output +
+  // healthy-probe signature is a transient/abortive failure — a brief overload
+  // or network blip that cleared before the probe ran a few seconds later —
+  // not a real code or prompt error (those leave a result or action_error).
+  // Retry once instead of giving up; bounded by the existing 3-attempt cap.
+  if (normalizedHttpCode === '200' && !hasAnyResultNode(executionText)) {
+    return {
+      httpCode: normalizedHttpCode,
+      isRateLimited: false,
+      shouldRetry: true,
+      retryReason: 'abortive_no_output',
+      softSuccess: false,
+      softSuccessReason: '',
+      annotation: 'warning',
+      message: finalRetry
+        ? `Attempt ${normalizedAttempt} failed with no execution output despite a healthy API probe (HTTP 200). Retrying final attempt — likely transient.`
+        : `Attempt ${normalizedAttempt} failed with no execution output despite a healthy API probe (HTTP 200). Retrying once — likely transient.`,
+    };
+  }
+
   return {
     httpCode: normalizedHttpCode,
     isRateLimited: false,
@@ -179,5 +215,6 @@ if (require.main === module) {
 module.exports = {
   classifyClaudeRetry,
   hasSuccessfulResult,
+  hasAnyResultNode,
   isRateLimitOrOverloadText,
 };
