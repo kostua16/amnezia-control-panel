@@ -201,6 +201,14 @@ jobs:
           echo "Audit fix lane: $(jq -r '.branch_name' /tmp/audit-classification.json)"
           echo "Audit fix classification: $(jq -r '.reason' /tmp/audit-classification.json)"
 
+      - name: Detect manual audit findings
+        id: detect_manual_findings
+        env:
+          CLAUDE_STRUCTURED_OUTPUT: ${{ steps.claude_run.outputs.structured_output }}
+          CLAUDE_LAST_OUTPUT: ${{ steps.claude_run.outputs.claude_last_output }}
+          PR_BODY: ${{ steps.classify.outputs.body }}
+        run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs --report-only
+
       - uses: ./.github/actions/commit-and-push
         id: push
         with:
@@ -226,7 +234,7 @@ jobs:
           require-rich-body: 'true'
 
       - name: Ensure manual finding labels
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.detect_manual_findings.outputs.finding_count != '0'
         uses: ./.github/actions/ensure-workflow-labels
         with:
           github-token: ${{ secrets.GH_PAT }}
@@ -234,7 +242,7 @@ jobs:
           names: auto-fix,needs-review,audit-manual-finding
 
       - name: Create issues for manual audit findings
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.detect_manual_findings.outputs.finding_count != '0'
         id: manual_findings
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}

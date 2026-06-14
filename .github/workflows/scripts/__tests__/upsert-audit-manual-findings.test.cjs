@@ -1,17 +1,43 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   collectManualFindings,
   fingerprintFinding,
   markerForFingerprint,
+  normalizeSeverity,
   parseList,
   parseManualFindingsFromText,
   requireGitHubContext,
   renderIssueBody,
   upsertIssues,
 } = require('../upsert-audit-manual-findings.cjs');
+
+const scriptPath = path.join(
+  __dirname,
+  '..',
+  'upsert-audit-manual-findings.cjs',
+);
+
+function runReportOnly(env) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-report-only-'));
+  const outputPath = path.join(dir, 'github-output');
+  const stdout = execFileSync(process.execPath, [scriptPath, '--report-only'], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GITHUB_OUTPUT: outputPath,
+      ...env,
+    },
+  });
+  const output = fs.readFileSync(outputPath, 'utf8');
+  return { stdout, output };
+}
 
 const pr382ManualFindings = `
 ### Manual-only findings (need developer decisions)
@@ -203,6 +229,48 @@ test('JSON changed file list output parses as file paths', () => {
   assert.deepEqual(parseList('["src/lib/resource-monitor.ts"]'), [
     'src/lib/resource-monitor.ts',
   ]);
+});
+
+test('report-only mode counts structured findings without GitHub context', () => {
+  const { stdout, output } = runReportOnly({
+    CLAUDE_STRUCTURED_OUTPUT: makeStructuredOutput(),
+    GH_TOKEN: '',
+    GITHUB_TOKEN: '',
+    GITHUB_REPOSITORY: '',
+  });
+
+  assert.match(stdout, /Manual audit findings: 4; created: 0; updated: 0/);
+  assert.match(output, /^finding_count=4$/m);
+  assert.match(output, /^created_count=0$/m);
+  assert.match(output, /^updated_count=0$/m);
+});
+
+test('report-only mode counts PR-body fallback findings', () => {
+  const { output } = runReportOnly({
+    PR_BODY: pr382ManualFindings,
+    GH_TOKEN: '',
+    GITHUB_TOKEN: '',
+    GITHUB_REPOSITORY: '',
+  });
+
+  assert.match(output, /^finding_count=4$/m);
+});
+
+test('report-only mode emits zero when no manual findings exist', () => {
+  const { output } = runReportOnly({
+    PR_BODY: '## Audit complete\n\nNo manual findings.',
+    CLAUDE_STRUCTURED_OUTPUT: '',
+    GH_TOKEN: '',
+    GITHUB_TOKEN: '',
+    GITHUB_REPOSITORY: '',
+  });
+
+  assert.match(output, /^finding_count=0$/m);
+});
+
+test('normalizeSeverity lowercases values and defaults empty values', () => {
+  assert.equal(normalizeSeverity('MEDIUM'), 'medium');
+  assert.equal(normalizeSeverity(''), 'unspecified');
 });
 
 test('missing GitHub context fails only when findings need issue upsert', () => {

@@ -58,11 +58,7 @@ function firstString(...values) {
 
 function normalizeSeverity(value) {
   const severity = cleanText(value).toLowerCase();
-  if (!severity) return 'unspecified';
-  if (['critical', 'high', 'medium', 'low', 'info'].includes(severity)) {
-    return severity;
-  }
-  return severity;
+  return severity || 'unspecified';
 }
 
 function normalizeFinding(raw = {}, index = 0) {
@@ -388,6 +384,7 @@ function parseArgs(argv) {
 
 function runCli() {
   const args = parseArgs(process.argv.slice(2));
+  const reportOnly = args.reportOnly === 'true';
   const textFallback =
     process.env.PR_BODY ||
     process.env.CLAUDE_LAST_OUTPUT ||
@@ -398,14 +395,21 @@ function runCli() {
     textFallback,
   });
 
-  requireGitHubContext(process.env, findings.length);
-
-  const result = upsertIssues({
-    findings,
-    sourceRunUrl: process.env.SOURCE_RUN_URL || '',
-    sourcePrUrl: process.env.SOURCE_PR_URL || '',
-    changedFiles: parseList(process.env.CHANGED_FILES),
-  });
+  const result = reportOnly
+    ? {
+        findingCount: findings.length,
+        createdCount: 0,
+        updatedCount: 0,
+      }
+    : (() => {
+        requireGitHubContext(process.env, findings.length);
+        return upsertIssues({
+          findings,
+          sourceRunUrl: process.env.SOURCE_RUN_URL || '',
+          sourcePrUrl: process.env.SOURCE_PR_URL || '',
+          changedFiles: parseList(process.env.CHANGED_FILES),
+        });
+      })();
 
   appendGithubOutputs(args.githubOutput || process.env.GITHUB_OUTPUT, {
     finding_count: result.findingCount,
@@ -422,6 +426,7 @@ module.exports = {
   collectManualFindings,
   fingerprintFinding,
   markerForFingerprint,
+  normalizeSeverity,
   parseList,
   parseManualFindingsFromStructuredOutput,
   parseManualFindingsFromText,
