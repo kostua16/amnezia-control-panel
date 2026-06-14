@@ -115,17 +115,46 @@ describe('run-claude-params turn budget prompt', () => {
       'utf8',
     );
 
-    // Allowlisted to only the pull-request comments endpoint.
-    assert.match(helper, /repos\/\$\{REPO\}\/pulls\/\$\{PR_NUMBER\}\/comments/);
+    // Flags mirror the GitHub create-review-comment fields (underscore names,
+    // matching the create_inline_comment MCP tool), plus --pr. No positional
+    // <pr_number> and no hyphenated --start-line / --commit-id variants.
+    for (const flag of [
+      '--pr)',
+      '--path)',
+      '--line)',
+      '--body)',
+      '--start_line)',
+      '--side)',
+      '--commit_id)',
+    ]) {
+      assert.match(helper, new RegExp(flag.replace(/[()]/g, '\\$&')));
+    }
+    assert.doesNotMatch(helper, /--start-line/);
+    assert.doesNotMatch(helper, /--commit-id/);
+    assert.match(helper, /PR="\$\{PR_NUMBER:-\}"/);
+
     // Required-arg guards and a RIGHT-side default for added (+) lines.
     assert.match(helper, /--path is required/);
     assert.match(helper, /--line is required/);
     assert.match(helper, /--body is required/);
     assert.match(helper, /SIDE="RIGHT"/);
-    // Falls back to the PR head SHA when --commit-id is omitted.
+    // Falls back to the PR head SHA when --commit_id is omitted.
+    assert.match(helper, /gh pr view "\$PR" --repo "\$REPO" --json headRefOid/);
+
+    // Idempotent upsert: list existing comments, PATCH an existing one or POST
+    // a new one, scoped to helper-owned comments via the ownership marker.
+    assert.match(helper, /<!-- pr-inline-comment -->/);
     assert.match(
       helper,
-      /gh pr view "\$PR_NUMBER" --repo "\$REPO" --json headRefOid/,
+      /gh api "repos\/\$\{REPO\}\/pulls\/\$\{PR\}\/comments" --paginate/,
     );
+    assert.match(
+      helper,
+      /gh api -X PATCH "repos\/\$\{REPO\}\/pulls\/comments\/\$\{existing_id\}"/,
+    );
+    assert.match(helper, /body="\$BODY_WITH_MARKER"/);
+    // Prints the resulting comment URL on both update and create paths.
+    const urlPrints = helper.match(/--jq '\.html_url'/g) ?? [];
+    assert.equal(urlPrints.length, 2);
   });
 });

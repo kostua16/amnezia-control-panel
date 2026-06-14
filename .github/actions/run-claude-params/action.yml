@@ -317,7 +317,7 @@ runs:
         ALLOW_POST_INLINE: ${{ inputs.allow-post-inline }}
       run: |
         if [[ "$ALLOW_POST_INLINE" == "true" ]]; then
-          printf 'inline_guidance=%s\n' 'Post actionable findings as inline review comments: prefer the `mcp__github_inline_comment__create_inline_comment` tool when it is available; otherwise post each finding via `./.github/workflows/scripts/post-pr-inline-comment.sh <pr_number> --path <path> --line <line> --body <body>` (add `--start-line <n>` for multi-line spans; the head commit SHA is resolved automatically).' >> "$GITHUB_OUTPUT"
+          printf 'inline_guidance=%s\n' 'Post actionable findings as inline review comments: prefer the `mcp__github_inline_comment__create_inline_comment` tool when it is available; otherwise use `./.github/workflows/scripts/post-pr-inline-comment.sh --pr <n> --path <file> --line <n> --body <text>` (same field names as the inline-comment tool, plus --pr; idempotent — re-running updates the existing comment at that path/line rather than duplicating; --start_line for multi-line spans; the head commit SHA is resolved automatically).' >> "$GITHUB_OUTPUT"
         else
           echo "inline_guidance=" >> "$GITHUB_OUTPUT"
         fi
