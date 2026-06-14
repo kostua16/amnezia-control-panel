@@ -174,9 +174,7 @@ export const MIN_COUNTRY_COUNT = 100;
  * message Country { string iso_code = 1; repeated CIDR cidr = 2; }
  * message CIDR { bytes ip = 1; uint32 prefix = 2; }
  */
-export function parseGeoIPBuffer(
-  buffer: Buffer,
-): Map<string, CachedCountry> {
+export function parseGeoIPBuffer(buffer: Buffer): Map<string, CachedCountry> {
   const countries = new Map<string, CachedCountry>();
   decodeGeoIPProtobufIntoMap(buffer, countries);
   return countries;
