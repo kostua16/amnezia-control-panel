@@ -160,6 +160,7 @@ model TrafficLog {
   @@index([userId])
   @@index([serverId])
   @@index([timestamp])
+  @@index([userId, timestamp])
   @@map("traffic_logs")
 }
 
