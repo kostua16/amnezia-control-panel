@@ -31,7 +31,10 @@ permissions:
 jobs:
   audit-fix:
     runs-on: [self-hosted, big]
-    timeout-minutes: 10
+    # Includes checkout + setup-environment (deps, prisma, gsd, rtk) before the
+    # audit agent starts; the agent needs the bulk of this budget to finish a
+    # full audit/fix/verify pass. 10 min cancelled ~5/6 recent runs mid-work.
+    timeout-minutes: 20
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
       claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
