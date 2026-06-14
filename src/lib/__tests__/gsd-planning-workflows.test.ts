@@ -130,6 +130,10 @@ describe('GSD planning workflow automation', () => {
       prBodyIndex > createIndex,
       'deferred proposal issues must be created before the execution PR body',
     );
+    assert.match(
+      workflow,
+      /name: Create issues for deferred GSD proposals[\s\S]*continue-on-error: true/,
+    );
     assert.match(workflow, /### Proposals deferred/);
     assert.match(workflow, /--mode gsd-deferred-proposals --report-only/);
     assert.match(

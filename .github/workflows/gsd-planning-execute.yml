@@ -335,6 +335,7 @@ jobs:
       - name: Create issues for deferred GSD proposals
         if: steps.detect_deferred_proposals.outcome == 'success' && steps.detect_deferred_proposals.outputs.finding_count != '0'
         id: deferred_proposals
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           MANUAL_FINDING_MODE: gsd-deferred-proposals
