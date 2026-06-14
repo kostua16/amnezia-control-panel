@@ -314,7 +314,10 @@ function upsertIssues({
     });
     const bodyFile = writeTempBody(body);
     const existing = findExistingIssue(existingIssues, fingerprint);
-    const labelArgs = labels.flatMap((label) => ['--label', label]);
+    // gh issue create accepts --label; gh issue edit only accepts --add-label/--remove-label.
+    // Build per-branch flag arrays so the edit path does not pass an unsupported --label.
+    const createLabelArgs = labels.flatMap((label) => ['--label', label]);
+    const editLabelArgs = labels.flatMap((label) => ['--add-label', label]);
 
     if (existing) {
       runGhCommand([
@@ -325,7 +328,7 @@ function upsertIssues({
         title,
         '--body-file',
         bodyFile,
-        ...labelArgs,
+        ...editLabelArgs,
       ]);
       updatedCount += 1;
     } else {
@@ -336,7 +339,7 @@ function upsertIssues({
         title,
         '--body-file',
         bodyFile,
-        ...labelArgs,
+        ...createLabelArgs,
       ]);
       createdCount += 1;
     }

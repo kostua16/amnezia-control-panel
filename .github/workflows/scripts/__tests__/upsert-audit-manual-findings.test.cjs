@@ -127,6 +127,14 @@ test('structured output with four manual findings creates four issue payloads', 
       '[audit] F-02: Monitoring modules have no tests',
     ],
   );
+  const createCall = calls.find(
+    (args) => args[0] === 'issue' && args[1] === 'create',
+  );
+  assert.ok(createCall.includes('--label'), 'create path must use --label');
+  assert.ok(
+    !createCall.includes('--add-label'),
+    'create path must not use --add-label',
+  );
 });
 
 test('PR body fallback parses F-02 through F-05 from manual-only section', () => {
@@ -189,6 +197,11 @@ test('stable fingerprint deduplicates the same finding across run ids', () => {
     calls.some((args) => args[0] === 'issue' && args[1] === 'edit'),
     true,
   );
+  const editCall = calls.find(
+    (args) => args[0] === 'issue' && args[1] === 'edit',
+  );
+  assert.ok(editCall.includes('--add-label'), 'edit path must use --add-label');
+  assert.ok(!editCall.includes('--label'), 'edit path must not use --label');
 });
 
 test('empty manual findings succeed and create nothing', () => {
