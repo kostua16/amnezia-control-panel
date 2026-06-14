@@ -55,7 +55,7 @@ function getDiskUsage(): {
     const target = isWin ? 'C:' : '/';
 
     if (isWin) {
-      // Use wmic on Windows
+      // PowerShell CIM query — wmic is deprecated on modern Windows.
       const output = execFileSync(
         'powershell',
         [
