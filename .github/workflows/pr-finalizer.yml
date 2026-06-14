@@ -98,124 +98,31 @@ jobs:
             --policy-file .github/workflows/policy.json \
             --pr-file /tmp/pr.json \
             > /tmp/policy-eval.json
-          checks_read_error=""
-          if ! gh pr checks "$PR_NUMBER" --json name,state,bucket,link,workflow > /tmp/pr-checks-all.json 2> /tmp/pr-checks-error.txt; then
-            checks_read_error=$(tr '\n' ' ' < /tmp/pr-checks-error.txt | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//')
-            printf '[]\n' > /tmp/pr-checks-all.json
-          fi
-          node .github/workflows/scripts/filter-required-pr-checks.cjs \
+          node .github/workflows/scripts/evaluate-pr-finalizer-decision.cjs \
             --config-file .github/pr-flow.json \
-            --checks-file /tmp/pr-checks-all.json \
-            > /tmp/pr-checks.json
+            --policy-file /tmp/policy-eval.json \
+            --pr-file /tmp/pr.json \
+            --event-name "${GITHUB_EVENT_NAME}" \
+            --event-path "${GITHUB_EVENT_PATH}" \
+            --dry-run "${{ github.event.inputs.dry_run || 'false' }}" \
+            > /tmp/finalizer-decision.json
           {
             echo "head_ref=$(jq -r '.head_ref_name' /tmp/policy-eval.json)"
             echo "same_repo=$(jq -r '.same_repo' /tmp/policy-eval.json)"
             echo "decision_ready=true"
-            DELIM="EOF-$(openssl rand -hex 8)"
-            echo "checks_read_error<<$DELIM"
-            printf '%s\n' "$checks_read_error"
-            echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
       - name: Evaluate finalizer decision
         if: steps.resolve.outputs.pr_number != '' && steps.metadata.outputs.decision_ready == 'true'
         id: decision
-        env:
-          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-          CHECKS_READ_ERROR: ${{ steps.metadata.outputs.checks_read_error }}
         run: |
-          policy_eligible=$(jq -r '.eligible' /tmp/policy-eval.json)
-          manual_only=$(jq -r '.manual_only' /tmp/policy-eval.json)
-          maintainer_approved=$(jq -r '.maintainer_approved // false' /tmp/policy-eval.json)
-          blocked_reason=$(jq -r '.blocked_reason // ""' /tmp/policy-eval.json)
-          same_repo=$(jq -r '.same_repo' /tmp/policy-eval.json)
-          head_ref=$(jq -r '.head_ref_name // ""' /tmp/policy-eval.json)
-          is_draft=$(jq -r '.is_draft' /tmp/policy-eval.json)
-          mapfile -t required_labels_arr < <(jq -r '.required_pass_labels[]?' /tmp/policy-eval.json)
-          mapfile -t present_labels_arr < <(jq -r '.labels[]?' /tmp/policy-eval.json)
-          mapfile -t blocking_labels_arr < <(jq -r '.blocking_labels_present[]?' /tmp/policy-eval.json)
-
-          hard_blocking_labels_arr=()
-          manual_review_labels_arr=()
-          for blocking_label in "${blocking_labels_arr[@]}"; do
-            case "$blocking_label" in
-              needs-review) manual_review_labels_arr+=("$blocking_label") ;;
-              *) hard_blocking_labels_arr+=("$blocking_label") ;;
-            esac
-          done
-
-          join_labels() {
-            local IFS=', '
-            printf '%s' "$*"
-          }
-
-          missing_labels_arr=()
-          for required_label in "${required_labels_arr[@]}"; do
-            label_present="false"
-            for present_label in "${present_labels_arr[@]}"; do
-              if [ "$present_label" = "$required_label" ]; then
-                label_present="true"
-                break
-              fi
-            done
-            if [ "$label_present" != "true" ]; then
-              missing_labels_arr+=("$required_label")
-            fi
-          done
-
-          failing_required=$(jq '[.[] | select((((.bucket // "") | ascii_downcase) == "fail") or (((.bucket // "") | ascii_downcase) == "cancel") or (((.state // "") | ascii_downcase) == "failure"))] | length' /tmp/pr-checks.json)
-          pending_required=$(jq '[.[] | select((((.bucket // "") | ascii_downcase) == "pending") or (((.state // "") | ascii_downcase) != "success" and ((.bucket // "") | ascii_downcase) != "pass"))] | length' /tmp/pr-checks.json)
-          total_checks=$(jq 'length' /tmp/pr-checks.json)
-
-          decision="manual_only"
-          summary="PR does not match the trusted auto-finalization policy."
-
-          if [ "$is_draft" = "true" ]; then
-            decision="awaiting_checks"
-            summary="PR is still draft."
-          elif [ "${#hard_blocking_labels_arr[@]}" -gt 0 ]; then
-            decision="blocked"
-            summary="Blocking labels are present: $(join_labels "${hard_blocking_labels_arr[@]}")"
-          elif [ "$maintainer_approved" != "true" ] && [ "${#manual_review_labels_arr[@]}" -gt 0 ]; then
-            decision="manual_only"
-            summary="Manual review is required by label: $(join_labels "${manual_review_labels_arr[@]}")"
-          elif [ -z "$head_ref" ]; then
-            decision="blocked"
-            summary="PR metadata is incomplete; skipping auto-finalization."
-          elif [ "$maintainer_approved" != "true" ] && [ "$manual_only" = "true" ]; then
-            decision="manual_only"
-            summary="${blocked_reason:-PR is manual-only by policy.}"
-          elif [ "$same_repo" != "true" ]; then
-            decision="manual_only"
-            summary="${blocked_reason:-PR is outside the same-repo trusted scope.}"
-          elif [ "$policy_eligible" != "true" ] && [ "$maintainer_approved" != "true" ]; then
-            decision="manual_only"
-            summary="${blocked_reason:-PR needs maintainer approval or a trusted auto-finalization policy.}"
-          elif [ "${#missing_labels_arr[@]}" -gt 0 ]; then
-            decision="awaiting_checks"
-            summary="Waiting on review signals: $(join_labels "${missing_labels_arr[@]}")"
-          elif [ -n "$CHECKS_READ_ERROR" ]; then
-            decision="blocked"
-            summary="Could not read required checks: $CHECKS_READ_ERROR"
-          elif [ "$failing_required" -gt 0 ]; then
-            decision="blocked"
-            summary="Required checks are failing."
-          elif [ "$pending_required" -gt 0 ] || [ "$total_checks" -eq 0 ]; then
-            decision="awaiting_checks"
-            summary="Waiting for required checks to finish."
-          else
-            decision="approve_and_enable_automerge"
-            summary="Trusted PR passed required checks and review signals."
-          fi
-
           {
-            echo "decision=$decision"
+            echo "decision=$(jq -r '.decision' /tmp/finalizer-decision.json)"
             DELIM="EOF-$(openssl rand -hex 8)"
             echo "summary<<$DELIM"
-            printf '%s\n' "$summary"
+            jq -r '.summary' /tmp/finalizer-decision.json
             echo "$DELIM"
-            echo "dry_run=${DRY_RUN}"
+            echo "dry_run=$(jq -r '.dry_run' /tmp/finalizer-decision.json)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Approve and enable auto-merge

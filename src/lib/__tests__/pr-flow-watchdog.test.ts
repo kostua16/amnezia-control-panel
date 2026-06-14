@@ -449,15 +449,9 @@ describe('PR flow workflow invariants', () => {
       /needs\.finalize\.outputs\.decision == 'approve_and_enable_automerge'/,
       'pr-finalizer.yml',
     );
-    assert.match(finalizer, /checks_read_error=""/, 'pr-finalizer.yml');
     assert.match(
       finalizer,
-      /CHECKS_READ_ERROR: \$\{\{ steps\.metadata\.outputs\.checks_read_error \}\}/,
-      'pr-finalizer.yml',
-    );
-    assert.match(
-      finalizer,
-      /\[ -n "\$CHECKS_READ_ERROR" \]/,
+      /evaluate-pr-finalizer-decision\.cjs/,
       'pr-finalizer.yml',
     );
     assert.doesNotMatch(
@@ -481,18 +475,18 @@ describe('PR flow workflow invariants', () => {
   });
 
   it('keeps PR Finalizer maintainer approval scoped to manual gating', () => {
-    const workflow = readWorkflow('.github/workflows/pr-finalizer.yml');
+    const finalizerDecision = fs.readFileSync(
+      '.github/workflows/scripts/evaluate-pr-finalizer-decision.cjs',
+      'utf8',
+    );
 
     assert.match(
-      workflow,
-      /maintainer_approved=\$\(jq -r '\.maintainer_approved \/\/ false'/,
+      finalizerDecision,
+      /const maintainerApproved = Boolean\(policy\.maintainer_approved\)/,
     );
-    assert.match(workflow, /hard_blocking_labels_arr=\(\)/);
-    assert.match(workflow, /needs-review\) manual_review_labels_arr/);
-    assert.match(
-      workflow,
-      /\[ "\$policy_eligible" != "true" \] && \[ "\$maintainer_approved" != "true" \]/,
-    );
+    assert.match(finalizerDecision, /label === 'needs-review'/);
+    assert.match(finalizerDecision, /manualReviewLabels\.length > 0/);
+    assert.match(finalizerDecision, /!policyEligible && !maintainerApproved/);
   });
 
   it('allows explicit bots only for orchestrated Claude worker runs', () => {
