@@ -225,6 +225,7 @@ jobs:
           install-deps: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
+          generate-prisma: 'true'
 
       - name: Prepare optimization branch
         id: branch
@@ -302,9 +303,27 @@ jobs:
           echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
           echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
 
+      - name: Validate tests pass after workflow edits
+        id: validate
+        if: steps.claude_run.outputs.claude_changed_files_list != '' && steps.duplicate.outputs.duplicate_found != 'true'
+        shell: bash
+        run: |
+          set +e
+          npm run test-only > /tmp/optimize-test-only.log 2>&1
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+            echo "Workflow invariant tests passed after optimization edits."
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::npm run test-only failed after optimization edits; skipping PR to avoid a doomed CI run."
+            echo "----- npm run test-only output (tail) -----"
+            tail -n 80 /tmp/optimize-test-only.log || true
+          fi
+
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.validate.outputs.passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): hourly optimization pass'
