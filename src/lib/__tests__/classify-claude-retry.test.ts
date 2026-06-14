@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   classifyClaudeRetry,
   hasSuccessfulResult,
+  hasAnyResultNode,
   isRateLimitOrOverloadText,
 } = require('../../../.github/workflows/scripts/classify-claude-retry.cjs');
 
@@ -87,6 +88,36 @@ describe('classifyClaudeRetry', () => {
     assert.equal(result.softSuccess, true);
     assert.match(result.softSuccessReason, /Claude completed successfully/);
     assert.match(result.message, /soft success/);
+  });
+
+  it('retries abortive failures with no execution output despite a healthy API probe', () => {
+    assert.equal(hasAnyResultNode(''), false);
+    assert.equal(hasAnyResultNode(JSON.stringify({ type: 'result', is_error: true })), true);
+
+    const result = classifyClaudeRetry({
+      httpCode: '200',
+      attempt: '1',
+      executionText: '',
+    });
+
+    assert.equal(result.httpCode, '200');
+    assert.equal(result.isRateLimited, false);
+    assert.equal(result.shouldRetry, true);
+    assert.equal(result.retryReason, 'abortive_no_output');
+    assert.equal(result.softSuccess, false);
+    assert.match(result.message, /Retrying once/);
+  });
+
+  it('retries abortive failures on the final attempt too', () => {
+    const result = classifyClaudeRetry({
+      httpCode: '200',
+      attempt: '2',
+      executionText: '',
+    });
+
+    assert.equal(result.shouldRetry, true);
+    assert.equal(result.retryReason, 'abortive_no_output');
+    assert.match(result.message, /Retrying final attempt/);
   });
 
   it('does not retry non-retryable failures', () => {
