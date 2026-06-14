@@ -77,7 +77,7 @@ function envEnabled(name: string): boolean {
   return ['1', 'true', 'yes'].includes((process.env[name] ?? '').toLowerCase());
 }
 
-function sanitizeUsername(username: string): void {
+export function sanitizeUsername(username: string): void {
   if (!USERNAME_PATTERN.test(username)) {
     throw new Error(
       `Username contains invalid characters: ${username}. Only alphanumeric, underscore, dot, and hyphen are allowed.`,

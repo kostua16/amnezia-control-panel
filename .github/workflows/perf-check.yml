@@ -36,7 +36,8 @@ jobs:
         run: |
           set -euo pipefail
           START=$(date +%s)
-          npm run build 2>&1 | tail -20 > /tmp/build-output.txt
+          npm run build > /tmp/build-output.txt 2>&1 || { echo "::error::Build failed — last 40 lines:"; tail -40 /tmp/build-output.txt; exit 1; }
+          tail -20 /tmp/build-output.txt
           END=$(date +%s)
           DURATION=$((END - START))
           SIZE=$(du -sb .next | cut -f1)
