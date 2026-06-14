@@ -4,6 +4,7 @@ import {
   buildHealthReport,
   deriveHealthStatus,
   geoipCheckFromStatus,
+  sanitizeDatabaseCheck,
   websocketCheckFromReady,
 } from '../health-checks';
 import type { HealthChecks } from '../health-checks';
@@ -78,6 +79,36 @@ describe('deriveHealthStatus', () => {
     );
     assert.strictEqual(result.status, 'unhealthy');
     assert.strictEqual(result.httpStatus, 503);
+  });
+});
+
+// --- sanitizeDatabaseCheck ---
+
+describe('sanitizeDatabaseCheck', () => {
+  it('preserves ok + latencyMs on success without an error field', () => {
+    const result = sanitizeDatabaseCheck(dbOk);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.latencyMs, 2);
+    assert.ok(!('error' in result), 'successful probe must not carry an error');
+  });
+
+  it('replaces raw error text with a static sentinel on failure', () => {
+    const raw = {
+      ok: false,
+      error: 'SECRET file:///secret/dev.db ECONNREFUSED',
+    };
+    const result = sanitizeDatabaseCheck(raw);
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.error, 'database unreachable');
+  });
+
+  it('never lets a raw secret leak through the sanitized result', () => {
+    const raw = { ok: false, error: 'LEAK-PROBE file:///var/db/app.db' };
+    const result = sanitizeDatabaseCheck(raw);
+    assert.ok(
+      !JSON.stringify(result).includes('LEAK-PROBE'),
+      'sanitized output must not contain raw error fragments',
+    );
   });
 });
 

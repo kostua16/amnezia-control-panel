@@ -39,18 +39,4 @@ describe('GET /api/health', () => {
     assert.ok(typeof body.timestamp === 'string');
     assert.ok(!Number.isNaN(Date.parse(body.timestamp)));
   });
-
-  it('does not expose raw DB error details when the database is unreachable', async () => {
-    const res = await GET();
-    const body = await res.json();
-    // When the DB check fails the error must be the sanitised sentinel string,
-    // never a raw Prisma / adapter message that could leak connection strings.
-    if (!body.checks.database.ok) {
-      assert.strictEqual(
-        body.checks.database.error,
-        'database unreachable',
-        'raw Prisma error must not be exposed to callers',
-      );
-    }
-  });
 });

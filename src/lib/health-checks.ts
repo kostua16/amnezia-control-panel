@@ -48,6 +48,16 @@ export function deriveHealthStatus(checks: HealthChecks): {
   return { status: 'ok', httpStatus: 200 };
 }
 
+/** Sanitize a raw DB probe result for unauthenticated callers. On success the
+ *  full result (ok, latencyMs) passes through; on failure any raw error text
+ *  — which may contain connection strings, file paths, or adapter details — is
+ *  replaced with a static sentinel so nothing sensitive leaves the process. */
+export function sanitizeDatabaseCheck(
+  raw: DatabaseHealthResult,
+): DatabaseCheck {
+  return raw.ok ? raw : { ok: false, error: 'database unreachable' };
+}
+
 /** Map a GeoIP status snapshot to a health check result. */
 export function geoipCheckFromStatus(status: GeoIPStatus): GeoIPCheck {
   return {
