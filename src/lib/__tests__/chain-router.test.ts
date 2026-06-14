@@ -1,6 +1,11 @@
 import { describe, it, mock, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyChainConfig, generateChainConfig } from '../chain-router';
+import {
+  applyChainConfig,
+  generateChainConfig,
+  __setDeps as __setChainDeps,
+  __resetDeps as __resetChainDeps,
+} from '../chain-router';
 import { __setDeps, __resetDeps } from '../transport-resolver';
 import type { ChainConfig } from '@/types/chain';
 import type { Server } from '@/types/server';
@@ -445,5 +450,117 @@ describe('generateChainConfig', () => {
     } finally {
       console.warn = origWarn;
     }
+  });
+});
+
+// ─── Service-port resolution via injected Prisma override ──
+
+describe('generateChainConfig: WireGuard service-port lookup (DI override)', () => {
+  const originalConsoleWarn = console.warn;
+  const originalConsoleError = console.error;
+
+  beforeEach(() => {
+    console.error = mock.fn<typeof console.error>();
+    console.warn = mock.fn<typeof console.warn>();
+    // Transport resolution succeeds via Tailscale DB-cache tier.
+    const mockGetNodeIP = mock.fn(async (_hostname?: string) => null);
+    const mockIsReachable = mock.fn(async (_hostname: string) => true);
+    __setDeps({ getNodeIP: mockGetNodeIP, isReachable: mockIsReachable });
+  });
+
+  afterEach(() => {
+    __resetDeps();
+    __resetChainDeps();
+    console.warn = originalConsoleWarn;
+    console.error = originalConsoleError;
+  });
+
+  function makeServers(): Server[] {
+    return [
+      {
+        id: 1,
+        name: 'Entry',
+        hostname: 'entry.example.com',
+        port: 22,
+        isActive: true,
+        tailnetIP: '100.64.0.1',
+        tailnetHostname: 'entry',
+        createdAt: new Date(),
+      },
+      {
+        id: 2,
+        name: 'Exit',
+        hostname: 'exit.example.com',
+        port: 22,
+        isActive: true,
+        tailnetIP: '100.64.0.2',
+        tailnetHostname: 'exit',
+        createdAt: new Date(),
+      },
+    ];
+  }
+
+  it('uses the AWG service port from the injected Prisma lookup (not the 51820 default)', async () => {
+    const servers = makeServers();
+    const serverMapping: Record<number, number> = { 0: 1, 1: 2 };
+
+    // Inject a Prisma override that reports a non-default WireGuard port.
+    __setChainDeps({
+      getNodeIP: async () => null,
+      isReachable: async () => true,
+      prisma: {
+        service: {
+          async findFirst() {
+            return { port: 51900 };
+          },
+        },
+      },
+    });
+
+    const config = await generateChainConfig(
+      '2hop-linear',
+      servers,
+      serverMapping,
+    );
+
+    const endpoints = config.wireguardPeers.map((p) => p.endpoint);
+    assert.ok(
+      endpoints.every((ep) => ep.endsWith(':51900')),
+      `Every peer endpoint should use the looked-up port 51900, got: ${endpoints.join(', ')}`,
+    );
+    assert.ok(
+      !endpoints.some((ep) => ep.endsWith(':51820')),
+      'No endpoint should fall back to the default port when a service port is found',
+    );
+  });
+
+  it('falls back to the default WireGuard port when the service lookup returns no port', async () => {
+    const servers = makeServers();
+    const serverMapping: Record<number, number> = { 0: 1, 1: 2 };
+
+    // Inject a Prisma override that reports no configured service (null result).
+    __setChainDeps({
+      getNodeIP: async () => null,
+      isReachable: async () => true,
+      prisma: {
+        service: {
+          async findFirst() {
+            return null;
+          },
+        },
+      },
+    });
+
+    const config = await generateChainConfig(
+      '2hop-linear',
+      servers,
+      serverMapping,
+    );
+
+    const endpoints = config.wireguardPeers.map((p) => p.endpoint);
+    assert.ok(
+      endpoints.every((ep) => ep.endsWith(':51820')),
+      `Endpoints should default to 51820 when no service port is found, got: ${endpoints.join(', ')}`,
+    );
   });
 });
