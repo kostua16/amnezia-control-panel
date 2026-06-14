@@ -1,6 +1,6 @@
 ---
 phase: 999
-plan: 999-005
+plan: 999-006
 status: complete
 started: "2026-06-14T00:00:00Z"
 updated: "2026-06-14T00:00:00Z"
