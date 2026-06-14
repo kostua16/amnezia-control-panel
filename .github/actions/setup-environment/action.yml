@@ -58,6 +58,12 @@ inputs:
   rtk-install-sha256:
     description: 'SHA-256 for the pinned RTK install script'
     default: '9989e60e33a353e9e6802fab1fd410b96d1dd228b34e52402c32f3c8c2dd8c66'
+  install-uv:
+    description: 'Install or verify uv for Python tool/plugin runtime support (e.g. serena MCP)'
+    default: 'false'
+  uv-version:
+    description: 'Pinned uv version used when plugin flows require Python runtime'
+    default: '0.6.0'
 
 runs:
   using: 'composite'
@@ -187,6 +193,11 @@ runs:
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
         bun-version: ${{ inputs.bun-version }}
+
+    - if: inputs.install-uv == 'true'
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: ${{ inputs.uv-version }}
 
     - name: Debug PATH before setup-gh
       if: runner.debug == '1'

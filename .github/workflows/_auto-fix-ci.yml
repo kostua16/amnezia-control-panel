@@ -135,6 +135,7 @@ jobs:
           generate-prisma: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
+          install-uv: 'true'
 
       - name: Warm TypeScript cache
         if: steps.failure.outputs.fixable == 'true' && steps.prettier.outputs.prettier_only != 'true'
@@ -212,6 +213,19 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           allowed-bots: 'claude[bot],github-actions[bot]'
           max-turns: ${{ env.MAX_TURNS }}
+          plugin-marketplaces: |-
+            anthropics/claude-plugins-official
+            juliusbrussee/caveman
+          plugins: |-
+            typescript-lsp@claude-plugins-official
+            serena@claude-plugins-official
+            context7@claude-plugins-official
+            code-review@claude-plugins-official
+            security-guidance@claude-plugins-official
+            code-simplifier@claude-plugins-official
+            frontend-design@claude-plugins-official
+            superpowers@claude-plugins-official
+            caveman@caveman
           prompt: ${{ steps.prompt.outputs.content }}
 
       - uses: ./.github/actions/commit-and-push
