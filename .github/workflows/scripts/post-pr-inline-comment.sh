@@ -96,8 +96,10 @@ ${MARKER}"
 # Match only a helper-owned comment (same path+line, carrying our ownership
 # marker). Values go to jq as data (--arg/--argjson), never interpolated into the
 # jq program, so a path containing " cannot break the filter or return a wrong id.
+# --paginate so the dedup scan reads EVERY page (a PR can carry >100 comments);
+# jq streams each page-array as a separate input document.
 existing_id="$(
-  gh api "repos/${REPO}/pulls/${PR}/comments?per_page=100" 2>/dev/null \
+  gh api "repos/${REPO}/pulls/${PR}/comments" --paginate 2>/dev/null \
     | jq -r --arg path "$FILE_PATH" --argjson line "$LINE" --arg marker "$MARKER" \
         '[.[] | select(.path == $path and ((.line // 0) == $line) and ((.body // "") | contains($marker)))] | first | .id // empty' \
     | head -1 || true

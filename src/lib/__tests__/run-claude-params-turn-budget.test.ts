@@ -151,17 +151,17 @@ describe('run-claude-params turn budget prompt', () => {
     // Idempotent upsert: list existing comments, PATCH an existing one or POST
     // a new one, scoped to helper-owned comments via the ownership marker.
     assert.match(helper, /<!-- pr-inline-comment -->/);
-    // Injection-safe lookup: values reach jq as data (--arg/--argjson), fetched
-    // as a single page; never string-interpolated into a --jq program.
+    // Injection-safe lookup: values reach jq as data (--arg/--argjson), never
+    // string-interpolated into a --jq program; --paginate so the dedup scan reads
+    // every page (a PR can carry >100 comments).
     assert.match(
       helper,
-      /gh api "repos\/\$\{REPO\}\/pulls\/\$\{PR\}\/comments\?per_page=100"/,
+      /gh api "repos\/\$\{REPO\}\/pulls\/\$\{PR\}\/comments" --paginate/,
     );
     assert.match(
       helper,
       /jq -r --arg path "\$FILE_PATH" --argjson line "\$LINE" --arg marker "\$MARKER"/,
     );
-    assert.doesNotMatch(helper, /--paginate/);
     assert.match(
       helper,
       /gh api -X PATCH "repos\/\$\{REPO\}\/pulls\/comments\/\$\{existing_id\}"/,
