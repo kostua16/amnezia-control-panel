@@ -146,6 +146,20 @@ jobs:
           policy-file: .github/workflows/policy.json
           names: ai-review-passed,ai-review-concerns,security-review-passed,security-review-concerns
 
+      - name: Post review started
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
+          HEAD_SHA: ${{ needs.resolve-pr.outputs.head-sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node .github/workflows/scripts/upsert-code-review-comment.cjs \
+            --pr "$PR_NUMBER" \
+            --head-sha "$HEAD_SHA" \
+            --run-url "$RUN_URL" \
+            --mode started
+
       - name: Combined Claude review
         id: review
         uses: ./.github/actions/run-zai
@@ -298,6 +312,27 @@ jobs:
               issue_number: issueNumber,
               labels: labelsToAdd
             });
+
+      - name: Post review summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
+          HEAD_SHA: ${{ needs.resolve-pr.outputs.head-sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
+          NUM_TURNS: ${{ steps.review.outputs.claude_num_turns }}
+          CLAUDE_FAILED: ${{ steps.review.outputs.claude_failed }}
+          CLAUDE_FAILURE_REASON: ${{ steps.review.outputs.claude_failure_reason }}
+        run: |
+          node .github/workflows/scripts/upsert-code-review-comment.cjs \
+            --pr "$PR_NUMBER" \
+            --head-sha "$HEAD_SHA" \
+            --run-url "$RUN_URL" \
+            --num-turns "$NUM_TURNS" \
+            --failed "$CLAUDE_FAILED" \
+            --fail-reason "$CLAUDE_FAILURE_REASON" \
+            --mode complete
 
   wake-orchestrator:
     needs: [resolve-pr, claude-combined-review]
