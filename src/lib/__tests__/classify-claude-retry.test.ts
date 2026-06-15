@@ -92,7 +92,10 @@ describe('classifyClaudeRetry', () => {
 
   it('retries abortive failures with no execution output despite a healthy API probe', () => {
     assert.equal(hasAnyResultNode(''), false);
-    assert.equal(hasAnyResultNode(JSON.stringify({ type: 'result', is_error: true })), true);
+    assert.equal(
+      hasAnyResultNode(JSON.stringify({ type: 'result', is_error: true })),
+      true,
+    );
 
     const result = classifyClaudeRetry({
       httpCode: '200',
