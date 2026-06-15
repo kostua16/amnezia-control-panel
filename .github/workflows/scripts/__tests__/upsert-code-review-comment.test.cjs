@@ -9,6 +9,7 @@ const {
   verdictIcon,
   quoteBlock,
   renderStarted,
+  renderCancelled,
   renderComplete,
   renderFailureBody,
   findExistingComment,
@@ -207,4 +208,22 @@ test('quoteBlock prefixes every line, including blank ones', () => {
   assert.equal(quoteBlock('a\nb'), '> a\n> b');
   assert.equal(quoteBlock('only'), '> only');
   assert.equal(quoteBlock('a\n\nb'), '> a\n> \n> b');
+});
+
+test('renderCancelled renders the cancellation body with a clear reason', () => {
+  const body = renderCancelled({
+    headSha: 'abc123def456',
+    runUrl: 'https://example/run/9',
+    updatedAt: '2026-06-15T10:04:49.000Z',
+  });
+
+  assert.match(body, new RegExp(`^${COMMENT_MARKER}`));
+  assert.match(body, /🚫 Code review was cancelled/);
+  assert.match(body, /`abc123def456`/);
+  assert.match(body, /did not finish/);
+  assert.match(body, /job timeout|superseded/);
+  assert.match(body, /Re-dispatch with `\/review`/);
+  // It must not claim success or a generic model failure.
+  assert.doesNotMatch(body, /Code review complete/);
+  assert.doesNotMatch(body, /failed to complete/);
 });

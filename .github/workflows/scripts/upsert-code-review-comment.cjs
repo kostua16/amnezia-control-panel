@@ -137,6 +137,25 @@ function renderFailureBody({ headSha, runUrl, failReason, updatedAt }) {
   ].join('\n');
 }
 
+function renderCancelled({ headSha, runUrl, updatedAt }) {
+  return [
+    COMMENT_MARKER,
+    '## 🚫 Code review was cancelled',
+    '',
+    `- Head SHA: \`${shortSha(headSha)}\``,
+    `- Run: ${runUrl || '_n/a_'}`,
+    '',
+    quoteBlock(
+      'The review run did not finish — it was cancelled, most likely by ' +
+        'the job timeout or by a newer review run superseding it.',
+    ),
+    '',
+    'Re-dispatch with `/review`, or raise the review timeout if this recurs.',
+    '',
+    '<!-- updated: ' + updatedAt + ' -->',
+  ].join('\n');
+}
+
 function renderComplete({
   structured,
   numTurns,
@@ -297,16 +316,27 @@ function main() {
       startedAt: new Date().toISOString(),
     });
   } else {
-    body = renderComplete({
-      structured: parseStructuredOutput(
-        process.env.STRUCTURED_OUTPUT || getArg('--structured-output'),
-      ),
-      numTurns: getArg('--num-turns'),
-      headSha,
-      runUrl,
-      failed: getArg('--failed'),
-      failReason: getArg('--fail-reason'),
-    });
+    // A cancelled review step (job timeout or superseded) is the root cause
+    // of an "execution output unreadable" failure, so surface it distinctly
+    // rather than as a generic model error.
+    if (getArg('--outcome') === 'cancelled') {
+      body = renderCancelled({
+        headSha,
+        runUrl,
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      body = renderComplete({
+        structured: parseStructuredOutput(
+          process.env.STRUCTURED_OUTPUT || getArg('--structured-output'),
+        ),
+        numTurns: getArg('--num-turns'),
+        headSha,
+        runUrl,
+        failed: getArg('--failed'),
+        failReason: getArg('--fail-reason'),
+      });
+    }
   }
 
   upsertComment({ repo, prNumber, body });
@@ -323,6 +353,7 @@ module.exports = {
   verdictIcon,
   quoteBlock,
   renderStarted,
+  renderCancelled,
   renderComplete,
   renderFailureBody,
   findExistingComment,
