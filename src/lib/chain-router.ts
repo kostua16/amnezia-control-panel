@@ -1,10 +1,4 @@
-import type {
-  ChainTemplate,
-  ChainConfig,
-  ChainNode,
-  WireGuardPeerConfig,
-  XrayRoutingRule,
-} from '@/types/chain';
+import type { ChainConfig, ChainNode } from '@/types/chain';
 import type { Server } from '@/types/server';
 import type { GeoRoutingResult } from '@/types/geo-routing';
 import type { ServiceType } from '@/generated/prisma/enums';
@@ -13,6 +7,10 @@ import { generatePerPanelConfig } from './panel-sync-client';
 import { applyPanelConfig } from './config-applier';
 import { resolveGeoRoute } from './geo-routing';
 import { resolvePanelTransport } from './transport-resolver';
+import {
+  generateWireGuardPeers,
+  generateXrayRoutingRules,
+} from './chain-config-generator';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -274,158 +272,6 @@ export async function applyChainConfig(
     appliedTo,
     errors,
   };
-}
-
-// ─── WireGuard Peer Generation ────────────────────────────
-
-function generateWireGuardPeers(
-  template: ChainTemplate,
-  nodes: Array<ChainNode & { hostname: string; port: number }>,
-): WireGuardPeerConfig[] {
-  const peers: WireGuardPeerConfig[] = [];
-
-  switch (template.topology) {
-    case 'linear': {
-      // In a linear chain, each node connects to the next
-      for (let i = 0; i < nodes.length - 1; i++) {
-        const current = nodes[i];
-        const next = nodes[i + 1];
-
-        peers.push({
-          nodeId: current.label,
-          publicKey: `STUB_PUBKEY_${next.label.replace(/\s+/g, '_')}`,
-          allowedIPs: '0.0.0.0/0',
-          endpoint: `${next.hostname}:${next.port}`,
-          persistentKeepalive: 25,
-        });
-
-        peers.push({
-          nodeId: next.label,
-          publicKey: `STUB_PUBKEY_${current.label.replace(/\s+/g, '_')}`,
-          allowedIPs: `10.0.0.${i + 1}/32`,
-          endpoint: `${current.hostname}:${current.port}`,
-          persistentKeepalive: 25,
-        });
-      }
-      break;
-    }
-    case 'split': {
-      // Split routing: domestic is direct, foreign handles VPN traffic
-      // Find domestic node for documentation purposes (not used in peer config)
-      void nodes.find((n) => n.role === 'domestic');
-      const foreign = nodes.find((n) => n.role === 'foreign');
-
-      if (foreign) {
-        peers.push({
-          nodeId: foreign.label,
-          publicKey: `STUB_PUBKEY_${foreign.label.replace(/\s+/g, '_')}`,
-          allowedIPs: '0.0.0.0/0',
-          endpoint: `${foreign.hostname}:${foreign.port}`,
-          persistentKeepalive: 25,
-        });
-      }
-      // Domestic server doesn't need a WireGuard peer (direct connection)
-      break;
-    }
-    case 'mesh': {
-      // Mesh: every node connects to every other node
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = 0; j < nodes.length; j++) {
-          if (i === j) continue;
-          const current = nodes[i];
-          const peer = nodes[j];
-
-          peers.push({
-            nodeId: current.label,
-            publicKey: `STUB_PUBKEY_${peer.label.replace(/\s+/g, '_')}`,
-            allowedIPs: `10.0.0.${j + 1}/32`,
-            endpoint: `${peer.hostname}:${peer.port}`,
-            persistentKeepalive: 25,
-          });
-        }
-      }
-      break;
-    }
-  }
-
-  return peers;
-}
-
-// ─── Xray Routing Rule Generation ────────────────────────
-
-function generateXrayRoutingRules(
-  template: ChainTemplate,
-  nodes: Array<ChainNode & { hostname: string; port: number }>,
-): XrayRoutingRule[] {
-  const rules: XrayRoutingRule[] = [];
-
-  switch (template.topology) {
-    case 'linear': {
-      // Route all traffic from entry to exit, then to direct
-      const entry = nodes.find((n) => n.role === 'entry');
-      const exit = nodes.find((n) => n.role === 'exit');
-
-      if (entry && exit) {
-        rules.push({
-          nodeId: entry.label,
-          type: 'ip',
-          value: '0.0.0.0/0',
-          outboundTag: `chain_${exit.label.replace(/\s+/g, '_')}`,
-          priority: 0,
-        });
-
-        rules.push({
-          nodeId: exit.label,
-          type: 'ip',
-          value: '0.0.0.0/0',
-          outboundTag: 'direct',
-          priority: 0,
-        });
-      }
-      break;
-    }
-    case 'split': {
-      // Split: domestic routes to direct, foreign routes through chain
-      const domestic = nodes.find((n) => n.role === 'domestic');
-      const foreign = nodes.find((n) => n.role === 'foreign');
-
-      if (domestic) {
-        rules.push({
-          nodeId: domestic.label,
-          type: 'ip',
-          value: '0.0.0.0/0',
-          outboundTag: 'direct',
-          priority: 0,
-        });
-      }
-
-      if (foreign) {
-        rules.push({
-          nodeId: foreign.label,
-          type: 'ip',
-          value: '0.0.0.0/0',
-          outboundTag: 'direct',
-          priority: 0,
-        });
-      }
-      break;
-    }
-    case 'mesh': {
-      // Mesh: all nodes route to direct
-      for (const node of nodes) {
-        rules.push({
-          nodeId: node.label,
-          type: 'ip',
-          value: '0.0.0.0/0',
-          outboundTag: 'direct',
-          priority: 0,
-        });
-      }
-      break;
-    }
-  }
-
-  return rules;
 }
 
 // ─── Test Helpers ────────────────────────────────────────

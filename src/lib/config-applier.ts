@@ -3,13 +3,124 @@ import type { ConfigApplierResult } from '@/types/config-push';
 import { signPayload } from './hmac';
 import { enrichError } from './error-reporter';
 
-// ─── Shell Metacharacter Guard (T-11.4-01) ────────────────
+// ─── Shell Metacharacter Guard ────────────────────────────
 
 const DANGEROUS_CHARS = /[;|&$`\\]/;
 
 function validateNoInjection(value: string): void {
   if (DANGEROUS_CHARS.test(value)) {
     throw new Error(`Rejected value containing shell metacharacters: ${value}`);
+  }
+}
+
+/** Human-readable label for each push target, used in 404 error messages. */
+const SERVICE_LABELS: Record<ConfigApplierResult['service'], string> = {
+  awg: 'AWG',
+  three_xui: '3x-ui',
+};
+
+// ─── Shared remote-push helper ────────────────────────────
+
+/**
+ * Push a pre-built payload to a remote panel's /api/sync/apply endpoint.
+ *
+ * Shared by the AWG and 3x-ui appliers: both sign the payload, POST it with the
+ * same headers and timeout, and interpret the response identically. Only the
+ * body payload shape differs, which each caller builds before delegating here.
+ *
+ * Never throws — failures are returned as a ConfigApplierResult with a
+ * structured error so callers can aggregate per-panel results.
+ */
+async function pushToRemotePanel(params: {
+  panelUrl: string;
+  panelName: string;
+  apiKey: string;
+  bodyPayload: Record<string, unknown>;
+  service: ConfigApplierResult['service'];
+}): Promise<ConfigApplierResult> {
+  const { panelUrl, panelName, apiKey, bodyPayload, service } = params;
+  const startTime = Date.now();
+  const serviceLabel = SERVICE_LABELS[service];
+
+  try {
+    const body = JSON.stringify(bodyPayload);
+    const signature = signPayload(bodyPayload, apiKey);
+
+    const response = await fetch(`${panelUrl}/api/sync/apply`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+        'X-Signature': signature,
+      },
+      body,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (response.ok) {
+      const resp = await response.json();
+      const data = resp.data;
+      if (data?.applied) {
+        return {
+          success: true,
+          service,
+          panelName,
+          latencyMs: Date.now() - startTime,
+          error: null,
+        };
+      }
+      // Remote returned applied=false
+      const msg = data?.message || 'Remote panel did not apply the config';
+      return {
+        success: false,
+        service,
+        panelName,
+        latencyMs: Date.now() - startTime,
+        error: enrichError(msg, panelName),
+      };
+    }
+
+    if (response.status === 404) {
+      // Remote panel does not have the apply endpoint -- this is a real failure
+      console.error(
+        `[config-applier] Remote panel ${panelName} returned 404 for /api/sync/apply. Config was NOT applied.`,
+      );
+      return {
+        success: false,
+        service,
+        panelName,
+        latencyMs: Date.now() - startTime,
+        error: {
+          type: 'service_error',
+          message: `Remote panel ${panelName} does not have /api/sync/apply. Config was NOT applied to ${serviceLabel} services.`,
+          recommendation:
+            'Update the remote panel to the latest version that supports the apply endpoint',
+          knownFix: 'Run git pull and restart the remote panel service',
+          rawError: 'HTTP 404: /api/sync/apply not found',
+        },
+      };
+    }
+
+    // Other HTTP error
+    const errorText = await response
+      .text()
+      .catch(() => `HTTP ${response.status}`);
+    return {
+      success: false,
+      service,
+      panelName,
+      latencyMs: Date.now() - startTime,
+      error: enrichError(`HTTP ${response.status}: ${errorText}`, panelName),
+    };
+  } catch (err) {
+    const rawError = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      service,
+      panelName,
+      latencyMs: Date.now() - startTime,
+      error: enrichError(rawError, panelName),
+    };
   }
 }
 
@@ -28,16 +139,11 @@ export async function applyAwgConfig(
   apiKey: string,
   wireguardPeers: PanelSyncPayload['wireguardPeers'],
 ): Promise<ConfigApplierResult> {
-  const startTime = Date.now();
-
-  // Validate peer values against shell injection (T-11.4-01)
+  // Validate peer values against shell injection
   for (const peer of wireguardPeers) {
     validateNoInjection(peer.publicKey);
     validateNoInjection(peer.allowedIPs);
     validateNoInjection(peer.endpoint);
-    if (peer.persistentKeepalive != null) {
-      // numeric value, no injection risk
-    }
   }
 
   // Construct WireGuard config format: [Peer] sections
@@ -54,87 +160,13 @@ export async function applyAwgConfig(
     })
     .join('\n\n');
 
-  try {
-    const bodyPayload = { service: 'awg' as const, config: wgConfig };
-    const body = JSON.stringify(bodyPayload);
-    const signature = signPayload(bodyPayload, apiKey);
-
-    const response = await fetch(`${panelUrl}/api/sync/apply`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
-        'X-Signature': signature,
-      },
-      body,
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (response.ok) {
-      const resp = await response.json();
-      const data = resp.data;
-      if (data?.applied) {
-        return {
-          success: true,
-          service: 'awg',
-          panelName,
-          latencyMs: Date.now() - startTime,
-          error: null,
-        };
-      }
-      // Remote returned applied=false
-      const msg = data?.message || 'Remote panel did not apply the config';
-      return {
-        success: false,
-        service: 'awg',
-        panelName,
-        latencyMs: Date.now() - startTime,
-        error: enrichError(msg, panelName),
-      };
-    }
-
-    if (response.status === 404) {
-      // Remote panel does not have the apply endpoint -- this is a real failure
-      console.error(
-        `[config-applier] Remote panel ${panelName} returned 404 for /api/sync/apply. Config was NOT applied.`,
-      );
-      return {
-        success: false,
-        service: 'awg',
-        panelName,
-        latencyMs: Date.now() - startTime,
-        error: {
-          type: 'service_error',
-          message: `Remote panel ${panelName} does not have /api/sync/apply. Config was NOT applied to AWG services.`,
-          recommendation:
-            'Update the remote panel to the latest version that supports the apply endpoint',
-          knownFix: 'Run git pull and restart the remote panel service',
-          rawError: 'HTTP 404: /api/sync/apply not found',
-        },
-      };
-    }
-
-    // Other HTTP error
-    const errorText = await response
-      .text()
-      .catch(() => `HTTP ${response.status}`);
-    return {
-      success: false,
-      service: 'awg',
-      panelName,
-      latencyMs: Date.now() - startTime,
-      error: enrichError(`HTTP ${response.status}: ${errorText}`, panelName),
-    };
-  } catch (err) {
-    const rawError = err instanceof Error ? err.message : String(err);
-    return {
-      success: false,
-      service: 'awg',
-      panelName,
-      latencyMs: Date.now() - startTime,
-      error: enrichError(rawError, panelName),
-    };
-  }
+  return pushToRemotePanel({
+    panelUrl,
+    panelName,
+    apiKey,
+    bodyPayload: { service: 'awg', config: wgConfig },
+    service: 'awg',
+  });
 }
 
 // ─── applyThreeXuiConfig ───────────────────────────────────
@@ -143,7 +175,8 @@ export async function applyAwgConfig(
  * Apply Xray routing rules to the 3x-ui REST API on a remote panel.
  *
  * Sends routing rules to the remote panel's `/api/sync/apply` endpoint,
- * which proxies them to the local 3x-ui instance.
+ * which proxies them to the local 3x-ui instance. Rules are JSON-serialized
+ * (not string-interpolated) so rule values cannot break out of the payload.
  */
 export async function applyThreeXuiConfig(
   panelUrl: string,
@@ -151,92 +184,13 @@ export async function applyThreeXuiConfig(
   apiKey: string,
   xrayRules: PanelSyncPayload['routingRules'],
 ): Promise<ConfigApplierResult> {
-  const startTime = Date.now();
-
-  // Rules are JSON-serialized (not string-interpolated) per T-11.4-02
-
-  try {
-    const bodyPayload = {
-      service: 'three_xui' as const,
-      routingRules: xrayRules,
-    };
-    const body = JSON.stringify(bodyPayload);
-    const signature = signPayload(bodyPayload, apiKey);
-
-    const response = await fetch(`${panelUrl}/api/sync/apply`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
-        'X-Signature': signature,
-      },
-      body,
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (response.ok) {
-      const resp = await response.json();
-      const data = resp.data;
-      if (data?.applied) {
-        return {
-          success: true,
-          service: 'three_xui',
-          panelName,
-          latencyMs: Date.now() - startTime,
-          error: null,
-        };
-      }
-      const msg = data?.message || 'Remote panel did not apply the config';
-      return {
-        success: false,
-        service: 'three_xui',
-        panelName,
-        latencyMs: Date.now() - startTime,
-        error: enrichError(msg, panelName),
-      };
-    }
-
-    if (response.status === 404) {
-      // Remote panel does not have the apply endpoint -- this is a real failure
-      console.error(
-        `[config-applier] Remote panel ${panelName} returned 404 for /api/sync/apply. Config was NOT applied.`,
-      );
-      return {
-        success: false,
-        service: 'three_xui',
-        panelName,
-        latencyMs: Date.now() - startTime,
-        error: {
-          type: 'service_error',
-          message: `Remote panel ${panelName} does not have /api/sync/apply. Config was NOT applied to 3x-ui services.`,
-          recommendation:
-            'Update the remote panel to the latest version that supports the apply endpoint',
-          knownFix: 'Run git pull and restart the remote panel service',
-          rawError: 'HTTP 404: /api/sync/apply not found',
-        },
-      };
-    }
-
-    const errorText = await response
-      .text()
-      .catch(() => `HTTP ${response.status}`);
-    return {
-      success: false,
-      service: 'three_xui',
-      panelName,
-      latencyMs: Date.now() - startTime,
-      error: enrichError(`HTTP ${response.status}: ${errorText}`, panelName),
-    };
-  } catch (err) {
-    const rawError = err instanceof Error ? err.message : String(err);
-    return {
-      success: false,
-      service: 'three_xui',
-      panelName,
-      latencyMs: Date.now() - startTime,
-      error: enrichError(rawError, panelName),
-    };
-  }
+  return pushToRemotePanel({
+    panelUrl,
+    panelName,
+    apiKey,
+    bodyPayload: { service: 'three_xui', routingRules: xrayRules },
+    service: 'three_xui',
+  });
 }
 
 // ─── applyPanelConfig ──────────────────────────────────────

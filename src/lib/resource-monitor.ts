@@ -1,6 +1,9 @@
 import os from 'os';
-import { execFileSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { SystemResources } from '@/types/monitoring';
+
+const execFileAsync = promisify(execFile);
 
 interface CachedResources {
   data: SystemResources;
@@ -9,6 +12,13 @@ interface CachedResources {
 
 let cachedResources: CachedResources | null = null;
 const CACHE_TTL_MS = 10_000;
+
+interface DiskUsage {
+  total: number;
+  used: number;
+  free: number;
+  percent: number;
+}
 
 /**
  * Get CPU usage as a percentage (0-100).
@@ -43,20 +53,18 @@ function getAverageLoad(): { idle: number; total: number } {
 /**
  * Get disk usage for the filesystem containing the project root.
  * Falls back to '/' on non-Windows, or the drive root on Windows.
+ *
+ * Non-blocking: shells out via execFile (promisified) instead of the
+ * synchronous execFileSync so a slow df/PowerShell call cannot stall the
+ * event loop between broadcaster ticks.
  */
-function getDiskUsage(): {
-  total: number;
-  used: number;
-  free: number;
-  percent: number;
-} {
+async function getDiskUsageAsync(): Promise<DiskUsage> {
   try {
     const isWin = process.platform === 'win32';
-    const target = isWin ? 'C:' : '/';
 
     if (isWin) {
       // PowerShell CIM query — wmic is deprecated on modern Windows.
-      const output = execFileSync(
+      const { stdout } = await execFileAsync(
         'powershell',
         [
           '-NoProfile',
@@ -64,9 +72,9 @@ function getDiskUsage(): {
           'Get-CimInstance Win32_LogicalDisk -Filter "DeviceID=\'C:\'" | Select-Object Size,FreeSpace | ConvertTo-Json',
         ],
         { encoding: 'utf-8', timeout: 5000 },
-      ).trim();
+      );
 
-      const disk = JSON.parse(output);
+      const disk = JSON.parse(stdout.trim());
       const total = Number(disk.Size) || 0;
       const free = Number(disk.FreeSpace) || 0;
       const used = total - free;
@@ -75,10 +83,11 @@ function getDiskUsage(): {
     }
 
     // Unix: use df
-    const output = execFileSync('df', ['-k', target], {
+    const { stdout } = await execFileAsync('df', ['-k', '/'], {
       encoding: 'utf-8',
       timeout: 5000,
-    }).trim();
+    });
+    const output = stdout.trim();
 
     // Parse df output: skip header, second line has the data
     const lines = output.split('\n');
@@ -119,7 +128,7 @@ export async function getSystemResources(): Promise<SystemResources> {
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
 
-  const disk = getDiskUsage();
+  const disk = await getDiskUsageAsync();
 
   const data: SystemResources = {
     cpu: {
