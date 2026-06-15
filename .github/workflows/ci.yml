@@ -101,3 +101,16 @@ jobs:
           path: ${{ steps.build-metrics.outputs.metrics_file }}
           if-no-files-found: error
           retention-days: 30
+
+  security-audit:
+    name: Security Audit
+    runs-on: [self-hosted, big]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          require-gh-auth: 'false'
+      - name: npm audit (high+ advisories)
+        run: npm audit --audit-level=high

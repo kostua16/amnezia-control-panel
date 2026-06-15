@@ -1,0 +1,58 @@
+name: Security Audit (Weekly)
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: security-audit-weekly
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: [self-hosted, big]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          require-gh-auth: 'false'
+
+      - name: npm audit (high+ advisories)
+        id: audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Open issue on failure
+        if: steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          RUN_URL="https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}"
+          {
+            echo "## Weekly npm audit found HIGH+ advisories"
+            echo ""
+            echo "Scheduled security audit failed. Review and remediate before the next run."
+            echo ""
+            echo "Run: ${RUN_URL}"
+            echo ""
+            echo '<details><summary>npm audit output</summary>'
+            echo ""
+            echo '```'
+            npm audit --audit-level=high || true
+            echo '```'
+            echo '</details>'
+          } > /tmp/audit-issue-body.md
+          gh issue create \
+            --repo "${REPOSITORY}" \
+            --title 'Security: weekly npm audit found HIGH+ advisories' \
+            --body-file /tmp/audit-issue-body.md
