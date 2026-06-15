@@ -31,6 +31,25 @@ jobs:
       should_publish: ${{ steps.classify.outputs.should_publish }}
       should_validate: ${{ steps.classify.outputs.should_validate }}
     steps:
+      - name: Ensure runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Self-hosted runners accumulate Docker buildx layer cache across
+          # builds and eventually exhaust disk, failing jobs with ENOSPC
+          # (including action extraction into _actions). Free headroom before
+          # running when space drops below threshold, using the same prune as
+          # cleanup-runner.yml and setup-environment's cleanup_general.
+          threshold_mb=4096
+          avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
+          echo "Available disk space: ${avail_mb} MB (threshold ${threshold_mb} MB)"
+          if [ "${avail_mb}" -lt "${threshold_mb}" ]; then
+            echo "Low disk; pruning Docker state..."
+            docker system prune -af --volumes 2>/dev/null || true
+            avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
+            echo "Available disk space after prune: ${avail_mb} MB"
+          fi
+
       - name: Decide Docker image action
         id: classify
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -197,6 +216,25 @@ jobs:
     runs-on: [self-hosted, big]
     timeout-minutes: 30
     steps:
+      - name: Ensure runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Self-hosted runners accumulate Docker buildx layer cache across
+          # builds and eventually exhaust disk, failing jobs with ENOSPC
+          # (including action extraction into _actions). Free headroom before
+          # running when space drops below threshold, using the same prune as
+          # cleanup-runner.yml and setup-environment's cleanup_general.
+          threshold_mb=4096
+          avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
+          echo "Available disk space: ${avail_mb} MB (threshold ${threshold_mb} MB)"
+          if [ "${avail_mb}" -lt "${threshold_mb}" ]; then
+            echo "Low disk; pruning Docker state..."
+            docker system prune -af --volumes 2>/dev/null || true
+            avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
+            echo "Available disk space after prune: ${avail_mb} MB"
+          fi
+
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
@@ -235,6 +273,25 @@ jobs:
       attestations: write
       id-token: write
     steps:
+      - name: Ensure runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Self-hosted runners accumulate Docker buildx layer cache across
+          # builds and eventually exhaust disk, failing jobs with ENOSPC
+          # (including action extraction into _actions). Free headroom before
+          # running when space drops below threshold, using the same prune as
+          # cleanup-runner.yml and setup-environment's cleanup_general.
+          threshold_mb=4096
+          avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
+          echo "Available disk space: ${avail_mb} MB (threshold ${threshold_mb} MB)"
+          if [ "${avail_mb}" -lt "${threshold_mb}" ]; then
+            echo "Low disk; pruning Docker state..."
+            docker system prune -af --volumes 2>/dev/null || true
+            avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
+            echo "Available disk space after prune: ${avail_mb} MB"
+          fi
+
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
