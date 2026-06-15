@@ -91,6 +91,15 @@ function shortSha(sha) {
   return sha ? String(sha).slice(0, 12) : 'unknown';
 }
 
+// Prefix every line with "> " so multi-line text stays inside a Markdown
+// blockquote instead of leaking into the surrounding body.
+function quoteBlock(text) {
+  return String(text)
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+}
+
 function renderStarted({ headSha, runUrl, startedAt }) {
   const checklist = REVIEW_CHECKLIST.map((item) => `- [ ] ${item}`).join('\n');
   return [
@@ -120,7 +129,7 @@ function renderFailureBody({ headSha, runUrl, failReason, updatedAt }) {
     `- Head SHA: \`${shortSha(headSha)}\``,
     `- Run: ${runUrl || '_n/a_'}`,
     '',
-    `> ${reason}`,
+    quoteBlock(reason),
     '',
     'Re-dispatch the review after addressing the failure, or comment `/review`.',
     '',
@@ -147,6 +156,19 @@ function renderComplete({
     ? structured.reviewed_files
     : [];
 
+  // Missing verdicts mean the review did not actually produce its result
+  // (empty structured output without a hard failure). Default to incomplete,
+  // never a green "passed" — the label step treats missing verdicts as
+  // concerns, so the comment must not claim success.
+  if (!codeReview.verdict || !securityReview.verdict) {
+    return renderFailureBody({
+      headSha,
+      runUrl,
+      failReason: failReason || 'Review did not produce structured verdicts.',
+      updatedAt,
+    });
+  }
+
   const anyConcerns =
     codeReview.verdict === 'concerns' || securityReview.verdict === 'concerns';
   const overallIcon = anyConcerns ? '⚠️' : '✅';
@@ -167,7 +189,7 @@ function renderComplete({
     }**`,
   );
   if (codeReview.summary) {
-    sections.push(`> ${codeReview.summary}`);
+    sections.push(quoteBlock(codeReview.summary));
   }
   const blocking = Number.isInteger(codeReview.blocking_findings_count)
     ? codeReview.blocking_findings_count
@@ -181,7 +203,7 @@ function renderComplete({
     }**`,
   );
   if (securityReview.summary) {
-    sections.push(`> ${securityReview.summary}`);
+    sections.push(quoteBlock(securityReview.summary));
   }
   sections.push(
     `Highest severity: **${securityReview.highest_severity || 'none'}**`,
@@ -299,6 +321,7 @@ module.exports = {
   REVIEW_CHECKLIST,
   parseStructuredOutput,
   verdictIcon,
+  quoteBlock,
   renderStarted,
   renderComplete,
   renderFailureBody,

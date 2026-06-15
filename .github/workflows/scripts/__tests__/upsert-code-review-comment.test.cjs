@@ -7,6 +7,7 @@ const {
   REVIEW_CHECKLIST,
   parseStructuredOutput,
   verdictIcon,
+  quoteBlock,
   renderStarted,
   renderComplete,
   renderFailureBody,
@@ -153,4 +154,57 @@ test('findExistingComment ignores duplicate text without the marker', () => {
   ]);
 
   assert.equal(existing, null);
+});
+
+test('renderComplete never claims "passed" when verdicts are missing (empty output)', () => {
+  const body = renderComplete({
+    structured: {},
+    headSha: 'abc',
+    runUrl: 'u',
+    failed: 'false',
+  });
+
+  assert.match(body, /❌ Code review failed to complete/);
+  assert.match(body, /Review did not produce structured verdicts\./);
+  assert.doesNotMatch(body, /✅ Code review complete/);
+});
+
+test('renderComplete treats a partial result (verdict missing) as incomplete', () => {
+  const body = renderComplete({
+    structured: { code_review: { summary: 'partial, no verdict' } },
+    headSha: 'abc',
+    runUrl: 'u',
+    failed: 'false',
+  });
+
+  assert.match(body, /❌ Code review failed to complete/);
+  assert.doesNotMatch(body, /Code review complete —/);
+});
+
+test('renderComplete keeps a multi-line summary inside the blockquote', () => {
+  const body = renderComplete({
+    structured: {
+      code_review: {
+        verdict: 'concerns',
+        summary: 'line one\nline two',
+        blocking_findings_count: 1,
+      },
+      security_review: { verdict: 'passed', highest_severity: 'low' },
+      reviewed_files: [],
+    },
+    headSha: 'abc',
+    runUrl: 'u',
+    failed: 'false',
+  });
+
+  assert.match(body, /> line one/);
+  assert.match(body, /> line two/);
+  // No summary line should render without the blockquote prefix.
+  assert.doesNotMatch(body, /(^|\n)line two/);
+});
+
+test('quoteBlock prefixes every line, including blank ones', () => {
+  assert.equal(quoteBlock('a\nb'), '> a\n> b');
+  assert.equal(quoteBlock('only'), '> only');
+  assert.equal(quoteBlock('a\n\nb'), '> a\n> \n> b');
 });
