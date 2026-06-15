@@ -133,28 +133,45 @@ export function varintSize(buffer: Buffer, offset: number): number {
   return Math.max(size, 1);
 }
 
-export function matchesCIDR(ipNum: number, cidr: string): boolean {
+/**
+ * Parse a `"a.b.c.d/prefix"` CIDR into its unsigned 32-bit network address
+ * (host bits cleared) and prefix mask. Returns null for malformed input.
+ *
+ * The network address is masked so it always carries zero host bits — this is
+ * what makes a sorted CIDR table binary-searchable (ranges are then ordered by
+ * both start and end address). `matchesCIDR` compares `(ipNum & mask)` against
+ * this masked network, so behavior is identical to computing it inline.
+ */
+export function cidrToNetworkAndMask(
+  cidr: string,
+): { network: number; mask: number } | null {
   const slashIdx = cidr.indexOf('/');
-  if (slashIdx === -1) return false;
+  if (slashIdx === -1) return null;
 
   const ipStr = cidr.substring(0, slashIdx);
   const prefixStr = cidr.substring(slashIdx + 1);
-  if (!ipStr || !prefixStr) return false;
+  if (!ipStr || !prefixStr) return null;
 
   const prefix = parseInt(prefixStr, 10);
-  if (isNaN(prefix) || prefix < 0 || prefix > 32) return false;
+  if (isNaN(prefix) || prefix < 0 || prefix > 32) return null;
 
   const parts = ipStr.split('.');
-  if (parts.length !== 4 || parts.some((p) => isNaN(Number(p)))) return false;
+  if (parts.length !== 4 || parts.some((p) => isNaN(Number(p)))) return null;
 
-  const networkNum =
+  const raw =
     (Number(parts[0]) << 24) |
     (Number(parts[1]) << 16) |
     (Number(parts[2]) << 8) |
     Number(parts[3]);
   const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+  const network = (raw & mask) >>> 0;
+  return { network, mask };
+}
 
-  return (ipNum & mask) === (networkNum & mask);
+export function matchesCIDR(ipNum: number, cidr: string): boolean {
+  const parsed = cidrToNetworkAndMask(cidr);
+  if (!parsed) return false;
+  return (ipNum & parsed.mask) >>> 0 === parsed.network;
 }
 
 /**
@@ -290,10 +307,81 @@ function decodeCIDRMessage(buffer: Buffer): string | null {
   return `${ipStr}/${prefix}`;
 }
 
+// --- Sorted lookup index ---
+
+/** A single CIDR entry in the binary-searchable lookup table. */
+export interface GeoIPLookupEntry {
+  /** Unsigned 32-bit network address (host bits zero). */
+  network: number;
+  /** Unsigned 32-bit contiguous-prefix mask. */
+  mask: number;
+  countryCode: string;
+}
+
+/**
+ * Build a lookup index over every CIDR in the country map, sorted by ascending
+ * network address so a lookup can binary-search the candidate range.
+ *
+ * Correctness relies on the GeoIP invariant that CIDR ranges are disjoint
+ * (each public IPv4 maps to at most one country). Under disjointness, sorting
+ * ranges by start address also orders them by end address, so the one range
+ * whose start <= ipNum and end >= ipNum — if any — is the rightmost start that
+ * is <= ipNum. A single mask check then confirms the match.
+ */
+export function buildLookupIndex(
+  countries: Map<string, CachedCountry>,
+): GeoIPLookupEntry[] {
+  const entries: GeoIPLookupEntry[] = [];
+  for (const [, country] of countries) {
+    for (const cidr of country.cidrs) {
+      const parsed = cidrToNetworkAndMask(cidr);
+      if (!parsed) continue;
+      entries.push({
+        network: parsed.network,
+        mask: parsed.mask,
+        countryCode: country.countryCode,
+      });
+    }
+  }
+  entries.sort((a, b) => (a.network >>> 0) - (b.network >>> 0));
+  return entries;
+}
+
+/**
+ * Look up the country for an unsigned 32-bit IPv4 via binary search over the
+ * sorted index. O(log n) per query vs the previous O(total_CIDRs) linear scan.
+ * Returns null when no range contains the address.
+ */
+export function lookupCountryInIndex(
+  entries: GeoIPLookupEntry[],
+  ipNum: number,
+): string | null {
+  const ip = ipNum >>> 0;
+
+  // Binary search for the rightmost entry whose network address is <= ip.
+  let lo = 0;
+  let hi = entries.length - 1;
+  let candidate = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    if (entries[mid].network >>> 0 <= ip) {
+      candidate = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  if (candidate === -1) return null;
+  const entry = entries[candidate];
+  return (ip & entry.mask) >>> 0 === entry.network ? entry.countryCode : null;
+}
+
 // --- GeoIPManager singleton ---
 
 class GeoIPManager {
   private countries: Map<string, CachedCountry> = new Map();
+  private lookupIndex: GeoIPLookupEntry[] = [];
   private status: GeoIPStatus = {
     loaded: false,
     stale: false,
@@ -350,11 +438,14 @@ class GeoIPManager {
 
     try {
       this.countries = parseGeoIPBuffer(buffer);
+      this.lookupIndex = buildLookupIndex(this.countries);
 
       console.log(
-        `[geoip] Loaded ${this.countries.size} countries from geoip.dat`,
+        `[geoip] Loaded ${this.countries.size} countries from geoip.dat (${this.lookupIndex.length} CIDR ranges)`,
       );
     } catch (err) {
+      this.countries = new Map();
+      this.lookupIndex = [];
       this.status.loaded = false;
       this.status.error = `Failed to parse geoip.dat: ${err instanceof Error ? err.message : String(err)}`;
       console.error('[geoip]', this.status.error);
@@ -375,17 +466,10 @@ class GeoIPManager {
     try {
       const parts = ip.split('.').map(Number);
       const ipNum =
-        (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+        ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>>
+        0;
 
-      for (const [, country] of this.countries) {
-        for (const cidr of country.cidrs) {
-          if (matchesCIDR(ipNum, cidr)) {
-            return country.countryCode;
-          }
-        }
-      }
-
-      return null;
+      return lookupCountryInIndex(this.lookupIndex, ipNum);
     } catch {
       return null;
     }
@@ -484,6 +568,7 @@ class GeoIPManager {
           // Validated — adopt the parsed map and swap the file atomically.
           await fs.promises.rename(tempPath, GEOIP_FILE);
           this.countries = parsed;
+          this.lookupIndex = buildLookupIndex(parsed);
           this.status.loaded = true;
           this.status.fileSize = stat.size;
           this.status.lastRefreshed = stat.mtime.toISOString();

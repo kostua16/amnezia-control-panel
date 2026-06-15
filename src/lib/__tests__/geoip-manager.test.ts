@@ -9,6 +9,10 @@ import {
   parseGeoIPBuffer,
   readVarint,
   varintSize,
+  cidrToNetworkAndMask,
+  buildLookupIndex,
+  lookupCountryInIndex,
+  type CachedCountry,
 } from '../geoip-manager';
 
 // --- readVarint ---
@@ -155,6 +159,132 @@ describe('matchesCIDR', () => {
       matchesCIDR(ipToNum('192.168.1.128'), '192.168.1.128/25'),
       true,
     );
+  });
+});
+
+// --- cidrToNetworkAndMask ---
+
+describe('cidrToNetworkAndMask', () => {
+  it('parses a normalized /24 into a masked network and mask', () => {
+    const parsed = cidrToNetworkAndMask('192.168.1.0/24');
+    assert.ok(parsed);
+    assert.strictEqual(parsed.network, 0xc0_a801_00); // 192.168.1.0
+    assert.strictEqual(parsed.mask, 0xffffff_00);
+  });
+
+  it('clears host bits from a non-normalized CIDR', () => {
+    // 10.1.2.3/8 → network 10.0.0.0 (host bits cleared by the mask).
+    const parsed = cidrToNetworkAndMask('10.1.2.3/8');
+    assert.ok(parsed);
+    assert.strictEqual(parsed.network, 0x0a_000000);
+    assert.strictEqual(parsed.mask, 0xff_000000);
+  });
+
+  it('treats /0 as the catch-all (mask 0, network 0)', () => {
+    const parsed = cidrToNetworkAndMask('0.0.0.0/0');
+    assert.ok(parsed);
+    assert.strictEqual(parsed.network, 0);
+    assert.strictEqual(parsed.mask, 0);
+  });
+
+  it('treats /32 as an exact-address mask', () => {
+    const parsed = cidrToNetworkAndMask('9.9.9.9/32');
+    assert.ok(parsed);
+    assert.strictEqual(parsed.network, 0x0909_0909);
+    assert.strictEqual(parsed.mask, 0xffff_ffff);
+  });
+
+  it('returns null for malformed input', () => {
+    assert.strictEqual(cidrToNetworkAndMask('1.2.3.4'), null);
+    assert.strictEqual(cidrToNetworkAndMask('1.2.3.4/'), null);
+    assert.strictEqual(cidrToNetworkAndMask('/24'), null);
+    assert.strictEqual(cidrToNetworkAndMask('1.2.3.4/abc'), null);
+    assert.strictEqual(cidrToNetworkAndMask('1.2.3.4/33'), null);
+    assert.strictEqual(cidrToNetworkAndMask('1.2.3.4/-1'), null);
+  });
+});
+
+// --- buildLookupIndex + lookupCountryInIndex ---
+
+describe('buildLookupIndex + lookupCountryInIndex', () => {
+  function makeCountry(code: string, cidrs: string[]): CachedCountry {
+    return { countryCode: code, cidrs };
+  }
+
+  function ipNum(ip: string): number {
+    const p = ip.split('.').map(Number);
+    return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+  }
+
+  it('sorts entries by ascending network address', () => {
+    const map = new Map<string, CachedCountry>([
+      ['US', makeCountry('US', ['10.0.0.0/8'])],
+      ['CN', makeCountry('CN', ['1.0.0.0/8'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    assert.strictEqual(idx.length, 2);
+    assert.strictEqual(idx[0].countryCode, 'CN');
+    assert.strictEqual(idx[1].countryCode, 'US');
+  });
+
+  it('returns the country whose range contains the address (binary search)', () => {
+    const map = new Map<string, CachedCountry>([
+      ['CN', makeCountry('CN', ['1.0.0.0/8'])],
+      ['DE', makeCountry('DE', ['8.8.8.0/24'])], // sorts between CN and US
+      ['US', makeCountry('US', ['10.0.0.0/8', '192.168.1.0/24'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('1.2.3.4')), 'CN');
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('8.8.8.8')), 'DE');
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('10.1.2.3')), 'US');
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('192.168.1.42')), 'US');
+  });
+
+  it('returns null for an address in a gap between disjoint ranges', () => {
+    const map = new Map<string, CachedCountry>([
+      ['US', makeCountry('US', ['10.0.0.0/8'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    // 172.16.0.1 sorts above 10.0.0.0 but is outside the /8 range.
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('172.16.0.1')), null);
+  });
+
+  it('returns null for an address below every range', () => {
+    const map = new Map<string, CachedCountry>([
+      ['US', makeCountry('US', ['10.0.0.0/8'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('9.9.9.9')), null);
+  });
+
+  it('matches a /0 catch-all entry', () => {
+    const map = new Map<string, CachedCountry>([
+      ['XX', makeCountry('XX', ['0.0.0.0/0'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('203.0.113.5')), 'XX');
+  });
+
+  it('matches a /32 exact address only', () => {
+    const map = new Map<string, CachedCountry>([
+      ['XX', makeCountry('XX', ['9.9.9.9/32'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('9.9.9.9')), 'XX');
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('9.9.9.10')), null);
+  });
+
+  it('skips malformed CIDRs while building the index', () => {
+    const map = new Map<string, CachedCountry>([
+      ['XX', makeCountry('XX', ['not-a-cidr', '10.0.0.0/8'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    assert.strictEqual(idx.length, 1);
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('10.0.0.1')), 'XX');
+  });
+
+  it('returns null on an empty index', () => {
+    assert.strictEqual(lookupCountryInIndex([], ipNum('1.2.3.4')), null);
   });
 });
 
