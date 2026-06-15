@@ -113,18 +113,27 @@ jobs:
             --repo "${{ github.repository }}" \
             --base-ref main \
             --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --detect-overlap \
+            --overlap-label auto-fix \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Log duplicate audit result
-        if: steps.duplicate.outputs.duplicate_found == 'true'
+        if: steps.duplicate.outputs.duplicate_found == 'true' || steps.duplicate.outputs.overlap_found == 'true'
         run: |
-          echo "Skipping duplicate auto PR audit fix."
-          echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
-          echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+          if [ "${{ steps.duplicate.outputs.duplicate_found }}" = 'true' ]; then
+            echo "Skipping duplicate auto PR audit fix."
+            echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
+            echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+          fi
+          if [ "${{ steps.duplicate.outputs.overlap_found }}" = 'true' ]; then
+            echo "Deferring auto PR audit fix; another automation PR already edits the same file(s)."
+            echo "Overlapping PR: #${{ steps.duplicate.outputs.overlap_pr_number }} ${{ steps.duplicate.outputs.overlap_pr_url }}"
+            echo "Reason: ${{ steps.duplicate.outputs.overlap_reason }}"
+          fi
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): audit automation-created PRs'
@@ -168,6 +177,10 @@ jobs:
           DUPLICATE_PR_NUMBER: ${{ steps.duplicate.outputs.duplicate_pr_number }}
           DUPLICATE_PR_URL: ${{ steps.duplicate.outputs.duplicate_pr_url }}
           DUPLICATE_REASON: ${{ steps.duplicate.outputs.duplicate_reason }}
+          OVERLAP_FOUND: ${{ steps.duplicate.outputs.overlap_found }}
+          OVERLAP_PR_NUMBER: ${{ steps.duplicate.outputs.overlap_pr_number }}
+          OVERLAP_PR_URL: ${{ steps.duplicate.outputs.overlap_pr_url }}
+          OVERLAP_REASON: ${{ steps.duplicate.outputs.overlap_reason }}
           STRUCTURED_OUTPUT: ${{ steps.claude_run.outputs.structured_output }}
           CLAUDE_LAST_OUTPUT: ${{ steps.claude_run.outputs.claude_last_output }}
         run: |
@@ -179,6 +192,10 @@ jobs:
               echo "- Result: duplicate fix suppressed"
               echo "- Existing PR: #${DUPLICATE_PR_NUMBER} ${DUPLICATE_PR_URL}"
               echo "- Reason: ${DUPLICATE_REASON}"
+            elif [ "$OVERLAP_FOUND" = "true" ]; then
+              echo "- Result: deferred — same-file overlap with another automation PR"
+              echo "- Overlapping PR: #${OVERLAP_PR_NUMBER} ${OVERLAP_PR_URL}"
+              echo "- Reason: ${OVERLAP_REASON}"
             else
               echo "- Result: no PR created"
             fi

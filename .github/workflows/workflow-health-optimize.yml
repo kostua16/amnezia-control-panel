@@ -295,18 +295,27 @@ jobs:
             --base-ref main \
             --title-prefix "ci(workflows): hourly optimization - " \
             --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --detect-overlap \
+            --overlap-label auto-fix \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Log duplicate optimization result
-        if: steps.duplicate.outputs.duplicate_found == 'true'
+        if: steps.duplicate.outputs.duplicate_found == 'true' || steps.duplicate.outputs.overlap_found == 'true'
         run: |
-          echo "Skipping duplicate optimization PR."
-          echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
-          echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+          if [ "${{ steps.duplicate.outputs.duplicate_found }}" = 'true' ]; then
+            echo "Skipping duplicate optimization PR."
+            echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
+            echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+          fi
+          if [ "${{ steps.duplicate.outputs.overlap_found }}" = 'true' ]; then
+            echo "Deferring optimization PR; another automation PR already edits the same file(s)."
+            echo "Overlapping PR: #${{ steps.duplicate.outputs.overlap_pr_number }} ${{ steps.duplicate.outputs.overlap_pr_url }}"
+            echo "Reason: ${{ steps.duplicate.outputs.overlap_reason }}"
+          fi
 
       - name: Validate tests pass after workflow edits
         id: validate
-        if: steps.claude_run.outputs.claude_changed_files_list != '' && steps.duplicate.outputs.duplicate_found != 'true'
+        if: steps.claude_run.outputs.claude_changed_files_list != '' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
         shell: bash
         run: |
           set +e
@@ -325,7 +334,7 @@ jobs:
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.validate.outputs.passed == 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.validate.outputs.passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): hourly optimization pass'
