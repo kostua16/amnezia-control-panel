@@ -42,8 +42,10 @@ const panelSyncPayloadSchema = z.object({
       persistentKeepalive: z.number().int().optional(),
     }),
   ),
-  generatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  generatedAt: z.string().min(1),
 });
+
+const generatedAtSchema = z.string().datetime({ offset: true });
 
 export async function POST(request: NextRequest) {
   try {
@@ -110,20 +112,6 @@ export async function POST(request: NextRequest) {
       where: { panelId: matchedPanel.id },
     });
 
-    // 6a. Freshness: reject captured payloads replayed after an arbitrary delay.
-    // Only enforced when generatedAt parses to a real timestamp; non-ISO values
-    // (accepted by the schema's min(1) fallback) are left to version ordering.
-    const generatedAtMs = Date.parse(configData.generatedAt);
-    if (!Number.isNaN(generatedAtMs)) {
-      const ageMs = Math.abs(Date.now() - generatedAtMs);
-      if (ageMs > SYNC_FRESHNESS_MS) {
-        return NextResponse.json(
-          { success: false, error: 'Stale payload' },
-          { status: 401 },
-        );
-      }
-    }
-
     if (
       existingConfig &&
       existingConfig.configVersion === configData.configVersion
@@ -148,6 +136,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const generatedAt = generatedAtSchema.safeParse(configData.generatedAt);
+    const generatedAtMs = generatedAt.success
+      ? Date.parse(generatedAt.data)
+      : Number.NaN;
+    if (Number.isNaN(generatedAtMs)) {
+      return NextResponse.json(
+        { success: false, error: 'Stale payload' },
+        { status: 409 },
+      );
+    }
+
+    const ageMs = Math.abs(Date.now() - generatedAtMs);
+    if (ageMs > SYNC_FRESHNESS_MS) {
+      return NextResponse.json(
+        { success: false, error: 'Stale payload' },
+        { status: 409 },
+      );
+    }
+
     // 6b. Monotonic version: ignore down-versioned replays. A captured older
     // payload must not downgrade the cached routing/WireGuard config. Equal
     // versions were handled above, so this catches strictly older versions.
@@ -169,7 +176,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: {
-          applied: true,
+          applied: false,
           configVersion: existingConfig.configVersion,
           message: 'Stale version ignored',
         },

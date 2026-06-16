@@ -39,8 +39,10 @@ export interface CreateUserPayload {
 }
 
 export interface UpdateUserPayload {
-  displayName?: string;
+  displayName?: string | null;
   trafficQuotaBytes?: number;
   speedLimitKbps?: number;
   isActive?: boolean;
+  newPassword?: string;
+  services?: ServiceType[];
 }

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ServiceType } from '@/generated/prisma/enums';
+import type { CreateUserPayload, UpdateUserPayload } from '@/types/user';
 
 export interface UsersListParams {
   search?: string;
@@ -87,7 +88,7 @@ export function useUsers(params?: UsersListParams) {
 export function useCreateUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: unknown) => {
+    mutationFn: async (body: CreateUserPayload) => {
       const response = await fetch('/api/users', {
         method: 'POST',
         headers: JSON_HEADERS,
@@ -104,7 +105,7 @@ export function useCreateUser() {
 export function useUpdateUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: { id: number; body: unknown }) => {
+    mutationFn: async (vars: { id: number; body: UpdateUserPayload }) => {
       const response = await fetch(`/api/users/${vars.id}`, {
         method: 'PUT',
         headers: JSON_HEADERS,
