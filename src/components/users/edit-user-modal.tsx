@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { EditUserForm } from '@/components/users/edit-user-form';
+import { useUpdateUser } from '@/hooks/use-users';
 import type { EditUserFormData } from '@/components/users/edit-user-form';
 import type { ServiceType } from '@/generated/prisma/enums';
 
@@ -35,6 +36,7 @@ export function EditUserModal({
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const updateUser = useUpdateUser();
 
   // Fetch user data when modal opens
   useEffect(() => {
@@ -90,32 +92,20 @@ export function EditUserModal({
       setApiError(null);
 
       try {
-        const response = await fetch(`/api/users/${userId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          setApiError(
-            result.error || 'Failed to update user. Please try again.',
-          );
-          return;
-        }
-
+        await updateUser.mutateAsync({ id: userId, body: data });
         onSuccess();
         handleClose();
-      } catch {
+      } catch (err) {
         setApiError(
-          'Network error. Please check your connection and try again.',
+          err instanceof Error && err.message
+            ? err.message
+            : 'Failed to update user. Please try again.',
         );
       } finally {
         setLoading(false);
       }
     },
-    [userData, userId, onSuccess, handleClose],
+    [userData, userId, updateUser, onSuccess, handleClose],
   );
 
   return (

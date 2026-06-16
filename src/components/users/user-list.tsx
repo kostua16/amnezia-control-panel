@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useUsers } from '@/hooks/use-users';
+import { useDeleteUser, useToggleUserBlock } from '@/hooks/use-users';
 import { UserStatusBadge } from '@/components/users/user-status-badge';
 import { UserServiceBadge } from '@/components/users/user-service-badge';
 import { UserTableSkeleton } from '@/components/users/user-table-skeleton';
@@ -111,6 +112,8 @@ export function UserList() {
     page,
     limit: 50,
   });
+  const deleteUser = useDeleteUser();
+  const toggleUserBlock = useToggleUserBlock();
 
   const users = data?.data ?? [];
   const pagination = data?.pagination;
@@ -144,24 +147,19 @@ export function UserList() {
     setActionError(null);
 
     try {
-      const response = await fetch(`/api/users/${deleteConfirmId}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        setActionError(result.error || 'Failed to delete user.');
-        return;
-      }
-
+      await deleteUser.mutateAsync(deleteConfirmId);
       setDeleteConfirmId(null);
       refetch();
-    } catch {
-      setActionError('Network error. Please check your connection.');
+    } catch (err) {
+      setActionError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to delete user.',
+      );
     } finally {
       setDeleteLoadingId(null);
     }
-  }, [deleteConfirmId, refetch]);
+  }, [deleteConfirmId, deleteUser, refetch]);
 
   const handleDeleteCancel = useCallback(() => {
     setDeleteConfirmId(null);
@@ -172,27 +170,23 @@ export function UserList() {
       setBlockLoadingId(user.id);
       setActionError(null);
 
-      const endpoint = user.isBlocked
-        ? `/api/users/${user.id}/unblock`
-        : `/api/users/${user.id}/block`;
-
       try {
-        const response = await fetch(endpoint, { method: 'POST' });
-
-        if (!response.ok) {
-          const result = await response.json();
-          setActionError(result.error || 'Failed to update block status.');
-          return;
-        }
-
+        await toggleUserBlock.mutateAsync({
+          id: user.id,
+          block: !user.isBlocked,
+        });
         refetch();
-      } catch {
-        setActionError('Network error. Please check your connection.');
+      } catch (err) {
+        setActionError(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Failed to update block status.',
+        );
       } finally {
         setBlockLoadingId(null);
       }
     },
-    [refetch],
+    [toggleUserBlock, refetch],
   );
 
   // Loading state

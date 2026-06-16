@@ -15,7 +15,8 @@ interface AuthClaims extends JWTPayload {
  * Public API routes that skip JWT verification.
  * - /api/auth/login — no token available before login
  * - /api/health — health check must work without auth
- * - /api/ws — Socket.io upgrade handled separately, not via middleware
+ * - /api/ws — Socket.IO upgrade; the handshake is authenticated by the io.use()
+ *   JWT gate in server.mjs (reusing this same auth-token cookie), not here
  * - /api/sync/receive — uses HMAC + API key auth, not JWT
  * - /api/sync/apply — uses HMAC + API key auth, not JWT
  */

@@ -71,6 +71,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       reconnection: true,
       reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
       reconnectionDelay: 1000,
+      // Send the auth-token cookie so the server-side io.use() handshake
+      // authenticates the socket. Same-origin includes cookies by default,
+      // but credentials must be explicit for any cross-origin deployment.
+      withCredentials: true,
     });
 
     socket.on('connect', () => {
