@@ -42,6 +42,9 @@ jobs:
         run: npm audit signatures
         continue-on-error: true
 
+      - name: Audit npm advisories (high+)
+        run: npm audit --audit-level=high
+
       - name: Verify lockfile is npm v3+
         run: |
           set -euo pipefail

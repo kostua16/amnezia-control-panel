@@ -23,7 +23,7 @@ describe('workflow gh auth policy', () => {
     const ciWorkflow = readRepoFile('.github/workflows/ci.yml');
     const optOuts = ciWorkflow.match(/require-gh-auth: 'false'/g) ?? [];
 
-    assert.equal(optOuts.length, 4);
+    assert.equal(optOuts.length, 5);
   });
 
   it('treats performance check comments as best-effort', () => {

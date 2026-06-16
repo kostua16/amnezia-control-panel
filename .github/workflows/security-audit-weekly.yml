@@ -1,0 +1,93 @@
+name: Security Audit (Weekly)
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: security-audit-weekly
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: [self-hosted, big]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          require-gh-auth: 'false'
+
+      - name: npm audit (high+ advisories)
+        id: audit
+        run: |
+          set -o pipefail
+          npm audit --audit-level=high 2>&1 | tee "${RUNNER_TEMP}/npm-audit-high-output.txt"
+        continue-on-error: true
+
+      - name: Open issue on failure
+        if: steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          AUDIT_ISSUE_BODY="${RUNNER_TEMP}/audit-issue-body.md"
+          AUDIT_ISSUE_TITLE="Security: weekly npm audit found HIGH+ advisories"
+          AUDIT_OUTPUT_FILE="${RUNNER_TEMP}/npm-audit-high-output.txt"
+          AUDIT_OUTPUT_LIMIT=60000
+          RUN_URL="https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}"
+          AUDIT_OUTPUT_SIZE=$(wc -c < "${AUDIT_OUTPUT_FILE}" | tr -d ' ')
+          {
+            echo "## Weekly npm audit found HIGH+ advisories"
+            echo ""
+            echo "Scheduled security audit failed. Review and remediate before the next run."
+            echo ""
+            echo "Run: ${RUN_URL}"
+            echo ""
+            echo '<details><summary>npm audit output</summary>'
+            echo ""
+            echo '```'
+            head -c "${AUDIT_OUTPUT_LIMIT}" "${AUDIT_OUTPUT_FILE}"
+            if [ "${AUDIT_OUTPUT_SIZE}" -gt "${AUDIT_OUTPUT_LIMIT}" ]; then
+              echo ""
+              echo "[output truncated to ${AUDIT_OUTPUT_LIMIT} bytes; full output is in the workflow logs]"
+            fi
+            echo '```'
+            echo '</details>'
+          } > "${AUDIT_ISSUE_BODY}"
+          EXISTING_ISSUE=""
+          if ! EXISTING_ISSUE=$(
+            gh issue list --repo "${REPOSITORY}" --state open \
+              --search 'weekly npm audit in:title' \
+              --json number \
+              --jq '.[0].number // empty' \
+              2>/dev/null
+          ); then
+            echo "Unable to check for an existing weekly npm audit issue; creating a new issue."
+            EXISTING_ISSUE=""
+          fi
+          if [ -z "${EXISTING_ISSUE}" ]; then
+            gh issue create \
+              --repo "${REPOSITORY}" \
+              --title "${AUDIT_ISSUE_TITLE}" \
+              --body-file "${AUDIT_ISSUE_BODY}"
+          else
+            echo "Refreshing existing weekly npm audit tracking issue #${EXISTING_ISSUE}."
+            if ! gh issue edit "${EXISTING_ISSUE}" \
+              --repo "${REPOSITORY}" \
+              --body-file "${AUDIT_ISSUE_BODY}"; then
+              echo "Unable to refresh issue #${EXISTING_ISSUE}; creating a new issue."
+              gh issue create \
+                --repo "${REPOSITORY}" \
+                --title "${AUDIT_ISSUE_TITLE}" \
+                --body-file "${AUDIT_ISSUE_BODY}"
+            fi
+          fi
