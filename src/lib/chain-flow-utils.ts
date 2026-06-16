@@ -1,9 +1,10 @@
-import { randomUUID } from 'crypto';
 import type { Node, Edge } from '@xyflow/react';
 import type { ChainNode, ChainTopology } from '@/types/chain';
 import type { RemotePanel } from '@/types/remote-panel';
 import type { CrossPanelEdgeData } from '@/types/chain-flow';
 import { calculateNodePositions, CANVAS_PADDING } from '@/lib/chain-layout';
+
+let nodeIdCounter = 0;
 
 export interface ChainBuilderNode {
   [key: string]: unknown;
@@ -141,5 +142,11 @@ export function reassignRoles(nodes: ChainBuilderNode[]): ChainBuilderNode[] {
  * Generate a unique node ID.
  */
 export function generateNodeId(): string {
-  return 'node-' + randomUUID().slice(0, 8);
+  const randomId = globalThis.crypto?.randomUUID?.();
+  if (randomId) {
+    return 'node-' + randomId.slice(0, 8);
+  }
+
+  nodeIdCounter = (nodeIdCounter + 1) % 0xffffffff;
+  return 'node-' + nodeIdCounter.toString(16).padStart(8, '0');
 }
