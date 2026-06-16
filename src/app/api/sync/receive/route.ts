@@ -5,6 +5,14 @@ import { verifySignature } from '@/lib/hmac';
 import { storePreviousConfig } from '@/lib/rollback-manager';
 import { writeAuditLog } from '@/lib/audit-log';
 
+/**
+ * Reject sync payloads whose generatedAt timestamp drifts further than this
+ * window from server time. HMAC authenticates payload content but not
+ * freshness, so a byte-for-byte replay of a real (API-key + HMAC-signed)
+ * request still verifies. This window is the replay defense.
+ */
+const SYNC_FRESHNESS_MS = 5 * 60 * 1000;
+
 const panelSyncPayloadSchema = z.object({
   configVersion: z.number().int().positive(),
   panelRole: z.enum(['entry', 'middle', 'exit', 'domestic', 'foreign']),
@@ -34,8 +42,10 @@ const panelSyncPayloadSchema = z.object({
       persistentKeepalive: z.number().int().optional(),
     }),
   ),
-  generatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  generatedAt: z.string().min(1),
 });
+
+const generatedAtSchema = z.string().datetime({ offset: true });
 
 export async function POST(request: NextRequest) {
   try {
@@ -122,6 +132,53 @@ export async function POST(request: NextRequest) {
           applied: true,
           configVersion: configData.configVersion,
           message: 'Config already applied (idempotent)',
+        },
+      });
+    }
+
+    const generatedAt = generatedAtSchema.safeParse(configData.generatedAt);
+    const generatedAtMs = generatedAt.success
+      ? Date.parse(generatedAt.data)
+      : Number.NaN;
+    if (Number.isNaN(generatedAtMs)) {
+      return NextResponse.json(
+        { success: false, error: 'Stale payload' },
+        { status: 409 },
+      );
+    }
+
+    const ageMs = Math.abs(Date.now() - generatedAtMs);
+    if (ageMs > SYNC_FRESHNESS_MS) {
+      return NextResponse.json(
+        { success: false, error: 'Stale payload' },
+        { status: 409 },
+      );
+    }
+
+    // 6b. Monotonic version: ignore down-versioned replays. A captured older
+    // payload must not downgrade the cached routing/WireGuard config. Equal
+    // versions were handled above, so this catches strictly older versions.
+    if (
+      existingConfig &&
+      configData.configVersion <= existingConfig.configVersion
+    ) {
+      await writeAuditLog({
+        action: 'sync.receive.stale-version',
+        resource: 'cachedPanelConfig',
+        resourceId: matchedPanel.id,
+        metadata: {
+          panelId: matchedPanel.id,
+          receivedVersion: configData.configVersion,
+          currentVersion: existingConfig.configVersion,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          applied: false,
+          configVersion: existingConfig.configVersion,
+          message: 'Stale version ignored',
         },
       });
     }

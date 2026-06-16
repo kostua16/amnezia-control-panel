@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { UserQuotaForm } from '@/components/users/user-quota-form';
+import { useUpdateUserQuota } from '@/hooks/use-users';
 
 type QuotaPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 
@@ -34,6 +35,7 @@ export function UserQuotaModal({
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const updateQuota = useUpdateUserQuota();
 
   useEffect(() => {
     if (!open) return;
@@ -86,30 +88,20 @@ export function UserQuotaModal({
       setApiError(null);
 
       try {
-        const response = await fetch(`/api/users/${userId}/quota`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          setApiError(result.error || 'Failed to update quota.');
-          return;
-        }
-
+        await updateQuota.mutateAsync({ id: userId, body: data });
         onSuccess();
         handleClose();
-      } catch {
+      } catch (err) {
         setApiError(
-          'Network error. Please check your connection and try again.',
+          err instanceof Error && err.message
+            ? err.message
+            : 'Failed to update quota.',
         );
       } finally {
         setLoading(false);
       }
     },
-    [userId, onSuccess, handleClose],
+    [userId, updateQuota, onSuccess, handleClose],
   );
 
   return (

@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import { Dialog } from '@/components/ui/dialog';
 import { CreateUserForm } from '@/components/users/create-user-form';
+import { useCreateUser } from '@/hooks/use-users';
 import type { CreateUserPayload } from '@/types/user';
 
 interface CreateUserModalProps {
@@ -19,6 +20,7 @@ export function CreateUserModal({
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
+  const createUser = useCreateUser();
 
   const resetForm = useCallback(() => {
     setApiError(null);
@@ -36,32 +38,20 @@ export function CreateUserModal({
       setApiError(null);
 
       try {
-        const response = await fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          setApiError(
-            result.error || 'Failed to create user. Please try again.',
-          );
-          return;
-        }
-
+        await createUser.mutateAsync(data);
         onSuccess();
         handleClose();
-      } catch {
+      } catch (err) {
         setApiError(
-          'Network error. Please check your connection and try again.',
+          err instanceof Error && err.message
+            ? err.message
+            : 'Failed to create user. Please try again.',
         );
       } finally {
         setLoading(false);
       }
     },
-    [onSuccess, handleClose],
+    [createUser, onSuccess, handleClose],
   );
 
   return (

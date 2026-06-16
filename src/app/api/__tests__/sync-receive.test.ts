@@ -19,6 +19,7 @@ type SyncSuccessBody = {
   data: {
     applied: boolean;
     configVersion: number;
+    message?: string;
   };
 };
 
@@ -31,9 +32,14 @@ const orig = {
   execRaw: prisma.$executeRaw,
 };
 
-function validPayload() {
+function validPayload(
+  overrides: Partial<{
+    configVersion: number;
+    generatedAt: string;
+  }> = {},
+) {
   return {
-    configVersion: 1,
+    configVersion: overrides.configVersion ?? 1,
     panelRole: 'entry' as const,
     chainNodes: [
       {
@@ -56,7 +62,8 @@ function validPayload() {
     wireguardPeers: [
       { publicKey: 'pub', allowedIPs: '0.0.0.0/0', endpoint: '10.0.0.1:51820' },
     ],
-    generatedAt: '2024-01-01T00:00:00Z',
+    // Fresh timestamp so the SYNC_FRESHNESS_MS window accepts the payload.
+    generatedAt: overrides.generatedAt ?? new Date().toISOString(),
   };
 }
 
@@ -169,5 +176,111 @@ describe('POST /api/sync/receive', () => {
       1,
       'persisted config against matched panel',
     );
+  });
+
+  it('rejects a payload whose generatedAt is outside the freshness window with 409', async () => {
+    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.cachedPanelConfig.findUnique = (async () => null) as never;
+
+    // Far in the past: a captured payload replayed long after capture.
+    const payload = validPayload({ generatedAt: '2020-01-01T00:00:00Z' });
+    const signature = signPayload(payload, API_KEY);
+    const { status, body } = await readJson<SyncErrorBody>(
+      await POST(
+        postRequest(PATH, payload, {
+          'X-API-Key': API_KEY,
+          'X-Signature': signature,
+        }),
+      ),
+    );
+    assert.strictEqual(status, 409);
+    assert.strictEqual(body.error, 'Stale payload');
+  });
+
+  it('rejects a payload whose generatedAt is not an ISO datetime with 409', async () => {
+    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.cachedPanelConfig.findUnique = (async () => null) as never;
+
+    const payload = validPayload({ generatedAt: 'x' });
+    const signature = signPayload(payload, API_KEY);
+    const { status, body } = await readJson<SyncErrorBody>(
+      await POST(
+        postRequest(PATH, payload, {
+          'X-API-Key': API_KEY,
+          'X-Signature': signature,
+        }),
+      ),
+    );
+    assert.strictEqual(status, 409);
+    assert.strictEqual(body.error, 'Stale payload');
+  });
+
+  it('treats a stale same-version replay as idempotent success', async () => {
+    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.cachedPanelConfig.findUnique = (async () => ({
+      id: 7,
+      configVersion: 7,
+    })) as never;
+
+    let overwriteCalled = false;
+    prisma.cachedPanelConfig.create = (async () => {
+      overwriteCalled = true;
+      return { id: 99 };
+    }) as never;
+
+    const payload = validPayload({
+      configVersion: 7,
+      generatedAt: '2020-01-01T00:00:00Z',
+    });
+    const signature = signPayload(payload, API_KEY);
+    const { status, body } = await readJson<SyncSuccessBody>(
+      await POST(
+        postRequest(PATH, payload, {
+          'X-API-Key': API_KEY,
+          'X-Signature': signature,
+        }),
+      ),
+    );
+    assert.strictEqual(status, 200);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.data.applied, true);
+    assert.strictEqual(body.data.configVersion, 7);
+    assert.strictEqual(
+      body.data.message,
+      'Config already applied (idempotent)',
+    );
+    assert.strictEqual(overwriteCalled, false, 'cached config not overwritten');
+  });
+
+  it('treats a replayed older configVersion as a no-op and does not overwrite', async () => {
+    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.cachedPanelConfig.findUnique = (async () => ({
+      id: 7,
+      configVersion: 7,
+    })) as never;
+
+    let overwriteCalled = false;
+    prisma.cachedPanelConfig.create = (async () => {
+      overwriteCalled = true;
+      return { id: 99 };
+    }) as never;
+
+    // Older than the cached version 7 — a down-versioned replay.
+    const payload = validPayload({ configVersion: 5 });
+    const signature = signPayload(payload, API_KEY);
+    const { status, body } = await readJson<SyncSuccessBody>(
+      await POST(
+        postRequest(PATH, payload, {
+          'X-API-Key': API_KEY,
+          'X-Signature': signature,
+        }),
+      ),
+    );
+    assert.strictEqual(status, 200);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.data.applied, false);
+    // The cached (current) version is reported, not the replayed one.
+    assert.strictEqual(body.data.configVersion, 7);
+    assert.strictEqual(overwriteCalled, false, 'cached config not overwritten');
   });
 });
