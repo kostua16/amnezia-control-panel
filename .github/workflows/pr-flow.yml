@@ -46,7 +46,13 @@ permissions:
   actions: write
 
 concurrency:
-  group: pr-flow-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.display_title || github.event.workflow_run.head_branch || github.run_id }}
+  # Split by event class: pull_request_target / issue_comment / workflow_dispatch
+  # runs share `pr-flow-live-<PR#>`; workflow_run wakes use `pr-flow-wr-<PR#>`.
+  # A completing check can no longer cancel the in-flight pull_request_target
+  # orchestrate job — the only run that reports a check on the PR — so the
+  # "PR Orchestrator" check stops showing as cancelled. Each class still
+  # collapses its own stale reruns via cancel-in-progress below.
+  group: pr-flow-${{ (github.event_name == 'workflow_run' && 'wr') || 'live' }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.display_title || github.event.workflow_run.head_branch || github.run_id }}
   # Label churn must not cancel an in-flight orchestration run; only meaningful PR events cancel older runs.
   cancel-in-progress: ${{ github.event_name != 'pull_request_target' || (github.event.action != 'labeled' && github.event.action != 'unlabeled') }}
 

@@ -180,6 +180,93 @@ a human makes the final decision. Hard blockers such as `do-not-merge`,
 AI/security concern labels, and blocked dependency labels still fail
 `pr-flow/ready`.
 
+> See [PR Orchestrator Concurrency](#pr-orchestrator-concurrency) for how
+> `pr-flow.yml` groups runs by event class and why a cancelled `orchestrate`
+> check should no longer appear on PRs.
+
+## PR Orchestrator Concurrency
+
+`pr-flow.yml` keys its concurrency group per PR but **splits it by event class**
+so a completing check cannot cancel a direct PR-action run:
+
+| event class       | concurrency group    | triggers                                                                                                                                                     |
+| ----------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| direct PR action  | `pr-flow-live-<PR#>` | `pull_request_target` (opened/synchronize/reopened/ready_for_review/converted_to_draft/labeled/unlabeled), `issue_comment` (`/approve`), `workflow_dispatch` |
+| check/worker wake | `pr-flow-wr-<PR#>`   | `workflow_run` (CI, PR Policy, Code Review, Dependency Review, PR Improve, PR Finalizer completed)                                                           |
+
+Each class still collapses its own stale reruns via `cancel-in-progress`, but the
+two classes never cancel each other.
+
+### Why cancellation exists at all
+
+`pr-flow.yml` has two feedback loops that would otherwise flood the **shared
+self-hosted runner pool**:
+
+1. **Label loop** — orchestrate adds `flow/*` labels → `pull_request_target`
+   `labeled` → re-triggers pr-flow. Bot-applied labels are prefiltered by
+   `evaluate-trigger-policy.cjs` (`should_run=false` — "re-evaluates on
+   workflow_run completion"), and `cancel-in-progress` is `false` for
+   `labeled`/`unlabeled`.
+2. **Worker/check loop** — orchestrate dispatches a worker (or CI runs) → it
+   completes → `workflow_run` → re-triggers pr-flow. This is intentional: pr-flow
+   re-evaluates after each worker/check finishes.
+
+`cancel-in-progress` collapses the redundant wakes so only the newest run per
+class executes — protecting limited runner capacity.
+
+### The cancellation cascade this design fixes
+
+Previously all triggers shared one `pr-flow-<PR#>` group. A fast completing check
+(PR Policy finishes in ~1.5–3 min) entered the same group and cancelled the
+in-flight `pull_request_target` `orchestrate` job (needs ~1.5 min) before it ran a
+step. Only `pull_request_target` runs surface as **PR checks** — `workflow_run`
+runs execute on the default branch and do not attach a check to the PR head — so
+this showed as a red `cancelled` "PR Orchestrator" check.
+
+Functionally it was cosmetic: a later `workflow_run` run completed orchestration
+and posted `pr-flow/ready`, so PRs stayed mergeable. The event-class split removes
+the cancelled check entirely while keeping worker-side collapsing intact.
+
+### Dispatch safety under concurrent runs
+
+With the split, a `live` and a `wr` orchestrate can run concurrently. This is safe
+because every dispatch is **label-guarded**:
+
+- review workers (code-review, dependency-review, security) check for existing
+  `*-review-passed` / `*-review-concerns` / `flow/review-pending` labels first;
+- the finalizer checks `flow/finalizer-dispatched` for the current head SHA;
+- PR Improve checks `flow/improve-pending`.
+
+In practice the two classes rarely overlap: the prt orchestrate finishes (~70 s)
+before the first `workflow_run` wake (PR Policy ~90 s+) starts.
+
+### Runner-count assumption
+
+This design assumes **at least two self-hosted runners** (three or more currently
+in use). Measured durations (setup overhead included):
+
+| job                                 | duration            | runner label          | required for `pr-flow/ready` |
+| ----------------------------------- | ------------------- | --------------------- | ---------------------------- |
+| CI Lint / Type Check / Build / Test | 43 / 62 / 55 / 53 s | `[self-hosted,big]`   | yes                          |
+| CI Security Audit                   | ~35 s               | `[self-hosted,big]`   | no                           |
+| PR Policy (`label-and-validate`)    | ~60–120 s           | `self-hosted`         | yes                          |
+| pr-flow orchestrate                 | ~70 s               | `self-hosted`         | posts `pr-flow/ready`        |
+| Dependency Review                   | 3–12 min            | `self-hosted` + `big` | no                           |
+| Code Review                         | 6–12 min            | `self-hosted`         | review signal                |
+| PR Improve / Finalizer              | 5–7 min / ~1 min    | `self-hosted`         | dispatched later             |
+
+Time-to-ready (required checks green + `pr-flow/ready` posted) by runner count:
+
+| self-hosted runners | wall-clock   | notes                                                                                                                         |
+| ------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| 1                   | ~7.5–8.5 min | CI's 4 jobs serialize — the bottleneck. The concurrency choice swings only ~1–2 min here; a **2nd runner** is the real lever. |
+| 2                   | ~3.5–4.5 min | event-class split is effectively free (extra prt orchestrate rides the spare runner)                                          |
+| 3+                  | ~3 min       | split is free; pick the design on correctness/cosmetics                                                                       |
+
+If the pool is ever downsized to a single runner, revisit this design: the
+event-class split then costs ~1–2 min per push, and collapsing more aggressively
+(or dropping redundant `pull_request_target` triggers) may be preferable.
+
 ## Policy Labels
 
 The following labels are enforced or created automatically by the workflow stack:
@@ -281,7 +368,7 @@ Always manual-only:
   - **Profile E (Engineer):** `claude`, `fix-issue`, `_auto-fix-ci`, `audit-fix`, `gsd-planning-execute` — code-editing flows with typescript-lsp, serena (read-only), context7, code-review, security-guidance, code-simplifier, frontend-design, superpowers, caveman (+ commit-commands in claude.yml only)
   - **Profile R (Reviewer):** `code-review`, `audit-auto-prs` — review/inspect flows with typescript-lsp, serena (read-only), context7, code-review, pr-review-toolkit, security-guidance, code-simplifier
   - **Profile P (Planner):** `gsd-planning`, `suggest-improvements`, `pr-improve`, `docs-drift` — planning/propose flows with context7, serena (read-only), caveman
-  - **Profile O (Ops):** all remaining flows (triage, release-notes, dependency-review, issue-catch-up, maintenance, workflow-health-optimize, monitor-*) — no plugins (haiku/label ops, tight budgets, or YAML-only scope)
+  - **Profile O (Ops):** all remaining flows (triage, release-notes, dependency-review, issue-catch-up, maintenance, workflow-health-optimize, monitor-\*) — no plugins (haiku/label ops, tight budgets, or YAML-only scope)
 - serena is restricted to **read-only** by **enumerating each allowed tool by name** — `mcp__plugin_serena_serena__{find_symbol,get_symbols_overview,find_referencing_symbols,find_implementations,find_declaration,search_for_pattern,find_file,list_dir,read_file,get_diagnostics_for_file}`. The `mcp__plugin_serena_serena__*` wildcard is **intentionally NOT** used so `execute_shell_command` and all write tools (`replace_*`, `edit_*`, `write_memory`, `create_text_file`, `safe_delete_symbol`, `delete_memory`) stay blocked. context7 tools use `mcp__plugin_context7_context7__{query-docs,resolve-library-id}`; typescript-lsp tools (Profiles E + R) use the `mcp__plugin_typescript-lsp__*` prefix.
 - `pyright-lsp` and `claude-code-setup` plugins are intentionally excluded from CI (pyright: no Python app code; claude-code-setup: risk of rewriting committed `.claude/settings.json`)
 - `commit-commands` is included only in `claude.yml` (interactive @claude flows); excluded from automated flows that forbid committing
