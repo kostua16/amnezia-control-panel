@@ -57,7 +57,7 @@ export function MetricsCards() {
     : 0;
   const trafficLabel = stats
     ? `Traffic (${stats.trafficWindowHours}h)`
-    : 'Traffic (24h)';
+    : 'Traffic';
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

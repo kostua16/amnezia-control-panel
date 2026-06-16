@@ -169,7 +169,8 @@ export function cidrToNetworkAndMask(
 export function matchesCIDR(ipNum: number, cidr: string): boolean {
   const parsed = cidrToNetworkAndMask(cidr);
   if (!parsed) return false;
-  return (ipNum & parsed.mask) >>> 0 === parsed.network;
+  const maskedIp = (ipNum & parsed.mask) >>> 0;
+  return maskedIp === parsed.network;
 }
 
 /**
@@ -366,8 +367,8 @@ export function lookupCountryInIndex(
 // --- GeoIPManager singleton ---
 
 class GeoIPManager {
-  private countries: Map<string, CachedCountry> = new Map();
-  private lookupIndex: GeoIPLookupEntry = buildLookupIndex(this.countries);
+  private countryCount = 0;
+  private lookupIndex: GeoIPLookupEntry = buildLookupIndex(new Map());
   private status: GeoIPStatus = {
     loaded: false,
     stale: false,
@@ -416,22 +417,23 @@ class GeoIPManager {
   // --- Parse v2fly geoip.dat format ---
 
   /**
-   * Parse the on-disk geoip.dat into the live country map. Used at startup
+   * Parse the on-disk geoip.dat into the live lookup index. Used at startup
    * (`init`) to load an already-verified database file.
    */
   private parseDatFile(filePath: string): void {
     const buffer = fs.readFileSync(filePath);
 
     try {
-      this.countries = parseGeoIPBuffer(buffer);
-      this.lookupIndex = buildLookupIndex(this.countries);
+      const countries = parseGeoIPBuffer(buffer);
+      this.countryCount = countries.size;
+      this.lookupIndex = buildLookupIndex(countries);
 
       console.log(
-        `[geoip] Loaded ${this.countries.size} countries from geoip.dat`,
+        `[geoip] Loaded ${this.countryCount} countries from geoip.dat`,
       );
     } catch (err) {
-      this.countries = new Map();
-      this.lookupIndex = buildLookupIndex(this.countries);
+      this.countryCount = 0;
+      this.lookupIndex = buildLookupIndex(new Map());
       this.status.loaded = false;
       this.status.error = `Failed to parse geoip.dat: ${err instanceof Error ? err.message : String(err)}`;
       console.error('[geoip]', this.status.error);
@@ -553,7 +555,7 @@ class GeoIPManager {
 
           // Validated — adopt the parsed map and swap the file atomically.
           await fs.promises.rename(tempPath, GEOIP_FILE);
-          this.countries = parsed;
+          this.countryCount = parsed.size;
           this.lookupIndex = buildLookupIndex(parsed);
           this.status.loaded = true;
           this.status.fileSize = stat.size;
@@ -583,7 +585,7 @@ class GeoIPManager {
 
       return {
         success: true,
-        message: `GeoIP database updated (${this.countries.size} countries)`,
+        message: `GeoIP database updated (${this.countryCount} countries)`,
       };
     } finally {
       this.refreshing = false;
