@@ -56,15 +56,12 @@ jobs:
       head-sha: ${{ steps.resolve.outputs.head_sha }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-
-      - uses: ./.github/actions/setup-environment
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          node-version: ${{ env.NODE_VERSION }}
-          # Runs actions/github-script (a Node action); Bun is unused here.
-          setup-bun: 'false'
-
+      # resolve-pr only calls the GitHub REST API via actions/github-script,
+      # which authenticates with the ambient GITHUB_TOKEN and executes on the
+      # runner's bundled Node runtime. No repo checkout, Node setup, or gh auth
+      # is required here, so actions/checkout and setup-environment are skipped
+      # to drop the ~11-20s setup-environment step this job previously ran per
+      # review (self-hosted setup-node + setup-gh retry + gh-auth verify).
       - name: Resolve PR context
         id: resolve
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
