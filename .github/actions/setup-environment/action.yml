@@ -223,9 +223,13 @@ runs:
         switch-account: 'true'
         skip-matching-version: 'false'
 
-    # The outages this absorbs are multi-second TCP i/o timeouts, not
-    # micro-hiccups; re-dialing with no gap just re-hits the same wall, so wait
-    # before retrying to let the transient network blip clear.
+    # Wait before retrying so multi-second transient outages (TCP i/o timeouts,
+    # DNS, resets) can clear instead of immediately re-dialing. The gate is
+    # intentionally broad (any setup_gh failure): we cannot cheaply tell a
+    # transient blip from a permanent one such as a bad token, and matching on
+    # error strings would drop retry coverage for transient shapes we have not
+    # seen yet. A permanent failure pays one ~10s sleep before the job aborts
+    # anyway (require-gh-auth), which is acceptable.
     - name: Backoff before gh retry
       if: steps.setup_gh.outcome == 'failure'
       shell: bash
