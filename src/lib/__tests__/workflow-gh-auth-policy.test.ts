@@ -23,8 +23,7 @@ describe('workflow gh auth policy', () => {
     const ciWorkflow = readRepoFile('.github/workflows/ci.yml');
     const optOuts = ciWorkflow.match(/require-gh-auth: 'false'/g) ?? [];
     const setupEnvUses =
-      ciWorkflow.match(/uses: \.\/\.github\/actions\/setup-environment/g) ??
-      [];
+      ciWorkflow.match(/uses: \.\/\.github\/actions\/setup-environment/g) ?? [];
 
     // CI must stay runnable without gh credentials (fork/PR builds), so EVERY
     // setup-environment call must opt out of hard gh-auth failure. Comparing
