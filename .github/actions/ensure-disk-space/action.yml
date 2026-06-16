@@ -1,0 +1,44 @@
+name: 'Ensure Disk Space'
+description: |
+  Lightweight disk-space guard for self-hosted runners. Prunes Docker state, the
+  npm cache and the runner temp directory only when available disk drops below a
+  threshold. Use this in jobs that do not otherwise pull in the heavier
+  setup-environment action (e.g. image build/publish jobs) so disk exhaustion is
+  handled by one shared contract instead of a per-workflow inline prune script.
+
+inputs:
+  minimum-disk-space-mb:
+    description: 'Prune temp/docker/npm-cache data when available disk drops below this threshold (MB)'
+    default: '4096'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Ensure runner disk space
+      shell: bash
+      env:
+        REQUIRED_MB: ${{ inputs.minimum-disk-space-mb }}
+      run: |
+        set -euo pipefail
+
+        get_available_mb() {
+          local available_kb
+          available_kb=$(df --output=avail / | tail -1 | tr -d ' ')
+          echo $((available_kb / 1024))
+        }
+
+        cleanup_general() {
+          npm cache clean --force 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP"/* 2>/dev/null || true
+          docker system prune -af --volumes 2>/dev/null || true
+        }
+
+        available_mb=$(get_available_mb)
+        echo "Available disk space: ${available_mb} MB (threshold ${REQUIRED_MB} MB)"
+
+        if [ "${available_mb}" -lt "${REQUIRED_MB}" ]; then
+          echo "Low disk; pruning Docker state, npm cache and runner temp..."
+          cleanup_general
+          available_mb=$(get_available_mb)
+          echo "Available disk space after prune: ${available_mb} MB"
+        fi
