@@ -11,10 +11,12 @@ runs:
   steps:
     - name: Ensure Docker disk space
       shell: bash
+      env:
+        INPUT_THRESHOLD_MB: ${{ inputs.threshold-mb }}
       run: |
         set -euo pipefail
 
-        threshold_mb="${{ inputs.threshold-mb }}"
+        threshold_mb="${INPUT_THRESHOLD_MB}"
         if [[ ! "$threshold_mb" =~ ^[0-9]+$ ]] || [ "$threshold_mb" -lt 1 ]; then
           echo "::error::threshold-mb must be a positive integer, got: ${threshold_mb}"
           exit 1
