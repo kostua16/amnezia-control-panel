@@ -19,9 +19,7 @@ test('hasFileOverlap returns true when local and remote share a file path', () =
 
 test('hasFileOverlap returns false when no paths are shared', () => {
   const local = [{ path: '.github/workflows/ci.yml', patch: '@@' }];
-  const remote = [
-    { path: '.github/workflows/docker-image.yml', patch: '@@' },
-  ];
+  const remote = [{ path: '.github/workflows/docker-image.yml', patch: '@@' }];
   assert.equal(hasFileOverlap(local, remote), false);
 });
 

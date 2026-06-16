@@ -272,19 +272,24 @@ function run() {
       return true;
     });
 
+    const pullRequestFiles = new Map();
+    const getPullRequestFiles = (pullRequest) => {
+      const number = Number(pullRequest.number);
+      if (!pullRequestFiles.has(number)) {
+        pullRequestFiles.set(
+          number,
+          parseJson(
+            gh(['api', `repos/${repo}/pulls/${number}/files?per_page=100`]),
+          ) || [],
+        );
+      }
+      return pullRequestFiles.get(number);
+    };
+
     const duplicate = findDuplicatePullRequest(
       localFiles,
       candidates,
-      (pullRequest) => {
-        const files =
-          parseJson(
-            gh([
-              'api',
-              `repos/${repo}/pulls/${pullRequest.number}/files?per_page=100`,
-            ]),
-          ) || [];
-        return files;
-      },
+      getPullRequestFiles,
     );
 
     if (duplicate) {
@@ -312,14 +317,15 @@ function run() {
       const duplicateNumber = result.duplicate_pr_number;
       const overlapCandidates = openPulls.filter((pullRequest) => {
         if (!pullRequest || typeof pullRequest !== 'object') return false;
-        if (excludeHead && pullRequest.headRefName === excludeHead) return false;
+        if (excludeHead && pullRequest.headRefName === excludeHead)
+          return false;
         if (duplicateNumber && String(pullRequest.number) === duplicateNumber) {
           return false;
         }
         if (overlapLabel) {
           const labels = Array.isArray(pullRequest.labels)
-            ? pullRequest.labels.map(
-                (label) => String(label?.name ?? label ?? ''),
+            ? pullRequest.labels.map((label) =>
+                String(label?.name ?? label ?? ''),
               )
             : [];
           if (!labels.includes(overlapLabel)) return false;
@@ -328,13 +334,7 @@ function run() {
       });
 
       for (const pullRequest of overlapCandidates) {
-        const files =
-          parseJson(
-            gh([
-              'api',
-              `repos/${repo}/pulls/${pullRequest.number}/files?per_page=100`,
-            ]),
-          ) || [];
+        const files = getPullRequestFiles(pullRequest);
         if (hasFileOverlap(localFiles, files)) {
           result.overlap_found = 'true';
           result.overlap_pr_number = String(pullRequest.number);
@@ -346,7 +346,8 @@ function run() {
       }
 
       if (result.overlap_found !== 'true') {
-        result.overlap_reason = 'No open pull request overlaps the changed files.';
+        result.overlap_reason =
+          'No open pull request overlaps the changed files.';
       }
     }
   }
