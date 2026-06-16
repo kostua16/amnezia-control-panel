@@ -10,6 +10,7 @@ import {
 import { Check, ArrowLeft, RotateCcw } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { PanelSelector } from './panel-selector';
 import { ChainTemplateSelector } from './chain-template-selector';
@@ -17,6 +18,11 @@ import { ConfigDiffView } from './config-diff-view';
 import { PushProgressTracker } from './push-progress-tracker';
 import { PushResultSummary } from './push-result-summary';
 import { useWebSocket } from '@/hooks/use-websocket';
+import {
+  buildRoutingOptionsForTopology,
+  getInvalidDirectGeoipTags,
+  hasDirectGeoipTags,
+} from '@/lib/chain-routing-options';
 import type { ChainConfig, ChainTemplate } from '@/types/chain';
 import type { ConfigDiffResult, PushProgressEvent } from '@/types/config-push';
 import type { PushResult, PushAllResult } from '@/types/panel-sync';
@@ -62,6 +68,7 @@ export function PushWizard({ panels }: PushWizardProps) {
   const [panelMapping, setPanelMapping] = useState<Record<number, number>>({});
   const [chainConfigLoading, setChainConfigLoading] = useState(false);
   const [panelApiKeys, setPanelApiKeys] = useState<Record<number, string>>({});
+  const [splitDirectGeoipTags, setSplitDirectGeoipTags] = useState('');
 
   // Track which chain config we're pushing (fetched from apply response or pre-built)
   const chainConfigRef = useRef<ChainConfig | null>(null);
@@ -181,6 +188,10 @@ export function PushWizard({ panels }: PushWizardProps) {
         body: JSON.stringify({
           templateId: selectedTemplate.id,
           panelMapping,
+          routingOptions: buildRoutingOptionsForTopology(
+            selectedTemplate.topology,
+            splitDirectGeoipTags,
+          ),
         }),
       });
       const configJson = await configRes.json();
@@ -213,7 +224,7 @@ export function PushWizard({ panels }: PushWizardProps) {
       setDiffLoading(false);
       setChainConfigLoading(false);
     }
-  }, [selectedPanelIds, selectedTemplate, panelMapping]);
+  }, [selectedPanelIds, selectedTemplate, panelMapping, splitDirectGeoipTags]);
 
   const handlePush = useCallback(async () => {
     if (!chainConfigRef.current) return;
@@ -293,10 +304,19 @@ export function PushWizard({ panels }: PushWizardProps) {
     setSelectedTemplate(null);
     setPanelMapping({});
     setPanelApiKeys({});
+    setSplitDirectGeoipTags('');
     setCurrentStep(1);
     setPushError(null);
     chainConfigRef.current = null;
   }, []);
+
+  const splitZonesMissing =
+    selectedTemplate?.topology === 'split' &&
+    !hasDirectGeoipTags(splitDirectGeoipTags);
+  const invalidSplitGeoipTags =
+    selectedTemplate?.topology === 'split'
+      ? getInvalidDirectGeoipTags(splitDirectGeoipTags)
+      : [];
 
   // Render step indicator bar
   const renderStepIndicator = () => (
@@ -350,6 +370,31 @@ export function PushWizard({ panels }: PushWizardProps) {
               onTemplateSelect={setSelectedTemplate}
               onPanelMappingChange={setPanelMapping}
             />
+            {selectedTemplate?.topology === 'split' && (
+              <div className="max-w-sm space-y-1">
+                <label
+                  htmlFor="push-wizard-split-zones"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Direct GeoIP zones
+                </label>
+                <Input
+                  id="push-wizard-split-zones"
+                  value={splitDirectGeoipTags}
+                  onChange={(e) => setSplitDirectGeoipTags(e.target.value)}
+                  placeholder="ru, kz, de"
+                  className={clsx(
+                    'text-sm',
+                    invalidSplitGeoipTags.length > 0 && 'border-destructive',
+                  )}
+                />
+                {invalidSplitGeoipTags.length > 0 && (
+                  <p className="text-xs text-destructive">
+                    Invalid GeoIP tag: {invalidSplitGeoipTags[0]}
+                  </p>
+                )}
+              </div>
+            )}
             <PanelSelector
               panels={panels}
               selectedPanelIds={selectedPanelIds}
@@ -418,6 +463,7 @@ export function PushWizard({ panels }: PushWizardProps) {
                   !Array.from(selectedPanelIds).every(
                     (id) => (panelApiKeys[id] ?? '').trim().length > 0,
                   ) ||
+                  splitZonesMissing ||
                   diffLoading ||
                   chainConfigLoading
                 }

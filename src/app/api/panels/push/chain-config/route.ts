@@ -4,204 +4,29 @@ import { getTemplateById } from '@/lib/chain-templates';
 import { prisma } from '@/lib/prisma';
 import { resolvePanelTransport } from '@/lib/transport-resolver';
 import { writeAuditLog } from '@/lib/audit-log';
-import type {
-  ChainConfig,
-  WireGuardPeerConfig,
-  XrayRoutingRule,
-  ChainTemplate,
-} from '@/types/chain';
+import {
+  generateWireGuardPeers,
+  generateXrayRoutingRules,
+  normalizeChainRoutingOptions,
+} from '@/lib/chain-config-generator';
+import type { ChainConfig, ChainRoutingOptions } from '@/types/chain';
 
 // ─── Request Validation ─────────────────────────────────
+
+const routingOptionsSchema = z.object({
+  split: z
+    .object({
+      directGeoipTags: z.array(z.string()),
+    })
+    .optional(),
+});
 
 const chainConfigRequestSchema = z.object({
   templateId: z.string().min(1),
   panelMapping: z.record(z.coerce.number().int(), z.coerce.number().int()),
+  routingOptions: routingOptionsSchema.optional(),
   // key = node index in template, value = RemotePanel.id
 });
-
-// ─── WireGuard Peer Generation ─────────────────────────
-
-function generateWireGuardPeers(
-  template: ChainTemplate,
-  nodes: Array<{ label: string; hostname: string; port: number }>,
-): WireGuardPeerConfig[] {
-  const peers: WireGuardPeerConfig[] = [];
-
-  switch (template.topology) {
-    case 'linear': {
-      for (let i = 0; i < nodes.length - 1; i++) {
-        const current = nodes[i];
-        const next = nodes[i + 1];
-
-        peers.push({
-          nodeId: current.label,
-          publicKey: `STUB_PUBKEY_${next.label.replace(/\s+/g, '_')}`,
-          allowedIPs: '0.0.0.0/0',
-          endpoint: `${next.hostname}:${next.port}`,
-          persistentKeepalive: 25,
-        });
-
-        peers.push({
-          nodeId: next.label,
-          publicKey: `STUB_PUBKEY_${current.label.replace(/\s+/g, '_')}`,
-          allowedIPs: `10.0.0.${i + 1}/32`,
-          endpoint: `${current.hostname}:${current.port}`,
-          persistentKeepalive: 25,
-        });
-      }
-      break;
-    }
-    case 'split': {
-      const foreign = nodes.find(
-        (n) => n.label.includes('VPN') || n.label.includes('Foreign'),
-      );
-
-      if (foreign) {
-        peers.push({
-          nodeId: foreign.label,
-          publicKey: `STUB_PUBKEY_${foreign.label.replace(/\s+/g, '_')}`,
-          allowedIPs: '0.0.0.0/0',
-          endpoint: `${foreign.hostname}:${foreign.port}`,
-          persistentKeepalive: 25,
-        });
-      }
-      break;
-    }
-    case 'mesh': {
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = 0; j < nodes.length; j++) {
-          if (i === j) continue;
-          const current = nodes[i];
-          const peer = nodes[j];
-
-          peers.push({
-            nodeId: current.label,
-            publicKey: `STUB_PUBKEY_${peer.label.replace(/\s+/g, '_')}`,
-            allowedIPs: `10.0.0.${j + 1}/32`,
-            endpoint: `${peer.hostname}:${peer.port}`,
-            persistentKeepalive: 25,
-          });
-        }
-      }
-      break;
-    }
-    default:
-      throw new Error(`Unsupported topology: ${template.topology}`);
-  }
-
-  return peers;
-}
-
-// ─── Xray Routing Rule Generation ─────────────────────────
-
-function generateXrayRoutingRules(
-  template: ChainTemplate,
-  nodes: Array<{ label: string; hostname: string; port: number }>,
-): XrayRoutingRule[] {
-  const rules: XrayRoutingRule[] = [];
-
-  switch (template.topology) {
-    case 'linear': {
-      for (let i = 0; i < nodes.length - 1; i++) {
-        const current = nodes[i];
-        const next = nodes[i + 1];
-
-        rules.push({
-          nodeId: current.label,
-          type: 'ip',
-          value: '0.0.0.0/0',
-          outboundTag: `chain_${next.label.replace(/\s+/g, '_')}`,
-          priority: i * 10,
-        });
-
-        rules.push({
-          nodeId: current.label,
-          type: 'ip',
-          value: '10.0.0.0/8',
-          outboundTag: 'direct',
-          priority: i * 10 + 1,
-        });
-      }
-
-      const exitNode = nodes[nodes.length - 1];
-      rules.push({
-        nodeId: exitNode.label,
-        type: 'ip',
-        value: '0.0.0.0/0',
-        outboundTag: 'direct',
-        priority: (nodes.length - 1) * 10,
-      });
-      break;
-    }
-    case 'split': {
-      const domestic = nodes.find(
-        (n) => n.label.includes('Domestic') || n.label.includes('Direct'),
-      );
-      const foreign = nodes.find(
-        (n) => n.label.includes('VPN') || n.label.includes('Foreign'),
-      );
-
-      if (domestic && foreign) {
-        rules.push({
-          nodeId: domestic.label,
-          type: 'geoip',
-          value: 'ru',
-          outboundTag: 'direct',
-          priority: 0,
-        });
-
-        rules.push({
-          nodeId: domestic.label,
-          type: 'geoip',
-          value: 'private',
-          outboundTag: 'direct',
-          priority: 1,
-        });
-
-        rules.push({
-          nodeId: domestic.label,
-          type: 'ip',
-          value: '0.0.0.0/0',
-          outboundTag: `chain_${foreign.label.replace(/\s+/g, '_')}`,
-          priority: 10,
-        });
-
-        rules.push({
-          nodeId: foreign.label,
-          type: 'ip',
-          value: '0.0.0.0/0',
-          outboundTag: 'direct',
-          priority: 0,
-        });
-      }
-      break;
-    }
-    case 'mesh': {
-      for (const node of nodes) {
-        rules.push({
-          nodeId: node.label,
-          type: 'ip',
-          value: '0.0.0.0/0',
-          outboundTag: 'mesh_balancer',
-          priority: 0,
-        });
-
-        rules.push({
-          nodeId: node.label,
-          type: 'ip',
-          value: '10.0.0.0/8',
-          outboundTag: 'direct',
-          priority: 1,
-        });
-      }
-      break;
-    }
-    default:
-      throw new Error(`Unsupported topology: ${template.topology}`);
-  }
-
-  return rules;
-}
 
 // ─── POST /api/panels/push/chain-config ──────────────
 
@@ -226,7 +51,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { templateId, panelMapping } = parsed.data;
+    const { templateId, panelMapping, routingOptions } = parsed.data;
 
     // Validate template exists
     const template = getTemplateById(templateId);
@@ -234,6 +59,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: `Template not found: ${templateId}` },
         { status: 404 },
+      );
+    }
+
+    let normalizedRoutingOptions: ChainRoutingOptions | undefined;
+    try {
+      normalizedRoutingOptions = normalizeChainRoutingOptions(
+        template,
+        routingOptions,
+      );
+    } catch (err) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Invalid chain routing options',
+        },
+        { status: 422 },
       );
     }
 
@@ -383,10 +227,15 @@ export async function POST(request: NextRequest) {
 
     // Generate WireGuard peers and Xray routing rules
     const wireguardPeers = generateWireGuardPeers(template, resolvedNodes);
-    const xrayRoutingRules = generateXrayRoutingRules(template, resolvedNodes);
+    const xrayRoutingRules = generateXrayRoutingRules(
+      template,
+      resolvedNodes,
+      normalizedRoutingOptions,
+    );
 
     const chainConfig: ChainConfig = {
       templateId: template.id,
+      routingOptions: normalizedRoutingOptions,
       nodes: resolvedNodes,
       wireguardPeers,
       xrayRoutingRules,

@@ -6,9 +6,18 @@ import { computeConfigDiff } from '@/lib/config-diff';
 
 // ─── Request Validation ─────────────────────────────────
 
+const routingOptionsSchema = z.object({
+  split: z
+    .object({
+      directGeoipTags: z.array(z.string()),
+    })
+    .optional(),
+});
+
 const diffRequestSchema = z.object({
   chainConfig: z.object({
     templateId: z.string().min(1),
+    routingOptions: routingOptionsSchema.optional(),
     nodes: z.array(
       z.object({
         label: z.string(),

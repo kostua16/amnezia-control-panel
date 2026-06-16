@@ -15,9 +15,14 @@ type ChainConfigSuccessBody = {
   success: boolean;
   data: {
     templateId: string;
+    routingOptions?: {
+      split?: {
+        directGeoipTags: string[];
+      };
+    };
     nodes: Array<{ hostname: string }>;
     wireguardPeers: unknown[];
-    xrayRoutingRules: unknown[];
+    xrayRoutingRules: Array<{ type: string; value: string }>;
     generatedAt: string;
   };
 };
@@ -90,6 +95,38 @@ describe('POST /api/panels/push/chain-config — validation', () => {
       'Panel mapping contains duplicate panel assignments',
     );
   });
+
+  it('rejects split routing without direct GeoIP zones with 422', async () => {
+    const { status, body } = await readJson<ChainConfigErrorBody>(
+      await POST(
+        postRequest(PATH, {
+          templateId: 'split-routing',
+          panelMapping: { 0: 1, 1: 2 },
+        }),
+      ),
+    );
+
+    assert.strictEqual(status, 422);
+    assert.strictEqual(
+      body.error,
+      'Split routing requires at least one direct GeoIP zone tag',
+    );
+  });
+
+  it('rejects split routing with invalid direct GeoIP zones with 422', async () => {
+    const { status, body } = await readJson<ChainConfigErrorBody>(
+      await POST(
+        postRequest(PATH, {
+          templateId: 'split-routing',
+          panelMapping: { 0: 1, 1: 2 },
+          routingOptions: { split: { directGeoipTags: ['kz', 'r u'] } },
+        }),
+      ),
+    );
+
+    assert.strictEqual(status, 422);
+    assert.strictEqual(body.error, 'Invalid split GeoIP zone tag: r u');
+  });
 });
 
 describe('POST /api/panels/push/chain-config — generation', () => {
@@ -131,6 +168,36 @@ describe('POST /api/panels/push/chain-config — generation', () => {
     assert.strictEqual(status, 200);
     // Mesh of N nodes produces N*(N-1) directed peers.
     assert.strictEqual(body.data.wireguardPeers.length, 6);
+  });
+
+  it('generates split routing with the requested direct GeoIP zone', async () => {
+    prisma.remotePanel.findMany = (async () => activePanels([1, 2])) as never;
+    prisma.service.findFirst = (async () => null) as never;
+
+    const { status, body } = await readJson<ChainConfigSuccessBody>(
+      await POST(
+        postRequest(PATH, {
+          templateId: 'split-routing',
+          panelMapping: { 0: 1, 1: 2 },
+          routingOptions: { split: { directGeoipTags: ['KZ'] } },
+        }),
+      ),
+    );
+
+    assert.strictEqual(status, 200);
+    assert.deepStrictEqual(body.data.routingOptions, {
+      split: { directGeoipTags: ['kz'] },
+    });
+    assert.ok(
+      body.data.xrayRoutingRules.some(
+        (r) => r.type === 'geoip' && r.value === 'kz',
+      ),
+    );
+    assert.ok(
+      !body.data.xrayRoutingRules.some(
+        (r) => r.type === 'geoip' && r.value === 'ru',
+      ),
+    );
   });
 
   it('falls back to panelUrl parsing when no Server row matches', async () => {

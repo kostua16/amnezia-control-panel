@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { Plus, Save, GitBranch, Globe, Network } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ChainNodeCard } from './chain-node';
 import { ChainTemplatesList } from './chain-templates-list';
@@ -13,6 +14,11 @@ import {
   NODE_WIDTH,
   NODE_HEIGHT,
 } from '@/lib/chain-layout';
+import {
+  buildRoutingOptionsForTopology,
+  getInvalidDirectGeoipTags,
+  hasDirectGeoipTags,
+} from '@/lib/chain-routing-options';
 import type { ChainNode, ChainTopology, ChainTemplate } from '@/types/chain';
 import type { Server } from '@/types/server';
 
@@ -47,6 +53,7 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
   const [showTemplates, setShowTemplates] = useState(true);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [splitDirectGeoipTags, setSplitDirectGeoipTags] = useState('');
 
   // Drag state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -185,6 +192,10 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
         body: JSON.stringify({
           templateId: selectedTemplate?.id ?? 'custom',
           serverMapping,
+          routingOptions: buildRoutingOptionsForTopology(
+            topology,
+            splitDirectGeoipTags,
+          ),
         }),
       });
       const result = await response.json();
@@ -194,7 +205,7 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
     } finally {
       setSaving(false);
     }
-  }, [nodes, selectedTemplate, onApply]);
+  }, [nodes, selectedTemplate, onApply, topology, splitDirectGeoipTags]);
 
   // Calculate layout positions
   const layoutNodes = nodes.map((n) => ({ id: n.id, label: n.label }));
@@ -205,6 +216,10 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
   }));
   const connections = calculateConnections(positions, topology);
   const posLookup = new Map(positions.map((p) => [p.id, p]));
+  const splitZonesMissing =
+    topology === 'split' && !hasDirectGeoipTags(splitDirectGeoipTags);
+  const invalidSplitGeoipTags =
+    topology === 'split' ? getInvalidDirectGeoipTags(splitDirectGeoipTags) : [];
 
   // Determine SVG canvas size
   const maxX =
@@ -238,6 +253,32 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
           );
         })}
       </div>
+
+      {topology === 'split' && (
+        <div className="max-w-sm space-y-1">
+          <label
+            htmlFor="chain-builder-split-zones"
+            className="text-sm font-medium text-foreground"
+          >
+            Direct GeoIP zones
+          </label>
+          <Input
+            id="chain-builder-split-zones"
+            value={splitDirectGeoipTags}
+            onChange={(e) => setSplitDirectGeoipTags(e.target.value)}
+            placeholder="ru, kz, de"
+            className={clsx(
+              'text-sm',
+              invalidSplitGeoipTags.length > 0 && 'border-destructive',
+            )}
+          />
+          {invalidSplitGeoipTags.length > 0 && (
+            <p className="text-xs text-destructive">
+              Invalid GeoIP tag: {invalidSplitGeoipTags[0]}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Template selector */}
       {showTemplates && (
@@ -315,7 +356,7 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
         <Button
           size="sm"
           onClick={handleSave}
-          disabled={nodes.length === 0 || saving}
+          disabled={nodes.length === 0 || saving || splitZonesMissing}
         >
           <Save className="mr-1.5 h-3.5 w-3.5" />
           {saving ? 'Saving...' : 'Save Chain'}

@@ -31,6 +31,7 @@ export interface ChainTemplate {
 export interface ChainConfig {
   /** The template this config is based on */
   templateId: string;
+  routingOptions?: ChainRoutingOptions;
   /** Applied nodes with resolved server IDs */
   nodes: Array<ChainNode & { hostname: string; port: number }>;
   /** Generated WireGuard peer configurations */
@@ -72,4 +73,11 @@ export interface ApplyChainRequest {
   templateId: string;
   /** Map of template node index to server ID */
   serverMapping: Record<number, number>;
+  routingOptions?: ChainRoutingOptions;
+}
+
+export interface ChainRoutingOptions {
+  split?: {
+    directGeoipTags: string[];
+  };
 }

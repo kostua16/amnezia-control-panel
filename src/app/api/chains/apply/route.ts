@@ -3,9 +3,19 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateChainConfig, applyChainConfig } from '@/lib/chain-router';
 import { getTemplateById } from '@/lib/chain-templates';
+import { normalizeChainRoutingOptions } from '@/lib/chain-config-generator';
 import { cachePanelApiKey } from '@/lib/panel-health-checker';
 import { resolvePanelTransport } from '@/lib/transport-resolver';
 import { writeAuditLog } from '@/lib/audit-log';
+import type { ChainRoutingOptions } from '@/types/chain';
+
+const routingOptionsSchema = z.object({
+  split: z
+    .object({
+      directGeoipTags: z.array(z.string()),
+    })
+    .optional(),
+});
 
 const applyChainSchema = z.object({
   templateId: z.string().min(1, 'Template ID is required'),
@@ -17,6 +27,7 @@ const applyChainSchema = z.object({
     ),
   /** Plaintext API keys for each panel: { panelId: apiKey } */
   panelApiKeys: z.record(z.coerce.number().int(), z.string()).optional(),
+  routingOptions: routingOptionsSchema.optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -33,7 +44,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { templateId, serverMapping, panelApiKeys } = parsed.data;
+    const { templateId, serverMapping, panelApiKeys, routingOptions } =
+      parsed.data;
 
     // Validate template exists
     const template = getTemplateById(templateId);
@@ -41,6 +53,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: `Template not found: ${templateId}` },
         { status: 404 },
+      );
+    }
+
+    let normalizedRoutingOptions: ChainRoutingOptions | undefined;
+    try {
+      normalizedRoutingOptions = normalizeChainRoutingOptions(
+        template,
+        routingOptions,
+      );
+    } catch (err) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Invalid chain routing options',
+        },
+        { status: 422 },
       );
     }
 
@@ -90,6 +121,7 @@ export async function POST(request: NextRequest) {
         createdAt: s.createdAt,
       })),
       serverMapping,
+      normalizedRoutingOptions,
     );
 
     // Build panel credentials map using Tailscale transport resolution.
