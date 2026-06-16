@@ -52,9 +52,12 @@ function MetricCard({
 export function MetricsCards() {
   const { data: stats, isLoading } = useDashboardStats();
 
-  const totalTraffic = stats
-    ? stats.totalTrafficBytesIn + stats.totalTrafficBytesOut
+  const windowedTraffic = stats
+    ? stats.trafficBytesInWindow + stats.trafficBytesOutWindow
     : 0;
+  const trafficLabel = stats
+    ? `Traffic (${stats.trafficWindowHours}h)`
+    : 'Traffic (24h)';
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -81,11 +84,11 @@ export function MetricsCards() {
         isLoading={isLoading}
       />
       <MetricCard
-        label="Total Traffic"
-        value={stats ? formatBytes(totalTraffic) : '--'}
+        label={trafficLabel}
+        value={stats ? formatBytes(windowedTraffic) : '--'}
         subtext={
           stats
-            ? `${formatBytes(stats.totalTrafficBytesIn)} down / ${formatBytes(stats.totalTrafficBytesOut)} up`
+            ? `${formatBytes(stats.trafficBytesInWindow)} down / ${formatBytes(stats.trafficBytesOutWindow)} up`
             : undefined
         }
         icon={<HardDrive className="h-6 w-6 text-muted-foreground" />}

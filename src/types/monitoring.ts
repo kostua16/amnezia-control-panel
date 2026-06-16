@@ -4,8 +4,9 @@ export interface DashboardStats {
   totalUsers: number;
   activeUsers: number;
   blockedUsers: number;
-  totalTrafficBytesIn: number;
-  totalTrafficBytesOut: number;
+  trafficBytesInWindow: number;
+  trafficBytesOutWindow: number;
+  trafficWindowHours: number;
   servicesOnline: number;
   servicesTotal: number;
 }

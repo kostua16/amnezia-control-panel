@@ -216,21 +216,10 @@ describe('buildLookupIndex + lookupCountryInIndex', () => {
     return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
   }
 
-  it('sorts entries by ascending network address', () => {
-    const map = new Map<string, CachedCountry>([
-      ['US', makeCountry('US', ['10.0.0.0/8'])],
-      ['CN', makeCountry('CN', ['1.0.0.0/8'])],
-    ]);
-    const idx = buildLookupIndex(map);
-    assert.strictEqual(idx.length, 2);
-    assert.strictEqual(idx[0].countryCode, 'CN');
-    assert.strictEqual(idx[1].countryCode, 'US');
-  });
-
-  it('returns the country whose range contains the address (binary search)', () => {
+  it('returns the country whose range contains the address', () => {
     const map = new Map<string, CachedCountry>([
       ['CN', makeCountry('CN', ['1.0.0.0/8'])],
-      ['DE', makeCountry('DE', ['8.8.8.0/24'])], // sorts between CN and US
+      ['DE', makeCountry('DE', ['8.8.8.0/24'])],
       ['US', makeCountry('US', ['10.0.0.0/8', '192.168.1.0/24'])],
     ]);
     const idx = buildLookupIndex(map);
@@ -238,6 +227,33 @@ describe('buildLookupIndex + lookupCountryInIndex', () => {
     assert.strictEqual(lookupCountryInIndex(idx, ipNum('8.8.8.8')), 'DE');
     assert.strictEqual(lookupCountryInIndex(idx, ipNum('10.1.2.3')), 'US');
     assert.strictEqual(lookupCountryInIndex(idx, ipNum('192.168.1.42')), 'US');
+  });
+
+  it('falls back to a parent prefix when a nested child does not contain the address', () => {
+    const map = new Map<string, CachedCountry>([
+      ['PA', makeCountry('PA', ['8.0.0.0/8'])],
+      ['CH', makeCountry('CH', ['8.8.8.0/24'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('8.8.9.5')), 'PA');
+  });
+
+  it('returns the most-specific country for a nested child prefix', () => {
+    const map = new Map<string, CachedCountry>([
+      ['PA', makeCountry('PA', ['8.0.0.0/8'])],
+      ['CH', makeCountry('CH', ['8.8.8.0/24'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('8.8.8.5')), 'CH');
+  });
+
+  it('handles same-country nested prefixes without losing parent-only regions', () => {
+    const map = new Map<string, CachedCountry>([
+      ['US', makeCountry('US', ['8.0.0.0/8', '8.8.8.0/24'])],
+    ]);
+    const idx = buildLookupIndex(map);
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('8.8.8.5')), 'US');
+    assert.strictEqual(lookupCountryInIndex(idx, ipNum('8.8.9.5')), 'US');
   });
 
   it('returns null for an address in a gap between disjoint ranges', () => {
@@ -279,12 +295,14 @@ describe('buildLookupIndex + lookupCountryInIndex', () => {
       ['XX', makeCountry('XX', ['not-a-cidr', '10.0.0.0/8'])],
     ]);
     const idx = buildLookupIndex(map);
-    assert.strictEqual(idx.length, 1);
     assert.strictEqual(lookupCountryInIndex(idx, ipNum('10.0.0.1')), 'XX');
   });
 
   it('returns null on an empty index', () => {
-    assert.strictEqual(lookupCountryInIndex([], ipNum('1.2.3.4')), null);
+    assert.strictEqual(
+      lookupCountryInIndex(buildLookupIndex(new Map()), ipNum('1.2.3.4')),
+      null,
+    );
   });
 });
 

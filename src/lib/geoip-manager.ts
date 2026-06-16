@@ -137,14 +137,12 @@ export function varintSize(buffer: Buffer, offset: number): number {
  * Parse a `"a.b.c.d/prefix"` CIDR into its unsigned 32-bit network address
  * (host bits cleared) and prefix mask. Returns null for malformed input.
  *
- * The network address is masked so it always carries zero host bits — this is
- * what makes a sorted CIDR table binary-searchable (ranges are then ordered by
- * both start and end address). `matchesCIDR` compares `(ipNum & mask)` against
- * this masked network, so behavior is identical to computing it inline.
+ * `matchesCIDR` compares `(ipNum & mask)` against this masked network, so all
+ * lookup paths share the same CIDR parsing and matching semantics.
  */
 export function cidrToNetworkAndMask(
   cidr: string,
-): { network: number; mask: number } | null {
+): { network: number; mask: number; prefix: number } | null {
   const slashIdx = cidr.indexOf('/');
   if (slashIdx === -1) return null;
 
@@ -165,7 +163,7 @@ export function cidrToNetworkAndMask(
     Number(parts[3]);
   const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
   const network = (raw & mask) >>> 0;
-  return { network, mask };
+  return { network, mask, prefix };
 }
 
 export function matchesCIDR(ipNum: number, cidr: string): boolean {
@@ -307,81 +305,69 @@ function decodeCIDRMessage(buffer: Buffer): string | null {
   return `${ipStr}/${prefix}`;
 }
 
-// --- Sorted lookup index ---
+// --- Lookup index ---
 
-/** A single CIDR entry in the binary-searchable lookup table. */
+/** A node in the IPv4 longest-prefix-match lookup trie. */
 export interface GeoIPLookupEntry {
-  /** Unsigned 32-bit network address (host bits zero). */
-  network: number;
-  /** Unsigned 32-bit contiguous-prefix mask. */
-  mask: number;
-  countryCode: string;
+  countryCode: string | null;
+  children: [GeoIPLookupEntry | null, GeoIPLookupEntry | null];
 }
 
 /**
- * Build a lookup index over every CIDR in the country map, sorted by ascending
- * network address so a lookup can binary-search the candidate range.
+ * Build a longest-prefix-match trie over every CIDR in the country map.
  *
- * Correctness relies on the GeoIP invariant that CIDR ranges are disjoint
- * (each public IPv4 maps to at most one country). Under disjointness, sorting
- * ranges by start address also orders them by end address, so the one range
- * whose start <= ipNum and end >= ipNum — if any — is the rightmost start that
- * is <= ipNum. A single mask check then confirms the match.
+ * Nested/overlapping CIDRs are valid in real GeoIP data. Lookup policy is
+ * therefore explicit: the most-specific prefix wins, and duplicate prefixes keep
+ * the last country encountered during deterministic Map/CIDR iteration.
  */
 export function buildLookupIndex(
   countries: Map<string, CachedCountry>,
-): GeoIPLookupEntry[] {
-  const entries: GeoIPLookupEntry[] = [];
+): GeoIPLookupEntry {
+  const root: GeoIPLookupEntry = { countryCode: null, children: [null, null] };
   for (const [, country] of countries) {
     for (const cidr of country.cidrs) {
       const parsed = cidrToNetworkAndMask(cidr);
       if (!parsed) continue;
-      entries.push({
-        network: parsed.network,
-        mask: parsed.mask,
-        countryCode: country.countryCode,
-      });
+
+      let node = root;
+      for (let bitIndex = 31; bitIndex >= 32 - parsed.prefix; bitIndex--) {
+        const bit = ((parsed.network >>> bitIndex) & 1) as 0 | 1;
+        node.children[bit] ??= { countryCode: null, children: [null, null] };
+        node = node.children[bit];
+      }
+      node.countryCode = country.countryCode;
     }
   }
-  entries.sort((a, b) => (a.network >>> 0) - (b.network >>> 0));
-  return entries;
+  return root;
 }
 
 /**
- * Look up the country for an unsigned 32-bit IPv4 via binary search over the
- * sorted index. O(log n) per query vs the previous O(total_CIDRs) linear scan.
- * Returns null when no range contains the address.
+ * Look up the country for an unsigned 32-bit IPv4 via longest prefix match.
+ * This is bounded to 32 steps per query and handles nested CIDR ranges.
  */
 export function lookupCountryInIndex(
-  entries: GeoIPLookupEntry[],
+  index: GeoIPLookupEntry,
   ipNum: number,
 ): string | null {
   const ip = ipNum >>> 0;
+  let node: GeoIPLookupEntry | null = index;
+  let match = node.countryCode;
 
-  // Binary search for the rightmost entry whose network address is <= ip.
-  let lo = 0;
-  let hi = entries.length - 1;
-  let candidate = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >>> 1;
-    if (entries[mid].network >>> 0 <= ip) {
-      candidate = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
+  for (let bitIndex = 31; bitIndex >= 0; bitIndex--) {
+    const bit = ((ip >>> bitIndex) & 1) as 0 | 1;
+    node = node.children[bit];
+    if (!node) break;
+    if (node.countryCode) match = node.countryCode;
   }
 
-  if (candidate === -1) return null;
-  const entry = entries[candidate];
-  return (ip & entry.mask) >>> 0 === entry.network ? entry.countryCode : null;
+  return match;
 }
 
 // --- GeoIPManager singleton ---
 
 class GeoIPManager {
   private countries: Map<string, CachedCountry> = new Map();
-  private lookupIndex: GeoIPLookupEntry[] = [];
+  private lookupIndex: GeoIPLookupEntry = buildLookupIndex(this.countries);
   private status: GeoIPStatus = {
     loaded: false,
     stale: false,
@@ -441,11 +427,11 @@ class GeoIPManager {
       this.lookupIndex = buildLookupIndex(this.countries);
 
       console.log(
-        `[geoip] Loaded ${this.countries.size} countries from geoip.dat (${this.lookupIndex.length} CIDR ranges)`,
+        `[geoip] Loaded ${this.countries.size} countries from geoip.dat`,
       );
     } catch (err) {
       this.countries = new Map();
-      this.lookupIndex = [];
+      this.lookupIndex = buildLookupIndex(this.countries);
       this.status.loaded = false;
       this.status.error = `Failed to parse geoip.dat: ${err instanceof Error ? err.message : String(err)}`;
       console.error('[geoip]', this.status.error);
