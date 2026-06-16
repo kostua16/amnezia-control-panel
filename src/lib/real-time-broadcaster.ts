@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma';
+import { getDashboardStats } from '@/lib/dashboard-stats';
 import { getSystemResources } from '@/lib/resource-monitor';
 import { broadcastEvent } from '@/lib/websocket';
 
@@ -15,33 +15,7 @@ export function startBroadcaster(): void {
   // Dashboard stats — every 30s
   statsInterval = setInterval(async () => {
     try {
-      const [
-        totalUsers,
-        activeUsers,
-        blockedUsers,
-        trafficAgg,
-        servicesOnline,
-        servicesTotal,
-      ] = await Promise.all([
-        prisma.user.count(),
-        prisma.user.count({ where: { isActive: true } }),
-        prisma.user.count({ where: { isBlocked: true } }),
-        prisma.trafficLog.aggregate({
-          _sum: { bytesIn: true, bytesOut: true },
-        }),
-        prisma.service.count({ where: { status: 'RUNNING' } }),
-        prisma.service.count(),
-      ]);
-
-      broadcastEvent('stats:update', {
-        totalUsers,
-        activeUsers,
-        blockedUsers,
-        totalTrafficBytesIn: trafficAgg._sum.bytesIn ?? 0,
-        totalTrafficBytesOut: trafficAgg._sum.bytesOut ?? 0,
-        servicesOnline,
-        servicesTotal,
-      });
+      broadcastEvent('stats:update', await getDashboardStats());
     } catch (err) {
       console.error('[broadcaster] Stats push failed:', err);
     }
