@@ -223,12 +223,22 @@ runs:
         switch-account: 'true'
         skip-matching-version: 'false'
 
+    # The outages this absorbs are multi-second TCP i/o timeouts, not
+    # micro-hiccups; re-dialing with no gap just re-hits the same wall, so wait
+    # before retrying to let the transient network blip clear.
+    - name: Backoff before gh retry
+      if: steps.setup_gh.outcome == 'failure'
+      shell: bash
+      run: sleep 10
+
     - id: setup_gh_retry
       name: Retry setup-gh (transient network)
       if: steps.setup_gh.outcome == 'failure'
       uses: kostua16/setup-gh@bd07f8bef16d6973adb48d8d3f22f99125a95058
       continue-on-error: ${{ inputs.require-gh-auth != 'true' }}
       with:
+        # Composite actions cannot share a step-input block, so these inputs are
+        # duplicated from setup_gh above — keep the two in sync when editing.
         gh-version: ${{ inputs.gh-version }}
         cli-token: ${{ inputs.github-token }}
         token: ${{ inputs.github-token }}
