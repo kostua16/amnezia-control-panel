@@ -268,6 +268,30 @@ jobs:
           SOURCE_PR_URL: ${{ steps.audit_pr.outputs.pr_url }}
         run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs
 
+  reconcile:
+    name: Reconcile resolved audit issues
+    needs: [audit-fix]
+    if: needs.audit-fix.result == 'success'
+    runs-on: self-hosted
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Reconcile resolved dependency-vuln tracking issues
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          ./.github/workflows/scripts/reconcile-audit-issues.sh
+
   report-failure:
     needs: [audit-fix]
     if: failure()

@@ -84,6 +84,18 @@ function firstRateLimitEvidenceLine(value) {
   );
 }
 
+function isBenignErrorMessage(message) {
+  if (!message) return true;
+  const text = String(message);
+  // Git submodule noise from stray worktree dirs / runner checkout artifacts
+  // ("fatal: no submodule mapping found in .gitmodules") is not a real run error.
+  if (/no submodule mapping found in \.gitmodules/i.test(text)) return true;
+  // TAP diagnostic lines ("# ...") are test-runner output captured into tool
+  // results (e.g. "# [api/users] Prisma error P2002"), not Claude errors.
+  if (/^\s*#/.test(text)) return true;
+  return false;
+}
+
 function compactJson(value) {
   return JSON.stringify(value);
 }
@@ -309,7 +321,8 @@ function buildFindings({
         !/Claude Code failed with a non-(rate-limit|retryable) error/.test(
           message,
         ) &&
-        !isRateLimitOrOverloadText(message),
+        !isRateLimitOrOverloadText(message) &&
+        !isBenignErrorMessage(message),
     )
     .slice(0, 3);
   if (extraErrors.length > 0) {

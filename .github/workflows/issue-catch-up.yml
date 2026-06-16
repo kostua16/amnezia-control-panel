@@ -239,6 +239,7 @@ jobs:
 
               // Bucket: triaged_no_fix — has triaged, no linked PR, no active fix, <2 fix attempts
               // Only consider issues triaged >1h ago (give triage workflow time to settle)
+              // Skip issues already flagged needs-review: the manual-fix notice is a one-time nudge, not an hourly reminder
               // Skip auto-generated issues whose titles match patterns from failed workflows
               const AUTO_GEN_PATTERNS = [/\[auto-fix\]/, /\[workflow-health\]/];
               const triageResultComment = comments.find(c =>
@@ -248,7 +249,7 @@ jobs:
                 ? new Date(triageResultComment.created_at)
                 : createdAt;
               const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-              if (triagedAt < oneHourAgo && !AUTO_GEN_PATTERNS.some(p => p.test(issue.title))) {
+              if (triagedAt < oneHourAgo && !hasNeedsReview && !AUTO_GEN_PATTERNS.some(p => p.test(issue.title))) {
                 buckets.triaged_no_fix.push({
                   number: num,
                   title: issue.title,
@@ -460,7 +461,7 @@ jobs:
             ```
 
             For each `triaged_no_fix` issue (max 5 per run):
-            - First check: `gh issue view NUM --json body,comments` — skip if body/comments contain PR URL or "Fixes #"
+            - First check: `gh issue view NUM --json body,comments` — skip if body/comments contain PR URL, "Fixes #", the issue already has the `needs-review` label, or a prior "Manual fix triage needed." comment exists
             - If safe to proceed:
             ```
             gh issue edit NUM --add-label "needs-review"
