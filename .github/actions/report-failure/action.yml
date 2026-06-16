@@ -293,6 +293,21 @@ runs:
               ).join('\n\n')
             : '_No logs available_';
 
+          const failureReason = process.env.CLAUDE_FAILURE_REASON || '';
+          const rootCauseBits = [];
+          if (failureReason) rootCauseBits.push(failureReason);
+          if (failedSteps.length > 0) {
+            rootCauseBits.push(`failing step: ${failedSteps[0]}`);
+          }
+          const rootCauseSection = [
+            '## Root Cause',
+            '',
+            rootCauseBits.length > 0
+              ? rootCauseBits.join(' — ')
+              : '_Not determined automatically — see Failed Steps and Log Tails below._',
+            '',
+          ].join('\n');
+
           const mergedClaudeMetrics = mergeClaudeMetrics(
             process.env.CLAUDE_METRICS_JSON,
             process.env.DETECTED_CLAUDE_METRICS,
@@ -346,6 +361,7 @@ runs:
             ].join('\n');
             const body = [
               intro,
+              rootCauseSection,
               claudeSection,
               '### Failed Steps',
               stepsSection,
@@ -391,6 +407,7 @@ runs:
 
             const body = [
               intro,
+              rootCauseSection,
               claudeSection,
               '### Failed Steps',
               stepsSection,
