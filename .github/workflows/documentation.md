@@ -453,3 +453,4 @@ All GSD slash commands in workflow prompts **must** use the colon namespace form
 ## Syntax Gate
 
 `actionlint` should remain the mandatory syntax check after any workflow edit. Run it before merging workflow changes.
+
