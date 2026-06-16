@@ -5,8 +5,9 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { buildRoutingOptionsForTopology } from '@/lib/chain-routing-options';
 import type { ChainBuilderNode } from '@/lib/chain-flow-utils';
-import type { ChainTemplate } from '@/types/chain';
+import type { ChainTopology, ChainTemplate } from '@/types/chain';
 import type { RemotePanel } from '@/types/remote-panel';
 
 interface SaveChainDialogProps {
@@ -16,6 +17,10 @@ interface SaveChainDialogProps {
   selectedTemplate: ChainTemplate | null;
   serverPanelMap?: Record<number, number>;
   panels?: RemotePanel[];
+  /** Active topology; split routing adds routingOptions to the apply body. */
+  topology: ChainTopology;
+  /** Comma-separated direct GeoIP zones (used only for split topology). */
+  splitDirectGeoipTags: string;
   /** Invoked after a successful apply with the template id and server mapping. */
   onApplied: (
     templateId: string,
@@ -30,6 +35,8 @@ export function SaveChainDialog({
   selectedTemplate,
   serverPanelMap,
   panels,
+  topology,
+  splitDirectGeoipTags,
   onApplied,
 }: SaveChainDialogProps) {
   const [panelApiKeys, setPanelApiKeys] = useState<Record<number, string>>({});
@@ -76,6 +83,10 @@ export function SaveChainDialog({
           templateId: selectedTemplate?.id ?? 'custom',
           serverMapping,
           panelApiKeys,
+          routingOptions: buildRoutingOptionsForTopology(
+            topology,
+            splitDirectGeoipTags,
+          ),
         }),
       });
       const result = await response.json();
@@ -94,7 +105,15 @@ export function SaveChainDialog({
     } finally {
       setSaving(false);
     }
-  }, [localNodes, selectedTemplate, panelApiKeys, onApplied, onClose]);
+  }, [
+    localNodes,
+    selectedTemplate,
+    panelApiKeys,
+    topology,
+    splitDirectGeoipTags,
+    onApplied,
+    onClose,
+  ]);
 
   // No panels to collect keys for — save directly without showing the form.
   const ranDirectSaveRef = useRef(false);
