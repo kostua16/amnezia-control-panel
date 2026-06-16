@@ -306,6 +306,25 @@ describe('scan-claude-logs', () => {
     assert.deepEqual(categories, ['rate_limited']);
   });
 
+  it('filters git/test noise from uncategorized errors so benign output is not fatal', () => {
+    const metrics = baseMetrics({
+      errorMessages: [
+        "fatal: no submodule mapping found in .gitmodules for path '.claude/worktrees/improve-claude'",
+        '# [api/users] Prisma error P2002: PrismaClientKnownRequestError: Unique constraint failed',
+      ],
+    });
+    const findings = buildFindings({
+      metrics,
+      conclusion: 'failure',
+      maxTurns: 40,
+    });
+    const uncategorized = findings.filter(
+      (finding: { category: string }) => finding.category === 'uncategorized',
+    );
+
+    assert.equal(uncategorized.length, 0);
+  });
+
   it('CLI writes GitHub outputs and a readable issue JSON file from samples', () => {
     const tmpDir = makeTempDir();
     const executionFile = path.join(tmpDir, 'execution.jsonl');
