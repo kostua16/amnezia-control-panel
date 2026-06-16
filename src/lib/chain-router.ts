@@ -1,4 +1,8 @@
-import type { ChainConfig, ChainNode } from '@/types/chain';
+import type {
+  ChainConfig,
+  ChainNode,
+  ChainRoutingOptions,
+} from '@/types/chain';
 import type { Server } from '@/types/server';
 import type { GeoRoutingResult } from '@/types/geo-routing';
 import type { ServiceType } from '@/generated/prisma/enums';
@@ -10,6 +14,7 @@ import { resolvePanelTransport } from './transport-resolver';
 import {
   generateWireGuardPeers,
   generateXrayRoutingRules,
+  normalizeChainRoutingOptions,
 } from './chain-config-generator';
 
 // ─── Types ───────────────────────────────────────────────
@@ -58,11 +63,16 @@ export async function generateChainConfig(
   templateId: string,
   servers: Server[],
   serverMapping: Record<number, number>,
+  routingOptions?: ChainRoutingOptions,
 ): Promise<ChainConfig> {
   const template = getTemplateById(templateId);
   if (!template) {
     throw new Error(`Template not found: ${templateId}`);
   }
+  const normalizedRoutingOptions = normalizeChainRoutingOptions(
+    template,
+    routingOptions,
+  );
 
   // Validate server mapping
   const mappedServerIds = Object.values(serverMapping);
@@ -170,10 +180,15 @@ export async function generateChainConfig(
   const wireguardPeers = generateWireGuardPeers(template, resolvedNodes);
 
   // Generate Xray routing rules based on topology
-  const xrayRules = generateXrayRoutingRules(template, resolvedNodes);
+  const xrayRules = generateXrayRoutingRules(
+    template,
+    resolvedNodes,
+    normalizedRoutingOptions,
+  );
 
   return {
     templateId: template.id,
+    routingOptions: normalizedRoutingOptions,
     nodes: resolvedNodes,
     wireguardPeers,
     xrayRoutingRules: xrayRules,

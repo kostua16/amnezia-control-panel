@@ -7,14 +7,24 @@ import { writeAuditLog } from '@/lib/audit-log';
 import {
   generateWireGuardPeers,
   generateXrayRoutingRules,
+  normalizeChainRoutingOptions,
 } from '@/lib/chain-config-generator';
-import type { ChainConfig } from '@/types/chain';
+import type { ChainConfig, ChainRoutingOptions } from '@/types/chain';
 
 // ─── Request Validation ─────────────────────────────────
+
+const routingOptionsSchema = z.object({
+  split: z
+    .object({
+      directGeoipTags: z.array(z.string()),
+    })
+    .optional(),
+});
 
 const chainConfigRequestSchema = z.object({
   templateId: z.string().min(1),
   panelMapping: z.record(z.coerce.number().int(), z.coerce.number().int()),
+  routingOptions: routingOptionsSchema.optional(),
   // key = node index in template, value = RemotePanel.id
 });
 
@@ -41,7 +51,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { templateId, panelMapping } = parsed.data;
+    const { templateId, panelMapping, routingOptions } = parsed.data;
 
     // Validate template exists
     const template = getTemplateById(templateId);
@@ -49,6 +59,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: `Template not found: ${templateId}` },
         { status: 404 },
+      );
+    }
+
+    let normalizedRoutingOptions: ChainRoutingOptions | undefined;
+    try {
+      normalizedRoutingOptions = normalizeChainRoutingOptions(
+        template,
+        routingOptions,
+      );
+    } catch (err) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Invalid chain routing options',
+        },
+        { status: 422 },
       );
     }
 
@@ -198,10 +227,15 @@ export async function POST(request: NextRequest) {
 
     // Generate WireGuard peers and Xray routing rules
     const wireguardPeers = generateWireGuardPeers(template, resolvedNodes);
-    const xrayRoutingRules = generateXrayRoutingRules(template, resolvedNodes);
+    const xrayRoutingRules = generateXrayRoutingRules(
+      template,
+      resolvedNodes,
+      normalizedRoutingOptions,
+    );
 
     const chainConfig: ChainConfig = {
       templateId: template.id,
+      routingOptions: normalizedRoutingOptions,
       nodes: resolvedNodes,
       wireguardPeers,
       xrayRoutingRules,

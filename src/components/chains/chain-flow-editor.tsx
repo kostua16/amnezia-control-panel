@@ -49,6 +49,10 @@ import {
   generateNodeId,
   type ChainBuilderNode,
 } from '@/lib/chain-flow-utils';
+import {
+  buildRoutingOptionsForTopology,
+  hasDirectGeoipTags,
+} from '@/lib/chain-routing-options';
 import { CANVAS_PADDING } from '@/lib/chain-layout';
 import type { ChainTopology, ChainTemplate } from '@/types/chain';
 import type { Server } from '@/types/server';
@@ -112,6 +116,7 @@ export function ChainFlowEditor({
   const [panelApiKeys, setPanelApiKeys] = useState<Record<number, string>>({});
   const [visibleKeys, setVisibleKeys] = useState<Record<number, boolean>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [splitDirectGeoipTags, setSplitDirectGeoipTags] = useState('');
 
   // Register custom node types (memoized)
   const nodeTypes = useMemo(
@@ -424,6 +429,10 @@ export function ChainFlowEditor({
           templateId: selectedTemplate?.id ?? 'custom',
           serverMapping,
           panelApiKeys,
+          routingOptions: buildRoutingOptionsForTopology(
+            topology,
+            splitDirectGeoipTags,
+          ),
         }),
       });
       const result = await response.json();
@@ -444,11 +453,22 @@ export function ChainFlowEditor({
     } finally {
       setSaving(false);
     }
-  }, [localNodes, selectedTemplate, onApply, panelApiKeys]);
+  }, [
+    localNodes,
+    selectedTemplate,
+    onApply,
+    panelApiKeys,
+    topology,
+    splitDirectGeoipTags,
+  ]);
 
   // Save chain -- opens the API key dialog
   const handleSaveClick = useCallback(() => {
     if (localNodes.length === 0) return;
+    if (topology === 'split' && !hasDirectGeoipTags(splitDirectGeoipTags)) {
+      setSaveError('Direct GeoIP zones are required for split routing');
+      return;
+    }
     if (saveDialogPanels.length === 0) {
       // No panels to provide keys for -- save directly
       handleSaveDirect();
@@ -456,7 +476,13 @@ export function ChainFlowEditor({
       setSaveError(null);
       setSaveDialogOpen(true);
     }
-  }, [localNodes.length, saveDialogPanels.length, handleSaveDirect]);
+  }, [
+    localNodes.length,
+    saveDialogPanels.length,
+    handleSaveDirect,
+    topology,
+    splitDirectGeoipTags,
+  ]);
 
   // Keyboard: Delete for selected nodes/edges
   useEffect(() => {
@@ -527,6 +553,9 @@ export function ChainFlowEditor({
     setRoutingDrawerOpen(false);
     setSelectedDrawerNode(null);
   }, [deleteConfirmNodeId]);
+
+  const splitZonesMissing =
+    topology === 'split' && !hasDirectGeoipTags(splitDirectGeoipTags);
 
   return (
     <div className="space-y-4">
@@ -610,7 +639,7 @@ export function ChainFlowEditor({
         <Button
           size="sm"
           onClick={handleSaveClick}
-          disabled={localNodes.length === 0}
+          disabled={localNodes.length === 0 || splitZonesMissing}
         >
           <Save className="mr-1.5 h-3.5 w-3.5" />
           Save Chain
@@ -621,6 +650,24 @@ export function ChainFlowEditor({
           {localNodes.length} node{localNodes.length !== 1 ? 's' : ''}
         </span>
       </div>
+
+      {topology === 'split' && (
+        <div className="max-w-sm space-y-1">
+          <label
+            htmlFor="chain-flow-split-zones"
+            className="text-sm font-medium text-foreground"
+          >
+            Direct GeoIP zones
+          </label>
+          <Input
+            id="chain-flow-split-zones"
+            value={splitDirectGeoipTags}
+            onChange={(e) => setSplitDirectGeoipTags(e.target.value)}
+            placeholder="ru, kz, de"
+            className="text-sm"
+          />
+        </div>
+      )}
 
       {/* Template selector panel */}
       {showTemplates && (

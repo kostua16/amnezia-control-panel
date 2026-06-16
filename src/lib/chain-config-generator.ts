@@ -1,6 +1,7 @@
 import type {
   ChainTemplate,
   ChainNode,
+  ChainRoutingOptions,
   WireGuardPeerConfig,
   XrayRoutingRule,
 } from '@/types/chain';
@@ -13,6 +14,41 @@ import type {
  * output identical.
  */
 export type ResolvedChainNode = ChainNode & { hostname: string; port: number };
+
+const GEOIP_TAG_PATTERN = /^[a-z0-9_-]+$/i;
+
+export function normalizeChainRoutingOptions(
+  template: ChainTemplate,
+  options?: ChainRoutingOptions,
+): ChainRoutingOptions | undefined {
+  if (template.topology !== 'split') {
+    return undefined;
+  }
+
+  const tags = options?.split?.directGeoipTags ?? [];
+  const directGeoipTags = Array.from(
+    new Set(
+      tags
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag.length > 0 && tag !== 'private'),
+    ),
+  );
+
+  if (directGeoipTags.length === 0) {
+    throw new Error(
+      'Split routing requires at least one direct GeoIP zone tag',
+    );
+  }
+
+  const invalidTag = directGeoipTags.find(
+    (tag) => !GEOIP_TAG_PATTERN.test(tag),
+  );
+  if (invalidTag) {
+    throw new Error(`Invalid split GeoIP zone tag: ${invalidTag}`);
+  }
+
+  return { split: { directGeoipTags } };
+}
 
 /**
  * Generate WireGuard peer configurations for a chain topology.
@@ -100,16 +136,18 @@ export function generateWireGuardPeers(
  * Canonical behavior (resolves prior drift between the apply and preview paths):
  * - linear: per-hop rules with ascending priorities, plus a direct rule for
  *   inter-node (10.0.0.0/8) traffic and a catch-all direct rule on the exit.
- * - split: the domestic node routes RU/private geoip traffic direct and sends
- *   the remainder through the foreign chain; the foreign node exits direct.
+ * - split: the domestic node routes configured/private geoip traffic direct
+ *   and sends the remainder through the foreign chain; the foreign node exits direct.
  * - mesh: each node balances outbound traffic via the mesh balancer while
  *   keeping inter-node traffic direct.
  */
 export function generateXrayRoutingRules(
   template: ChainTemplate,
   nodes: ResolvedChainNode[],
+  options?: ChainRoutingOptions,
 ): XrayRoutingRule[] {
   const rules: XrayRoutingRule[] = [];
+  const routingOptions = normalizeChainRoutingOptions(template, options);
 
   switch (template.topology) {
     case 'linear': {
@@ -149,27 +187,30 @@ export function generateXrayRoutingRules(
       const foreign = nodes.find((n) => n.role === 'foreign');
 
       if (domestic && foreign) {
-        // Domestic node: keep RU and private traffic direct, chain the rest.
-        rules.push({
-          nodeId: domestic.label,
-          type: 'geoip',
-          value: 'ru',
-          outboundTag: 'direct',
-          priority: 0,
-        });
+        const directGeoipTags = routingOptions!.split!.directGeoipTags;
+
+        for (const [index, tag] of directGeoipTags.entries()) {
+          rules.push({
+            nodeId: domestic.label,
+            type: 'geoip',
+            value: tag,
+            outboundTag: 'direct',
+            priority: index,
+          });
+        }
         rules.push({
           nodeId: domestic.label,
           type: 'geoip',
           value: 'private',
           outboundTag: 'direct',
-          priority: 1,
+          priority: directGeoipTags.length,
         });
         rules.push({
           nodeId: domestic.label,
           type: 'ip',
           value: '0.0.0.0/0',
           outboundTag: `chain_${foreign.label.replace(/\s+/g, '_')}`,
-          priority: 10,
+          priority: directGeoipTags.length + 10,
         });
 
         // Foreign node: traffic exits directly to the internet.

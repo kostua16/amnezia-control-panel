@@ -135,17 +135,19 @@ describe('generateXrayRoutingRules — canonical behavior', () => {
       node({ label: 'Foreign (VPN)', role: 'foreign' }),
     ];
 
-    const rules = generateXrayRoutingRules(template, nodes);
+    const rules = generateXrayRoutingRules(template, nodes, {
+      split: { directGeoipTags: ['kz'] },
+    });
 
-    // ru + private direct, catch-all chain, foreign direct = 4.
     assert.equal(rules.length, 4);
     const domesticRules = rules.filter((r) => r.nodeId === 'Domestic (Direct)');
     assert.ok(
-      domesticRules.some((r) => r.type === 'geoip' && r.value === 'ru'),
+      domesticRules.some((r) => r.type === 'geoip' && r.value === 'kz'),
     );
     assert.ok(
       domesticRules.some((r) => r.type === 'geoip' && r.value === 'private'),
     );
+    assert.ok(!rules.some((r) => r.type === 'geoip' && r.value === 'ru'));
     assert.ok(
       domesticRules.some((r) => r.outboundTag === 'chain_Foreign_(VPN)'),
     );
@@ -153,6 +155,38 @@ describe('generateXrayRoutingRules — canonical behavior', () => {
       rules.some(
         (r) => r.nodeId === 'Foreign (VPN)' && r.outboundTag === 'direct',
       ),
+    );
+  });
+
+  it('split: multiple direct zones use deterministic priorities', () => {
+    const template: ChainTemplate = {
+      id: 't',
+      name: 't',
+      description: '',
+      topology: 'split',
+      requiredServers: 2,
+      nodes: [],
+      icon: '',
+    };
+    const nodes = [
+      node({ label: 'Domestic (Direct)', role: 'domestic' }),
+      node({ label: 'Foreign (VPN)', role: 'foreign' }),
+    ];
+
+    const rules = generateXrayRoutingRules(template, nodes, {
+      split: { directGeoipTags: ['KZ', 'de', 'kz'] },
+    });
+
+    assert.deepEqual(
+      rules
+        .filter((r) => r.nodeId === 'Domestic (Direct)')
+        .map((r) => [r.type, r.value, r.priority]),
+      [
+        ['geoip', 'kz', 0],
+        ['geoip', 'de', 1],
+        ['geoip', 'private', 2],
+        ['ip', '0.0.0.0/0', 12],
+      ],
     );
   });
 
@@ -220,8 +254,12 @@ describe('chain-config-generator — preview/apply parity', () => {
       generateWireGuardPeers(template, previewShape),
     );
     assert.deepEqual(
-      generateXrayRoutingRules(template, applyShape),
-      generateXrayRoutingRules(template, previewShape),
+      generateXrayRoutingRules(template, applyShape, {
+        split: { directGeoipTags: ['kz'] },
+      }),
+      generateXrayRoutingRules(template, previewShape, {
+        split: { directGeoipTags: ['kz'] },
+      }),
     );
   });
 });
