@@ -63,7 +63,7 @@ jobs:
           generate-prisma: 'true'
           require-gh-auth: 'false'
       - run: npm run test-only
-      - run: node --test .github/workflows/scripts/__tests__/*.test.cjs
+      - run: node --test .github/workflows/scripts/__tests__/find-duplicate-automation-pr.test.cjs
 
   build:
     name: Build
