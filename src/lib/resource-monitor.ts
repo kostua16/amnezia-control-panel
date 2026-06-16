@@ -3,7 +3,14 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { SystemResources } from '@/types/monitoring';
 
-const execFileAsync = promisify(execFile);
+type ExecFileAsync = (
+  file: string,
+  args: string[],
+  options: { encoding: BufferEncoding; timeout: number },
+) => Promise<{ stdout: string; stderr: string }>;
+
+const execFileAsync: ExecFileAsync = promisify(execFile);
+let runExecFile = execFileAsync;
 
 interface CachedResources {
   data: SystemResources;
@@ -11,6 +18,7 @@ interface CachedResources {
 }
 
 let cachedResources: CachedResources | null = null;
+let inflightResources: Promise<SystemResources> | null = null;
 const CACHE_TTL_MS = 10_000;
 
 interface DiskUsage {
@@ -64,7 +72,7 @@ async function getDiskUsageAsync(): Promise<DiskUsage> {
 
     if (isWin) {
       // PowerShell CIM query — wmic is deprecated on modern Windows.
-      const { stdout } = await execFileAsync(
+      const { stdout } = await runExecFile(
         'powershell',
         [
           '-NoProfile',
@@ -83,7 +91,7 @@ async function getDiskUsageAsync(): Promise<DiskUsage> {
     }
 
     // Unix: use df
-    const { stdout } = await execFileAsync('df', ['-k', '/'], {
+    const { stdout } = await runExecFile('df', ['-k', '/'], {
       encoding: 'utf-8',
       timeout: 5000,
     });
@@ -113,16 +121,8 @@ async function getDiskUsageAsync(): Promise<DiskUsage> {
   }
 }
 
-/**
- * Collect system resources (CPU, RAM, Disk).
- * Results are cached for 10 seconds.
- */
-export async function getSystemResources(): Promise<SystemResources> {
+async function computeSystemResources(): Promise<SystemResources> {
   const now = Date.now();
-
-  if (cachedResources && cachedResources.expiresAt > now) {
-    return cachedResources.data;
-  }
 
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
@@ -151,4 +151,34 @@ export async function getSystemResources(): Promise<SystemResources> {
   };
 
   return data;
+}
+
+/**
+ * Collect system resources (CPU, RAM, Disk).
+ * Results are cached for 10 seconds.
+ */
+export async function getSystemResources(): Promise<SystemResources> {
+  if (cachedResources && cachedResources.expiresAt > Date.now()) {
+    return cachedResources.data;
+  }
+
+  inflightResources ??= computeSystemResources().finally(() => {
+    inflightResources = null;
+  });
+
+  return inflightResources;
+}
+
+export function __setResourceMonitorDepsForTests(deps: {
+  execFileAsync?: typeof execFileAsync;
+}): void {
+  if (deps.execFileAsync) {
+    runExecFile = deps.execFileAsync;
+  }
+}
+
+export function __resetResourceMonitorForTests(): void {
+  cachedResources = null;
+  inflightResources = null;
+  runExecFile = execFileAsync;
 }
