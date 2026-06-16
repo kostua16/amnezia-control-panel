@@ -186,16 +186,19 @@ AI/security concern labels, and blocked dependency labels still fail
 
 ## PR Orchestrator Concurrency
 
-`pr-flow.yml` keys its concurrency group per PR but **splits it by event class**
-so a completing check cannot cancel a direct PR-action run:
+`pr-flow.yml` keys its concurrency group per PR but **isolates
+`pull_request_target` runs from every reactive wake**, so nothing but a newer PR
+state change can cancel the prt `orchestrate` job:
 
-| event class       | concurrency group    | triggers                                                                                                                                                     |
-| ----------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| direct PR action  | `pr-flow-live-<PR#>` | `pull_request_target` (opened/synchronize/reopened/ready_for_review/converted_to_draft/labeled/unlabeled), `issue_comment` (`/approve`), `workflow_dispatch` |
-| check/worker wake | `pr-flow-wr-<PR#>`   | `workflow_run` (CI, PR Policy, Code Review, Dependency Review, PR Improve, PR Finalizer completed)                                                           |
+| event class         | concurrency group    | triggers                                                                                                                                              |
+| ------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pull_request_target | `pr-flow-prt-<PR#>`  | `opened` / `synchronize` / `reopened` / `ready_for_review` / `converted_to_draft` / `labeled` / `unlabeled`                                           |
+| reactive wake       | `pr-flow-wake-<PR#>` | `workflow_run` (CI, PR Policy, Code Review, Dependency Review, PR Improve, PR Finalizer completed), `issue_comment` (`/approve`), `workflow_dispatch` |
 
-Each class still collapses its own stale reruns via `cancel-in-progress`, but the
-two classes never cancel each other.
+prt state-change runs still cancel older prt runs via `cancel-in-progress`; wakes
+collapse among themselves. A wake can never cancel a prt run, so the prt
+`orchestrate` — the only run that reports a check on the PR — always runs to
+completion (green or skipped, never `cancelled`).
 
 ### Why cancellation exists at all
 
@@ -216,16 +219,24 @@ class executes — protecting limited runner capacity.
 
 ### The cancellation cascade this design fixes
 
-Previously all triggers shared one `pr-flow-<PR#>` group. A fast completing check
-(PR Policy finishes in ~1.5–3 min) entered the same group and cancelled the
-in-flight `pull_request_target` `orchestrate` job (needs ~1.5 min) before it ran a
-step. Only `pull_request_target` runs surface as **PR checks** — `workflow_run`
-runs execute on the default branch and do not attach a check to the PR head — so
-this showed as a red `cancelled` "PR Orchestrator" check.
+Previously all triggers shared one `pr-flow-<PR#>` group, so any newer run with
+`cancel-in-progress: true` cancelled the in-flight `pull_request_target`
+`orchestrate` job before it ran a step. Two cancellers stood out:
 
-Functionally it was cosmetic: a later `workflow_run` run completed orchestration
-and posted `pr-flow/ready`, so PRs stayed mergeable. The event-class split removes
-the cancelled check entirely while keeping worker-side collapsing intact.
+- a fast completing check (PR Policy finishes in ~1.5–3 min) fires `workflow_run`;
+- a bot `issue_comment` (e.g. an automation posting on the PR shortly after open).
+
+Only `pull_request_target` runs surface as **PR checks** — `workflow_run`,
+`issue_comment`, and `workflow_dispatch` runs execute on the default branch and do
+not attach a check to the PR head — so this showed as a red `cancelled`
+"PR Orchestrator" check. Functionally it was cosmetic: a later wake completed
+orchestration and posted `pr-flow/ready`, so PRs stayed mergeable.
+
+A first attempt split only `workflow_run` into its own group (`pr-flow-wr` vs
+`pr-flow-live`), but `issue_comment` still shared the `live` group and kept
+cancelling the prt orchestrate. Isolating `pull_request_target` alone in
+`pr-flow-prt` — with all wakes in `pr-flow-wake` — removes the cancelled check
+entirely while keeping wake-side collapsing intact.
 
 ### Dispatch safety under concurrent runs
 
