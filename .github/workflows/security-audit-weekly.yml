@@ -39,7 +39,12 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
+          AUDIT_ISSUE_BODY="${RUNNER_TEMP}/audit-issue-body.md"
+          AUDIT_ISSUE_TITLE="Security: weekly npm audit found HIGH+ advisories"
+          AUDIT_OUTPUT_FILE="${RUNNER_TEMP}/npm-audit-high-output.txt"
+          AUDIT_OUTPUT_LIMIT=60000
           RUN_URL="https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}"
+          AUDIT_OUTPUT_SIZE=$(wc -c < "${AUDIT_OUTPUT_FILE}" | tr -d ' ')
           {
             echo "## Weekly npm audit found HIGH+ advisories"
             echo ""
@@ -50,21 +55,39 @@ jobs:
             echo '<details><summary>npm audit output</summary>'
             echo ""
             echo '```'
-            cat "${RUNNER_TEMP}/npm-audit-high-output.txt"
+            head -c "${AUDIT_OUTPUT_LIMIT}" "${AUDIT_OUTPUT_FILE}"
+            if [ "${AUDIT_OUTPUT_SIZE}" -gt "${AUDIT_OUTPUT_LIMIT}" ]; then
+              echo ""
+              echo "[output truncated to ${AUDIT_OUTPUT_LIMIT} bytes; full output is in the workflow logs]"
+            fi
             echo '```'
             echo '</details>'
-          } > /tmp/audit-issue-body.md
-          EXISTING_ISSUES=$(
+          } > "${AUDIT_ISSUE_BODY}"
+          EXISTING_ISSUE=""
+          if ! EXISTING_ISSUE=$(
             gh issue list --repo "${REPOSITORY}" --state open \
               --search 'weekly npm audit in:title' \
               --json number \
-              --jq 'length'
-          )
-          if [ "${EXISTING_ISSUES}" -eq 0 ]; then
+              --jq '.[0].number // empty' \
+              2>/dev/null
+          ); then
+            echo "Unable to check for an existing weekly npm audit issue; creating a new issue."
+            EXISTING_ISSUE=""
+          fi
+          if [ -z "${EXISTING_ISSUE}" ]; then
             gh issue create \
               --repo "${REPOSITORY}" \
-              --title 'Security: weekly npm audit found HIGH+ advisories' \
-              --body-file /tmp/audit-issue-body.md
+              --title "${AUDIT_ISSUE_TITLE}" \
+              --body-file "${AUDIT_ISSUE_BODY}"
           else
-            echo "Open weekly npm audit tracking issue already exists; skipping create."
+            echo "Refreshing existing weekly npm audit tracking issue #${EXISTING_ISSUE}."
+            if ! gh issue edit "${EXISTING_ISSUE}" \
+              --repo "${REPOSITORY}" \
+              --body-file "${AUDIT_ISSUE_BODY}"; then
+              echo "Unable to refresh issue #${EXISTING_ISSUE}; creating a new issue."
+              gh issue create \
+                --repo "${REPOSITORY}" \
+                --title "${AUDIT_ISSUE_TITLE}" \
+                --body-file "${AUDIT_ISSUE_BODY}"
+            fi
           fi
