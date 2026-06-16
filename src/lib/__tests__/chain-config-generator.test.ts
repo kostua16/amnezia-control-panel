@@ -190,6 +190,30 @@ describe('generateXrayRoutingRules — canonical behavior', () => {
     );
   });
 
+  it('split: rejects invalid direct zone tags', () => {
+    const template: ChainTemplate = {
+      id: 't',
+      name: 't',
+      description: '',
+      topology: 'split',
+      requiredServers: 2,
+      nodes: [],
+      icon: '',
+    };
+    const nodes = [
+      node({ label: 'Domestic (Direct)', role: 'domestic' }),
+      node({ label: 'Foreign (VPN)', role: 'foreign' }),
+    ];
+
+    assert.throws(
+      () =>
+        generateXrayRoutingRules(template, nodes, {
+          split: { directGeoipTags: ['kz', 'r u'] },
+        }),
+      /Invalid split GeoIP zone tag: r u/,
+    );
+  });
+
   it('mesh: routes through mesh_balancer with inter-node direct', () => {
     const template: ChainTemplate = {
       id: 't',

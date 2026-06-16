@@ -51,6 +51,7 @@ import {
 } from '@/lib/chain-flow-utils';
 import {
   buildRoutingOptionsForTopology,
+  getInvalidDirectGeoipTags,
   hasDirectGeoipTags,
 } from '@/lib/chain-routing-options';
 import { CANVAS_PADDING } from '@/lib/chain-layout';
@@ -556,6 +557,8 @@ export function ChainFlowEditor({
 
   const splitZonesMissing =
     topology === 'split' && !hasDirectGeoipTags(splitDirectGeoipTags);
+  const invalidSplitGeoipTags =
+    topology === 'split' ? getInvalidDirectGeoipTags(splitDirectGeoipTags) : [];
 
   return (
     <div className="space-y-4">
@@ -664,8 +667,16 @@ export function ChainFlowEditor({
             value={splitDirectGeoipTags}
             onChange={(e) => setSplitDirectGeoipTags(e.target.value)}
             placeholder="ru, kz, de"
-            className="text-sm"
+            className={clsx(
+              'text-sm',
+              invalidSplitGeoipTags.length > 0 && 'border-destructive',
+            )}
           />
+          {invalidSplitGeoipTags.length > 0 && (
+            <p className="text-xs text-destructive">
+              Invalid GeoIP tag: {invalidSplitGeoipTags[0]}
+            </p>
+          )}
         </div>
       )}
 

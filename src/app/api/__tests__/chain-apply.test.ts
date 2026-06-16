@@ -27,4 +27,19 @@ describe('POST /api/chains/apply — validation', () => {
       'Split routing requires at least one direct GeoIP zone tag',
     );
   });
+
+  it('rejects split routing with invalid direct GeoIP zones with 422', async () => {
+    const { status, body } = await readJson<ChainApplyErrorBody>(
+      await POST(
+        postRequest(PATH, {
+          templateId: 'split-routing',
+          serverMapping: { 0: 1, 1: 2 },
+          routingOptions: { split: { directGeoipTags: ['kz', 'r u'] } },
+        }),
+      ),
+    );
+
+    assert.strictEqual(status, 422);
+    assert.strictEqual(body.error, 'Invalid split GeoIP zone tag: r u');
+  });
 });

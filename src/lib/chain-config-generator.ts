@@ -5,6 +5,7 @@ import type {
   WireGuardPeerConfig,
   XrayRoutingRule,
 } from '@/types/chain';
+import { normalizeDirectGeoipTagsInput } from './chain-routing-options';
 
 /**
  * Resolved chain node: the template node plus the transport endpoint that was
@@ -15,8 +16,6 @@ import type {
  */
 export type ResolvedChainNode = ChainNode & { hostname: string; port: number };
 
-const GEOIP_TAG_PATTERN = /^[a-z0-9_-]+$/i;
-
 export function normalizeChainRoutingOptions(
   template: ChainTemplate,
   options?: ChainRoutingOptions,
@@ -26,13 +25,8 @@ export function normalizeChainRoutingOptions(
   }
 
   const tags = options?.split?.directGeoipTags ?? [];
-  const directGeoipTags = Array.from(
-    new Set(
-      tags
-        .map((tag) => tag.trim().toLowerCase())
-        .filter((tag) => tag.length > 0 && tag !== 'private'),
-    ),
-  );
+  const { validTags: directGeoipTags, invalidTags } =
+    normalizeDirectGeoipTagsInput(tags);
 
   if (directGeoipTags.length === 0) {
     throw new Error(
@@ -40,11 +34,8 @@ export function normalizeChainRoutingOptions(
     );
   }
 
-  const invalidTag = directGeoipTags.find(
-    (tag) => !GEOIP_TAG_PATTERN.test(tag),
-  );
-  if (invalidTag) {
-    throw new Error(`Invalid split GeoIP zone tag: ${invalidTag}`);
+  if (invalidTags.length > 0) {
+    throw new Error(`Invalid split GeoIP zone tag: ${invalidTags[0]}`);
   }
 
   return { split: { directGeoipTags } };

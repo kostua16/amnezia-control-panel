@@ -16,6 +16,7 @@ import {
 } from '@/lib/chain-layout';
 import {
   buildRoutingOptionsForTopology,
+  getInvalidDirectGeoipTags,
   hasDirectGeoipTags,
 } from '@/lib/chain-routing-options';
 import type { ChainNode, ChainTopology, ChainTemplate } from '@/types/chain';
@@ -217,6 +218,8 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
   const posLookup = new Map(positions.map((p) => [p.id, p]));
   const splitZonesMissing =
     topology === 'split' && !hasDirectGeoipTags(splitDirectGeoipTags);
+  const invalidSplitGeoipTags =
+    topology === 'split' ? getInvalidDirectGeoipTags(splitDirectGeoipTags) : [];
 
   // Determine SVG canvas size
   const maxX =
@@ -264,8 +267,16 @@ export function ChainBuilder({ servers, onApply }: ChainBuilderProps) {
             value={splitDirectGeoipTags}
             onChange={(e) => setSplitDirectGeoipTags(e.target.value)}
             placeholder="ru, kz, de"
-            className="text-sm"
+            className={clsx(
+              'text-sm',
+              invalidSplitGeoipTags.length > 0 && 'border-destructive',
+            )}
           />
+          {invalidSplitGeoipTags.length > 0 && (
+            <p className="text-xs text-destructive">
+              Invalid GeoIP tag: {invalidSplitGeoipTags[0]}
+            </p>
+          )}
         </div>
       )}
 
