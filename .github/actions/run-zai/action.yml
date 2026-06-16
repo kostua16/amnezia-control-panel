@@ -193,9 +193,9 @@ inputs:
     required: false
     default: 'glm-5'
   opus-model:
-    description: 'Override default opus model (glm-5.1)'
+    description: 'Override default opus model (glm-5.2)'
     required: false
-    default: 'glm-5.1'
+    default: 'glm-5.2'
   github-token:
     description: 'GitHub token for Claude GitHub operations, log scanning, and issue reporting'
     required: false
