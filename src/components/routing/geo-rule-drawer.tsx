@@ -10,35 +10,12 @@ import type {
   GeoRuleCreate,
   GeoMatchType,
 } from '@/types/geo-routing';
-
-// ─── Constants ───────────────────────────────────────────
-
-const MATCH_TYPE_OPTIONS: { value: GeoMatchType; label: string }[] = [
-  { value: 'country', label: 'Country' },
-  { value: 'region', label: 'Region' },
-  { value: 'special', label: 'Special' },
-];
-
-const REGION_OPTIONS = [
-  'Europe',
-  'Asia-Pacific',
-  'North America',
-  'South America',
-  'Africa',
-  'Middle East',
-];
-
-const SPECIAL_OPTIONS = [
-  { value: 'domestic' as const, label: 'Domestic' },
-  { value: 'foreign' as const, label: 'Foreign' },
-];
-
-const ACTION_OPTIONS: { value: 'ALLOW' | 'BLOCK' | 'ROUTE'; label: string }[] =
-  [
-    { value: 'ALLOW', label: 'Allow' },
-    { value: 'BLOCK', label: 'Block' },
-    { value: 'ROUTE', label: 'Route' },
-  ];
+import {
+  MATCH_TYPE_OPTIONS,
+  REGION_OPTIONS,
+  SPECIAL_OPTIONS,
+  ACTION_OPTIONS,
+} from '@/lib/routing-constants';
 
 // ─── Types ───────────────────────────────────────────────
 

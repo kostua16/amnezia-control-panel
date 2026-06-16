@@ -17,39 +17,9 @@ import { GeoRuleDrawer } from '@/components/routing/geo-rule-drawer';
 import { GeoIPStatusBadge } from '@/components/routing/geoip-status-badge';
 import { EmptyStateStarter } from '@/components/routing/empty-state-starter';
 import { GEO_STARTER_RULES } from '@/lib/geo-starter-rules';
+import { countryCodeToFlag } from '@/lib/format-country';
+import { actionLabel, actionStyle } from '@/lib/routing-constants';
 import type { GeoRoutingRule, GeoRuleCreate } from '@/types/geo-routing';
-
-// ─── Helpers ─────────────────────────────────────────────
-
-function countryCodeToFlag(code: string): string {
-  return code
-    .toUpperCase()
-    .split('')
-    .map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
-    .join('');
-}
-
-function actionLabel(action: string): string {
-  const labels: Record<string, string> = {
-    ALLOW: 'Allow',
-    BLOCK: 'Block',
-    ROUTE: 'Route',
-  };
-  return labels[action] ?? action;
-}
-
-function actionStyle(action: string): string {
-  switch (action) {
-    case 'ALLOW':
-      return 'bg-green-500/10 text-green-700 dark:text-green-400';
-    case 'BLOCK':
-      return 'bg-red-500/10 text-red-700 dark:text-red-400';
-    case 'ROUTE':
-      return 'bg-blue-500/10 text-blue-700 dark:text-blue-400';
-    default:
-      return 'bg-muted text-muted-foreground';
-  }
-}
 
 // ─── Component ───────────────────────────────────────────
 
