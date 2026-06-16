@@ -10,6 +10,10 @@ function getArg(name) {
   return process.argv[index + 1] ?? '';
 }
 
+function getFlag(name) {
+  return process.argv.includes(name);
+}
+
 function parseJson(text) {
   try {
     return JSON.parse(String(text || '').trim());
@@ -174,6 +178,19 @@ function hasEquivalentDuplicate(localFiles, remoteFiles) {
   );
 }
 
+function hasFileOverlap(localFiles, remoteFiles) {
+  const localPaths = new Set(
+    localFiles
+      .map((file) => String(file?.path ?? file?.filename ?? '').trim())
+      .filter(Boolean),
+  );
+  if (localPaths.size === 0) return false;
+
+  return remoteFiles.some((file) =>
+    localPaths.has(String(file?.path ?? file?.filename ?? '').trim()),
+  );
+}
+
 function findDuplicatePullRequest(localFiles, pullRequests, getFiles) {
   let equivalentDuplicate = null;
 
@@ -204,6 +221,8 @@ function run() {
   const baseRef = getArg('--base-ref') || 'main';
   const titlePrefix = getArg('--title-prefix') || '';
   const excludeHead = getArg('--exclude-head') || '';
+  const detectOverlap = getFlag('--detect-overlap');
+  const overlapLabel = getArg('--overlap-label') || '';
   const outputPath = getArg('--github-output') || process.env.GITHUB_OUTPUT;
 
   const result = {
@@ -212,6 +231,11 @@ function run() {
     duplicate_pr_url: '',
     duplicate_pr_branch: '',
     duplicate_reason: '',
+    overlap_found: 'false',
+    overlap_pr_number: '',
+    overlap_pr_url: '',
+    overlap_pr_branch: '',
+    overlap_reason: '',
   };
 
   const localFiles = collectLocalFilePatches(baseRef);
@@ -232,7 +256,7 @@ function run() {
           '--limit',
           '100',
           '--json',
-          'number,title,url,headRefName',
+          'number,title,url,headRefName,labels',
         ]),
       ) || [];
 
@@ -248,19 +272,24 @@ function run() {
       return true;
     });
 
+    const pullRequestFiles = new Map();
+    const getPullRequestFiles = (pullRequest) => {
+      const number = Number(pullRequest.number);
+      if (!pullRequestFiles.has(number)) {
+        pullRequestFiles.set(
+          number,
+          parseJson(
+            gh(['api', `repos/${repo}/pulls/${number}/files?per_page=100`]),
+          ) || [],
+        );
+      }
+      return pullRequestFiles.get(number);
+    };
+
     const duplicate = findDuplicatePullRequest(
       localFiles,
       candidates,
-      (pullRequest) => {
-        const files =
-          parseJson(
-            gh([
-              'api',
-              `repos/${repo}/pulls/${pullRequest.number}/files?per_page=100`,
-            ]),
-          ) || [];
-        return files;
-      },
+      getPullRequestFiles,
     );
 
     if (duplicate) {
@@ -277,6 +306,49 @@ function run() {
           : `Equivalent duplicate diff already exists in PR #${duplicatePullRequest.number}; differences are comment-only.`;
     } else {
       result.duplicate_reason = 'No exact duplicate open pull request found.';
+    }
+
+    if (detectOverlap) {
+      // Overlap intentionally ignores --title-prefix: each generator scopes its
+      // own duplicate check by title, so cross-family PRs editing the same
+      // shared workflow/helper file would otherwise be invisible to each other
+      // and produce conflicting same-file PRs. Filter to automation PRs via an
+      // optional label to avoid deferring against unrelated human/dependabot PRs.
+      const duplicateNumber = result.duplicate_pr_number;
+      const overlapCandidates = openPulls.filter((pullRequest) => {
+        if (!pullRequest || typeof pullRequest !== 'object') return false;
+        if (excludeHead && pullRequest.headRefName === excludeHead)
+          return false;
+        if (duplicateNumber && String(pullRequest.number) === duplicateNumber) {
+          return false;
+        }
+        if (overlapLabel) {
+          const labels = Array.isArray(pullRequest.labels)
+            ? pullRequest.labels.map((label) =>
+                String(label?.name ?? label ?? ''),
+              )
+            : [];
+          if (!labels.includes(overlapLabel)) return false;
+        }
+        return true;
+      });
+
+      for (const pullRequest of overlapCandidates) {
+        const files = getPullRequestFiles(pullRequest);
+        if (hasFileOverlap(localFiles, files)) {
+          result.overlap_found = 'true';
+          result.overlap_pr_number = String(pullRequest.number);
+          result.overlap_pr_url = String(pullRequest.url || '');
+          result.overlap_pr_branch = String(pullRequest.headRefName || '');
+          result.overlap_reason = `Open PR #${pullRequest.number} already edits one or more of the same files; deferring to avoid a conflicting same-file edit.`;
+          break;
+        }
+      }
+
+      if (result.overlap_found !== 'true') {
+        result.overlap_reason =
+          'No open pull request overlaps the changed files.';
+      }
     }
   }
 
@@ -296,6 +368,7 @@ module.exports = {
   findDuplicatePullRequest,
   hasExactDuplicate,
   hasEquivalentDuplicate,
+  hasFileOverlap,
   normalizePatch,
   normalizeSubstantivePatch,
   sortedFilePatches,

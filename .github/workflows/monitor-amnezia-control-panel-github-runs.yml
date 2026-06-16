@@ -332,18 +332,27 @@ jobs:
             --base-ref main \
             --title-prefix "fix(ci): monitored GitHub run finding - " \
             --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --detect-overlap \
+            --overlap-label auto-fix \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Log duplicate monitor result
-        if: steps.duplicate.outputs.duplicate_found == 'true'
+        if: steps.duplicate.outputs.duplicate_found == 'true' || steps.duplicate.outputs.overlap_found == 'true'
         run: |
-          echo "Skipping duplicate monitor PR."
-          echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
-          echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+          if [ "${{ steps.duplicate.outputs.duplicate_found }}" = 'true' ]; then
+            echo "Skipping duplicate monitor PR."
+            echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
+            echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+          fi
+          if [ "${{ steps.duplicate.outputs.overlap_found }}" = 'true' ]; then
+            echo "Deferring monitor PR; another automation PR already edits the same file(s)."
+            echo "Overlapping PR: #${{ steps.duplicate.outputs.overlap_pr_number }} ${{ steps.duplicate.outputs.overlap_pr_url }}"
+            echo "Reason: ${{ steps.duplicate.outputs.overlap_reason }}"
+          fi
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix(ci): address monitored GitHub run finding'
