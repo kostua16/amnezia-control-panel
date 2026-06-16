@@ -1,22 +1,28 @@
-# pr-flow.yml concurrency groups (event-class split)
+# pr-flow.yml concurrency groups (prt vs wake)
 
-`pr-flow.yml` keys its concurrency group per PR but SPLITS IT BY EVENT CLASS
-(commit fix/pr-flow-orchestrate-cancellation, PR #428):
+`pr-flow.yml` keys its concurrency group per PR but ISOLATES pull_request_target
+runs from every reactive wake, so nothing but a newer PR state change can cancel
+the prt `orchestrate` job:
 
-- `pull_request_target` / `issue_comment` / `workflow_dispatch`  →  `pr-flow-live-<PR#>`
-- `workflow_run` wakes (CI, PR Policy, Code Review, Dependency Review, PR Improve,
-  PR Finalizer completed)  →  `pr-flow-wr-<PR#>`
+- `pull_request_target` (opened/synchronize/reopened/ready_for_review/converted_to_draft/labeled/unlabeled)
+  →  `pr-flow-prt-<PR#>`
+- reactive wakes: `workflow_run` (CI, PR Policy, Code Review, Dependency Review,
+  PR Improve, PR Finalizer completed), `issue_comment` (`/approve`),
+  `workflow_dispatch`  →  `pr-flow-wake-<PR#>`
 
-Expression: `group: pr-flow-${{ (github.event_name == 'workflow_run' && 'wr') || 'live' }}-<PR#>`.
+Expression: `group: pr-flow-${{ (github.event_name == 'pull_request_target' && 'prt') || 'wake' }}-<PR#>`.
 
-`cancel-in-progress` is unchanged: TRUE for everything except `pull_request_target`
-`labeled`/`unlabeled`. So each class still collapses its own stale reruns, but the
-two classes never cancel each other.
+`cancel-in-progress` is TRUE for everything except `pull_request_target`
+`labeled`/`unlabeled`. Net effect: prt state-change runs cancel older prt runs;
+wakes collapse among themselves; a wake can NEVER cancel a prt run.
 
-WHY: previously all triggers shared one group, so a fast completing check (PR Policy
-~1.5–3 min) cancelled the in-flight `pull_request_target` `orchestrate` job before it
-ran a step → the "PR Orchestrator" check showed as `cancelled`. See
-[[ci/pr-flow-only-prt-runs-are-pr-checks]] for why that was visible. The split removes it.
+WHY isolate prt fully (history): a first attempt split only workflow_run into
+`pr-flow-wr` vs `pr-flow-live` (PR #428), but `issue_comment` still shared the
+`live` group and kept cancelling the prt orchestrate — a bot comment posted ~60s
+after PR open cancelled the in-flight prt `opened` orchestrate (validated on a
+throwaway PR; prt run cancelled steps=0, canceller = the issue_comment run).
+Isolating prt alone in `pr-flow-prt` (follow-up PR) fixed it.
 
-WHY cancel-in-progress exists at all (the runner constraint): see
-[[ci/pr-flow-cancel-in-progress-rationale]].
+The prt `orchestrate` is the only run that reports a check on the PR — see
+[[ci/pr-flow-only-prt-runs-are-pr-checks]]. Why cancel-in-progress exists at all
+(runner constraint): see [[ci/pr-flow-cancel-in-progress-rationale]].
