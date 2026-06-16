@@ -10,6 +10,7 @@ import type {
 import { broadcastEvent } from './websocket';
 import { enrichError } from './error-reporter';
 import { resolvePanelTransport } from './transport-resolver';
+import { httpClient } from './http-client';
 
 // ─── Constants ──────────────────────────────────────────
 
@@ -112,11 +113,12 @@ export async function pushConfigToPanel(
 
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
     try {
-      const response = await fetch(url, {
+      const response = await httpClient(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(15000),
+        timeoutMs: 15_000,
+        retries: 0,
       });
 
       if (response.ok) {

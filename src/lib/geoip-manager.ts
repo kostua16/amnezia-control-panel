@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { isIPv4 } from 'net';
 import { once } from 'node:events';
+import { httpClient } from '@/lib/http-client';
 
 // --- Constants ---
 
@@ -483,8 +484,9 @@ class GeoIPManager {
       for (const url of GEOIP_DOWNLOAD_URLS) {
         const tempPath = GEOIP_FILE + '.tmp';
         try {
-          const response = await fetch(url, {
-            signal: AbortSignal.timeout(120_000),
+          const response = await httpClient(url, {
+            timeoutMs: 120_000,
+            retries: 0,
           });
 
           if (!response.ok) continue;

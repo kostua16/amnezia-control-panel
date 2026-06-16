@@ -1,4 +1,4 @@
-import { execFileSync } from 'child_process';
+import { execCommandSync } from '@/lib/command-executor';
 
 export interface ServiceHealth {
   service: string;
@@ -22,10 +22,10 @@ export function checkServiceStatus(serviceKey: ServiceKey): ServiceHealth {
   const systemdName = SERVICE_MAP[serviceKey];
 
   try {
-    const result = execFileSync('systemctl', ['is-active', systemdName], {
+    const result = execCommandSync('systemctl', ['is-active', systemdName], {
       encoding: 'utf-8',
-      timeout: 5000,
-    }).trim();
+      timeoutMs: 5000,
+    }).stdout.trim();
 
     return {
       service: serviceKey,
@@ -63,8 +63,8 @@ export function restartService(serviceKey: ServiceKey): boolean {
   const systemdName = SERVICE_MAP[serviceKey];
 
   try {
-    execFileSync('systemctl', ['restart', systemdName], {
-      timeout: 15000,
+    execCommandSync('systemctl', ['restart', systemdName], {
+      timeoutMs: 15000,
     });
     return true;
   } catch (err) {
