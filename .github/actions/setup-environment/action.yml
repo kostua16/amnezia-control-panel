@@ -209,7 +209,22 @@ runs:
         echo "PATH(before setup-gh)=$PATH"
         command -v gh >/dev/null 2>&1 && echo "gh(before setup-gh)=$(command -v gh)" || echo "gh(before setup-gh)=<not found>"
 
+    # First attempt is non-fatal: gh auth login validates the token by dialing
+    # api.github.com, which intermittently hits transient TCP i/o timeouts on
+    # self-hosted runners. setup_gh_retry absorbs those; if it also fails, the
+    # "Verify gh authenticated" step still aborts when require-gh-auth=true.
     - id: setup_gh
+      uses: kostua16/setup-gh@bd07f8bef16d6973adb48d8d3f22f99125a95058
+      continue-on-error: true
+      with:
+        gh-version: ${{ inputs.gh-version }}
+        cli-token: ${{ inputs.github-token }}
+        token: ${{ inputs.github-token }}
+        switch-account: 'true'
+        skip-matching-version: 'false'
+
+    - id: setup_gh_retry
+      if: steps.setup_gh.outcome == 'failure'
       uses: kostua16/setup-gh@bd07f8bef16d6973adb48d8d3f22f99125a95058
       continue-on-error: ${{ inputs.require-gh-auth != 'true' }}
       with:
@@ -241,7 +256,13 @@ runs:
         gh --version
 
         host="${GITHUB_SERVER_URL#https://}"
-        if [[ "${{ steps.setup_gh.outputs.auth }}" != "true" ]]; then
+        # setup_gh runs non-fatally; on a transient failure setup_gh_retry
+        # re-runs it. Accept auth from whichever attempt succeeded.
+        setup_gh_auth="${{ steps.setup_gh.outputs.auth }}"
+        if [[ "${{ steps.setup_gh.outcome }}" == "failure" ]]; then
+          setup_gh_auth="${{ steps.setup_gh_retry.outputs.auth }}"
+        fi
+        if [[ "$setup_gh_auth" != "true" ]]; then
           echo "gh authentication was not configured for ${host}. Aborting." >&2
           exit 1
         fi
