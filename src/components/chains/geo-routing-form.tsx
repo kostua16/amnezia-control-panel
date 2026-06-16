@@ -221,7 +221,7 @@ export function GeoRoutingForm({
     geoAutoSave,
   ]);
 
-  const handleGeoCreate = useCallback(() => {
+  const handleGeoCreate = useCallback(async () => {
     if (!validateGeoForm()) return;
 
     const target: GeoRuleCreate['target'] = {};
@@ -247,25 +247,27 @@ export function GeoRoutingForm({
     setGeoSubmitting(true);
     setGeoApiError(null);
 
-    fetch('/api/routing/geo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    })
-      .then((response) => response.json())
-      .then((result) => {
-        if (!result.ok && !result.data) {
-          // Response might be ok even without .ok property
-        }
-        setGeoShowForm(false);
-        setGeoEditingRule(null);
-        setGeoLoading(true);
-        fetchGeoRules();
-      })
-      .catch(() => {
-        setGeoApiError('Network error. Please check your connection.');
-      })
-      .finally(() => setGeoSubmitting(false));
+    try {
+      const response = await fetch('/api/routing/geo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setGeoApiError(result.error || 'Failed to create rule');
+        return;
+      }
+
+      setGeoShowForm(false);
+      setGeoEditingRule(null);
+      setGeoLoading(true);
+      fetchGeoRules();
+    } catch {
+      setGeoApiError('Network error. Please check your connection.');
+    } finally {
+      setGeoSubmitting(false);
+    }
   }, [
     geoFormName,
     geoFormMatchType,

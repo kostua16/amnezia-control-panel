@@ -175,33 +175,39 @@ export function IpDomainRoutingForm({
     routingAutoSave,
   ]);
 
-  const handleRoutingCreate = useCallback(() => {
+  const handleRoutingCreate = useCallback(async () => {
     if (!validateRoutingForm()) return;
 
     setRoutingSubmitting(true);
     setRoutingApiError(null);
 
-    fetch('/api/routing/rules', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        protocol: routingFormProtocol,
-        destination: routingFormDestination.trim(),
-        action: routingFormAction,
-        priority: parseInt(routingFormPriority, 10) || 0,
-        isActive: routingFormIsActive,
-      }),
-    })
-      .then(() => {
-        setRoutingShowForm(false);
-        setRoutingEditingRule(null);
-        setRoutingLoading(true);
-        fetchRoutingRules();
-      })
-      .catch(() => {
-        setRoutingApiError('Network error. Please check your connection.');
-      })
-      .finally(() => setRoutingSubmitting(false));
+    try {
+      const response = await fetch('/api/routing/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          protocol: routingFormProtocol,
+          destination: routingFormDestination.trim(),
+          action: routingFormAction,
+          priority: parseInt(routingFormPriority, 10) || 0,
+          isActive: routingFormIsActive,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setRoutingApiError(result.error || 'Failed to create rule');
+        return;
+      }
+
+      setRoutingShowForm(false);
+      setRoutingEditingRule(null);
+      setRoutingLoading(true);
+      fetchRoutingRules();
+    } catch {
+      setRoutingApiError('Network error. Please check your connection.');
+    } finally {
+      setRoutingSubmitting(false);
+    }
   }, [
     routingFormProtocol,
     routingFormDestination,
