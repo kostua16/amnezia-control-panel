@@ -1,0 +1,75 @@
+name: 'Ensure Docker Disk Space'
+description: 'Prune non-volume Docker state when the Docker data-root filesystem is below a free-space threshold'
+
+inputs:
+  threshold-mb:
+    description: 'Minimum available space in MB required on the Docker data-root filesystem'
+    default: '4096'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Ensure Docker disk space
+      shell: bash
+      env:
+        INPUT_THRESHOLD_MB: ${{ inputs.threshold-mb }}
+      run: |
+        set -euo pipefail
+
+        threshold_mb="${INPUT_THRESHOLD_MB}"
+        if [[ ! "$threshold_mb" =~ ^[0-9]+$ ]] || [ "$threshold_mb" -lt 1 ]; then
+          echo "::error::threshold-mb must be a positive integer, got: ${threshold_mb}"
+          exit 1
+        fi
+
+        docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+        if [ -z "$docker_root" ]; then
+          docker_root="/var/lib/docker"
+          echo "::warning::Unable to resolve Docker data root; falling back to ${docker_root}"
+        fi
+
+        resolve_existing_path() {
+          local path="$1"
+
+          while [ ! -e "$path" ]; do
+            local parent
+            parent="$(dirname "$path")"
+            if [ "$parent" = "$path" ]; then
+              echo "$path"
+              return
+            fi
+            path="$parent"
+          done
+
+          echo "$path"
+        }
+
+        get_available_mb() {
+          local path="$1"
+          local available_kb
+
+          available_kb="$(df --output=avail "$path" | tail -1 | tr -d ' ')"
+
+          echo $((available_kb / 1024))
+        }
+
+        df_path="$(resolve_existing_path "$docker_root")"
+        if [ "$df_path" != "$docker_root" ]; then
+          echo "::warning::Docker data root ${docker_root} does not exist; checking nearest existing parent ${df_path}"
+        fi
+
+        avail_mb="$(get_available_mb "$df_path")"
+        echo "Available Docker disk space at ${df_path}: ${avail_mb} MB (threshold ${threshold_mb} MB)"
+
+        if [ "$avail_mb" -lt "$threshold_mb" ]; then
+          echo "Low Docker disk space; pruning unused Docker state without removing volumes..."
+          if ! prune_output="$(docker system prune -af 2>&1)"; then
+            printf '%s\n' "$prune_output"
+            echo "::warning::Docker system prune failed; disk space may remain below threshold"
+          elif [ -n "$prune_output" ]; then
+            printf '%s\n' "$prune_output"
+          fi
+
+          avail_mb="$(get_available_mb "$df_path")"
+          echo "Available Docker disk space after prune: ${avail_mb} MB"
+        fi
