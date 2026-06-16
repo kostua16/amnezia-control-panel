@@ -273,6 +273,13 @@ jobs:
             [ -n "$file" ] || continue
             [ -f "$file" ] || continue
 
+            # .planning/** is in .prettierignore but Prettier's explicit
+            # file-arg check bypasses ignore, so a generated/debug .md there
+            # would fail verification and discard an otherwise-valid fix.
+            case "$file" in
+              .planning/*) continue ;;
+            esac
+
             case "$file" in
               *.js|*.cjs|*.ts|*.tsx)
                 js_ts_files+=("$file")
