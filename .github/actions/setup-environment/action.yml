@@ -209,7 +209,23 @@ runs:
         echo "PATH(before setup-gh)=$PATH"
         command -v gh >/dev/null 2>&1 && echo "gh(before setup-gh)=$(command -v gh)" || echo "gh(before setup-gh)=<not found>"
 
+    # Self-hosted runners occasionally hit transient i/o timeouts reaching
+    # api.github.com while setup-gh validates the token (e.g. "dial tcp
+    # ...:443: i/o timeout"), killing the whole job. Make the first attempt
+    # non-fatal so one retry can absorb the blip before require-gh-auth decides.
     - id: setup_gh
+      uses: kostua16/setup-gh@bd07f8bef16d6973adb48d8d3f22f99125a95058
+      continue-on-error: true
+      with:
+        gh-version: ${{ inputs.gh-version }}
+        cli-token: ${{ inputs.github-token }}
+        token: ${{ inputs.github-token }}
+        switch-account: 'true'
+        skip-matching-version: 'false'
+
+    - id: setup_gh_retry
+      name: Retry setup-gh (transient network)
+      if: steps.setup_gh.outcome == 'failure'
       uses: kostua16/setup-gh@bd07f8bef16d6973adb48d8d3f22f99125a95058
       continue-on-error: ${{ inputs.require-gh-auth != 'true' }}
       with:
@@ -241,7 +257,7 @@ runs:
         gh --version
 
         host="${GITHUB_SERVER_URL#https://}"
-        if [[ "${{ steps.setup_gh.outputs.auth }}" != "true" ]]; then
+        if [[ "${{ steps.setup_gh.outputs.auth }}" != "true" && "${{ steps.setup_gh_retry.outputs.auth }}" != "true" ]]; then
           echo "gh authentication was not configured for ${host}. Aborting." >&2
           exit 1
         fi
