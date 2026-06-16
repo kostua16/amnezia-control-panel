@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 #
-# Reconciles dependency-vulnerability tracking issues once npm audit is clean.
+# Reconciles dependency-vulnerability tracking issues once the SPECIFIC
+# advisories they document are resolved in the current lockfile.
 #
 # Safety contract:
-#   - Runs only when `npm audit --audit-level=high` passes (genuinely clean).
-#   - Touches only OPEN issues labeled "dependencies" that are NOT already
-#     "fixed" and whose title looks like a vuln/audit tracker.
-#   - Marks them "fixed" with an evidence comment; does NOT auto-close (a human
-#     confirms closure).
+#   - Scope: only OPEN issues labeled "dependencies" that are not already "fixed".
+#   - Evidence-based: extracts GHSA/CVE IDs from each tracker's body and marks it
+#     "fixed" only when NONE of those advisories remain in `npm audit --json`.
+#     Trackers with no advisory IDs in the body are left untouched (cannot verify).
+#   - Marks "fixed" with an evidence comment; does NOT auto-close (human confirms).
 #
-# Prevents stale trackers from lingering and being nagged by issue-catch-up
-# after an upstream patch lands (e.g. a ws/socket.io fix the autonomous audit
-# pipeline already pulled in).
+# Prevents stale trackers from lingering (and being nagged by issue-catch-up)
+# after an upstream patch lands, without false-positive "fixed" on unrelated or
+# unfinished dependency work.
 
 set -euo pipefail
 
@@ -21,39 +22,60 @@ if [ -z "$REPO" ]; then
   exit 0
 fi
 
-# Only reconcile when there are genuinely no HIGH+ advisories.
-set +e
-npm audit --audit-level=high >/tmp/reconcile-audit.txt 2>&1
-AUDIT_EXIT=$?
-set -e
-if [ "$AUDIT_EXIT" -ne 0 ]; then
-  echo "npm audit still reports HIGH+ advisories; nothing to reconcile."
+# npm audit exits 1 when vulns exist (still emits valid JSON) and 2 on real
+# errors; only unparseable output should stop us from reconciling.
+AUDIT_JSON="$(npm audit --json 2>/dev/null || true)"
+if ! printf '%s' "$AUDIT_JSON" | jq -e '.vulnerabilities' >/dev/null 2>&1; then
+  echo "npm audit output is not parseable; skipping reconciliation." >&2
   exit 0
 fi
-echo "npm audit is clean; scanning for resolved dependency-vuln tracking issues."
 
-# Open dependency issues that are not already marked fixed.
+# Advisory identifiers still open against the current lockfile.
+OPEN_IDS="$(printf '%s' "$AUDIT_JSON" | grep -oE 'GHSA-[0-9a-z-]+|CVE-[0-9-]+' | sort -u || true)"
+open_count="$(printf '%s\n' "$OPEN_IDS" | grep -c . 2>/dev/null || true)"
+echo "npm audit reports $open_count open advisory id(s); scanning trackers."
+
+# Open dependency issues not already marked fixed.
 mapfile -t ROWS < <(gh issue list --repo "$REPO" \
   --search "is:issue is:open label:dependencies -label:fixed" \
   --json number,title --jq '.[] | "\(.number)\t\(.title)"' 2>/dev/null || true)
 
-count=0
+marked=0
 for row in "${ROWS[@]}"; do
   [ -n "$row" ] || continue
   num="${row%%$'\t'*}"
   title="${row#*$'\t'}"
-  # Only vuln/audit trackers — skip generic dependency upgrade requests.
-  case "$title" in
-    *[Vv]ulnerabilit* | *[Aa]udit* | *CVE-* | *CVE[0-9]* | *GHSA-* | *[Aa]dvisory*)
-      echo "-> marking #$num fixed: $title"
-      gh issue edit "$num" --repo "$REPO" --add-label "fixed" >/dev/null 2>&1 || true
-      gh issue comment "$num" --repo "$REPO" --body "npm audit reports 0 HIGH+ advisories as of this run; the tracked dependency vulnerabilities are resolved. Marking \`fixed\` — close at your discretion." >/dev/null 2>&1 || true
-      count=$((count + 1))
-      ;;
-    *)
-      echo "-- skipping #$num (not a vuln tracker): $title"
-      ;;
-  esac
+
+  body="$(gh issue view "$num" --repo "$REPO" --json body -q '.body' 2>/dev/null || echo '')"
+  issue_ids="$(printf '%s' "$body" | grep -oE 'GHSA-[0-9a-z-]+|CVE-[0-9-]+' | sort -u || true)"
+
+  if [ -z "$issue_ids" ]; then
+    echo "-- skipping #$num (no advisory ids in body to verify): $title"
+    continue
+  fi
+
+  # Any of this tracker's advisories still open?
+  unresolved=""
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    if printf '%s\n' "$OPEN_IDS" | grep -qxF "$id"; then
+      unresolved="${unresolved} ${id}"
+    fi
+  done <<< "$issue_ids"
+
+  if [ -n "$unresolved" ]; then
+    echo "-- skipping #$num (still open:${unresolved}): $title"
+    continue
+  fi
+
+  resolved_list="$(printf '%s' "$issue_ids" | paste -sd ', ' -)"
+  echo "-> marking #$num fixed (advisories resolved: ${resolved_list}): $title"
+  if gh issue edit "$num" --repo "$REPO" --add-label "fixed" >/dev/null 2>&1; then
+    gh issue comment "$num" --repo "$REPO" --body "All advisories referenced in this tracker (${resolved_list}) are absent from the current \`npm audit\`; the tracked dependency vulnerabilities are resolved. Marking \`fixed\` — close at your discretion." >/dev/null 2>&1 || true
+    marked=$((marked + 1))
+  else
+    echo "   label application failed for #$num; not counted"
+  fi
 done
 
-echo "Reconciliation complete: $count issue(s) marked fixed."
+echo "Reconciliation complete: $marked issue(s) marked fixed."
