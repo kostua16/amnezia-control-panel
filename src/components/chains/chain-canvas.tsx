@@ -29,6 +29,8 @@ interface ChainCanvasProps {
   onNodesChange: OnNodesChange<Node>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
+  onNodesDelete: (nodes: Node[]) => void;
+  onEdgesDelete: (edges: Edge[]) => void;
   onNodeClick: (event: React.MouseEvent, node: Node) => void;
   onPaneClick: () => void;
   nodeTypes: NodeTypes;
@@ -43,6 +45,8 @@ export function ChainCanvas({
   onNodesChange,
   onEdgesChange,
   onConnect,
+  onNodesDelete,
+  onEdgesDelete,
   onNodeClick,
   onPaneClick,
   nodeTypes,
@@ -58,6 +62,8 @@ export function ChainCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodesDelete={onNodesDelete}
+        onEdgesDelete={onEdgesDelete}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}

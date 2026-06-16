@@ -65,6 +65,8 @@ export function ChainFlowEditor({
     reactFlowEdges,
     onNodesChange,
     onEdgesChange,
+    onNodesDelete,
+    onEdgesDelete,
   } = useChainFlowActions({
     servers,
     serverPanelMap,
@@ -187,6 +189,8 @@ export function ChainFlowEditor({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodesDelete={onNodesDelete}
+        onEdgesDelete={onEdgesDelete}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
