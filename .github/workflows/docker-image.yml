@@ -31,24 +31,11 @@ jobs:
       should_publish: ${{ steps.classify.outputs.should_publish }}
       should_validate: ${{ steps.classify.outputs.should_validate }}
     steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
       - name: Ensure runner disk space
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Self-hosted runners accumulate Docker buildx layer cache across
-          # builds and eventually exhaust disk, failing jobs with ENOSPC
-          # (including action extraction into _actions). Free headroom before
-          # running when space drops below threshold, using the same prune as
-          # cleanup-runner.yml and setup-environment's cleanup_general.
-          threshold_mb=4096
-          avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
-          echo "Available disk space: ${avail_mb} MB (threshold ${threshold_mb} MB)"
-          if [ "${avail_mb}" -lt "${threshold_mb}" ]; then
-            echo "Low disk; pruning Docker state..."
-            docker system prune -af --volumes 2>/dev/null || true
-            avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
-            echo "Available disk space after prune: ${avail_mb} MB"
-          fi
+        uses: ./.github/actions/ensure-docker-disk-space
 
       - name: Decide Docker image action
         id: classify
@@ -216,27 +203,11 @@ jobs:
     runs-on: [self-hosted, big]
     timeout-minutes: 30
     steps:
-      - name: Ensure runner disk space
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Self-hosted runners accumulate Docker buildx layer cache across
-          # builds and eventually exhaust disk, failing jobs with ENOSPC
-          # (including action extraction into _actions). Free headroom before
-          # running when space drops below threshold, using the same prune as
-          # cleanup-runner.yml and setup-environment's cleanup_general.
-          threshold_mb=4096
-          avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
-          echo "Available disk space: ${avail_mb} MB (threshold ${threshold_mb} MB)"
-          if [ "${avail_mb}" -lt "${threshold_mb}" ]; then
-            echo "Low disk; pruning Docker state..."
-            docker system prune -af --volumes 2>/dev/null || true
-            avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
-            echo "Available disk space after prune: ${avail_mb} MB"
-          fi
-
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Ensure runner disk space
+        uses: ./.github/actions/ensure-docker-disk-space
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
@@ -273,27 +244,11 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - name: Ensure runner disk space
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Self-hosted runners accumulate Docker buildx layer cache across
-          # builds and eventually exhaust disk, failing jobs with ENOSPC
-          # (including action extraction into _actions). Free headroom before
-          # running when space drops below threshold, using the same prune as
-          # cleanup-runner.yml and setup-environment's cleanup_general.
-          threshold_mb=4096
-          avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
-          echo "Available disk space: ${avail_mb} MB (threshold ${threshold_mb} MB)"
-          if [ "${avail_mb}" -lt "${threshold_mb}" ]; then
-            echo "Low disk; pruning Docker state..."
-            docker system prune -af --volumes 2>/dev/null || true
-            avail_mb=$(( $(df --output=avail / | tail -1 | tr -d ' ') / 1024 ))
-            echo "Available disk space after prune: ${avail_mb} MB"
-          fi
-
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Ensure runner disk space
+        uses: ./.github/actions/ensure-docker-disk-space
 
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
