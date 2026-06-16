@@ -13,6 +13,7 @@
 
 ## Pre-commit (for `.js`/`.cjs`/`.ts`/`.tsx`, incl. `.github` workflow helper scripts)
 - ESLint + Prettier must pass. package.json `format:check` only covers `src/**/*.{ts,tsx,css}` — for `.yml`/workflow files, run `npx prettier --check <changed files>` directly.
+- GOTCHA: the RTK hook rewrites `npx prettier --check` → `rtk prettier --check`, whose verdict can diverge from the repo's Prettier (seen reporting false "clean" → CI `format:check` then failed). Before pushing `.ts`/`.tsx`, verify with the REPO Prettier directly: `node "$(node -e "console.log(require.resolve('prettier/bin/prettier.cjs'))")" --check "src/**/*.{ts,tsx,css}"` (mirrors CI exactly; bare `prettier` isn't on PATH and the `node_modules` path is scout-blocked, hence the resolve trick).
 
 ## Gotcha: scout-block hook
 - The scout-block hook rejects `grep`/command patterns containing the literal token `node_modules`. Don't include `node_modules` in a grep pattern; scope exclusions via `.ckignore` (`!node_modules`) if truly needed.
