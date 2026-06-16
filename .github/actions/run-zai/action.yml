@@ -189,9 +189,9 @@ inputs:
     required: false
     default: 'glm-4.7'
   sonnet-model:
-    description: 'Override default sonnet model (glm-5)'
+    description: 'Override default sonnet model (glm-5-turbo)'
     required: false
-    default: 'glm-5'
+    default: 'glm-5-turbo'
   opus-model:
     description: 'Override default opus model (glm-5.2)'
     required: false
