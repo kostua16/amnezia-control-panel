@@ -162,7 +162,11 @@ export async function getSystemResources(): Promise<SystemResources> {
     return cachedResources.data;
   }
 
-  inflightResources ??= computeSystemResources().finally(() => {
+  if (inflightResources) {
+    return inflightResources;
+  }
+
+  inflightResources = computeSystemResources().finally(() => {
     inflightResources = null;
   });
 
