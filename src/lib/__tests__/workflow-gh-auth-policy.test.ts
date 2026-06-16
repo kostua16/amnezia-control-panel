@@ -22,8 +22,19 @@ describe('workflow gh auth policy', () => {
   it('keeps CI jobs independent from gh auth', () => {
     const ciWorkflow = readRepoFile('.github/workflows/ci.yml');
     const optOuts = ciWorkflow.match(/require-gh-auth: 'false'/g) ?? [];
+    const setupEnvUses =
+      ciWorkflow.match(/uses: \.\/\.github\/actions\/setup-environment/g) ?? [];
 
-    assert.equal(optOuts.length, 5);
+    // CI must stay runnable without gh credentials (fork/PR builds), so EVERY
+    // setup-environment call must opt out of hard gh-auth failure. Comparing
+    // opt-outs to setup-environment uses is resilient to adding jobs (both
+    // counts grow together) without being vacuous: a job that drops the opt-out
+    // makes optOuts < setupEnvUses and fails the test.
+    assert.equal(
+      optOuts.length,
+      setupEnvUses.length,
+      'every CI setup-environment call must set require-gh-auth: false',
+    );
   });
 
   it('treats performance check comments as best-effort', () => {
