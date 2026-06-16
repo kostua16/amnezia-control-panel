@@ -94,7 +94,13 @@ jobs:
 
             1. Classify as bug report, feature request, or question
             2. Assess priority (critical, high, medium, low)
-            3. Assign appropriate labels
+            3. Assign appropriate labels:
+               - Apply EXACTLY ONE priority label matching your assessed priority
+                 ("critical", "high", "medium", or "low"). A serious/high-severity
+                 issue (e.g. CVSS High) MUST get the "high" label — do not leave
+                 priority only in the summary comment.
+               - For a dependency-vulnerability issue whose advisory reports
+                 fixAvailable:false (no upstream fix released yet), ALSO add "backlog".
             4. Check for duplicates against existing issues
             5. Add the "triaged" label: ./.github/workflows/scripts/edit-issue-labels.sh --add-label "triaged"
 
