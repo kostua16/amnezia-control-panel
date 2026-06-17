@@ -18,7 +18,7 @@ describe('BUILTIN_CHAIN_PRESETS', () => {
   });
 
   it('uses valid topologies', () => {
-    const validTopologies = ['linear', 'split', 'mesh'];
+    const validTopologies = ['LINEAR', 'SPLIT', 'MESH'];
     for (const preset of BUILTIN_CHAIN_PRESETS) {
       assert.ok(
         validTopologies.includes(preset.topology),
@@ -48,7 +48,7 @@ describe('BUILTIN_CHAIN_PRESETS', () => {
   it('simple-relay preset exists with expected properties', () => {
     const relay = BUILTIN_CHAIN_PRESETS.find((p) => p.id === 'simple-relay');
     assert.ok(relay, 'simple-relay preset not found');
-    assert.strictEqual(relay.topology, 'linear');
+    assert.strictEqual(relay.topology, 'LINEAR');
     assert.strictEqual(relay.nodeCount, 2);
   });
 });

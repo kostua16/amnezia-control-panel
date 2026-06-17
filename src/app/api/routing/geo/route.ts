@@ -22,18 +22,18 @@ const createGeoRuleSchema = z.object({
   chainId: z.number().int().positive().optional(),
   priority: z.number().int().min(0).default(0),
   isActive: z.boolean().default(true),
-  source: z.enum(['custom', 'imported', 'template']).default('custom'),
+  source: z.enum(['CUSTOM', 'IMPORTED', 'TEMPLATE']).default('CUSTOM'),
 });
 
 /** Derive matchType from which target field is set */
 function deriveMatchType(
   target: z.infer<typeof geoTargetSchema>,
-): 'country' | 'region' | 'special' {
-  if (target.countryCode) return 'country';
-  if (target.region) return 'region';
-  if (target.special) return 'special';
+): 'COUNTRY' | 'REGION' | 'SPECIAL' {
+  if (target.countryCode) return 'COUNTRY';
+  if (target.region) return 'REGION';
+  if (target.special) return 'SPECIAL';
   // Should not reach here due to Zod refine
-  return 'country';
+  return 'COUNTRY';
 }
 
 /** Map a Prisma GeoRoutingRule row to the GeoRoutingRule API shape */
@@ -55,7 +55,7 @@ function mapToGeoRoutingRule(row: {
   return {
     id: row.id,
     name: row.name,
-    matchType: row.matchType as 'country' | 'region' | 'special',
+    matchType: row.matchType as 'COUNTRY' | 'REGION' | 'SPECIAL',
     target: {
       countryCode: row.countryCode ?? undefined,
       region: row.region ?? undefined,
@@ -65,7 +65,7 @@ function mapToGeoRoutingRule(row: {
     chainId: row.chainId ?? undefined,
     priority: row.priority,
     isActive: row.isActive,
-    source: row.source as 'custom' | 'imported' | 'template',
+    source: row.source as 'CUSTOM' | 'IMPORTED' | 'TEMPLATE',
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

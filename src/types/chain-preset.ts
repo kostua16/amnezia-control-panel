@@ -2,7 +2,7 @@ export interface ChainPreset {
   id: number;
   name: string;
   description: string;
-  topology: 'linear' | 'split' | 'mesh';
+  topology: 'LINEAR' | 'SPLIT' | 'MESH';
   nodeCount: number;
   chainTemplateId: string;
   routingBundleId: string | null;
@@ -15,7 +15,7 @@ export interface ChainPreset {
 export interface ChainPresetCreate {
   name: string;
   description?: string;
-  topology?: 'linear' | 'split' | 'mesh';
+  topology?: 'LINEAR' | 'SPLIT' | 'MESH';
   nodeCount?: number;
   chainTemplateId?: string;
   routingBundleId?: string;
