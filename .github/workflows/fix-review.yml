@@ -35,10 +35,10 @@ permissions:
   actions: read
 
 concurrency:
-  # Non-command and bot-authored comments get a unique group so they cannot
-  # cancel an in-progress run (mirrors code-review.yml's ignored-run_id guard
-  # and also excludes bots, so a bot summary containing /fix-review can't cancel).
-  group: ${{ (github.event_name == 'issue_comment' && !(github.event.comment.user.type != 'Bot' && (contains(github.event.comment.body, '/fix-review') || contains(github.event.comment.body, '/address-review')))) && format('fix-review-ignored-{0}', github.run_id) || format('fix-review-{0}', github.event.issue.number || github.event.inputs.pr_number || github.run_id) }}
+  # Non-command, bot-authored, or non-PR comments get a unique group so they
+  # cannot cancel an in-progress run. The ignored condition mirrors authorize.if:
+  # only a human /fix-review|/address-review on a PR shares the shared group.
+  group: ${{ (github.event_name == 'issue_comment' && !(github.event.issue.pull_request != null && github.event.comment.user.type != 'Bot' && (contains(github.event.comment.body, '/fix-review') || contains(github.event.comment.body, '/address-review')))) && format('fix-review-ignored-{0}', github.run_id) || format('fix-review-{0}', github.event.issue.number || github.event.inputs.pr_number || github.run_id) }}
   cancel-in-progress: true
 
 env:
