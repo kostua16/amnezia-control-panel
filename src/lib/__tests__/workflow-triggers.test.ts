@@ -95,17 +95,50 @@ describe('workflow trigger policy', () => {
     );
   });
 
-  it('keeps non-review comments from cancelling active code-review runs', () => {
+  it('keeps non-review, bot, and non-PR comments from cancelling active code-review runs', () => {
     const workflow = readWorkflow('code-review.yml');
     const group = workflow.concurrency?.group ?? '';
 
     assert.match(group, /github\.event_name == 'issue_comment'/);
-    assert.match(
-      group,
-      /!contains\(github\.event\.comment\.body, '\/review'\)/,
-    );
+    assert.match(group, /github\.event\.issue\.pull_request != null/);
+    assert.match(group, /github\.event\.comment\.user\.type != 'Bot'/);
+    assert.match(group, /contains\(github\.event\.comment\.body, '\/review'\)/);
     assert.match(group, /code-review-ignored-\{0\}/);
     assert.match(group, /code-review-\{0\}/);
+    assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
+  });
+
+  it('keeps non-command, bot, and non-PR comments from cancelling active deepseek-code-review runs', () => {
+    const workflow = readWorkflow('deepseek-code-review.yml');
+    const group = workflow.concurrency?.group ?? '';
+
+    assert.match(group, /github\.event_name == 'issue_comment'/);
+    assert.match(group, /github\.event\.issue\.pull_request != null/);
+    assert.match(group, /github\.event\.comment\.user\.type != 'Bot'/);
+    assert.match(
+      group,
+      /contains\(github\.event\.comment\.body, '\/deepseek-review'\)/,
+    );
+    assert.match(group, /deepseek-code-review-ignored-\{0\}/);
+    assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
+  });
+
+  it('keeps non-command, bot, and non-PR comments from cancelling active fix-review runs', () => {
+    const workflow = readWorkflow('fix-review.yml');
+    const group = workflow.concurrency?.group ?? '';
+
+    assert.match(group, /github\.event_name == 'issue_comment'/);
+    assert.match(group, /github\.event\.issue\.pull_request != null/);
+    assert.match(group, /github\.event\.comment\.user\.type != 'Bot'/);
+    assert.match(
+      group,
+      /contains\(github\.event\.comment\.body, '\/fix-review'\)/,
+    );
+    assert.match(
+      group,
+      /contains\(github\.event\.comment\.body, '\/address-review'\)/,
+    );
+    assert.match(group, /fix-review-ignored-\{0\}/);
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
   });
 
