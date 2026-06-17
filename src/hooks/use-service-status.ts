@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/query-keys';
 
 export interface ServiceStatusData {
   service: string;
@@ -18,7 +19,7 @@ async function fetchServiceStatus(
 
 export function useServiceStatus(serviceKey: string) {
   return useQuery({
-    queryKey: ['service-status', serviceKey],
+    queryKey: [...queryKeys.serviceStatus, serviceKey],
     queryFn: () => fetchServiceStatus(serviceKey),
     refetchInterval: 30_000,
     staleTime: 10_000,

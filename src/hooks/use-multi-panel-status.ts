@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { FleetAggregatedStatus } from '@/types/multi-panel-dashboard';
+import { queryKeys } from '@/lib/query-keys';
 
 async function fetchFleetStatus(): Promise<FleetAggregatedStatus> {
   const response = await fetch('/api/panels/status');
@@ -15,7 +16,7 @@ async function fetchFleetStatus(): Promise<FleetAggregatedStatus> {
 
 export function useMultiPanelStatus() {
   return useQuery({
-    queryKey: ['fleet-status'],
+    queryKey: queryKeys.fleetStatus,
     queryFn: fetchFleetStatus,
     refetchInterval: 30_000,
     staleTime: 15_000,

@@ -8,6 +8,7 @@ import {
   useEffect,
   type ReactNode,
 } from 'react';
+import { queryKeys } from '@/lib/query-keys';
 import { useWebSocket } from '@/hooks/use-websocket';
 import type { WsEventType } from '@/lib/websocket';
 
@@ -39,15 +40,22 @@ const WS_EVENTS: WsEventType[] = [
  * Mapping from WebSocket event types to React Query key prefixes.
  * When a WS event arrives, all queries whose key starts with the
  * mapped prefix are invalidated, triggering a fresh fetch.
+ *
+ * Poll-only (no WS→RQ mapping):
+ * - panel:push-progress — consumed by push-wizard.tsx via lastEvent (no RQ cache)
  */
-const WS_TO_QUERY_KEYS: Partial<Record<WsEventType, string[][]>> = {
-  'stats:update': [['dashboard-stats']],
-  'resource:update': [['system-resources']],
-  'user:status-change': [['users']],
-  'panel:fallback-change': [['fleet-status']],
-  // alert:new handled by use-alerts.ts directly (single source of truth)
-  // panel:push-progress consumed by push-wizard.tsx via lastEvent (no RQ)
-  // chain:status-update consumed by use-chain-status.ts via direct socket (no RQ)
+const WS_TO_QUERY_KEYS: Partial<Record<WsEventType, readonly (readonly string[])[]>> = {
+  'stats:update': [
+    queryKeys.dashboardStats,
+    queryKeys.serviceStatus,
+    queryKeys.trafficStats,
+    queryKeys.topUserTraffic,
+  ],
+  'resource:update': [queryKeys.systemResources],
+  'user:status-change': [queryKeys.users],
+  'panel:fallback-change': [queryKeys.fleetStatus],
+  'alert:new': [queryKeys.alerts, queryKeys.alertsUnreadCount],
+  'chain:status-update': [queryKeys.fleetStatus],
 };
 
 interface ProvidersProps {

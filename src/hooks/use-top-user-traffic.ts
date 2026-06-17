@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { TopUserTraffic } from '@/types/monitoring';
+import { queryKeys } from '@/lib/query-keys';
 
 async function fetchTopUserTraffic(
   limit = 10,
@@ -24,7 +25,7 @@ async function fetchTopUserTraffic(
 
 export function useTopUserTraffic(limit?: number, period?: string) {
   return useQuery({
-    queryKey: ['top-user-traffic', limit, period],
+    queryKey: [...queryKeys.topUserTraffic, limit, period],
     queryFn: () => fetchTopUserTraffic(limit, period),
     staleTime: 15_000,
     refetchInterval: 30_000,

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { TrafficStatsResponse } from '@/types/monitoring';
+import { queryKeys } from '@/lib/query-keys';
 
 export interface TrafficStatsParams {
   userId?: number;
@@ -36,7 +37,7 @@ async function fetchTrafficStats(
 
 export function useTrafficStats(params?: TrafficStatsParams) {
   return useQuery({
-    queryKey: ['traffic-stats', params],
+    queryKey: [...queryKeys.trafficStats, params],
     queryFn: () => fetchTrafficStats(params),
     staleTime: 15_000,
     refetchInterval: 30_000,
