@@ -47,6 +47,8 @@ export interface WireGuardPeerConfig {
   nodeId: string;
   /** Peer public key */
   publicKey: string;
+  /** Private key for the local interface (panels configure their WG interface with this) */
+  privateKey?: string;
   /** Allowed IPs for this peer */
   allowedIPs: string;
   /** Endpoint address (hostname:port) */

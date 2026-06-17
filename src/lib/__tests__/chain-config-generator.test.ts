@@ -8,6 +8,8 @@ import type { ChainTemplate, ChainNode } from '@/types/chain';
 
 type Resolved = ChainNode & { hostname: string; port: number };
 
+const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
+
 function node(
   partial: Partial<Resolved> & Pick<Resolved, 'label' | 'role'>,
 ): Resolved {
@@ -43,6 +45,17 @@ describe('generateWireGuardPeers', () => {
     assert.deepEqual(peers.map((p) => p.nodeId).sort(), ['Entry', 'Exit']);
     // Forward peer carries the full-tunnel allowed IPs.
     assert.ok(peers.some((p) => p.allowedIPs === '0.0.0.0/0'));
+    // All peers have real WireGuard public keys (no STUB_ prefix).
+    for (const p of peers) {
+      assert.ok(
+        WG_KEY_RE.test(p.publicKey),
+        `linear peer ${p.nodeId} publicKey is not a valid WG key: ${p.publicKey}`,
+      );
+      assert.ok(
+        p.privateKey !== undefined,
+        `linear peer ${p.nodeId} missing privateKey`,
+      );
+    }
   });
 
   it('split: only the foreign node gets a peer', () => {
@@ -64,6 +77,14 @@ describe('generateWireGuardPeers', () => {
 
     assert.equal(peers.length, 1);
     assert.equal(peers[0].nodeId, 'Foreign (VPN)');
+    assert.ok(
+      WG_KEY_RE.test(peers[0].publicKey),
+      'split peer publicKey is not a valid WG key',
+    );
+    assert.ok(
+      peers[0].privateKey !== undefined,
+      'split peer missing privateKey',
+    );
   });
 
   it('mesh: fully meshed directed peers', () => {
@@ -86,6 +107,17 @@ describe('generateWireGuardPeers', () => {
 
     // N*(N-1) directed peers for 3 nodes.
     assert.equal(peers.length, 6);
+    // All mesh peers have real WireGuard keys.
+    for (const p of peers) {
+      assert.ok(
+        WG_KEY_RE.test(p.publicKey),
+        `mesh peer ${p.nodeId} publicKey is not a valid WG key: ${p.publicKey}`,
+      );
+      assert.ok(
+        p.privateKey !== undefined,
+        `mesh peer ${p.nodeId} missing privateKey`,
+      );
+    }
   });
 });
 
@@ -273,10 +305,25 @@ describe('chain-config-generator — preview/apply parity', () => {
       isActive: true,
     }));
 
-    assert.deepEqual(
-      generateWireGuardPeers(template, applyShape),
-      generateWireGuardPeers(template, previewShape),
-    );
+    // WireGuard peers generate fresh keypairs each call, so compare
+    // structural fields (nodeId, allowedIPs, endpoint, persistentKeepalive)
+    // rather than the full deep-equal which would differ on publicKey/privateKey.
+    const applyPeers = generateWireGuardPeers(template, applyShape);
+    const previewPeers = generateWireGuardPeers(template, previewShape);
+    assert.equal(applyPeers.length, previewPeers.length);
+    for (let i = 0; i < applyPeers.length; i++) {
+      assert.equal(applyPeers[i].nodeId, previewPeers[i].nodeId);
+      assert.equal(applyPeers[i].allowedIPs, previewPeers[i].allowedIPs);
+      assert.equal(applyPeers[i].endpoint, previewPeers[i].endpoint);
+      assert.equal(
+        applyPeers[i].persistentKeepalive,
+        previewPeers[i].persistentKeepalive,
+      );
+      // Both peers must have real keys (not stubs).
+      assert.ok(WG_KEY_RE.test(applyPeers[i].publicKey));
+      assert.ok(WG_KEY_RE.test(previewPeers[i].publicKey));
+    }
+
     assert.deepEqual(
       generateXrayRoutingRules(template, applyShape, {
         split: { directGeoipTags: ['kz'] },

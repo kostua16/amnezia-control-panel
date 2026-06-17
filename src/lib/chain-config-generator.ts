@@ -6,6 +6,7 @@ import type {
   XrayRoutingRule,
 } from '@/types/chain';
 import { normalizeDirectGeoipTagsInput } from './chain-routing-options';
+import { generateKeypair } from './wireguard-keys';
 
 /**
  * Resolved chain node: the template node plus the transport endpoint that was
@@ -44,9 +45,10 @@ export function normalizeChainRoutingOptions(
 /**
  * Generate WireGuard peer configurations for a chain topology.
  *
- * Peers use placeholder public keys (`STUB_PUBKEY_*`) — real keys are injected
- * at apply time. Shared by the chain apply path and the push-wizard preview so
- * both paths emit identical peer sets.
+ * Each peer receives a unique Curve25519 keypair. The public key is embedded
+ * in the peer config; the private key is included so the panel can configure
+ * its local WireGuard interface. Shared by the chain apply path and the
+ * push-wizard preview so both paths emit identical peer sets.
  */
 export function generateWireGuardPeers(
   template: ChainTemplate,
@@ -61,9 +63,13 @@ export function generateWireGuardPeers(
         const current = nodes[i];
         const next = nodes[i + 1];
 
+        const forward = generateKeypair();
+        const reverse = generateKeypair();
+
         peers.push({
           nodeId: current.label,
-          publicKey: `STUB_PUBKEY_${next.label.replace(/\s+/g, '_')}`,
+          publicKey: forward.publicKey,
+          privateKey: forward.privateKey,
           allowedIPs: '0.0.0.0/0',
           endpoint: `${next.hostname}:${next.port}`,
           persistentKeepalive: 25,
@@ -71,7 +77,8 @@ export function generateWireGuardPeers(
 
         peers.push({
           nodeId: next.label,
-          publicKey: `STUB_PUBKEY_${current.label.replace(/\s+/g, '_')}`,
+          publicKey: reverse.publicKey,
+          privateKey: reverse.privateKey,
           allowedIPs: `10.0.0.${i + 1}/32`,
           endpoint: `${current.hostname}:${current.port}`,
           persistentKeepalive: 25,
@@ -85,9 +92,11 @@ export function generateWireGuardPeers(
       // populate from the template definition.
       const foreign = nodes.find((n) => n.role === 'foreign');
       if (foreign) {
+        const keypair = generateKeypair();
         peers.push({
           nodeId: foreign.label,
-          publicKey: `STUB_PUBKEY_${foreign.label.replace(/\s+/g, '_')}`,
+          publicKey: keypair.publicKey,
+          privateKey: keypair.privateKey,
           allowedIPs: '0.0.0.0/0',
           endpoint: `${foreign.hostname}:${foreign.port}`,
           persistentKeepalive: 25,
@@ -103,9 +112,11 @@ export function generateWireGuardPeers(
           const current = nodes[i];
           const peer = nodes[j];
 
+          const keypair = generateKeypair();
           peers.push({
             nodeId: current.label,
-            publicKey: `STUB_PUBKEY_${peer.label.replace(/\s+/g, '_')}`,
+            publicKey: keypair.publicKey,
+            privateKey: keypair.privateKey,
             allowedIPs: `10.0.0.${j + 1}/32`,
             endpoint: `${peer.hostname}:${peer.port}`,
             persistentKeepalive: 25,
