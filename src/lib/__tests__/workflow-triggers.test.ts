@@ -120,6 +120,7 @@ describe('workflow trigger policy', () => {
       /contains\(github\.event\.comment\.body, '\/deepseek-review'\)/,
     );
     assert.match(group, /deepseek-code-review-ignored-\{0\}/);
+    assert.match(group, /deepseek-code-review-\{0\}/);
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
   });
 
