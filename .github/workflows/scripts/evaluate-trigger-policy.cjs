@@ -472,4 +472,46 @@ if (mode === 'fix-branch') {
   process.exit(0);
 }
 
+if (mode === 'fix-review') {
+  const isPrComment = Boolean(event.issue?.pull_request);
+  const body = String(commentBody ?? '');
+  const command = body.includes('/address-review')
+    ? '/address-review'
+    : body.includes('/fix-review')
+      ? '/fix-review'
+      : null;
+  const wantsFix = command !== null;
+  const commenterIsBot = isBotAccount(event.comment?.user);
+  const commentTriggered =
+    eventName === 'issue_comment' &&
+    isPrComment &&
+    wantsFix &&
+    !commenterIsBot &&
+    isMaintainer;
+  const dispatchTriggered = eventName === 'workflow_dispatch';
+  const prNumber = event.inputs?.pr_number ?? event.issue?.number ?? null;
+  const active = commentTriggered || dispatchTriggered;
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: active,
+        trusted: dispatchTriggered || (isMaintainer && !commenterIsBot),
+        author_association: association,
+        trigger_source: commentTriggered
+          ? 'comment'
+          : dispatchTriggered
+            ? 'workflow_dispatch'
+            : null,
+        pr_number: active ? prNumber : null,
+        command,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 throw new Error(`Unsupported mode "${mode}"`);

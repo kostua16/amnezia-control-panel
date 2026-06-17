@@ -311,6 +311,10 @@
     "area/docker": {
       "color": "0052cc",
       "description": "Changes Docker or container files"
+    },
+    "fix-review": {
+      "color": "5319e7",
+      "description": "Review feedback addressed in place by the /fix-review workflow"
     }
   }
 }

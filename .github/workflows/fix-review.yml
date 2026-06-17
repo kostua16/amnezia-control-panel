@@ -1,0 +1,324 @@
+name: Fix Review
+
+# Reacts to a maintainer's `/fix-review` (alias `/address-review`) comment on an
+# open same-repo PR: pre-fetches unresolved, non-outdated review feedback, has
+# Claude apply fixes in place, enforces a CI-matching gate, pushes to the SAME PR
+# head branch (never force-pushes), disables auto-merge so the bot commit is
+# re-reviewed, and keeps one sticky summary comment (started -> working ->
+# finished, or skipped / no-changes / push-rejected / validation-failed / failed
+# / cancelled).
+#
+# SECURITY: same trust model as fix-pr.yml / claude.yml — PR code runs build/test
+# with contents:write, so only maintainers may trigger this (policy gate) and the
+# agent gets no gh / write-git scope (it cannot bypass the gate or merge/comment).
+# All dynamic values are passed through env:/with:; nothing attacker-controlled
+# is interpolated into a run: command.
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to fix'
+        required: true
+        type: string
+      head_sha:
+        description: 'Expected head SHA (stale-guard; leave empty to skip the check)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+concurrency:
+  group: fix-review-${{ github.event.issue.number || github.event.inputs.pr_number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22.x'
+  MAX_TURNS: '70'
+
+jobs:
+  authorize:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (
+        github.event.issue.pull_request != null &&
+        (
+          contains(github.event.comment.body, '/fix-review') ||
+          contains(github.event.comment.body, '/address-review')
+        ) &&
+        github.event.comment.user.type != 'Bot'
+      )
+    runs-on: self-hosted
+    timeout-minutes: 10
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+      trusted: ${{ steps.gate.outputs.trusted }}
+      pr-number: ${{ steps.gate.outputs.pr_number }}
+      command: ${{ steps.gate.outputs.command }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Evaluate trigger trust
+        id: gate
+        shell: bash
+        run: |
+          node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode fix-review \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" > /tmp/fix-review-gate.json
+          {
+            echo "should_run=$(jq -r '.should_run' /tmp/fix-review-gate.json)"
+            echo "trusted=$(jq -r '.trusted' /tmp/fix-review-gate.json)"
+            echo "pr_number=$(jq -r '.pr_number // empty' /tmp/fix-review-gate.json)"
+            echo "command=$(jq -r '.command // empty' /tmp/fix-review-gate.json)"
+          } >> "$GITHUB_OUTPUT"
+
+  fix:
+    needs: [authorize]
+    if: needs.authorize.outputs.should_run == 'true' && needs.authorize.outputs.trusted == 'true'
+    runs-on: [self-hosted, big]
+    timeout-minutes: 45
+    steps:
+      - name: Resolve PR head and eligibility
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+          EXPECTED_HEAD_SHA: ${{ github.event.inputs.head_sha }}
+        run: |
+          gh pr view "$PR_NUMBER" \
+            --json number,headRefName,headRefOid,state,mergedAt,autoMergeRequest > /tmp/fix-review-pr.json
+          node .github/workflows/scripts/evaluate-pr-policy.cjs \
+            --policy-file .github/workflows/policy.json \
+            --pr-file /tmp/fix-review-pr.json > /tmp/fix-review-eval.json
+          node -e '
+            const fs = require("fs");
+            const pr = JSON.parse(fs.readFileSync("/tmp/fix-review-pr.json", "utf8"));
+            const ev = JSON.parse(fs.readFileSync("/tmp/fix-review-eval.json", "utf8"));
+            const automationClasses = ["automation", "dependabot", "planning", "gsd"];
+            const human = !automationClasses.includes(String(ev.pr_class || "").toLowerCase());
+            const stale = process.env.EXPECTED_HEAD_SHA && process.env.EXPECTED_HEAD_SHA !== pr.headRefOid;
+            const eligible =
+              String(pr.state || "").toLowerCase() === "open" &&
+              !pr.mergedAt &&
+              ev.same_repo === true &&
+              ev.is_draft !== true &&
+              (ev.blocking_labels_present || []).length === 0 &&
+              human &&
+              !stale;
+            process.stdout.write(
+              "head_ref=" + pr.headRefName + "\n" +
+              "head_sha=" + pr.headRefOid + "\n" +
+              "auto_merge_enabled=" + Boolean(pr.autoMergeRequest && pr.autoMergeRequest.enabledAt) + "\n" +
+              "eligible=" + eligible + "\n"
+            );
+          ' >> "$GITHUB_OUTPUT"
+
+      - name: React and post skipped (ineligible)
+        if: steps.pr.outputs.eligible != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: |
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" -f content=eyes || true
+          fi
+          node .github/workflows/scripts/upsert-fix-review-comment.cjs --pr "$PR_NUMBER" --mode skipped
+          exit 0
+
+      - name: React eyes
+        if: steps.pr.outputs.eligible == 'true' && github.event.comment.id != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: gh api -X POST "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" -f content=eyes
+
+      - name: Post started
+        if: steps.pr.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          COMMAND: ${{ needs.authorize.outputs.command }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node .github/workflows/scripts/upsert-fix-review-comment.cjs \
+            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" --mode started
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        if: steps.pr.outputs.eligible == 'true'
+        with:
+          ref: ${{ steps.pr.outputs.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        if: steps.pr.outputs.eligible == 'true'
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'true'
+          generate-prisma: 'true'
+          install-gsd: 'true'
+          install-rtk: 'true'
+          install-uv: 'true'
+
+      - uses: ./.github/actions/setup-bot-git
+        if: steps.pr.outputs.eligible == 'true'
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+
+      - name: Collect review feedback
+        if: steps.pr.outputs.eligible == 'true'
+        id: feedback
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+        run: |
+          out="$RUNNER_TEMP/review-feedback.md"
+          node .github/workflows/scripts/collect-review-feedback.cjs \
+            --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --out "$out"
+          echo "path=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Post working
+        if: steps.pr.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          COMMAND: ${{ needs.authorize.outputs.command }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node .github/workflows/scripts/upsert-fix-review-comment.cjs \
+            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" --mode working
+
+      - name: Apply review fixes
+        id: claude
+        if: steps.pr.outputs.eligible == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          model: 'opus'
+          max-turns: ${{ env.MAX_TURNS }}
+          track-progress: 'false'
+          json-schema: '{"type":"object","required":["summary","changed_files","findings_addressed","findings_skipped"],"properties":{"summary":{"type":"string"},"changed_files":{"type":"array","items":{"type":"string"}},"findings_addressed":{"type":"array","items":{"type":"object","required":["file","change"],"properties":{"file":{"type":"string"},"change":{"type":"string"}}}},"findings_skipped":{"type":"array","items":{"type":"object","required":["file","reason"],"properties":{"file":{"type":"string"},"reason":{"type":"string"}}}},"validation":{"type":"object","properties":{"tsc":{"type":"string","enum":["pass","fail","skipped"]},"lint":{"type":"string","enum":["pass","fail","skipped"]},"tests":{"type":"string","enum":["pass","fail","skipped"]},"format":{"type":"string","enum":["pass","fail","skipped"]},"build":{"type":"string","enum":["pass","fail","skipped"]}}}}}'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),mcp__plugin_serena_serena__find_symbol,mcp__plugin_serena_serena__get_symbols_overview,mcp__plugin_serena_serena__find_referencing_symbols,mcp__plugin_serena_serena__find_implementations,mcp__plugin_serena_serena__find_declaration,mcp__plugin_serena_serena__search_for_pattern,mcp__plugin_serena_serena__find_file,mcp__plugin_serena_serena__list_dir,mcp__plugin_serena_serena__read_file,mcp__plugin_serena_serena__get_diagnostics_for_file,mcp__plugin_context7_context7__query-docs,mcp__plugin_context7_context7__resolve-library-id,mcp__plugin_typescript-lsp__*'
+          plugins: |-
+            typescript-lsp@claude-plugins-official
+            serena@claude-plugins-official
+            context7@claude-plugins-official
+            code-review@claude-plugins-official
+            security-guidance@claude-plugins-official
+            code-simplifier@claude-plugins-official
+          plugin-marketplaces: |-
+            https://github.com/anthropics/claude-plugins-official.git
+          prompt: |
+            /gsd:debug
+            Fix the actionable review findings on this pull request.
+
+            COMMAND: ${{ needs.authorize.outputs.command }}
+            PR NUMBER: ${{ needs.authorize.outputs.pr-number }}
+            REPOSITORY: ${{ github.repository }}
+            HEAD REF: ${{ steps.pr.outputs.head_ref }}
+
+            Review feedback has been pre-fetched to: ${{ steps.feedback.outputs.path }}
+            READ THAT FILE FIRST. It contains unresolved, non-outdated review
+            threads, review submissions, and filtered PR comments, plus the diff.
+
+            Rules:
+            - Fix ONLY actionable findings from the feedback file. Ignore nitpicks
+              unless explicitly requested. One root cause per finding.
+            - Iterate with `npx tsc --noEmit` for fast feedback.
+            - Before finishing, run `npm run format`, then the full gate:
+              `npm run test && npm run build`. Never use $queryRawUnsafe (use the
+              Prisma $queryRaw tagged template instead).
+            - Stop early once the gate is green — do not make extra improvements.
+            - If you cannot get the gate green, revert your changes so the tree is
+              clean (the workflow will not push failing code).
+            - Do NOT commit, push, resolve threads, or post PR comments — the
+              workflow enforces the gate, pushes to the branch, and posts the
+              sticky summary.
+            - If more than 8 files need changes, fix the highest-severity findings
+              and report the rest as skipped.
+            - Follow ./docs/code-standards.md and existing conventions.
+
+            Return JSON only with: summary, changed_files[], findings_addressed[]
+            [{file,change}], findings_skipped[] [{file,reason}], and validation
+            {tsc,lint,tests,format,build} each "pass"/"fail"/"skipped".
+
+      - name: 'Validate (match CI: typecheck + tests + lint + format + build + script tests + prisma-safe)'
+        id: validate
+        if: steps.pr.outputs.eligible == 'true'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          npm run test
+          npm run build
+          node --test .github/workflows/scripts/__tests__/*.test.cjs
+          node .github/workflows/scripts/check-prisma-safe-sql.cjs
+
+      - name: Commit and push to the PR branch
+        id: push
+        if: steps.pr.outputs.eligible == 'true' && steps.validate.outcome == 'success'
+        uses: ./.github/actions/commit-and-push
+        with:
+          branch-name: ${{ steps.pr.outputs.head_ref }}
+          commit-message: 'fix(review): address review feedback via /fix-review'
+
+      - name: Disable auto-merge (force re-review of the bot commit)
+        id: automerge
+        if: steps.pr.outputs.eligible == 'true' && steps.push.outputs.pushed == 'true' && steps.pr.outputs.auto_merge_enabled == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+        run: |
+          gh pr merge "$PR_NUMBER" --disable-auto || true
+          echo "disabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Capture pushed commit SHA
+        id: sha
+        if: steps.pr.outputs.eligible == 'true' && steps.push.outputs.pushed == 'true'
+        run: echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Post finished summary
+        if: always() && steps.pr.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          COMMAND: ${{ needs.authorize.outputs.command }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          NUM_TURNS: ${{ steps.claude.outputs.claude_num_turns }}
+          CLAUDE_FAILED: ${{ steps.claude.outputs.claude_failed }}
+          CLAUDE_FAILURE_REASON: ${{ steps.claude.outputs.claude_failure_reason }}
+          OUTCOME: ${{ steps.claude.outcome }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          PUSHED: ${{ steps.push.outputs.pushed }}
+          COMMIT_SHA: ${{ steps.sha.outputs.commit_sha }}
+          AUTOMERGE_DISABLED: ${{ steps.automerge.outputs.disabled }}
+        run: |
+          node .github/workflows/scripts/upsert-fix-review-comment.cjs \
+            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" \
+            --num-turns "$NUM_TURNS" --failed "$CLAUDE_FAILED" --fail-reason "$CLAUDE_FAILURE_REASON" \
+            --outcome "$OUTCOME" --validate-outcome "$VALIDATE_OUTCOME" --pushed "$PUSHED" \
+            --commit-sha "$COMMIT_SHA" --automerge-disabled "$AUTOMERGE_DISABLED" --mode complete
