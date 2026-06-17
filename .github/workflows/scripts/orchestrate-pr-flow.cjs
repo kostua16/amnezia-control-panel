@@ -8,6 +8,9 @@ const {
   collectCheckEvidence,
   getRequiredCheckStatus,
 } = require('./required-check-evidence.cjs');
+// Shared sticky-comment create-or-update helper (single source for the
+// marker-based PR comment upsert used across review/size/orchestration scripts).
+const { upsertComment } = require('./lib/sticky-comment.cjs');
 
 const TIMING_NAMES = [
   'resolve-pr',
@@ -1139,43 +1142,12 @@ function publishFlowStatuses(pr, visibility) {
 }
 
 function upsertFlowComment(pr, body) {
-  const repo = getRepoSlug();
-  const comments = runJson(
-    'gh',
-    ['api', `repos/${repo}/issues/${pr.number}/comments`, '--paginate'],
-    [],
-  );
-  const existing = comments.find(
-    (comment) =>
-      comment.user?.login === 'github-actions[bot]' &&
-      String(comment.body ?? '').includes(COMMENT_MARKER),
-  );
-  const payloadFile = writeTempJson('pr-flow-comment', { body });
-
-  try {
-    if (existing) {
-      run('gh', [
-        'api',
-        '-X',
-        'PATCH',
-        `repos/${repo}/issues/comments/${existing.id}`,
-        '--input',
-        payloadFile,
-      ]);
-      return;
-    }
-
-    run('gh', [
-      'api',
-      '-X',
-      'POST',
-      `repos/${repo}/issues/${pr.number}/comments`,
-      '--input',
-      payloadFile,
-    ]);
-  } finally {
-    fs.rmSync(payloadFile, { force: true });
-  }
+  upsertComment({
+    repo: getRepoSlug(),
+    prNumber: pr.number,
+    marker: COMMENT_MARKER,
+    body,
+  });
 }
 
 function collectConfiguredWorkerRuns(config, workerRuns, getWorkerRuns) {

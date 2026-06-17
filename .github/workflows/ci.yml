@@ -29,12 +29,7 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - name: Block Prisma unsafe raw SQL
-        run: |
-          set -euo pipefail
-          if grep -R --line-number --fixed-strings "\$queryRawUnsafe" src/; then
-            echo "::error::Use Prisma tagged template \$queryRaw instead of \$queryRawUnsafe."
-            exit 1
-          fi
+        run: node .github/workflows/scripts/check-prisma-safe-sql.cjs
 
   typecheck:
     name: Type Check
@@ -63,7 +58,7 @@ jobs:
           generate-prisma: 'true'
           require-gh-auth: 'false'
       - run: npm run test-only
-      - run: node --test .github/workflows/scripts/__tests__/find-duplicate-automation-pr.test.cjs
+      - run: node --test .github/workflows/scripts/__tests__/*.test.cjs
 
   build:
     name: Build
