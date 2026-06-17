@@ -108,3 +108,17 @@ There is no module-level mock API. Use these boundaries instead:
 - **Split by concern**, not by route size: keep validation tests (no DB) and
   DB-path tests (mocked) in separate files when one set would otherwise disturb
   the other — see `users.test.ts` vs `users-db.test.ts`.
+
+## Workflow change protocol
+
+Any change to `.github/workflows/**`, `.github/actions/**`, `.github/workflows/scripts/**`, `policy.json`, or `.github/pr-flow.json` MUST:
+
+1. **Keep the e2e suite green** — run BOTH:
+   - `npm run test-only` (src suite, incl. `src/lib/__tests__/workflow-triggers.test.ts` trigger/concurrency guardrails), AND
+   - `cd .github/workflows && node --test scripts/__tests__/*.test.cjs` (e2e + script-decision tests; this is the `ci.yml:61` step).
+
+   `npm run test-only` alone gives a **false-green** on workflow logic — both are required.
+2. **Update `docs/workflow-e2e-scenarios.md`** when behavior intentionally changes; add a characterization case for any new flow.
+3. **Spec tests for in-progress fixes stay `test.todo`/`test.skip`** (visible, CI-green) — never silently delete a spec test; activate it (`test()`) and implement the fix in the same PR.
+
+The catalog (`docs/workflow-e2e-scenarios.md`) is the source of truth for what the flows do; the tests are the machine-checked enforcement. Rationale and trade-offs: `docs/adr/0001-e2e-characterization-suite-as-workflow-gate.md`.
