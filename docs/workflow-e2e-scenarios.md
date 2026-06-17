@@ -20,7 +20,7 @@ This catalog is the **spec for the characterization + spec test suite** (`script
 
 ## §1 Merge gate — `pr-finalizer.yml` (+ `pr-flow.yml`)
 
-Decision basis: `evaluate-pr-finalizer-decision.cjs` (draft / hard-block / manual-review / manual-only / metadata / check-fail / pending / ready), `required-check-evidence.cjs` (success / **skipped+cancelled→cancel** / failure→fail / missing→pending), `policy.json` (`blockingLabels`, `manualOnlyBranchPrefixes`, `manualOnlyPathGlobs`, `generatedStatePathGlobs`, `trustedPlanning.requiredPassLabels`).
+Decision basis: `evaluate-pr-finalizer-decision.cjs` (draft / hard-block / manual-review / manual-only / metadata / check-fail / pending / ready), `required-check-evidence.cjs` (success→pass / **skipped→skip (non-blocking)** / **cancelled→cancel (blocking)** / failure→fail / missing→pending), `policy.json` (`blockingLabels`, `manualOnlyBranchPrefixes`, `manualOnlyPathGlobs`, `generatedStatePathGlobs`, `trustedPlanning.requiredPassLabels`).
 
 ```mermaid
 flowchart TD
@@ -52,7 +52,7 @@ flowchart TD
 | M8 | `generatedStatePathGlobs` (`graphify-out/**`) | push removes files (`synchronize`)→re-gate; else close | char |
 | M9 | required check **FAILED** | blocked (no auto-merge) | char |
 | M10 | required check **PENDING** | check completes → M13 / M9 | char |
-| M11 | required check **SKIPPED** (job-level) | today: `cancel` bucket → counted **failing** → blocks; **after fix → M13** | **spec P0-1** (`required-check-evidence.cjs:84`, cancel=failing) |
+| M11 | required check **SKIPPED** (job-level) | `skip` bucket (non-blocking) → M13; `cancelled` still blocks | char (`required-check-evidence.cjs:86,185-191`) |
 | M12 | required check **MISSING** (whole wf path-filtered out) | today: stale→close; **after fix: → M13** | **spec P0-1** |
 | M13 | all review labels + checks pass + trusted | `approve_and_enable_automerge` → **merged** | char |
 | M14 | all pass + untrusted branch | manual_only → human **merged** | char |
@@ -283,7 +283,7 @@ flowchart TD
 - **Phase 1 = all `char` green + `spec`/`TR` red, no behavior change. Phase 2 flips each `spec` green via its tagged fix.**
 
 ## Open questions (resolve during characterization)
-1. ~~M11 — cancel-bucket treatment~~ **RESOLVED:** `cancel` → `failing` (`required-check-evidence.cjs:84`), so a skipped/cancelled required check **blocks** today → M11 is **spec P0-1** (red), alongside M12.
+1. ~~M11 — cancel-bucket treatment~~ **RESOLVED & SHIPPED:** skipped and cancelled are now split (`required-check-evidence.cjs:185-191`) — `skipped` → `skip` bucket, **non-blocking** (→ M13); `cancelled` → `cancel` bucket, still **blocking**. M11 is a green char case (`e2e-merge-gate.test.cjs`). M12 (a genuinely-missing check) remains a separate open item.
 2. Exact `fix-issue` label-trigger set (`labelTriggeredFix` branch) — capture in F3.
 3. `gsd-planning-execute` terminal on persistent validation failure (G4) — partial commit or report-only?
 4. `release-notes` output target — release / PR-comment / asset? (N1)
