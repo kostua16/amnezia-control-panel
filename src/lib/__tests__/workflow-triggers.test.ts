@@ -140,6 +140,7 @@ describe('workflow trigger policy', () => {
       /contains\(github\.event\.comment\.body, '\/address-review'\)/,
     );
     assert.match(group, /fix-review-ignored-\{0\}/);
+    assert.match(group, /fix-review-\{0\}/);
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
   });
 
