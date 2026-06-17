@@ -44,7 +44,9 @@ const WS_EVENTS: WsEventType[] = [
  * Poll-only (no WS→RQ mapping):
  * - panel:push-progress — consumed by push-wizard.tsx via lastEvent (no RQ cache)
  */
-const WS_TO_QUERY_KEYS: Partial<Record<WsEventType, readonly (readonly string[])[]>> = {
+const WS_TO_QUERY_KEYS: Partial<
+  Record<WsEventType, readonly (readonly string[])[]>
+> = {
   'stats:update': [
     queryKeys.dashboardStats,
     queryKeys.serviceStatus,
