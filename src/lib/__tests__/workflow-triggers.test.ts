@@ -189,6 +189,26 @@ describe('workflow trigger policy', () => {
     ]);
   });
 
+  it('collects open PR context before proposing improvements', () => {
+    const workflow = readWorkflowText('suggest-improvements.yml');
+
+    assert.match(
+      workflow,
+      /Collect open automation PR context[\s\S]*?gh pr list[\s\S]*?state open/,
+      'suggest-improvements should fetch open PRs before the Claude step',
+    );
+    assert.match(
+      workflow,
+      /steps\.pr_context\.outputs\.context/,
+      'prompt should inject open-PR context from the pre-scan step',
+    );
+    assert.match(
+      workflow,
+      /Do NOT propose improvements that are already implemented/,
+      'context block should instruct Claude to skip already-implemented work',
+    );
+  });
+
   it('prefilters review and orchestrator issue comments before resolver setup', () => {
     expectGuard('code-review.yml', [
       /resolve-pr:[\s\S]*?if: >-/,

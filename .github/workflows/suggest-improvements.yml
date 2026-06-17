@@ -51,6 +51,29 @@ jobs:
           branch-name: claude-workflow-optimize-${{ github.run_id }}
           github-token: ${{ secrets.GH_PAT }}
 
+      - name: Collect open automation PR context
+        id: pr_context
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          OPEN_PRS=$(gh pr list --state open --limit 50 \
+            --json number,title,headRefName,changedFiles \
+            --jq '.[] | "PR #\(.number): \(.title) (branch: \(.headRefName), files: \([.changedFiles[]] | join(", ")))"' \
+            2>/dev/null || echo "")
+          {
+            echo "context<<OPENAUTOPRS"
+            if [ -n "$OPEN_PRS" ]; then
+              echo "## Currently Open PRs (skip proposals already covered)"
+              echo ""
+              echo "$OPEN_PRS"
+              echo ""
+              echo "Do NOT propose improvements that are already implemented in any of these open PRs."
+            else
+              echo "No open PRs found."
+            fi
+            echo "OPENAUTOPRS"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Propose repo-wide improvement follow-ups
         id: claude_run
         uses: ./.github/actions/run-zai
@@ -72,6 +95,8 @@ jobs:
             /gsd:explore
             Perform a deep architectural review of the repository.
             Identify technical debt, missing abstractions, or performance bottlenecks, then record 2-3 concrete follow-up improvements.
+
+            ${{ steps.pr_context.outputs.context }}
 
             Allowed edit scope:
             - `.planning/ROADMAP.md`
