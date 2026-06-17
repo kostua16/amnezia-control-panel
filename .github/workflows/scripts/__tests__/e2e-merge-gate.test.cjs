@@ -16,7 +16,8 @@ const CI = [{ names: ['CI'], workflow: 'CI' }];
 const ciPassing = [buildCheck('CI', { workflow: 'CI' })];
 const ciFailing = [buildCheck('CI', { workflow: 'CI', bucket: 'fail', state: 'failure' })];
 const ciPending = [buildCheck('CI', { workflow: 'CI', bucket: 'pending', state: 'in_progress' })];
-const ciSkipped = [buildCheck('CI', { workflow: 'CI', bucket: 'cancel', state: 'skipped' })];
+const ciSkipped = [buildCheck('CI', { workflow: 'CI', bucket: 'skip', state: 'skipped' })];
+const ciCancelled = [buildCheck('CI', { workflow: 'CI', bucket: 'cancel', state: 'cancelled' })];
 
 // decision helper: trusted-ready policy by default, override per case
 const mg = (policyOverrides, checks = ciPassing) =>
@@ -31,8 +32,15 @@ test('aggregator: failure → failed', () => {
   assert.equal(getRequiredCheckStatus(ciFailing, CI).status, 'failed');
 });
 
-test('M11 char: SKIPPED check → cancel bucket counted as failing (blocks today)', () => {
+test('skipped required check is non-blocking (intentional non-run)', () => {
   const s = getRequiredCheckStatus(ciSkipped, CI);
+  assert.equal(s.status, 'passed');
+  assert.deepEqual(s.failing, []);
+  assert.deepEqual(s.pending, []);
+});
+
+test('cancelled required check still blocks (aborted, did not pass)', () => {
+  const s = getRequiredCheckStatus(ciCancelled, CI);
   assert.equal(s.status, 'failed');
   assert.deepEqual(s.failing, ['CI']);
 });
@@ -82,8 +90,8 @@ test('M10 char: required check PENDING → awaiting_checks', () => {
   assert.equal(mg({}, ciPending), 'awaiting_checks');
 });
 
-test('M11 char: SKIPPED check → blocked (cancel bucket = failing)', () => {
-  assert.equal(mg({}, ciSkipped), 'blocked');
+test('skipped required check does not block merge', () => {
+  assert.equal(mg({}, ciSkipped), 'approve_and_enable_automerge');
 });
 
 test('M12 char: MISSING check → awaiting_checks', () => {
@@ -102,9 +110,11 @@ test('M15 char: missing required_pass_label → awaiting_checks', () => {
   assert.equal(mg({ labels: [] }), 'awaiting_checks');
 });
 
-// ---------- specs (desired; RED today → test.todo, activated + fixed in Phase 2 P0-1) ----------
-test.todo('M11 spec: SKIPPED required check must NOT block → approve_and_enable_automerge (P0-1)');
-test.todo('M12 spec: MISSING (path-filtered) required check must NOT strand PR → approve_and_enable_automerge (P0-1)');
+// ---------- specs (desired; RED today → test.todo, activated + fixed later) ----------
+// M11 (skipped non-blocking) is now active above. M12 is architectural: a
+// genuinely-missing check SHOULD block (pending), so the fix is to make ci.yml
+// always report the required check (guard job) rather than change this script.
+test.todo('ci.yml guard job always reports the required check when path-filtered (M12 / P0-1b)');
 
 // ---------- out of scope for the decision function (documented in the catalog) ----------
 // M6/M8 feed the same manual_only branch as M5 (upstream evaluate-pr-policy sets manual_only).
