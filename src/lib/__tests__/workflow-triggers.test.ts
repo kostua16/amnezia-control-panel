@@ -102,7 +102,7 @@ describe('workflow trigger policy', () => {
     assert.match(group, /github\.event_name == 'issue_comment'/);
     assert.match(
       group,
-      /!contains\(github\.event\.comment\.body, '\/review'\)/,
+      /contains\(github\.event\.comment\.body, '\/review'\)/,
     );
     assert.match(group, /code-review-ignored-\{0\}/);
     assert.match(group, /code-review-\{0\}/);
