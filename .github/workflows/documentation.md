@@ -84,6 +84,15 @@ deepseek-code-review.yml
   -> NOT integrated into pr-flow.yml — runs independently
   -> skips gracefully when DEEPSEEK_API_KEY secret is not set
 
+fix-review.yml
+  -> maintainer-only /fix-review or /address-review PR comment (issue_comment) or workflow_dispatch
+  -> pre-fetches unresolved, non-outdated review threads + reviews + filtered PR comments
+  -> applies fixes in place on the SAME PR head branch (never a new branch, never force-pushes)
+  -> CI-matching gate (npm run test && npm run build + script tests + Prisma-safe check) must pass before push
+  -> disables auto-merge after a fix push so the bot commit is re-reviewed before merge
+  -> sticky summary comment: started -> working -> finished (or skipped / no-changes / push-rejected / validation-failed / failed / cancelled)
+  -> standalone — NOT integrated into pr-flow.yml
+
 dependency-review.yml
   -> dispatch-only worker controlled by pr-flow.yml
   -> produces deps-review-passed / deps-review-manual / deps-review-blocked

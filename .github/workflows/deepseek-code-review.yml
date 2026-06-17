@@ -27,7 +27,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: deepseek-code-review-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha }}
+  group: ${{ ((github.event_name == 'issue_comment' && !(github.event.issue.pull_request != null && github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, '/deepseek-review'))) && format('deepseek-code-review-ignored-{0}', github.run_id)) || format('deepseek-code-review-{0}', github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha) }}
   cancel-in-progress: true
 
 env:
@@ -40,7 +40,8 @@ jobs:
       github.event_name != 'issue_comment' ||
       (
         github.event.issue.pull_request != null &&
-        contains(github.event.comment.body, '/deepseek-review')
+        contains(github.event.comment.body, '/deepseek-review') &&
+        github.event.comment.user.type != 'Bot'
       )
     runs-on: self-hosted
     timeout-minutes: 10
@@ -69,7 +70,8 @@ jobs:
             if (eventName === 'issue_comment') {
               const isPrComment = Boolean(context.payload.issue?.pull_request);
               const wantsReview = context.payload.comment?.body?.includes('/deepseek-review');
-              if (!isPrComment || !wantsReview) {
+              const commenterIsBot = context.payload.comment?.user?.type === 'Bot';
+              if (!isPrComment || !wantsReview || commenterIsBot) {
                 core.setOutput('should_run', 'false');
                 return;
               }

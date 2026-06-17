@@ -3,10 +3,14 @@
 // Owned by the code-review workflow itself so a summary appears on every
 // trigger (workflow_dispatch included), independent of claude-code-action's
 // track_progress (which only posts for pull_request/issue events).
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const {
+  getRepoSlug,
+  upsertComment,
+  parseStructuredOutput,
+  quoteBlock,
+  shortSha,
+  findExistingComment: findExistingCommentByMarker,
+} = require('./lib/sticky-comment.cjs');
 
 const COMMENT_MARKER = '<!-- code-review-summary -->';
 
@@ -24,80 +28,15 @@ function getArg(name, fallback = null) {
   return process.argv[index + 1] ?? fallback;
 }
 
-function getRepoSlug() {
-  const repo = process.env.GH_REPO || process.env.GITHUB_REPOSITORY;
-  if (!repo) {
-    throw new Error('GH_REPO or GITHUB_REPOSITORY is required.');
-  }
-  return repo;
-}
-
-function run(command, args, options = {}) {
-  try {
-    return (
-      execFileSync(command, args, {
-        encoding: 'utf8',
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }) ?? ''
-    ).trim();
-  } catch (error) {
-    const stderr = String(error.stderr ?? '').trim();
-    if (options.allowFailure) {
-      return options.fallback ?? '';
-    }
-    if (stderr) {
-      console.error(stderr);
-    }
-    throw error;
-  }
-}
-
-function runJson(command, args, fallback = []) {
-  const output = run(command, args, {
-    allowFailure: fallback !== undefined,
-    fallback: JSON.stringify(fallback),
-  });
-  return output ? JSON.parse(output) : fallback;
-}
-
-function writeTempJson(prefix, payload) {
-  const filePath = path.join(
-    os.tmpdir(),
-    `${prefix}-${process.pid}-${Date.now()}.json`,
-  );
-  fs.writeFileSync(filePath, JSON.stringify(payload), 'utf8');
-  return filePath;
-}
-
-// Parses the structured review output defensively: empty/invalid JSON -> {}.
-function parseStructuredOutput(raw) {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
+// Preserve the historical single-arg signature expected by callers/tests;
+// the marker is this script's own.
+const findExistingComment = (comments) =>
+  findExistingCommentByMarker(comments, COMMENT_MARKER);
 
 function verdictIcon(verdict) {
   if (verdict === 'concerns') return '⚠️';
   if (verdict === 'passed') return '✅';
   return 'ℹ️';
-}
-
-function shortSha(sha) {
-  return sha ? String(sha).slice(0, 12) : 'unknown';
-}
-
-// Prefix every line with "> " so multi-line text stays inside a Markdown
-// blockquote instead of leaking into the surrounding body.
-function quoteBlock(text) {
-  return String(text)
-    .split('\n')
-    .map((line) => `> ${line}`)
-    .join('\n');
 }
 
 function renderStarted({ headSha, runUrl, startedAt }) {
@@ -250,53 +189,6 @@ function renderComplete({
   return sections.join('\n');
 }
 
-function findExistingComment(comments) {
-  return (
-    comments.find(
-      (comment) =>
-        comment.user?.login === 'github-actions[bot]' &&
-        String(comment.body ?? '').includes(COMMENT_MARKER),
-    ) ?? null
-  );
-}
-
-function listComments(repo, prNumber) {
-  return runJson(
-    'gh',
-    ['api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate'],
-    [],
-  );
-}
-
-function upsertComment({ repo, prNumber, body }) {
-  const existing = findExistingComment(listComments(repo, prNumber));
-  const payloadPath = writeTempJson('code-review-comment', { body });
-
-  try {
-    if (existing) {
-      run('gh', [
-        'api',
-        '-X',
-        'PATCH',
-        `repos/${repo}/issues/comments/${existing.id}`,
-        '--input',
-        payloadPath,
-      ]);
-      return;
-    }
-    run('gh', [
-      'api',
-      '-X',
-      'POST',
-      `repos/${repo}/issues/${prNumber}/comments`,
-      '--input',
-      payloadPath,
-    ]);
-  } finally {
-    fs.rmSync(payloadPath, { force: true });
-  }
-}
-
 function main() {
   const repo = getRepoSlug();
   const prNumber = Number(getArg('--pr', getArg('--pr-number')));
@@ -339,7 +231,7 @@ function main() {
     }
   }
 
-  upsertComment({ repo, prNumber, body });
+  upsertComment({ repo, prNumber, marker: COMMENT_MARKER, body });
 }
 
 if (require.main === module) {
