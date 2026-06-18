@@ -44,8 +44,45 @@ jobs:
           install-rtk: 'true'
           install-uv: 'true'
 
+      - name: Check for pending suggest-improvements PRs
+        id: pending_suggest
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          PENDING=$(gh pr list --repo "${{ github.repository }}" --state open \
+            --base main \
+            --json number,title,headRefName \
+            --jq '[.[] | select(.title | test("^planning: repo-wide improvement follow-ups"))
+              | select(.headRefName != "claude-workflow-optimize-${{ github.run_id }}")
+              | .number] | first // empty')
+          if [ -n "$PENDING" ]; then
+            echo "pending=true" >> "$GITHUB_OUTPUT"
+            echo "pending_pr=${PENDING}" >> "$GITHUB_OUTPUT"
+            echo "Skipping: pending suggest-improvements PR #${PENDING} already open."
+          else
+            echo "pending=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Gather open PR context for dedup
+        id: open_prs
+        if: steps.pending_suggest.outputs.pending != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          {
+            echo "# Open Automation PRs (for dedup context)"
+            echo ""
+            gh pr list --repo "${{ github.repository }}" --state open \
+              --base main \
+              --json number,title,headRefName,labels \
+              --jq '.[] | "## #\(.number): \(.title)\nBranch: \(.headRefName)\nLabels: \([.labels[].name] | join(", "))\n"' \
+            | head -300
+          } > /tmp/open-prs-context.md
+          echo "Wrote $(wc -l < /tmp/open-prs-context.md) lines to /tmp/open-prs-context.md"
+
       - name: Prepare improvement branch
         id: branch
+        if: steps.pending_suggest.outputs.pending != 'true'
         uses: ./.github/actions/prepare-automation-branch
         with:
           branch-name: claude-workflow-optimize-${{ github.run_id }}
@@ -72,6 +109,8 @@ jobs:
             /gsd:explore
             Perform a deep architectural review of the repository.
             Identify technical debt, missing abstractions, or performance bottlenecks, then record 2-3 concrete follow-up improvements.
+
+            **Before proposing new improvements**, read `/tmp/open-prs-context.md` to see what work is already in progress or proposed in open PRs. Exclude any topics that are already covered by existing open PRs to avoid duplication.
 
             Allowed edit scope:
             - `.planning/ROADMAP.md`
