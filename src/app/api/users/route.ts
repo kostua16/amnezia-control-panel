@@ -8,6 +8,8 @@ import { createAwgUser, createThreeXuiUser } from '@/lib/vpn-services';
 import type { VpnServiceResult } from '@/lib/vpn-services';
 import { apiHandler } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
+import { createAlert } from '@/lib/alert-service';
+import { AlertSeverity } from '@/generated/prisma/enums';
 
 const listUsersSchema = z.object({
   search: z.string().optional().default(''),
@@ -198,6 +200,21 @@ export const POST = apiHandler(async (request: NextRequest) => {
 
   const allVpnSuccess =
     vpnResults.length > 0 && vpnResults.every((r) => r.success);
+
+  // Create a WARNING alert if any VPN service provisioning failed
+  if (!allVpnSuccess) {
+    const failedServices = vpnResults
+      .filter((r) => !r.success)
+      .map((r) => r.serviceType);
+    const alert = await createAlert(
+      'vpn-provisioning',
+      AlertSeverity.WARNING,
+      `User "${username}" created but VPN provisioning incomplete: ${failedServices.join(', ')}`,
+    );
+    console.log(
+      `[api/users POST] Created alert ${alert.id} for partial VPN provisioning failure`,
+    );
+  }
 
   // Compensating transaction for failed provisioning: mark every protocol
   // whose remote service could not be created as inactive. If no service
