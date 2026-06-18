@@ -63,8 +63,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
       where,
       include: {
         protocols: {
-          where: { isActive: true },
-          select: { serviceType: true },
+          select: { serviceType: true, isActive: true },
         },
       },
       orderBy: { [sortBy]: sortOrder },
@@ -74,18 +73,22 @@ export const GET = apiHandler(async (request: NextRequest) => {
     prisma.user.count({ where }),
   ]);
 
-  const data = users.map((user) => ({
-    id: user.id,
-    username: user.username,
-    displayName: user.displayName,
-    isActive: user.isActive,
-    isBlocked: user.isBlocked,
-    trafficQuotaBytes: user.trafficQuotaBytes,
-    speedLimitKbps: user.speedLimitKbps,
-    assignedServices: user.protocols.map((p) => p.serviceType),
-    createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString(),
-  }));
+  const data = users.map((user) => {
+    const activeProtocols = user.protocols.filter((p) => p.isActive);
+    return {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      isActive: user.isActive,
+      isBlocked: user.isBlocked,
+      trafficQuotaBytes: user.trafficQuotaBytes,
+      speedLimitKbps: user.speedLimitKbps,
+      assignedServices: activeProtocols.map((p) => p.serviceType),
+      hasPartialProvisioning: user.protocols.some((p) => !p.isActive),
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    };
+  });
 
   return NextResponse.json({
     success: true,

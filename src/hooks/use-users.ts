@@ -20,6 +20,7 @@ export interface UserListItem {
   trafficQuotaBytes: number;
   speedLimitKbps: number;
   assignedServices: ServiceType[];
+  hasPartialProvisioning: boolean;
   createdAt: string;
   updatedAt: string;
 }

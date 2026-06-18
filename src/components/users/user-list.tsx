@@ -12,6 +12,8 @@ import {
   ChevronRight,
   Loader2,
   Gauge,
+  TriangleAlert,
+  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,6 +66,7 @@ interface UserItem {
   trafficQuotaBytes: number;
   speedLimitKbps: number;
   assignedServices: string[];
+  hasPartialProvisioning: boolean;
 }
 
 export function UserList() {
@@ -79,6 +82,7 @@ export function UserList() {
   const [quotaUserId, setQuotaUserId] = useState<number | null>(null);
   const [blockLoadingId, setBlockLoadingId] = useState<number | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<number | null>(null);
+  const [syncLoadingId, setSyncLoadingId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Debounce search input by 300ms
@@ -187,6 +191,35 @@ export function UserList() {
       }
     },
     [toggleUserBlock, refetch],
+  );
+
+  const handleResync = useCallback(
+    async (userId: number) => {
+      setSyncLoadingId(userId);
+      setActionError(null);
+
+      try {
+        const response = await fetch(`/api/users/${userId}/sync`, {
+          method: 'POST',
+        });
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Failed to sync user');
+        }
+
+        refetch();
+      } catch (err) {
+        setActionError(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Failed to sync user.',
+        );
+      } finally {
+        setSyncLoadingId(null);
+      }
+    },
+    [refetch],
   );
 
   // Loading state
@@ -317,10 +350,18 @@ export function UserList() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <UserStatusBadge
-                      isActive={user.isActive}
-                      isBlocked={user.isBlocked}
-                    />
+                    <div className="flex items-center gap-2">
+                      <UserStatusBadge
+                        isActive={user.isActive}
+                        isBlocked={user.isBlocked}
+                      />
+                      {user.hasPartialProvisioning && (
+                        <TriangleAlert
+                          className="h-4 w-4 text-yellow-600 dark:text-yellow-500"
+                          aria-label="VPN provisioning incomplete"
+                        />
+                      )}
+                    </div>
                   </td>
                   <td className="hidden px-4 py-3 sm:table-cell">
                     <UserServiceBadge
@@ -374,6 +415,20 @@ export function UserList() {
                           <ShieldCheck className="h-4 w-4" />
                         ) : (
                           <Ban className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleResync(user.id)}
+                        disabled={syncLoadingId === user.id}
+                        aria-label={`Re-sync ${user.username}`}
+                      >
+                        {syncLoadingId === user.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
                         )}
                       </Button>
                       <Button
