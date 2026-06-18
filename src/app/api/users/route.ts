@@ -8,8 +8,9 @@ import { createAwgUser, createThreeXuiUser } from '@/lib/vpn-services';
 import type { VpnServiceResult } from '@/lib/vpn-services';
 import { apiHandler } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
-import { createAlert } from '@/lib/alert-service';
+import { createAlert, markAlertRead } from '@/lib/alert-service';
 import { AlertSeverity } from '@/generated/prisma/enums';
+import { syncUser } from '@/lib/user-sync';
 
 const listUsersSchema = z.object({
   search: z.string().optional().default(''),
@@ -202,6 +203,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
     vpnResults.length > 0 && vpnResults.every((r) => r.success);
 
   // Create a WARNING alert if any VPN service provisioning failed
+  let alertId: number | null = null;
   if (!allVpnSuccess) {
     const failedServices = vpnResults
       .filter((r) => !r.success)
@@ -211,9 +213,33 @@ export const POST = apiHandler(async (request: NextRequest) => {
       AlertSeverity.WARNING,
       `User "${username}" created but VPN provisioning incomplete: ${failedServices.join(', ')}`,
     );
+    alertId = alert.id;
     console.log(
       `[api/users POST] Created alert ${alert.id} for partial VPN provisioning failure`,
     );
+  }
+
+  // Trigger immediate retry via syncUser if provisioning failed
+  if (alertId !== null) {
+    try {
+      const syncReport = await syncUser(user.id);
+      if (syncReport.errors.length === 0) {
+        // Retry succeeded - resolve the alert
+        await markAlertRead(alertId);
+        console.log(
+          `[api/users POST] Retry succeeded for ${username}, resolved alert ${alertId}`,
+        );
+      } else {
+        console.log(
+          `[api/users POST] Retry failed for ${username}, alert ${alertId} remains visible`,
+        );
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[api/users POST] Retry attempt failed for ${username}: ${msg}`,
+      );
+    }
   }
 
   // Compensating transaction for failed provisioning: mark every protocol
