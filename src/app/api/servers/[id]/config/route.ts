@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
+import { hashSecret } from '@/lib/crypto';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -127,8 +128,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     if (isActive !== undefined) serverUpdateData.isActive = isActive;
 
     if (apiKey !== undefined) {
-      const bcrypt = await import('bcryptjs');
-      serverUpdateData.apiKeyHash = await bcrypt.hash(apiKey, 10);
+      serverUpdateData.apiKeyHash = await hashSecret(apiKey);
     }
 
     // Apply service-level overrides

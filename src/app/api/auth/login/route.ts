@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SignJWT } from 'jose';
 import { z } from 'zod';
-import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { seedAdmin } from '@/lib/seed';
+import { verifySecret } from '@/lib/crypto';
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const isValid = await bcrypt.compare(password, admin.password);
+    const isValid = await verifySecret(password, admin.password);
     if (!isValid) {
       return NextResponse.json(
         { error: 'Invalid credentials' },

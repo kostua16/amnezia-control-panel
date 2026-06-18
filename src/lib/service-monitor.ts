@@ -1,4 +1,7 @@
-import { execFileSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 export interface ServiceHealth {
   service: string;
@@ -18,19 +21,25 @@ const SERVICE_MAP: Record<ServiceKey, string> = {
  * Check the current status of a single VPN service via systemctl.
  * Returns 'online' if the service is active, 'offline' otherwise.
  */
-export function checkServiceStatus(serviceKey: ServiceKey): ServiceHealth {
+export async function checkServiceStatus(
+  serviceKey: ServiceKey,
+): Promise<ServiceHealth> {
   const systemdName = SERVICE_MAP[serviceKey];
 
   try {
-    const result = execFileSync('systemctl', ['is-active', systemdName], {
-      encoding: 'utf-8',
-      timeout: 5000,
-    }).trim();
+    const { stdout } = await execFileAsync(
+      'systemctl',
+      ['is-active', systemdName],
+      {
+        encoding: 'utf-8',
+        timeout: 5000,
+      },
+    );
 
     return {
       service: serviceKey,
       systemdName,
-      status: result === 'active' ? 'online' : 'offline',
+      status: stdout.trim() === 'active' ? 'online' : 'offline',
       timestamp: new Date().toISOString(),
     };
   } catch (err) {
@@ -50,20 +59,20 @@ export function checkServiceStatus(serviceKey: ServiceKey): ServiceHealth {
 /**
  * Check the status of all VPN services.
  */
-export function checkAllServices(): ServiceHealth[] {
+export async function checkAllServices(): Promise<ServiceHealth[]> {
   const services: ServiceKey[] = ['awg', '3x-ui'];
-  return services.map(checkServiceStatus);
+  return Promise.all(services.map(checkServiceStatus));
 }
 
 /**
  * Attempt to restart a VPN service via systemctl.
  * Returns true if the restart command succeeded, false otherwise.
  */
-export function restartService(serviceKey: ServiceKey): boolean {
+export async function restartService(serviceKey: ServiceKey): Promise<boolean> {
   const systemdName = SERVICE_MAP[serviceKey];
 
   try {
-    execFileSync('systemctl', ['restart', systemdName], {
+    await execFileAsync('systemctl', ['restart', systemdName], {
       timeout: 15000,
     });
     return true;
@@ -106,7 +115,7 @@ export class ServiceMonitor {
 
     const check = async () => {
       for (const serviceKey of this.services) {
-        const health = checkServiceStatus(serviceKey);
+        const health = await checkServiceStatus(serviceKey);
         const previous = lastStatuses[serviceKey];
 
         if (previous === undefined) {
@@ -115,10 +124,10 @@ export class ServiceMonitor {
         } else if (previous === 'online' && health.status === 'offline') {
           // Detect transition from online -> offline
           if (this.autoRestart) {
-            const restarted = restartService(serviceKey);
+            const restarted = await restartService(serviceKey);
             if (restarted) {
               // Re-check after restart
-              const newHealth = checkServiceStatus(serviceKey);
+              const newHealth = await checkServiceStatus(serviceKey);
               if (newHealth.status === 'online') {
                 health.status = 'online';
               }

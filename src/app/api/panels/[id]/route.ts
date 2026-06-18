@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
+import { hashSecret } from '@/lib/crypto';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -103,8 +104,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     if (isActive !== undefined) updateData.isActive = isActive;
 
     if (apiKey !== undefined) {
-      const bcrypt = await import('bcryptjs');
-      updateData.apiKeyHash = await bcrypt.hash(apiKey, 10);
+      updateData.apiKeyHash = await hashSecret(apiKey);
     }
 
     const updated = await prisma.remotePanel.update({

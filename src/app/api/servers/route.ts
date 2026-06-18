@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
+import { hashSecret } from '@/lib/crypto';
 import { apiHandler } from '@/lib/api-handler';
 import { validationError } from '@/lib/api-response';
 
@@ -63,7 +63,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
   const { name, hostname, port, apiKey } = parsed.data;
 
   // Hash the API key before storing
-  const apiKeyHash = await bcrypt.hash(apiKey, 10);
+  const apiKeyHash = await hashSecret(apiKey);
 
   const server = await prisma.server.create({
     data: {

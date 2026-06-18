@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
 import { writeAuditLog } from '@/lib/audit-log';
+import { verifySecret } from '@/lib/crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
@@ -193,10 +194,9 @@ export async function POST(request: NextRequest) {
     });
 
     let matchedPanel: (typeof panels)[number] | null = null;
-    const bcrypt = await import('bcryptjs');
 
     for (const panel of panels) {
-      const isValid = await bcrypt.compare(apiKey, panel.apiKeyHash);
+      const isValid = await verifySecret(apiKey, panel.apiKeyHash);
       if (isValid) {
         matchedPanel = panel;
         break;
