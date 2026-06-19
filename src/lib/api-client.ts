@@ -28,7 +28,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
  *
  * Filters out undefined values and converts to URLSearchParams.
  */
-function buildUrl(path: string, params?: Record<string, unknown>): string {
+function buildUrl(path: string, params?: object): string {
   if (!params || Object.keys(params).length === 0) {
     return path;
   }
@@ -79,7 +79,7 @@ async function parseErrorResponse(response: Response): Promise<string> {
  */
 export async function apiGet<T>(
   path: string,
-  params?: Record<string, unknown>,
+  params?: object,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
   const url = buildUrl(path, params);
@@ -99,18 +99,6 @@ export async function apiGet<T>(
     }
 
     const json = await response.json();
-
-    // Handle { success: true, data: ... } envelope
-    if (json && typeof json === 'object' && 'success' in json) {
-      if (json.success === true && 'data' in json) {
-        return json.data as T;
-      }
-      if (json.success === false && 'error' in json) {
-        throw new Error(String(json.error));
-      }
-    }
-
-    // Direct response (no envelope)
     return json as T;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
@@ -157,18 +145,6 @@ export async function apiMutate<T>(
     }
 
     const json = await response.json();
-
-    // Handle { success: true, data: ... } envelope
-    if (json && typeof json === 'object' && 'success' in json) {
-      if (json.success === true && 'data' in json) {
-        return json.data as T;
-      }
-      if (json.success === false && 'error' in json) {
-        throw new Error(String(json.error));
-      }
-    }
-
-    // Direct response (no envelope)
     return json as T;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
