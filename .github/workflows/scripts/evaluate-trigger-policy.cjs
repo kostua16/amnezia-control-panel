@@ -394,11 +394,19 @@ if (mode === 'fix-pr') {
   const sourcePrAuthorLogin = String(sourcePrAuthor.login ?? '');
   const sourcePrAuthorType = String(sourcePrAuthor.type ?? '');
   const hasBotAuthor = isBotAccount(sourcePrAuthor);
+  const attemptCount = Number(sourcePr.auto_fix_attempt_count ?? 0);
+  const maxAttempts = Number(policy.maxAutoFixAttempts ?? 0);
+  const capReached = maxAttempts > 0 && attemptCount >= maxAttempts;
   const shouldRun =
-    !hasAutomationBranchPrefix && !hasAutoFixLabel && !hasBotAuthor;
+    !hasAutomationBranchPrefix &&
+    !hasAutoFixLabel &&
+    !hasBotAuthor &&
+    !capReached;
   let reason = null;
 
-  if (hasAutoFixLabel) {
+  if (capReached) {
+    reason = `auto-fix attempt cap reached (${attemptCount}/${maxAttempts}); stopping to avoid a fix loop`;
+  } else if (hasAutoFixLabel) {
     reason = 'source PR already has the auto-fix label';
   } else if (hasAutomationBranchPrefix) {
     reason = `source PR branch ${headRefName} already matches an automation prefix`;
@@ -415,6 +423,8 @@ if (mode === 'fix-pr') {
         labels,
         source_pr_author_login: sourcePrAuthorLogin || null,
         source_pr_author_type: sourcePrAuthorType || null,
+        auto_fix_attempt_count: attemptCount,
+        max_auto_fix_attempts: maxAttempts,
         reason,
       },
       null,

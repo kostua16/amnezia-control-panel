@@ -33,6 +33,7 @@
     "maxChangedLines": 300
   },
   "fixApprovalLabel": "auto-fix-approved",
+  "maxAutoFixAttempts": 3,
   "blockingLabels": [
     "do-not-merge",
     "ai-review-concerns",

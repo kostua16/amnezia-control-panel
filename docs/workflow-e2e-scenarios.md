@@ -96,7 +96,7 @@ flowchart TD
 | A5 | CI **passes** | conclusion≠failure → not triggered → n/a | char |
 | A6 | fix produces no changes | sticky `no-changes` → no commit → **reported** | char |
 | A7 | fix fails CI-matching gate before push | `validation-failed`/`push-rejected` → no push → **reported** | char |
-| A8 | fix-PR's own CI keeps failing | fix-pr re-fires unbounded → runaway cost → stale→close | **spec P0-2** (attempt cap) |
+| A8 | fix-PR's own CI keeps failing | capped after `maxAutoFixAttempts` (3): evaluate-trigger-policy declines further runs → **reported** (no loop) | char (P0-2) |
 | A9 | maintainer `/approve` on automation PR | approve-auto-fix → approve + auto-merge → **merged** | char |
 | A10 | non-CI workflow failure (review/dep/etc.) | fix-* CI-scoped → **no-op** (no auto-fix) | char |
 | A11 | fix push disables auto-merge | bot commit needs re-review → manual → **merged** | char |
