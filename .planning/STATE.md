@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: complete
+status: Milestone v1.1 archived 2026-06-11
 stopped_at: null
-last_updated: '2026-06-12T20:01:55Z'
+last_updated: "2026-06-19T19:54:47.911Z"
 last_activity: 2026-06-12 -- Loosen audit-safe auto-approval criteria
 progress:
   total_phases: 24
