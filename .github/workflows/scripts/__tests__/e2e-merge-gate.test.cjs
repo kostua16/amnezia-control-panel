@@ -4,24 +4,30 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const {
-  buildCheck,
-  mergeGateDecision,
-} = require('../lib/e2e-simulator.cjs');
+const { buildCheck, mergeGateDecision } = require('../lib/e2e-simulator.cjs');
 const { getRequiredCheckStatus } = require('../required-check-evidence.cjs');
 
 // Model CI as a single required check named "CI" (decision logic is independent
 // of how many jobs ci.yml has).
 const CI = [{ names: ['CI'], workflow: 'CI' }];
 const ciPassing = [buildCheck('CI', { workflow: 'CI' })];
-const ciFailing = [buildCheck('CI', { workflow: 'CI', bucket: 'fail', state: 'failure' })];
-const ciPending = [buildCheck('CI', { workflow: 'CI', bucket: 'pending', state: 'in_progress' })];
-const ciSkipped = [buildCheck('CI', { workflow: 'CI', bucket: 'skip', state: 'skipped' })];
-const ciCancelled = [buildCheck('CI', { workflow: 'CI', bucket: 'cancel', state: 'cancelled' })];
+const ciFailing = [
+  buildCheck('CI', { workflow: 'CI', bucket: 'fail', state: 'failure' }),
+];
+const ciPending = [
+  buildCheck('CI', { workflow: 'CI', bucket: 'pending', state: 'in_progress' }),
+];
+const ciSkipped = [
+  buildCheck('CI', { workflow: 'CI', bucket: 'skip', state: 'skipped' }),
+];
+const ciCancelled = [
+  buildCheck('CI', { workflow: 'CI', bucket: 'cancel', state: 'cancelled' }),
+];
 
 // decision helper: trusted-ready policy by default, override per case
 const mg = (policyOverrides, checks = ciPassing) =>
-  mergeGateDecision({ policy: policyOverrides, checks, requiredChecks: CI }).decision;
+  mergeGateDecision({ policy: policyOverrides, checks, requiredChecks: CI })
+    .decision;
 
 // ---------- required-check aggregator (the M11/M12 bug surface) ----------
 test('aggregator: success → passed', () => {
@@ -76,20 +82,29 @@ test('M2 char: hard block label → blocked', () => {
 
 test('M3 char: needs-review, non-maintainer → manual_only', () => {
   assert.equal(
-    mg({ blocking_labels_present: ['needs-review'], maintainer_approved: false }),
+    mg({
+      blocking_labels_present: ['needs-review'],
+      maintainer_approved: false,
+    }),
     'manual_only',
   );
 });
 
 test('M4 char: needs-review, maintainer-approved → approve_and_enable_automerge', () => {
   assert.equal(
-    mg({ blocking_labels_present: ['needs-review'], maintainer_approved: true }),
+    mg({
+      blocking_labels_present: ['needs-review'],
+      maintainer_approved: true,
+    }),
     'approve_and_enable_automerge',
   );
 });
 
 test('M5 char: manualOnly policy → manual_only', () => {
-  assert.equal(mg({ manual_only: true, maintainer_approved: false }), 'manual_only');
+  assert.equal(
+    mg({ manual_only: true, maintainer_approved: false }),
+    'manual_only',
+  );
 });
 
 test('M7 char: fork / cross-repo (same_repo=false) → manual_only', () => {
@@ -124,11 +139,12 @@ test('M15 char: missing required_pass_label → awaiting_checks', () => {
   assert.equal(mg({ labels: [] }), 'awaiting_checks');
 });
 
-// ---------- specs (desired; RED today → test.todo, activated + fixed later) ----------
-// M11 (skipped non-blocking) is now active above. M12 is architectural: a
-// genuinely-missing check SHOULD block (pending), so the fix is to make ci.yml
-// always report the required check (guard job) rather than change this script.
-test.todo('ci.yml guard job always reports the required check when path-filtered (M12 / P0-1b)');
+// ---------- specs ----------
+// M11 (skipped non-blocking) + M12 (path-filtered required check) resolved:
+// ci.yml gates heavy jobs on a `changes` job (P0-1b) so docs-only changes skip
+// them — the required checks report `skipped`, which is non-blocking (P0-1a).
+// A genuinely-missing check still correctly blocks (pending) — see M12 char tests.
+// Guarded by workflow-triggers.test.ts (heavy jobs need [changes]).
 
 // ---------- out of scope for the decision function (documented in the catalog) ----------
 // M6/M8 feed the same manual_only branch as M5 (upstream evaluate-pr-policy sets manual_only).

@@ -15,8 +15,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: self-hosted
+    timeout-minutes: 5
+    outputs:
+      run-heavy: ${{ steps.detect.outputs.run-heavy }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          fetch-depth: 0
+      - name: Detect code-relevant changes
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            RANGE="$PR_BASE..$PR_HEAD"
+          elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="HEAD~1..HEAD"
+          else
+            RANGE="$PUSH_BEFORE..$PUSH_AFTER"
+          fi
+          CHANGED=$(git diff --name-only "$RANGE" 2>/dev/null || true)
+          # docs-only = markdown, docs/, LICENSE, .editorconfig. If changes can't
+          # be determined, run heavy (safe default).
+          if [ -z "$CHANGED" ] || printf '%s\n' "$CHANGED" | grep -Evq '^(docs/|.*\.md$|LICENSE$|\.editorconfig$)'; then
+            echo "run-heavy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run-heavy=false" >> "$GITHUB_OUTPUT"
+          fi
   lint:
     name: Lint
+    needs: [changes]
+    if: needs.changes.outputs.run-heavy == 'true'
     runs-on: [self-hosted, big]
     timeout-minutes: 10
     steps:
@@ -33,6 +70,8 @@ jobs:
 
   typecheck:
     name: Type Check
+    needs: [changes]
+    if: needs.changes.outputs.run-heavy == 'true'
     runs-on: [self-hosted, big]
     timeout-minutes: 10
     steps:
@@ -47,6 +86,8 @@ jobs:
 
   test:
     name: Test
+    needs: [changes]
+    if: needs.changes.outputs.run-heavy == 'true'
     runs-on: [self-hosted, big]
     timeout-minutes: 10
     steps:
@@ -62,6 +103,8 @@ jobs:
 
   build:
     name: Build
+    needs: [changes]
+    if: needs.changes.outputs.run-heavy == 'true'
     runs-on: [self-hosted, big]
     timeout-minutes: 10
     steps:
@@ -100,6 +143,8 @@ jobs:
 
   security-audit:
     name: Security Audit
+    needs: [changes]
+    if: needs.changes.outputs.run-heavy == 'true'
     runs-on: [self-hosted, big]
     timeout-minutes: 10
     steps:
