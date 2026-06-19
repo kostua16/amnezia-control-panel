@@ -322,6 +322,30 @@ describe('filterRequiredChecks', () => {
     assert.equal(decision.dispatch?.key, 'finalizer');
   });
 
+  it('normalizes skipped required checks to the non-blocking skip bucket', () => {
+    const filtered = filterRequiredChecks(
+      config,
+      requiredCheckNames.map((name) => ({
+        name,
+        workflow: 'CI',
+        state: 'skipped',
+      })),
+    );
+    assert.ok(filtered.every((check: Check) => check.bucket === 'skip'));
+  });
+
+  it('normalizes cancelled required checks to the blocking cancel bucket', () => {
+    const filtered = filterRequiredChecks(
+      config,
+      requiredCheckNames.map((name) => ({
+        name,
+        workflow: 'CI',
+        state: 'cancelled',
+      })),
+    );
+    assert.ok(filtered.every((check: Check) => check.bucket === 'cancel'));
+  });
+
   it('synthesizes pending entries for missing configured CI checks', () => {
     const filtered = filterRequiredChecks(
       config,
