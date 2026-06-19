@@ -83,6 +83,20 @@ function getRequiredCheckStatus(checks, requiredChecks) {
 
       if (bucket === 'fail' || bucket === 'cancel' || state === 'failure') {
         failing.push(name);
+      } else if (bucket === 'skip') {
+        // Intentionally skipped (job `if:` false) → non-blocking, UNLESS a
+        // sibling job in the same workflow failed. GitHub marks a failed
+        // `needs:` dependency's dependents as conclusion "skipped", which would
+        // otherwise mask a real failure; fall back to blocking then. See #443.
+        const siblingFailed = checks.some(
+          (c) =>
+            c !== match &&
+            (c.workflow ?? '') === (match.workflow ?? '') &&
+            String(c.bucket ?? '').toLowerCase() === 'fail',
+        );
+        if (siblingFailed) {
+          failing.push(name);
+        }
       } else if (bucket !== 'pass' && state !== 'success') {
         pending.push(name);
       }
@@ -177,8 +191,15 @@ function mapJobConclusion(job) {
     return { bucket: 'pass', state: 'success' };
   }
 
-  if (conclusion === 'cancelled' || conclusion === 'skipped') {
-    return { bucket: 'cancel', state: conclusion };
+  // A skipped job (its `if:` evaluated false) is an intentional non-run and must
+  // not block a merge. A cancelled job was aborted mid-run and did not actually
+  // pass, so it stays blocking. See docs/workflow-e2e-scenarios.md (merge gate).
+  if (conclusion === 'skipped') {
+    return { bucket: 'skip', state: 'skipped' };
+  }
+
+  if (conclusion === 'cancelled') {
+    return { bucket: 'cancel', state: 'cancelled' };
   }
 
   if (

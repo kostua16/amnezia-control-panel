@@ -473,3 +473,11 @@ All GSD slash commands in workflow prompts **must** use the colon namespace form
 ## Syntax Gate
 
 `actionlint` should remain the mandatory syntax check after any workflow edit. Run it before merging workflow changes.
+
+---
+
+## See also
+
+- [`CONTEXT.md`](./CONTEXT.md) — glossary for the workflow-automation sub-system (sharpens overloaded terms like "required check").
+- [`../../docs/workflow-e2e-scenarios.md`](../../docs/workflow-e2e-scenarios.md) — exhaustive e2e scenario catalog (trigger → terminal) and the machine-checked gate for any workflow change.
+- [`../../docs/gh-workflows-architecture-review.md`](../../docs/gh-workflows-architecture-review.md) — architecture review + prioritized (P0/P1/P2) backlog.

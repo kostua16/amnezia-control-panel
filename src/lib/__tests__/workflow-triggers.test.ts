@@ -213,4 +213,22 @@ describe('workflow trigger policy', () => {
       /node \.github\/workflows\/scripts\/evaluate-trigger-policy\.cjs[\s\S]*?--mode pr-flow-approve/,
     ]);
   });
+
+  // §5 cancellation cascade — locks the pr-flow prt/wake design (PR #434).
+  it('isolates prt and wake concurrency in pr-flow (cancellation cascade)', () => {
+    const workflow = readWorkflowText('pr-flow.yml');
+    // prt (pull_request_target) and wakes run in separate groups, so a wake can
+    // never cancel an in-flight prt orchestrate (and vice versa).
+    assert.match(
+      workflow,
+      /group: pr-flow-\$\{\{ \(github\.event_name == 'pull_request_target' && 'prt'\) \|\| 'wake' \}/,
+    );
+    // prt opened/synchronize/ready_for_review DO cancel an older prt (a new commit
+    // restarts orchestration); prt labeled/unlabeled do NOT (anti-thrash, since
+    // orchestrate itself adds flow/* labels); wakes always collapse to newest.
+    assert.match(
+      workflow,
+      /cancel-in-progress: \$\{\{ github\.event_name != 'pull_request_target' \|\| \(github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\) \}\}/,
+    );
+  });
 });
