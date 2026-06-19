@@ -231,4 +231,15 @@ describe('workflow trigger policy', () => {
       /cancel-in-progress: \$\{\{ github\.event_name != 'pull_request_target' \|\| \(github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\) \}\}/,
     );
   });
+
+  // P0-1b — heavy CI jobs are gated on the `changes` job, so docs-only changes
+  // skip them; skipped required checks are non-blocking (P0-1a).
+  it('gates heavy CI jobs on the changes-detection job (docs-only skips heavy CI)', () => {
+    const ci = readWorkflowText('ci.yml');
+    assert.match(ci, /\n  changes:/);
+    assert.match(ci, /run-heavy/);
+    const gates = ci.match(/needs: \[changes\]/g) ?? [];
+    assert.equal(gates.length, 5);
+    assert.match(ci, /if: needs\.changes\.outputs\.run-heavy == 'true'/);
+  });
 });
