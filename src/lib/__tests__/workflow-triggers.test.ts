@@ -255,4 +255,16 @@ describe('workflow trigger policy', () => {
       `fix-review heavy job timeout ${maxTimeout} > 30 (would hog a big runner)`,
     );
   });
+
+  // P1-4 — pull_request_target must stay on the base ref: never check out / run
+  // untrusted PR-head code with the workflow's token (injection vector).
+  it('keeps pull_request_target workflows on the base ref (no PR-head checkout)', () => {
+    for (const f of ['pr-flow.yml', 'pr-policy.yml']) {
+      const y = readWorkflowText(f);
+      assert.ok(
+        !/ref:\s*\$\{\{[^}]*pull_request\.head\.sha/.test(y),
+        `${f} checks out the PR head sha under pull_request_target (injection risk)`,
+      );
+    }
+  });
 });
