@@ -111,3 +111,31 @@ test('fix-pr still runs for human-authored source PRs without guard labels', () 
   assert.equal(result.should_run, true);
   assert.equal(result.reason, null);
 });
+
+test('fix-pr stops once the auto-fix attempt cap is reached', () => {
+  const result = runFixPrPolicy({
+    event: { workflow_run: { head_branch: 'feature/x' } },
+    sourcePr: {
+      head: { ref: 'feature/x' },
+      user: { login: 'kostua16', type: 'User' },
+      labels: [],
+      auto_fix_attempt_count: 3,
+    },
+  });
+  assert.equal(result.should_run, false);
+  assert.match(result.reason, /cap reached/);
+});
+
+test('fix-pr still runs below the attempt cap for a human-authored PR', () => {
+  const result = runFixPrPolicy({
+    event: { workflow_run: { head_branch: 'feature/x' } },
+    sourcePr: {
+      head: { ref: 'feature/x' },
+      user: { login: 'kostua16', type: 'User' },
+      labels: [],
+      auto_fix_attempt_count: 1,
+    },
+  });
+  assert.equal(result.should_run, true);
+  assert.equal(result.reason, null);
+});

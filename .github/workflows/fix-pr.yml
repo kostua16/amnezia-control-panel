@@ -70,6 +70,17 @@ jobs:
               pull_number: prNumber,
             });
 
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+            const AUTO_FIX_MSG = /^(fix\(ci\): auto-fix CI failures|style: auto-fix prettier formatting)/;
+            pr.auto_fix_attempt_count = commits.filter((c) =>
+              AUTO_FIX_MSG.test(String(c.commit?.message ?? "")),
+            ).length;
+
             const outputPath = `${process.env.RUNNER_TEMP}/fix-pr-source-pr.json`;
             require('fs').writeFileSync(outputPath, JSON.stringify(pr));
             core.setOutput('path', outputPath);
