@@ -242,4 +242,17 @@ describe('workflow trigger policy', () => {
     assert.equal(gates.length, 5);
     assert.match(ci, /if: needs\.changes\.outputs\.run-heavy == 'true'/);
   });
+
+  // P0-4 — fix-review's heavy job is time-boxed so it can't hog a big runner.
+  it('time-boxes the fix-review heavy job', () => {
+    const fr = readWorkflowText('fix-review.yml');
+    const timeouts = [...fr.matchAll(/timeout-minutes:\s*(\d+)/g)].map((m) =>
+      Number(m[1]),
+    );
+    const maxTimeout = Math.max(...timeouts);
+    assert.ok(
+      maxTimeout <= 30,
+      `fix-review heavy job timeout ${maxTimeout} > 30 (would hog a big runner)`,
+    );
+  });
 });
