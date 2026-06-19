@@ -1,11 +1,9 @@
+import type { ServiceType } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
-import {
-  blockAwgUser,
-  unblockAwgUser,
-  blockThreeXuiUser,
-  unblockThreeXuiUser,
-} from '@/lib/vpn-services';
+import { getAdapter } from '@/lib/vpn-service-adapter';
 import type { VpnServiceResult } from '@/lib/vpn-services';
+
+const SUPPORTED_SERVICE_TYPES = new Set<string>(['AWG', 'THREE_XUI']);
 
 export interface SyncReport {
   checked: number;
@@ -36,15 +34,19 @@ export interface SyncUser {
 
 /**
  * Dependency surface for user-state reconciliation. In production the defaults
- * read from the real database and call the real VPN services; tests inject
- * fakes so block/unblock scenarios are deterministic without a live DB.
+ * read from the real database and call the real VPN services via the adapter;
+ * tests inject fakes so block/unblock scenarios are deterministic without a live DB.
  */
 export interface UserSyncDeps {
   findUser: (userId: number) => Promise<SyncUser | null>;
-  blockAwgUser: (username: string) => Promise<VpnServiceResult>;
-  unblockAwgUser: (username: string) => Promise<VpnServiceResult>;
-  blockThreeXuiUser: (username: string) => Promise<VpnServiceResult>;
-  unblockThreeXuiUser: (username: string) => Promise<VpnServiceResult>;
+  blockUser: (
+    username: string,
+    serviceType: string,
+  ) => Promise<VpnServiceResult>;
+  unblockUser: (
+    username: string,
+    serviceType: string,
+  ) => Promise<VpnServiceResult>;
 }
 
 let _deps: UserSyncDeps | null = null;
@@ -73,10 +75,10 @@ function resolveDeps(): UserSyncDeps {
   return (
     _deps ?? {
       findUser: defaultFindUser,
-      blockAwgUser,
-      unblockAwgUser,
-      blockThreeXuiUser,
-      unblockThreeXuiUser,
+      blockUser: (username, serviceType) =>
+        getAdapter(serviceType as ServiceType).block(username),
+      unblockUser: (username, serviceType) =>
+        getAdapter(serviceType as ServiceType).unblock(username),
     }
   );
 }
@@ -120,16 +122,12 @@ export async function syncUser(userId: number): Promise<SyncReport> {
     if (user.isBlocked) {
       // User is blocked in DB — ensure blocked in VPN services
       for (const protocol of user.protocols) {
-        // Attempt to block (idempotent in VPN services)
+        if (!SUPPORTED_SERVICE_TYPES.has(protocol.serviceType)) continue;
         try {
-          let result;
-          if (protocol.serviceType === 'AWG') {
-            result = await deps.blockAwgUser(user.username);
-          } else if (protocol.serviceType === 'THREE_XUI') {
-            result = await deps.blockThreeXuiUser(user.username);
-          } else {
-            continue;
-          }
+          const result = await deps.blockUser(
+            user.username,
+            protocol.serviceType,
+          );
 
           if (result.success) {
             report.details.push({
@@ -154,15 +152,12 @@ export async function syncUser(userId: number): Promise<SyncReport> {
     } else {
       // User is active in DB — ensure unblocked in VPN services
       for (const protocol of user.protocols) {
+        if (!SUPPORTED_SERVICE_TYPES.has(protocol.serviceType)) continue;
         try {
-          let result;
-          if (protocol.serviceType === 'AWG') {
-            result = await deps.unblockAwgUser(user.username);
-          } else if (protocol.serviceType === 'THREE_XUI') {
-            result = await deps.unblockThreeXuiUser(user.username);
-          } else {
-            continue;
-          }
+          const result = await deps.unblockUser(
+            user.username,
+            protocol.serviceType,
+          );
 
           if (result.success) {
             report.details.push({

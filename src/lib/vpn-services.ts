@@ -462,6 +462,8 @@ async function getAwgConfig(username: string): Promise<AwgUserConfig> {
  * - `AWG_USE_SUDO=1` to run `sudo awg ...`
  * - `AWG_CLIENT_IPV4_PREFIX` (default: `10.8.0.`)
  * - `AWG_CLIENT_ALLOWED_IPS` (default client routes: `0.0.0.0/0, ::/0`)
+ *
+ * @deprecated Use `getAdapter('AWG').create()` from `vpn-service-adapter.ts` instead.
  */
 export async function createAwgUser(
   username: string,
@@ -499,6 +501,7 @@ export async function createAwgUser(
   }
 }
 
+/** @deprecated Use `getAdapter('AWG').delete()` from `vpn-service-adapter.ts` instead. */
 export async function deleteAwgUser(
   username: string,
 ): Promise<VpnServiceResult> {
@@ -518,6 +521,7 @@ export async function deleteAwgUser(
  * peer from the live interface while preserving the stored DB config for
  * later unblock/re-add.
  */
+/** @deprecated Use `getAdapter('AWG').block()` from `vpn-service-adapter.ts` instead. */
 export async function blockAwgUser(
   username: string,
 ): Promise<VpnServiceResult> {
@@ -533,6 +537,7 @@ export async function blockAwgUser(
   }
 }
 
+/** @deprecated Use `getAdapter('AWG').unblock()` from `vpn-service-adapter.ts` instead. */
 export async function unblockAwgUser(
   username: string,
 ): Promise<VpnServiceResult> {
@@ -697,6 +702,7 @@ async function updateXuiClientEnabled(
  * does not expose client CRUD as CLI subcommands, so client lifecycle has to
  * use `/panel/api/inbounds/*`.
  */
+/** @deprecated Use `getAdapter('THREE_XUI').create()` from `vpn-service-adapter.ts` instead. */
 export async function createThreeXuiUser(
   username: string,
 ): Promise<VpnServiceResult & { config?: ThreeXuiUserConfig }> {
@@ -737,6 +743,7 @@ export async function createThreeXuiUser(
   }
 }
 
+/** @deprecated Use `getAdapter('THREE_XUI').delete()` from `vpn-service-adapter.ts` instead. */
 export async function deleteThreeXuiUser(
   username: string,
 ): Promise<VpnServiceResult> {
@@ -763,6 +770,7 @@ export async function deleteThreeXuiUser(
   }
 }
 
+/** @deprecated Use `getAdapter('THREE_XUI').block()` from `vpn-service-adapter.ts` instead. */
 export async function blockThreeXuiUser(
   username: string,
 ): Promise<VpnServiceResult> {
@@ -775,6 +783,7 @@ export async function blockThreeXuiUser(
   }
 }
 
+/** @deprecated Use `getAdapter('THREE_XUI').unblock()` from `vpn-service-adapter.ts` instead. */
 export async function unblockThreeXuiUser(
   username: string,
 ): Promise<VpnServiceResult> {

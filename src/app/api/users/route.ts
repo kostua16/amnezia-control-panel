@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import { hashValue } from '@/lib/password';
 import { writeAuditLog } from '@/lib/audit-log';
-import { createAwgUser, createThreeXuiUser } from '@/lib/vpn-services';
+import { getAdapter } from '@/lib/vpn-service-adapter';
 import type { VpnServiceResult } from '@/lib/vpn-services';
 import { apiHandler } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
@@ -162,11 +162,10 @@ export const POST = apiHandler(async (request: NextRequest) => {
   for (const protocol of user.protocols) {
     let result: VpnServiceResult & { config?: Record<string, unknown> };
 
-    if (protocol.serviceType === 'AWG') {
-      result = await createAwgUser(username);
-    } else if (protocol.serviceType === 'THREE_XUI') {
-      result = await createThreeXuiUser(username);
-    } else {
+    try {
+      const adapter = getAdapter(protocol.serviceType);
+      result = await adapter.create(username);
+    } catch {
       continue;
     }
 

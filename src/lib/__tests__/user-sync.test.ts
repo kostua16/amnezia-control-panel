@@ -38,12 +38,8 @@ function makeDeps(
 ): UserSyncDeps {
   return {
     findUser,
-    blockAwgUser: vpn.blockAwgUser ?? (async () => ok('blocked awg')),
-    unblockAwgUser: vpn.unblockAwgUser ?? (async () => ok('unblocked awg')),
-    blockThreeXuiUser:
-      vpn.blockThreeXuiUser ?? (async () => ok('blocked 3x-ui')),
-    unblockThreeXuiUser:
-      vpn.unblockThreeXuiUser ?? (async () => ok('unblocked 3x-ui')),
+    blockUser: vpn.blockUser ?? (async (_u, _s) => ok('blocked')),
+    unblockUser: vpn.unblockUser ?? (async (_u, _s) => ok('unblocked')),
   };
 }
 
@@ -74,13 +70,9 @@ describe('syncUser', () => {
             protocols: [{ serviceType: 'AWG' }, { serviceType: 'THREE_XUI' }],
           }),
         {
-          blockAwgUser: async (u) => {
-            calls.push(['block', 'AWG']);
-            return ok(`blocked ${u} awg`);
-          },
-          blockThreeXuiUser: async (u) => {
-            calls.push(['block', 'THREE_XUI']);
-            return ok(`blocked ${u} 3x-ui`);
+          blockUser: async (u, s) => {
+            calls.push(['block', s]);
+            return ok(`blocked ${u} ${s}`);
           },
         },
       ),
@@ -115,13 +107,9 @@ describe('syncUser', () => {
             protocols: [{ serviceType: 'AWG' }, { serviceType: 'THREE_XUI' }],
           }),
         {
-          unblockAwgUser: async (u) => {
-            calls.push(['unblock', 'AWG']);
-            return ok(`unblocked ${u} awg`);
-          },
-          unblockThreeXuiUser: async (u) => {
-            calls.push(['unblock', 'THREE_XUI']);
-            return ok(`unblocked ${u} 3x-ui`);
+          unblockUser: async (u, s) => {
+            calls.push(['unblock', s]);
+            return ok(`unblocked ${u} ${s}`);
           },
         },
       ),
@@ -176,7 +164,7 @@ describe('syncUser', () => {
             protocols: [{ serviceType: 'AWG' }],
           }),
         {
-          blockAwgUser: async () => fail('awg CLI missing'),
+          blockUser: async () => fail('awg CLI missing'),
         },
       ),
     );
@@ -201,8 +189,8 @@ describe('syncUser', () => {
             protocols: [{ serviceType: 'UNKNOWN' }, { serviceType: 'AWG' }],
           }),
         {
-          blockAwgUser: async () => {
-            calls.push('awg');
+          blockUser: async (_u, s) => {
+            calls.push(s);
             return ok('blocked');
           },
         },
@@ -212,6 +200,6 @@ describe('syncUser', () => {
     const report = await syncUser(1);
 
     assert.equal(report.fixed, 1, 'only the AWG protocol should be acted on');
-    assert.deepEqual(calls, ['awg']);
+    assert.deepEqual(calls, ['AWG']);
   });
 });
