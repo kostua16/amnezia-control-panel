@@ -39,6 +39,20 @@ test('skipped required check is non-blocking (intentional non-run)', () => {
   assert.deepEqual(s.pending, []);
 });
 
+// A skipped required check must still block when a sibling job in the same
+// workflow failed: GitHub reports a failed `needs:` dependency's dependents as
+// "skipped", which would otherwise mask a real failure. Run-cleanliness guard
+// added in #443 (see kilo-code-bot review on that PR).
+test('skipped required check blocks when a sibling job in the same workflow failed', () => {
+  const checks = [
+    buildCheck('CI', { workflow: 'CI', bucket: 'skip', state: 'skipped' }),
+    buildCheck('install', { workflow: 'CI', bucket: 'fail', state: 'failure' }),
+  ];
+  const s = getRequiredCheckStatus(checks, CI);
+  assert.equal(s.status, 'failed');
+  assert.deepEqual(s.failing, ['CI']);
+});
+
 test('cancelled required check still blocks (aborted, did not pass)', () => {
   const s = getRequiredCheckStatus(ciCancelled, CI);
   assert.equal(s.status, 'failed');

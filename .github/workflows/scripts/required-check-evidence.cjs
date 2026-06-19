@@ -84,7 +84,19 @@ function getRequiredCheckStatus(checks, requiredChecks) {
       if (bucket === 'fail' || bucket === 'cancel' || state === 'failure') {
         failing.push(name);
       } else if (bucket === 'skip') {
-        // intentionally skipped — neither failing nor pending; does not block
+        // Intentionally skipped (job `if:` false) → non-blocking, UNLESS a
+        // sibling job in the same workflow failed. GitHub marks a failed
+        // `needs:` dependency's dependents as conclusion "skipped", which would
+        // otherwise mask a real failure; fall back to blocking then. See #443.
+        const siblingFailed = checks.some(
+          (c) =>
+            c !== match &&
+            (c.workflow ?? '') === (match.workflow ?? '') &&
+            String(c.bucket ?? '').toLowerCase() === 'fail',
+        );
+        if (siblingFailed) {
+          failing.push(name);
+        }
       } else if (bucket !== 'pass' && state !== 'success') {
         pending.push(name);
       }
