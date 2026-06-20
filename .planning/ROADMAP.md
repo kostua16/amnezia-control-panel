@@ -566,6 +566,16 @@ Source: `/gsd:explore` fourth-pass review (non-duplicative). Artifact: `.plannin
 | 11 | **Config-applier shared push helper** — `applyAwgConfig()` and `applyThreeXuiConfig()` share ~80% identical code (fetch + HMAC signing + timeout + error handling + 404 handling). Extract `pushToRemotePanel()` helper; thin wrappers per service | Medium (DRY) | `src/lib/config-applier.ts` | Proposed |
 | 12 | **Resource-monitor async conversion** — Extends proposal 9 scope: `execFileSync('df', ...)` and `execFileSync('powershell', ...)` in `resource-monitor.ts` block the event loop up to 5s. Convert to `execFileAsync` matching vpn-services.ts pattern | Medium (Perf) | `src/lib/resource-monitor.ts` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 6 (2026-06-20)
+
+Source: `/gsd:explore` sixth-pass deep review (non-duplicative). Artifact: `.planning/quick/260620-arch-review/260620-PLAN.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 16 | **Deduplicate protobuf parsing + decompose geoip-manager.ts** — `readVarint()`/`varintSize()` duplicated between geoip-manager.ts (653 lines) and routing-rule-templates.ts (622 lines) with divergent higher-level decode functions. Extract shared `protobuf-varint.ts`; split geoip-manager.ts into downloader/protobuf/lookup/manager modules (all <200 lines). Compounds with proposal 1 (binary search in lookup layer) | Medium (Correctness + Maintainability) | `src/lib/geoip-manager.ts`, `src/lib/routing-rule-templates.ts` → `src/lib/protobuf-varint.ts`, `src/lib/geoip-downloader.ts`, `src/lib/geoip-protobuf.ts`, `src/lib/geoip-lookup.ts` (new) | Proposed |
+
+Notes: Prior reviews 1-5 produced 15 proposals covering GeoIP perf, API handler DRY, broadcaster optimization, transaction boundaries, vpn-services decomposition, schema indexes, audit-log cleanup, bcrypt extraction, async monitors, chain-config dedup, config-applier DRY, resource-monitor async, WS auth, sync replay guard, and user mutation cache. This pass found one genuinely new finding (protobuf duplication); all other areas checked overlap existing proposals or were explicitly dismissed in prior reviews.
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-06-13 - Added improvement intake #4 (proposals 10-12: chain config dedup, config-applier DRY, resource-monitor async)*
+*Last updated: 2026-06-20 - Added improvement intake #6 (proposal 16: protobuf dedup + geoip-manager decomposition)*
