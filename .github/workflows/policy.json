@@ -67,7 +67,7 @@
       "package*.json",
       "next.config.*",
       "scripts/**",
-      "src/middleware.ts",
+      "src/proxy.ts",
       "src/app/api/**",
       "src/lib/seed.ts",
       "src/lib/auth.ts",
