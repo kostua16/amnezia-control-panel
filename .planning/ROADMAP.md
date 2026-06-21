@@ -566,6 +566,18 @@ Source: `/gsd:explore` fourth-pass review (non-duplicative). Artifact: `.plannin
 | 11 | **Config-applier shared push helper** — `applyAwgConfig()` and `applyThreeXuiConfig()` share ~80% identical code (fetch + HMAC signing + timeout + error handling + 404 handling). Extract `pushToRemotePanel()` helper; thin wrappers per service | Medium (DRY) | `src/lib/config-applier.ts` | Proposed |
 | 12 | **Resource-monitor async conversion** — Extends proposal 9 scope: `execFileSync('df', ...)` and `execFileSync('powershell', ...)` in `resource-monitor.ts` block the event loop up to 5s. Convert to `execFileAsync` matching vpn-services.ts pattern | Medium (Perf) | `src/lib/resource-monitor.ts` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 5 (2026-06-21)
+
+Source: `/gsd:explore` fifth-pass review (non-duplicative). Artifact: `.planning/quick/260621-arch-review-pass5/260621-PLAN.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 13 | **Panel push sequential stall — no circuit breaker** — `pushConfigToAllPanels` processes panels sequentially; one dead panel blocks up to 52s (3 × 15s fetch timeout + backoff). No circuit breaker. Fix: parallel push with `Promise.allSettled` + per-panel circuit breaker (skip after 3 consecutive failures within cooldown) | High (UX/Reliability) | `src/lib/panel-sync-client.ts` | Proposed |
+| 14 | **Quota monitor N+1 alert dedup queries** — `checkUserQuotas()` does individual `prisma.alert.findFirst()` per user per threshold (up to 150 queries for 50 users). Fix: bulk-fetch all recent `quota_*` alerts in one query, filter in-memory with a Set | Medium (Perf) | `src/lib/quota-monitor.ts` | Proposed |
+| 15 | **No rate limiting on auth login endpoint** — Login has no brute-force protection. For an internet-exposed single-admin panel, unlimited credential guessing is possible. Fix: in-memory rate limiter (5 attempts per IP per 15min window → 429) + audit log visibility | Medium-High (Security) | `src/app/api/auth/login/route.ts` | Proposed |
+
+**Previous proposals still open:** #1 (GeoIP optimization), #4 (user lifecycle transactions), #5 (vpn-services decomposition), #7 (audit log raw SQL), #8 (bcrypt utility), #9 (service-monitor async). Proposals #6, #10, #11, #12 resolved.
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-06-13 - Added improvement intake #4 (proposals 10-12: chain config dedup, config-applier DRY, resource-monitor async)*
+*Last updated: 2026-06-21 - Added improvement intake #5 (proposals 13-15: panel push stall, quota N+1, auth rate limiting)*
