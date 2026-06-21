@@ -64,11 +64,15 @@ export function initWebSocketServer(
   // Set up connection tracking for throttling
   io.on('connection', (socket) => {
     connectedClients++;
-    console.log(`[ws] Client connected: ${socket.id} (total: ${connectedClients})`);
+    console.log(
+      `[ws] Client connected: ${socket.id} (total: ${connectedClients})`,
+    );
 
     socket.on('disconnect', (reason) => {
       connectedClients--;
-      console.log(`[ws] Client disconnected: ${socket.id} (${reason}, total: ${connectedClients})`);
+      console.log(
+        `[ws] Client disconnected: ${socket.id} (${reason}, total: ${connectedClients})`,
+      );
     });
   });
 

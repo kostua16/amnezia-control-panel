@@ -18,13 +18,11 @@ let cachedTrafficTotals: {
  * Get cached traffic totals (computed once per broadcaster tick).
  * Returns null if no cache is available yet (e.g., broadcaster not started or no clients connected).
  */
-export function getCachedTrafficTotals():
-  | {
-      bytesIn: number;
-      bytesOut: number;
-      timestamp: number;
-    }
-  | null {
+export function getCachedTrafficTotals(): {
+  bytesIn: number;
+  bytesOut: number;
+  timestamp: number;
+} | null {
   return cachedTrafficTotals;
 }
 
@@ -73,13 +71,16 @@ export function startBroadcaster(): void {
   }, 10_000);
 
   // Traffic log cleanup — once daily (24 hours)
-  cleanupInterval = setInterval(async () => {
-    try {
-      await cleanupOldTrafficLogs();
-    } catch (err) {
-      console.error('[broadcaster] Traffic log cleanup failed:', err);
-    }
-  }, 24 * 60 * 60 * 1000);
+  cleanupInterval = setInterval(
+    async () => {
+      try {
+        await cleanupOldTrafficLogs();
+      } catch (err) {
+        console.error('[broadcaster] Traffic log cleanup failed:', err);
+      }
+    },
+    24 * 60 * 60 * 1000,
+  );
 
   // Run cleanup once on startup (after a short delay to avoid startup churn)
   setTimeout(async () => {
