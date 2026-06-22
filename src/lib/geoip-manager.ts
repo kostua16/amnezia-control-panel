@@ -618,6 +618,24 @@ class GeoIPManager {
     }
   }
 
+  /**
+   * Cleanup function for graceful shutdown.
+   * Stops the refresh scheduler and clears in-memory state.
+   */
+  cleanup(): void {
+    this.stopScheduler();
+    this.countryCount = 0;
+    this.lookupIndex = buildLookupIndex(new Map());
+    this.status = {
+      loaded: false,
+      stale: false,
+      lastRefreshed: null,
+      fileSize: null,
+      error: null,
+    };
+    console.log('[geoip] Cleaned up all state');
+  }
+
   // --- Helpers ---
 
   private setStatus(partial: Partial<GeoIPStatus>): void {
@@ -650,4 +668,12 @@ export async function refreshGeoIP(): Promise<{
   message: string;
 }> {
   return geoIPManager.refresh();
+}
+
+/**
+ * Cleanup function for graceful shutdown.
+ * Delegates to the singleton instance.
+ */
+export function cleanupGeoIP(): void {
+  geoIPManager.cleanup();
 }

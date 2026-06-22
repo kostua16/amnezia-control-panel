@@ -346,6 +346,20 @@ export function stopPanelHealthChecks(): void {
 }
 
 /**
+ * Cleanup function for graceful shutdown.
+ * Clears all intervals and flushes all in-memory state.
+ * Call from process SIGTERM handler in server.mjs.
+ */
+export function cleanup(): void {
+  stopPanelHealthChecks();
+  consecutiveFailures.clear();
+  fallbackPanels.clear();
+  panelApiKeyCache.clear();
+  panelApiKeyCacheTimestamps.clear();
+  console.log('[panel-health] Cleaned up all in-memory state');
+}
+
+/**
  * Get status for a single panel with latest connection record.
  * Used by API routes to provide per-panel status data.
  */

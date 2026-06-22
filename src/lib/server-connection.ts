@@ -217,3 +217,16 @@ export function getCachedStatus(
 export function invalidateConnection(serverId: number): void {
   connectionPool.delete(serverId);
 }
+
+/**
+ * Cleanup function for graceful shutdown.
+ * Clears the entire connection pool.
+ * Call from process SIGTERM handler in server.mjs.
+ */
+export function cleanupConnections(): void {
+  const size = connectionPool.size;
+  connectionPool.clear();
+  if (size > 0) {
+    console.log(`[server-connection] Cleared ${size} connection pool entries`);
+  }
+}
