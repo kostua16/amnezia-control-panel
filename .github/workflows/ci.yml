@@ -152,6 +152,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          setup-bun: 'false'
           require-gh-auth: 'false'
       - name: npm audit (high+ advisories)
         run: npm audit --audit-level=high
