@@ -128,7 +128,7 @@ jobs:
             Review criteria:
             1. Breaking-change risk from the manifest and lockfile diff
             2. Security advisories resolved or introduced according to `npm audit`
-            3. Potential compatibility issues with Node 22 / Next.js 16 / React 19
+            3. Potential compatibility issues with Node 24 / Next.js 16 / React 19
             4. Whether the update should stay auto-merge eligible or require manual review
 
             Dependency diff:
