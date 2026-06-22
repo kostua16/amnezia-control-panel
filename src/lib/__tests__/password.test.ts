@@ -13,6 +13,18 @@ describe('password', () => {
     assert.notStrictEqual(hashStr, 'hello');
   });
 
+  it('hashValue salts input so identical plaintexts hash differently', async () => {
+    // bcrypt salting must produce distinct hashes for the same input; a plain
+    // digest would return identical bytes and defeat per-row uniqueness.
+    const first = await hashValue('same-password');
+    const second = await hashValue('same-password');
+    assert.notStrictEqual(
+      first,
+      second,
+      'salting should produce distinct hashes for identical input',
+    );
+  });
+
   it('verifyValue returns true for correct plaintext', async () => {
     const hashStr = await hashValue('secret');
     const result = await verifyValue('secret', hashStr);
