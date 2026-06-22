@@ -4,19 +4,26 @@ on:
   pull_request_review:
     types: [submitted]
 
+# Default read-only; the record-approval job widens to write. The gate job
+# checks out the PR merge ref (pull_request_review default) and runs the
+# checked-out evaluate-trigger-policy.cjs, so it must stay read-only and
+# secret-free — writes happen only in record-approval, which checks out the
+# base ref and never runs PR-head code.
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: review-approved-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  record-approval:
+  gate:
     if: github.event.review.state == 'approved'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+      pr_number: ${{ steps.gate.outputs.pr_number }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
@@ -32,11 +39,31 @@ jobs:
           echo "should_run=$(jq -r '.should_run' <<<"$result")" >> "$GITHUB_OUTPUT"
           echo "pr_number=$(jq -r '.pr_number // empty' <<<"$result")" >> "$GITHUB_OUTPUT"
 
+  record-approval:
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true' && github.event.pull_request.head.repo.fork != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Ensure maintainer-approved label exists
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+          names: maintainer-approved
+
       - name: Record maintainer-approved
-        if: steps.gate.outputs.should_run == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.gate.outputs.pr_number }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           APPROVER: ${{ github.event.review.user.login }}
         run: |
           gh pr edit "$PR_NUMBER" --add-label "maintainer-approved"
