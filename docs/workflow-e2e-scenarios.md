@@ -66,7 +66,7 @@ flowchart TD
 
 ## §2 Auto-fix loop — `fix-branch.yml` / `fix-pr.yml` / `_auto-fix-ci.yml` (+ `approve-auto-fix.yml`)
 
-Decision basis: `workflow_run` scoped to **`workflows: ['CI']`** (`fix-branch.yml:22`, `fix-pr.yml:25`) + failure/branch/PR guards (`fix-branch.yml:40-44`, `fix-pr.yml:43-44`), `_auto-fix-ci.yml` CI-matching gate + sticky statuses (`documentation.md:91-93`), `policy.json trustedAutomationBranchPrefixes`.
+Decision basis: `workflow_run` scoped to **`workflows: ['CI']`** (`fix-branch.yml:22`, `fix-pr.yml:25`) + failure/branch/PR guards (`fix-branch.yml:40-44`, `fix-pr.yml:43-44`), `_auto-fix-ci.yml` CI-matching gate + sticky statuses (`documentation.md:91-93`), `policy.json trustedAutomationBranchPrefixes`. The fix commit is gated by `validate-pr-gate` before push; a gate failure means no push (no fix PR).
 
 ```mermaid
 flowchart TD
@@ -141,7 +141,7 @@ flowchart TD
 
 ## §4 Autonomous-PR fleet — scheduled agents (`audit-fix`, `audit-auto-prs`, `suggest-improvements`, `docs-drift`, `monitor-…runs`, `workflow-health-optimize`, `issue-catch-up`, `gsd-planning-execute`, `maintenance`)
 
-Decision basis: common pipeline `run-zai → prepare-automation-branch → find-duplicate-automation-pr → commit-and-push → upsert-pull-request`; lane classification `classify-audit-fix.cjs` + `evaluate-pr-policy.cjs` (safe vs manual by path/count); `find-duplicate-automation-pr.cjs` (exact / comment-only dedup).
+Decision basis: common pipeline `run-zai → prepare-automation-branch → find-duplicate-automation-pr → validate-pr-gate → commit-and-push → upsert-pull-request`; lane classification `classify-audit-fix.cjs` + `evaluate-pr-policy.cjs` (safe vs manual by path/count); `find-duplicate-automation-pr.cjs` (exact / comment-only dedup). `audit-fix` / `monitor-amnezia-control-panel-github-runs` / `workflow-health-optimize` gate their push on `validate-pr-gate` (`.github/actions/validate-pr-gate`); a gate failure posts a not-pushed summary instead of creating a PR.
 
 ```mermaid
 flowchart TD
@@ -208,7 +208,7 @@ flowchart TD
 
 ## §6a Issue → `/fix-issue` → PR — `fix-issue.yml`
 
-Decision basis: `evaluate-trigger-policy.cjs --mode fix-issue` (`maintainerTriggeredFix` / `labelTriggeredFix`), guard `issue.pull_request == null` (`fix-issue.yml:27-33`).
+Decision basis: `evaluate-trigger-policy.cjs --mode fix-issue` (`maintainerTriggeredFix` / `labelTriggeredFix`), guard `issue.pull_request == null` (`fix-issue.yml:27-33`). Push is gated by `validate-pr-gate` (`fix-issue.yml`); a gate failure means no fix PR is created.
 
 | ID | Trigger / precondition | Resolution → terminal | Type |
 |---|---|---|---|
@@ -242,7 +242,7 @@ Decision basis: release trigger → `run-zai` → notes (not a PR-merge flow).
 
 ## §6d `/fix-review` · `/address-review` → PR — `fix-review.yml`
 
-Decision basis: `fix-review.yml` issue_comment (`/fix-review`,`/address-review`) + `workflow_dispatch`; concurrency "ignored" branch; ZAI address-review → commit. Distinct command-driven fix flow (not folded into §3).
+Decision basis: `fix-review.yml` issue_comment (`/fix-review`,`/address-review`) + `workflow_dispatch`; concurrency "ignored" branch; ZAI address-review → commit. Distinct command-driven fix flow (not folded into §3). Push is gated by `validate-pr-gate` (`id: gate`); a `detect-noop` step skips the gate+push and posts `renderNoChanges` when the agent changed nothing. A gate failure posts a dual-block summary (agent-reported vs authoritative gate) and does not push.
 
 ```mermaid
 flowchart TD
@@ -258,10 +258,12 @@ flowchart TD
 
 | ID | Trigger / precondition | Resolution → terminal | Type |
 |---|---|---|---|
-| FR1 | maintainer `/fix-review`/`/address-review` on PR | gate → ZAI address review → commit → §1 → **merged** | char |
+| FR1 | maintainer `/fix-review`/`/address-review` on PR | detect-noop → validate-pr-gate → ZAI address review → commit → §1 → **merged** | char |
 | FR2 | non-maintainer command | ignored branch → **no-op** | char |
 | FR3 | no review comments to address | `no-changes` → **reported** | char |
 | FR4 | ZAI fix fails validation | `push-rejected` → **reported** | char |
+| FR5 | agent changed nothing (no findings / clean tree) | `detect-noop` `has_changes=false` → `renderNoChanges`, no push → **reported** | char |
+| FR6 | `validate-pr-gate` fails | dual-block summary (agent-reported vs authoritative gate), not pushed → **reported** (re-run to retry) | char |
 
 ---
 
