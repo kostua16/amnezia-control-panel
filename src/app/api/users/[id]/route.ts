@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { hashValue } from '@/lib/password';
 import { writeAuditLog } from '@/lib/audit-log';
 import {
   createAwgUser,
@@ -144,8 +145,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     // Hash new password if provided
     if (newPassword) {
-      const bcrypt = await import('bcryptjs');
-      updateData.passwordHash = await bcrypt.hash(newPassword, 10);
+      updateData.passwordHash = await hashValue(newPassword);
     }
 
     // Update user in DB
