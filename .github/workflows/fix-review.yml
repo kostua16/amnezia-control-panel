@@ -42,7 +42,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
   MAX_TURNS: '50'
 
 jobs:

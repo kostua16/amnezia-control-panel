@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
   MAX_TURNS: '60'
 
 permissions:

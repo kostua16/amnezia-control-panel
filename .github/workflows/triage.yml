@@ -22,7 +22,7 @@ concurrency:
 
 env:
   MAX_TURNS: 15
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
 
 jobs:
   triage:
