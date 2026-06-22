@@ -57,7 +57,9 @@ function setPoolEntry(
 
     if (oldestId !== null) {
       connectionPool.delete(oldestId);
-      console.log(`[server-connection] Evicted oldest pool entry ${oldestId} (LRU)`);
+      console.log(
+        `[server-connection] Evicted oldest pool entry ${oldestId} (LRU)`,
+      );
     }
   }
 

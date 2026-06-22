@@ -79,7 +79,9 @@ export function evictPanel(panelId: number): void {
   fallbackPanels.delete(panelId);
   panelApiKeyCache.delete(panelId);
   panelApiKeyCacheTimestamps.delete(panelId);
-  console.log(`[panel-health] Evicted all in-memory state for panel ${panelId}`);
+  console.log(
+    `[panel-health] Evicted all in-memory state for panel ${panelId}`,
+  );
 }
 
 /**
@@ -99,7 +101,9 @@ export function cleanupExpiredApiKeys(): void {
   }
 
   if (expiredCount > 0) {
-    console.log(`[panel-health] Cleaned up ${expiredCount} expired API key cache entries`);
+    console.log(
+      `[panel-health] Cleaned up ${expiredCount} expired API key cache entries`,
+    );
   }
 }
 
