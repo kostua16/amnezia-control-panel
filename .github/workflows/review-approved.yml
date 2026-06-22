@@ -1,0 +1,43 @@
+name: Review Approved
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: review-approved-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  record-approval:
+    if: github.event.review.state == 'approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Evaluate review approval
+        id: gate
+        run: |
+          result=$(node .github/workflows/scripts/evaluate-trigger-policy.cjs \
+            --mode review-approved \
+            --policy-file .github/workflows/policy.json \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME")
+          echo "$result"
+          echo "should_run=$(jq -r '.should_run' <<<"$result")" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$(jq -r '.pr_number // empty' <<<"$result")" >> "$GITHUB_OUTPUT"
+
+      - name: Record maintainer-approved
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.gate.outputs.pr_number }}
+          APPROVER: ${{ github.event.review.user.login }}
+        run: |
+          gh pr edit "$PR_NUMBER" --add-label "maintainer-approved"
+          gh pr comment "$PR_NUMBER" --body "Maintainer approval recorded by @$APPROVER via review approval. PR flow will continue after required checks and review signals pass."

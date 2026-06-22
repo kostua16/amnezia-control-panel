@@ -248,6 +248,30 @@ if (mode === 'pr-flow-approve') {
   process.exit(0);
 }
 
+if (mode === 'review-approved') {
+  const reviewState = String(event.review?.state ?? '').toLowerCase();
+  const reviewApproved =
+    eventName === 'pull_request_review' && reviewState === 'approved';
+  const shouldRun = reviewApproved && isMaintainer;
+  const prNumber = event.pull_request?.number ?? null;
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: shouldRun,
+        triggered: reviewApproved,
+        trusted: isMaintainer,
+        author_association: association,
+        pr_number: shouldRun ? prNumber : null,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 if (mode === 'pr-flow-pull-request-target') {
   const config = readJson(configFile);
   const action = event.action ?? '';
