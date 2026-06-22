@@ -229,6 +229,10 @@ jobs:
             caveman@caveman
           prompt: ${{ steps.prompt.outputs.content }}
 
+      - name: Generate Prisma client (prettier-only path skips setup-environment)
+        if: steps.failure.outputs.fixable == 'true' && steps.prettier.outputs.prettier_only == 'true'
+        run: npx prisma generate
+
       - name: Validate (CI-matching gate)
         id: gate
         # Not gated on claude_changed_files_list: the prettier_only path skips
