@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify, type JWTPayload } from 'jose';
 
 /**
- * Claims embedded in the auth-token JWT. The middleware is the single source
+ * Claims embedded in the auth-token JWT. The proxy is the single source
  * of truth for what a session contains; route handlers read these from request
  * headers instead of re-decoding the token on every authenticated call.
  */
@@ -59,10 +59,10 @@ function withClaims(request: NextRequest, payload: AuthClaims): NextResponse {
   return NextResponse.next({ request: { headers } });
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip middleware for non-protected resources
+  // Skip proxy for non-protected resources
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||

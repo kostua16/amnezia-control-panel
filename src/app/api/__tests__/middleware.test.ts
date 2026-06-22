@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
-import { middleware } from '../../../middleware';
+import { proxy } from '../../../proxy';
 
 const TEST_JWT_SECRET = 'test-middleware-secret-key-for-integration-test';
 const ORIGINAL_JWT_SECRET = process.env.JWT_SECRET;
@@ -17,7 +17,7 @@ after(() => {
 
 /**
  * Mint a real HS256 JWT carrying the given claims, signed with the secret
- * the middleware reads from process.env.JWT_SECRET.
+ * the proxy reads from process.env.JWT_SECRET.
  */
 async function mintToken(claims: {
   userId: string;
@@ -52,14 +52,14 @@ function apiRequest(
   return new NextRequest('http://localhost/api/users', { headers });
 }
 
-describe('middleware — claim-header overwrite on valid JWT', () => {
+describe('proxy — claim-header overwrite on valid JWT', () => {
   it('overwrites client-supplied x-user-id / x-user-name with JWT claims', async () => {
     const token = await mintToken({
       userId: 'real-admin',
       username: 'real-admin',
     });
 
-    const res = await middleware(
+    const res = await proxy(
       apiRequest({
         token,
         userId: 'spoofed-id',
@@ -82,7 +82,7 @@ describe('middleware — claim-header overwrite on valid JWT', () => {
   });
 
   it('returns 401 and no claim headers when token is missing', async () => {
-    const res = await middleware(apiRequest());
+    const res = await proxy(apiRequest());
 
     assert.strictEqual(res.status, 401);
     assert.strictEqual(
