@@ -357,9 +357,14 @@ jobs:
             echo "Reason: ${{ steps.duplicate.outputs.overlap_reason }}"
           fi
 
+      - name: Validate (CI-matching gate)
+        id: gate
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
+        uses: ./.github/actions/validate-pr-gate
+
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.gate.outputs.gate_passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix(ci): address monitored GitHub run finding'

@@ -229,9 +229,14 @@ jobs:
             caveman@caveman
           prompt: ${{ steps.prompt.outputs.content }}
 
+      - name: Validate (CI-matching gate)
+        id: gate
+        if: steps.failure.outputs.fixable == 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
+        uses: ./.github/actions/validate-pr-gate
+
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.failure.outputs.fixable == 'true'
+        if: steps.failure.outputs.fixable == 'true' && steps.gate.outputs.gate_passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: "${{ steps.prettier.outputs.prettier_only == 'true' && 'style: auto-fix prettier formatting' || 'fix(ci): auto-fix CI failures' }}"

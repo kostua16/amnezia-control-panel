@@ -169,8 +169,14 @@ jobs:
           echo "::error::Claude soft failure: ${{ steps.claude_run.outputs.claude_failure_reason }}"
           exit 1
 
+      - name: Validate (CI-matching gate)
+        id: gate
+        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        uses: ./.github/actions/validate-pr-gate
+
       - uses: ./.github/actions/commit-and-push
         id: push
+        if: steps.gate.outputs.gate_passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix: resolve #${{ github.event.issue.number }}'
