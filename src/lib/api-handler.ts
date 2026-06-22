@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { Prisma } from '@/generated/prisma/client';
 import { ZodError } from 'zod';
 import { error, firstZodError } from '@/lib/api-response';
+import { isPrismaNotFound, isPrismaUniqueViolation } from '@/lib/prisma-errors';
 
 /**
  * Dynamic-route context: the second argument Next.js passes to handlers under
@@ -19,37 +20,24 @@ export type RouteHandler<P = Record<string, string | string[]>> = (
 ) => Promise<Response>;
 
 /**
- * Map a Prisma known-request error code to the matching HTTP status.
- * P2002 (unique-constraint violation) → 409, P2025 (record not found) → 404.
- * Returns null for codes we do not explicitly translate.
- */
-function prismaHttpStatus(code: string): number | null {
-  switch (code) {
-    case 'P2002':
-      return 409;
-    case 'P2025':
-      return 404;
-    default:
-      return null;
-  }
-}
-
-/**
  * Convert any thrown error into the standardized JSON error response.
  * Centralizes Prisma / Zod / unknown mapping so route handlers can drop their
  * manual try/catch blocks. `label` is the request path, logged for tracing.
  */
 export function toErrorResponse(err: unknown, label: string): Response {
+  if (isPrismaUniqueViolation(err)) {
+    console.error(`[${label}] Prisma error P2002:`, err);
+    return error('Resource already exists', 409);
+  }
+
+  if (isPrismaNotFound(err)) {
+    console.error(`[${label}] Prisma error P2025:`, err);
+    return error('Resource not found', 404);
+  }
+
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    const status = prismaHttpStatus(err.code) ?? 500;
-    const message =
-      status === 409
-        ? 'Resource already exists'
-        : status === 404
-          ? 'Resource not found'
-          : 'Database request failed';
     console.error(`[${label}] Prisma error ${err.code}:`, err);
-    return error(message, status);
+    return error('Database request failed', 500);
   }
 
   if (err instanceof ZodError) {
