@@ -211,7 +211,7 @@ jobs:
       claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
-      validate_blocked: ${{ steps.validate.outputs.validate-blocked }}
+      validate_blocked: ${{ steps.gate.outputs.gate_passed == 'false' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -313,28 +313,16 @@ jobs:
             echo "Reason: ${{ steps.duplicate.outputs.overlap_reason }}"
           fi
 
-      - name: Validate tests pass after workflow edits
-        id: validate
+      - name: Validate (CI-matching gate; build skipped for YAML-only edits)
+        id: gate
         if: steps.claude_run.outputs.claude_changed_files_list != '' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
-        shell: bash
-        run: |
-          set +e
-          npm run test-only > /tmp/optimize-test-only.log 2>&1
-          status=$?
-          if [ "$status" -eq 0 ]; then
-            echo "passed=true" >> "$GITHUB_OUTPUT"
-            echo "Workflow invariant tests passed after optimization edits."
-          else
-            echo "passed=false" >> "$GITHUB_OUTPUT"
-            echo "validate-blocked=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::npm run test-only failed after optimization edits; skipping PR to avoid a doomed CI run."
-            echo "----- npm run test-only output (tail) -----"
-            tail -n 80 /tmp/optimize-test-only.log || true
-          fi
+        uses: ./.github/actions/validate-pr-gate
+        with:
+          run-build: 'false'
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.validate.outputs.passed == 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.gate.outputs.gate_passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): hourly optimization pass'
