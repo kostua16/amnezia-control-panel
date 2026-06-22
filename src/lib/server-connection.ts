@@ -1,4 +1,4 @@
-import { execCommand } from '@/lib/command-executor';
+import { execCommand, isWindows } from '@/lib/command-executor';
 import type {
   Server,
   ServerConnectionStatus,
@@ -82,8 +82,7 @@ export async function testConnection(
 
     // Use ping as a basic reachability check (cross-platform stub).
     // In production, replace with a proper SSH/TCP connection test.
-    const isWindows = process.platform === 'win32';
-    const pingArgs = isWindows
+    const pingArgs = isWindows()
       ? ['-n', '1', '-w', '3000', server.hostname]
       : ['-c', '1', '-W', '3', server.hostname];
 

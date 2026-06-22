@@ -6,8 +6,10 @@
  * callers keep full control over status handling and streaming — the only
  * behavioral additions are timeout enforcement and optional 5xx/network retry.
  *
- * Call sites that already implement their own retry loop should pass
- * `retries: 0` to keep their existing attempt semantics unchanged.
+ * Retry only applies to idempotent methods by default, so a non-idempotent
+ * POST/PUT/DELETE that omits `retries` cannot silently double-fire. Pass an
+ * explicit `retries` value to override per call, or `retries: 0` to keep an
+ * existing caller retry loop unchanged.
  */
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -15,10 +17,19 @@ const DEFAULT_RETRIES = 1;
 const DEFAULT_RETRY_DELAY_MS = 500;
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
+/** Methods safe to retry without risking duplicate side effects. */
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 export interface HttpClientOptions extends Omit<RequestInit, 'signal'> {
   /** Abort the request after this many milliseconds (default 15000). */
   timeoutMs?: number;
-  /** Extra attempts on 5xx responses or network errors (default 1). */
+  /**
+   * Extra attempts on 5xx responses or network errors. Defaults to 1 for
+   * idempotent methods (GET/HEAD/OPTIONS) and 0 for mutating verbs, so an
+   * unconfigured POST/PUT/DELETE is never retried. Pass an explicit value to
+   * override (e.g. `retries: 0` to disable, or a positive number to opt a
+   * mutating call into retries when its side effects are idempotent).
+   */
   retries?: number;
   /** Base backoff between retries, doubled each attempt (default 500ms). */
   retryDelayMs?: number;
@@ -47,6 +58,9 @@ export class HttpError extends Error {
     const timeoutLabel = params.timedOut ? ' (timeout)' : '';
     super(
       `${params.method} ${params.url} failed: ${statusLabel}${timeoutLabel}`,
+      // Preserve the underlying network/timeout error so `err.cause` stays
+      // debuggable — that is the whole point of an enriched error type.
+      params.cause !== undefined ? { cause: params.cause } : undefined,
     );
     this.name = 'HttpError';
     this.url = params.url;
@@ -81,11 +95,14 @@ export async function httpClient(
 ): Promise<Response> {
   const {
     timeoutMs = DEFAULT_TIMEOUT_MS,
-    retries = DEFAULT_RETRIES,
     retryDelayMs = DEFAULT_RETRY_DELAY_MS,
     ...init
   } = options;
   const method = (init.method ?? 'GET').toUpperCase();
+  // Default to no retry for mutating verbs so a non-idempotent request can never
+  // silently repeat (e.g. a duplicate config push); honor any explicit value.
+  const idempotent = IDEMPOTENT_METHODS.has(method);
+  const retries = options.retries ?? (idempotent ? DEFAULT_RETRIES : 0);
   const maxAttempts = retries + 1;
 
   let lastFailure: {

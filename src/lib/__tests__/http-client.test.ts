@@ -102,8 +102,9 @@ describe('httpClient', () => {
   });
 
   it('enriches network errors with method and url after retries exhaust', async () => {
+    const cause = new Error('ECONNRESET');
     mockFetch(async () => {
-      throw new Error('ECONNRESET');
+      throw cause;
     });
 
     await assert.rejects(
@@ -117,9 +118,43 @@ describe('httpClient', () => {
         assert.ok(err instanceof HttpError);
         assert.strictEqual(err.method, 'POST');
         assert.ok(err.message.includes('https://example.test/y'));
+        // The underlying error must survive on `cause` so it can be debugged.
+        assert.strictEqual((err as Error & { cause?: unknown }).cause, cause);
         return true;
       },
     );
+  });
+
+  it('does not retry a non-idempotent method by default (no duplicate side effects)', async () => {
+    let callCount = 0;
+    mockFetch(async () => {
+      callCount++;
+      return new Response('created', { status: 201 });
+    });
+
+    // No explicit `retries` — a POST must not retry even though 2xx is returned.
+    const res = await httpClient('https://example.test/z', { method: 'POST' });
+
+    assert.strictEqual(res.status, 201);
+    assert.strictEqual(callCount, 1);
+  });
+
+  it('honors an explicit `retries` value even on a non-idempotent method', async () => {
+    const statuses: number[] = [];
+    mockFetch(async () => {
+      const status = statuses.length === 0 ? 500 : 200;
+      statuses.push(status);
+      return new Response('', { status });
+    });
+
+    const res = await httpClient('https://example.test/z', {
+      method: 'POST',
+      retries: 1,
+      retryDelayMs: 1,
+    });
+
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(statuses, [500, 200]);
   });
 });
 
