@@ -54,7 +54,8 @@ jobs:
             --json number,title,headRefName \
             --jq '[.[] | select(.title | test("^planning: repo-wide improvement follow-ups"))
               | select(.headRefName != "claude-workflow-optimize-${{ github.run_id }}")
-              | .number] | first // empty')
+              | .number] | first // empty') \
+            || { echo "::error::gh pr list failed; aborting to avoid a stacked suggest-improvements PR."; exit 1; }
           if [ -n "$PENDING" ]; then
             echo "pending=true" >> "$GITHUB_OUTPUT"
             echo "pending_pr=${PENDING}" >> "$GITHUB_OUTPUT"
@@ -64,7 +65,6 @@ jobs:
           fi
 
       - name: Gather open PR context for dedup
-        id: open_prs
         if: steps.pending_suggest.outputs.pending != 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -76,8 +76,17 @@ jobs:
               --base main \
               --json number,title,headRefName,labels \
               --jq '.[] | "## #\(.number): \(.title)\nBranch: \(.headRefName)\nLabels: \([.labels[].name] | join(", "))\n"' \
-            | head -300
+              || { echo "::error::gh pr list failed; aborting dedup context gather."; exit 1; }
           } > /tmp/open-prs-context.md
+          TOTAL_LINES=$(wc -l < /tmp/open-prs-context.md)
+          if [ "$TOTAL_LINES" -gt 300 ]; then
+            head -300 /tmp/open-prs-context.md > /tmp/open-prs-context.tmp
+            mv /tmp/open-prs-context.tmp /tmp/open-prs-context.md
+            {
+              echo ""
+              echo "> Warning: $((TOTAL_LINES - 300)) more lines truncated - run \`gh pr list\` for the full set. Treat this list as non-exhaustive when deduplicating."
+            } >> /tmp/open-prs-context.md
+          fi
           echo "Wrote $(wc -l < /tmp/open-prs-context.md) lines to /tmp/open-prs-context.md"
 
       - name: Prepare improvement branch
@@ -89,6 +98,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
 
       - name: Propose repo-wide improvement follow-ups
+        if: steps.pending_suggest.outputs.pending != 'true'
         id: claude_run
         uses: ./.github/actions/run-zai
         with:
@@ -131,13 +141,22 @@ jobs:
 
       - uses: ./.github/actions/commit-and-push
         id: push
+        if: steps.pending_suggest.outputs.pending != 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'docs(planning): propose repo improvement follow-ups'
 
       - name: Log no-changes result
         if: steps.push.outputs.pushed != 'true'
-        run: echo "No worthwhile repo-wide improvement proposals were identified."
+        env:
+          PENDING: ${{ steps.pending_suggest.outputs.pending }}
+          PENDING_PR: ${{ steps.pending_suggest.outputs.pending_pr }}
+        run: |
+          if [ "$PENDING" = "true" ]; then
+            echo "Skipped: pending suggest-improvements PR #${PENDING_PR} already open."
+          else
+            echo "No worthwhile repo-wide improvement proposals were identified."
+          fi
 
       - name: Build improvement planning PR body
         id: pr-body

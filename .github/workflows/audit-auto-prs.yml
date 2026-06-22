@@ -56,7 +56,8 @@ jobs:
             --json number,title,headRefName \
             --jq '[.[] | select(.title | test("^ci\\(workflows\\): audit automation-created PRs"))
               | select(.headRefName != "claude-workflow-optimize-auto-pr-audit-${{ github.run_id }}")
-              | .number] | first // empty')
+              | .number] | first // empty') \
+            || { echo "::error::gh pr list failed; aborting to avoid a stacked audit PR."; exit 1; }
           if [ -n "$PENDING" ]; then
             echo "pending=true" >> "$GITHUB_OUTPUT"
             echo "pending_pr=${PENDING}" >> "$GITHUB_OUTPUT"
@@ -74,6 +75,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
 
       - name: Audit automation-authored pull requests
+        if: steps.pending_audit.outputs.pending != 'true'
         id: claude_run
         uses: ./.github/actions/run-zai
         with:
@@ -153,7 +155,7 @@ jobs:
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
+        if: steps.pending_audit.outputs.pending != 'true' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): audit automation-created PRs'
@@ -193,6 +195,8 @@ jobs:
         if: steps.push.outputs.pushed != 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PENDING: ${{ steps.pending_audit.outputs.pending }}
+          PENDING_PR: ${{ steps.pending_audit.outputs.pending_pr }}
           DUPLICATE_FOUND: ${{ steps.duplicate.outputs.duplicate_found }}
           DUPLICATE_PR_NUMBER: ${{ steps.duplicate.outputs.duplicate_pr_number }}
           DUPLICATE_PR_URL: ${{ steps.duplicate.outputs.duplicate_pr_url }}
@@ -208,7 +212,9 @@ jobs:
             echo "## Auto PR Audit"
             echo
             echo "- Source run: ${RUN_URL}"
-            if [ "$DUPLICATE_FOUND" = "true" ]; then
+            if [ "$PENDING" = "true" ]; then
+              echo "- Result: skipped - audit PR #${PENDING_PR} already open"
+            elif [ "$DUPLICATE_FOUND" = "true" ]; then
               echo "- Result: duplicate fix suppressed"
               echo "- Existing PR: #${DUPLICATE_PR_NUMBER} ${DUPLICATE_PR_URL}"
               echo "- Reason: ${DUPLICATE_REASON}"
