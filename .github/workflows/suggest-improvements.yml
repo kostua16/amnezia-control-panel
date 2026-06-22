@@ -66,6 +66,7 @@ jobs:
             echo ""
             gh pr list --repo "${{ github.repository }}" --state open \
               --base main \
+              --limit 100 \
               --json number,title,headRefName,labels \
               --jq '.[] | "## #\(.number): \(.title)\nBranch: \(.headRefName)\nLabels: \([.labels[].name] | join(", "))\n"' \
               || { echo "::error::gh pr list failed; aborting dedup context gather." >&2; exit 1; }
