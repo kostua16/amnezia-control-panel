@@ -11,6 +11,11 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
+# --ignore-scripts above hardens the supply chain by skipping arbitrary install
+# scripts, but it also skips better-sqlite3's native-binding fetch. Rebuild just
+# that one module (using the toolchain installed above) so its compiled binary is
+# present for the Next.js standalone trace — without re-enabling other scripts.
+RUN npm rebuild better-sqlite3
 
 # ─── Stage 2: Builder ─────────────────────────────────────────────────────────
 FROM deps AS builder
