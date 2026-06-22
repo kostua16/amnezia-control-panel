@@ -28,7 +28,7 @@ concurrency:
 env:
   MAX_TURNS: 80
   MONITOR_WORKFLOW_FILE: monitor-amnezia-control-panel-github-runs.yml
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
 
 permissions:
   contents: write

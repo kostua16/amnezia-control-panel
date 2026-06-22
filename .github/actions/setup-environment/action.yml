@@ -7,7 +7,7 @@ inputs:
     required: true
   node-version:
     description: 'Node.js version'
-    default: '22.x'
+    default: '24.x'
   gh-version:
     description: 'GitHub CLI version'
     default: '2.93.0'

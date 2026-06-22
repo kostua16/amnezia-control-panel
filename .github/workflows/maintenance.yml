@@ -10,7 +10,7 @@ concurrency:
 
 env:
   MAX_TURNS: 50
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
 
 permissions:
   contents: write

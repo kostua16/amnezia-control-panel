@@ -27,7 +27,7 @@ concurrency:
 
 env:
   MAX_TURNS: '60'
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
 
 jobs:
   authorize:

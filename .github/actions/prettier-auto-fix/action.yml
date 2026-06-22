@@ -10,7 +10,7 @@ inputs:
     required: true
   node-version:
     description: 'Node.js version'
-    default: '22.x'
+    default: '24.x'
   prettier-glob:
     description: 'Glob pattern for prettier --write'
     default: 'src/**/*.{ts,tsx,css}'

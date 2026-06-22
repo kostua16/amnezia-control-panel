@@ -3,7 +3,7 @@
 # ─── Stage 1: Dependencies ────────────────────────────────────────────────────
 # Install both prod + dev dependencies; native modules (better-sqlite3) are built
 # here so the builder stage can reuse the cache.
-FROM node:22-alpine3.21 AS deps
+FROM node:24-alpine3.22 AS deps
 
 RUN apk add --no-cache python3 make g++
 
@@ -27,7 +27,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ─── Stage 3: Runner ──────────────────────────────────────────────────────────
-FROM node:22-alpine3.21 AS runner
+FROM node:24-alpine3.22 AS runner
 
 WORKDIR /app
 

@@ -84,7 +84,7 @@ Claude workflows define at workflow level:
 ```yaml
 env:
   MAX_TURNS: "<per-workflow>"
-  NODE_VERSION: "22.x"
+  NODE_VERSION: "24.x"
 ```
 No `vars.ANTHROPIC_*` — models are baked into run-zai/run-claude-params.
 
