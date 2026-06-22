@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { DashboardStats } from '@/types/monitoring';
+import { queryKeys } from '@/lib/query-keys';
 
 async function fetchDashboardStats(): Promise<DashboardStats> {
   const response = await fetch('/api/dashboard/stats');
@@ -17,7 +18,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
 
 export function useDashboardStats() {
   return useQuery({
-    queryKey: ['dashboard-stats'],
+    queryKey: queryKeys.dashboardStats,
     queryFn: fetchDashboardStats,
     refetchInterval: 30_000,
     staleTime: 15_000,

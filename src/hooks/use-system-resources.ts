@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { SystemResources } from '@/types/monitoring';
+import { queryKeys } from '@/lib/query-keys';
 
 async function fetchSystemResources(): Promise<SystemResources> {
   const response = await fetch('/api/monitoring/resources');
@@ -17,7 +18,7 @@ async function fetchSystemResources(): Promise<SystemResources> {
 
 export function useSystemResources() {
   return useQuery({
-    queryKey: ['system-resources'],
+    queryKey: queryKeys.systemResources,
     queryFn: fetchSystemResources,
     refetchInterval: 10_000,
     staleTime: 5_000,
