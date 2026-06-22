@@ -78,9 +78,20 @@ on:
         type: string
 ```
 
-Scheduled runs should default to `dry_run: false` after the workflow has passed
-at least one manual dry run in the repository. During initial rollout, keep the
-schedule in report-only mode or gate write steps behind an explicit config flag.
+Resolve the effective dry-run value explicitly because `workflow_dispatch`
+defaults do not exist on `schedule` events:
+
+```bash
+if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+  effective_dry_run="${MERGE_PR_SCHEDULE_DRY_RUN:-true}"
+else
+  effective_dry_run="${{ github.event.inputs.dry_run || 'true' }}"
+fi
+```
+
+Initial rollout should keep `MERGE_PR_SCHEDULE_DRY_RUN=true`. After at least one
+manual dry run and one scheduled dry run pass with the expected grouping, the
+repo can flip scheduled runs to write mode by setting that variable to `false`.
 
 Permissions:
 
@@ -404,7 +415,7 @@ Then:
 
 ```bash
 gh pr edit "$SOURCE_PR" --add-label "fresh/superseded"
-gh pr close "$SOURCE_PR" --comment-file "$comment_file"
+gh pr close "$SOURCE_PR" --comment "$(cat "$comment_file")"
 ```
 
 Do not delete branches directly.
