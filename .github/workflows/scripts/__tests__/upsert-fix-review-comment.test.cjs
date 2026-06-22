@@ -84,21 +84,55 @@ test('renderPushRejected lists attempted changes and forbids force-push', () => 
   assert.match(body, /- src\/a\.ts/);
 });
 
-test('renderValidationFailed surfaces gate sub-statuses and not-pushed', () => {
+test('renderValidationFailed shows dual-block: agent-reported + authoritative gate', () => {
   const body = renderValidationFailed({
     headSha: SHA,
     runUrl: RUN,
     command: '/fix-review',
     structured: {
       changed_files: ['src/a.ts'],
-      validation: { tsc: 'fail', build: 'pass' },
+      validation: { tsc: 'pass', lint: 'pass', build: 'pass' },
+    },
+    gateOutcomes: {
+      lint: 'failure',
+      test: 'success',
+      build: 'skipped',
+      scriptTests: 'success',
+      prismaSafe: 'success',
     },
     updatedAt: '2026-06-17T00:00:00.000Z',
   });
   assert.match(body, /Validation failed — fixes not pushed/);
-  assert.match(body, /tsc: \*\*fail\*\*/);
-  assert.match(body, /build: \*\*pass\*\*/);
   assert.match(body, /NOT pushed/);
+  // Banner + both labelled blocks present.
+  assert.match(body, /Agent self-reported checks can be inaccurate/);
+  assert.match(body, /Agent-reported \(may be inaccurate\):/);
+  assert.match(body, /Workflow gate \(authoritative\):/);
+  // Agent-reported values come from structured.validation.
+  assert.match(body, /- lint: \*\*pass\*\*/);
+  // Authoritative gate values are normalized (failure -> fail).
+  assert.match(body, /- lint \(tracked files\): \*\*fail\*\*/);
+  assert.match(body, /- build: \*\*skipped\*\*/);
+});
+
+test('renderValidationFailed omits the agent block when none was reported', () => {
+  const body = renderValidationFailed({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    structured: { changed_files: ['src/a.ts'] },
+    gateOutcomes: {
+      lint: 'success',
+      test: 'failure',
+      build: 'success',
+      scriptTests: 'success',
+      prismaSafe: 'success',
+    },
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /Workflow gate \(authoritative\):/);
+  assert.match(body, /- unit tests: \*\*fail\*\*/);
+  assert.doesNotMatch(body, /Agent-reported/);
 });
 
 test('renderFailed uses the provided reason', () => {
@@ -157,7 +191,8 @@ test('resolveFinishedBody: cancelled wins over everything', () => {
   const body = resolveFinishedBody({
     outcome: 'cancelled',
     failed: 'true',
-    validateOutcome: 'failure',
+    hasChanges: 'true',
+    gatePassed: 'false',
     pushed: 'true',
     structured: {},
   });
@@ -169,7 +204,8 @@ test('resolveFinishedBody: Claude hard-failure beats a passing gate', () => {
     outcome: 'success',
     failed: 'true',
     failReason: 'api error',
-    validateOutcome: 'success',
+    hasChanges: 'true',
+    gatePassed: 'true',
     pushed: 'true',
     structured: {},
   });
@@ -177,33 +213,56 @@ test('resolveFinishedBody: Claude hard-failure beats a passing gate', () => {
   assert.match(body, /api error/);
 });
 
+test('resolveFinishedBody: clean no-op (has_changes=false) -> no-changes, gate skipped', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    hasChanges: 'false',
+    gatePassed: 'false',
+    pushed: 'false',
+    structured: {},
+  });
+  assert.match(body, /No changes needed/);
+});
+
 test('resolveFinishedBody: gate failure -> validation-failed, not pushed', () => {
   const body = resolveFinishedBody({
     outcome: 'success',
     failed: 'false',
-    validateOutcome: 'failure',
+    hasChanges: 'true',
+    gatePassed: 'false',
     pushed: 'false',
+    gateOutcomes: {
+      lint: 'failure',
+      test: 'success',
+      build: 'success',
+      scriptTests: 'success',
+      prismaSafe: 'success',
+    },
     structured: { changed_files: ['a.ts'] },
   });
   assert.match(body, /Validation failed/);
+  assert.match(body, /Workflow gate \(authoritative\):/);
 });
 
 test('resolveFinishedBody: green gate, not pushed, with changes -> push-rejected', () => {
   const body = resolveFinishedBody({
     outcome: 'success',
     failed: 'false',
-    validateOutcome: 'success',
+    hasChanges: 'true',
+    gatePassed: 'true',
     pushed: 'false',
     structured: { changed_files: ['a.ts'] },
   });
   assert.match(body, /Push rejected/);
 });
 
-test('resolveFinishedBody: green gate, not pushed, no changes -> no-changes', () => {
+test('resolveFinishedBody: green gate, not pushed, no changed_files -> no-changes', () => {
   const body = resolveFinishedBody({
     outcome: 'success',
     failed: 'false',
-    validateOutcome: 'success',
+    hasChanges: 'true',
+    gatePassed: 'true',
     pushed: 'false',
     structured: {},
   });
@@ -214,7 +273,8 @@ test('resolveFinishedBody: green gate, pushed -> complete', () => {
   const body = resolveFinishedBody({
     outcome: 'success',
     failed: 'false',
-    validateOutcome: 'success',
+    hasChanges: 'true',
+    gatePassed: 'true',
     pushed: 'true',
     structured: { summary: 'done' },
     commitSha: '1234567890abcdef',
