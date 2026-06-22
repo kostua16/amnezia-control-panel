@@ -95,6 +95,7 @@ export async function httpClient(
 ): Promise<Response> {
   const {
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    retries: retriesOpt,
     retryDelayMs = DEFAULT_RETRY_DELAY_MS,
     ...init
   } = options;
@@ -102,7 +103,7 @@ export async function httpClient(
   // Default to no retry for mutating verbs so a non-idempotent request can never
   // silently repeat (e.g. a duplicate config push); honor any explicit value.
   const idempotent = IDEMPOTENT_METHODS.has(method);
-  const retries = options.retries ?? (idempotent ? DEFAULT_RETRIES : 0);
+  const retries = retriesOpt ?? (idempotent ? DEFAULT_RETRIES : 0);
   const maxAttempts = retries + 1;
 
   let lastFailure: {

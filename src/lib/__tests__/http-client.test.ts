@@ -129,13 +129,15 @@ describe('httpClient', () => {
     let callCount = 0;
     mockFetch(async () => {
       callCount++;
-      return new Response('created', { status: 201 });
+      // Return a retryable status so this only passes when the POST default is
+      // non-retrying — a 2xx would never retry under any default.
+      return new Response('server error', { status: 500 });
     });
 
-    // No explicit `retries` — a POST must not retry even though 2xx is returned.
+    // No explicit `retries` — a non-idempotent POST must not be retried.
     const res = await httpClient('https://example.test/z', { method: 'POST' });
 
-    assert.strictEqual(res.status, 201);
+    assert.strictEqual(res.status, 500);
     assert.strictEqual(callCount, 1);
   });
 
