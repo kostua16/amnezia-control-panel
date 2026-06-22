@@ -25,7 +25,7 @@ jobs:
       should_run: ${{ steps.gate.outputs.should_run }}
       pr_number: ${{ steps.gate.outputs.pr_number }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Evaluate review approval
         id: gate
@@ -49,7 +49,7 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           ref: ${{ github.event.pull_request.base.ref }}
 

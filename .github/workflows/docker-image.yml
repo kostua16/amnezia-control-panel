@@ -32,7 +32,7 @@ jobs:
       should_validate: ${{ steps.classify.outputs.should_validate }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space
@@ -204,7 +204,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space
@@ -246,7 +246,7 @@ jobs:
       id-token: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space
