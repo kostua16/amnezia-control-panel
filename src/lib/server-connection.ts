@@ -49,7 +49,9 @@ function setPoolEntry(
   // Evict oldest entry if pool exceeds max size (LRU by lastUsed)
   if (connectionPool.size >= MAX_POOL_SIZE && !connectionPool.has(serverId)) {
     let oldestId: number | null = null;
-    let oldestTime = Date.now();
+    // Start from +Infinity so the first iterated entry is always selected,
+    // even if every entry's lastUsed equals the current millisecond.
+    let oldestTime = Number.POSITIVE_INFINITY;
 
     for (const [id, entry] of connectionPool) {
       if (entry.lastUsed < oldestTime) {
