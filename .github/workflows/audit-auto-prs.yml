@@ -51,20 +51,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          PENDING=$(gh pr list --repo "${{ github.repository }}" --state open \
-            --base main \
-            --json number,title,headRefName \
-            --jq '[.[] | select(.title | test("^ci\\(workflows\\): audit automation-created PRs"))
-              | select(.headRefName != "claude-workflow-optimize-auto-pr-audit-${{ github.run_id }}")
-              | .number] | first // empty') \
-            || { echo "::error::gh pr list failed; aborting to avoid a stacked audit PR."; exit 1; }
-          if [ -n "$PENDING" ]; then
-            echo "pending=true" >> "$GITHUB_OUTPUT"
-            echo "pending_pr=${PENDING}" >> "$GITHUB_OUTPUT"
-            echo "Skipping: pending audit PR #${PENDING} already open."
-          else
-            echo "pending=false" >> "$GITHUB_OUTPUT"
-          fi
+          node .github/workflows/scripts/check-pending-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --title-prefix 'ci(workflows): audit automation-created PRs' \
+            --exclude-head 'claude-workflow-optimize-auto-pr-audit-${{ github.run_id }}' \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Prepare auto PR audit branch
         if: steps.pending_audit.outputs.pending != 'true'

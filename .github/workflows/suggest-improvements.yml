@@ -49,20 +49,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          PENDING=$(gh pr list --repo "${{ github.repository }}" --state open \
-            --base main \
-            --json number,title,headRefName \
-            --jq '[.[] | select(.title | test("^planning: repo-wide improvement follow-ups"))
-              | select(.headRefName != "claude-workflow-optimize-${{ github.run_id }}")
-              | .number] | first // empty') \
-            || { echo "::error::gh pr list failed; aborting to avoid a stacked suggest-improvements PR."; exit 1; }
-          if [ -n "$PENDING" ]; then
-            echo "pending=true" >> "$GITHUB_OUTPUT"
-            echo "pending_pr=${PENDING}" >> "$GITHUB_OUTPUT"
-            echo "Skipping: pending suggest-improvements PR #${PENDING} already open."
-          else
-            echo "pending=false" >> "$GITHUB_OUTPUT"
-          fi
+          node .github/workflows/scripts/check-pending-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --title-prefix 'planning: repo-wide improvement follow-ups' \
+            --exclude-head 'claude-workflow-optimize-${{ github.run_id }}' \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Gather open PR context for dedup
         if: steps.pending_suggest.outputs.pending != 'true'
@@ -76,7 +68,7 @@ jobs:
               --base main \
               --json number,title,headRefName,labels \
               --jq '.[] | "## #\(.number): \(.title)\nBranch: \(.headRefName)\nLabels: \([.labels[].name] | join(", "))\n"' \
-              || { echo "::error::gh pr list failed; aborting dedup context gather."; exit 1; }
+              || { echo "::error::gh pr list failed; aborting dedup context gather." >&2; exit 1; }
           } > /tmp/open-prs-context.md
           TOTAL_LINES=$(wc -l < /tmp/open-prs-context.md)
           if [ "$TOTAL_LINES" -gt 300 ]; then
