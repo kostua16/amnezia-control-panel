@@ -20,8 +20,8 @@ prisma.server.findFirst({
 
 Then `resolvePanelTransport()` may do additional writes (cache-back to DB) per server.
 
-With N panels: N `findMany` (active panels) + N `findFirst` (server lookup) = 2N queries
-where 1+N would suffice.
+With N panels: 1 `findMany` for active panels + N `findFirst` server lookups = N+1
+queries where 2 would suffice.
 
 ## Evidence
 
@@ -61,7 +61,7 @@ which is redundant parsing work.
 
 ## Impact
 
-- Reduces DB queries from 2N to N+1 during panel push.
+- Reduces DB queries from N+1 to 2 during panel push.
 - Eliminates redundant URL parsing per panel.
 - Behavior preserved — lookup function mirrors Prisma `contains`+`equals` semantics exactly.
 - Low risk: pure lookup refactor, same data sources, same match semantics.
