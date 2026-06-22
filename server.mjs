@@ -60,11 +60,7 @@ app.prepare().then(() => {
     path: '/api/ws',
     addTrailingSlash: false,
     cors: {
-      origin: dev
-        ? '*'
-        : allowedWsOrigins.length
-          ? allowedWsOrigins
-          : false,
+      origin: dev ? '*' : allowedWsOrigins.length ? allowedWsOrigins : false,
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -99,55 +95,10 @@ app.prepare().then(() => {
   // This mirrors what src/lib/websocket.ts does, but runs at the right time
   globalThis.__socketIO = io;
 
-  // Register cleanup hooks for graceful shutdown
-  async function cleanup() {
-    console.log('[server] Starting graceful shutdown...');
-
-    try {
-      // Cleanup panel health checker intervals and state
-      const { cleanup: cleanupPanelHealth } = await import('./src/lib/panel-health-checker.js');
-      cleanupPanelHealth();
-    } catch (err) {
-      console.error('[server] Error cleaning up panel health checker:', err);
-    }
-
-    try {
-      // Cleanup real-time broadcaster intervals
-      const { stopBroadcaster } = await import('./src/lib/real-time-broadcaster.js');
-      stopBroadcaster();
-    } catch (err) {
-      console.error('[server] Error stopping broadcaster:', err);
-    }
-
-    try {
-      // Cleanup connection pool
-      const { cleanupConnections } = await import('./src/lib/server-connection.js');
-      cleanupConnections();
-    } catch (err) {
-      console.error('[server] Error cleaning up connections:', err);
-    }
-
-    try {
-      // Cleanup GeoIP manager
-      const { cleanupGeoIP } = await import('./src/lib/geoip-manager.js');
-      cleanupGeoIP();
-    } catch (err) {
-      console.error('[server] Error cleaning up GeoIP:', err);
-    }
-
-    console.log('[server] Graceful shutdown complete');
-  }
-
-  // Register cleanup on SIGTERM and SIGINT
-  process.on('SIGTERM', () => {
-    console.log('[server] Received SIGTERM, cleaning up...');
-    cleanup().finally(() => process.exit(0));
-  });
-
-  process.on('SIGINT', () => {
-    console.log('[server] Received SIGINT, cleaning up...');
-    cleanup().finally(() => process.exit(0));
-  });
+  // Graceful shutdown (SIGTERM/SIGINT cleanup) is registered in
+  // instrumentation.ts, which runs inside Next.js's Node runtime where the
+  // @/lib/* TypeScript sources resolve. server.mjs is plain Node and cannot
+  // import those sources directly, so cleanup must live there, not here.
 
   httpServer
     .once('error', (err) => {
@@ -161,6 +112,5 @@ app.prepare().then(() => {
         }`,
       );
       console.log('> Socket.IO attached on /api/ws');
-      console.log('> Registered cleanup hooks for SIGTERM/SIGINT');
     });
 });

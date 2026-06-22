@@ -35,6 +35,9 @@ function getPoolEntry(serverId: number): ConnectionPoolEntry | undefined {
     connectionPool.delete(serverId);
     return undefined;
   }
+  // Bump recency on a cache hit so frequently read servers are not evicted as
+  // "oldest" — this is what makes the max-size eviction genuine LRU.
+  entry.lastUsed = Date.now();
   return entry;
 }
 
