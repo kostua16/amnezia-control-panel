@@ -26,6 +26,7 @@ interface ConnectionPoolEntry {
 const connectionPool = new Map<number, ConnectionPoolEntry>();
 
 const POOL_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_POOL_SIZE = 100; // Maximum number of entries in the pool
 
 function getPoolEntry(serverId: number): ConnectionPoolEntry | undefined {
   const entry = connectionPool.get(serverId);
@@ -42,6 +43,24 @@ function setPoolEntry(
   status: ServerConnectionStatus,
   latencyMs: number | null,
 ): void {
+  // Evict oldest entry if pool exceeds max size (LRU by lastUsed)
+  if (connectionPool.size >= MAX_POOL_SIZE && !connectionPool.has(serverId)) {
+    let oldestId: number | null = null;
+    let oldestTime = Date.now();
+
+    for (const [id, entry] of connectionPool) {
+      if (entry.lastUsed < oldestTime) {
+        oldestTime = entry.lastUsed;
+        oldestId = id;
+      }
+    }
+
+    if (oldestId !== null) {
+      connectionPool.delete(oldestId);
+      console.log(`[server-connection] Evicted oldest pool entry ${oldestId} (LRU)`);
+    }
+  }
+
   connectionPool.set(serverId, { lastUsed: Date.now(), status, latencyMs });
 }
 
