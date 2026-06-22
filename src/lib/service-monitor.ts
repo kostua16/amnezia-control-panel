@@ -1,7 +1,4 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-
-const execFileAsync = promisify(execFile);
+import { execCommand } from '@/lib/command-executor';
 
 export interface ServiceHealth {
   service: string;
@@ -20,6 +17,9 @@ const SERVICE_MAP: Record<ServiceKey, string> = {
 /**
  * Check the current status of a single VPN service via systemctl.
  * Returns 'online' if the service is active, 'offline' otherwise.
+ *
+ * Async so HTTP handlers (e.g. the service-status route) can await it without
+ * blocking the Node event loop while systemctl responds.
  */
 export async function checkServiceStatus(
   serviceKey: ServiceKey,
@@ -27,12 +27,12 @@ export async function checkServiceStatus(
   const systemdName = SERVICE_MAP[serviceKey];
 
   try {
-    const { stdout } = await execFileAsync(
+    const { stdout } = await execCommand(
       'systemctl',
       ['is-active', systemdName],
       {
         encoding: 'utf-8',
-        timeout: 5000,
+        timeoutMs: 5000,
       },
     );
 
@@ -72,8 +72,8 @@ export async function restartService(serviceKey: ServiceKey): Promise<boolean> {
   const systemdName = SERVICE_MAP[serviceKey];
 
   try {
-    await execFileAsync('systemctl', ['restart', systemdName], {
-      timeout: 15000,
+    await execCommand('systemctl', ['restart', systemdName], {
+      timeoutMs: 15000,
     });
     return true;
   } catch (err) {

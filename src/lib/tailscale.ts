@@ -1,13 +1,10 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { execCommand, CommandError } from '@/lib/command-executor';
 import type {
   TailscaleStatus,
   TailscalePeer,
   TailscaleNodeInfo,
   TransportAddress,
 } from '@/types/tailscale';
-
-const execFileAsync = promisify(execFile);
 
 // ─── Constants ───────────────────────────────────────────
 
@@ -44,8 +41,8 @@ async function runTailscale(
   try {
     console.log(`[tailscale] Executing ${label}: ${bin} ${args.join(' ')}`);
 
-    const { stdout, stderr } = await execFileAsync(bin, args, {
-      timeout,
+    const { stdout, stderr } = await execCommand(bin, args, {
+      timeoutMs: timeout,
       encoding: 'utf-8',
     });
 
@@ -61,10 +58,7 @@ async function runTailscale(
     };
   } catch (err: unknown) {
     // D-04: fallback to /usr/bin/tailscale on ENOENT
-    const isEnoent =
-      err instanceof Error &&
-      'code' in err &&
-      (err as NodeJS.ErrnoException).code === 'ENOENT';
+    const isEnoent = err instanceof CommandError && err.code === 'ENOENT';
 
     if (isEnoent && bin === TAILSCALE_BIN) {
       bin = TAILSCALE_FALLBACK;
@@ -73,8 +67,8 @@ async function runTailscale(
           `[tailscale] Retrying ${label} with fallback: ${bin} ${args.join(' ')}`,
         );
 
-        const { stdout, stderr } = await execFileAsync(bin, args, {
-          timeout,
+        const { stdout, stderr } = await execCommand(bin, args, {
+          timeoutMs: timeout,
           encoding: 'utf-8',
         });
 
@@ -99,9 +93,7 @@ async function runTailscale(
     }
 
     const errMsg =
-      err instanceof Error
-        ? ((err as NodeJS.ErrnoException).message ?? String(err))
-        : String(err);
+      err instanceof Error ? err.message || String(err) : String(err);
 
     console.error(`[tailscale] ${label} failed: ${errMsg}`);
     return { success: false, stdout: '', message: errMsg };

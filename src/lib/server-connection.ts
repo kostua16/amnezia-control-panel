@@ -1,12 +1,9 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { execCommand, isWindows } from '@/lib/command-executor';
 import type {
   Server,
   ServerConnectionStatus,
   ServerTestResult,
 } from '@/types/server';
-
-const execFileAsync = promisify(execFile);
 
 const SAFE_HOSTNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 
@@ -85,12 +82,11 @@ export async function testConnection(
 
     // Use ping as a basic reachability check (cross-platform stub).
     // In production, replace with a proper SSH/TCP connection test.
-    const isWindows = process.platform === 'win32';
-    const pingArgs = isWindows
+    const pingArgs = isWindows()
       ? ['-n', '1', '-w', '3000', server.hostname]
       : ['-c', '1', '-W', '3', server.hostname];
 
-    await execFileAsync('ping', pingArgs, { timeout: 5000 });
+    await execCommand('ping', pingArgs, { timeoutMs: 5000 });
     const latencyMs = Date.now() - startTime;
 
     setPoolEntry(server.id, 'connected', latencyMs);

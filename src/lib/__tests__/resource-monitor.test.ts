@@ -19,23 +19,19 @@ describe('getSystemResources', () => {
     let resolveDiskUsage:
       | ((value: { stdout: string; stderr: string }) => void)
       | undefined;
-    const execFileAsync = mock.fn(
-      async (
-        _file: string,
-        _args: string[],
-        _options: { encoding: BufferEncoding; timeout: number },
-      ) =>
+    const execCommand = mock.fn(
+      async (_cmd: string, _args: string[], _options: { timeoutMs: number }) =>
         new Promise<{ stdout: string; stderr: string }>((resolve) => {
           resolveDiskUsage = resolve;
         }),
     );
 
-    __setResourceMonitorDepsForTests({ execFileAsync });
+    __setResourceMonitorDepsForTests({ execCommand });
 
     const first = getSystemResources();
     const second = getSystemResources();
 
-    assert.equal(execFileAsync.mock.callCount(), 1);
+    assert.equal(execCommand.mock.callCount(), 1);
     assert.ok(resolveDiskUsage);
     resolveDiskUsage({
       stdout:
@@ -53,11 +49,11 @@ describe('getSystemResources', () => {
   });
 
   it('serves cache hits without running disk collection again', async () => {
-    const execFileAsync = mock.fn(
+    const execCommand = mock.fn(
       async (
-        _file: string,
+        _cmd: string,
         _args: string[],
-        _options: { encoding: BufferEncoding; timeout: number },
+        _options: { timeoutMs: number },
       ) => ({
         stdout:
           'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk1 200 50 150 25% /\n',
@@ -65,12 +61,12 @@ describe('getSystemResources', () => {
       }),
     );
 
-    __setResourceMonitorDepsForTests({ execFileAsync });
+    __setResourceMonitorDepsForTests({ execCommand });
 
     const first = await getSystemResources();
     const second = await getSystemResources();
 
     assert.strictEqual(first, second);
-    assert.equal(execFileAsync.mock.callCount(), 1);
+    assert.equal(execCommand.mock.callCount(), 1);
   });
 });
