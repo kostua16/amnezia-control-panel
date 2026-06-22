@@ -27,6 +27,12 @@ const fallbackPanels = new Set<number>();
 /** In-memory cache of plaintext API keys for auto-resync. Populated on manual push. */
 const panelApiKeyCache = new Map<number, string>();
 
+/** Timestamps for API key cache entries (for max-age eviction) */
+const panelApiKeyCacheTimestamps = new Map<number, number>();
+
+/** Max age for API key cache entries (1 hour) */
+const API_KEY_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+
 // ─── Health Check Interval ──────────────────────────────
 
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
@@ -53,6 +59,7 @@ export function getFallbackPanels(): number[] {
  */
 export function cachePanelApiKey(panelId: number, apiKey: string): void {
   panelApiKeyCache.set(panelId, apiKey);
+  panelApiKeyCacheTimestamps.set(panelId, Date.now());
 }
 
 /**
@@ -60,6 +67,67 @@ export function cachePanelApiKey(panelId: number, apiKey: string): void {
  */
 export function removePanelApiKey(panelId: number): void {
   panelApiKeyCache.delete(panelId);
+  panelApiKeyCacheTimestamps.delete(panelId);
+}
+
+/**
+ * Evict all in-memory state for a panel when it is deleted.
+ * Clears from consecutiveFailures, fallbackPanels, and panelApiKeyCache.
+ * Called from panel DELETE route after DB delete succeeds.
+ */
+export function evictPanel(panelId: number): void {
+  consecutiveFailures.delete(panelId);
+  fallbackPanels.delete(panelId);
+  panelApiKeyCache.delete(panelId);
+  panelApiKeyCacheTimestamps.delete(panelId);
+  console.log(
+    `[panel-health] Evicted all in-memory state for panel ${panelId}`,
+  );
+}
+
+/**
+ * Clean up expired API key cache entries (older than 1 hour).
+ * Call periodically to prevent unbounded growth of the cache.
+ * Invoked on each health-check tick and during graceful shutdown.
+ */
+export function cleanupExpiredApiKeys(now: number = Date.now()): void {
+  let expiredCount = 0;
+
+  for (const [panelId, timestamp] of panelApiKeyCacheTimestamps.entries()) {
+    if (now - timestamp > API_KEY_CACHE_MAX_AGE_MS) {
+      panelApiKeyCache.delete(panelId);
+      panelApiKeyCacheTimestamps.delete(panelId);
+      expiredCount++;
+    }
+  }
+
+  if (expiredCount > 0) {
+    console.log(
+      `[panel-health] Cleaned up ${expiredCount} expired API key cache entries`,
+    );
+  }
+}
+
+/**
+ * Read a panel's cached API key only if it is within the max-age window.
+ * A stale entry is evicted and treated as a cache miss so that plaintext keys
+ * never outlive the 1-hour TTL even if the periodic cleanup tick has not run.
+ */
+export function getCachedPanelApiKey(
+  panelId: number,
+  now: number = Date.now(),
+): string | undefined {
+  const key = panelApiKeyCache.get(panelId);
+  if (key === undefined) return undefined;
+
+  const stamped = panelApiKeyCacheTimestamps.get(panelId);
+  if (stamped === undefined || now - stamped > API_KEY_CACHE_MAX_AGE_MS) {
+    panelApiKeyCache.delete(panelId);
+    panelApiKeyCacheTimestamps.delete(panelId);
+    return undefined;
+  }
+
+  return key;
 }
 
 // ─── WebSocket Fallback Broadcast ───────────────────────
@@ -108,7 +176,7 @@ async function triggerAutoResync(
     // Import dynamically to avoid circular dependency at module load
     const { pushConfigToPanel } = await import('@/lib/panel-sync-client');
 
-    const cachedApiKey = panelApiKeyCache.get(panelId);
+    const cachedApiKey = getCachedPanelApiKey(panelId);
     if (!cachedApiKey) {
       console.warn(
         `[panel-health] Auto-resync skipped for panel ${panelId}: no cached API key. Admin must trigger manual push first.`,
@@ -250,6 +318,9 @@ export function startPanelHealthChecks(): void {
 
   healthCheckInterval = setInterval(async () => {
     try {
+      // Evict API key cache entries that have exceeded their 1-hour max-age.
+      cleanupExpiredApiKeys();
+
       const panels = await prisma.remotePanel.findMany({
         where: { isActive: true },
       });
@@ -303,6 +374,20 @@ export function stopPanelHealthChecks(): void {
     healthCheckInterval = null;
   }
   console.log('[panel-health] Stopped periodic health checks');
+}
+
+/**
+ * Cleanup function for graceful shutdown.
+ * Clears all intervals and flushes all in-memory state.
+ * Call from the graceful-shutdown handler in instrumentation.ts.
+ */
+export function cleanup(): void {
+  stopPanelHealthChecks();
+  consecutiveFailures.clear();
+  fallbackPanels.clear();
+  panelApiKeyCache.clear();
+  panelApiKeyCacheTimestamps.clear();
+  console.log('[panel-health] Cleaned up all in-memory state');
 }
 
 /**

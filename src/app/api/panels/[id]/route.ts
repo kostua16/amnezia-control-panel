@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { hashValue } from '@/lib/password';
 import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
 import { writeAuditLog } from '@/lib/audit-log';
+import { evictPanel } from '@/lib/panel-health-checker';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -167,6 +168,9 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     }
 
     await prisma.remotePanel.delete({ where: { id: panelId } });
+
+    // Evict all in-memory state for this panel
+    evictPanel(panelId);
 
     await writeAuditLog({
       action: 'panel.delete',

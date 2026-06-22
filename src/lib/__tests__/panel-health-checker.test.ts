@@ -5,6 +5,8 @@ import {
   getFallbackPanels,
   cachePanelApiKey,
   removePanelApiKey,
+  cleanupExpiredApiKeys,
+  getCachedPanelApiKey,
 } from '../panel-health-checker';
 
 describe('Panel fallback state', () => {
@@ -62,5 +64,53 @@ describe('Panel API key cache', () => {
     cachePanelApiKey(99, 'key-b');
     removePanelApiKey(42);
     removePanelApiKey(99);
+  });
+});
+
+describe('API key cache 1-hour TTL', () => {
+  // Mirrors API_KEY_CACHE_MAX_AGE_MS in panel-health-checker.ts
+  const MAX_AGE_MS = 60 * 60 * 1000;
+
+  beforeEach(() => {
+    removePanelApiKey(700);
+    removePanelApiKey(701);
+  });
+
+  it('cleanupExpiredApiKeys evicts entries past the 1-hour max-age', () => {
+    const cachedAt = Date.now();
+    cachePanelApiKey(700, 'stale-key');
+
+    // Read two hours later — past the max-age, so the entry is evicted
+    cleanupExpiredApiKeys(cachedAt + MAX_AGE_MS * 2);
+
+    assert.strictEqual(getCachedPanelApiKey(700, cachedAt), undefined);
+  });
+
+  it('cleanupExpiredApiKeys keeps entries within the 1-hour max-age', () => {
+    const cachedAt = Date.now();
+    cachePanelApiKey(701, 'fresh-key');
+
+    const thirtyMinLater = cachedAt + 30 * 60 * 1000;
+    cleanupExpiredApiKeys(thirtyMinLater);
+
+    assert.strictEqual(getCachedPanelApiKey(701, thirtyMinLater), 'fresh-key');
+  });
+
+  it('getCachedPanelApiKey treats an expired entry as a miss and evicts it on read', () => {
+    const cachedAt = Date.now();
+    cachePanelApiKey(700, 'stale-key');
+
+    const twoHoursLater = cachedAt + MAX_AGE_MS * 2;
+    assert.strictEqual(getCachedPanelApiKey(700, twoHoursLater), undefined);
+    // The read itself evicted the stale entry
+    assert.strictEqual(getCachedPanelApiKey(700, twoHoursLater), undefined);
+  });
+
+  it('getCachedPanelApiKey returns the key within the 1-hour max-age', () => {
+    const cachedAt = Date.now();
+    cachePanelApiKey(701, 'fresh-key');
+
+    const thirtyMinLater = cachedAt + 30 * 60 * 1000;
+    assert.strictEqual(getCachedPanelApiKey(701, thirtyMinLater), 'fresh-key');
   });
 });

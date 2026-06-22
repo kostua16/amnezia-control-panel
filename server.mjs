@@ -60,11 +60,7 @@ app.prepare().then(() => {
     path: '/api/ws',
     addTrailingSlash: false,
     cors: {
-      origin: dev
-        ? '*'
-        : allowedWsOrigins.length
-          ? allowedWsOrigins
-          : false,
+      origin: dev ? '*' : allowedWsOrigins.length ? allowedWsOrigins : false,
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -98,6 +94,11 @@ app.prepare().then(() => {
   // Store the io instance globally so that server-side code can access it
   // This mirrors what src/lib/websocket.ts does, but runs at the right time
   globalThis.__socketIO = io;
+
+  // Graceful shutdown (SIGTERM/SIGINT cleanup) is registered in
+  // instrumentation.ts, which runs inside Next.js's Node runtime where the
+  // @/lib/* TypeScript sources resolve. server.mjs is plain Node and cannot
+  // import those sources directly, so cleanup must live there, not here.
 
   httpServer
     .once('error', (err) => {
