@@ -50,6 +50,12 @@ function gh(args) {
   });
 }
 
+/** REST ref path for deleting a branch. The repos/ prefix is required; without
+ * it gh api 404s every branch and the sweep silently deletes nothing. */
+function deleteRefPath(repo, branchName) {
+  return `repos/${repo}/git/refs/heads/${branchName}`;
+}
+
 /** Flatten the policy.json branch-prefix keys into a unique list. */
 function collectPolicyPrefixes(policy) {
   const p = policy || {};
@@ -151,21 +157,16 @@ function run() {
   }
 
   const branches = fetchBranches(repo);
-  const openHeads =
-    parseJson(
-      gh([
-        'pr',
-        'list',
-        '--repo',
-        repo,
-        '--state',
-        'open',
-        '--limit',
-        '300',
-        '--json',
-        'headRefName',
-      ]),
-    )?.map((pr) => String(pr.headRefName ?? '')) || [];
+  const openHeads = gh([
+    'api',
+    `repos/${repo}/pulls?state=open`,
+    '--paginate',
+    '--jq',
+    '.[].head.ref',
+  ])
+    .split('\n')
+    .map((ref) => ref.trim())
+    .filter(Boolean);
 
   const orphans = selectOrphanBranches(branches, openHeads, prefixes, {
     maxAgeMs: maxAgeDays * 24 * 60 * 60 * 1000,
@@ -188,12 +189,7 @@ function run() {
   let deleted = 0;
   for (const branch of orphans) {
     try {
-      gh([
-        'api',
-        '--method',
-        'DELETE',
-        `${repo}/git/refs/heads/${branch.name}`,
-      ]);
+      gh(['api', '--method', 'DELETE', deleteRefPath(repo, branch.name)]);
       process.stdout.write(`::notice::Deleted orphan branch ${branch.name}\n`);
       deleted += 1;
     } catch (error) {
@@ -208,7 +204,7 @@ function run() {
   appendOutput(outputPath, 'orphan_count', orphans.length);
 }
 
-module.exports = { collectPolicyPrefixes, selectOrphanBranches };
+module.exports = { collectPolicyPrefixes, selectOrphanBranches, deleteRefPath };
 
 if (require.main === module) {
   run();

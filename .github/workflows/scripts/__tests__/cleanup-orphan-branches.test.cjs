@@ -5,7 +5,25 @@ const assert = require('node:assert/strict');
 const {
   selectOrphanBranches,
   collectPolicyPrefixes,
+  deleteRefPath,
 } = require('../cleanup-orphan-branches.cjs');
+
+test('deleteRefPath: includes the repos/ prefix required by the REST API', () => {
+  assert.equal(
+    deleteRefPath(
+      'kostua16/amnezia-control-panel',
+      'claude-workflow-optimize-1',
+    ),
+    'repos/kostua16/amnezia-control-panel/git/refs/heads/claude-workflow-optimize-1',
+  );
+});
+
+test('deleteRefPath: preserves slashes in branch names', () => {
+  assert.equal(
+    deleteRefPath('o/r', 'claude/issue-9'),
+    'repos/o/r/git/refs/heads/claude/issue-9',
+  );
+});
 
 const NOW = Date.UTC(2026, 5, 23, 0, 0, 0); // 2026-06-23T00:00:00Z
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
