@@ -127,25 +127,19 @@ The planning artifact (`.planning/quick/260604-j9k-geoip-lookup-index/proposal.m
 - Trie rebuilt once on file load/refresh, not per lookup
 
 ### Test Status
-- Pre-existing test failures in other modules (unrelated to GeoIP)
-- Pre-existing TypeScript errors (Prisma client missing, known deferred item)
-- GeoIP-specific tests cannot run due to module resolution (environment issue, not code issue)
+- Full suite (`npm run test-only`): **594 pass, 0 fail**
+- GeoIP suite (`src/lib/__tests__/geoip-manager.test.ts`): **47 pass, 0 fail**, covering `matchesCIDR`, `cidrToNetworkAndMask`, `buildLookupIndex` + `lookupCountryInIndex`, `parseGeoIPBuffer`, download integrity, and refresh durability
+- Prisma client is a generated artifact (`npx prisma generate` → `src/generated/prisma`); it is not committed, so a fresh worktree must regenerate it before type-check and tests resolve `@/generated/prisma/client`
 
 ## Issues Encountered
 
-### Pre-Existing Test Failures (Out of Scope)
-- 20 test failures in auth, chain, routing, user modules
-- These are pre-existing issues, not introduced by this plan
-- Documented in STATE.md as deferred items or known gaps
+### Environment Setup (Resolved)
+- A fresh worktree lacks the generated Prisma client; running `npx prisma generate` produces `src/generated/prisma` and the suite then passes cleanly (594/0)
+- The earlier "466 pass, 20 fail" and "GeoIP tests cannot run (module resolution)" notes reflected that incomplete environment, not code defects — after generating the client both the full suite and the GeoIP suite pass without changes
 
-### Pre-Existing TypeScript Errors (Out of Scope)
-- Missing Prisma client (`@/generated/prisma/client`)
-- Known deferred item (database refactoring planned)
-
-### Module Resolution (Test Environment)
-- Direct `node --test` fails with module resolution
-- This is a test environment configuration issue, not a code issue
-- Tests run via npm script successfully (466 pass, 20 fail - pre-existing failures)
+### No Implementation Issues
+- This plan touched zero executable code, so no runtime regression is possible
+- The GeoIP suite (47/0) confirms country-lookup behavior is intact
 
 ## Next Phase Readiness
 
@@ -158,7 +152,8 @@ The plan's acceptance criteria are already met by the current implementation:
    - Current implementation: CIDRs pre-parsed to integers during trie construction
 
 3. ✅ **Existing geo-routing behavior unchanged (same country results)**
-   - Current implementation: Same lookup logic via trie, just faster
+   - Verified by the GeoIP suite (47/0 pass): `buildLookupIndex` + `lookupCountryInIndex`, `matchesCIDR`, and `cidrToNetworkAndMask` exercise the exact country-lookup path this criterion covers
+   - The trie is a performance-only representation of the same CIDR→country mapping; the country returned for a given IP is unchanged
 
 ## Conclusion
 
