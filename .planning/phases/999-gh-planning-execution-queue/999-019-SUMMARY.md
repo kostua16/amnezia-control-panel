@@ -15,7 +15,7 @@ The source artifact's implementation was already present in commit `5bd0722` ("L
 
 | Check | Result |
 |-------|--------|
-| Policy tests (7) | 594/594 pass |
+| Policy tests (7) | 7/7 pass (focused) |
 | TypeScript | No errors |
 | ESLint | 0 errors |
 | Prettier | All formatted |
