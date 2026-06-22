@@ -11,6 +11,7 @@ const {
   quoteBlock,
   shortSha,
 } = require('./lib/sticky-comment.cjs');
+const { renderGateSummary } = require('./lib/gate-summary.cjs');
 
 const COMMENT_MARKER = '<!-- fix-review-summary -->';
 
@@ -139,12 +140,12 @@ function renderValidationFailed({
   runUrl,
   command,
   structured,
+  gateOutcomes = {},
   updatedAt,
 }) {
   const changed = Array.isArray(structured.changed_files)
     ? structured.changed_files
     : [];
-  const validation = structured.validation || {};
   const lines = [
     COMMENT_MARKER,
     '## ⚠️ Validation failed — fixes not pushed',
@@ -154,16 +155,18 @@ function renderValidationFailed({
     `- Run: ${runUrl || '_n/a_'}`,
     '',
     quoteBlock(
-      'The gate (`npm run test && npm run build` + the Prisma-safe-SQL check) did ' +
-        'not pass, so the changes were NOT pushed. Adjust the PR and re-run `/fix-review`.',
+      'The CI-matching gate did not pass, so the changes were NOT pushed. ' +
+        'Fix the failing check and re-run `/fix-review`.',
     ),
+    '',
+    // Dual-block: the agent's self-reported checks (may be inaccurate) beside
+    // the workflow gate's real outcomes (authoritative). The push verdict is
+    // driven by the gate alone, never the agent self-report.
+    renderGateSummary({
+      agentValidation: structured.validation,
+      gateOutcomes,
+    }),
   ];
-  const checks = ['tsc', 'lint', 'tests', 'format', 'build']
-    .filter((k) => validation[k])
-    .map((k) => `- ${k}: **${validation[k]}**`);
-  if (checks.length > 0) {
-    lines.push('', 'Validation:', ...checks);
-  }
   if (changed.length > 0) {
     lines.push(
       '',
@@ -296,7 +299,9 @@ function resolveFinishedBody({
   failed,
   failReason,
   outcome,
-  validateOutcome,
+  hasChanges,
+  gatePassed,
+  gateOutcomes = {},
   pushed,
 }) {
   const updatedAt = new Date().toISOString();
@@ -306,12 +311,21 @@ function resolveFinishedBody({
   if (isTrue(failed)) {
     return renderFailed({ headSha, runUrl, failReason, updatedAt });
   }
-  if (validateOutcome !== 'success') {
+  // Clean no-op: the agent changed nothing, so the gate was skipped and there
+  // is nothing to push (fix-review.yml detect-noop sets has_changes=false).
+  if (!isTrue(hasChanges)) {
+    return renderNoChanges({ headSha, runUrl, command, structured, updatedAt });
+  }
+  // The workflow gate ran and failed: show the real per-check outcomes
+  // (authoritative) beside the agent's self-report, and do NOT push. The gate
+  // — never the agent self-report — drives the push verdict.
+  if (!isTrue(gatePassed)) {
     return renderValidationFailed({
       headSha,
       runUrl,
       command,
       structured,
+      gateOutcomes,
       updatedAt,
     });
   }
@@ -392,7 +406,17 @@ function main() {
         failed: getArg('--failed'),
         failReason: getArg('--fail-reason'),
         outcome: getArg('--outcome'),
-        validateOutcome: getArg('--validate-outcome'),
+        hasChanges: getArg('--has-changes'),
+        gatePassed: getArg('--gate-passed'),
+        gateOutcomes: {
+          lint: getArg('--lint-outcome'),
+          typecheck: getArg('--typecheck-outcome'),
+          format: getArg('--format-outcome'),
+          test: getArg('--test-outcome'),
+          build: getArg('--build-outcome'),
+          scriptTests: getArg('--script-tests-outcome'),
+          prismaSafe: getArg('--prisma-safe-outcome'),
+        },
         pushed: getArg('--pushed'),
       });
   }

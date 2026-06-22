@@ -1,0 +1,137 @@
+name: 'Validate PR gate'
+description: >-
+  Pre-push gate matching CI: lint (git-tracked files only), typecheck, format
+  check, unit tests, optional build, workflow script e2e-tests, and the
+  prisma-safe-sql guard. Each check runs with continue-on-error and exposes its
+  real outcome, so callers gate push on the explicit `gate_passed` output
+  instead of a masked step conclusion. See
+  docs/adr/0002-pre-push-gate-for-claude-driven-workflows.md.
+
+inputs:
+  run-build:
+    description: >-
+      Run `npm run build`. Set to 'false' for YAML-only workflows where build
+      adds no value (the script e2e-tests are the real invariant there).
+    required: false
+    default: 'true'
+
+outputs:
+  gate_passed:
+    description: 'true only when every active check succeeded (skipped build counts as pass).'
+    value: ${{ steps.aggregate.outputs.gate_passed }}
+  lint_outcome:
+    description: 'Outcome of the tracked-files lint check.'
+    value: ${{ steps.gate-lint.outcome }}
+  typecheck_outcome:
+    description: 'Outcome of `npm run typecheck` (tsc --noEmit).'
+    value: ${{ steps.gate-typecheck.outcome }}
+  format_outcome:
+    description: 'Outcome of `npm run format:check` (Prettier).'
+    value: ${{ steps.gate-format.outcome }}
+  test_outcome:
+    description: 'Outcome of `npm run test-only`.'
+    value: ${{ steps.gate-test.outcome }}
+  build_outcome:
+    description: 'Outcome of `npm run build` (skipped when run-build is false).'
+    value: ${{ steps.gate-build.outcome }}
+  script_tests_outcome:
+    description: 'Outcome of the workflow script e2e-tests.'
+    value: ${{ steps.gate-script-tests.outcome }}
+  prisma_safe_outcome:
+    description: 'Outcome of the prisma-safe-sql guard.'
+    value: ${{ steps.gate-prisma-safe.outcome }}
+  summary:
+    description: 'Markdown bullet list of the per-check outcomes.'
+    value: ${{ steps.aggregate.outputs.summary }}
+
+runs:
+  using: composite
+  steps:
+    - name: Gate - lint (git-tracked files only)
+      id: gate-lint
+      shell: bash
+      continue-on-error: true
+      run: |
+        # Lint only what we are about to push: git-tracked source files. This
+        # excludes every untracked runtime artifact by construction, including
+        # the .claude-pr/ parallel checkout that claude-driven workflows create
+        # (which previously tripped no-require-imports on its vendored .cjs).
+        git ls-files -z '*.ts' '*.tsx' '*.js' '*.jsx' '*.cjs' '*.mjs' \
+          | xargs -0 npx eslint
+
+    - name: Gate - typecheck
+      id: gate-typecheck
+      shell: bash
+      continue-on-error: true
+      run: npm run typecheck
+
+    - name: Gate - format check
+      id: gate-format
+      shell: bash
+      continue-on-error: true
+      run: npm run format:check
+
+    - name: Gate - unit tests
+      id: gate-test
+      shell: bash
+      continue-on-error: true
+      run: npm run test-only
+
+    - name: Gate - production build
+      id: gate-build
+      if: inputs.run-build == 'true'
+      shell: bash
+      continue-on-error: true
+      run: npm run build
+
+    - name: Gate - workflow script e2e-tests
+      id: gate-script-tests
+      shell: bash
+      continue-on-error: true
+      run: node --test .github/workflows/scripts/__tests__/*.test.cjs
+
+    - name: Gate - prisma-safe-sql guard
+      id: gate-prisma-safe
+      shell: bash
+      continue-on-error: true
+      run: node .github/workflows/scripts/check-prisma-safe-sql.cjs
+
+    - name: Aggregate gate verdict
+      id: aggregate
+      shell: bash
+      env:
+        LINT: ${{ steps.gate-lint.outcome }}
+        TYPECHECK: ${{ steps.gate-typecheck.outcome }}
+        FORMAT: ${{ steps.gate-format.outcome }}
+        TEST: ${{ steps.gate-test.outcome }}
+        BUILD: ${{ steps.gate-build.outcome }}
+        SCRIPT: ${{ steps.gate-script-tests.outcome }}
+        PRISMA: ${{ steps.gate-prisma-safe.outcome }}
+        RUN_BUILD: ${{ inputs.run-build }}
+      run: |
+        # A skipped build step (run-build != 'true') is not a failure.
+        if [ "$BUILD" = "success" ] || [ "$BUILD" = "skipped" ]; then
+          build_ok=true
+        else
+          build_ok=false
+        fi
+        gate=true
+        [ "$LINT" = "success" ] || gate=false
+        [ "$TYPECHECK" = "success" ] || gate=false
+        [ "$FORMAT" = "success" ] || gate=false
+        [ "$TEST" = "success" ] || gate=false
+        [ "$build_ok" = "true" ] || gate=false
+        [ "$SCRIPT" = "success" ] || gate=false
+        [ "$PRISMA" = "success" ] || gate=false
+        {
+          echo "gate_passed=$gate"
+          echo "summary<<GATE_SUMMARY_EOF"
+          echo "- lint (tracked files): $LINT"
+          echo "- typecheck: $TYPECHECK"
+          echo "- format (prettier): $FORMAT"
+          echo "- unit tests: $TEST"
+          echo "- build (run-build=$RUN_BUILD): $BUILD"
+          echo "- workflow script e2e-tests: $SCRIPT"
+          echo "- prisma-safe-sql: $PRISMA"
+          echo "GATE_SUMMARY_EOF"
+        } >> "$GITHUB_OUTPUT"

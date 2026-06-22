@@ -25,6 +25,11 @@ const eslintConfig = defineConfig([
     '.agents/scripts/**',
     // Claude skills/agents use CommonJS require():
     '.claude/**',
+    // Parallel .claude/ checkout created at runtime by claude-driven workflows
+    // (run-zai/claude-code-action) so the agent runs with PR-scoped config.
+    // Untracked, never committed; ignored so eslint . / next build never trip
+    // on its vendored .cjs tooling. See docs/adr/0002-pre-push-gate-for-claude-driven-workflows.md
+    '.claude-pr/**',
     // CommonJS launch scripts use require() by design:
     'scripts/dev.cjs',
     'scripts/start.cjs',
