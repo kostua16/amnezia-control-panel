@@ -39,7 +39,7 @@ function extractPortFromArgs(args) {
         };
       }
     }
-    const eqMatch = args[i].match(/^-(?:p|port)=(\d+)$/);
+    const eqMatch = args[i].match(/^--?(?:p|port)=(\d+)$/);
     if (eqMatch) {
       return {
         port: eqMatch[1],
