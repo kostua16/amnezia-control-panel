@@ -213,4 +213,91 @@ describe('workflow trigger policy', () => {
       /node \.github\/workflows\/scripts\/evaluate-trigger-policy\.cjs[\s\S]*?--mode pr-flow-approve/,
     ]);
   });
+
+  // §5 cancellation cascade — locks the pr-flow prt/wake design (PR #434).
+  it('isolates prt and wake concurrency in pr-flow (cancellation cascade)', () => {
+    const workflow = readWorkflowText('pr-flow.yml');
+    // prt (pull_request_target) and wakes run in separate groups, so a wake can
+    // never cancel an in-flight prt orchestrate (and vice versa).
+    assert.match(
+      workflow,
+      /group: pr-flow-\$\{\{ \(github\.event_name == 'pull_request_target' && 'prt'\) \|\| 'wake' \}/,
+    );
+    // prt opened/synchronize/ready_for_review DO cancel an older prt (a new commit
+    // restarts orchestration); prt labeled/unlabeled do NOT (anti-thrash, since
+    // orchestrate itself adds flow/* labels); wakes always collapse to newest.
+    assert.match(
+      workflow,
+      /cancel-in-progress: \$\{\{ github\.event_name != 'pull_request_target' \|\| \(github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\) \}\}/,
+    );
+  });
+
+  // P0-1b — heavy CI jobs are gated on the `changes` job, so docs-only changes
+  // skip them; skipped required checks are non-blocking (P0-1a).
+  it('gates heavy CI jobs on the changes-detection job (docs-only skips heavy CI)', () => {
+    const ci = readWorkflowText('ci.yml');
+    assert.match(ci, /\n  changes:/);
+    assert.match(ci, /run-heavy/);
+    const gates = ci.match(/needs: \[changes\]/g) ?? [];
+    assert.equal(gates.length, 5);
+    assert.match(ci, /if: needs\.changes\.outputs\.run-heavy == 'true'/);
+  });
+
+  // P0-4 — fix-review's heavy job is time-boxed so it can't hog a big runner.
+  it('time-boxes the fix-review heavy job', () => {
+    const fr = readWorkflowText('fix-review.yml');
+    const timeouts = [...fr.matchAll(/timeout-minutes:\s*(\d+)/g)].map((m) =>
+      Number(m[1]),
+    );
+    const maxTimeout = Math.max(...timeouts);
+    assert.ok(
+      maxTimeout <= 30,
+      `fix-review heavy job timeout ${maxTimeout} > 30 (would hog a big runner)`,
+    );
+  });
+
+  // P1-4 — pull_request_target must stay on the base ref: never check out / run
+  // untrusted PR-head code with the workflow's token (injection vector). The
+  // pattern is hoisted+shared so the coverage test locks the SAME regex the guard
+  // uses; the prt workflow list is discovered dynamically so new ones are covered.
+  const PR_HEAD_CHECKOUT_PATTERN =
+    /ref:\s*\$\{\{[^}]*(?:pull_request\.head\.sha|head_ref|head\.ref)/;
+
+  it('keeps pull_request_target workflows on the base ref (no PR-head checkout)', () => {
+    const workflowsDir = path.join(repoRoot, '.github/workflows');
+    const prtWorkflows = fs
+      .readdirSync(workflowsDir)
+      .filter((f) => f.endsWith('.yml'))
+      .filter((f) =>
+        /pull_request_target/.test(
+          fs.readFileSync(path.join(workflowsDir, f), 'utf8'),
+        ),
+      );
+    assert.ok(
+      prtWorkflows.length > 0,
+      'expected to find pull_request_target workflows to guard',
+    );
+    for (const f of prtWorkflows) {
+      const y = fs.readFileSync(path.join(workflowsDir, f), 'utf8');
+      assert.ok(
+        !PR_HEAD_CHECKOUT_PATTERN.test(y),
+        `${f} checks out the PR head (sha/ref/branch) under pull_request_target (injection risk)`,
+      );
+    }
+  });
+
+  it('the pull_request_target guard catches every PR-head checkout token', () => {
+    for (const dangerous of [
+      'ref: ${{ github.event.pull_request.head.sha }}',
+      'ref: ${{ github.event.pull_request.head.ref }}',
+      'ref: ${{ github.head_ref }}',
+    ]) {
+      assert.ok(
+        PR_HEAD_CHECKOUT_PATTERN.test(dangerous),
+        `guard must catch: ${dangerous}`,
+      );
+    }
+    assert.ok(!PR_HEAD_CHECKOUT_PATTERN.test('ref: ${{ github.ref }}'));
+    assert.ok(!PR_HEAD_CHECKOUT_PATTERN.test('ref: ${{ github.base_ref }}'));
+  });
 });

@@ -3,7 +3,7 @@ import { SignJWT } from 'jose';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { seedAdmin } from '@/lib/seed';
-import { verifySecret } from '@/lib/crypto';
+import { verifyValue } from '@/lib/password';
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const isValid = await verifySecret(password, admin.password);
+    const isValid = await verifyValue(password, admin.password);
     if (!isValid) {
       return NextResponse.json(
         { error: 'Invalid credentials' },

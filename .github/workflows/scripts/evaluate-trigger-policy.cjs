@@ -248,6 +248,30 @@ if (mode === 'pr-flow-approve') {
   process.exit(0);
 }
 
+if (mode === 'review-approved') {
+  const reviewState = String(event.review?.state ?? '').toLowerCase();
+  const reviewApproved =
+    eventName === 'pull_request_review' && reviewState === 'approved';
+  const shouldRun = reviewApproved && isMaintainer;
+  const prNumber = event.pull_request?.number ?? null;
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: shouldRun,
+        triggered: reviewApproved,
+        trusted: isMaintainer,
+        author_association: association,
+        pr_number: shouldRun ? prNumber : null,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 if (mode === 'pr-flow-pull-request-target') {
   const config = readJson(configFile);
   const action = event.action ?? '';
@@ -394,11 +418,19 @@ if (mode === 'fix-pr') {
   const sourcePrAuthorLogin = String(sourcePrAuthor.login ?? '');
   const sourcePrAuthorType = String(sourcePrAuthor.type ?? '');
   const hasBotAuthor = isBotAccount(sourcePrAuthor);
+  const attemptCount = Number(sourcePr.auto_fix_attempt_count ?? 0);
+  const maxAttempts = Number(policy.maxAutoFixAttempts ?? 0);
+  const capReached = maxAttempts > 0 && attemptCount >= maxAttempts;
   const shouldRun =
-    !hasAutomationBranchPrefix && !hasAutoFixLabel && !hasBotAuthor;
+    !hasAutomationBranchPrefix &&
+    !hasAutoFixLabel &&
+    !hasBotAuthor &&
+    !capReached;
   let reason = null;
 
-  if (hasAutoFixLabel) {
+  if (capReached) {
+    reason = `auto-fix attempt cap reached (${attemptCount}/${maxAttempts}); stopping to avoid a fix loop`;
+  } else if (hasAutoFixLabel) {
     reason = 'source PR already has the auto-fix label';
   } else if (hasAutomationBranchPrefix) {
     reason = `source PR branch ${headRefName} already matches an automation prefix`;
@@ -415,6 +447,8 @@ if (mode === 'fix-pr') {
         labels,
         source_pr_author_login: sourcePrAuthorLogin || null,
         source_pr_author_type: sourcePrAuthorType || null,
+        auto_fix_attempt_count: attemptCount,
+        max_auto_fix_attempts: maxAttempts,
         reason,
       },
       null,

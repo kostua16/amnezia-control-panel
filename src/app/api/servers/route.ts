@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
-import { hashSecret } from '@/lib/crypto';
+import { hashValue } from '@/lib/password';
 import { apiHandler } from '@/lib/api-handler';
 import { validationError } from '@/lib/api-response';
 
@@ -63,7 +63,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
   const { name, hostname, port, apiKey } = parsed.data;
 
   // Hash the API key before storing
-  const apiKeyHash = await hashSecret(apiKey);
+  const apiKeyHash = await hashValue(apiKey);
 
   const server = await prisma.server.create({
     data: {

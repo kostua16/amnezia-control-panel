@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { hashValue } from '@/lib/password';
 import { writeAuditLog } from '@/lib/audit-log';
-import { hashSecret } from '@/lib/crypto';
 import {
   createAwgUser,
   createThreeXuiUser,
@@ -145,7 +145,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     // Hash new password if provided
     if (newPassword) {
-      updateData.passwordHash = await hashSecret(newPassword);
+      updateData.passwordHash = await hashValue(newPassword);
     }
 
     // Update user in DB

@@ -86,10 +86,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Prefer small, scoped git commits; do not commit large unintended trees (e.g. nested `.claude/worktrees` copies) without explicit approval.
 - When documenting Servers/Panels for admins, state that API keys are operator-chosen shared secrets (e.g. `openssl rand -hex 32`), not `JWT_SECRET`, and plaintext is not recoverable from the DB after save.
 - For any change to `.js`, `.cjs`, `.ts`, or `.tsx` files, including workflow helper scripts under `.github`, verify both lint and Prettier pass before finishing. If the repo scripts do not cover the changed workflow files, run a targeted Prettier check on the changed JS/CJS/TS files.
+- When explaining dense or number/ID-heavy topics (architecture, multi-step plans, review passes, big backlogs), lead with a single annotated ASCII/diagram + a plain-language "read it like this" before granular tables; keep IDs/counts out of the main picture, and offer a richer Mermaid/HTML render as a follow-up.
 
 ## Learned Workspace Facts
 
 - `AGENTS.md` is a symlink to `CLAUDE.md`; project rules and learned sections are edited in that single file.
+- Workflow changes (`.github/workflows/**`, `.github/actions/**`, `.github/workflows/scripts/**`, `policy.json`, `pr-flow.json`) must keep the e2e suite green — run BOTH `npm run test-only` AND `cd .github/workflows && node --test scripts/__tests__/*.test.cjs` — and update `docs/workflow-e2e-scenarios.md` if behavior changes. See `docs/code-standards.md` → "Workflow change protocol" + ADR `docs/adr/0001-e2e-characterization-suite-as-workflow-gate.md`.
 - Default dev port is 3333 only when no `-p`/`--port` in argv and `PORT` is unset; the dev/start launchers forward resolved ports to the Next CLI.
 - Next.js dev may block `/_next/webpack-hmr` when the document host and the HMR WebSocket host differ (e.g. `localhost` vs `127.0.0.1`); `next.config.ts` sets `allowedDevOrigins` for both.
 - `npm run dev` runs through `scripts/dev.cjs`, which appends `--max-old-space-size=8192` to `NODE_OPTIONS` when no `--max-old-space-size` is already set, to reduce Turbopack/HMR heap out-of-memory failures on long sessions.

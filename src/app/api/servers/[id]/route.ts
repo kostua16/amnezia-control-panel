@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { hashValue } from '@/lib/password';
+import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
 import { writeAuditLog } from '@/lib/audit-log';
-import { hashSecret } from '@/lib/crypto';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -128,7 +129,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     if (isActive !== undefined) updateData.isActive = isActive;
 
     if (apiKey !== undefined) {
-      updateData.apiKeyHash = await hashSecret(apiKey);
+      updateData.apiKeyHash = await hashValue(apiKey);
     }
 
     const server = await prisma.server.update({
@@ -164,12 +165,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   } catch (err) {
     console.error('[api/servers/:id PUT] Error:', err);
 
-    if (
-      err &&
-      typeof err === 'object' &&
-      'code' in err &&
-      (err as { code: string }).code === 'P2002'
-    ) {
+    if (isPrismaUniqueViolation(err)) {
       return NextResponse.json(
         { success: false, error: 'Server hostname already exists' },
         { status: 409 },

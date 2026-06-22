@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
+import { verifyValue } from '@/lib/password';
 import { writeAuditLog } from '@/lib/audit-log';
-import { verifySecret } from '@/lib/crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
@@ -194,9 +194,8 @@ export async function POST(request: NextRequest) {
     });
 
     let matchedPanel: (typeof panels)[number] | null = null;
-
     for (const panel of panels) {
-      const isValid = await verifySecret(apiKey, panel.apiKeyHash);
+      const isValid = await verifyValue(apiKey, panel.apiKeyHash);
       if (isValid) {
         matchedPanel = panel;
         break;
