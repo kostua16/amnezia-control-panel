@@ -26,6 +26,12 @@ const fallbackPanels = new Set<number>();
 /** In-memory cache of plaintext API keys for auto-resync. Populated on manual push. */
 const panelApiKeyCache = new Map<number, string>();
 
+/** Timestamps for API key cache entries (for max-age eviction) */
+const panelApiKeyCacheTimestamps = new Map<number, number>();
+
+/** Max age for API key cache entries (1 hour) */
+const API_KEY_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+
 // ─── Health Check Interval ──────────────────────────────
 
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
@@ -52,6 +58,7 @@ export function getFallbackPanels(): number[] {
  */
 export function cachePanelApiKey(panelId: number, apiKey: string): void {
   panelApiKeyCache.set(panelId, apiKey);
+  panelApiKeyCacheTimestamps.set(panelId, Date.now());
 }
 
 /**
@@ -59,6 +66,41 @@ export function cachePanelApiKey(panelId: number, apiKey: string): void {
  */
 export function removePanelApiKey(panelId: number): void {
   panelApiKeyCache.delete(panelId);
+  panelApiKeyCacheTimestamps.delete(panelId);
+}
+
+/**
+ * Evict all in-memory state for a panel when it is deleted.
+ * Clears from consecutiveFailures, fallbackPanels, and panelApiKeyCache.
+ * Called from panel DELETE route after DB delete succeeds.
+ */
+export function evictPanel(panelId: number): void {
+  consecutiveFailures.delete(panelId);
+  fallbackPanels.delete(panelId);
+  panelApiKeyCache.delete(panelId);
+  panelApiKeyCacheTimestamps.delete(panelId);
+  console.log(`[panel-health] Evicted all in-memory state for panel ${panelId}`);
+}
+
+/**
+ * Clean up expired API key cache entries (older than 1 hour).
+ * Call periodically to prevent unbounded growth of the cache.
+ */
+export function cleanupExpiredApiKeys(): void {
+  const now = Date.now();
+  let expiredCount = 0;
+
+  for (const [panelId, timestamp] of panelApiKeyCacheTimestamps.entries()) {
+    if (now - timestamp > API_KEY_CACHE_MAX_AGE_MS) {
+      panelApiKeyCache.delete(panelId);
+      panelApiKeyCacheTimestamps.delete(panelId);
+      expiredCount++;
+    }
+  }
+
+  if (expiredCount > 0) {
+    console.log(`[panel-health] Cleaned up ${expiredCount} expired API key cache entries`);
+  }
 }
 
 // ─── WebSocket Fallback Broadcast ───────────────────────
