@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
-import { useWebSocketContext } from '@/components/providers';
 import type { AlertData } from '@/lib/alert-service';
 import type { AlertSeverity } from '@/generated/prisma/enums';
+import { queryKeys } from '@/lib/query-keys';
 
 export interface AlertsResponse {
   success: boolean;
@@ -46,34 +45,17 @@ async function fetchAlerts(params?: AlertsParams): Promise<AlertsResponse> {
 }
 
 export function useAlerts(params?: AlertsParams) {
-  const { lastEvent } = useWebSocketContext();
-  const queryClient = useQueryClient();
-
-  const query = useQuery({
-    queryKey: ['alerts', params],
+  return useQuery({
+    queryKey: [...queryKeys.alerts, params],
     queryFn: () => fetchAlerts(params),
     refetchInterval: 30_000,
     staleTime: 10_000,
   });
-
-  // Invalidate alerts query when a new alert arrives via WebSocket
-  useEffect(() => {
-    const alertData = lastEvent['alert:new'];
-    if (alertData != null && alertData !== false) {
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
-      queryClient.invalidateQueries({ queryKey: ['alerts-unread-count'] });
-    }
-  }, [lastEvent, queryClient]);
-
-  return query;
 }
 
 export function useAlertUnreadCount() {
-  const { lastEvent } = useWebSocketContext();
-  const queryClient = useQueryClient();
-
-  const query = useQuery({
-    queryKey: ['alerts-unread-count'],
+  return useQuery({
+    queryKey: queryKeys.alertsUnreadCount,
     queryFn: async () => {
       const response = await fetchAlerts({ limit: 1 });
       return response.data.pagination.unreadCount;
@@ -81,16 +63,6 @@ export function useAlertUnreadCount() {
     refetchInterval: 15_000,
     staleTime: 5_000,
   });
-
-  // Invalidate unread count when a new alert arrives
-  useEffect(() => {
-    const alertData = lastEvent['alert:new'];
-    if (alertData != null && alertData !== false) {
-      queryClient.invalidateQueries({ queryKey: ['alerts-unread-count'] });
-    }
-  }, [lastEvent, queryClient]);
-
-  return query;
 }
 
 export function useMarkAlertRead() {
@@ -107,8 +79,8 @@ export function useMarkAlertRead() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
-      queryClient.invalidateQueries({ queryKey: ['alerts-unread-count'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.alerts });
+      queryClient.invalidateQueries({ queryKey: queryKeys.alertsUnreadCount });
     },
   });
 }
@@ -127,8 +99,8 @@ export function useMarkAllAlertsRead() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
-      queryClient.invalidateQueries({ queryKey: ['alerts-unread-count'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.alerts });
+      queryClient.invalidateQueries({ queryKey: queryKeys.alertsUnreadCount });
     },
   });
 }
@@ -147,8 +119,8 @@ export function useDeleteAlert() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
-      queryClient.invalidateQueries({ queryKey: ['alerts-unread-count'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.alerts });
+      queryClient.invalidateQueries({ queryKey: queryKeys.alertsUnreadCount });
     },
   });
 }
