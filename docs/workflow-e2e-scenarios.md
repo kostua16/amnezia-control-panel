@@ -258,7 +258,7 @@ flowchart TD
 
 | ID | Trigger / precondition | Resolution → terminal | Type |
 |---|---|---|---|
-| FR1 | maintainer `/fix-review`/`/address-review` on PR | detect-noop → validate-pr-gate → ZAI address review → commit → §1 → **merged** | char |
+| FR1 | maintainer `/fix-review`/`/address-review` on PR | ZAI address review → detect-noop → validate-pr-gate → commit → §1 → **merged** | char |
 | FR2 | non-maintainer command | ignored branch → **no-op** | char |
 | FR3 | no review comments to address | `no-changes` → **reported** | char |
 | FR4 | ZAI fix fails validation | `push-rejected` → **reported** | char |

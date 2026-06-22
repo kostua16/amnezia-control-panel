@@ -273,10 +273,12 @@ jobs:
         env:
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
-          # Real change detection (never the agent self-report): uncommitted
-          # edits OR a moved HEAD (the agent committed despite instructions).
-          # When nothing changed, skip the gate and the push and post no-changes.
-          dirty=$(git status --porcelain | wc -l | tr -d ' ')
+          # Real change detection (never the agent self-report): working-tree
+          # changes commit-and-push would stage (git add -A respects .gitignore)
+          # OR a moved HEAD (the agent committed despite instructions). The
+          # untracked .claude-pr/ runtime artifact is excluded explicitly so the
+          # no-op skip holds even on a branch whose .gitignore lacks the entry.
+          dirty=$(git status --porcelain | grep -vcF '.claude-pr/' || true)
           current=$(git rev-parse HEAD)
           if [ "$dirty" -gt 0 ] || [ "$current" != "$HEAD_SHA" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
