@@ -269,7 +269,7 @@ flowchart TD
 
 | ID | Scenario | Current behavior | Intended | Type |
 |---|---|---|---|---|
-| TR-1 | **Maintainer review-approval wake** — `needs-review` PR, maintainer submits GitHub *review approval* (no label/comment) | pr-flow does not trigger on `pull_request_review` → stuck until stale→close | wake on `pull_request_review: submitted` → §1 | **TR** (deferred helper #3; recorded so it's checked) |
+| TR-1 | **Maintainer review-approval wake** — `needs-review` PR, maintainer submits GitHub *review approval* | `review-approved.yml` (#479) records `maintainer-approved` on an approved maintainer review → pr-flow wakes on the `labeled` event → §1 | char (#479, resolved) |
 | X1 | **Config drift** — `policy.json`/`pr-flow.json` change removes a required label | all PRs stuck at missing-label | guard: scenario suite + governance check catch it | **spec** (regression guard) |
 | X2 | **`GH_PAT` expired / insufficient scope** | `upsert-pull-request`/`commit-and-push` fail → report-failure across agents | reported (no silent corruption) | char |
 
