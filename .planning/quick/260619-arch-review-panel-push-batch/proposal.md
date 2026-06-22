@@ -41,24 +41,32 @@ which is redundant parsing work.
    });
    ```
 
-2. Build a hostname→server lookup:
+2. Build a lookup helper that preserves current `contains` + `equals` semantics:
    ```
-   const serverByHost = new Map<string, typeof allServers[0]>();
-   for (const s of allServers) {
-     serverByHost.set(s.hostname, s);
-     if (s.tailnetIP) serverByHost.set(s.tailnetIP, s);
-     if (s.tailnetHostname) serverByHost.set(s.tailnetHostname, s);
+   function findServerByHost(
+     servers: typeof allServers,
+     urlHostname: string,
+   ) {
+     // Exact match on tailnetIP (mirrors `tailnetIP: { equals }`)
+     const byIP = servers.find((s) => s.tailnetIP === urlHostname);
+     if (byIP) return byIP;
+     // Substring match on hostname (mirrors `hostname: { contains }`)
+     return servers.find((s) => s.hostname.includes(urlHostname));
    }
    ```
 
-3. In the loop, replace `prisma.server.findFirst(...)` with `serverByHost.get(hostname)`.
+3. In the loop, replace `prisma.server.findFirst(...)` with `findServerByHost(allServers, hostname)`.
+
+> **Behavioral equivalence note:** The original query uses `hostname: { contains: urlHostname }` (substring match) and `tailnetIP: { equals: urlHostname }` (exact match) with Prisma's default `findFirst` ordering. A naive `Map.get()` would be an exact-only lookup and would silently drop matches where the panel URL hostname is a substring of the server hostname (e.g. panel `vpn-server-1` matching server `vpn-server-1.tail-scale.ts.net`). The `findServerByHost` helper above preserves both match modes.
 
 ## Impact
 
 - Reduces DB queries from 2N to N+1 during panel push.
 - Eliminates redundant URL parsing per panel.
-- No behavior change — same transport resolution, fewer DB round-trips.
-- Low risk: pure lookup refactor, same data sources.
+- Reduces DB queries from 2N to N+1 during panel push.
+- Eliminates redundant URL parsing per panel.
+- Behavior preserved — lookup function mirrors Prisma `contains`+`equals` semantics exactly.
+- Low risk: pure lookup refactor, same data sources, same match semantics.
 
 ## Files
 
