@@ -6,6 +6,7 @@ const {
   selectOrphanBranches,
   collectPolicyPrefixes,
   deleteRefPath,
+  parseMaxAgeDays,
 } = require('../cleanup-orphan-branches.cjs');
 
 test('deleteRefPath: includes the repos/ prefix required by the REST API', () => {
@@ -37,6 +38,23 @@ const branch = (name, date, extra = {}) => ({
   ...extra,
 });
 
+test('parseMaxAgeDays: returns the default for a missing/empty argument', () => {
+  assert.equal(parseMaxAgeDays(null, 7), 7);
+  assert.equal(parseMaxAgeDays('', 7), 7);
+});
+
+test('parseMaxAgeDays: parses valid positive numbers (incl. decimals)', () => {
+  assert.equal(parseMaxAgeDays('7', 7), 7);
+  assert.equal(parseMaxAgeDays('14', 7), 14);
+  assert.equal(parseMaxAgeDays('0.5', 7), 0.5);
+});
+
+test('parseMaxAgeDays: rejects non-numeric, zero, and negative as null', () => {
+  assert.equal(parseMaxAgeDays('seven', 7), null);
+  assert.equal(parseMaxAgeDays('0', 7), null);
+  assert.equal(parseMaxAgeDays('-3', 7), null);
+  assert.equal(parseMaxAgeDays('NaN', 7), null);
+});
 test('selectOrphanBranches: selects prefixed, old, non-open-PR branch', () => {
   const got = selectOrphanBranches(
     [branch('claude-workflow-optimize-123', OLD)],

@@ -56,6 +56,16 @@ function deleteRefPath(repo, branchName) {
   return `repos/${repo}/git/refs/heads/${branchName}`;
 }
 
+/** Parse --max-age-days into a positive finite number. Returns defaultDays for
+ * a missing/empty argument, or null when the argument is present but invalid,
+ * so the caller can fail closed instead of silently no-op'ing on NaN. */
+function parseMaxAgeDays(arg, defaultDays) {
+  if (arg === null || arg === '') return defaultDays;
+  const days = Number(arg);
+  if (!Number.isFinite(days) || days <= 0) return null;
+  return days;
+}
+
 /** Flatten the policy.json branch-prefix keys into a unique list. */
 function collectPolicyPrefixes(policy) {
   const p = policy || {};
@@ -139,10 +149,32 @@ function fetchBranches(repo) {
   return branches;
 }
 
+/** Paginated fetch of every open pull request head ref (full parity with the
+ * GraphQL branch fetch — no result cap that could drop an in-use head). */
+function fetchOpenHeads(repo) {
+  return gh([
+    'api',
+    `repos/${repo}/pulls?state=open`,
+    '--paginate',
+    '--jq',
+    '.[].head.ref',
+  ])
+    .split('\n')
+    .map((ref) => ref.trim())
+    .filter(Boolean);
+}
+
 function run() {
   const repo = getArg('--repo') || process.env.GITHUB_REPOSITORY;
   const policyPath = getArg('--policy-path') || '.github/workflows/policy.json';
-  const maxAgeDays = Number(getArg('--max-age-days') || DEFAULT_MAX_AGE_DAYS);
+  const maxAgeDaysArg = getArg('--max-age-days');
+  const maxAgeDays = parseMaxAgeDays(maxAgeDaysArg, DEFAULT_MAX_AGE_DAYS);
+  if (maxAgeDays === null) {
+    process.stderr.write(
+      `::error::Invalid --max-age-days "${maxAgeDaysArg}": must be a positive number.\n`,
+    );
+    process.exit(1);
+  }
   const dryRunArg = getArg('--dry-run');
   const dryRun = dryRunArg === null ? true : dryRunArg !== 'false';
   const outputPath = getArg('--github-output') || process.env.GITHUB_OUTPUT;
@@ -157,16 +189,7 @@ function run() {
   }
 
   const branches = fetchBranches(repo);
-  const openHeads = gh([
-    'api',
-    `repos/${repo}/pulls?state=open`,
-    '--paginate',
-    '--jq',
-    '.[].head.ref',
-  ])
-    .split('\n')
-    .map((ref) => ref.trim())
-    .filter(Boolean);
+  const openHeads = fetchOpenHeads(repo);
 
   const orphans = selectOrphanBranches(branches, openHeads, prefixes, {
     maxAgeMs: maxAgeDays * 24 * 60 * 60 * 1000,
@@ -186,14 +209,29 @@ function run() {
     return;
   }
 
+  // Re-check the open-PR exclusion set immediately before destructive
+  // deletes: a PR opened against an orphan branch after the top-of-run
+  // snapshot would otherwise lose its head. A residual window remains for the
+  // loop duration, accepted because candidates are 7+ day-old, PR-less branches.
+  const freshHeads = new Set(fetchOpenHeads(repo));
+  const toDelete = orphans.filter((branch) => !freshHeads.has(branch.name));
+  const skipped = orphans.length - toDelete.length;
+  if (skipped > 0) {
+    process.stdout.write(
+      `::notice::${skipped} orphan branch(es) gained an open PR during the sweep; skipping.\n`,
+    );
+  }
+
   let deleted = 0;
-  for (const branch of orphans) {
+  for (const branch of toDelete) {
     try {
       gh(['api', '--method', 'DELETE', deleteRefPath(repo, branch.name)]);
       process.stdout.write(`::notice::Deleted orphan branch ${branch.name}\n`);
       deleted += 1;
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail =
+        (error && error.stderr && String(error.stderr).trim()) ||
+        (error instanceof Error ? error.message : String(error));
       process.stdout.write(
         `::warning::Failed to delete ${branch.name}: ${detail}\n`,
       );
@@ -204,7 +242,12 @@ function run() {
   appendOutput(outputPath, 'orphan_count', orphans.length);
 }
 
-module.exports = { collectPolicyPrefixes, selectOrphanBranches, deleteRefPath };
+module.exports = {
+  collectPolicyPrefixes,
+  selectOrphanBranches,
+  deleteRefPath,
+  parseMaxAgeDays,
+};
 
 if (require.main === module) {
   run();
