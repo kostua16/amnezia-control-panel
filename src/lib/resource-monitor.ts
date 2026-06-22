@@ -1,16 +1,16 @@
 import os from 'os';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { execCommand, type ExecResult } from '@/lib/command-executor';
 import type { SystemResources } from '@/types/monitoring';
 
-type ExecFileAsync = (
-  file: string,
+type ExecFn = (
+  cmd: string,
   args: string[],
-  options: { encoding: BufferEncoding; timeout: number },
-) => Promise<{ stdout: string; stderr: string }>;
+  options: { timeoutMs: number },
+) => Promise<ExecResult>;
 
-const execFileAsync: ExecFileAsync = promisify(execFile);
-let runExecFile = execFileAsync;
+const defaultExec: ExecFn = (cmd, args, options) =>
+  execCommand(cmd, args, options);
+let runExec = defaultExec;
 
 interface CachedResources {
   data: SystemResources;
@@ -72,14 +72,14 @@ async function getDiskUsageAsync(): Promise<DiskUsage> {
 
     if (isWin) {
       // PowerShell CIM query — wmic is deprecated on modern Windows.
-      const { stdout } = await runExecFile(
+      const { stdout } = await runExec(
         'powershell',
         [
           '-NoProfile',
           '-Command',
           'Get-CimInstance Win32_LogicalDisk -Filter "DeviceID=\'C:\'" | Select-Object Size,FreeSpace | ConvertTo-Json',
         ],
-        { encoding: 'utf-8', timeout: 5000 },
+        { timeoutMs: 5000 },
       );
 
       const disk = JSON.parse(stdout.trim());
@@ -91,9 +91,8 @@ async function getDiskUsageAsync(): Promise<DiskUsage> {
     }
 
     // Unix: use df
-    const { stdout } = await runExecFile('df', ['-k', '/'], {
-      encoding: 'utf-8',
-      timeout: 5000,
+    const { stdout } = await runExec('df', ['-k', '/'], {
+      timeoutMs: 5000,
     });
     const output = stdout.trim();
 
@@ -174,15 +173,15 @@ export async function getSystemResources(): Promise<SystemResources> {
 }
 
 export function __setResourceMonitorDepsForTests(deps: {
-  execFileAsync?: typeof execFileAsync;
+  execCommand?: ExecFn;
 }): void {
-  if (deps.execFileAsync) {
-    runExecFile = deps.execFileAsync;
+  if (deps.execCommand) {
+    runExec = deps.execCommand;
   }
 }
 
 export function __resetResourceMonitorForTests(): void {
   cachedResources = null;
   inflightResources = null;
-  runExecFile = execFileAsync;
+  runExec = defaultExec;
 }

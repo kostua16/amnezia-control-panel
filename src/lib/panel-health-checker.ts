@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { broadcastEvent } from '@/lib/websocket';
 import { createAlert } from '@/lib/alert-service';
+import { httpClient } from '@/lib/http-client';
 import type { Alert } from '@/types/alert';
 import type {
   PanelTestResult,
@@ -183,9 +184,10 @@ export async function testPanel(panelId: number): Promise<PanelTestResult> {
   const startTime = Date.now();
 
   try {
-    const response = await fetch(`${panel.panelUrl}/api/health`, {
+    const response = await httpClient(`${panel.panelUrl}/api/health`, {
       method: 'HEAD',
-      signal: AbortSignal.timeout(10_000),
+      timeoutMs: 10_000,
+      retries: 0,
     });
 
     const latency = Date.now() - startTime;

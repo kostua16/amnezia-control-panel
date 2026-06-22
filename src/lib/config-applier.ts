@@ -2,6 +2,7 @@ import type { PanelSyncPayload } from '@/types/panel-sync';
 import type { ConfigApplierResult } from '@/types/config-push';
 import { signPayload } from './hmac';
 import { enrichError } from './error-reporter';
+import { httpClient } from './http-client';
 
 // ─── Shell Metacharacter Guard ────────────────────────────
 
@@ -46,7 +47,7 @@ async function pushToRemotePanel(params: {
     const body = JSON.stringify(bodyPayload);
     const signature = signPayload(bodyPayload, apiKey);
 
-    const response = await fetch(`${panelUrl}/api/sync/apply`, {
+    const response = await httpClient(`${panelUrl}/api/sync/apply`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -54,7 +55,8 @@ async function pushToRemotePanel(params: {
         'X-Signature': signature,
       },
       body,
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15_000,
+      retries: 0,
     });
 
     if (response.ok) {
