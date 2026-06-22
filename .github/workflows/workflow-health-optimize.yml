@@ -29,7 +29,7 @@ jobs:
       has-problems: ${{ steps.collect.outputs.has_problems }}
       runs-data: ${{ steps.collect.outputs.runs_data }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -214,7 +214,7 @@ jobs:
       validate_blocked: ${{ steps.validate.outputs.validate-blocked }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
@@ -383,7 +383,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -418,7 +418,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:
