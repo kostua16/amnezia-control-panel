@@ -1,9 +1,10 @@
 name: 'Validate PR gate'
 description: >-
-  Pre-push gate matching CI: lint (git-tracked files only), unit tests, optional
-  build, workflow script e2e-tests, and the prisma-safe-sql guard. Each check
-  runs with continue-on-error and exposes its real outcome, so callers gate push
-  on the explicit `gate_passed` output instead of a masked step conclusion. See
+  Pre-push gate matching CI: lint (git-tracked files only), typecheck, format
+  check, unit tests, optional build, workflow script e2e-tests, and the
+  prisma-safe-sql guard. Each check runs with continue-on-error and exposes its
+  real outcome, so callers gate push on the explicit `gate_passed` output
+  instead of a masked step conclusion. See
   docs/adr/0002-pre-push-gate-for-claude-driven-workflows.md.
 
 inputs:
@@ -21,6 +22,12 @@ outputs:
   lint_outcome:
     description: 'Outcome of the tracked-files lint check.'
     value: ${{ steps.gate-lint.outcome }}
+  typecheck_outcome:
+    description: 'Outcome of `npm run typecheck` (tsc --noEmit).'
+    value: ${{ steps.gate-typecheck.outcome }}
+  format_outcome:
+    description: 'Outcome of `npm run format:check` (Prettier).'
+    value: ${{ steps.gate-format.outcome }}
   test_outcome:
     description: 'Outcome of `npm run test-only`.'
     value: ${{ steps.gate-test.outcome }}
@@ -52,6 +59,18 @@ runs:
         git ls-files -z '*.ts' '*.tsx' '*.js' '*.jsx' '*.cjs' '*.mjs' \
           | xargs -0 npx eslint
 
+    - name: Gate - typecheck
+      id: gate-typecheck
+      shell: bash
+      continue-on-error: true
+      run: npm run typecheck
+
+    - name: Gate - format check
+      id: gate-format
+      shell: bash
+      continue-on-error: true
+      run: npm run format:check
+
     - name: Gate - unit tests
       id: gate-test
       shell: bash
@@ -82,6 +101,8 @@ runs:
       shell: bash
       env:
         LINT: ${{ steps.gate-lint.outcome }}
+        TYPECHECK: ${{ steps.gate-typecheck.outcome }}
+        FORMAT: ${{ steps.gate-format.outcome }}
         TEST: ${{ steps.gate-test.outcome }}
         BUILD: ${{ steps.gate-build.outcome }}
         SCRIPT: ${{ steps.gate-script-tests.outcome }}
@@ -96,6 +117,8 @@ runs:
         fi
         gate=true
         [ "$LINT" = "success" ] || gate=false
+        [ "$TYPECHECK" = "success" ] || gate=false
+        [ "$FORMAT" = "success" ] || gate=false
         [ "$TEST" = "success" ] || gate=false
         [ "$build_ok" = "true" ] || gate=false
         [ "$SCRIPT" = "success" ] || gate=false
@@ -104,6 +127,8 @@ runs:
           echo "gate_passed=$gate"
           echo "summary<<GATE_SUMMARY_EOF"
           echo "- lint (tracked files): $LINT"
+          echo "- typecheck: $TYPECHECK"
+          echo "- format (prettier): $FORMAT"
           echo "- unit tests: $TEST"
           echo "- build (run-build=$RUN_BUILD): $BUILD"
           echo "- workflow script e2e-tests: $SCRIPT"

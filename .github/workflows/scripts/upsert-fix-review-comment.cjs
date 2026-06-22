@@ -410,6 +410,8 @@ function main() {
         gatePassed: getArg('--gate-passed'),
         gateOutcomes: {
           lint: getArg('--lint-outcome'),
+          typecheck: getArg('--typecheck-outcome'),
+          format: getArg('--format-outcome'),
           test: getArg('--test-outcome'),
           build: getArg('--build-outcome'),
           scriptTests: getArg('--script-tests-outcome'),

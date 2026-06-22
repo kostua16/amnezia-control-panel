@@ -231,7 +231,10 @@ jobs:
 
       - name: Validate (CI-matching gate)
         id: gate
-        if: steps.failure.outputs.fixable == 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
+        # Not gated on claude_changed_files_list: the prettier_only path skips
+        # run-zai (claude_run), so that output is empty there. Gate whenever a
+        # fix is attempted; commit-and-push handles the no-change case.
+        if: steps.failure.outputs.fixable == 'true'
         uses: ./.github/actions/validate-pr-gate
 
       - uses: ./.github/actions/commit-and-push

@@ -20,6 +20,8 @@ test('renderGateSummary always shows the banner + authoritative gate block', () 
   const body = renderGateSummary({
     gateOutcomes: {
       lint: 'success',
+      typecheck: 'success',
+      format: 'success',
       test: 'success',
       build: 'success',
       scriptTests: 'success',
@@ -29,6 +31,8 @@ test('renderGateSummary always shows the banner + authoritative gate block', () 
   assert.ok(body.includes(BANNER));
   assert.ok(body.includes('Workflow gate (authoritative):'));
   assert.ok(body.includes('- lint (tracked files): **pass**'));
+  assert.ok(body.includes('- typecheck: **pass**'));
+  assert.ok(body.includes('- format (prettier): **pass**'));
   assert.ok(body.includes('- build: **pass**'));
   assert.ok(body.includes('- prisma-safe-sql: **pass**'));
   // No agent block when agentValidation is absent.

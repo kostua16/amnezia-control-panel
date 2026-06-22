@@ -331,6 +331,8 @@ jobs:
           HAS_CHANGES: ${{ steps.detect-noop.outputs.has_changes }}
           GATE_PASSED: ${{ steps.gate.outputs.gate_passed }}
           LINT_OUTCOME: ${{ steps.gate.outputs.lint_outcome }}
+          TYPECHECK_OUTCOME: ${{ steps.gate.outputs.typecheck_outcome }}
+          FORMAT_OUTCOME: ${{ steps.gate.outputs.format_outcome }}
           TEST_OUTCOME: ${{ steps.gate.outputs.test_outcome }}
           BUILD_OUTCOME: ${{ steps.gate.outputs.build_outcome }}
           SCRIPT_TESTS_OUTCOME: ${{ steps.gate.outputs.script_tests_outcome }}
@@ -343,7 +345,8 @@ jobs:
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" \
             --num-turns "$NUM_TURNS" --failed "$CLAUDE_FAILED" --fail-reason "$CLAUDE_FAILURE_REASON" \
             --outcome "$OUTCOME" --has-changes "$HAS_CHANGES" --gate-passed "$GATE_PASSED" \
-            --lint-outcome "$LINT_OUTCOME" --test-outcome "$TEST_OUTCOME" \
+            --lint-outcome "$LINT_OUTCOME" --typecheck-outcome "$TYPECHECK_OUTCOME" \
+            --format-outcome "$FORMAT_OUTCOME" --test-outcome "$TEST_OUTCOME" \
             --build-outcome "$BUILD_OUTCOME" --script-tests-outcome "$SCRIPT_TESTS_OUTCOME" \
             --prisma-safe-outcome "$PRISMA_SAFE_OUTCOME" --pushed "$PUSHED" \
             --commit-sha "$COMMIT_SHA" --automerge-disabled "$AUTOMERGE_DISABLED" --mode complete

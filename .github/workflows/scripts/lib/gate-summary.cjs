@@ -44,6 +44,8 @@ function renderGateSummary({ agentValidation = {}, gateOutcomes = {} } = {}) {
   lines.push('Workflow gate (authoritative):');
   const rows = [
     ['lint (tracked files)', gateOutcomes.lint],
+    ['typecheck', gateOutcomes.typecheck],
+    ['format (prettier)', gateOutcomes.format],
     ['unit tests', gateOutcomes.test],
     ['build', gateOutcomes.build],
     ['workflow script e2e-tests', gateOutcomes.scriptTests],
