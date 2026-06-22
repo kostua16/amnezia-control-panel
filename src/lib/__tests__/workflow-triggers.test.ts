@@ -262,9 +262,25 @@ describe('workflow trigger policy', () => {
     for (const f of ['pr-flow.yml', 'pr-policy.yml']) {
       const y = readWorkflowText(f);
       assert.ok(
-        !/ref:\s*\$\{\{[^}]*pull_request\.head\.sha/.test(y),
-        `${f} checks out the PR head sha under pull_request_target (injection risk)`,
+        !/ref:\s*\$\{\{[^}]*(?:pull_request\.head\.sha|head_ref|head\.ref)/.test(
+          y,
+        ),
+        `${f} checks out the PR head (sha/ref/branch) under pull_request_target (injection risk)`,
       );
     }
+  });
+
+  it('the pull_request_target guard catches every PR-head checkout token', () => {
+    const pattern =
+      /ref:\s*\$\{\{[^}]*(?:pull_request\.head\.sha|head_ref|head\.ref)/;
+    for (const dangerous of [
+      'ref: ${{ github.event.pull_request.head.sha }}',
+      'ref: ${{ github.event.pull_request.head.ref }}',
+      'ref: ${{ github.head_ref }}',
+    ]) {
+      assert.ok(pattern.test(dangerous), `guard must catch: ${dangerous}`);
+    }
+    assert.ok(!pattern.test('ref: ${{ github.ref }}'));
+    assert.ok(!pattern.test('ref: ${{ github.base_ref }}'));
   });
 });
