@@ -226,7 +226,7 @@ export function invalidateConnection(serverId: number): void {
 /**
  * Cleanup function for graceful shutdown.
  * Clears the entire connection pool.
- * Call from process SIGTERM handler in server.mjs.
+ * Call from the graceful-shutdown handler in instrumentation.ts.
  */
 export function cleanupConnections(): void {
   const size = connectionPool.size;

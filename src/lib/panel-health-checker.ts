@@ -377,7 +377,7 @@ export function stopPanelHealthChecks(): void {
 /**
  * Cleanup function for graceful shutdown.
  * Clears all intervals and flushes all in-memory state.
- * Call from process SIGTERM handler in server.mjs.
+ * Call from the graceful-shutdown handler in instrumentation.ts.
  */
 export function cleanup(): void {
   stopPanelHealthChecks();
