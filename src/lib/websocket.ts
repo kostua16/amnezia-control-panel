@@ -18,6 +18,9 @@ export {};
 
 let ioInstance: SocketIOServer | null = null;
 
+/** Track the number of connected WebSocket clients for throttling */
+let connectedClients = 0;
+
 /**
  * Get the Socket.IO server instance.
  * Throws if called before the server is initialized.
@@ -57,7 +60,23 @@ export function initWebSocketServer(
   }
 
   ioInstance = io;
-  console.log('[ws] Socket.IO server initialized');
+
+  // Set up connection tracking for throttling
+  io.on('connection', (socket) => {
+    connectedClients++;
+    console.log(
+      `[ws] Client connected: ${socket.id} (total: ${connectedClients})`,
+    );
+
+    socket.on('disconnect', (reason) => {
+      connectedClients--;
+      console.log(
+        `[ws] Client disconnected: ${socket.id} (${reason}, total: ${connectedClients})`,
+      );
+    });
+  });
+
+  console.log('[ws] Socket.IO server initialized with connection tracking');
 }
 
 /**
@@ -97,4 +116,12 @@ export function broadcastStatsUpdate(data: unknown): void {
 /** Broadcast system resource update. */
 export function broadcastResourceUpdate(data: unknown): void {
   broadcastEvent('resource:update', data);
+}
+
+/**
+ * Check if any WebSocket clients are currently connected.
+ * Used by the broadcaster to skip expensive queries when no one is listening.
+ */
+export function hasConnectedClients(): boolean {
+  return connectedClients > 0;
 }
