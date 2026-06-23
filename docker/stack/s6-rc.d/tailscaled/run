@@ -1,0 +1,11 @@
+#!/command/with-contenv bash
+set -e
+
+STATE_DIR="${TS_STATE_DIR:-/opt/acp-stack/tailscale}"
+SOCKET="${TS_SOCKET:-${STATE_DIR}/tailscaled.sock}"
+mkdir -p "$STATE_DIR"
+export TS_SOCKET="$SOCKET"
+
+exec tailscaled \
+  --state="${STATE_DIR}/tailscaled.state" \
+  --socket="$SOCKET"

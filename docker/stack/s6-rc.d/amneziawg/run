@@ -1,0 +1,22 @@
+#!/command/with-contenv bash
+set -e
+
+CONF="/opt/acp-stack/awg/awg0.conf"
+IFACE="${AWG_INTERFACE:-awg0}"
+
+if [ ! -f "$CONF" ]; then
+  echo "[amneziawg] no config at $CONF yet; idle"
+  exec sleep infinity
+fi
+
+if command -v amneziawg-go >/dev/null 2>&1; then
+  amneziawg-go -f "$CONF" "$IFACE" &
+  sleep 2
+fi
+
+if awg show "$IFACE" >/dev/null 2>&1; then
+  exec sleep infinity
+fi
+
+awg-quick up "$IFACE" 2>/dev/null || awg setconf "$IFACE" "$CONF"
+exec sleep infinity

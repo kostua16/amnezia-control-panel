@@ -1,0 +1,74 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.stack
+      args:
+        XUI_REF: ${XUI_REF:-v3.4.0}
+        XRAY_VERSION: ${XRAY_VERSION:-26.6.22}
+        AWGTOOLS_RELEASE: ${AWGTOOLS_RELEASE:-1.0.20260618-2}
+        AMNEZIAWG_GO_REF: ${AMNEZIAWG_GO_REF:-v0.2.19}
+        TAILSCALE_VERSION: ${TAILSCALE_VERSION:-v1.98.5}
+        S6_OVERLAY_VERSION: ${S6_OVERLAY_VERSION:-3.2.0.2}
+    container_name: amnezia-control-panel-stack
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      net.ipv4.ip_forward: 1
+      net.ipv4.conf.all.src_valid_mark: 1
+    ports:
+      - "${PORT:-3333}:3333"
+      - "${ACP_AWG_UDP_PORT:-51821}:${ACP_AWG_UDP_PORT:-51821}/udp"
+    environment:
+      - NODE_ENV=production
+      - PORT=3333
+      - HOSTNAME=0.0.0.0
+      - ACP_DEPLOYMENT_MODE=bundled
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required — generate one with: openssl rand -hex 32}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      - DATABASE_URL=file:/app/data/prisma/dev.db
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3333}
+      - XUI_BASE_URL=http://127.0.0.1:2053
+      - XUI_MAIN_FOLDER=/opt/acp-stack/x-ui
+      - AWG_INTERFACE=awg0
+      - AWG_CLI_PATH=/usr/bin/awg
+      - ACP_AWG_UDP_PORT=${ACP_AWG_UDP_PORT:-51821}
+      - TS_STATE_DIR=/opt/acp-stack/tailscale
+      - TS_SOCKET=/opt/acp-stack/tailscale/tailscaled.sock
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_HOSTNAME=${TS_HOSTNAME:-}
+      - TS_EXTRA_ARGS=${TS_EXTRA_ARGS:-}
+      - XUI_USERNAME=${XUI_USERNAME:-}
+      - XUI_PASSWORD=${XUI_PASSWORD:-}
+    volumes:
+      - db-data:/app/data/prisma
+      - geoip-data:/app/data/geoip
+      - log-data:/app/logs
+      - xui-data:/opt/acp-stack/x-ui
+      - awg-data:/opt/acp-stack/awg
+      - tailscale-data:/opt/acp-stack/tailscale
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3333/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  db-data:
+    driver: local
+  geoip-data:
+    driver: local
+  log-data:
+    driver: local
+  xui-data:
+    driver: local
+  awg-data:
+    driver: local
+  tailscale-data:
+    driver: local

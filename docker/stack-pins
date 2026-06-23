@@ -1,0 +1,22 @@
+# Pinned upstream versions for the bundled VPN stack image (Dockerfile.stack).
+# Bump procedure: docs/bundled-stack.md
+#
+# Resolved via: gh release view / gh api (2026-06-24)
+
+# 3x-ui panel + build ref (git tag)
+XUI_REF=v3.4.0
+
+# Xray-core bundled by 3x-ui at XUI_REF (see 3x-ui release notes / DockerInit.sh)
+XRAY_VERSION=26.6.22
+
+# amneziawg-tools prebuilt zip (release tag without leading v in URL path)
+AWGTOOLS_RELEASE=1.0.20260618-2
+
+# amneziawg-go git tag
+AMNEZIAWG_GO_REF=v0.2.19
+
+# Tailscale static image / binary version
+TAILSCALE_VERSION=v1.98.5
+
+# s6-overlay for multi-process supervision (https://github.com/just-containers/s6-overlay)
+S6_OVERLAY_VERSION=3.2.0.2
