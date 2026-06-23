@@ -548,4 +548,44 @@ if (mode === 'fix-review') {
   process.exit(0);
 }
 
+if (mode === 'rebase-pr') {
+  const isPrComment = Boolean(event.issue?.pull_request);
+  // v1 accepts the standalone command only: the whole comment body must be
+  // exactly "/rebase". This rejects prose mentions and "/rebase main" (and any
+  // arguments), and stays in lockstep with the rebase-pr.yml concurrency guard,
+  // which uses `comment.body == '/rebase'`.
+  const wantsRebase = String(commentBody ?? '') === '/rebase';
+  const commenterIsBot = isBotAccount(event.comment?.user);
+  const commentTriggered =
+    eventName === 'issue_comment' &&
+    isPrComment &&
+    wantsRebase &&
+    !commenterIsBot &&
+    isMaintainer;
+  const dispatchTriggered = eventName === 'workflow_dispatch';
+  const prNumber = event.inputs?.pr_number ?? event.issue?.number ?? null;
+  const active = commentTriggered || dispatchTriggered;
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode,
+        should_run: active,
+        trusted: dispatchTriggered || (isMaintainer && !commenterIsBot),
+        author_association: association,
+        trigger_source: commentTriggered
+          ? 'comment'
+          : dispatchTriggered
+            ? 'workflow_dispatch'
+            : null,
+        pr_number: active ? prNumber : null,
+        command: commentTriggered ? '/rebase' : null,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 throw new Error(`Unsupported mode "${mode}"`);
