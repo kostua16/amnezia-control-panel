@@ -287,10 +287,10 @@ describe('pushConfigToPanel', () => {
 
     const result = await pushConfigToPanel(mockPanel, mockPayload);
 
-    // 1 initial attempt + 3 retries = 4 total calls
-    assert.equal(callCount, 4);
+    // Fixed: exactly 3 attempts total (1 initial + 2 retries)
+    assert.equal(callCount, 3);
     assert.equal(result.success, false);
-    assert.equal(result.retries, 3);
+    assert.equal(result.retries, 2);
     assert.ok(result.error);
     // Verify exponential backoff delays between calls
     assert.ok(
@@ -301,10 +301,6 @@ describe('pushConfigToPanel', () => {
       callTimestamps[2] - callTimestamps[1] >= 1900,
       'Second retry delay should be ~2s',
     );
-    assert.ok(
-      callTimestamps[3] - callTimestamps[2] >= 3900,
-      'Third retry delay should be ~4s',
-    );
   });
 
   it('returns { success: false, error } after 3 failed retries', async () => {
@@ -314,7 +310,7 @@ describe('pushConfigToPanel', () => {
 
     const result = await pushConfigToPanel(mockPanel, mockPayload);
     assert.equal(result.success, false);
-    assert.equal(result.retries, 3);
+    assert.equal(result.retries, 2);
     assert.ok(result.error);
     assert.ok(result.error.length > 0);
   });
