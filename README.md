@@ -45,6 +45,17 @@ docker compose up -d
 
 3. Open [http://localhost:3333](http://localhost:3333) in your browser.
 
+### Bundled VPN stack (AWG + 3x-ui + Tailscale)
+
+For a **self-contained** VPN server in one container (isolated from host VPN installs):
+
+```bash
+cp .env.example .env
+docker compose -f docker-compose.stack.yml up -d --build
+```
+
+See [Bundled stack deployment](docs/bundled-stack.md) for ports, volumes, version bumps, and `stack-latest` GHCR tags.
+
 ### Environment variables
 
 | Variable              | Default                        | Description                                                          |
@@ -67,6 +78,7 @@ Published tags:
 
 - `latest`, `main`, and `sha-*` from the `main` branch
 - `1.2.3`, `1.2`, and `sha-*` from release tags like `v1.2.3`
+- `stack-latest`, `stack`, and `stack-sha-*` for the bundled VPN stack image
 
 The first workflow publish creates the GHCR package. Package visibility is managed in the GitHub Packages settings for `ghcr.io/kostua16/amnezia-control-panel`.
 
