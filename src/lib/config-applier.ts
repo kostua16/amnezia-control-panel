@@ -1,8 +1,6 @@
 import type { PanelSyncPayload } from '@/types/panel-sync';
 import type { ConfigApplierResult } from '@/types/config-push';
-import { signPayload } from './hmac';
-import { enrichError } from './error-reporter';
-import { httpClient } from './http-client';
+import { pushToPanel } from './panel-push';
 
 // ─── Shell Metacharacter Guard ────────────────────────────
 
@@ -40,90 +38,80 @@ async function pushToRemotePanel(params: {
   service: ConfigApplierResult['service'];
 }): Promise<ConfigApplierResult> {
   const { panelUrl, panelName, apiKey, bodyPayload, service } = params;
-  const startTime = Date.now();
   const serviceLabel = SERVICE_LABELS[service];
 
-  try {
-    const body = JSON.stringify(bodyPayload);
-    const signature = signPayload(bodyPayload, apiKey);
+  const result = await pushToPanel({
+    panelUrl,
+    panelName,
+    apiKey,
+    payload: bodyPayload,
+    endpoint: '/api/sync/apply',
+    retries: 0,
+  });
 
-    const response = await httpClient(`${panelUrl}/api/sync/apply`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
-        'X-Signature': signature,
+  if (result.success && result.data) {
+    if (result.data.applied) {
+      return {
+        success: true,
+        service,
+        panelName,
+        latencyMs: result.latencyMs,
+        error: null,
+      };
+    }
+    // Remote returned applied=false
+    const msg =
+      (result.data.message as string) ||
+      'Remote panel did not apply the config';
+    return {
+      success: false,
+      service,
+      panelName,
+      latencyMs: result.latencyMs,
+      error: result.error ?? {
+        type: 'unknown',
+        message: msg,
+        recommendation: '',
+        knownFix: null,
+        rawError: null,
       },
-      body,
-      timeoutMs: 15_000,
-      retries: 0,
-    });
-
-    if (response.ok) {
-      const resp = await response.json();
-      const data = resp.data;
-      if (data?.applied) {
-        return {
-          success: true,
-          service,
-          panelName,
-          latencyMs: Date.now() - startTime,
-          error: null,
-        };
-      }
-      // Remote returned applied=false
-      const msg = data?.message || 'Remote panel did not apply the config';
-      return {
-        success: false,
-        service,
-        panelName,
-        latencyMs: Date.now() - startTime,
-        error: enrichError(msg, panelName),
-      };
-    }
-
-    if (response.status === 404) {
-      // Remote panel does not have the apply endpoint -- this is a real failure
-      console.error(
-        `[config-applier] Remote panel ${panelName} returned 404 for /api/sync/apply. Config was NOT applied.`,
-      );
-      return {
-        success: false,
-        service,
-        panelName,
-        latencyMs: Date.now() - startTime,
-        error: {
-          type: 'service_error',
-          message: `Remote panel ${panelName} does not have /api/sync/apply. Config was NOT applied to ${serviceLabel} services.`,
-          recommendation:
-            'Update the remote panel to the latest version that supports the apply endpoint',
-          knownFix: 'Run git pull and restart the remote panel service',
-          rawError: 'HTTP 404: /api/sync/apply not found',
-        },
-      };
-    }
-
-    // Other HTTP error
-    const errorText = await response
-      .text()
-      .catch(() => `HTTP ${response.status}`);
-    return {
-      success: false,
-      service,
-      panelName,
-      latencyMs: Date.now() - startTime,
-      error: enrichError(`HTTP ${response.status}: ${errorText}`, panelName),
-    };
-  } catch (err) {
-    const rawError = err instanceof Error ? err.message : String(err);
-    return {
-      success: false,
-      service,
-      panelName,
-      latencyMs: Date.now() - startTime,
-      error: enrichError(rawError, panelName),
     };
   }
+
+  if (result.error && result.error.rawError?.startsWith('HTTP 404')) {
+    // Remote panel does not have the apply endpoint -- this is a real failure
+    console.error(
+      `[config-applier] Remote panel ${panelName} returned 404 for /api/sync/apply. Config was NOT applied.`,
+    );
+    return {
+      success: false,
+      service,
+      panelName,
+      latencyMs: result.latencyMs,
+      error: {
+        type: 'service_error',
+        message: `Remote panel ${panelName} does not have /api/sync/apply. Config was NOT applied to ${serviceLabel} services.`,
+        recommendation:
+          'Update the remote panel to the latest version that supports the apply endpoint',
+        knownFix: 'Run git pull and restart the remote panel service',
+        rawError: 'HTTP 404: /api/sync/apply not found',
+      },
+    };
+  }
+
+  return {
+    success: false,
+    service,
+    panelName,
+    latencyMs: result.latencyMs,
+    error: result.error ?? {
+      type: 'unknown',
+      message: 'Unknown error',
+      recommendation: '',
+      knownFix: null,
+      rawError: null,
+    },
+  };
 }
 
 // ─── applyAwgConfig ────────────────────────────────────────
