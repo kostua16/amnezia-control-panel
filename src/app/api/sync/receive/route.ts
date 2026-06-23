@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
-import { verifyValue } from '@/lib/password';
+import { verifyValue, fastHash } from '@/lib/password';
 import { storePreviousConfig } from '@/lib/rollback-manager';
 import { writeAuditLog } from '@/lib/audit-log';
 
@@ -61,19 +61,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Auth check: find panel by API key hash
-    const panels = await prisma.remotePanel.findMany({
-      where: { isActive: true },
+    // 2. Auth check: O(1) fast-hash lookup, then bcrypt verify on match
+    const candidate = await prisma.remotePanel.findFirst({
+      where: { isActive: true, apiKeyFastHash: fastHash(apiKey) },
     });
 
-    let matchedPanel: (typeof panels)[number] | null = null;
-    for (const panel of panels) {
-      const isValid = await verifyValue(apiKey, panel.apiKeyHash);
-      if (isValid) {
-        matchedPanel = panel;
-        break;
-      }
+    if (!candidate) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid API key' },
+        { status: 401 },
+      );
     }
+
+    const isValid = await verifyValue(apiKey, candidate.apiKeyHash);
+    if (!isValid) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid API key' },
+        { status: 401 },
+      );
+    }
+
+    const matchedPanel = candidate;
 
     if (!matchedPanel) {
       return NextResponse.json(

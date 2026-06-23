@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { signPayload } from '@/lib/hmac';
@@ -8,6 +9,7 @@ import { postRequest, readJson } from '@/lib/__tests__/helpers/test-server';
 
 const PATH = '/api/sync/receive';
 const API_KEY = 'test-panel-api-key';
+const FAST_HASH = createHash('sha256').update(API_KEY).digest('hex');
 
 type SyncErrorBody = {
   success?: boolean;
@@ -25,7 +27,7 @@ type SyncSuccessBody = {
 
 // Save originals; restore after each test so stubs never leak.
 const orig = {
-  findMany: prisma.remotePanel.findMany,
+  findFirst: prisma.remotePanel.findFirst,
   findUnique: prisma.cachedPanelConfig.findUnique,
   create: prisma.cachedPanelConfig.create,
   execRawUnsafe: prisma.$executeRawUnsafe,
@@ -72,12 +74,13 @@ function hashedPanel() {
   return {
     id: 1,
     apiKeyHash: bcrypt.hashSync(API_KEY, 4),
+    apiKeyFastHash: FAST_HASH,
     isActive: true,
   };
 }
 
 function restore() {
-  prisma.remotePanel.findMany = orig.findMany;
+  prisma.remotePanel.findFirst = orig.findFirst;
   prisma.cachedPanelConfig.findUnique = orig.findUnique;
   prisma.cachedPanelConfig.create = orig.create;
   prisma.$executeRawUnsafe = orig.execRawUnsafe;
@@ -85,7 +88,7 @@ function restore() {
 }
 
 beforeEach(() => {
-  prisma.remotePanel.findMany = orig.findMany;
+  prisma.remotePanel.findFirst = orig.findFirst;
   prisma.cachedPanelConfig.findUnique = orig.findUnique;
   prisma.cachedPanelConfig.create = orig.create;
   // writeAuditLog must not touch a real DB.
@@ -104,7 +107,7 @@ describe('POST /api/sync/receive', () => {
   });
 
   it('rejects an API key that matches no active panel with 401', async () => {
-    prisma.remotePanel.findMany = (async () => []) as never;
+    prisma.remotePanel.findFirst = (async () => null) as never;
     const { status, body } = await readJson<SyncErrorBody>(
       await POST(
         postRequest(PATH, validPayload(), {
@@ -118,7 +121,7 @@ describe('POST /api/sync/receive', () => {
   });
 
   it('rejects a payload with a valid key but bad signature with 401', async () => {
-    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.remotePanel.findFirst = (async () => hashedPanel()) as never;
     const { status, body } = await readJson<SyncErrorBody>(
       await POST(
         postRequest(PATH, validPayload(), {
@@ -132,7 +135,7 @@ describe('POST /api/sync/receive', () => {
   });
 
   it('rejects a structurally invalid payload with 400 after key match', async () => {
-    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.remotePanel.findFirst = (async () => hashedPanel()) as never;
     const bad = { ...validPayload(), configVersion: 'not-a-number' };
     const { status, body } = await readJson<SyncErrorBody>(
       await POST(
@@ -147,7 +150,7 @@ describe('POST /api/sync/receive', () => {
   });
 
   it('stores a valid, correctly-signed payload and returns 200', async () => {
-    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.remotePanel.findFirst = (async () => hashedPanel()) as never;
     prisma.cachedPanelConfig.findUnique = (async () => null) as never;
     let createdPanelId: number | null = null;
     prisma.cachedPanelConfig.create = (async (args: {
@@ -179,7 +182,7 @@ describe('POST /api/sync/receive', () => {
   });
 
   it('rejects a payload whose generatedAt is outside the freshness window with 409', async () => {
-    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.remotePanel.findFirst = (async () => hashedPanel()) as never;
     prisma.cachedPanelConfig.findUnique = (async () => null) as never;
 
     // Far in the past: a captured payload replayed long after capture.
@@ -198,7 +201,7 @@ describe('POST /api/sync/receive', () => {
   });
 
   it('rejects a payload whose generatedAt is not an ISO datetime with 409', async () => {
-    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.remotePanel.findFirst = (async () => hashedPanel()) as never;
     prisma.cachedPanelConfig.findUnique = (async () => null) as never;
 
     const payload = validPayload({ generatedAt: 'x' });
@@ -216,7 +219,7 @@ describe('POST /api/sync/receive', () => {
   });
 
   it('treats a stale same-version replay as idempotent success', async () => {
-    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.remotePanel.findFirst = (async () => hashedPanel()) as never;
     prisma.cachedPanelConfig.findUnique = (async () => ({
       id: 7,
       configVersion: 7,
@@ -253,7 +256,7 @@ describe('POST /api/sync/receive', () => {
   });
 
   it('treats a replayed older configVersion as a no-op and does not overwrite', async () => {
-    prisma.remotePanel.findMany = (async () => [hashedPanel()]) as never;
+    prisma.remotePanel.findFirst = (async () => hashedPanel()) as never;
     prisma.cachedPanelConfig.findUnique = (async () => ({
       id: 7,
       configVersion: 7,

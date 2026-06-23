@@ -48,7 +48,13 @@ export async function register() {
   startBroadcaster();
 
   const { cleanupConnections } = await import('@/lib/server-connection');
-  const { cleanupGeoIP } = await import('@/lib/geoip-manager');
+  const { geoIPManager, cleanupGeoIP } = await import('@/lib/geoip-manager');
+
+  // GeoIP init loads geoip.dat and builds the country trie so geo-routing
+  // rules resolve correctly at runtime. Must run before any lookup call.
+  geoIPManager.init().catch((err) =>
+    console.error('[instrumentation] GeoIP init failed:', err),
+  );
 
   // Each cleanup function stops its own interval and clears its in-memory
   // state, so they are idempotent and safe to call together on shutdown.

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { hashValue } from '@/lib/password';
+import { hashValue, fastHash } from '@/lib/password';
 import { writeAuditLog } from '@/lib/audit-log';
 import {
   evictPanel,
@@ -92,6 +92,7 @@ export const PUT = apiHandler(
 
     if (apiKey !== undefined) {
       updateData.apiKeyHash = await hashValue(apiKey);
+      updateData.apiKeyFastHash = fastHash(apiKey);
     }
 
     try {

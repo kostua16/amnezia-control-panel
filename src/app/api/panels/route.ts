@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
-import { hashValue } from '@/lib/password';
+import { hashValue, fastHash } from '@/lib/password';
 import { apiHandler } from '@/lib/api-handler';
 import { invalidatePanelListCache } from '@/lib/panel-health-checker';
 import { validationError } from '@/lib/api-response';
@@ -48,9 +48,10 @@ export const POST = apiHandler(async (request: NextRequest) => {
   const { name, panelUrl, apiKey } = parsed.data;
 
   const apiKeyHash = await hashValue(apiKey);
+  const apiKeyFastHash = fastHash(apiKey);
 
   const panel = await prisma.remotePanel.create({
-    data: { name, panelUrl, apiKeyHash },
+    data: { name, panelUrl, apiKeyHash, apiKeyFastHash },
   });
 
   invalidatePanelListCache();
