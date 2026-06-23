@@ -1,11 +1,20 @@
 name: Stale PR Consolidation
 
-# Daily(ready) consolidation of stale PRs into one replacement PR per compatible
-# group. Conservative by design: ships in dry-run/report mode; the run-zai ->
-# validate -> push -> open -> close write path is present but inert until an
-# operator flips dry_run to false (Rollout step 5-6). Source PRs are closed only
-# through merge-pr-close-guard.cjs after the replacement is green and linked.
-# See .planning/ideas/merge-pr-plan.md and docs/workflow-e2e-scenarios.md.
+# Daily stale-PR consolidation REPORT workflow. This PR ships the report /
+# dry-run path only: collect open PRs -> deterministic select/group -> publish a
+# central consolidation report. The consolidation WRITE path (run-zai build
+# branch -> validate -> push -> open replacement -> close sources) is
+# intentionally DEFERRED to a follow-up (Rollout 5-7) and is NOT present here.
+# Doing it safely requires (see deferred-write-path note at the bottom):
+#   (a) a least-privilege agent job with no push-capable credential and a
+#       stripped remote (the agent cannot escape its tool allowlist via
+#       Bash(node/npm) + Write to spawn `git push` / hit the API), and
+#   (b) a deferred close that re-runs merge-pr-close-guard.cjs once the
+#       replacement reaches pr-flow/ready (a synchronous close cannot observe a
+#       green replacement), and (c) replacement-PR dedup on re-dispatch.
+# The deterministic core (merge-pr-logic.cjs, collect-stale-pr-feedback.cjs,
+# merge-pr-close-guard.cjs) ships + is unit-tested now for reuse there.
+# See .planning/ideas/merge-pr-plan.md and docs/workflow-e2e-scenarios.md (S7).
 on:
   workflow_dispatch:
     inputs:
@@ -135,185 +144,18 @@ jobs:
             --report-json "${{ steps.report.outputs.report_path }}" \
             --summary true
 
-      # ---------------- Write path: inert unless dry_run=false ----------------
-
-      - name: Collect review-debt bundle
-        id: feedback
-        if: steps.select.outputs.has_safe_group == 'true' && env.EFFECTIVE_DRY_RUN == 'false'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          node .github/workflows/scripts/collect-stale-pr-feedback.cjs \
-            --repo "$GITHUB_REPOSITORY" \
-            --prs "${{ steps.select.outputs.source_prs_csv }}" \
-            --out stale-pr-feedback.md \
-            --max-diff-chars-per-pr 30000
-          echo "bundle_path=$(pwd)/stale-pr-feedback.md" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare consolidation branch
-        id: branch
-        if: steps.select.outputs.has_safe_group == 'true' && env.EFFECTIVE_DRY_RUN == 'false'
-        uses: ./.github/actions/prepare-automation-branch
-        with:
-          branch-name: claude/stale-pr-merge-${{ steps.select.outputs.first_group_id }}-${{ github.run_id }}
-          github-token: ${{ secrets.GH_PAT }}
-
-      - name: Build consolidation branch
-        id: claude_run
-        if: steps.select.outputs.has_safe_group == 'true' && env.EFFECTIVE_DRY_RUN == 'false'
-        uses: ./.github/actions/run-zai
-        with:
-          api-key: ${{ secrets.ZAI_API_KEY }}
-          github-token: ${{ secrets.GH_PAT }}
-          max-turns: '90'
-          allowed-bots: 'github-actions,github-actions[bot],claude[bot]'
-          # The agent may read source PR branches but must not mutate GitHub:
-          # push, PR, close, approve, merge, and comment are owned by this workflow.
-          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(gh pr diff:*),Bash(gh pr view:*)'
-          model: opus
-          json-schema: |
-            {
-              "type": "object",
-              "additionalProperties": true,
-              "properties": {
-                "summary": { "type": "string" },
-                "source_prs_applied": { "type": "array", "items": { "type": "number" } },
-                "source_prs_skipped": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": true,
-                    "properties": {
-                      "pr": { "type": "number" },
-                      "reason": { "type": "string" }
-                    }
-                  }
-                },
-                "review_findings_addressed": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": true,
-                    "properties": {
-                      "pr": { "type": "number" },
-                      "file": { "type": "string" },
-                      "change": { "type": "string" }
-                    }
-                  }
-                },
-                "changed_files": { "type": "array", "items": { "type": "string" } },
-                "validation": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "properties": {
-                    "test": { "type": "string" },
-                    "build": { "type": "string" },
-                    "workflow_scripts": { "type": "string" },
-                    "prisma_safe": { "type": "string" }
-                  }
-                }
-              }
-            }
-          prompt: |
-            Create a consolidation branch for stale PR group ${{ steps.select.outputs.first_group_id }}.
-
-            Read the stale PR feedback bundle first:
-            ${{ steps.feedback.outputs.bundle_path }}
-
-            Source PRs in this group: ${{ steps.select.outputs.source_prs_csv }}
-
-            Goals:
-            - Apply the still-valid intent from each source PR onto current main.
-            - Address unresolved review feedback from source PRs (listed in the bundle).
-            - Keep the result smaller and safer than merging the source branches directly.
-            - If a source PR contains unsafe code, replace it with a safer implementation or report it as skipped.
-
-            Rules:
-            - Do not commit, push, comment, approve, merge, or close PRs.
-            - Run validation before finishing (npm run test-only; the workflow script e2e suite; npm run build).
-            - Return JSON only matching the structured-output schema.
-
-      - name: Validate consolidation branch
-        id: gate
-        if: steps.select.outputs.has_safe_group == 'true' && env.EFFECTIVE_DRY_RUN == 'false' && steps.claude_run.outputs.claude_failed != 'true'
-        uses: ./.github/actions/validate-pr-gate
-
-      - name: Commit and push consolidation branch
-        id: push
-        if: steps.gate.outputs.gate_passed == 'true'
-        uses: ./.github/actions/commit-and-push
-        with:
-          branch-name: ${{ steps.branch.outputs.branch_name }}
-          commit-message: 'fix(stale-prs): consolidate ${{ steps.select.outputs.first_group_id }}'
-
-      - name: Build replacement PR body
-        id: body
-        if: steps.push.outputs.pushed == 'true'
-        uses: ./.github/actions/build-automation-pr-body
-        with:
-          workflow-name: stale-pr-consolidation
-          problem: Stale PR consolidation grouped ${{ steps.select.outputs.source_prs_csv }} into ${{ steps.select.outputs.first_group_id }} and carried forward their unresolved review feedback.
-          rationale: Source PRs drifted stale; a single validated replacement addresses their combined intent and review debt on current main.
-          evidence: ${{ steps.claude_run.outputs.structured_output }}
-          review-notes: |
-            Source PRs superseded: ${{ steps.select.outputs.source_prs_csv }}.
-            Review-debt bundle and diffs were attached to the consolidation agent prompt.
-            Replacement PRs are manual-review by policy (claude/stale-pr-merge-* is not a trusted auto-finalize prefix).
-
-      - name: Open replacement PR
-        id: pr
-        if: steps.push.outputs.pushed == 'true'
-        uses: ./.github/actions/upsert-pull-request
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          branch-name: ${{ steps.branch.outputs.branch_name }}
-          title: 'fix(stale-prs): consolidate ${{ steps.select.outputs.first_group_title }}'
-          body: ${{ steps.body.outputs.body }}
-          labels: auto-fix,stale-pr-consolidation,fresh/consolidation-candidate,area/workflows
-          draft: 'false'
-          require-rich-body: 'true'
-
-      - name: Guard and close source PRs
-        if: steps.pr.outputs.pr_number != ''
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          set -euo pipefail
-          REPLACEMENT="${{ steps.pr.outputs.pr_number }}"
-          # replacementGreen becomes true once pr-flow labels the replacement
-          # manual-only or review-passed. Until then the guard keeps every source
-          # open (correct: never close before the replacement is visible + green).
-          LABELS=$(gh pr view "$REPLACEMENT" --repo "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' 2>/dev/null || true)
-          GREEN=false
-          if echo "$LABELS" | grep -Eq 'flow/manual-only|ai-review-passed|security-review-passed'; then GREEN=true; fi
-          SOURCE_CSV="${{ steps.select.outputs.source_prs_csv }}"
-          SHAS_JSON='${{ steps.select.outputs.source_pr_shas_json }}'
-          # Derive the structural preconditions from the actual replacement PR so
-          # merge-pr-close-guard enforces its full contract: body links every
-          # source, body carries the findings evidence, no source advanced since
-          # collection. Nothing here is asserted true.
-          BODY=$(gh pr view "$REPLACEMENT" --repo "$GITHUB_REPOSITORY" --json body -q .body 2>/dev/null || true)
-          BODY_LINKS=true
-          BODY_FINDINGS=true
-          UNCHANGED=true
-          for PR in $(echo "$SOURCE_CSV" | tr ',' ' '); do
-            printf '%s' "$BODY" | grep -qE "(^|[^0-9])${PR}([^0-9]|$)" || BODY_LINKS=false
-            CAP=$(node -e 'const m=JSON.parse(process.argv[1]||"{}");process.stdout.write(m[process.argv[2]]||"")' "$SHAS_JSON" "$PR" 2>/dev/null || true)
-            CUR=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid 2>/dev/null || true)
-            if [ -n "$CAP" ] && [ "$CAP" != "$CUR" ]; then UNCHANGED=false; fi
-          done
-          printf '%s' "$BODY" | grep -qiE 'review_findings_addressed|source_prs_skipped|findings_addressed' || BODY_FINDINGS=false
-          node .github/workflows/scripts/merge-pr-close-guard.cjs --json "$(cat <<JSON
-          {"replacementPushed":true,"replacementPrOpened":true,"validationPassed":true,"replacementGreen":$GREEN,"bodyLinksAllSources":$BODY_LINKS,"bodyListsFindings":$BODY_FINDINGS,"sourceUnchangedSinceCollection":$UNCHANGED,"dryRun":"${{ env.EFFECTIVE_DRY_RUN }}","labelsPolicyOk":true}
-          JSON
-          )" | tee close-decision.txt
-          CAN_CLOSE=$(head -1 close-decision.txt)
-          echo "can_close_line=$CAN_CLOSE" >> "$GITHUB_OUTPUT"
-          if [[ "$CAN_CLOSE" == CAN_CLOSE* ]]; then
-            for PR in $(echo "${{ steps.select.outputs.source_prs_csv }}" | tr ',' ' '); do
-              gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --add-label "fresh/superseded" || true
-              gh pr close "$PR" --repo "$GITHUB_REPOSITORY" --comment "Superseded by #$REPLACEMENT (stale PR consolidation group ${{ steps.select.outputs.first_group_id }})." || true
-            done
-          fi
+      # ------------------------------------------------------------------
+      # Consolidation WRITE path -- intentionally NOT implemented in this PR.
+      # Only the report path above is active. The write path is deferred to
+      # Rollout 5-7; when it lands it MUST provide:
+      #   1. Least-privilege agent job: no push-capable token in the agent env
+      #      or remote.origin.url (actions/checkout persist-credentials: false
+      #      + strip the remote) so the agent cannot escape its tool allowlist
+      #      via Bash(node/npm) + Write to spawn `git push` / hit the API.
+      #   2. Deferred close: a workflow_run listener re-runs
+      #      merge-pr-close-guard.cjs once the replacement reaches
+      #      pr-flow/ready -- a synchronous close cannot observe a green
+      #      replacement (pr-flow labels arrive in separate async runs).
+      #   3. Replacement dedup: re-dispatch re-evaluates an existing open
+      #      replacement (by branch/marker), not opens a new one.
+      # The deterministic core is shipped + unit-tested now for reuse there.
