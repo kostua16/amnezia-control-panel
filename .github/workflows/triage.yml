@@ -21,13 +21,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 15
+  MAX_TURNS: 40
   NODE_VERSION: '24.x'
 
 jobs:
   triage:
     runs-on: [self-hosted, big]
-    timeout-minutes: 10
+    # Keep wall-clock headroom for the 40-turn budget; a tighter cap would
+    # clip runs before the extra turns are usable.
+    timeout-minutes: 15
     if: |
       github.event_name == 'issues' ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/triage')) ||

@@ -255,6 +255,10 @@ jobs:
             ${{ needs.collect-runs.outputs.runs-data }}
             ```
 
+            ## GLOBAL CONSTRAINT (all phases)
+            Do NOT run `git`, `gh`, `curl`, or any live network/API commands in ANY phase.
+            Use ONLY the provided Completed Runs Data for evidence. Do NOT fetch logs, run statuses, or issue details from the API.
+
             ## PHASE-BASED EXECUTION (MANDATORY)
 
             ### Phase 1: ASSESS (turns 1-3)
@@ -274,7 +278,6 @@ jobs:
             ### Phase 3: EXECUTE (remaining turns)
             - Apply planned changes. Validate YAML after each edit using only allowed local tools such as `node`, `npx`, or file reads.
             - Do NOT commit or push.
-            - Do NOT run `git`, `gh`, `curl`, or other live network/API investigation commands.
 
             ## SCOPE
             - ONLY modify `.github/workflows/` files
