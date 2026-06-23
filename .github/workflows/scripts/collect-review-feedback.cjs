@@ -12,6 +12,7 @@ const STICKY_MARKERS = [
   '<!-- pr-size-guard -->',
   '<!-- pr-flow-orchestration -->',
   '<!-- fix-review-summary -->',
+  '<!-- rebase-pr-summary -->',
 ];
 const SLASH_COMMAND = /^\s*\/[\w-]+/;
 const MAX_DIFF_CHARS = 30000;

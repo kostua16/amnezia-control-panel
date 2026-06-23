@@ -267,6 +267,46 @@ flowchart TD
 
 ---
 
+## §6e `/rebase` → PR (branch refresh) — `rebase-pr.yml`
+
+Decision basis: `rebase-pr.yml` issue_comment (exact body `/rebase`) + `workflow_dispatch` (`pr_number`, `head_sha`, `dry_run`); concurrency "ignored" branch (mirrors §6d); `evaluate-trigger-policy.cjs --mode rebase-pr` (maintainer-only, PR-only, exact command — rejects prose and `/rebase main`). A **branch-refresh** tool, never a merge tool: it rewrites the SAME PR branch and republishes it with `--force-with-lease`. Eligibility is intentionally narrower than merge: only `do-not-merge` blocks a rebase (`manual-only` / `needs-review` / `ai-review-concerns` / `security-review-concerns` block merge, not refresh). `git rebase origin/<base>` runs first; **clean rebases validate + push with no AI**. `run-zai` (opus) is invoked only when Git enters a conflict state, with review feedback pre-fetched so the agent can preserve/address findings touched by conflicts. Push is gated by `validate-pr-gate` (`id: gate`); a gate failure posts a dual-block summary and does not push. A clean no-op (head already current) skips the gate+push and reports `complete` with `pushed=false`.
+
+```mermaid
+flowchart TD
+  R[/rebase , dispatch/] --> G{maintainer, PR, exact command?}
+  G -->|no| IG[ignored: no-op]
+  G -->|yes| E{eligible? open, same-repo, not draft, no do-not-merge}
+  E -->|no| SK[skipped: reported]
+  E -->|yes| RB[git rebase onto base]
+  RB --> S{rebase state?}
+  S -->|conflict| ZAI[run-zai opus resolve conflicts]
+  S -->|failed| FL[failed: reported]
+  ZAI --> V2{rebase complete?}
+  V2 -->|no| FL
+  S -->|clean| M{head moved?}
+  V2 -->|yes| M
+  M -->|no| NO[complete pushed=false: reported]
+  M -->|yes| V{validate-pr-gate ok?}
+  V -->|no| VF[validation-failed: reported]
+  V -->|yes| P{dry-run?}
+  P -->|yes| DR[complete dry-run: reported]
+  P -->|no| FW[force-with-lease push, disable automerge, wake pr-flow to §1]
+```
+
+| ID | Trigger / precondition | Resolution → terminal | Type |
+|---|---|---|---|
+| RB1 | maintainer `/rebase` on open same-repo PR, clean rebase | validate-pr-gate → `--force-with-lease` push → disable auto-merge → wake pr-flow → §1 | char |
+| RB2 | non-maintainer / bot / prose / `/rebase main` / non-PR comment | ignored branch → **no-op** | char |
+| RB3 | ineligible PR (closed, merged, draft, cross-repo, `do-not-merge`, stale dispatch head) | `skipped` → **reported** | char |
+| RB4 | clean rebase, head already current (no-op) | gate+push skipped → `complete` `pushed=false` → **reported** | char |
+| RB5 | rebase enters conflict | run-zai (opus) resolves → validate-pr-gate → `--force-with-lease` push → §1 | char |
+| RB6 | conflict unresolved / run-zai fails / git error | rebase aborted → `failed` → **reported** | char |
+| RB7 | `validate-pr-gate` fails | dual-block summary (agent-reported vs authoritative gate), not pushed → **reported** | char |
+| RB8 | `--force-with-lease` rejected (branch advanced / protection) | `push-rejected` (no plain-force retry) → **reported** | char |
+| RB9 | `dry_run` dispatch | validate-pr-gate → `complete` `dry-run` (not pushed) → **reported** | char |
+
+---
+
 ## Cross-cutting
 
 | ID | Scenario | Current behavior | Intended | Type |

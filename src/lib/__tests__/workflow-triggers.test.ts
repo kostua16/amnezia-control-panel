@@ -144,6 +144,30 @@ describe('workflow trigger policy', () => {
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
   });
 
+  it('keeps non-command, bot, and non-PR comments from cancelling active rebase-pr runs', () => {
+    const workflow = readWorkflow('rebase-pr.yml');
+    const group = workflow.concurrency?.group ?? '';
+
+    assert.match(group, /github\.event_name == 'issue_comment'/);
+    assert.match(group, /github\.event\.issue\.pull_request != null/);
+    assert.match(group, /github\.event\.comment\.user\.type != 'Bot'/);
+    // rebase-pr uses an exact-body match (== '/rebase'), so prose mentions and
+    // "/rebase main" do not share the PR-wide group and cannot cancel a run.
+    assert.match(group, /github\.event\.comment\.body == '\/rebase'/);
+    assert.match(group, /rebase-pr-ignored-\{0\}/);
+    assert.match(group, /rebase-pr-\{0\}/);
+    assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
+  });
+
+  it('rebase-pr skipped summary names the specific blocking condition', () => {
+    // The skipped step must forward the eligibility reason so the sticky summary
+    // states which condition blocked the rebase (draft / do-not-merge / stale
+    // head / cross-repo / closed / merged) instead of the generic cause list.
+    const yaml = readWorkflowText('rebase-pr.yml');
+    assert.match(yaml, /REASON: \$\{\{ steps\.pr\.outputs\.reason \}\}/);
+    assert.match(yaml, /--reason "\$REASON"/);
+  });
+
   it('prefilters standalone AI mention workflows before runner checkout', () => {
     expectGuard('claude.yml', [
       /authorize:[\s\S]*?if: >-/,

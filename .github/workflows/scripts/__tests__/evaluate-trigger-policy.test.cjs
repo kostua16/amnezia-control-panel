@@ -226,3 +226,127 @@ test('review-approved: non-approval review (comment) is ignored', () => {
   assert.equal(out.should_run, false);
 });
 
+function runRebasePr({ event, eventName = 'issue_comment' }) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rebase-pr-'));
+  const eventPath = path.join(tempDir, 'event.json');
+  fs.writeFileSync(eventPath, JSON.stringify(event), 'utf8');
+  const output = execFileSync(
+    process.execPath,
+    [
+      scriptPath,
+      '--mode',
+      'rebase-pr',
+      '--policy-file',
+      policyPath,
+      '--event-path',
+      eventPath,
+      '--event-name',
+      eventName,
+    ],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  return JSON.parse(output);
+}
+
+// rebase-pr requires the whole comment body to be exactly "/rebase" (rejects
+// prose mentions and "/rebase main"); maintainer-only; issue_comment + dispatch.
+test('rebase-pr: maintainer /rebase on a PR runs and reports the command', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: '/rebase',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+  assert.equal(out.should_run, true);
+  assert.equal(out.trusted, true);
+  assert.equal(out.pr_number, 472);
+  assert.equal(out.command, '/rebase');
+  assert.equal(out.trigger_source, 'comment');
+});
+
+test('rebase-pr: /rebase on a non-PR issue is ignored', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 5 },
+      comment: {
+        body: '/rebase',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+  assert.equal(out.should_run, false);
+  assert.equal(out.pr_number, null);
+});
+
+test('rebase-pr: bot /rebase is ignored', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: '/rebase',
+        author_association: 'COLLABORATOR',
+        user: { login: 'dependabot[bot]', type: 'Bot' },
+      },
+    },
+  });
+  assert.equal(out.should_run, false);
+});
+
+test('rebase-pr: non-maintainer /rebase is ignored', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: '/rebase',
+        author_association: 'NONE',
+        user: { login: 'contrib', type: 'User' },
+      },
+    },
+  });
+  assert.equal(out.should_run, false);
+  assert.equal(out.trusted, false);
+});
+
+test('rebase-pr: prose mentioning /rebase does not trigger', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: 'can you /rebase this branch please?',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+  assert.equal(out.should_run, false);
+});
+
+test('rebase-pr: /rebase with arguments is rejected in v1', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: '/rebase main',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+  assert.equal(out.should_run, false);
+});
+
+test('rebase-pr: workflow_dispatch runs with the supplied PR number', () => {
+  const out = runRebasePr({
+    event: { inputs: { pr_number: '472' } },
+    eventName: 'workflow_dispatch',
+  });
+  assert.equal(out.should_run, true);
+  assert.equal(out.trusted, true);
+  assert.equal(out.pr_number, '472');
+  assert.equal(out.trigger_source, 'workflow_dispatch');
+});
