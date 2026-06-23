@@ -6,6 +6,7 @@ DEFAULT_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/amnezia-control-panel/deploy.y
 DEFAULT_SECRETS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/amnezia-control-panel/secrets.env"
 DEFAULT_GHCR_USER="kostua16"
 DEFAULT_IMAGE_REF="ghcr.io/kostua16/amnezia-control-panel:latest"
+DEFAULT_STACK_IMAGE_REF="ghcr.io/kostua16/amnezia-control-panel:stack-latest"
 DEFAULT_RELEASE_REPO="kostua16/amnezia-control-panel"
 DEFAULT_PORT="3333"
 DEFAULT_APP_DIR="/opt/amnezia-control-panel"
@@ -31,6 +32,7 @@ CLI_PORT=""
 CLI_APP_DIR=""
 CLI_NEXT_PUBLIC_APP_URL=""
 CLI_INSTALL_SERVICE=""
+CLI_STACK_MODE=""
 
 usage() {
   cat <<'USAGE'
@@ -51,6 +53,7 @@ Global options:
   --jwt-secret SECRET
   --ghcr-user USER
   --image-ref REF
+  --stack                 Use bundled VPN stack image (stack-latest)
   --release-repo OWNER/REPO
   --port PORT
   --app-dir PATH
@@ -74,6 +77,13 @@ die() {
 
 have_cmd() {
   command -v "$1" >/dev/null 2>&1
+}
+
+truthy() {
+  case "${1:-}" in
+    1 | true | yes | on) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 shell_quote() {
@@ -376,6 +386,7 @@ parse_global_options() {
       --jwt-secret) CLI_JWT_SECRET="${2:-}"; shift 2 ;;
       --ghcr-user) CLI_GHCR_USER="${2:-}"; shift 2 ;;
       --image-ref) CLI_IMAGE_REF="${2:-}"; shift 2 ;;
+      --stack) CLI_STACK_MODE="1"; shift ;;
       --release-repo) CLI_RELEASE_REPO="${2:-}"; shift 2 ;;
       --port) CLI_PORT="${2:-}"; shift 2 ;;
       --app-dir) CLI_APP_DIR="${2:-}"; shift 2 ;;
@@ -568,6 +579,9 @@ build_bootstrap_payload() {
 
   ghcr_user="$(value_for_record "$CLI_GHCR_USER" "GHCR_USER" "" "$(default_value ghcr_user "$DEFAULT_GHCR_USER")")"
   image_ref="$(value_for_record "$CLI_IMAGE_REF" "IMAGE_REF" "$(record_field "$record" 8)" "$(default_value image_ref "$DEFAULT_IMAGE_REF")")"
+  if truthy "$CLI_STACK_MODE" && [ -z "$CLI_IMAGE_REF" ]; then
+    image_ref="$DEFAULT_STACK_IMAGE_REF"
+  fi
   release_repo="$(value_for_record "$CLI_RELEASE_REPO" "RELEASE_REPO" "" "$(default_value release_repo "$DEFAULT_RELEASE_REPO")")"
   port="$(value_for_record "$CLI_PORT" "PORT" "$(record_field "$record" 9)" "$(default_value port "$DEFAULT_PORT")")"
   app_dir="$(value_for_record "$CLI_APP_DIR" "APP_DIR" "$(record_field "$record" 10)" "$(default_value app_dir "$DEFAULT_APP_DIR")")"
@@ -590,6 +604,9 @@ build_bootstrap_payload() {
   if [ -n "$jwt_secret" ]; then
     payload_line "JWT_SECRET" "$jwt_secret"
   fi
+  if truthy "$CLI_STACK_MODE"; then
+    payload_line "STACK_MODE" "1"
+  fi
 }
 
 install_target() {
@@ -603,6 +620,9 @@ install_target() {
     agent_args+=" --no-service"
   else
     agent_args+=" --install-service"
+  fi
+  if truthy "$CLI_STACK_MODE"; then
+    agent_args+=" --stack"
   fi
   local command="set -e; if [ \"\$(id -u)\" -eq 0 ]; then /usr/local/bin/acp-agent$agent_args; else sudo -n /usr/local/bin/acp-agent$agent_args; fi"
   # shellcheck disable=SC2029 # The quoted command must be evaluated by the remote shell.
