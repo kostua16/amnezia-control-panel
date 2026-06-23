@@ -48,6 +48,13 @@ Proposed path:
 
 - `.github/workflows/merge-pr.yml`
 
+Related plan:
+
+- `.planning/ideas/fresh-prs-plan.md` owns the scanner/reporting layer and may
+  dispatch this workflow later with deterministic group JSON. `merge-pr.yml`
+  must also work as a standalone scheduled or manually dispatched workflow, and
+  it must not infer groups from natural-language report text.
+
 Triggers:
 
 ```yaml
@@ -82,10 +89,12 @@ Resolve the effective dry-run value explicitly because `workflow_dispatch`
 defaults do not exist on `schedule` events:
 
 ```bash
+# Set MERGE_PR_DRY_RUN_INPUT from `${{ inputs.dry_run }}` at the step env level
+# so an explicit boolean false is preserved as the string "false".
 if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
   effective_dry_run="${MERGE_PR_SCHEDULE_DRY_RUN:-true}"
 else
-  effective_dry_run="${{ github.event.inputs.dry_run || 'true' }}"
+  effective_dry_run="${MERGE_PR_DRY_RUN_INPUT:-true}"
 fi
 ```
 
@@ -142,6 +151,11 @@ Excluded by default:
 - security-sensitive manual-only PRs with `do-not-merge`,
 - PRs that already have an open replacement PR linked by marker.
 
+Automation evidence is branch/policy based, not just the GitHub PR author. For
+example, a PR authored by a maintainer but opened from
+`claude-gsd-planning-execute-*` with automation labels still belongs to the
+automation backlog.
+
 ## Grouping model
 
 Use deterministic grouping before invoking AI. `run-zai` may validate or refine
@@ -151,7 +165,8 @@ Group fields:
 
 - `id`
 - `title`
-- `kind`: `workflow`, `dependency`, `app-code`, `planning`, `mixed-rejected`
+- `kind`: `workflow`, `dependency`, `app-code`, `database`, `planning`,
+  `mixed-rejected`
 - `source_prs`
 - `changed_paths`
 - `review_thread_count`
@@ -178,7 +193,7 @@ Initial group mapping from the evidence snapshot:
 | `workflow-automation` | `#472` | workflow | Rebase or consolidate alone. |
 | `dashboard-observability` | `#474` | app-code | Consolidate alone. |
 | `vpn-user-lifecycle` | `#460`, `#444` | app-code | Consolidate together if conflicts are manageable. |
-| `routing-schema-config` | `#442`, `#439` | app-code/database | Prefer split unless migration safety is clear. |
+| `routing-schema-config` | `#442`, `#439` | database | Prefer split unless migration safety is clear. |
 | `frontend-api-client` | `#459` | app-code | Rebase first; consolidate alone if still stale. |
 | `dependencies` | future stale `#485`, `#483` | dependency | Keep dependency-only and review manually for majors. |
 
@@ -245,8 +260,14 @@ The `run-zai` prompt must say:
 Branch naming:
 
 ```text
-claude-stale-pr-merge-<group-id>-<run-id>
+claude/stale-pr-merge-<group-id>-<run-id>
 ```
+
+Use the `claude/` namespace so the existing automation cleanup allow-list can
+recognize the closed replacement branch. Initial rollout should keep
+replacement PRs manual-review by policy; do not add this prefix to
+`trustedAutomationBranchPrefixes` until a separate policy change, e2e scenario,
+and review decision explicitly allow auto-finalizing consolidation PRs.
 
 PR title:
 
@@ -263,6 +284,13 @@ PR body must be built with the shared rich-body pattern:
 - Validation
 - Supersedes
 - Review Notes
+
+Implementation should use the existing composite actions where possible:
+
+- `.github/actions/build-automation-pr-body` with the source/review evidence in
+  `evidence` or `review-notes`,
+- `.github/actions/commit-and-push`,
+- `.github/actions/upsert-pull-request` with `require-rich-body: true`.
 
 Required source links:
 
@@ -281,9 +309,30 @@ Labels on replacement PR:
 - area labels inferred from source paths
 - size label from existing policy if available
 
+Add new labels to `.github/workflows/policy.json` before use:
+
+- `fresh/stale`
+- `fresh/consolidation-candidate`
+- `fresh/superseded`
+- `stale-pr-consolidation`
+
+If this workflow ever applies `keep-open` itself, add that label to policy too;
+until then, treat it as an operator-owned escape hatch that the selector honors
+when present.
+
 ## AI implementation step
 
 Use `.github/actions/run-zai`.
+
+Run-ZAI inputs:
+
+- `allowed-bots: github-actions,github-actions[bot],claude[bot]` for scheduled
+  or workflow-dispatched runs.
+- `github-token: ${{ secrets.GH_PAT }}` for modify-capable runs, matching the
+  repo's automation workflow pattern. The prompt and allowed tools still forbid
+  the agent from pushing, commenting, closing, approving, or merging.
+- `json-schema` matching the structured output below, so malformed results fail
+  visibly instead of becoming an implicit no-op.
 
 Model:
 
@@ -307,6 +356,9 @@ Allowed tools:
   - `Bash(gh pr diff:*)`
   - `Bash(gh pr view:*)`
 - The agent may read source PR branches through `git show` or `gh pr diff`.
+- Include the same read-only repo-context tools used by existing engineer
+  automation profiles when available, such as Serena, Context7, and the
+  TypeScript LSP MCP tools.
 
 Forbidden:
 
@@ -366,19 +418,33 @@ Structured output:
 
 The workflow should validate before opening or updating a replacement PR.
 
-Baseline:
+Required workflow-change protocol:
+
+```bash
+npm run test-only
+cd .github/workflows && node --test scripts/__tests__/*.test.cjs
+```
+
+Baseline branch validation:
 
 ```bash
 npm run test
 npm run build
-node --test .github/workflows/scripts/__tests__/*.test.cjs
 node .github/workflows/scripts/check-prisma-safe-sql.cjs
 ```
 
 Additional validation:
 
 - If `.github/**` changed, run `actionlint`.
-- If only Markdown planning files changed, run targeted Prettier check.
+- If JS/CJS/TS/TSX files changed, including workflow helper scripts, run lint
+  and targeted `npx prettier --check <changed files>`. `npm run format:check`
+  only covers `src/**/*.{ts,tsx,css}`.
+- If workflow/action YAML changed, run `actionlint -config-file
+  .github/actionlint.yaml` and targeted `npx prettier --check <changed files>`.
+- If workflow behavior changes, update `docs/workflow-e2e-scenarios.md` in the
+  same PR and add/activate the matching workflow-script tests.
+- If only Markdown planning files changed outside `.planning/**`, run targeted
+  Prettier check.
 - If Prisma migrations changed, run migration-specific checks and inspect SQL
   for data-loss patterns.
 - If dependency files changed, run `npm audit` and `npm ls`.
@@ -392,10 +458,16 @@ Close source PRs only after all conditions are true:
 - replacement branch pushed,
 - replacement PR opened,
 - validation passed,
+- replacement PR has a passing `pr-flow/ready` status or has intentionally
+  reached `flow/manual-only` after advisory review signals passed,
 - replacement PR body links every source PR,
 - replacement PR body lists review findings addressed/skipped,
 - source PR has not received a newer human commit after collection,
 - `dry_run` is not true.
+
+Here "green replacement PR" means the replacement PR is visible, validated,
+linked, and either finalizer-eligible or explicitly manual-only under the PR-flow
+policy. It does not mean the replacement PR has already merged.
 
 Source PR comment:
 
@@ -452,6 +524,10 @@ attempt failed after selecting that PR.
   same source PR set.
 - Source PR updated after collection: skip closing that source PR and report
   stale source data.
+- New label or branch prefix is missing from policy: fail before mutation and
+  leave source PRs open.
+- `run-zai` is blocked because the actor is a bot and `allowed-bots` is missing:
+  fail before mutation and leave source PRs open.
 - One source PR closes while run is active: exclude it and recompute group.
 - Push rejected: report, leave source PRs open.
 
@@ -466,12 +542,15 @@ attempt failed after selecting that PR.
 - Unit tests for multi-PR feedback bundle formatting.
 - Unit tests for source PR closure guard.
 - Unit tests for sticky report rendering.
+- Unit tests or e2e cases for policy-backed labels, branch-prefix handling, and
+  manual-only replacement PR behavior.
 - Workflow e2e documentation update in `docs/workflow-e2e-scenarios.md`.
 
 ## Rollout
 
 1. Add labels and helper scripts.
-2. Add `fresh-prs.yml` in report-only mode.
+2. Add `fresh-prs.yml` in report-only mode, following
+   `.planning/ideas/fresh-prs-plan.md`.
 3. Add `merge-pr.yml` with `workflow_dispatch` only and `dry_run: true`.
 4. Run against the current open PR snapshot and inspect grouping.
 5. Enable one scheduled dry run.

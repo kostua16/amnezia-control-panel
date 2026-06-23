@@ -8,10 +8,11 @@ them by age, review debt, changed-path compatibility, mergeability, and workflow
 state, then feed two focused automation paths:
 
 - `/rebase`: a maintainer-triggered AI-assisted rebase for one PR branch.
-- `merge-pr`: a daily consolidation workflow for stale compatible PR groups.
+- `merge-pr`: a daily consolidation workflow for freshness-stale compatible PR
+  groups.
 
-The current stale workflow remains a long-horizon cleanup policy. It should not
-be shortened to solve the 1-7 day PR freshness problem.
+The current `stale.yml` workflow remains a long-horizon cleanup policy. It
+should not be shortened to solve the 1-7 day PR freshness problem.
 
 ```
 open PRs
@@ -21,11 +22,11 @@ freshness scan
   |
   +-- fresh (<23h): watch, no consolidation
   |
-  +-- stale (>23h), one PR needs branch refresh: /rebase
+  +-- freshness-stale (>23h), one PR needs branch refresh: /rebase
   |
-  +-- stale (>23h), compatible group: merge-pr consolidation
+  +-- freshness-stale (>23h), compatible group: merge-pr consolidation
   |
-  +-- blocked by human-only policy: report, do not auto-close
+  +-- blocked by manual-only policy: report, do not auto-close
 ```
 
 Read it like this: the scanner classifies and reports; `/rebase` fixes one PR in
@@ -34,29 +35,36 @@ safer than letting the backlog drift.
 
 ## Evidence snapshot
 
-Snapshot time: `2026-06-22T23:06:55Z`.
+Snapshot time: `2026-06-23T21:44:04Z`.
 
-The latest 50 open PRs were requested. The repository had only 10 open PRs, so
-the latest 50 equals the full open backlog at that time.
+The latest 50 open PRs were requested. The repository had only 14 open PRs, so
+the latest 50 equals the full open backlog at that time. With `fresh_hours=23`,
+the freshness cutoff was `2026-06-22T22:44:04Z`. PRs created before that cutoff
+are freshness-stale; this is separate from the existing `stale.yml` policy,
+which marks PRs stale after 60 days and closes 30 days later.
 
 | PR | Age bucket | Class | State | Summary |
 | --- | --- | --- | --- | --- |
-| `#489` | fresh | GSD execution | mergeable, checks pending | Adds optional `ADMIN_PASSWORD` seed fallback; has security review debt. |
-| `#485` | fresh | Dependabot | mergeable, checks failed | Bumps ESLint `9.39.4` to `10.5.0`; major dependency review concern. |
-| `#483` | fresh | Dependabot | mergeable, review-blocked | Bumps `js-yaml` `4.2.0` to `5.0.0`; major dependency review concern. |
-| `#474` | stale | GSD execution | mergeable, review-blocked | Broadcaster throttling and traffic retention; dashboard payload review debt. |
-| `#472` | stale | GSD execution, workflow | conflicting, manual-only | Workflow fix; unresolved timeout review on `triage.yml`. |
-| `#460` | stale | GSD execution | mergeable, manual-only | VPN service adapter refactor; review debt around swallowed errors and registry truth. |
-| `#459` | stale | GSD execution | conflicting, review-blocked | Typed API client hooks; review debt around unwrapped response envelope. |
-| `#444` | stale | GSD execution | mergeable, checks failed | User creation/VPN consistency; review debt around retry semantics and alert resolution. |
-| `#442` | stale | GSD execution | mergeable, review-blocked | WireGuard key generation; review debt around preview/apply parity and private key handling. |
-| `#439` | stale | GSD execution | mergeable, review-blocked | Schema hygiene; review debt around data-loss migration and schema drift. |
+| `#499` | fresh | GSD execution | `CLEAN`, manual-only | Batches server lookups in panel-sync push; already reached `flow/manual-only`. |
+| `#498` | fresh | GSD execution | `UNSTABLE`, review-blocked | Architectural review follow-up with backend and database review debt. |
+| `#497` | fresh | GSD execution | `UNSTABLE`, review-blocked | Architectural review follow-up with frontend, backend, test, and security review debt. |
+| `#495` | fresh | GSD execution | `UNSTABLE`, review-blocked | Architectural review follow-up with frontend, backend, database, and test review debt. |
+| `#489` | freshness-stale | GSD execution | `UNSTABLE`, checks pending | Adds optional `ADMIN_PASSWORD` seed fallback; security-sensitive backend/config review debt. |
+| `#485` | freshness-stale | Dependabot | `UNSTABLE`, checks failed | Bumps ESLint `9.39.4` to `10.5.0`; major dependency review concern. |
+| `#483` | freshness-stale | Dependabot | `UNSTABLE`, review-blocked | Bumps `js-yaml` `4.2.0` to `5.0.0`; `deps-review-manual`. |
+| `#474` | freshness-stale | GSD execution | `CLEAN`, manual-only | Broadcaster throttling and traffic retention; dashboard payload review debt. |
+| `#472` | freshness-stale | GSD execution, workflow | `CLEAN`, manual-only | Workflow fix; unresolved timeout review on `triage.yml`. |
+| `#460` | freshness-stale | GSD execution | `CLEAN`, manual-only | VPN service adapter refactor; review debt around swallowed errors and registry truth. |
+| `#459` | freshness-stale | GSD execution | `DIRTY`, review-blocked | Typed API client hooks; review debt around unwrapped response envelope. |
+| `#444` | freshness-stale | GSD execution | `UNSTABLE`, checks failed | User creation/VPN consistency; review debt around retry semantics and alert resolution. |
+| `#442` | freshness-stale | GSD execution | `UNSTABLE`, review-blocked | WireGuard key generation; review debt around preview/apply parity and private key handling. |
+| `#439` | freshness-stale | GSD execution | `UNSTABLE`, review-blocked | Schema hygiene; review debt around data-loss migration and schema drift. |
 
 ## PR categories
 
 ### Fresh watch-only
 
-PRs: `#489`, `#485`, `#483`
+PRs: `#499`, `#498`, `#497`, `#495`
 
 These are younger than 23 hours. The freshness workflow should not consolidate
 them yet. It may report their state and prepare them for future grouping, but it
@@ -68,6 +76,26 @@ Rules:
 - Do not close fresh PRs.
 - Re-run the normal PR flow if labels/checks look stuck.
 - Keep Dependabot PRs in a dependency-specific lane even when fresh.
+
+### Security-sensitive backend/config group
+
+PRs: `#489`
+
+This PR is freshness-stale and touches admin credential seeding behavior. It is
+not a dependency, workflow, or broad consolidation candidate. Treat it as a
+single-PR review-debt item unless a later stale group touches the same seed,
+auth, or config surface.
+
+Rules:
+
+- Keep credential seeding and auth/config changes separate from unrelated
+  runtime application consolidation.
+- Require source review findings to be preserved before any replacement PR is
+  opened.
+- Do not close the source PR while checks are pending or security review debt is
+  unresolved.
+- Prefer `/fix-review` or `/rebase` for in-place repair before considering a
+  replacement PR.
 
 ### Workflow automation group
 
@@ -83,17 +111,20 @@ Rules:
   implementation PR.
 - Treat workflow PRs as high-conflict candidates because they can change the
   automation that is trying to consolidate them.
-- Prefer `/rebase` first when mergeability is `CONFLICTING`.
+- `#472` is currently `CLEAN` and already reached `flow/manual-only`; report it
+  as manual-only rather than rebase-needed unless its mergeability later becomes
+  `DIRTY` or `CONFLICTING`.
 
 ### Dependency group
 
-Current fresh examples: `#485`, `#483`
+Current freshness-stale examples: `#485`, `#483`
 
-Future stale Dependabot PRs should be grouped separately from app-code and
-workflow PRs. Both example PRs edit `package.json` and `package-lock.json`, but
-they are major updates with review concerns. Consolidating two major dependency
-updates into one PR is allowed only when the dependency review bundle explains
-why their combined upgrade surface is safer than handling them separately.
+Freshness-stale Dependabot PRs should be grouped separately from app-code and
+workflow PRs. Both current examples edit `package.json` and
+`package-lock.json`, but they are major updates with review concerns.
+Consolidating two major dependency updates into one PR is allowed only when the
+dependency review bundle explains why their combined upgrade surface is safer
+than handling them separately.
 
 Rules:
 
@@ -174,11 +205,28 @@ manual dry runs.
 
 Inputs:
 
-- `dry_run`: default `true` for manual dispatch and `false` for scheduled runs.
+- `dry_run`: default `true` for manual dispatch.
 - `limit`: default `50`.
 - `fresh_hours`: default `23`.
 - `comment_mode`: `summary-only`, `changed-only`, or `artifact-only`; default
   `changed-only`.
+
+Scheduled runs must not rely on `workflow_dispatch` input defaults. Resolve the
+effective dry-run mode explicitly:
+
+```bash
+# Set FRESH_PRS_DRY_RUN_INPUT from `${{ inputs.dry_run }}` at the step env level
+# so an explicit boolean false is preserved as the string "false".
+if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+  effective_dry_run="${FRESH_PRS_SCHEDULE_DRY_RUN:-true}"
+else
+  effective_dry_run="${FRESH_PRS_DRY_RUN_INPUT:-true}"
+fi
+```
+
+Initial rollout should keep `FRESH_PRS_SCHEDULE_DRY_RUN=true`. Switching the
+scheduled scanner to mutation mode requires a later policy decision and a green
+dry-run history.
 
 Jobs:
 
@@ -190,21 +238,22 @@ Jobs:
      and unresolved non-outdated review thread counts.
 
 2. `classify`
-   - Produce deterministic JSON with these buckets:
+   - Produce deterministic JSON with per-PR classifications and these buckets:
      - `fresh`
-     - `stale`
+     - `freshness_stale`
      - `rebase_needed`
      - `review_debt`
      - `dependency`
      - `workflow`
      - `manual_only`
      - `consolidation_candidates`
-   - The output file should be committed nowhere. Upload as an artifact and
-     optionally attach a concise sticky summary comment.
+   - The output file should be committed nowhere. Upload it as an artifact and
+     render the same facts in the workflow summary.
 
 3. `report`
-   - Upsert one summary issue comment or a repository issue titled
-     `PR freshness report`.
+   - Upsert one central repository issue titled `PR freshness report`.
+   - Use sticky marker `<!-- fresh-prs-report -->`.
+   - Also write the report to the workflow summary.
    - Avoid per-PR comments unless a PR newly becomes a consolidation candidate
      or newly becomes superseded.
 
@@ -217,8 +266,19 @@ Output JSON shape:
 
 ```json
 {
-  "generated_at": "2026-06-22T23:06:55Z",
+  "schema_version": 1,
+  "generated_at": "2026-06-23T21:44:04Z",
   "fresh_hours": 23,
+  "fresh_cutoff": "2026-06-22T22:44:04Z",
+  "prs": [
+    {
+      "number": 472,
+      "age_bucket": "freshness_stale",
+      "merge_state": "CLEAN",
+      "flow_state": "flow/manual-only",
+      "recommended_action": "report-manual-only"
+    }
+  ],
   "groups": [
     {
       "id": "vpn-user-lifecycle",
@@ -237,6 +297,10 @@ Output JSON shape:
 
 The planning docs should recommend these future implementation changes:
 
+- Add report-only `fresh-prs.yml` first; mutation or dispatch to `merge-pr.yml`
+  is a later rollout step.
+- Add explicit schedule dry-run resolution with `FRESH_PRS_SCHEDULE_DRY_RUN`
+  and preserve explicit `false` input values.
 - Add `/rebase` trigger support to
   `.github/workflows/scripts/evaluate-trigger-policy.cjs`.
 - Add tests for `/rebase` maintainer gating, bot rejection, non-PR comment
@@ -248,20 +312,29 @@ The planning docs should recommend these future implementation changes:
   - `fresh/consolidation-candidate`
   - `fresh/superseded`
   - `stale-pr-consolidation`
+- Do not apply `keep-open` from this workflow. Honor it as an existing
+  operator-owned escape hatch if present.
 - Keep `fix-review.yml` strict for direct human commands.
 - Update `docs/workflow-e2e-scenarios.md` once actual workflow YAML and scripts
-  are implemented.
+  are implemented, including cases for fresh watch-only, aged report-only,
+  rebase-needed, dependency manual lane, workflow manual-only lane, and
+  consolidation-candidate handoff.
 - Keep `stale.yml` at its current long-horizon 60-day stale plus 30-day close
   policy.
 
 ## Safety defaults
 
+- Initial `fresh-prs.yml` rollout is report-only.
 - One consolidation PR per compatible group.
 - Close source PRs only after the replacement PR is green, pushed, linked, and
   includes the source review findings.
 - Do not mix workflow, dependency, and runtime app-code changes in one
   consolidation PR.
 - Do not auto-close human-authored or fork PRs.
+- Treat `flow/manual-only` as a completed PR-flow state that requires human
+  merge, not as a failed state.
+- Keep source PR closure owned by `merge-pr`; `fresh-prs` reports candidates and
+  may hand off deterministic group JSON later.
 - Do not delete source branches directly from `merge-pr`; let the existing
   branch cleanup workflow handle closed automation branches.
 - Do not let `run-zai` approve, merge, close, comment, or push directly unless
@@ -273,6 +346,12 @@ The planning docs should recommend these future implementation changes:
   rebase-needed, or consolidation-ready.
 - The report is deterministic enough to be unit-tested from fixture JSON.
 - Fresh PRs younger than 23 hours are not consolidated.
-- Stale PR consolidation candidates preserve unresolved review feedback.
+- Freshness-stale PR consolidation candidates preserve unresolved review
+  feedback.
+- Scheduled runs start in dry-run mode unless `FRESH_PRS_SCHEDULE_DRY_RUN` is
+  explicitly set to `false`.
+- The central `PR freshness report` issue is updated with marker
+  `<!-- fresh-prs-report -->`; per-PR comments are reserved for candidate or
+  superseded transitions.
 - Existing `pr-flow.yml`, `pr-finalizer.yml`, `fix-review.yml`, and `stale.yml`
   semantics remain intact.
