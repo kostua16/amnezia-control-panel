@@ -2,6 +2,12 @@
 # Bundled VPN stack image: ACP + AmneziaWG + 3x-ui/Xray + Tailscale.
 # Version pins: docker/stack-pins
 
+ARG XUI_REF=v3.4.0
+ARG TAILSCALE_VERSION=v1.98.5
+ARG AMNEZIAWG_GO_REF=v0.2.19
+ARG AWGTOOLS_RELEASE=1.0.20260618-2
+ARG S6_OVERLAY_VERSION=3.2.0.2
+
 # ─── Stage 1: ACP dependencies ────────────────────────────────────────────────
 FROM node:24-alpine3.22 AS deps
 
@@ -23,11 +29,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ─── Stage 3: 3x-ui upstream artifacts ──────────────────────────────────────
-ARG XUI_REF=v3.4.0
 FROM ghcr.io/mhsanaei/3x-ui:${XUI_REF} AS xui-upstream
 
 # ─── Stage 4: AmneziaWG go binary ─────────────────────────────────────────────
-ARG AMNEZIAWG_GO_REF=v0.2.19
 FROM golang:1.24-alpine AS awg-go-build
 
 RUN apk add --no-cache git
@@ -38,14 +42,13 @@ RUN git clone --depth 1 --branch "${AMNEZIAWG_GO_REF}" https://github.com/amnezi
     && go build -ldflags '-s -w' -o /amneziawg-go .
 
 # ─── Stage 5: Tailscale binaries ──────────────────────────────────────────────
-ARG TAILSCALE_VERSION=v1.98.5
 FROM tailscale/tailscale:${TAILSCALE_VERSION} AS tailscale-upstream
 
 # ─── Stage 6: Stack runner ────────────────────────────────────────────────────
 FROM node:24-alpine3.22 AS stack
 
-ARG AWGTOOLS_RELEASE=1.0.20260618-2
-ARG S6_OVERLAY_VERSION=3.2.0.2
+ARG AWGTOOLS_RELEASE
+ARG S6_OVERLAY_VERSION
 ARG TARGETARCH
 
 WORKDIR /app
@@ -69,6 +72,7 @@ RUN apk add --no-cache \
     iproute2 \
     iptables \
     openssl \
+    sudo \
     tzdata \
     unzip \
     wget \
@@ -120,9 +124,11 @@ COPY --from=builder /app/instrumentation.ts ./instrumentation.ts
 # s6 process supervision + stack helpers
 COPY docker/stack/s6-rc.d /etc/s6-overlay/s6-rc.d
 COPY docker/stack/scripts /docker/stack/scripts
+COPY docker/stack/sudoers.d/acp-stack /etc/sudoers.d/acp-stack
 COPY docker/stack-entrypoint.sh ./docker/stack-entrypoint.sh
-RUN chmod +x ./docker/stack-entrypoint.sh /docker/stack/scripts/*.sh \
-    && find /etc/s6-overlay/s6-rc.d -name run -exec chmod +x {} +
+RUN chmod 0440 /etc/sudoers.d/acp-stack \
+    && chmod +x ./docker/stack-entrypoint.sh /docker/stack/scripts/*.sh \
+    && find /etc/s6-overlay/s6-rc.d \( -name run -o -name up \) -exec chmod +x {} +
 
 # Build-time smoke checks (no NET_ADMIN required)
 RUN node -e "require('better-sqlite3')" \

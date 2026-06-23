@@ -1,0 +1,1 @@
+appuser ALL=(root) NOPASSWD: /docker/stack/scripts/restart-awg.sh, /docker/stack/scripts/restart-xui.sh

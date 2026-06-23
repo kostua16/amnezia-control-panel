@@ -37,7 +37,7 @@ Open [http://localhost:3333](http://localhost:3333).
 docker pull ghcr.io/kostua16/amnezia-control-panel:stack-latest
 ```
 
-Tags: `stack-latest`, `stack`, `stack-sha-*` (from `main`), plus semver stack tags on release.
+Tags: `stack-latest`, `stack-main` (from `main`), `stack-sha-*`, plus `stack-<semver>` on release.
 
 ## Environment variables (stack)
 

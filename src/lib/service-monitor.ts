@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { execCommand } from '@/lib/command-executor';
 import { isBundledDeployment } from '@/lib/deployment-mode';
 
@@ -35,14 +37,15 @@ async function checkBundledAwgStatus(): Promise<ServiceHealth> {
   const iface = awgInterface();
 
   try {
-    await execCommand('awg', ['show', iface], {
-      encoding: 'utf-8',
-      timeoutMs: 5000,
-    });
+    const operstate = await readFile(
+      `/sys/class/net/${iface}/operstate`,
+      'utf-8',
+    );
+    const online = operstate.trim() === 'unknown' || operstate.trim() === 'up';
     return {
       service: 'awg',
       systemdName,
-      status: 'online',
+      status: online ? 'online' : 'offline',
       timestamp: new Date().toISOString(),
     };
   } catch (err) {
@@ -147,7 +150,7 @@ export async function checkAllServices(): Promise<ServiceHealth[]> {
 async function restartBundledService(serviceKey: ServiceKey): Promise<boolean> {
   const script = BUNDLED_RESTART_SCRIPT[serviceKey];
   try {
-    await execCommand('sh', [script], { timeoutMs: 15000 });
+    await execCommand('sudo', ['-n', script], { timeoutMs: 15000 });
     return true;
   } catch (err) {
     console.error(
