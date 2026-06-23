@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ServiceType } from '@/generated/prisma/enums';
 import type { CreateUserPayload, UpdateUserPayload } from '@/types/user';
+import { queryKeys } from '@/lib/query-keys';
 
 export interface UsersListParams {
   search?: string;
@@ -39,7 +40,6 @@ export interface UsersResponse {
  * mutations invalidate by this prefix so every successful write refreshes the
  * list immediately instead of serving the pre-action state for the staleTime.
  */
-export const USERS_QUERY_KEY = ['users'] as const;
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
@@ -79,7 +79,7 @@ async function fetchUsers(params?: UsersListParams): Promise<UsersResponse> {
 
 export function useUsers(params?: UsersListParams) {
   return useQuery({
-    queryKey: [...USERS_QUERY_KEY, params],
+    queryKey: [...queryKeys.users, params],
     queryFn: () => fetchUsers(params),
     staleTime: 10_000,
   });
@@ -98,7 +98,7 @@ export function useCreateUser() {
       return response.json();
     },
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.users }),
   });
 }
 
@@ -115,7 +115,7 @@ export function useUpdateUser() {
       return response.json();
     },
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.users }),
   });
 }
 
@@ -135,7 +135,7 @@ export function useUpdateUserQuota() {
       return response.json();
     },
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.users }),
   });
 }
 
@@ -148,7 +148,7 @@ export function useDeleteUser() {
       return response.json();
     },
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.users }),
   });
 }
 
@@ -162,6 +162,6 @@ export function useToggleUserBlock() {
       return response.json();
     },
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.users }),
   });
 }

@@ -103,7 +103,7 @@ INCOMPATIBLE (MUST be false or conditional):
 ```yaml
 env:
   MAX_TURNS: "<varies by workflow>"
-  NODE_VERSION: "22.x"
+  NODE_VERSION: "24.x"
 ```
 
 No `vars.ANTHROPIC_*` — all model config baked into run-zai/run-claude-params.

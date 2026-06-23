@@ -1,12 +1,9 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { execCommand, isWindows } from '@/lib/command-executor';
 import type {
   Server,
   ServerConnectionStatus,
   ServerTestResult,
 } from '@/types/server';
-
-const execFileAsync = promisify(execFile);
 
 const SAFE_HOSTNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 
@@ -26,6 +23,7 @@ interface ConnectionPoolEntry {
 const connectionPool = new Map<number, ConnectionPoolEntry>();
 
 const POOL_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_POOL_SIZE = 100; // Maximum number of entries in the pool
 
 function getPoolEntry(serverId: number): ConnectionPoolEntry | undefined {
   const entry = connectionPool.get(serverId);
@@ -34,6 +32,9 @@ function getPoolEntry(serverId: number): ConnectionPoolEntry | undefined {
     connectionPool.delete(serverId);
     return undefined;
   }
+  // Bump recency on a cache hit so frequently read servers are not evicted as
+  // "oldest" — this is what makes the max-size eviction genuine LRU.
+  entry.lastUsed = Date.now();
   return entry;
 }
 
@@ -42,6 +43,28 @@ function setPoolEntry(
   status: ServerConnectionStatus,
   latencyMs: number | null,
 ): void {
+  // Evict oldest entry if pool exceeds max size (LRU by lastUsed)
+  if (connectionPool.size >= MAX_POOL_SIZE && !connectionPool.has(serverId)) {
+    let oldestId: number | null = null;
+    // Start from +Infinity so the first iterated entry is always selected,
+    // even if every entry's lastUsed equals the current millisecond.
+    let oldestTime = Number.POSITIVE_INFINITY;
+
+    for (const [id, entry] of connectionPool) {
+      if (entry.lastUsed < oldestTime) {
+        oldestTime = entry.lastUsed;
+        oldestId = id;
+      }
+    }
+
+    if (oldestId !== null) {
+      connectionPool.delete(oldestId);
+      console.log(
+        `[server-connection] Evicted oldest pool entry ${oldestId} (LRU)`,
+      );
+    }
+  }
+
   connectionPool.set(serverId, { lastUsed: Date.now(), status, latencyMs });
 }
 
@@ -85,12 +108,11 @@ export async function testConnection(
 
     // Use ping as a basic reachability check (cross-platform stub).
     // In production, replace with a proper SSH/TCP connection test.
-    const isWindows = process.platform === 'win32';
-    const pingArgs = isWindows
+    const pingArgs = isWindows()
       ? ['-n', '1', '-w', '3000', server.hostname]
       : ['-c', '1', '-W', '3', server.hostname];
 
-    await execFileAsync('ping', pingArgs, { timeout: 5000 });
+    await execCommand('ping', pingArgs, { timeoutMs: 5000 });
     const latencyMs = Date.now() - startTime;
 
     setPoolEntry(server.id, 'connected', latencyMs);
@@ -197,4 +219,17 @@ export function getCachedStatus(
  */
 export function invalidateConnection(serverId: number): void {
   connectionPool.delete(serverId);
+}
+
+/**
+ * Cleanup function for graceful shutdown.
+ * Clears the entire connection pool.
+ * Call from the graceful-shutdown handler in instrumentation.ts.
+ */
+export function cleanupConnections(): void {
+  const size = connectionPool.size;
+  connectionPool.clear();
+  if (size > 0) {
+    console.log(`[server-connection] Cleared ${size} connection pool entries`);
+  }
 }

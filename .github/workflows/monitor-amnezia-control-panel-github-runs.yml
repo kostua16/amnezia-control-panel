@@ -28,7 +28,7 @@ concurrency:
 env:
   MAX_TURNS: 80
   MONITOR_WORKFLOW_FILE: monitor-amnezia-control-panel-github-runs.yml
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
 
 permissions:
   contents: write
@@ -50,7 +50,7 @@ jobs:
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
       - name: Checkout main
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           ref: main
           fetch-depth: 0
@@ -357,9 +357,14 @@ jobs:
             echo "Reason: ${{ steps.duplicate.outputs.overlap_reason }}"
           fi
 
+      - name: Validate (CI-matching gate)
+        id: gate
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
+        uses: ./.github/actions/validate-pr-gate
+
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.gate.outputs.gate_passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix(ci): address monitored GitHub run finding'
@@ -414,7 +419,7 @@ jobs:
       issues: write
       actions: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:

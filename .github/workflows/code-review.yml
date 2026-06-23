@@ -37,7 +37,7 @@ concurrency:
 
 env:
   MAX_TURNS: 100
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
 
 jobs:
   resolve-pr:
@@ -56,7 +56,7 @@ jobs:
       head-sha: ${{ steps.resolve.outputs.head_sha }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -125,7 +125,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
           fetch-depth: 0
@@ -342,7 +342,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:

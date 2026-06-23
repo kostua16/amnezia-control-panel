@@ -21,7 +21,7 @@ permissions:
   actions: write
 
 env:
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
 
 jobs:
   collect-issues:
@@ -33,7 +33,7 @@ jobs:
       categorized: ${{ steps.categorize.outputs.categorized }}
       rate-limited: ${{ steps.categorize.outputs.rate_limited }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -343,7 +343,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GH_PAT }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           token: ${{ secrets.GH_PAT }}
 
@@ -475,7 +475,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:

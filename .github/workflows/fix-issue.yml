@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
   MAX_TURNS: '60'
 
 permissions:
@@ -38,7 +38,7 @@ jobs:
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -72,7 +72,7 @@ jobs:
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           fetch-depth: 1
           token: ${{ secrets.GH_PAT }}
@@ -169,8 +169,14 @@ jobs:
           echo "::error::Claude soft failure: ${{ steps.claude_run.outputs.claude_failure_reason }}"
           exit 1
 
+      - name: Validate (CI-matching gate)
+        id: gate
+        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        uses: ./.github/actions/validate-pr-gate
+
       - uses: ./.github/actions/commit-and-push
         id: push
+        if: steps.gate.outputs.gate_passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix: resolve #${{ github.event.issue.number }}'
@@ -240,7 +246,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:

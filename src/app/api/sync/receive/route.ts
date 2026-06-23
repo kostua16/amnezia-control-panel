@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
+import { verifyValue } from '@/lib/password';
 import { storePreviousConfig } from '@/lib/rollback-manager';
 import { writeAuditLog } from '@/lib/audit-log';
 
@@ -66,10 +67,8 @@ export async function POST(request: NextRequest) {
     });
 
     let matchedPanel: (typeof panels)[number] | null = null;
-    const bcrypt = await import('bcryptjs');
-
     for (const panel of panels) {
-      const isValid = await bcrypt.compare(apiKey, panel.apiKeyHash);
+      const isValid = await verifyValue(apiKey, panel.apiKeyHash);
       if (isValid) {
         matchedPanel = panel;
         break;

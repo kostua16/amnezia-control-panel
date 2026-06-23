@@ -629,6 +629,31 @@ Source: `/gsd:explore` fourth-pass review (non-duplicative). Artifact: `.plannin
 | 11 | **Config-applier shared push helper** — `applyAwgConfig()` and `applyThreeXuiConfig()` share ~80% identical code (fetch + HMAC signing + timeout + error handling + 404 handling). Extract `pushToRemotePanel()` helper; thin wrappers per service | Medium (DRY) | `src/lib/config-applier.ts` | Proposed |
 | 12 | **Resource-monitor async conversion** — Extends proposal 9 scope: `execFileSync('df', ...)` and `execFileSync('powershell', ...)` in `resource-monitor.ts` block the event loop up to 5s. Convert to `execFileAsync` matching vpn-services.ts pattern | Medium (Perf) | `src/lib/resource-monitor.ts` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 5 (2026-06-22)
+
+Source: `/gsd:explore` fifth-pass review (non-duplicative). Artifact: `.planning/quick/260622-arch-review-pass5/260622-PLAN.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 13 | **Missing server-side service lifecycle** — `startBroadcaster()`, `geoIPManager.init()`, and `ServiceMonitor` are never initialized in production. No `instrumentation.ts` exists. Real-time dashboard updates and geo-routing lookups are functionally broken in the custom `server.mjs` deployment path. Fix: add `src/instrumentation.ts` (Next.js stable API) to wire all orphaned singletons at server startup. | Critical (Runtime) | `server.mjs`, `src/instrumentation.ts` (new), `src/lib/real-time-broadcaster.ts`, `src/lib/geoip-manager.ts`, `src/lib/service-monitor.ts` | Proposed |
+| 14 | **`server-connection.ts` is a non-functional stub** — `executeOnServer()` logs "Would execute on remote server" and returns empty success. No SSH, no real command execution. Multi-server management (Phases 8.1–8.4) silently does nothing on remote servers. Fix: implement `RemoteExecutor` interface with `ssh2`-based production impl. | High (Correctness) | `src/lib/server-connection.ts` (rewrite), `src/lib/remote-executor.ts` (new), `src/lib/vpn-services.ts`, `package.json` | Proposed |
+| 15 | **Panel sync API key lookup is O(n) bcrypt** — `POST /api/sync/receive` loads all active panels and iterates `bcrypt.compare()` per panel. With N panels, each sync costs O(N × 100ms). Fix: add `apiKeyFastHash` (SHA-256) column for O(1) indexed pre-filter, then bcrypt-verify single match. | Medium (Perf) | `prisma/schema.prisma`, `src/app/api/sync/receive/route.ts`, `src/app/api/panels/route.ts`, `src/app/api/panels/[id]/route.ts` | Proposed |
+
+## Improvement Intake: Consolidated Review Archive (2026-06-17 to 2026-06-21)
+
+Source: consolidated follow-up for PRs #438, #455, and #471. PR #476 was already merged and remains indexed in the 2026-06-22 pass above.
+
+Artifacts:
+- `.planning/quick/260617-arch-review/260617-PLAN.md`
+- `.planning/quick/260619-arch-review-login-rate-limit/proposal.md`
+- `.planning/quick/260619-arch-review-panel-push-batch/proposal.md`
+- `.planning/quick/260619-arch-review-tailscale-dedup/proposal.md`
+- `.planning/quick/260621-arch-review-pass5/260621-PLAN.md`
+
+Notes:
+- Review corrections are folded into the artifacts: Prisma SQLite enum enforcement, Tailscale command/math framing, panel retry worst-case timing, and duplicate Impact bullets.
+- This archive intentionally does not renumber backlog proposals because several historical artifacts reuse numbers or overlap with already-indexed roadmap entries.
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-06-13 - Added improvement intake #4 (proposals 10-12: chain config dedup, config-applier DRY, resource-monitor async)*
+*Last updated: 2026-06-23 - Added consolidated review archive for PRs #438, #455, and #471; PR #476 was already merged*

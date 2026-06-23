@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
+import { hashValue } from '@/lib/password';
 import { writeAuditLog } from '@/lib/audit-log';
 import { createAwgUser, createThreeXuiUser } from '@/lib/vpn-services';
 import type { VpnServiceResult } from '@/lib/vpn-services';
@@ -113,7 +113,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
     services,
   } = parsed.data;
 
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await hashValue(password);
 
   // Build the user creation data with Prisma's generated create-input type so
   // schema changes (renamed/required fields) surface as compile errors instead

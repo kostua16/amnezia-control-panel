@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { execFileSync } from 'child_process';
+import { checkServiceStatus, type ServiceKey } from '@/lib/service-monitor';
 
-const VALID_SERVICES = ['awg', '3x-ui'] as const;
+const VALID_SERVICES: readonly ServiceKey[] = ['awg', '3x-ui'];
 
-const SYSTEMD_NAMES: Record<string, string> = {
-  awg: 'amnezia-awg',
-  '3x-ui': '3x-ui',
-};
+function isServiceKey(value: string): value is ServiceKey {
+  return (VALID_SERVICES as readonly string[]).includes(value);
+}
 
 export async function GET(
   _request: NextRequest,
@@ -14,7 +13,7 @@ export async function GET(
 ) {
   const { service } = await params;
 
-  if (!VALID_SERVICES.includes(service as (typeof VALID_SERVICES)[number])) {
+  if (!isServiceKey(service)) {
     return NextResponse.json(
       {
         success: false,
@@ -24,27 +23,13 @@ export async function GET(
     );
   }
 
-  const systemdName = SYSTEMD_NAMES[service];
+  // Delegate to the shared async systemctl check so this HTTP handler does not
+  // block the event loop while waiting for systemd to respond.
+  const health = await checkServiceStatus(service);
 
-  try {
-    const result = execFileSync('systemctl', ['is-active', systemdName], {
-      encoding: 'utf-8',
-      timeout: 5000,
-    }).trim();
-
-    const isOnline = result === 'active';
-
-    return NextResponse.json({
-      service,
-      status: isOnline ? 'online' : 'offline',
-      timestamp: new Date().toISOString(),
-    });
-  } catch {
-    // systemctl is-active returns non-zero exit code when service is inactive or not found
-    return NextResponse.json({
-      service,
-      status: 'offline',
-      timestamp: new Date().toISOString(),
-    });
-  }
+  return NextResponse.json({
+    service: health.service,
+    status: health.status,
+    timestamp: health.timestamp,
+  });
 }

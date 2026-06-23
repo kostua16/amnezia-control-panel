@@ -3,7 +3,7 @@
 # ─── Stage 1: Dependencies ────────────────────────────────────────────────────
 # Install both prod + dev dependencies; native modules (better-sqlite3) are built
 # here so the builder stage can reuse the cache.
-FROM node:22-alpine3.21 AS deps
+FROM node:24-alpine3.22 AS deps
 
 RUN apk add --no-cache python3 make g++
 
@@ -11,6 +11,11 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
+# --ignore-scripts above hardens the supply chain by skipping arbitrary install
+# scripts, but it also skips better-sqlite3's native-binding fetch. Rebuild just
+# that one module (using the toolchain installed above) so its compiled binary is
+# present for the Next.js standalone trace — without re-enabling other scripts.
+RUN --mount=type=cache,target=/root/.npm npm rebuild better-sqlite3
 
 # ─── Stage 2: Builder ─────────────────────────────────────────────────────────
 FROM deps AS builder
@@ -27,7 +32,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ─── Stage 3: Runner ──────────────────────────────────────────────────────────
-FROM node:22-alpine3.21 AS runner
+FROM node:24-alpine3.22 AS runner
 
 WORKDIR /app
 
@@ -66,6 +71,11 @@ COPY --from=builder /app/instrumentation.ts ./instrumentation.ts
 # Copy entrypoint script (runs migrations before starting server)
 COPY --from=builder /app/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
+
+# Fail the image build if the better-sqlite3 native binding is missing from the
+# standalone trace. require() throws when the .node is absent, so a future change
+# that stops tracing it fails here instead of crashing on first DB access at runtime.
+RUN node -e "require('better-sqlite3')"
 
 USER appuser
 

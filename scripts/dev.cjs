@@ -29,28 +29,45 @@ function resolvePortFromNpmShorthand(args) {
   return { port: undefined, remainingArgs: args };
 }
 
-function hasPortInArgs(args) {
-  for (const a of args) {
-    if (a === '-p' || a === '--port') return true;
-    if (a.startsWith('--port=') || a.startsWith('-p=')) return true;
+function extractPortFromArgs(args) {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-p' || args[i] === '--port') {
+      if (i + 1 < args.length && isPositiveIntegerText(args[i + 1])) {
+        return {
+          port: args[i + 1],
+          remainingArgs: [...args.slice(0, i), ...args.slice(i + 2)],
+        };
+      }
+    }
+    const eqMatch = args[i].match(/^--?(?:p|port)=(\d+)$/);
+    if (eqMatch) {
+      return {
+        port: eqMatch[1],
+        remainingArgs: [...args.slice(0, i), ...args.slice(i + 1)],
+      };
+    }
   }
-  return false;
+  return { port: undefined, remainingArgs: args };
 }
 
 const hasPortEnv =
   process.env.PORT !== undefined && String(process.env.PORT).trim().length > 0;
 const resolvedNpm = resolvePortFromNpmShorthand(userArgs);
-const argsWithoutNpmPortValue = resolvedNpm.remainingArgs;
+const extractedCli = extractPortFromArgs(resolvedNpm.remainingArgs);
+const finalArgs = extractedCli.remainingArgs;
+const hasCLIPort = extractedCli.port !== undefined;
 const hasNpmPort = resolvedNpm.port !== undefined;
 
 // Set NODE_ENV=development and resolve port
 process.env.NODE_ENV = 'development';
 
 let port;
-if (!hasPortInArgs(argsWithoutNpmPortValue) && !hasPortEnv && hasNpmPort) {
+if (!hasCLIPort && !hasPortEnv && hasNpmPort) {
   port = resolvedNpm.port;
-} else if (!hasPortInArgs(argsWithoutNpmPortValue) && !hasPortEnv) {
+} else if (!hasCLIPort && !hasPortEnv) {
   port = '3333';
+} else if (hasCLIPort) {
+  port = extractedCli.port;
 }
 
 if (port) {
@@ -74,7 +91,7 @@ function envForDevChild() {
 // Pass remaining args as environment or ignore (custom server doesn't support all next CLI flags)
 const child = spawn(
   process.execPath,
-  [serverScript, ...argsWithoutNpmPortValue],
+  [serverScript, ...finalArgs],
   {
     stdio: 'inherit',
     windowsHide: true,

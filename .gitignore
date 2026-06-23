@@ -58,6 +58,10 @@ next-env.d.ts
 .claude/settings.local.json
 .claude/hooks/.logs/
 
+# Parallel .claude/ checkout created at runtime by claude-driven workflows
+# (run-zai/claude-code-action) during CI agent runs. Never committed.
+.claude-pr/
+
 # npm
 .npm-cache
 .npm-cache/

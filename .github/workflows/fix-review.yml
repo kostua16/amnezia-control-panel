@@ -42,7 +42,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
   MAX_TURNS: '50'
 
 jobs:
@@ -65,7 +65,7 @@ jobs:
       pr-number: ${{ steps.gate.outputs.pr_number }}
       command: ${{ steps.gate.outputs.command }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -162,7 +162,7 @@ jobs:
           node .github/workflows/scripts/upsert-fix-review-comment.cjs \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" --mode started
 
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         if: steps.pr.outputs.eligible == 'true'
         with:
           ref: ${{ steps.pr.outputs.head_ref }}
@@ -267,20 +267,33 @@ jobs:
             [{file,change}], findings_skipped[] [{file,reason}], and validation
             {tsc,lint,tests,format,build} each "pass"/"fail"/"skipped".
 
-      - name: 'Validate (match CI: typecheck + tests + lint + format + build + script tests + prisma-safe)'
-        id: validate
+      - name: Detect no-op (skip the gate when the agent changed nothing)
+        id: detect-noop
         if: steps.pr.outputs.eligible == 'true'
-        continue-on-error: true
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
-          set -euo pipefail
-          npm run test
-          npm run build
-          node --test .github/workflows/scripts/__tests__/*.test.cjs
-          node .github/workflows/scripts/check-prisma-safe-sql.cjs
+          # Real change detection (never the agent self-report): working-tree
+          # changes commit-and-push would stage (git add -A respects .gitignore)
+          # OR a moved HEAD (the agent committed despite instructions). The
+          # untracked .claude-pr/ runtime artifact is excluded explicitly so the
+          # no-op skip holds even on a branch whose .gitignore lacks the entry.
+          dirty=$(git status --porcelain | grep -vcF '.claude-pr/' || true)
+          current=$(git rev-parse HEAD)
+          if [ "$dirty" -gt 0 ] || [ "$current" != "$HEAD_SHA" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate (CI-matching gate)
+        id: gate
+        if: steps.pr.outputs.eligible == 'true' && steps.detect-noop.outputs.has_changes == 'true'
+        uses: ./.github/actions/validate-pr-gate
 
       - name: Commit and push to the PR branch
         id: push
-        if: steps.pr.outputs.eligible == 'true' && steps.claude.outputs.claude_failed != 'true' && steps.validate.outcome == 'success'
+        if: steps.pr.outputs.eligible == 'true' && steps.detect-noop.outputs.has_changes == 'true' && steps.claude.outputs.claude_failed != 'true' && steps.gate.outputs.gate_passed == 'true'
         uses: ./.github/actions/commit-and-push
         with:
           branch-name: ${{ steps.pr.outputs.head_ref }}
@@ -315,7 +328,15 @@ jobs:
           CLAUDE_FAILED: ${{ steps.claude.outputs.claude_failed }}
           CLAUDE_FAILURE_REASON: ${{ steps.claude.outputs.claude_failure_reason }}
           OUTCOME: ${{ steps.claude.outcome }}
-          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          HAS_CHANGES: ${{ steps.detect-noop.outputs.has_changes }}
+          GATE_PASSED: ${{ steps.gate.outputs.gate_passed }}
+          LINT_OUTCOME: ${{ steps.gate.outputs.lint_outcome }}
+          TYPECHECK_OUTCOME: ${{ steps.gate.outputs.typecheck_outcome }}
+          FORMAT_OUTCOME: ${{ steps.gate.outputs.format_outcome }}
+          TEST_OUTCOME: ${{ steps.gate.outputs.test_outcome }}
+          BUILD_OUTCOME: ${{ steps.gate.outputs.build_outcome }}
+          SCRIPT_TESTS_OUTCOME: ${{ steps.gate.outputs.script_tests_outcome }}
+          PRISMA_SAFE_OUTCOME: ${{ steps.gate.outputs.prisma_safe_outcome }}
           PUSHED: ${{ steps.push.outputs.pushed }}
           COMMIT_SHA: ${{ steps.sha.outputs.commit_sha }}
           AUTOMERGE_DISABLED: ${{ steps.automerge.outputs.disabled }}
@@ -323,5 +344,9 @@ jobs:
           node .github/workflows/scripts/upsert-fix-review-comment.cjs \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" \
             --num-turns "$NUM_TURNS" --failed "$CLAUDE_FAILED" --fail-reason "$CLAUDE_FAILURE_REASON" \
-            --outcome "$OUTCOME" --validate-outcome "$VALIDATE_OUTCOME" --pushed "$PUSHED" \
+            --outcome "$OUTCOME" --has-changes "$HAS_CHANGES" --gate-passed "$GATE_PASSED" \
+            --lint-outcome "$LINT_OUTCOME" --typecheck-outcome "$TYPECHECK_OUTCOME" \
+            --format-outcome "$FORMAT_OUTCOME" --test-outcome "$TEST_OUTCOME" \
+            --build-outcome "$BUILD_OUTCOME" --script-tests-outcome "$SCRIPT_TESTS_OUTCOME" \
+            --prisma-safe-outcome "$PRISMA_SAFE_OUTCOME" --pushed "$PUSHED" \
             --commit-sha "$COMMIT_SHA" --automerge-disabled "$AUTOMERGE_DISABLED" --mode complete

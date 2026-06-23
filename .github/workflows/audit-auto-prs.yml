@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 70
-  NODE_VERSION: '22.x'
+  MAX_TURNS: 90
+  NODE_VERSION: '24.x'
 
 permissions:
   contents: write
@@ -31,7 +31,7 @@ jobs:
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
@@ -46,7 +46,20 @@ jobs:
           install-rtk: 'true'
           install-uv: 'true'
 
+      - name: Check for pending audit PRs
+        id: pending_audit
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/check-pending-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --title-prefix 'ci(workflows): audit automation-created PRs' \
+            --exclude-head 'claude-workflow-optimize-auto-pr-audit-${{ github.run_id }}' \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Prepare auto PR audit branch
+        if: steps.pending_audit.outputs.pending != 'true'
         id: branch
         uses: ./.github/actions/prepare-automation-branch
         with:
@@ -54,6 +67,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
 
       - name: Audit automation-authored pull requests
+        if: steps.pending_audit.outputs.pending != 'true'
         id: claude_run
         uses: ./.github/actions/run-zai
         with:
@@ -133,7 +147,7 @@ jobs:
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
+        if: steps.pending_audit.outputs.pending != 'true' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): audit automation-created PRs'
@@ -173,6 +187,8 @@ jobs:
         if: steps.push.outputs.pushed != 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PENDING: ${{ steps.pending_audit.outputs.pending }}
+          PENDING_PR: ${{ steps.pending_audit.outputs.pending_pr }}
           DUPLICATE_FOUND: ${{ steps.duplicate.outputs.duplicate_found }}
           DUPLICATE_PR_NUMBER: ${{ steps.duplicate.outputs.duplicate_pr_number }}
           DUPLICATE_PR_URL: ${{ steps.duplicate.outputs.duplicate_pr_url }}
@@ -188,7 +204,9 @@ jobs:
             echo "## Auto PR Audit"
             echo
             echo "- Source run: ${RUN_URL}"
-            if [ "$DUPLICATE_FOUND" = "true" ]; then
+            if [ "$PENDING" = "true" ]; then
+              echo "- Result: skipped - audit PR #${PENDING_PR} already open"
+            elif [ "$DUPLICATE_FOUND" = "true" ]; then
               echo "- Result: duplicate fix suppressed"
               echo "- Existing PR: #${DUPLICATE_PR_NUMBER} ${DUPLICATE_PR_URL}"
               echo "- Reason: ${DUPLICATE_REASON}"
@@ -225,7 +243,7 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -249,7 +267,7 @@ jobs:
       issues: write
       actions: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - uses: ./.github/actions/setup-environment
         with:

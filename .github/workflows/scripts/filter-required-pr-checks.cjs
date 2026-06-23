@@ -15,7 +15,7 @@ function normalizeBucket(check) {
   const bucket = String(check.bucket ?? '').toLowerCase();
   const state = String(check.state ?? '').toLowerCase();
 
-  if (['pass', 'fail', 'cancel', 'pending'].includes(bucket)) {
+  if (['pass', 'fail', 'cancel', 'skip', 'pending'].includes(bucket)) {
     return bucket;
   }
 
@@ -31,7 +31,8 @@ function normalizeBucket(check) {
   ) {
     return 'fail';
   }
-  if (['cancelled', 'canceled', 'skipped'].includes(state)) return 'cancel';
+  if (state === 'skipped') return 'skip';
+  if (['cancelled', 'canceled'].includes(state)) return 'cancel';
   return 'pending';
 }
 

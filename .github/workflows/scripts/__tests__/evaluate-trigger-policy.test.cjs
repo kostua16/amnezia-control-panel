@@ -172,3 +172,57 @@ test('fix-pr AUTO_FIX_MSG tracks the _auto-fix-ci commit messages (no drift)', (
     );
   }
 });
+
+function runReviewApproved({ event }) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'review-approved-'));
+  const eventPath = path.join(tempDir, 'event.json');
+  fs.writeFileSync(eventPath, JSON.stringify(event), 'utf8');
+  const output = execFileSync(
+    process.execPath,
+    [
+      scriptPath,
+      '--mode',
+      'review-approved',
+      '--policy-file',
+      policyPath,
+      '--event-path',
+      eventPath,
+      '--event-name',
+      'pull_request_review',
+    ],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  return JSON.parse(output);
+}
+
+test('review-approved: maintainer approval triggers the label', () => {
+  const out = runReviewApproved({
+    event: {
+      review: { state: 'approved', author_association: 'OWNER' },
+      pull_request: { number: 42 },
+    },
+  });
+  assert.equal(out.should_run, true);
+  assert.equal(out.pr_number, 42);
+});
+
+test('review-approved: non-maintainer approval is ignored', () => {
+  const out = runReviewApproved({
+    event: {
+      review: { state: 'approved', author_association: 'NONE' },
+      pull_request: { number: 42 },
+    },
+  });
+  assert.equal(out.should_run, false);
+});
+
+test('review-approved: non-approval review (comment) is ignored', () => {
+  const out = runReviewApproved({
+    event: {
+      review: { state: 'comment', author_association: 'OWNER' },
+      pull_request: { number: 42 },
+    },
+  });
+  assert.equal(out.should_run, false);
+});
+

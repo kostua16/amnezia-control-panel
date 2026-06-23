@@ -52,7 +52,7 @@ permissions:
   actions: read
 
 env:
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '24.x'
   MAX_TURNS: '70'
 
 jobs:
@@ -69,7 +69,7 @@ jobs:
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           ref: ${{ inputs.head-branch }}
           fetch-depth: 1
@@ -229,9 +229,21 @@ jobs:
             caveman@caveman
           prompt: ${{ steps.prompt.outputs.content }}
 
+      - name: Generate Prisma client (prettier-only path skips setup-environment)
+        if: steps.failure.outputs.fixable == 'true' && steps.prettier.outputs.prettier_only == 'true'
+        run: npx prisma generate
+
+      - name: Validate (CI-matching gate)
+        id: gate
+        # Not gated on claude_changed_files_list: the prettier_only path skips
+        # run-zai (claude_run), so that output is empty there. Gate whenever a
+        # fix is attempted; commit-and-push handles the no-change case.
+        if: steps.failure.outputs.fixable == 'true'
+        uses: ./.github/actions/validate-pr-gate
+
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.failure.outputs.fixable == 'true'
+        if: steps.failure.outputs.fixable == 'true' && steps.gate.outputs.gate_passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: "${{ steps.prettier.outputs.prettier_only == 'true' && 'style: auto-fix prettier formatting' || 'fix(ci): auto-fix CI failures' }}"

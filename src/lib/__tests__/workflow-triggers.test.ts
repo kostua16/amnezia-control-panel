@@ -255,4 +255,49 @@ describe('workflow trigger policy', () => {
       `fix-review heavy job timeout ${maxTimeout} > 30 (would hog a big runner)`,
     );
   });
+
+  // P1-4 — pull_request_target must stay on the base ref: never check out / run
+  // untrusted PR-head code with the workflow's token (injection vector). The
+  // pattern is hoisted+shared so the coverage test locks the SAME regex the guard
+  // uses; the prt workflow list is discovered dynamically so new ones are covered.
+  const PR_HEAD_CHECKOUT_PATTERN =
+    /ref:\s*\$\{\{[^}]*(?:pull_request\.head\.sha|head_ref|head\.ref)/;
+
+  it('keeps pull_request_target workflows on the base ref (no PR-head checkout)', () => {
+    const workflowsDir = path.join(repoRoot, '.github/workflows');
+    const prtWorkflows = fs
+      .readdirSync(workflowsDir)
+      .filter((f) => f.endsWith('.yml'))
+      .filter((f) =>
+        /pull_request_target/.test(
+          fs.readFileSync(path.join(workflowsDir, f), 'utf8'),
+        ),
+      );
+    assert.ok(
+      prtWorkflows.length > 0,
+      'expected to find pull_request_target workflows to guard',
+    );
+    for (const f of prtWorkflows) {
+      const y = fs.readFileSync(path.join(workflowsDir, f), 'utf8');
+      assert.ok(
+        !PR_HEAD_CHECKOUT_PATTERN.test(y),
+        `${f} checks out the PR head (sha/ref/branch) under pull_request_target (injection risk)`,
+      );
+    }
+  });
+
+  it('the pull_request_target guard catches every PR-head checkout token', () => {
+    for (const dangerous of [
+      'ref: ${{ github.event.pull_request.head.sha }}',
+      'ref: ${{ github.event.pull_request.head.ref }}',
+      'ref: ${{ github.head_ref }}',
+    ]) {
+      assert.ok(
+        PR_HEAD_CHECKOUT_PATTERN.test(dangerous),
+        `guard must catch: ${dangerous}`,
+      );
+    }
+    assert.ok(!PR_HEAD_CHECKOUT_PATTERN.test('ref: ${{ github.ref }}'));
+    assert.ok(!PR_HEAD_CHECKOUT_PATTERN.test('ref: ${{ github.base_ref }}'));
+  });
 });
