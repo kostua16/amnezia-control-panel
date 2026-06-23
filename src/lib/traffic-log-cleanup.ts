@@ -12,6 +12,11 @@ export const RETENTION_DAYS = (() => {
 /**
  * Delete traffic log entries older than the retention period.
  * This should be called once daily, not on every broadcaster tick.
+ *
+ * A single deleteMany is safe here: the application does not bulk-write traffic
+ * logs, so the table holds only modest volume and a one-shot delete cannot hold
+ * a long write lock. If a high-volume writer is introduced, switch to batched
+ * deletes to bound the lock duration.
  */
 export async function cleanupOldTrafficLogs(): Promise<number> {
   const retentionDate = new Date();

@@ -1,4 +1,5 @@
 import { getDashboardStats } from '@/lib/dashboard-stats';
+import type { DashboardStats } from '@/types/monitoring';
 import { getSystemResources } from '@/lib/resource-monitor';
 import { broadcastEvent, hasConnectedClients } from '@/lib/websocket';
 import { cleanupOldTrafficLogs } from '@/lib/traffic-log-cleanup';
@@ -6,24 +7,27 @@ import { cleanupOldTrafficLogs } from '@/lib/traffic-log-cleanup';
 let statsInterval: ReturnType<typeof setInterval> | null = null;
 let resourcesInterval: ReturnType<typeof setInterval> | null = null;
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
-
-/** Cached traffic totals for reuse by API routes */
-let cachedTrafficTotals: {
-  bytesIn: number;
-  bytesOut: number;
-  timestamp: number;
-} | null = null;
+let initialCleanupTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * Get cached traffic totals (computed once per broadcaster tick).
- * Returns null if no cache is available yet (e.g., broadcaster not started or no clients connected).
+ * Cached dashboard snapshot computed once per broadcaster stats tick.
+ * Kept so the stats API route can serve the same data without re-running the
+ * traffic aggregate query on every poll. Only populated while a WebSocket
+ * client is connected (the stats tick is skipped otherwise).
  */
-export function getCachedTrafficTotals(): {
-  bytesIn: number;
-  bytesOut: number;
+let cachedDashboardStats: { stats: DashboardStats; timestamp: number } | null =
+  null;
+
+/**
+ * Return the cached dashboard snapshot if one is available.
+ * Returns null when no cache exists yet (broadcaster not started or no clients
+ * connected to populate it). Callers decide their own freshness window.
+ */
+export function getCachedDashboardStats(): {
+  stats: DashboardStats;
   timestamp: number;
 } | null {
-  return cachedTrafficTotals;
+  return cachedDashboardStats;
 }
 
 /**
@@ -44,11 +48,7 @@ export function startBroadcaster(): void {
 
     try {
       const stats = await getDashboardStats();
-      cachedTrafficTotals = {
-        bytesIn: stats.trafficBytesInWindow,
-        bytesOut: stats.trafficBytesOutWindow,
-        timestamp: Date.now(),
-      };
+      cachedDashboardStats = { stats, timestamp: Date.now() };
       broadcastEvent('stats:update', stats);
     } catch (err) {
       console.error('[broadcaster] Stats push failed:', err);
@@ -83,7 +83,8 @@ export function startBroadcaster(): void {
   );
 
   // Run cleanup once on startup (after a short delay to avoid startup churn)
-  setTimeout(async () => {
+  initialCleanupTimeout = setTimeout(async () => {
+    initialCleanupTimeout = null;
     try {
       await cleanupOldTrafficLogs();
     } catch (err) {
@@ -108,5 +109,9 @@ export function stopBroadcaster(): void {
     clearInterval(cleanupInterval);
     cleanupInterval = null;
   }
-  cachedTrafficTotals = null;
+  if (initialCleanupTimeout) {
+    clearTimeout(initialCleanupTimeout);
+    initialCleanupTimeout = null;
+  }
+  cachedDashboardStats = null;
 }
