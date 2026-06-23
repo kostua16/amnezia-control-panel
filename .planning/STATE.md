@@ -148,10 +148,11 @@ Resume file: None
 | 2026-06-12 | 260612-aap   | Auto PR audit automation runs as scheduled GitHub workflow  |
 | 2026-06-12 | 260612-x6c   | graphify-out is ignored local cache with PR policy guard    |
 | 2026-06-12 | 260612-vxj   | Managed private GHCR deployment helper and server agent     |
+| 2026-06-24 | 260624-stack | Bundled VPN stack Docker image (AWG + 3x-ui + Tailscale)    |
 | 2026-06-12 | 260613-1cb   | Audit-safe auto-approval allows 10 files / 400 lines        |
 | 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-12 - Loosen audit-safe auto-approval criteria (quick 260613-1cb)_
+_Last updated: 2026-06-24 - Bundled VPN stack Docker image (quick 260624-stack)_
