@@ -45,10 +45,11 @@ function main() {
   const prs = readInput(inPath);
   const selected = selectStalePrs(prs, options);
   let groups = groupStalePrs(selected);
+  // Exact match only: group ids embed source PR numbers, so a substring filter
+  // (e.g. "1") would silently over-select every group whose id contains that
+  // text. The input is documented as a single group id.
   if (groupFilter) {
-    groups = groups.filter(
-      (g) => g.id === groupFilter || g.id.includes(groupFilter),
-    );
+    groups = groups.filter((g) => g.id === groupFilter);
   }
 
   const safe = groups.filter((g) => g.recommended_action === 'consolidate');
