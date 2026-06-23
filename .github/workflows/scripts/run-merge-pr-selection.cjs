@@ -68,6 +68,14 @@ function main() {
   );
 
   const sourcePrs = chosen.flatMap((g) => g.source_prs);
+  // Capture each selected source PR's head sha at collection time so the close
+  // step can detect a source updated mid-run (merge-pr-close-guard condition).
+  const sourceShas = Object.fromEntries(
+    sourcePrs.map((num) => {
+      const pr = selected.find((p) => p.number === num);
+      return [String(num), pr?.headRefOid ?? ''];
+    }),
+  );
   const first = chosen[0];
   appendOutputs({
     total_groups: String(groups.length),
@@ -78,6 +86,7 @@ function main() {
     skipped_json: JSON.stringify(skipped),
     source_prs_csv: sourcePrs.join(','),
     source_prs_json: JSON.stringify(sourcePrs),
+    source_pr_shas_json: JSON.stringify(sourceShas),
     first_group_id: first ? first.id : '',
     first_group_title: first ? first.title : '',
   });

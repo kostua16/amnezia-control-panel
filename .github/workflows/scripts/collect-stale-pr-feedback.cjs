@@ -63,6 +63,23 @@ function formatMultiPrBundle({ prs }) {
   }
   if (!reviewsFound) lines.push('_None._', '');
 
+  // Non-noise PR comments (bots/slash-commands/sticky markers already filtered
+  // by collect-review-feedback.cjs::fetchComments) — review discussion that is
+  // neither a thread reply nor a formal review submission.
+  lines.push('## Comments by PR (non-command, human)', '');
+  let commentsFound = false;
+  for (const p of prs) {
+    const comments = Array.isArray(p.comments) ? p.comments : [];
+    if (comments.length === 0) continue;
+    commentsFound = true;
+    lines.push(`### PR #${p.number}`, '');
+    for (const c of comments) {
+      lines.push(`- (@${c.author}): ${c.body}`);
+    }
+    lines.push('');
+  }
+  if (!commentsFound) lines.push('_None._', '');
+
   lines.push('## Diffs by PR', '');
   for (const p of prs) {
     lines.push(`### PR #${p.number}`, '');

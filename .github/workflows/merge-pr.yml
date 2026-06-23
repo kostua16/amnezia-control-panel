@@ -92,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --json number,title,state,isDraft,isCrossRepository,headRefName,baseRefName,labels,createdAt,updatedAt,mergeable,files,url \
+            --json number,title,state,isDraft,isCrossRepository,headRefName,baseRefName,labels,createdAt,updatedAt,mergeable,files,headRefOid,url \
             --limit 100 > prs.json
           echo "pr_count=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("prs.json","utf8")).length)')" >> "$GITHUB_OUTPUT"
 
@@ -170,7 +170,7 @@ jobs:
           allowed-bots: 'github-actions,github-actions[bot],claude[bot]'
           # The agent may read source PR branches but must not mutate GitHub:
           # push, PR, close, approve, merge, and comment are owned by this workflow.
-          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(gh pr diff:*),Bash(gh pr view:*)'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(gh pr diff:*),Bash(gh pr view:*)'
           model: opus
           json-schema: |
             {
@@ -288,12 +288,25 @@ jobs:
           LABELS=$(gh pr view "$REPLACEMENT" --repo "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' 2>/dev/null || true)
           GREEN=false
           if echo "$LABELS" | grep -Eq 'flow/manual-only|ai-review-passed|security-review-passed'; then GREEN=true; fi
-          # NOTE: sourceUnchangedSinceCollection is asserted true here. A follow-up
-          # should capture each source head sha at collection and compare before
-          # close, so a source updated mid-run is never closed. The guard itself
-          # enforces the condition; only the boolean source needs wiring.
+          SOURCE_CSV="${{ steps.select.outputs.source_prs_csv }}"
+          SHAS_JSON='${{ steps.select.outputs.source_pr_shas_json }}'
+          # Derive the structural preconditions from the actual replacement PR so
+          # merge-pr-close-guard enforces its full contract: body links every
+          # source, body carries the findings evidence, no source advanced since
+          # collection. Nothing here is asserted true.
+          BODY=$(gh pr view "$REPLACEMENT" --repo "$GITHUB_REPOSITORY" --json body -q .body 2>/dev/null || true)
+          BODY_LINKS=true
+          BODY_FINDINGS=true
+          UNCHANGED=true
+          for PR in $(echo "$SOURCE_CSV" | tr ',' ' '); do
+            printf '%s' "$BODY" | grep -qE "(^|[^0-9])${PR}([^0-9]|$)" || BODY_LINKS=false
+            CAP=$(node -e 'const m=JSON.parse(process.argv[1]||"{}");process.stdout.write(m[process.argv[2]]||"")' "$SHAS_JSON" "$PR" 2>/dev/null || true)
+            CUR=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid 2>/dev/null || true)
+            if [ -n "$CAP" ] && [ "$CAP" != "$CUR" ]; then UNCHANGED=false; fi
+          done
+          printf '%s' "$BODY" | grep -qiE 'review_findings_addressed|source_prs_skipped|findings_addressed' || BODY_FINDINGS=false
           node .github/workflows/scripts/merge-pr-close-guard.cjs --json "$(cat <<JSON
-          {"replacementPushed":true,"replacementPrOpened":true,"validationPassed":true,"replacementGreen":$GREEN,"bodyLinksAllSources":true,"bodyListsFindings":true,"sourceUnchangedSinceCollection":true,"dryRun":"${{ env.EFFECTIVE_DRY_RUN }}","labelsPolicyOk":true}
+          {"replacementPushed":true,"replacementPrOpened":true,"validationPassed":true,"replacementGreen":$GREEN,"bodyLinksAllSources":$BODY_LINKS,"bodyListsFindings":$BODY_FINDINGS,"sourceUnchangedSinceCollection":$UNCHANGED,"dryRun":"${{ env.EFFECTIVE_DRY_RUN }}","labelsPolicyOk":true}
           JSON
           )" | tee close-decision.txt
           CAN_CLOSE=$(head -1 close-decision.txt)

@@ -87,10 +87,35 @@ test('labels empty sections when there are no threads and no reviews', () => {
         files: ['a.ts'],
         threads: [],
         reviews: [],
+        comments: [],
         diff: 'd',
       },
     ],
   });
   assert.match(md, /Unresolved review threads by PR[\s\S]*?_None\./);
   assert.match(md, /Review submissions by PR[\s\S]*?_None\./);
+  assert.match(md, /Comments by PR[\s\S]*?_None\./);
+});
+
+test('renders non-noise comments per PR', () => {
+  const md = formatMultiPrBundle({
+    prs: [
+      {
+        number: 7,
+        title: 'x',
+        url: '',
+        labels: [],
+        headRef: 'b',
+        mergeable: 'MERGEABLE',
+        files: ['a.ts'],
+        threads: [],
+        reviews: [],
+        comments: [{ author: 'alice', body: 'consider extracting a helper' }],
+        diff: 'd',
+      },
+    ],
+  });
+  assert.match(md, /## Comments by PR \(non-command, human\)/);
+  assert.match(md, /### PR #7/);
+  assert.match(md, /@alice\): consider extracting a helper/);
 });

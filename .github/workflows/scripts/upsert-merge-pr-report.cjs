@@ -161,9 +161,10 @@ function main() {
   const reportJson =
     getArg('--report-json') || process.env.MERGE_PR_REPORT_JSON;
   const runUrl =
-    getArg('--run-url') || process.env.GITHUB_SERVER_URL
+    getArg('--run-url') ||
+    (process.env.GITHUB_SERVER_URL
       ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-      : '';
+      : '');
   const repo = getArg('--repo') || process.env.GITHUB_REPOSITORY;
   const title = getArg('--issue-title', DEFAULT_ISSUE_TITLE);
   const toSummary = getArg('--summary') === 'true';
