@@ -159,6 +159,15 @@ describe('workflow trigger policy', () => {
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
   });
 
+  it('rebase-pr skipped summary names the specific blocking condition', () => {
+    // The skipped step must forward the eligibility reason so the sticky summary
+    // states which condition blocked the rebase (draft / do-not-merge / stale
+    // head / cross-repo / closed / merged) instead of the generic cause list.
+    const yaml = readWorkflowText('rebase-pr.yml');
+    assert.match(yaml, /REASON: \$\{\{ steps\.pr\.outputs\.reason \}\}/);
+    assert.match(yaml, /--reason "\$REASON"/);
+  });
+
   it('prefilters standalone AI mention workflows before runner checkout', () => {
     expectGuard('claude.yml', [
       /authorize:[\s\S]*?if: >-/,

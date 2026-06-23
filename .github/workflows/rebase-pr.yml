@@ -119,13 +119,16 @@ jobs:
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
           COMMENT_ID: ${{ github.event.comment.id }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          REASON: ${{ steps.pr.outputs.reason }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -n "$COMMENT_ID" ]; then
             gh api -X POST "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" -f content=eyes || true
           fi
+          # Pass the specific ineligibility cause so the sticky summary names
+          # the blocking condition instead of the generic cause list.
           node .github/workflows/scripts/upsert-rebase-comment.cjs \
-            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --mode skipped
+            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --reason "$REASON" --mode skipped
           exit 0
 
       - name: React eyes
