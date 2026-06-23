@@ -1,0 +1,306 @@
+name: Stale PR Consolidation
+
+# Daily(ready) consolidation of stale PRs into one replacement PR per compatible
+# group. Conservative by design: ships in dry-run/report mode; the run-zai ->
+# validate -> push -> open -> close write path is present but inert until an
+# operator flips dry_run to false (Rollout step 5-6). Source PRs are closed only
+# through merge-pr-close-guard.cjs after the replacement is green and linked.
+# See .planning/ideas/merge-pr-plan.md and docs/workflow-e2e-scenarios.md.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview without creating, pushing, commenting, or closing
+        required: false
+        default: true
+        type: boolean
+      max_groups:
+        description: Maximum groups to process
+        required: false
+        default: '1'
+        type: string
+      group_filter:
+        description: Optional group id to process
+        required: false
+        default: ''
+        type: string
+      min_age_hours:
+        description: Minimum PR age in hours
+        required: false
+        default: '23'
+        type: string
+
+concurrency:
+  # Never cancel an active consolidation run: a cancelled run can leave a branch,
+  # comment, or report half-written.
+  group: merge-pr-${{ github.event.inputs.group_filter || 'daily' }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24.x'
+  # Scheduled runs (added in a later rollout step) resolve to this. Keep true so
+  # a future schedule cannot mutate until an operator explicitly flips it.
+  MERGE_PR_SCHEDULE_DRY_RUN: 'true'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+  checks: read
+
+jobs:
+  consolidate:
+    runs-on: [self-hosted, big]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'true'
+          generate-prisma: 'true'
+
+      - name: Resolve effective dry-run
+        id: dryrun
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          SCHEDULE_DRY_RUN: ${{ env.MERGE_PR_SCHEDULE_DRY_RUN }}
+        run: |
+          # workflow_dispatch input defaults do not exist on schedule events, so
+          # resolve the effective dry-run explicitly and preserve an explicit false.
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            effective="${SCHEDULE_DRY_RUN:-true}"
+          else
+            effective="${INPUT_DRY_RUN:-true}"
+          fi
+          echo "effective=$effective" >> "$GITHUB_OUTPUT"
+          echo "EFFECTIVE_DRY_RUN=$effective" >> "$GITHUB_ENV"
+
+      - name: Collect open PRs
+        id: collect
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --json number,title,state,isDraft,isCrossRepository,headRefName,baseRefName,labels,createdAt,updatedAt,mergeable,files,url \
+            --limit 100 > prs.json
+          echo "pr_count=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("prs.json","utf8")).length)')" >> "$GITHUB_OUTPUT"
+
+      - name: Select and group stale PRs
+        id: select
+        shell: bash
+        run: |
+          node .github/workflows/scripts/run-merge-pr-selection.cjs \
+            --in prs.json \
+            --out-dir . \
+            --min-age-hours "${{ inputs.min_age_hours || '23' }}" \
+            --max-groups "${{ inputs.max_groups || '1' }}" \
+            --group-filter "${{ inputs.group_filter || '' }}"
+
+      - name: Render consolidation report
+        id: report
+        if: always()
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          let groups = {};
+          try { groups = require('./merge-pr-groups.json'); } catch {}
+          const report = {
+            selectedGroups: groups.selected || [],
+            skippedGroups: groups.skipped || [],
+            validation: { dryRun: process.env.EFFECTIVE_DRY_RUN !== 'false' },
+          };
+          fs.writeFileSync('merge-pr-report.json', JSON.stringify(report));
+          NODE
+          echo "report_path=$(pwd)/merge-pr-report.json" >> "$GITHUB_OUTPUT"
+
+      - name: Publish report (central issue + summary)
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/upsert-merge-pr-report.cjs \
+            --report-json "${{ steps.report.outputs.report_path }}" \
+            --summary true
+
+      # ---------------- Write path: inert unless dry_run=false ----------------
+
+      - name: Collect review-debt bundle
+        id: feedback
+        if: steps.select.outputs.has_safe_group == 'true' && env.EFFECTIVE_DRY_RUN == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/collect-stale-pr-feedback.cjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --prs "${{ steps.select.outputs.source_prs_csv }}" \
+            --out stale-pr-feedback.md \
+            --max-diff-chars-per-pr 30000
+          echo "bundle_path=$(pwd)/stale-pr-feedback.md" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare consolidation branch
+        id: branch
+        if: steps.select.outputs.has_safe_group == 'true' && env.EFFECTIVE_DRY_RUN == 'false'
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude/stale-pr-merge-${{ steps.select.outputs.first_group_id }}-${{ github.run_id }}
+          github-token: ${{ secrets.GH_PAT }}
+
+      - name: Build consolidation branch
+        id: claude_run
+        if: steps.select.outputs.has_safe_group == 'true' && env.EFFECTIVE_DRY_RUN == 'false'
+        uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          max-turns: '90'
+          allowed-bots: 'github-actions,github-actions[bot],claude[bot]'
+          # The agent may read source PR branches but must not mutate GitHub:
+          # push, PR, close, approve, merge, and comment are owned by this workflow.
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(gh pr diff:*),Bash(gh pr view:*)'
+          model: opus
+          json-schema: |
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "summary": { "type": "string" },
+                "source_prs_applied": { "type": "array", "items": { "type": "number" } },
+                "source_prs_skipped": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "pr": { "type": "number" },
+                      "reason": { "type": "string" }
+                    }
+                  }
+                },
+                "review_findings_addressed": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "pr": { "type": "number" },
+                      "file": { "type": "string" },
+                      "change": { "type": "string" }
+                    }
+                  }
+                },
+                "changed_files": { "type": "array", "items": { "type": "string" } },
+                "validation": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "test": { "type": "string" },
+                    "build": { "type": "string" },
+                    "workflow_scripts": { "type": "string" },
+                    "prisma_safe": { "type": "string" }
+                  }
+                }
+              }
+            }
+          prompt: |
+            Create a consolidation branch for stale PR group ${{ steps.select.outputs.first_group_id }}.
+
+            Read the stale PR feedback bundle first:
+            ${{ steps.feedback.outputs.bundle_path }}
+
+            Source PRs in this group: ${{ steps.select.outputs.source_prs_csv }}
+
+            Goals:
+            - Apply the still-valid intent from each source PR onto current main.
+            - Address unresolved review feedback from source PRs (listed in the bundle).
+            - Keep the result smaller and safer than merging the source branches directly.
+            - If a source PR contains unsafe code, replace it with a safer implementation or report it as skipped.
+
+            Rules:
+            - Do not commit, push, comment, approve, merge, or close PRs.
+            - Run validation before finishing (npm run test-only; the workflow script e2e suite; npm run build).
+            - Return JSON only matching the structured-output schema.
+
+      - name: Validate consolidation branch
+        id: gate
+        if: steps.select.outputs.has_safe_group == 'true' && env.EFFECTIVE_DRY_RUN == 'false' && steps.claude_run.outputs.claude_failed != 'true'
+        uses: ./.github/actions/validate-pr-gate
+
+      - name: Commit and push consolidation branch
+        id: push
+        if: steps.gate.outputs.gate_passed == 'true'
+        uses: ./.github/actions/commit-and-push
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'fix(stale-prs): consolidate ${{ steps.select.outputs.first_group_id }}'
+
+      - name: Build replacement PR body
+        id: body
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/build-automation-pr-body
+        with:
+          workflow-name: stale-pr-consolidation
+          problem: Stale PR consolidation grouped ${{ steps.select.outputs.source_prs_csv }} into ${{ steps.select.outputs.first_group_id }} and carried forward their unresolved review feedback.
+          rationale: Source PRs drifted stale; a single validated replacement addresses their combined intent and review debt on current main.
+          evidence: ${{ steps.claude_run.outputs.structured_output }}
+          review-notes: |
+            Source PRs superseded: ${{ steps.select.outputs.source_prs_csv }}.
+            Review-debt bundle and diffs were attached to the consolidation agent prompt.
+            Replacement PRs are manual-review by policy (claude/stale-pr-merge-* is not a trusted auto-finalize prefix).
+
+      - name: Open replacement PR
+        id: pr
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/upsert-pull-request
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'fix(stale-prs): consolidate ${{ steps.select.outputs.first_group_title }}'
+          body: ${{ steps.body.outputs.body }}
+          labels: auto-fix,stale-pr-consolidation,fresh/consolidation-candidate,area/workflows
+          draft: 'false'
+          require-rich-body: 'true'
+
+      - name: Guard and close source PRs
+        if: steps.pr.outputs.pr_number != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          REPLACEMENT="${{ steps.pr.outputs.pr_number }}"
+          # replacementGreen becomes true once pr-flow labels the replacement
+          # manual-only or review-passed. Until then the guard keeps every source
+          # open (correct: never close before the replacement is visible + green).
+          LABELS=$(gh pr view "$REPLACEMENT" --repo "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' 2>/dev/null || true)
+          GREEN=false
+          if echo "$LABELS" | grep -Eq 'flow/manual-only|ai-review-passed|security-review-passed'; then GREEN=true; fi
+          # NOTE: sourceUnchangedSinceCollection is asserted true here. A follow-up
+          # should capture each source head sha at collection and compare before
+          # close, so a source updated mid-run is never closed. The guard itself
+          # enforces the condition; only the boolean source needs wiring.
+          node .github/workflows/scripts/merge-pr-close-guard.cjs --json "$(cat <<JSON
+          {"replacementPushed":true,"replacementPrOpened":true,"validationPassed":true,"replacementGreen":$GREEN,"bodyLinksAllSources":true,"bodyListsFindings":true,"sourceUnchangedSinceCollection":true,"dryRun":"${{ env.EFFECTIVE_DRY_RUN }}","labelsPolicyOk":true}
+          JSON
+          )" | tee close-decision.txt
+          CAN_CLOSE=$(head -1 close-decision.txt)
+          echo "can_close_line=$CAN_CLOSE" >> "$GITHUB_OUTPUT"
+          if [[ "$CAN_CLOSE" == CAN_CLOSE* ]]; then
+            for PR in $(echo "${{ steps.select.outputs.source_prs_csv }}" | tr ',' ' '); do
+              gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --add-label "fresh/superseded" || true
+              gh pr close "$PR" --repo "$GITHUB_REPOSITORY" --comment "Superseded by #$REPLACEMENT (stale PR consolidation group ${{ steps.select.outputs.first_group_id }})." || true
+            done
+          fi

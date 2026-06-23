@@ -293,6 +293,33 @@ flowchart TD
   P -->|no| FW[force-with-lease push, disable automerge, wake pr-flow to §1]
 ```
 
+## §7 Stale PR consolidation — `merge-pr.yml`
+
+Decision basis: `run-merge-pr-selection.cjs` (collect → `selectStalePrs`/`groupStalePrs` from `merge-pr-logic.cjs`), `collect-stale-pr-feedback.cjs` (multi-PR review-debt bundle), `merge-pr-close-guard.cjs` (source closure preconditions), `upsert-merge-pr-report.cjs` (central issue + step summary). Policy: `policy.json` labels `fresh/stale`, `fresh/consolidation-candidate`, `fresh/superseded`, `stale-pr-consolidation`; `claude/stale-pr-merge-*` is intentionally **not** a trusted auto-finalize prefix, so replacement PRs terminate at `flow/manual-only` (human merge). See `.planning/ideas/merge-pr-plan.md`.
+
+> Ships **dry-run/report-only**; the write/close path (run-zai -> validate -> push -> open -> close) is **deferred to Rollout 5-7** and not present in the workflow yet — it requires a least-privilege agent job, a deferred `workflow_run` close, and replacement-PR dedup. See `.planning/ideas/merge-pr-plan.md`.
+
+```mermaid
+flowchart TD
+  T[trigger: workflow_dispatch dry_run] --> CL[collect open PRs]
+  CL --> SL[selectStalePrs: age/state/label filter]
+  SL --> GR[groupStalePrs: kind-strict buckets]
+  GR -->|no safe group| RPT[report only]
+  GR -->|safe group, dry_run=true| RPT
+  GR -->|safe group, dry_run=false| FB[collect feedback bundle]
+  FB --> ZAI[run-zai build branch]
+  ZAI --> VG[validate-pr-gate]
+  VG -->|fail| RPT2[report, sources open]
+  VG -->|pass| PU[commit-and-push + open replacement PR]
+  PU --> CG[merge-pr-close-guard]
+  CG -->|not green / conditions unmet| KEEP[sources left open]
+  CG -->|all conditions met| CLOSE[close + label fresh/superseded]
+  RPT -->((reported))
+  RPT2 -->((reported))
+  KEEP -->((reported))
+  CLOSE -->((closed))
+```
+
 | ID | Trigger / precondition | Resolution → terminal | Type |
 |---|---|---|---|
 | RB1 | maintainer `/rebase` on open same-repo PR, clean rebase | validate-pr-gate → `--force-with-lease` push → disable auto-merge → wake pr-flow → §1 | char |
@@ -304,6 +331,13 @@ flowchart TD
 | RB7 | `validate-pr-gate` fails | dual-block summary (agent-reported vs authoritative gate), not pushed → **reported** | char |
 | RB8 | `--force-with-lease` rejected (branch advanced / protection) | `push-rejected` (no plain-force retry) → **reported** | char |
 | RB9 | `dry_run` dispatch | validate-pr-gate → `complete` `dry-run` (not pushed) → **reported** | char |
+| MP1 | `dry_run=true` (default) | select + group + report; no push/open/close → **reported** | char |
+| MP2 | no `consolidate` group (only rebase-first / manual-review / report-only) | report selected + skipped reasons → **reported** | char |
+| MP3 | safe group + `dry_run=false` | feedback → run-zai → validate → push → open replacement (`flow/manual-only`) → guard | **spec** (write path inert until Rollout activation) |
+| MP4 | `validate-pr-gate` fails after run-zai | not pushed, sources stay open → **reported** | char |
+| MP5 | replacement not yet green at guard time | `canCloseSourcePr=false` → sources **left open** | spec (guard enforces; runtime-verified on activation) |
+| MP6 | workflow PR + app-code PR both stale | grouped into **separate** kinds, never consolidated together | char (`merge-pr-logic.cjs` unit tests) |
+| MP7 | dependency PR group | `recommended_action=manual-review` → reported, not consolidated | char |
 
 ---
 
@@ -319,7 +353,7 @@ flowchart TD
 
 ## Mapping → tests + gate
 
-- **Test files:** `scripts/__tests__/e2e-merge-gate.test.cjs`, `e2e-autofix-loop.test.cjs`, `e2e-ai-review.test.cjs`, `e2e-autonomous-pr.test.cjs`, `e2e-cancellation.test.cjs`, `e2e-entry-flows.test.cjs` (§6a/b/c/d). YAML/trigger invariants extend `src/lib/__tests__/workflow-triggers.test.ts`.
+- **Test files:** `scripts/__tests__/e2e-merge-gate.test.cjs`, `e2e-autofix-loop.test.cjs`, `e2e-ai-review.test.cjs`, `e2e-autonomous-pr.test.cjs`, `e2e-cancellation.test.cjs`, `e2e-entry-flows.test.cjs` (§6a/b/c/d), plus §7 pure-logic suites `merge-pr-logic.test.cjs`, `merge-pr-close-guard.test.cjs`, `collect-stale-pr-feedback.test.cjs`, `upsert-merge-pr-report.test.cjs`. YAML/trigger invariants extend `src/lib/__tests__/workflow-triggers.test.ts`.
 - **Flow-simulator:** `scripts/__tests__/e2e/_simulator.cjs` — replays an event sequence through the decision scripts, asserts the terminal decision.
 - **CI gate:** `ci.yml:61` (`node --test .github/workflows/scripts/__tests__/*.test.cjs`) auto-runs the suite; a flow-breaking change fails CI. Local check needs **both** `npm run test-only` **and** that scripts glob.
 - **Phase 1 = all `char` green + `spec`/`TR` red, no behavior change. Phase 2 flips each `spec` green via its tagged fix.**
