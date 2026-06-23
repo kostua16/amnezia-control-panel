@@ -100,8 +100,12 @@ function conflictRiskFor(mergeStates) {
 
 function recommendActionForGroup(group) {
   if (!group || group.source_prs.length === 0) return 'report-only';
-  if (group.source_prs.length === 1 && group.conflict_risk === 'high') {
-    return 'rebase-first';
+  // A high-conflict-risk group is never auto-consolidated: a single conflicting
+  // PR should be rebased in place, and a multi-PR group of mutually-conflicting
+  // PRs (the riskiest consolidation) must be reviewed manually. Only low/medium
+  // risk groups are eligible for "consolidate".
+  if (group.conflict_risk === 'high') {
+    return group.source_prs.length === 1 ? 'rebase-first' : 'manual-review';
   }
   if (group.kind === 'dependency') return 'manual-review';
   return 'consolidate';

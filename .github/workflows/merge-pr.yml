@@ -108,13 +108,19 @@ jobs:
       - name: Select and group stale PRs
         id: select
         shell: bash
+        env:
+          # Pass dispatch inputs via env, not ${{ inputs.* }} interpolation in the
+          # run block, so a crafted group_filter cannot break out of the script.
+          MIN_AGE_HOURS: ${{ inputs.min_age_hours || '23' }}
+          MAX_GROUPS: ${{ inputs.max_groups || '1' }}
+          GROUP_FILTER: ${{ inputs.group_filter || '' }}
         run: |
           node .github/workflows/scripts/run-merge-pr-selection.cjs \
             --in prs.json \
             --out-dir . \
-            --min-age-hours "${{ inputs.min_age_hours || '23' }}" \
-            --max-groups "${{ inputs.max_groups || '1' }}" \
-            --group-filter "${{ inputs.group_filter || '' }}"
+            --min-age-hours "$MIN_AGE_HOURS" \
+            --max-groups "$MAX_GROUPS" \
+            --group-filter "$GROUP_FILTER"
 
       - name: Render consolidation report
         id: report

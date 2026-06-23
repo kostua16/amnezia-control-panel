@@ -134,6 +134,17 @@ test('groupStalePrs splits conflicting from clean within a kind', () => {
   assert.equal(groups[1].recommended_action, 'rebase-first');
 });
 
+test('groupStalePrs marks a multi-PR all-conflicting group manual-review, not consolidate', () => {
+  const groups = groupStalePrs([
+    pr({ number: 60, mergeable: 'CONFLICTING' }),
+    pr({ number: 61, mergeable: 'CONFLICTING' }),
+  ]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].conflict_risk, 'high');
+  // Mutually-conflicting PRs are the riskiest consolidation: never "consolidate".
+  assert.equal(groups[0].recommended_action, 'manual-review');
+});
+
 test('dependency group recommends manual-review', () => {
   const groups = groupStalePrs([
     pr({ number: 50, files: [{ path: 'package-lock.json' }] }),
