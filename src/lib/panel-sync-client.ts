@@ -75,6 +75,27 @@ function isTransientFailure(status: number | null): boolean {
   return status >= 500; // 5xx is transient; 4xx is a deterministic client/config fault
 }
 
+interface ServerRecord {
+  id: number;
+  tailnetIP: string | null;
+  tailnetHostname: string | null;
+  hostname: string | null;
+}
+
+/**
+ * In-memory server lookup that mirrors Prisma's `hostname: { contains }` +
+ * `tailnetIP: { equals }` semantics. Exact tailnetIP match wins, then
+ * substring hostname match.
+ */
+function findServerByHost(
+  servers: ServerRecord[],
+  urlHostname: string,
+): ServerRecord | undefined {
+  const byIP = servers.find((s) => s.tailnetIP === urlHostname);
+  if (byIP) return byIP;
+  return servers.find((s) => s.hostname?.includes(urlHostname));
+}
+
 // ─── generatePerPanelConfig ─────────────────────────────
 
 /**
@@ -275,9 +296,17 @@ export async function pushConfigToAllPanels(
 ): Promise<PushAllResult> {
   const { prisma } = await import('./prisma');
 
-  const panels = await prisma.remotePanel.findMany({
-    where: { isActive: true },
-  });
+  const [panels, allServers] = await Promise.all([
+    prisma.remotePanel.findMany({ where: { isActive: true } }),
+    prisma.server.findMany({
+      select: {
+        id: true,
+        tailnetIP: true,
+        tailnetHostname: true,
+        hostname: true,
+      },
+    }),
+  ]);
 
   const results: PushResult[] = [];
   let configVersion = 0;
@@ -307,28 +336,19 @@ export async function pushConfigToAllPanels(
     configVersion++;
     panelConfig.configVersion = configVersion;
 
-    // Resolve Tailscale transport address for this panel
+    // Resolve Tailscale transport address for this panel (in-memory lookup)
     let panelUrl = panel.panelUrl;
     try {
-      const server = await prisma.server.findFirst({
-        where: {
-          OR: [
-            { hostname: { contains: new URL(panel.panelUrl).hostname } },
-            { tailnetIP: { equals: new URL(panel.panelUrl).hostname } },
-          ],
-        },
-        select: {
-          id: true,
-          tailnetIP: true,
-          tailnetHostname: true,
-          hostname: true,
-        },
-      });
+      const urlHostname = new URL(panel.panelUrl).hostname;
+      const server = findServerByHost(allServers, urlHostname);
 
-      if (server) {
-        const transport = await resolvePanelTransport(server, {
-          panelUrl: panel.panelUrl,
-        });
+      if (server && server.hostname) {
+        const transport = await resolvePanelTransport(
+          server as Parameters<typeof resolvePanelTransport>[0],
+          {
+            panelUrl: panel.panelUrl,
+          },
+        );
         if (transport) {
           panelUrl = transport.panelUrl;
         }
