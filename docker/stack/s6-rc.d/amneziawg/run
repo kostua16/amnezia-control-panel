@@ -4,9 +4,14 @@ set -e
 CONF="/opt/acp-stack/awg/awg0.conf"
 IFACE="${AWG_INTERFACE:-awg0}"
 
+cleanup() {
+  /docker/stack/scripts/awg-postdown.sh || true
+}
+trap cleanup EXIT TERM INT
+
 if [ ! -f "$CONF" ]; then
   echo "[amneziawg] no config at $CONF yet; idle"
-  exec sleep infinity
+  while true; do sleep 3600; done
 fi
 
 if command -v amneziawg-go >/dev/null 2>&1; then
@@ -14,9 +19,14 @@ if command -v amneziawg-go >/dev/null 2>&1; then
   sleep 2
 fi
 
-if awg show "$IFACE" >/dev/null 2>&1; then
-  exec sleep infinity
+if ! awg show "$IFACE" >/dev/null 2>&1; then
+  awg-quick up "$IFACE" 2>/dev/null || awg setconf "$IFACE" "$CONF"
 fi
 
-awg-quick up "$IFACE" 2>/dev/null || awg setconf "$IFACE" "$CONF"
-exec sleep infinity
+if awg show "$IFACE" >/dev/null 2>&1; then
+  /docker/stack/scripts/awg-postup.sh
+else
+  echo "[amneziawg] failed to bring up $IFACE" >&2
+fi
+
+while true; do sleep 3600; done

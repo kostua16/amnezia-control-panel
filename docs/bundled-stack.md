@@ -17,6 +17,7 @@ The slim **`latest`** image contains only the control panel. Use it for central/
 - 3x-ui binds to **127.0.0.1:2053** inside the container (not published).
 - Config and keys live in **named Docker volumes**, not host `/etc`.
 - `ACP_DEPLOYMENT_MODE=bundled` switches health checks from `systemctl` to local CLI/HTTP probes.
+- Client NAT/forwarding (MASQUERADE) is applied by the `amneziawg` s6 service when the tunnel starts, not via `awg0.conf` PostUp hooks.
 
 Existing host Amnezia / 3x-ui / Tailscale installs are unaffected.
 

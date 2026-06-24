@@ -8,6 +8,9 @@ if [ -z "$EGRESS" ]; then
   exit 0
 fi
 
-iptables -t nat -A POSTROUTING -o "$EGRESS" -j MASQUERADE
-iptables -A FORWARD -i "$IFACE" -j ACCEPT
-iptables -A FORWARD -o "$IFACE" -j ACCEPT
+iptables -t nat -C POSTROUTING -o "$EGRESS" -j MASQUERADE 2>/dev/null \
+  || iptables -t nat -A POSTROUTING -o "$EGRESS" -j MASQUERADE
+iptables -C FORWARD -i "$IFACE" -j ACCEPT 2>/dev/null \
+  || iptables -A FORWARD -i "$IFACE" -j ACCEPT
+iptables -C FORWARD -o "$IFACE" -j ACCEPT 2>/dev/null \
+  || iptables -A FORWARD -o "$IFACE" -j ACCEPT

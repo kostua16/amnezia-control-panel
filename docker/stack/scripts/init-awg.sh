@@ -43,8 +43,6 @@ H1 = ${H1}
 H2 = ${H2}
 H3 = ${H3}
 H4 = ${H4}
-PostUp = /docker/stack/scripts/awg-postup.sh
-PostDown = /docker/stack/scripts/awg-postdown.sh
 EOF
 
 chmod 600 "$CONF"
