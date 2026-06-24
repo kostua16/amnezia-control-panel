@@ -93,7 +93,7 @@ Reference Dockerfile: [amnezia-vpn/amneziawg-go](https://github.com/amnezia-vpn/
 ### 4. Tailscale
 
 1. Check [Tailscale changelog](https://tailscale.com/changelog) / [releases](https://github.com/tailscale/tailscale/releases).
-2. Update `TAILSCALE_VERSION` (e.g. `v1.98.5`) to match `tailscale/tailscale` image tag.
+2. Update `TAILSCALE_VERSION` (e.g. `v1.98.3`) to match `tailscale/tailscale` image tag.
 3. Rebuild; run `tailscale version` in the image.
 4. **Keep `TS_STATE_DIR` on a volume** — without it, each restart registers a new tailnet node.
 

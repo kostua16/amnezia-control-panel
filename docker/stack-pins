@@ -16,7 +16,7 @@ AWGTOOLS_RELEASE=1.0.20260618-2
 AMNEZIAWG_GO_REF=v0.2.19
 
 # Tailscale static image / binary version
-TAILSCALE_VERSION=v1.98.5
+TAILSCALE_VERSION=v1.98.3
 
 # s6-overlay for multi-process supervision (https://github.com/just-containers/s6-overlay)
 S6_OVERLAY_VERSION=3.2.0.2
