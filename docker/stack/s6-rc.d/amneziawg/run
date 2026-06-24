@@ -3,8 +3,13 @@ set -e
 
 CONF="/opt/acp-stack/awg/awg0.conf"
 IFACE="${AWG_INTERFACE:-awg0}"
+pid=
 
 cleanup() {
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
   /docker/stack/scripts/awg-postdown.sh || true
 }
 trap cleanup EXIT TERM INT
