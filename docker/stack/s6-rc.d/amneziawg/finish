@@ -1,0 +1,2 @@
+#!/command/with-contenv bash
+/docker/stack/scripts/awg-postdown.sh || true

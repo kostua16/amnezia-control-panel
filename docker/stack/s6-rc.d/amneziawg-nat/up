@@ -1,0 +1,2 @@
+#!/command/with-contenv sh
+exec /docker/stack/scripts/amneziawg-nat-up.sh

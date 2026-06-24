@@ -128,7 +128,7 @@ COPY docker/stack/sudoers.d/acp-stack /etc/sudoers.d/acp-stack
 COPY docker/stack-entrypoint.sh ./docker/stack-entrypoint.sh
 RUN chmod 0440 /etc/sudoers.d/acp-stack \
     && chmod +x ./docker/stack-entrypoint.sh /docker/stack/scripts/*.sh \
-    && find /etc/s6-overlay/s6-rc.d \( -name run -o -name up \) -exec chmod +x {} +
+    && find /etc/s6-overlay/s6-rc.d \( -name run -o -name up -o -name finish \) -exec chmod +x {} +
 
 # Build-time smoke checks (no NET_ADMIN required)
 RUN node -e "require('better-sqlite3')" \
