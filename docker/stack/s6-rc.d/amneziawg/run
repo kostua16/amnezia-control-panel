@@ -4,6 +4,11 @@ set -e
 CONF="/opt/acp-stack/awg/awg0.conf"
 IFACE="${AWG_INTERFACE:-awg0}"
 
+cleanup() {
+  /docker/stack/scripts/awg-postdown.sh || true
+}
+trap cleanup EXIT TERM INT
+
 if [ ! -f "$CONF" ]; then
   echo "[amneziawg] no config at $CONF yet; idle"
   exec sleep infinity
@@ -15,4 +20,9 @@ if ! command -v amneziawg-go >/dev/null 2>&1; then
 fi
 
 echo "[amneziawg] starting userspace tunnel on $IFACE"
-exec amneziawg-go -f "$CONF" "$IFACE"
+amneziawg-go -f "$CONF" "$IFACE" &
+pid=$!
+
+/docker/stack/scripts/amneziawg-nat-up.sh
+
+wait "$pid"

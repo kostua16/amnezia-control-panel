@@ -17,7 +17,8 @@ The slim **`latest`** image contains only the control panel. Use it for central/
 - 3x-ui binds to **127.0.0.1:2053** inside the container (not published).
 - Config and keys live in **named Docker volumes**, not host `/etc`.
 - `ACP_DEPLOYMENT_MODE=bundled` switches health checks from `systemctl` to local CLI/HTTP probes.
-- Client NAT/forwarding (MASQUERADE) is applied by the `amneziawg-nat` s6 oneshot after the userspace tunnel interface appears; `amneziawg/finish` tears rules down on daemon exit.
+- AWG in the stack image is **userspace only** (`amneziawg-go` + `/dev/net/tun`); the Amnezia kernel module (`amneziawg-linux-kernel-module`) is not used inside the container — it is host-kernel-specific and belongs in external/bare-metal deployments.
+- Client NAT/forwarding (MASQUERADE) is applied on each `amneziawg` run start (`awg-postup.sh` after the tunnel interface appears) and torn down on exit via a trap in the s6 longrun script.
 
 Existing host Amnezia / 3x-ui / Tailscale installs are unaffected.
 

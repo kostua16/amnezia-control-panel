@@ -19,11 +19,11 @@ rand_u32() {
   od -An -N4 -tu4 /dev/urandom | tr -d ' '
 }
 
-Jc=$(( (RANDOM % 10) + 1 ))
-Jmin=$(( (RANDOM % 50) + 1 ))
-Jmax=$(( Jmin + (RANDOM % 50) + 1 ))
-S1=$(( (RANDOM % 150) + 1 ))
-S2=$(( (RANDOM % 150) + 1 ))
+Jc=$(( (rand_u32 % 10) + 1 ))
+Jmin=$(( (rand_u32 % 50) + 1 ))
+Jmax=$(( Jmin + (rand_u32 % 50) + 1 ))
+S1=$(( (rand_u32 % 150) + 1 ))
+S2=$(( (rand_u32 % 150) + 1 ))
 H1="$(rand_u32)"
 H2="$(rand_u32)"
 H3="$(rand_u32)"

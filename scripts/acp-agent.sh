@@ -338,7 +338,6 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-      - SYS_MODULE
     devices:
       - /dev/net/tun:/dev/net/tun
     sysctls:
