@@ -173,49 +173,48 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       const toAdd = services.filter((s) => !currentServices.includes(s));
       const toRemove = currentServices.filter((s) => !services.includes(s));
 
-      // Remove services that were unchecked
-      for (const serviceType of toRemove) {
-        // Delete from VPN service first
+      // Remove services that were unchecked — parallel VPN calls
+      const removeOps = toRemove.map(async (serviceType) => {
         let vpnResult: VpnServiceResult;
         if (serviceType === 'AWG') {
           vpnResult = await deleteAwgUser(existing.username);
         } else if (serviceType === 'THREE_XUI') {
           vpnResult = await deleteThreeXuiUser(existing.username);
         } else {
-          continue;
+          return null;
         }
-
-        vpnResults.push({
-          serviceType,
-          action: 'remove',
-          success: vpnResult.success,
-          message: vpnResult.message,
-        });
 
         // Deactivate protocol in DB
         await prisma.userProtocol.updateMany({
           where: { userId, serviceType, isActive: true },
           data: { isActive: false },
         });
+
+        return {
+          serviceType,
+          action: 'remove' as const,
+          success: vpnResult.success,
+          message: vpnResult.message,
+        };
+      });
+
+      const removeSettled = await Promise.allSettled(removeOps);
+      for (const outcome of removeSettled) {
+        if (outcome.status === 'fulfilled' && outcome.value) {
+          vpnResults.push(outcome.value);
+        }
       }
 
-      // Add new services
-      for (const serviceType of toAdd) {
+      // Add new services — parallel VPN calls, sequential DB writes
+      const addOps = toAdd.map(async (serviceType) => {
         let vpnResult: VpnServiceResult & { config?: Record<string, unknown> };
         if (serviceType === 'AWG') {
           vpnResult = await createAwgUser(existing.username);
         } else if (serviceType === 'THREE_XUI') {
           vpnResult = await createThreeXuiUser(existing.username);
         } else {
-          continue;
+          return null;
         }
-
-        vpnResults.push({
-          serviceType,
-          action: 'add',
-          success: vpnResult.success,
-          message: vpnResult.message,
-        });
 
         // Create or reactivate protocol in DB
         const existingProtocol = await prisma.userProtocol.findFirst({
@@ -240,6 +239,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
               config: vpnResult.config ? (vpnResult.config as never) : {},
             },
           });
+        }
+
+        return {
+          serviceType,
+          action: 'add' as const,
+          success: vpnResult.success,
+          message: vpnResult.message,
+        };
+      });
+
+      const addSettled = await Promise.allSettled(addOps);
+      for (const outcome of addSettled) {
+        if (outcome.status === 'fulfilled' && outcome.value) {
+          vpnResults.push(outcome.value);
         }
       }
     }
@@ -321,32 +334,43 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Delete from VPN services (best-effort — log failures but do not block)
+    // Delete from VPN services in parallel (best-effort — log failures but do not block)
     const vpnResults: Array<{
       serviceType: string;
       success: boolean;
       message: string;
     }> = [];
 
-    for (const protocol of user.protocols) {
-      let result: VpnServiceResult;
-
+    const deleteOps = user.protocols.map(async (protocol) => {
       if (protocol.serviceType === 'AWG') {
-        result = await deleteAwgUser(user.username);
-      } else if (protocol.serviceType === 'THREE_XUI') {
-        result = await deleteThreeXuiUser(user.username);
-      } else {
-        continue;
+        return {
+          type: protocol.serviceType,
+          result: await deleteAwgUser(user.username),
+        };
       }
+      if (protocol.serviceType === 'THREE_XUI') {
+        return {
+          type: protocol.serviceType,
+          result: await deleteThreeXuiUser(user.username),
+        };
+      }
+      return null;
+    });
+
+    const settled = await Promise.allSettled(deleteOps);
+
+    for (const outcome of settled) {
+      if (outcome.status === 'rejected' || !outcome.value) continue;
+      const { type, result } = outcome.value;
 
       if (!result.success) {
         console.warn(
-          `[api/users/[id] DELETE] VPN service deletion failed for ${user.username}/${protocol.serviceType}: ${result.message}`,
+          `[api/users/[id] DELETE] VPN service deletion failed for ${user.username}/${type}: ${result.message}`,
         );
       }
 
       vpnResults.push({
-        serviceType: protocol.serviceType,
+        serviceType: type,
         success: result.success,
         message: result.message,
       });
