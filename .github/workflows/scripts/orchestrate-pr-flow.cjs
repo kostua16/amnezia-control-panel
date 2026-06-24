@@ -186,6 +186,26 @@ function hasAll(labels, names) {
   return (names ?? []).every((name) => labels.includes(name));
 }
 
+function hasStandaloneCommand(body, command) {
+  return String(body ?? '')
+    .split(/\r?\n/)
+    .some((line) => line.trim() === command);
+}
+
+function isBotAccount(user = {}) {
+  const login = String(user.login ?? '');
+  const type = String(user.type ?? '');
+
+  return type === 'Bot' || /\[bot\]$/.test(login);
+}
+
+function isMaintainerComment(comment = {}, maintainerAssociations = []) {
+  return (
+    maintainerAssociations.includes(comment.author_association) &&
+    !isBotAccount(comment.user)
+  );
+}
+
 function splitBlockingLabels(labels) {
   const manualReview = [];
   const hard = [];
@@ -335,7 +355,7 @@ function evaluatePolicy(pr, policyFile) {
   try {
     return JSON.parse(
       run('node', [
-        '.github/workflows/scripts/evaluate-pr-policy.cjs',
+        path.join(__dirname, 'evaluate-pr-policy.cjs'),
         '--policy-file',
         policyFile,
         '--pr-file',
@@ -1251,7 +1271,13 @@ function makeDecision(context) {
     return summarizeWorkerRuns(workerRuns, workerName, pr);
   }
 
-  function finish(state, reason, dispatch = null, extraLabels = []) {
+  function finish(
+    state,
+    reason,
+    dispatch = null,
+    extraLabels = [],
+    extraRemoveLabels = [],
+  ) {
     const desiredLabels = unique([state, ...extraLabels]);
     const labelsToAdd = desiredLabels.filter(
       (label) => !currentLabels.includes(label),
@@ -1259,6 +1285,7 @@ function makeDecision(context) {
     const labelsToRemove = unique([
       ...presentFlowLabels.filter((label) => !desiredLabels.includes(label)),
       ...presentResetLabels,
+      ...extraRemoveLabels.filter((label) => currentLabels.includes(label)),
     ]);
 
     return {
@@ -1301,6 +1328,19 @@ function makeDecision(context) {
   const maintainerApproved = Boolean(policy.maintainer_approved);
   const { hard: hardBlockingLabels, manualReview: manualReviewLabels } =
     splitBlockingLabels(policyBlockingLabels);
+  const reviewSignalLabels = unique([
+    ...(codeReviewWorker.passLabels ?? []),
+    ...(codeReviewWorker.blockLabels ?? []),
+  ]);
+  const nonReviewHardBlockingLabels = hardBlockingLabels.filter(
+    (label) => !reviewSignalLabels.includes(label),
+  );
+  const manualCodeReviewRequested =
+    eventName === 'issue_comment' &&
+    Boolean(event?.issue?.pull_request) &&
+    isMaintainerComment(event?.comment, policy.maintainerAssociations ?? []) &&
+    hasStandaloneCommand(event?.comment?.body, '/review') &&
+    !policy.dependabot;
   const manualOnly = policy.manual_only || manualReviewLabels.length > 0;
   const manualOnlyReason =
     policy.blocked_reason ||
@@ -1308,10 +1348,35 @@ function makeDecision(context) {
       ? `Manual review is required by label: ${manualReviewLabels.join(', ')}.`
       : 'PR is manual-only by policy.');
 
-  if (hardBlockingLabels.length > 0) {
+  if (nonReviewHardBlockingLabels.length > 0) {
     return finish(
       'flow/review-blocked',
-      `Blocking labels are present: ${hardBlockingLabels.join(', ')}.`,
+      `Blocking labels are present: ${nonReviewHardBlockingLabels.join(', ')}.`,
+    );
+  }
+
+  if (manualCodeReviewRequested) {
+    const codeReviewRuns = getWorkerSummary('codeReview');
+    if (codeReviewRuns.active) {
+      return finish(
+        'flow/review-pending',
+        'Code review is already running.',
+        null,
+        [],
+        reviewSignalLabels,
+      );
+    }
+
+    return finish(
+      'flow/review-pending',
+      'Manual code review requested.',
+      {
+        key: 'codeReview',
+        workflow: codeReviewWorker.workflow,
+        inputs: codeReviewWorker.inputs,
+      },
+      [],
+      reviewSignalLabels,
     );
   }
 
@@ -1822,6 +1887,7 @@ module.exports = {
   getWorkerDispatchRef,
   getLabelsForDecision,
   getRequiredCheckStatus,
+  evaluatePolicy,
   makeDecision,
   readConfig,
   renderFlowComment,

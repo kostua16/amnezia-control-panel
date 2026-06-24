@@ -594,6 +594,7 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
     is_draft: isDraft,
     head_ref_name: headRefName,
     base_ref_name: baseRefName,
+    maintainerAssociations: policy.maintainerAssociations ?? [],
     maintainer_approved: maintainerApproved,
     required_pass_labels: requiredPassLabels,
     labels,

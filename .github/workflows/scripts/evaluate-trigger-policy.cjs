@@ -220,13 +220,16 @@ if (mode === 'fix-issue') {
   process.exit(0);
 }
 
-if (mode === 'pr-flow-approve') {
+if (mode === 'pr-flow-control') {
   const isPrComment = Boolean(event.issue?.pull_request);
   const wantsApproval = hasStandaloneCommand(commentBody, '/approve');
+  const wantsReview = hasStandaloneCommand(commentBody, '/review');
+  const commenterIsBot = isBotAccount(event.comment?.user);
   const commentTriggered =
     eventName === 'issue_comment' &&
     isPrComment &&
-    wantsApproval &&
+    (wantsApproval || wantsReview) &&
+    !commenterIsBot &&
     isMaintainer;
   const prNumber = event.issue?.number ?? null;
 
@@ -236,8 +239,12 @@ if (mode === 'pr-flow-approve') {
         mode,
         should_run: commentTriggered,
         triggered:
-          eventName === 'issue_comment' && isPrComment && wantsApproval,
-        trusted: isMaintainer,
+          eventName === 'issue_comment' &&
+          isPrComment &&
+          (wantsApproval || wantsReview),
+        trusted: isMaintainer && !commenterIsBot,
+        approve_requested: commentTriggered && wantsApproval,
+        review_requested: commentTriggered && wantsReview,
         author_association: association,
         pr_number: commentTriggered ? prNumber : null,
       },

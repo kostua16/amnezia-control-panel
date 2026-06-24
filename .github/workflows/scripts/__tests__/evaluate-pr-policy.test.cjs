@@ -40,6 +40,15 @@ test('blocks committed graphify generated state', () => {
   ]);
 });
 
+test('carries maintainer associations into the evaluated policy output', () => {
+  const result = evaluatePrPolicy(makePr(), policy, []);
+
+  assert.deepEqual(
+    result.maintainerAssociations,
+    policy.maintainerAssociations,
+  );
+});
+
 test('keeps normal source changes out of generated-state policy', () => {
   const result = evaluatePrPolicy(makePr(), policy, [
     {

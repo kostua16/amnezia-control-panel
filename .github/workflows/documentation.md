@@ -64,10 +64,10 @@ pull_request_target lifecycle events
   -> treats draft-to-ready as orchestration only; CI reruns require a new commit
 
 code-review.yml
-  -> dispatch-only worker controlled by pr-flow.yml
-  -> /review issue comments remain a manual override
-  -> issue-only comments are named Issue #... and skipped before setup
-  -> produces ai-review-passed / ai-review-concerns
+-> dispatch-only worker controlled by pr-flow.yml
+-> /review issue comments wake pr-flow.yml; once required checks are green,
+   pr-flow dispatches this worker with the current PR head SHA
+-> produces ai-review-passed / ai-review-concerns
   -> produces security-review-passed / security-review-concerns
   -> pr-flow.yml consumes those signals
 
@@ -148,7 +148,10 @@ The sticky PR Flow comment also renders state-specific next steps and relevant
 operator controls. It is rebuilt on each orchestrator run, including worker
 wakeups, so labels such as `skip-improve`, `needs-review`, `do-not-merge`, and
 `maintainer-approved`, plus PR comments such as `/approve` and `/review`, are
-reflected in the guidance as the PR moves through the flow.
+reflected in the guidance as the PR moves through the flow. Manual `/review`
+comments are PR Flow control inputs: PR Flow resolves the current PR head,
+clears stale review signal labels, and dispatches `code-review.yml` through
+`workflow_dispatch`.
 
 Worker completion also explicitly wakes `pr-flow.yml` with `workflow_dispatch`
 when the worker was orchestrator-dispatched. The `workflow_run` trigger remains

@@ -16,8 +16,10 @@ type PullRequestTrigger = {
 
 type Workflow = {
   on?: {
+    issue_comment?: unknown;
     pull_request?: PullRequestTrigger;
     pull_request_target?: PullRequestTrigger;
+    workflow_dispatch?: unknown;
   };
   concurrency?: {
     group?: string;
@@ -95,15 +97,14 @@ describe('workflow trigger policy', () => {
     );
   });
 
-  it('keeps non-review, bot, and non-PR comments from cancelling active code-review runs', () => {
+  it('keeps Code Review dispatch-only so /review identity comes from PR Flow', () => {
     const workflow = readWorkflow('code-review.yml');
     const group = workflow.concurrency?.group ?? '';
+    const triggers = workflow.on ?? {};
 
-    assert.match(group, /github\.event_name == 'issue_comment'/);
-    assert.match(group, /github\.event\.issue\.pull_request != null/);
-    assert.match(group, /github\.event\.comment\.user\.type != 'Bot'/);
-    assert.match(group, /contains\(github\.event\.comment\.body, '\/review'\)/);
-    assert.match(group, /code-review-ignored-\{0\}/);
+    assert.equal(triggers.issue_comment, undefined);
+    assert.ok(triggers.workflow_dispatch);
+    assert.match(group, /github\.event\.inputs\.pr_number/);
     assert.match(group, /code-review-\{0\}/);
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
   });
@@ -214,8 +215,8 @@ describe('workflow trigger policy', () => {
   });
 
   it('prefilters review and orchestrator issue comments before resolver setup', () => {
-    expectGuard('code-review.yml', [
-      /resolve-pr:[\s\S]*?if: >-/,
+    expectGuard('pr-flow.yml', [
+      /classify-trigger:[\s\S]*?if: >-/,
       /github\.event\.issue\.pull_request != null/,
       /contains\(github\.event\.comment\.body, '\/review'\)/,
     ]);
@@ -234,7 +235,8 @@ describe('workflow trigger policy', () => {
       /classify-trigger:[\s\S]*?if: >-/,
       /github\.event\.issue\.pull_request != null/,
       /contains\(github\.event\.comment\.body, '\/approve'\)/,
-      /node \.github\/workflows\/scripts\/evaluate-trigger-policy\.cjs[\s\S]*?--mode pr-flow-approve/,
+      /contains\(github\.event\.comment\.body, '\/review'\)/,
+      /node \.github\/workflows\/scripts\/evaluate-trigger-policy\.cjs[\s\S]*?--mode pr-flow-control/,
     ]);
   });
 

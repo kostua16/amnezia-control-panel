@@ -95,6 +95,33 @@ function renderCancelled({ headSha, runUrl, updatedAt }) {
   ].join('\n');
 }
 
+function renderSkipped({ headSha, runUrl, updatedAt }) {
+  return [
+    COMMENT_MARKER,
+    '## ⚪ Code review was skipped',
+    '',
+    `- Head SHA: \`${shortSha(headSha)}\``,
+    `- Run: ${runUrl || '_n/a_'}`,
+    '',
+    quoteBlock(
+      'The review step did not start because an earlier setup or prerequisite ' +
+        'step failed.',
+    ),
+    '',
+    'Inspect the failed prerequisite step, then re-dispatch with `/review`.',
+    '',
+    '<!-- updated: ' + updatedAt + ' -->',
+  ].join('\n');
+}
+
+function isCancelledOutcome(outcome) {
+  return outcome === 'cancelled';
+}
+
+function isSkippedOutcome(outcome) {
+  return outcome === 'skipped';
+}
+
 function renderComplete({
   structured,
   numTurns,
@@ -211,8 +238,15 @@ function main() {
     // A cancelled review step (job timeout or superseded) is the root cause
     // of an "execution output unreadable" failure, so surface it distinctly
     // rather than as a generic model error.
-    if (getArg('--outcome') === 'cancelled') {
+    const outcome = getArg('--outcome');
+    if (isCancelledOutcome(outcome)) {
       body = renderCancelled({
+        headSha,
+        runUrl,
+        updatedAt: new Date().toISOString(),
+      });
+    } else if (isSkippedOutcome(outcome)) {
+      body = renderSkipped({
         headSha,
         runUrl,
         updatedAt: new Date().toISOString(),
@@ -246,6 +280,9 @@ module.exports = {
   quoteBlock,
   renderStarted,
   renderCancelled,
+  renderSkipped,
+  isCancelledOutcome,
+  isSkippedOutcome,
   renderComplete,
   renderFailureBody,
   findExistingComment,

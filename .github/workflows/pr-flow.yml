@@ -70,7 +70,10 @@ jobs:
         github.event_name != 'issue_comment' ||
         (
           github.event.issue.pull_request != null &&
-          contains(github.event.comment.body, '/approve')
+          (
+            contains(github.event.comment.body, '/approve') ||
+            contains(github.event.comment.body, '/review')
+          )
         )
       )
     runs-on: self-hosted
@@ -121,22 +124,26 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           install-deps: 'false'
 
-      - name: Evaluate /approve trigger
-        id: approve
+      - name: Evaluate PR flow issue-comment trigger
+        id: comment
         if: github.event_name == 'issue_comment'
         shell: bash
         run: |
           node .github/workflows/scripts/evaluate-trigger-policy.cjs \
-            --mode pr-flow-approve \
+            --mode pr-flow-control \
             --policy-file .github/workflows/policy.json \
             --event-path "$GITHUB_EVENT_PATH" \
             --event-name "$GITHUB_EVENT_NAME" \
-            > /tmp/pr-flow-approve-policy.json
-          echo "should_run=$(jq -r '.should_run' /tmp/pr-flow-approve-policy.json)" >> "$GITHUB_OUTPUT"
-          echo "pr_number=$(jq -r '.pr_number // empty' /tmp/pr-flow-approve-policy.json)" >> "$GITHUB_OUTPUT"
+            > /tmp/pr-flow-comment-policy.json
+          {
+            echo "should_run=$(jq -r '.should_run' /tmp/pr-flow-comment-policy.json)"
+            echo "approve_requested=$(jq -r '.approve_requested' /tmp/pr-flow-comment-policy.json)"
+            echo "review_requested=$(jq -r '.review_requested' /tmp/pr-flow-comment-policy.json)"
+            echo "pr_number=$(jq -r '.pr_number // empty' /tmp/pr-flow-comment-policy.json)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Ensure maintainer approval label exists
-        if: github.event_name == 'issue_comment' && steps.approve.outputs.should_run == 'true'
+        if: github.event_name == 'issue_comment' && steps.comment.outputs.approve_requested == 'true'
         uses: ./.github/actions/ensure-workflow-labels
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -144,20 +151,20 @@ jobs:
           names: maintainer-approved
 
       - name: Record maintainer approval
-        if: github.event_name == 'issue_comment' && steps.approve.outputs.should_run == 'true'
+        if: github.event_name == 'issue_comment' && steps.comment.outputs.approve_requested == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.approve.outputs.pr_number }}
+          PR_NUMBER: ${{ steps.comment.outputs.pr_number }}
           APPROVER: ${{ github.actor }}
         run: |
           gh issue edit "$PR_NUMBER" --add-label "maintainer-approved"
           gh issue comment "$PR_NUMBER" --body "Maintainer approval recorded by @$APPROVER. PR flow will continue after required checks and review signals pass."
 
       - name: Orchestrate PR flow
-        if: github.event_name != 'issue_comment' || steps.approve.outputs.should_run == 'true'
+        if: github.event_name != 'issue_comment' || steps.comment.outputs.should_run == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.approve.outputs.pr_number || github.event.inputs.pr_number || '' }}
+          PR_NUMBER: ${{ steps.comment.outputs.pr_number || github.event.inputs.pr_number || '' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           node .github/workflows/scripts/orchestrate-pr-flow.cjs \

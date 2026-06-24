@@ -27,7 +27,7 @@ function runApprovePolicy(event: unknown, eventName = 'issue_comment') {
     [
       scriptPath,
       '--mode',
-      'pr-flow-approve',
+      'pr-flow-control',
       '--policy-file',
       policyPath,
       '--event-path',
@@ -42,6 +42,8 @@ function runApprovePolicy(event: unknown, eventName = 'issue_comment') {
     should_run: boolean;
     triggered: boolean;
     trusted: boolean;
+    approve_requested: boolean;
+    review_requested: boolean;
     pr_number: number | null;
   };
 }
@@ -136,6 +138,19 @@ describe('trigger policy', () => {
     assert.equal(result.should_run, true);
     assert.equal(result.triggered, true);
     assert.equal(result.trusted, true);
+    assert.equal(result.approve_requested, true);
+    assert.equal(result.review_requested, false);
+    assert.equal(result.pr_number, 42);
+  });
+
+  it('allows maintainer PR comments with standalone /review as a PR Flow control', () => {
+    const result = runApprovePolicy(prComment('Please rerun.\n/review\n'));
+
+    assert.equal(result.should_run, true);
+    assert.equal(result.triggered, true);
+    assert.equal(result.trusted, true);
+    assert.equal(result.approve_requested, false);
+    assert.equal(result.review_requested, true);
     assert.equal(result.pr_number, 42);
   });
 
@@ -169,6 +184,10 @@ describe('trigger policy', () => {
     );
     assert.equal(
       runApprovePolicy(prComment('please /approve this')).should_run,
+      false,
+    );
+    assert.equal(
+      runApprovePolicy(prComment('please /review this')).should_run,
       false,
     );
   });
