@@ -6,6 +6,7 @@
 // Uses the shared exec helpers so there is one source for gh-shellout logic.
 const fs = require('node:fs');
 const { run, runJson } = require('./lib/sticky-comment.cjs');
+const { KILO_MARKER, isKiloUser } = require('./lib/kilo.cjs');
 
 const STICKY_MARKERS = [
   '<!-- code-review-summary -->',
@@ -16,7 +17,6 @@ const STICKY_MARKERS = [
 ];
 const SLASH_COMMAND = /^\s*\/[\w-]+/;
 const MAX_DIFF_CHARS = 30000;
-const KILO_MARKER = '<!-- kilo-review -->';
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -40,10 +40,8 @@ function isBot(user = {}) {
 }
 
 function isTrustedKiloSummary(comment) {
-  const login = String(comment.user?.login ?? '');
   return (
-    (login === 'kilo-code-bot[bot]' || login === 'kilo-code-bot') &&
-    String(comment.body ?? '').includes(KILO_MARKER)
+    isKiloUser(comment.user) && String(comment.body ?? '').includes(KILO_MARKER)
   );
 }
 

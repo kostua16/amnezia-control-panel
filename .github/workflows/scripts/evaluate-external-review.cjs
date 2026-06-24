@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('node:fs');
+const { KILO_MARKER, isKiloUser } = require('./lib/kilo.cjs');
 
 const DEFAULT_CONTEXT = 'pr-flow/kilo-review';
 const DEFAULT_WAIT_MINUTES = 30;
-const KILO_MARKER = '<!-- kilo-review -->';
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -18,11 +18,6 @@ function readJson(filePath, fallback) {
 function asDate(value) {
   const date = value ? new Date(value) : null;
   return date && !Number.isNaN(date.getTime()) ? date : null;
-}
-
-function isKiloUser(user = {}) {
-  const login = String(user.login ?? user.author?.login ?? '');
-  return login === 'kilo-code-bot' || login === 'kilo-code-bot[bot]';
 }
 
 function itemTime(item = {}) {

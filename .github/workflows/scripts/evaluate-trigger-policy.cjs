@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('fs');
+const { KILO_MARKER, isKiloUser } = require('./lib/kilo.cjs');
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -225,12 +226,10 @@ if (mode === 'pr-flow-control') {
   const wantsApproval = hasStandaloneCommand(commentBody, '/approve');
   const wantsReview = hasStandaloneCommand(commentBody, '/review');
   const commenterIsBot = isBotAccount(event.comment?.user);
-  const commenterLogin = String(event.comment?.user?.login ?? '');
   const kiloReviewPosted =
     isPrComment &&
-    (commenterLogin === 'kilo-code-bot[bot]' ||
-      commenterLogin === 'kilo-code-bot') &&
-    commentBody.includes('<!-- kilo-review -->');
+    isKiloUser(event.comment?.user) &&
+    commentBody.includes(KILO_MARKER);
   const commentTriggered =
     eventName === 'issue_comment' &&
     isPrComment &&
