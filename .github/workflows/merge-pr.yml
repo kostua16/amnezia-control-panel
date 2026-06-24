@@ -1,0 +1,167 @@
+name: Stale PR Consolidation
+
+# Daily stale-PR consolidation REPORT workflow. This PR ships the report /
+# dry-run path only: collect open PRs -> deterministic select/group -> publish a
+# central consolidation report. The consolidation WRITE path (run-zai build
+# branch -> validate -> push -> open replacement -> close sources) is
+# intentionally DEFERRED to a follow-up (Rollout 5-7) and is NOT present here.
+# Doing it safely requires (see deferred-write-path note at the bottom):
+#   (a) a least-privilege agent job with no push-capable credential and a
+#       stripped remote (the agent cannot escape its tool allowlist via
+#       Bash(node/npm) + Write to spawn `git push` / hit the API), and
+#   (b) a deferred close that re-runs merge-pr-close-guard.cjs once the
+#       replacement reaches pr-flow/ready (a synchronous close cannot observe a
+#       green replacement), and (c) replacement-PR dedup on re-dispatch.
+# The deterministic core (merge-pr-logic.cjs, collect-stale-pr-feedback.cjs,
+# merge-pr-close-guard.cjs) ships + is unit-tested now for reuse there.
+# See .planning/ideas/merge-pr-plan.md and docs/workflow-e2e-scenarios.md (S7).
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview without creating, pushing, commenting, or closing
+        required: false
+        default: true
+        type: boolean
+      max_groups:
+        description: Maximum groups to process
+        required: false
+        default: '1'
+        type: string
+      group_filter:
+        description: Optional group id to process
+        required: false
+        default: ''
+        type: string
+      min_age_hours:
+        description: Minimum PR age in hours
+        required: false
+        default: '23'
+        type: string
+
+concurrency:
+  # Never cancel an active consolidation run: a cancelled run can leave a branch,
+  # comment, or report half-written.
+  group: merge-pr-${{ github.event.inputs.group_filter || 'daily' }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24.x'
+  # Scheduled runs (added in a later rollout step) resolve to this. Keep true so
+  # a future schedule cannot mutate until an operator explicitly flips it.
+  MERGE_PR_SCHEDULE_DRY_RUN: 'true'
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  consolidate:
+    runs-on: [self-hosted, big]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'true'
+          generate-prisma: 'true'
+
+      - name: Resolve effective dry-run
+        id: dryrun
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          SCHEDULE_DRY_RUN: ${{ env.MERGE_PR_SCHEDULE_DRY_RUN }}
+        run: |
+          # workflow_dispatch input defaults do not exist on schedule events, so
+          # resolve the effective dry-run explicitly and preserve an explicit false.
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            effective="${SCHEDULE_DRY_RUN:-true}"
+          else
+            effective="${INPUT_DRY_RUN:-true}"
+          fi
+          echo "effective=$effective" >> "$GITHUB_OUTPUT"
+          echo "EFFECTIVE_DRY_RUN=$effective" >> "$GITHUB_ENV"
+
+      - name: Collect open PRs
+        id: collect
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --json number,title,state,isDraft,isCrossRepository,headRefName,baseRefName,labels,createdAt,updatedAt,mergeable,files,headRefOid,url \
+            --limit 100 > prs.json
+          echo "pr_count=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("prs.json","utf8")).length)')" >> "$GITHUB_OUTPUT"
+
+      - name: Select and group stale PRs
+        id: select
+        shell: bash
+        env:
+          # Pass dispatch inputs via env, not ${{ inputs.* }} interpolation in the
+          # run block, so a crafted group_filter cannot break out of the script.
+          MIN_AGE_HOURS: ${{ inputs.min_age_hours || '23' }}
+          MAX_GROUPS: ${{ inputs.max_groups || '1' }}
+          GROUP_FILTER: ${{ inputs.group_filter || '' }}
+        run: |
+          node .github/workflows/scripts/run-merge-pr-selection.cjs \
+            --in prs.json \
+            --out-dir . \
+            --min-age-hours "$MIN_AGE_HOURS" \
+            --max-groups "$MAX_GROUPS" \
+            --group-filter "$GROUP_FILTER"
+
+      - name: Render consolidation report
+        id: report
+        if: always()
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          let groups = {};
+          try { groups = require('./merge-pr-groups.json'); } catch {}
+          const report = {
+            selectedGroups: groups.selected || [],
+            skippedGroups: groups.skipped || [],
+            validation: { dryRun: process.env.EFFECTIVE_DRY_RUN !== 'false' },
+          };
+          fs.writeFileSync('merge-pr-report.json', JSON.stringify(report));
+          NODE
+          echo "report_path=$(pwd)/merge-pr-report.json" >> "$GITHUB_OUTPUT"
+
+      - name: Publish report (central issue + summary)
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/upsert-merge-pr-report.cjs \
+            --report-json "${{ steps.report.outputs.report_path }}" \
+            --summary true
+
+      # ------------------------------------------------------------------
+      # Consolidation WRITE path -- intentionally NOT implemented in this PR.
+      # Only the report path above is active. The write path is deferred to
+      # Rollout 5-7; when it lands it MUST provide:
+      #   1. Least-privilege agent job: no push-capable token in the agent env
+      #      or remote.origin.url (actions/checkout persist-credentials: false
+      #      + strip the remote) so the agent cannot escape its tool allowlist
+      #      via Bash(node/npm) + Write to spawn `git push` / hit the API.
+      #   2. Deferred close: a workflow_run listener re-runs
+      #      merge-pr-close-guard.cjs once the replacement reaches
+      #      pr-flow/ready -- a synchronous close cannot observe a green
+      #      replacement (pr-flow labels arrive in separate async runs). The
+      #      source head-sha compare must fail CLOSED: a missing capture blocks
+      #      closure rather than treating the source as unchanged.
+      #   3. Replacement dedup: re-dispatch re-evaluates an existing open
+      #      replacement (by branch/marker), not opens a new one.
+      # The deterministic core is shipped + unit-tested now for reuse there.
