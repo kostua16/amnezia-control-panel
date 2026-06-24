@@ -1,10 +1,8 @@
 name: Code Review
 
-run-name: "${{ github.event_name == 'issue_comment' && github.event.issue.pull_request == null && format('Issue #{0} @ {1}', github.event.issue.number, github.sha) || format('PR #{0} @ {1}', github.event.inputs.pr_number || github.event.issue.number || 'manual', github.event.inputs.head_sha || github.sha) }}"
+run-name: "${{ format('PR #{0} @ {1}', github.event.inputs.pr_number || 'manual', github.event.inputs.head_sha || github.sha) }}"
 
 on:
-  issue_comment:
-    types: [created]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -32,7 +30,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: ${{ ((github.event_name == 'issue_comment' && !(github.event.issue.pull_request != null && github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, '/review'))) && format('code-review-ignored-{0}', github.run_id)) || format('code-review-{0}', github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha) }}
+  group: ${{ format('code-review-{0}', github.event.inputs.pr_number || github.sha) }}
   cancel-in-progress: true
 
 env:
@@ -41,13 +39,6 @@ env:
 
 jobs:
   resolve-pr:
-    if: >-
-      github.event_name != 'issue_comment' ||
-      (
-        github.event.issue.pull_request != null &&
-        contains(github.event.comment.body, '/review') &&
-        github.event.comment.user.type != 'Bot'
-      )
     runs-on: self-hosted
     timeout-minutes: 10
     outputs:
@@ -73,23 +64,7 @@ jobs:
             const eventName = context.eventName;
             let pr = null;
 
-            if (eventName === 'issue_comment') {
-              const isPrComment = Boolean(context.payload.issue?.pull_request);
-              const wantsReview = context.payload.comment?.body?.includes('/review');
-              // Bot-authored /review comments must route through the orchestrator;
-              // the run-zai action blocks non-human actors on the direct path.
-              const commenterIsBot = context.payload.comment?.user?.type === 'Bot';
-              if (!isPrComment || !wantsReview || commenterIsBot) {
-                core.setOutput('should_run', 'false');
-                return;
-              }
-              const response = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.payload.issue.number
-              });
-              pr = response.data;
-            } else if (eventName === 'workflow_dispatch') {
+            if (eventName === 'workflow_dispatch') {
               const response = await github.rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,

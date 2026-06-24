@@ -44,17 +44,78 @@ test('R1 char: maintainer @mention → triggered + trusted', () => {
   const out = runMode({
     mode: 'claude',
     eventName: 'issue_comment',
-    event: { comment: { body: '@claude please fix', author_association: 'OWNER' } },
+    event: {
+      comment: { body: '@claude please fix', author_association: 'OWNER' },
+    },
   });
   assert.equal(out.triggered, true);
   assert.equal(out.trusted, true);
+});
+
+test('R1 char: maintainer /review → PR Flow control wake', () => {
+  const out = runMode({
+    mode: 'pr-flow-control',
+    eventName: 'issue_comment',
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/review',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+
+  assert.equal(out.should_run, true);
+  assert.equal(out.review_requested, true);
+  assert.equal(out.approve_requested, false);
+  assert.equal(out.pr_number, 42);
+});
+
+test('R4 char: bot /review → ignored by PR Flow control', () => {
+  const out = runMode({
+    mode: 'pr-flow-control',
+    eventName: 'issue_comment',
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/review',
+        author_association: 'OWNER',
+        user: { login: 'github-actions[bot]', type: 'Bot' },
+      },
+    },
+  });
+
+  assert.equal(out.should_run, false);
+  assert.equal(out.triggered, true);
+  assert.equal(out.trusted, false);
+});
+
+test('R7b spec: manual /review control remains exact standalone command', () => {
+  const out = runMode({
+    mode: 'pr-flow-control',
+    eventName: 'issue_comment',
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: 'please /review this',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+
+  assert.equal(out.should_run, false);
+  assert.equal(out.triggered, false);
 });
 
 test('R3 char: non-maintainer @mention → triggered but NOT trusted', () => {
   const out = runMode({
     mode: 'claude',
     eventName: 'issue_comment',
-    event: { comment: { body: '@claude please fix', author_association: 'NONE' } },
+    event: {
+      comment: { body: '@claude please fix', author_association: 'NONE' },
+    },
   });
   assert.equal(out.triggered, true);
   assert.equal(out.trusted, false);

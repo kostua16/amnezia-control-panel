@@ -95,6 +95,10 @@ function renderCancelled({ headSha, runUrl, updatedAt }) {
   ].join('\n');
 }
 
+function isCancelledOutcome(outcome) {
+  return ['cancelled', 'skipped'].includes(outcome);
+}
+
 function renderComplete({
   structured,
   numTurns,
@@ -211,7 +215,7 @@ function main() {
     // A cancelled review step (job timeout or superseded) is the root cause
     // of an "execution output unreadable" failure, so surface it distinctly
     // rather than as a generic model error.
-    if (getArg('--outcome') === 'cancelled') {
+    if (isCancelledOutcome(getArg('--outcome'))) {
       body = renderCancelled({
         headSha,
         runUrl,
@@ -246,6 +250,7 @@ module.exports = {
   quoteBlock,
   renderStarted,
   renderCancelled,
+  isCancelledOutcome,
   renderComplete,
   renderFailureBody,
   findExistingComment,

@@ -8,6 +8,7 @@ const {
   parseStructuredOutput,
   verdictIcon,
   quoteBlock,
+  isCancelledOutcome,
   renderStarted,
   renderCancelled,
   renderComplete,
@@ -226,4 +227,11 @@ test('renderCancelled renders the cancellation body with a clear reason', () => 
   // It must not claim success or a generic model failure.
   assert.doesNotMatch(body, /Code review complete/);
   assert.doesNotMatch(body, /failed to complete/);
+});
+
+test('isCancelledOutcome treats skipped review action as cancellation', () => {
+  assert.equal(isCancelledOutcome('cancelled'), true);
+  assert.equal(isCancelledOutcome('skipped'), true);
+  assert.equal(isCancelledOutcome('success'), false);
+  assert.equal(isCancelledOutcome('failure'), false);
 });

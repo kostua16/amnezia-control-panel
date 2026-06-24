@@ -13,6 +13,28 @@ const scriptPath = path.join(
 );
 const policyPath = path.join(repoRoot, '.github/workflows/policy.json');
 
+function runPrFlowControl({ event, eventName = 'issue_comment' }) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-flow-control-'));
+  const eventPath = path.join(tempDir, 'event.json');
+  fs.writeFileSync(eventPath, JSON.stringify(event), 'utf8');
+  const output = execFileSync(
+    process.execPath,
+    [
+      scriptPath,
+      '--mode',
+      'pr-flow-control',
+      '--policy-file',
+      policyPath,
+      '--event-path',
+      eventPath,
+      '--event-name',
+      eventName,
+    ],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  return JSON.parse(output);
+}
+
 function runFixPrPolicy({ event, sourcePr }) {
   const tempDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'evaluate-trigger-policy-'),
@@ -68,6 +90,68 @@ test('fix-pr skips bot-authored source PRs before invoking auto-fix', () => {
   assert.equal(result.source_pr_author_login, 'dependabot[bot]');
   assert.equal(result.source_pr_author_type, 'Bot');
   assert.match(result.reason, /skips bot-authored PRs/);
+});
+
+test('pr-flow-control: maintainer /review wakes PR Flow without approval', () => {
+  const out = runPrFlowControl({
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/review',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+
+  assert.equal(out.should_run, true);
+  assert.equal(out.review_requested, true);
+  assert.equal(out.approve_requested, false);
+  assert.equal(out.pr_number, 42);
+});
+
+test('pr-flow-control: maintainer /approve keeps approval behavior', () => {
+  const out = runPrFlowControl({
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/approve',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+
+  assert.equal(out.should_run, true);
+  assert.equal(out.approve_requested, true);
+  assert.equal(out.review_requested, false);
+  assert.equal(out.pr_number, 42);
+});
+
+test('pr-flow-control: bot and non-maintainer /review comments are ignored', () => {
+  const bot = runPrFlowControl({
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/review',
+        author_association: 'OWNER',
+        user: { login: 'github-actions[bot]', type: 'Bot' },
+      },
+    },
+  });
+  const nonMaintainer = runPrFlowControl({
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/review',
+        author_association: 'NONE',
+        user: { login: 'octo', type: 'User' },
+      },
+    },
+  });
+
+  assert.equal(bot.should_run, false);
+  assert.equal(nonMaintainer.should_run, false);
 });
 
 test('fix-pr skips source PRs from automation branch prefixes first', () => {
@@ -225,4 +309,3 @@ test('review-approved: non-approval review (comment) is ignored', () => {
   });
   assert.equal(out.should_run, false);
 });
-

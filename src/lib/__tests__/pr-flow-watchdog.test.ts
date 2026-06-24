@@ -311,11 +311,15 @@ describe('PR flow workflow invariants', () => {
     ]);
   });
 
-  it('keeps maintainer approval PR comments wired through PR flow', () => {
+  it('keeps maintainer control PR comments wired through PR flow', () => {
     const workflow = readWorkflow('.github/workflows/pr-flow.yml');
 
     assert.match(workflow, /issue_comment:\s*\n\s+types: \[created\]/);
-    assert.match(workflow, /--mode pr-flow-approve/);
+    assert.match(workflow, /--mode pr-flow-control/);
+    assert.match(
+      workflow,
+      /contains\(github\.event\.comment\.body, '\/review'\)/,
+    );
     assert.match(workflow, /names: maintainer-approved/);
     assert.match(
       workflow,
@@ -323,7 +327,7 @@ describe('PR flow workflow invariants', () => {
     );
     assert.match(
       workflow,
-      /github\.event_name != 'issue_comment' \|\| steps\.approve\.outputs\.should_run == 'true'/,
+      /github\.event_name != 'issue_comment' \|\| steps\.comment\.outputs\.should_run == 'true'/,
     );
   });
 
@@ -353,7 +357,7 @@ describe('PR flow workflow invariants', () => {
     );
     assert.match(
       workflow,
-      /github\.event_name != 'issue_comment' \|\|\s*\n\s+\(\s*\n\s+github\.event\.issue\.pull_request != null &&\s*\n\s+contains\(github\.event\.comment\.body, '\/approve'\)/,
+      /github\.event_name != 'issue_comment' \|\|\s*\n\s+\(\s*\n\s+github\.event\.issue\.pull_request != null &&\s*\n\s+\(\s*\n\s+contains\(github\.event\.comment\.body, '\/approve'\) \|\|\s*\n\s+contains\(github\.event\.comment\.body, '\/review'\)/,
     );
     assert.match(
       workflow,

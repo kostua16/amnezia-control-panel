@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 const {
   buildFlowGuidance,
   getWorkerDispatchRef,
+  makeDecision: makePrFlowDecision,
   renderFlowComment,
+  summarizeWorkerRuns,
 } = require('../orchestrate-pr-flow.cjs');
 
 const basePr = {
@@ -58,6 +60,33 @@ const baseVisibility = {
       displayState: 'pending',
       description: 'Waiting for prior orchestration gates.',
       targetUrl: 'https://example.test/finalizer',
+    },
+  },
+};
+
+const testConfig = {
+  labels: {
+    'flow/review-pending': {},
+    'flow/review-blocked': {},
+    'flow/review-failed': {},
+    'flow/finalizer-dispatched': {},
+  },
+  resetOnHeadChange: {
+    labels: [
+      'ai-review-passed',
+      'ai-review-concerns',
+      'security-review-passed',
+      'security-review-concerns',
+    ],
+  },
+  workers: {
+    codeReview: {
+      workflow: 'code-review.yml',
+      passLabels: ['ai-review-passed', 'security-review-passed'],
+      blockLabels: ['ai-review-concerns', 'security-review-concerns'],
+    },
+    finalizer: {
+      workflow: 'pr-finalizer.yml',
     },
   },
 };
@@ -229,4 +258,85 @@ test('buildFlowGuidance limits next steps to three actions', () => {
   });
 
   assert.ok(guidance.nextSteps.length <= 3);
+});
+
+test('manual /review dispatches Code Review through PR Flow and resets stale review labels', () => {
+  const decision = makePrFlowDecision({
+    pr: {
+      ...basePr,
+      labels: ['ai-review-passed', 'security-review-passed'],
+      files: ['src/example.ts'],
+    },
+    policy: { blocking_labels_present: [] },
+    workerRuns: { codeReview: [] },
+    eventName: 'issue_comment',
+    event: {
+      issue: { pull_request: { url: 'https://example/pr/42' } },
+      comment: { body: '/review' },
+    },
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.equal(decision.state, 'flow/review-pending');
+  assert.equal(decision.reason, 'Manual code review requested.');
+  assert.equal(decision.dispatch?.key, 'codeReview');
+  assert.equal(decision.dispatch?.workflow, 'code-review.yml');
+  assert.deepEqual(decision.labelsToRemove.sort(), [
+    'ai-review-passed',
+    'security-review-passed',
+  ]);
+});
+
+test('manual /review does not treat old-head failed review runs as current', () => {
+  const decision = makePrFlowDecision({
+    pr: { ...basePr, labels: [], files: ['src/example.ts'] },
+    policy: { blocking_labels_present: [] },
+    workerRuns: {
+      codeReview: [
+        {
+          displayTitle: 'PR #42 @ old-head',
+          status: 'completed',
+          conclusion: 'failure',
+          createdAt: '2026-06-23T12:00:00Z',
+        },
+      ],
+    },
+    eventName: 'issue_comment',
+    event: {
+      issue: { pull_request: { url: 'https://example/pr/42' } },
+      comment: { body: '/review' },
+    },
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.equal(decision.state, 'flow/review-pending');
+  assert.equal(decision.reason, 'Manual code review requested.');
+  assert.equal(decision.dispatch?.key, 'codeReview');
+});
+
+test('worker run matching requires both PR number and current head SHA', () => {
+  const summary = summarizeWorkerRuns(
+    {
+      codeReview: [
+        {
+          displayTitle: 'PR #42 @ old-head',
+          status: 'completed',
+          conclusion: 'failure',
+          createdAt: '2026-06-23T12:00:00Z',
+        },
+        {
+          displayTitle: 'PR #42 @ abc123',
+          status: 'in_progress',
+          createdAt: '2026-06-23T12:01:00Z',
+        },
+      ],
+    },
+    'codeReview',
+    basePr,
+  );
+
+  assert.equal(summary.active?.displayTitle, 'PR #42 @ abc123');
+  assert.equal(summary.latest?.displayTitle, 'PR #42 @ abc123');
 });
