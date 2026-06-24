@@ -423,9 +423,11 @@ test('collectCheckEvidence chains to broader fallback when workflow_run jobs are
     },
   };
   let broaderFallbackCalled = false;
+  let triggeringRunViewCalls = 0;
   const runJson = (cmd, args) => {
     if (args[0] === 'pr') return runJsonOk([]); // empty pr checks
     if (args[0] === 'run' && args[1] === 'view' && args[2] === '200') {
+      triggeringRunViewCalls += 1;
       return runJsonOk(ciJobs(['success', 'success', 'success', 'success']));
     }
     if (args[0] === 'run' && args[1] === 'list') {
@@ -444,6 +446,7 @@ test('collectCheckEvidence chains to broader fallback when workflow_run jobs are
   const result = collectWith({ eventName: 'workflow_run', event, runJson });
   assert.equal(result.checkStatus.status, 'passed');
   assert.ok(broaderFallbackCalled, 'should have tried broader fallback');
+  assert.equal(triggeringRunViewCalls, 1);
 });
 
 test('collectCheckEvidence returns unavailable when both workflow_run and broader fallback fail', () => {
@@ -470,6 +473,8 @@ test('collectCheckEvidence returns unavailable when both workflow_run and broade
   const result = collectWith({ eventName: 'workflow_run', event, runJson });
   assert.equal(result.checkStatus.status, 'unavailable');
   assert.match(result.checkStatus.reason, /missing required checks/);
+  assert.match(result.reason, /Broader workflow-run search also failed/);
+  assert.equal(result.reason, result.checkStatus.reason);
 });
 
 // ─── getUnavailableCheckStatus ───────────────────────────────────────
