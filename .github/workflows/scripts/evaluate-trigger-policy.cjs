@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('fs');
+const { KILO_MARKER, isKiloUser } = require('./lib/kilo.cjs');
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -225,28 +226,34 @@ if (mode === 'pr-flow-control') {
   const wantsApproval = hasStandaloneCommand(commentBody, '/approve');
   const wantsReview = hasStandaloneCommand(commentBody, '/review');
   const commenterIsBot = isBotAccount(event.comment?.user);
+  const kiloReviewPosted =
+    isPrComment &&
+    isKiloUser(event.comment?.user) &&
+    commentBody.includes(KILO_MARKER);
   const commentTriggered =
     eventName === 'issue_comment' &&
     isPrComment &&
     (wantsApproval || wantsReview) &&
     !commenterIsBot &&
     isMaintainer;
+  const kiloTriggered = eventName === 'issue_comment' && kiloReviewPosted;
   const prNumber = event.issue?.number ?? null;
 
   process.stdout.write(
     JSON.stringify(
       {
         mode,
-        should_run: commentTriggered,
+        should_run: commentTriggered || kiloTriggered,
         triggered:
           eventName === 'issue_comment' &&
           isPrComment &&
-          (wantsApproval || wantsReview),
-        trusted: isMaintainer && !commenterIsBot,
+          (wantsApproval || wantsReview || kiloReviewPosted),
+        trusted: (isMaintainer && !commenterIsBot) || kiloTriggered,
         approve_requested: commentTriggered && wantsApproval,
         review_requested: commentTriggered && wantsReview,
+        kilo_review_posted: kiloTriggered,
         author_association: association,
-        pr_number: commentTriggered ? prNumber : null,
+        pr_number: commentTriggered || kiloTriggered ? prNumber : null,
       },
       null,
       2,

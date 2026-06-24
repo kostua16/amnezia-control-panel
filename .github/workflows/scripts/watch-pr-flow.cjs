@@ -7,6 +7,8 @@ const DEFAULT_ORCHESTRATOR_REF = 'main';
 const DEFAULT_ORCHESTRATOR_WORKFLOW = 'pr-flow.yml';
 const STALE_DRAFT_LABEL = 'flow/draft';
 const READY_STATUS_CONTEXT = 'pr-flow/ready';
+const KILO_STATUS_CONTEXT = 'pr-flow/kilo-review';
+const DEFAULT_KILO_TIMEOUT_MINUTES = 30;
 
 function parseArgs(argv) {
   const args = {};
@@ -55,9 +57,37 @@ function hasCurrentReadyStatus(statuses) {
   );
 }
 
+function statusTime(status = {}) {
+  const raw = status.created_at ?? status.createdAt ?? '';
+  const date = raw ? new Date(raw) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+function hasExpiredKiloPendingStatus(
+  statuses,
+  {
+    now = new Date().toISOString(),
+    timeoutMinutes = DEFAULT_KILO_TIMEOUT_MINUTES,
+  } = {},
+) {
+  const current = new Date(now);
+  return normalizeStatuses(statuses).some((status) => {
+    if (status.context !== KILO_STATUS_CONTEXT) return false;
+    if (String(status.state ?? '').toLowerCase() !== 'pending') return false;
+    const created = statusTime(status);
+    if (!created || Number.isNaN(current.getTime())) return false;
+    return current - created >= Number(timeoutMinutes) * 60000;
+  });
+}
+
 function selectStalePrs(
   prs,
-  { labelName = STALE_DRAFT_LABEL, getStatuses = () => [] } = {},
+  {
+    labelName = STALE_DRAFT_LABEL,
+    getStatuses = () => [],
+    now = new Date().toISOString(),
+    kiloTimeoutMinutes = DEFAULT_KILO_TIMEOUT_MINUTES,
+  } = {},
 ) {
   return (prs ?? []).flatMap((pr) => {
     const labels = normalizeLabels(pr.labels);
@@ -69,8 +99,20 @@ function selectStalePrs(
       recoveryReasons.push('stale-draft');
     }
 
-    if (pr.headRefOid && !hasCurrentReadyStatus(getStatuses(pr))) {
+    const statuses = pr.headRefOid ? getStatuses(pr) : [];
+
+    if (pr.headRefOid && !hasCurrentReadyStatus(statuses)) {
       recoveryReasons.push('missing-ready-status');
+    }
+
+    if (
+      pr.headRefOid &&
+      hasExpiredKiloPendingStatus(statuses, {
+        now,
+        timeoutMinutes: kiloTimeoutMinutes,
+      })
+    ) {
+      recoveryReasons.push('expired-kilo-review');
     }
 
     return recoveryReasons.length > 0 ? [{ ...pr, recoveryReasons }] : [];
@@ -175,11 +217,15 @@ function runWatchdog({
   runJsonCommand = runJson,
   workflow = DEFAULT_ORCHESTRATOR_WORKFLOW,
   ref = DEFAULT_ORCHESTRATOR_REF,
+  now = new Date().toISOString(),
+  kiloTimeoutMinutes = DEFAULT_KILO_TIMEOUT_MINUTES,
 } = {}) {
   const pullRequests = listPullRequests({ runJsonCommand });
   const readStatuses = getStatuses ?? createStatusReader({ runJsonCommand });
   const selected = selectStalePrs(pullRequests, {
     getStatuses: readStatuses,
+    now,
+    kiloTimeoutMinutes,
   });
   const dispatched = [];
 
@@ -220,6 +266,7 @@ if (require.main === module) {
 
 module.exports = {
   buildDispatchArgs,
+  hasExpiredKiloPendingStatus,
   hasCurrentReadyStatus,
   runWatchdog,
   selectStalePrs,

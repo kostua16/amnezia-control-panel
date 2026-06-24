@@ -6,6 +6,7 @@
 // Uses the shared exec helpers so there is one source for gh-shellout logic.
 const fs = require('node:fs');
 const { run, runJson } = require('./lib/sticky-comment.cjs');
+const { KILO_MARKER, isKiloUser } = require('./lib/kilo.cjs');
 
 const STICKY_MARKERS = [
   '<!-- code-review-summary -->',
@@ -38,9 +39,16 @@ function isBot(user = {}) {
   );
 }
 
+function isTrustedKiloSummary(comment) {
+  return (
+    isKiloUser(comment.user) && String(comment.body ?? '').includes(KILO_MARKER)
+  );
+}
+
 // Drop noise: bots, slash-command comments (e.g. the /fix-review trigger itself),
 // and other automation sticky summaries.
 function isNoiseComment(comment) {
+  if (isTrustedKiloSummary(comment)) return false;
   if (isBot(comment.user)) return true;
   const body = String(comment.body ?? '');
   if (SLASH_COMMAND.test(body)) return true;
@@ -177,6 +185,7 @@ module.exports = {
   MAX_DIFF_CHARS,
   parseRepo,
   isBot,
+  isTrustedKiloSummary,
   isNoiseComment,
   formatBundle,
   fetchReviewThreads,

@@ -44,6 +44,7 @@ function runApprovePolicy(event: unknown, eventName = 'issue_comment') {
     trusted: boolean;
     approve_requested: boolean;
     review_requested: boolean;
+    kilo_review_posted: boolean;
     pr_number: number | null;
   };
 }
@@ -161,6 +162,28 @@ describe('trigger policy', () => {
     assert.equal(result.triggered, true);
     assert.equal(result.trusted, false);
     assert.equal(result.pr_number, null);
+  });
+
+  it('allows trusted Kilo review marker comments to wake PR Flow', () => {
+    const result = runApprovePolicy({
+      issue: {
+        number: 507,
+        pull_request: {
+          url: 'https://api.github.test/repos/acme/repo/pulls/507',
+        },
+      },
+      comment: {
+        body: '<!-- kilo-review -->\nStatus: No Issues Found',
+        author_association: 'NONE',
+        user: { login: 'kilo-code-bot[bot]', type: 'Bot' },
+      },
+    });
+
+    assert.equal(result.should_run, true);
+    assert.equal(result.triggered, true);
+    assert.equal(result.trusted, true);
+    assert.equal(result.kilo_review_posted, true);
+    assert.equal(result.pr_number, 507);
   });
 
   it('ignores /approve on issue comments that are not PR comments', () => {

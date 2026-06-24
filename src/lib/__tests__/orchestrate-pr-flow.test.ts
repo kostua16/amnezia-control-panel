@@ -89,6 +89,7 @@ type DecisionOverrides = {
   getWorkerRuns?: (workerName: string) => WorkerRun[];
   eventName?: string;
   event?: { action?: string };
+  externalReview?: { state: string; reason: string };
 };
 
 const flowLabelNames = [
@@ -151,6 +152,10 @@ const config = {
         context: 'pr-flow/dependency-review',
         description: 'Dependency review worker status',
       },
+      kiloReview: {
+        context: 'pr-flow/kilo-review',
+        description: 'Kilo external review worker status',
+      },
       prImprove: {
         context: 'pr-flow/pr-improve',
         description: 'Optional PR improvement worker status',
@@ -172,6 +177,10 @@ const config = {
       paths: ['package.json', 'package-lock.json'],
       passLabels: ['deps-review-passed'],
       blockLabels: ['deps-review-manual', 'deps-review-blocked'],
+    },
+    kiloReview: {
+      required: false,
+      external: true,
     },
     prImprove: {
       workflow: 'pr-improve.yml',
@@ -291,6 +300,10 @@ function decide(overrides: DecisionOverrides = {}) {
     getWorkerRuns: overrides.getWorkerRuns,
     eventName: overrides.eventName ?? 'pull_request_target',
     event: overrides.event ?? { action: 'ready_for_review' },
+    externalReview: overrides.externalReview ?? {
+      state: 'skipped',
+      reason: 'Kilo review was skipped.',
+    },
     config,
   });
 }
@@ -1003,6 +1016,58 @@ describe('makeDecision', () => {
     assert.equal(decision.reason, 'Blocking labels are present: do-not-merge.');
   });
 
+  it('blocks when Kilo reports current-head review issues', () => {
+    const decision = decide({
+      pr: prFixture({
+        labels: ['ai-review-passed', 'security-review-passed'],
+      }),
+      externalReview: {
+        state: 'blocked',
+        reason: 'Kilo reported current-head issues.',
+      },
+    });
+
+    assert.equal(decision.state, 'flow/review-blocked');
+    assert.equal(decision.reason, 'Kilo reported current-head issues.');
+    assert.equal(decision.dispatch, null);
+  });
+
+  it('waits while Kilo review is pending', () => {
+    const decision = decide({
+      pr: prFixture({
+        labels: ['ai-review-passed', 'security-review-passed'],
+      }),
+      externalReview: {
+        state: 'pending',
+        reason: 'Waiting for current-head Kilo review signal.',
+      },
+    });
+
+    assert.equal(decision.state, 'flow/review-pending');
+    assert.equal(
+      decision.reason,
+      'Waiting for current-head Kilo review signal.',
+    );
+    assert.equal(decision.dispatch, null);
+  });
+
+  it('continues when Kilo passed or skipped', () => {
+    for (const state of ['passed', 'skipped']) {
+      const decision = decide({
+        pr: prFixture({
+          labels: ['ai-review-passed', 'security-review-passed'],
+        }),
+        externalReview: {
+          state,
+          reason: `Kilo ${state}.`,
+        },
+      });
+
+      assert.equal(decision.state, 'flow/finalizer-dispatched');
+      assert.equal(decision.dispatch?.key, 'finalizer');
+    }
+  });
+
   it('keeps pending checks ahead of maintainer-approved manual-only flow', () => {
     const decision = decide({
       pr: prFixture({
@@ -1191,6 +1256,7 @@ describe('buildFlowVisibility', () => {
     assert.equal(visibility.workers.codeReview.state, 'pending');
     assert.equal(visibility.workers.securityReview.state, 'pending');
     assert.equal(visibility.workers.dependencyReview.displayState, 'N/A');
+    assert.equal(visibility.workers.kiloReview.displayState, 'N/A');
     assert.equal(visibility.workers.finalizer.state, 'pending');
   });
 
@@ -1300,6 +1366,7 @@ describe('buildFlowVisibility', () => {
     assert.equal(visibility.aggregate.state, 'pending');
     assert.equal(visibility.workers.codeReview.state, 'pending');
     assert.equal(visibility.workers.securityReview.state, 'pending');
+    assert.equal(visibility.workers.kiloReview.displayState, 'N/A');
     assert.equal(visibility.workers.prImprove.displayState, 'N/A');
     assert.equal(visibility.workers.finalizer.displayState, 'N/A');
   });

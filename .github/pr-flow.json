@@ -93,6 +93,10 @@
         "context": "pr-flow/dependency-review",
         "description": "Dependency review worker status"
       },
+      "kiloReview": {
+        "context": "pr-flow/kilo-review",
+        "description": "Kilo external review worker status"
+      },
       "prImprove": {
         "context": "pr-flow/pr-improve",
         "description": "Optional PR improvement worker status"
@@ -120,6 +124,10 @@
       "paths": ["package.json", "package-lock.json"],
       "passLabels": ["deps-review-passed"],
       "blockLabels": ["deps-review-manual", "deps-review-blocked"]
+    },
+    "kiloReview": {
+      "required": false,
+      "external": true
     },
     "prImprove": {
       "workflow": "pr-improve.yml",

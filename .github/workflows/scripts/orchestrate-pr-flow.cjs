@@ -8,6 +8,7 @@ const {
   collectCheckEvidence,
   getRequiredCheckStatus,
 } = require('./required-check-evidence.cjs');
+const { evaluateExternalReview } = require('./evaluate-external-review.cjs');
 // Shared sticky-comment create-or-update helper (single source for the
 // marker-based PR comment upsert used across review/size/orchestration scripts).
 const { upsertComment } = require('./lib/sticky-comment.cjs');
@@ -40,6 +41,10 @@ const DEFAULT_STATUS_CONFIG = {
       context: 'pr-flow/dependency-review',
       description: 'Dependency review worker status',
     },
+    kiloReview: {
+      context: 'pr-flow/kilo-review',
+      description: 'Kilo external review worker status',
+    },
     prImprove: {
       context: 'pr-flow/pr-improve',
       description: 'Optional PR improvement worker status',
@@ -55,6 +60,7 @@ const STATUS_WORKER_LABELS = {
   codeReview: 'Code review',
   securityReview: 'Security review',
   dependencyReview: 'Dependency review',
+  kiloReview: 'Kilo review',
   prImprove: 'PR Improve',
   finalizer: 'Finalizer',
 };
@@ -451,6 +457,10 @@ function buildFlowVisibility({
   config,
   policy = emptyPolicy(),
   decision,
+  externalReview = {
+    state: 'skipped',
+    reason: 'Kilo review was not required.',
+  },
   workerRuns = {},
   eventName,
   event,
@@ -721,6 +731,33 @@ function buildFlowVisibility({
     );
   }
 
+  if (policy.dependabot) {
+    statuses.kiloReview = skippedStatus(
+      'kiloReview',
+      'N/A: Dependabot PRs use dependency review.',
+    );
+  } else if (externalReview.state === 'blocked') {
+    statuses.kiloReview = failureStatus(
+      'kiloReview',
+      externalReview.reason || 'Kilo review is blocking.',
+    );
+  } else if (externalReview.state === 'passed') {
+    statuses.kiloReview = successStatus(
+      'kiloReview',
+      externalReview.reason || 'Kilo review passed.',
+    );
+  } else if (externalReview.state === 'skipped') {
+    statuses.kiloReview = skippedStatus(
+      'kiloReview',
+      externalReview.reason || 'Kilo review was skipped.',
+    );
+  } else {
+    statuses.kiloReview = waitingStatus(
+      'kiloReview',
+      externalReview.reason || 'Waiting for Kilo review signal.',
+    );
+  }
+
   const improveDispatchError = dispatchErrorFor('prImprove');
   if (manualOnly) {
     statuses.prImprove = skippedStatus('prImprove', 'N/A: PR is manual-only.');
@@ -892,6 +929,7 @@ function buildFlowVisibility({
       statuses.codeReview,
       statuses.securityReview,
       statuses.dependencyReview,
+      statuses.kiloReview,
       statuses.prImprove,
       statuses.finalizer,
     ],
@@ -1179,6 +1217,61 @@ function collectConfiguredWorkerRuns(config, workerRuns, getWorkerRuns) {
   return workerRuns;
 }
 
+function fetchPrIssueComments(prNumber) {
+  return runJson(
+    'gh',
+    ['api', `repos/${getRepoSlug()}/issues/${prNumber}/comments`, '--paginate'],
+    [],
+  );
+}
+
+function fetchPrReviewComments(prNumber) {
+  return runJson(
+    'gh',
+    ['api', `repos/${getRepoSlug()}/pulls/${prNumber}/comments`, '--paginate'],
+    [],
+  );
+}
+
+function fetchPrReviews(prNumber) {
+  return runJson(
+    'gh',
+    ['api', `repos/${getRepoSlug()}/pulls/${prNumber}/reviews`, '--paginate'],
+    [],
+  );
+}
+
+function fetchCommitStatuses(headSha) {
+  if (!headSha) return [];
+  const response = runJson(
+    'gh',
+    ['api', `repos/${getRepoSlug()}/commits/${headSha}/status`],
+    { statuses: [] },
+  );
+  return response?.statuses ?? [];
+}
+
+function fetchCheckRuns(headSha) {
+  if (!headSha) return [];
+  const response = runJson(
+    'gh',
+    ['api', `repos/${getRepoSlug()}/commits/${headSha}/check-runs`],
+    { check_runs: [] },
+  );
+  return response?.check_runs ?? [];
+}
+
+function collectExternalReview(pr) {
+  return evaluateExternalReview({
+    pr,
+    comments: fetchPrIssueComments(pr.number),
+    reviewComments: fetchPrReviewComments(pr.number),
+    reviews: fetchPrReviews(pr.number),
+    checkRuns: fetchCheckRuns(pr.headSha),
+    statuses: fetchCommitStatuses(pr.headSha),
+  });
+}
+
 function decisionWithDispatchError({ decision, pr, config, errorMessage }) {
   const failureStateByWorker = {
     codeReview: 'flow/review-failed',
@@ -1245,6 +1338,10 @@ function makeDecision(context) {
     event,
     config,
     checkStatus: providedCheckStatus,
+    externalReview = {
+      state: 'skipped',
+      reason: 'Kilo review was not required.',
+    },
   } = context;
   const workers = config.workers ?? {};
   const currentLabels = pr.labels;
@@ -1438,6 +1535,22 @@ function makeDecision(context) {
         workflow: codeReviewWorker.workflow,
         inputs: codeReviewWorker.inputs,
       });
+    }
+  }
+
+  if (!policy.dependabot) {
+    if (externalReview.state === 'blocked') {
+      return finish(
+        'flow/review-blocked',
+        externalReview.reason || 'Kilo review is blocking.',
+      );
+    }
+
+    if (externalReview.state === 'pending') {
+      return finish(
+        'flow/review-pending',
+        externalReview.reason || 'Waiting for Kilo review signal.',
+      );
     }
   }
 
@@ -1689,6 +1802,10 @@ function main() {
     reason: 'PR is draft.',
   };
   let policy = emptyPolicy();
+  let externalReview = {
+    state: 'skipped',
+    reason: 'Kilo review was not required.',
+  };
 
   if (!pr.isDraft) {
     checkEvidence = timeStep(timings, 'checks', () =>
@@ -1714,6 +1831,12 @@ function main() {
         policyFile,
       ),
     );
+
+    if (!policy.dependabot) {
+      externalReview = timeStep(timings, 'worker-runs', () =>
+        collectExternalReview(pr),
+      );
+    }
   }
 
   const workerRuns = {};
@@ -1736,6 +1859,7 @@ function main() {
     event,
     config,
     checkStatus,
+    externalReview,
   });
   let appliedDecision = decision;
   let dispatchOutcome = null;
@@ -1783,6 +1907,7 @@ function main() {
         config,
         policy,
         decision: appliedDecision,
+        externalReview,
         workerRuns,
         eventName,
         event,
@@ -1811,6 +1936,7 @@ function main() {
           config,
           policy,
           decision: appliedDecision,
+          externalReview,
           workerRuns,
           eventName,
           event,
@@ -1841,6 +1967,7 @@ function main() {
       config,
       policy,
       decision: appliedDecision,
+      externalReview,
       workerRuns,
       eventName,
       event,

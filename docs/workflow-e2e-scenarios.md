@@ -143,6 +143,12 @@ flowchart TD
 | R9  | review on a **draft** PR                                                             | not orchestrated → **no-op**                                                                                  | char          |
 | R11 | antigravity secret fallback (`GEMINI_API_KEY` ∥ `AV_API_KEY`)                        | runs with whichever present → label                                                                           | char          |
 | R12 | review exceeds `MAX_TURNS`                                                           | truncated → label locked during run                                                                           | char [verify] |
+| R13 | Kilo current-head summary says `No Issues Found`                                     | `pr-flow/kilo-review=success` → PR Flow continues                                                             | char          |
+| R14 | Kilo current-head summary or inline comments contain issues                          | `pr-flow/kilo-review=failure` → `flow/review-blocked`                                                         | char          |
+| R15 | Kilo issues are only on older head commits                                           | stale Kilo findings ignored → waits/passes based on current-head signal                                       | char          |
+| R16 | Kilo check is cancelled/skipped                                                      | `pr-flow/kilo-review=N/A` → PR Flow continues                                                                 | char          |
+| R17 | no current-head Kilo reply under 30 minutes                                          | `pr-flow/kilo-review=pending` → `flow/review-pending`                                                         | char          |
+| R18 | no current-head Kilo reply after 30 minutes                                          | watchdog wakes PR Flow → `pr-flow/kilo-review=N/A` → PR Flow continues                                        | char          |
 
 ---
 
@@ -200,16 +206,19 @@ flowchart TD
   WL --> ONE
 ```
 
-| ID  | Trigger / precondition                                             | Resolution → terminal                                                                                             | Type                                |
-| --- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| C1  | prt `opened`/`synchronize`/`ready_for_review`/`reopened`           | `cancel-in-progress=true` → newer prt cancels older (restart on new commit)                                       | char                                |
-| C2  | prt vs wake                                                        | isolated groups (`prt-<PR#>` vs `wake-<PR#>`) → a wake can never cancel an in-flight prt                          | char                                |
-| C3  | prt `labeled`/`unlabeled`                                          | `cancel-in-progress=false` → does NOT cancel in-flight prt (anti-thrash: orchestrate itself adds `flow/*` labels) | char                                |
-| C4  | wake (workflow_run / comment / dispatch)                           | `cancel-in-progress=true` → collapses to newest wake                                                              | char                                |
-| C5  | label loop (orchestrate adds `flow/*` → `labeled`)                 | C3 ⇒ no cancel ⇒ no flood (the cascade fix)                                                                       | char                                |
-| C6  | prt terminal conclusion                                            | must never be wrongly `cancelled` (green/skipped) — consequence of C2+C3                                          | **spec** (PR #434 regression guard) |
-| C7  | wake source parametrized (workflow_run / comment / dispatch)       | all collapse via C4                                                                                               | char                                |
-| C8  | worker-completion wake (e.g. Code Review `workflow_run` completed) | re-orchestrate → dispatch next worker                                                                             | char                                |
+| ID  | Trigger / precondition                                                                | Resolution → terminal                                                                                                                                                                                                                                               | Type                                |
+| --- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| C1  | prt `opened`/`synchronize`/`ready_for_review`/`reopened`                              | `cancel-in-progress=true` → newer prt cancels older (restart on new commit)                                                                                                                                                                                         | char                                |
+| C2  | prt vs wake                                                                           | isolated groups (`prt-<PR#>` vs `wake-<PR#>`) → a wake can never cancel an in-flight prt                                                                                                                                                                            | char                                |
+| C3  | prt `labeled`/`unlabeled`                                                             | `cancel-in-progress=false` → does NOT cancel in-flight prt (anti-thrash: orchestrate itself adds `flow/*` labels)                                                                                                                                                   | char                                |
+| C4  | wake (workflow_run / comment / dispatch)                                              | `cancel-in-progress=true` → collapses to newest wake                                                                                                                                                                                                                | char                                |
+| C5  | label loop (orchestrate adds `flow/*` → `labeled`)                                    | C3 ⇒ no cancel ⇒ no flood (the cascade fix)                                                                                                                                                                                                                         | char                                |
+| C6  | prt terminal conclusion                                                               | must never be wrongly `cancelled` (green/skipped) — consequence of C2+C3                                                                                                                                                                                            | **spec** (PR #434 regression guard) |
+| C7  | wake source parametrized (workflow_run / comment / dispatch)                          | all collapse via C4                                                                                                                                                                                                                                                 | char                                |
+| C8  | worker-completion wake (e.g. Code Review `workflow_run` completed)                    | re-orchestrate → dispatch next worker                                                                                                                                                                                                                               | char                                |
+| C9  | expired `pr-flow/kilo-review` pending status                                          | `pr-flow-watchdog` dispatches PR Flow so the 30-minute Kilo skip is applied                                                                                                                                                                                         | char                                |
+| C10 | `auto-cover-review` scan mode (schedule / unresolved `workflow_run` / empty dispatch) | all scan-mode runs share one `auto-cover-review-scan` group (`cancel-in-progress=true`) so overlapping scans never both pass the eventually-consistent active-run check and dispatch duplicate `fix-review` runs (targeted single-PR paths still get per-PR groups) | char                                |
+| C11 | per-PR fetch failure during a scan                                                    | `fetch-auto-cover-context` isolates the failed PR (skipped + recorded in manifest; not handed to the dispatch loop) so the rest of the scan completes; only the shared `fix-review` runs fetch failing or EVERY PR failing aborts the job (retry next cycle)        | char                                |
 
 ---
 
@@ -263,14 +272,19 @@ flowchart TD
   V -->|yes| CP[commit → §1 → merged]
 ```
 
-| ID  | Trigger / precondition                           | Resolution → terminal                                                                                  | Type |
-| --- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | ---- |
-| FR1 | maintainer `/fix-review`/`/address-review` on PR | ZAI address review → detect-noop → validate-pr-gate → commit → §1 → **merged**                         | char |
-| FR2 | non-maintainer command                           | ignored branch → **no-op**                                                                             | char |
-| FR3 | no review comments to address                    | `no-changes` → **reported**                                                                            | char |
-| FR4 | ZAI fix fails validation                         | `push-rejected` → **reported**                                                                         | char |
-| FR5 | agent changed nothing (no findings / clean tree) | `detect-noop` `has_changes=false` → `renderNoChanges`, no push → **reported**                          | char |
-| FR6 | `validate-pr-gate` fails                         | dual-block summary (agent-reported vs authoritative gate), not pushed → **reported** (re-run to retry) | char |
+| ID   | Trigger / precondition                           | Resolution → terminal                                                                                  | Type |
+| ---- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | ---- |
+| FR1  | maintainer `/fix-review`/`/address-review` on PR | ZAI address review → detect-noop → validate-pr-gate → commit → §1 → **merged**                         | char |
+| FR2  | non-maintainer command                           | ignored branch → **no-op**                                                                             | char |
+| FR3  | no review comments to address                    | `no-changes` → **reported**                                                                            | char |
+| FR4  | ZAI fix fails validation                         | `push-rejected` → **reported**                                                                         | char |
+| FR5  | agent changed nothing (no findings / clean tree) | `detect-noop` `has_changes=false` → `renderNoChanges`, no push → **reported**                          | char |
+| FR6  | `validate-pr-gate` fails                         | dual-block summary (agent-reported vs authoritative gate), not pushed → **reported** (re-run to retry) | char |
+| FR7  | internal AI/security concerns on an eligible PR  | `auto-cover-review` dispatches `fix-review` automation mode → gated push → §3 review rerun             | char |
+| FR8  | Kilo-only current-head blocker                   | `auto-cover-review` dispatches `fix-review` automation mode → gated push → §3 review rerun             | char |
+| FR9  | manual-only PR with review blockers              | repair is allowed, but finalizer/auto-merge stay blocked by manual-only policy                         | char |
+| FR10 | auto-cover attempt cap reached                   | no new `fix-review` dispatch → **reported/no-op**                                                      | char |
+| FR11 | active current-head `fix-review` run exists      | no duplicate dispatch → **no-op**                                                                      | char |
 
 ---
 

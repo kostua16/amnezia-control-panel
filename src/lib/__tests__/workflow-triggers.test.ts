@@ -19,6 +19,8 @@ type Workflow = {
     issue_comment?: unknown;
     pull_request?: PullRequestTrigger;
     pull_request_target?: PullRequestTrigger;
+    workflow_run?: unknown;
+    schedule?: unknown;
     workflow_dispatch?: unknown;
   };
   concurrency?: {
@@ -143,6 +145,30 @@ describe('workflow trigger policy', () => {
     assert.match(group, /fix-review-ignored-\{0\}/);
     assert.match(group, /fix-review-\{0\}/);
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
+  });
+
+  it('keeps auto-cover-review event-driven with scheduled fallback and main-ref repair dispatch', () => {
+    const workflow = readWorkflow('auto-cover-review.yml');
+    const yaml = readWorkflowText('auto-cover-review.yml');
+
+    assert.ok(workflow.on?.workflow_run);
+    assert.ok(workflow.on?.issue_comment);
+    assert.ok(workflow.on?.schedule);
+    assert.ok(workflow.on?.workflow_dispatch);
+    assert.match(yaml, /workflows: \['Code Review'\]/);
+    assert.match(
+      yaml,
+      /github\.event\.comment\.user\.login == 'kilo-code-bot\[bot\]'/,
+    );
+    assert.match(
+      yaml,
+      /contains\(github\.event\.comment\.body, '<!-- kilo-review -->'\)/,
+    );
+    assert.match(yaml, /group: auto-cover-review-/);
+    assert.match(
+      yaml,
+      /gh workflow run fix-review\.yml\s+\\\n\s+--ref main\s+\\\n\s+-f pr_number="\$pr_number"\s+\\\n\s+-f head_sha="\$head_sha"\s+\\\n\s+-f automation_review_loop=true/,
+    );
   });
 
   it('keeps non-command, bot, and non-PR comments from cancelling active rebase-pr runs', () => {

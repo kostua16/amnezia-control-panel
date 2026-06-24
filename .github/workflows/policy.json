@@ -34,6 +34,7 @@
   },
   "fixApprovalLabel": "auto-fix-approved",
   "maxAutoFixAttempts": 3,
+  "maxAutoReviewFixAttempts": 3,
   "blockingLabels": [
     "do-not-merge",
     "ai-review-concerns",

@@ -70,6 +70,17 @@ code-review.yml
 -> produces ai-review-passed / ai-review-concerns
   -> produces security-review-passed / security-review-concerns
   -> pr-flow.yml consumes those signals
+-> when orchestrated, explicitly wakes pr-flow.yml and auto-cover-review.yml
+   after completion so repair loops do not depend on workflow_run delivery alone
+
+auto-cover-review.yml
+  -> event-driven review repair dispatcher: Code Review completion, trusted
+     kilo-code-bot `<!-- kilo-review -->` comments, workflow_dispatch, and a
+     scheduled fallback
+  -> evaluates internal review concern labels plus Kilo current-head feedback
+  -> dispatches fix-review.yml on `--ref main` with automation_review_loop=true
+  -> allows manual-only / needs-review PRs to be repaired, but never approves,
+     merges, removes needs-review, or bypasses do-not-merge
 
 deepseek.yml
   -> standalone @deepseek trigger (issue_comment, PR review, issues)
@@ -86,12 +97,15 @@ deepseek-code-review.yml
 
 fix-review.yml
   -> maintainer-only /fix-review or /address-review PR comment (issue_comment) or workflow_dispatch
+  -> automation_review_loop=true is reserved for auto-cover-review.yml and may
+     repair same-repo review-blocked/manual-only PRs without changing merge policy
   -> pre-fetches unresolved, non-outdated review threads + reviews + filtered PR comments
   -> applies fixes in place on the SAME PR head branch (never a new branch, never force-pushes)
   -> CI-matching gate (npm run test && npm run build + script tests + Prisma-safe check) must pass before push
   -> disables auto-merge after a fix push so the bot commit is re-reviewed before merge
   -> sticky summary comment: started -> working -> finished (or skipped / no-changes / push-rejected / validation-failed / failed / cancelled)
-  -> standalone — NOT integrated into pr-flow.yml
+  -> human command path remains standalone; automation_review_loop is dispatched
+     by auto-cover-review.yml
 
 dependency-review.yml
   -> dispatch-only worker controlled by pr-flow.yml
@@ -135,7 +149,8 @@ monitor-amnezia-control-panel-github-runs.yml
 `pr-flow/ready` is the only PR-flow status context that should be required in
 branch protection or repository rulesets. The per-worker contexts are visible
 diagnostics: `pr-flow/code-review`, `pr-flow/security-review`,
-`pr-flow/dependency-review`, `pr-flow/pr-improve`, and `pr-flow/finalizer`.
+`pr-flow/dependency-review`, `pr-flow/kilo-review`, `pr-flow/pr-improve`, and
+`pr-flow/finalizer`.
 
 Dispatch-only workers run through `workflow_dispatch`. GitHub associates a
 `workflow_dispatch` run with the dispatched ref, which is normally `main` here,
@@ -152,6 +167,13 @@ reflected in the guidance as the PR moves through the flow. Manual `/review`
 comments are PR Flow control inputs: PR Flow resolves the current PR head,
 clears stale review signal labels, and dispatches `code-review.yml` through
 `workflow_dispatch`.
+
+Kilo Code is modeled as an external advisory review signal rather than a
+dispatch worker. Current-head `kilo-code-bot` findings block PR Flow as
+`flow/review-blocked`; a current-head `No Issues Found` summary passes; a
+cancelled/skipped Kilo check or no current-head reply after 30 minutes is
+treated as skipped so Kilo cannot wedge the queue. `pr-flow-watchdog.yml`
+wakes expired `pr-flow/kilo-review` pending states so the timeout is applied.
 
 Worker completion also explicitly wakes `pr-flow.yml` with `workflow_dispatch`
 when the worker was orchestrator-dispatched. The `workflow_run` trigger remains
@@ -320,6 +342,7 @@ The following labels are enforced or created automatically by the workflow stack
 | `flow/improve-failed`         | PR flow improvement intake failed                       |
 | `flow/finalizer-dispatched`   | PR flow dispatched the finalizer for this PR head       |
 | `flow/manual-only`            | PR flow completed reviews but requires human merge      |
+| `pr-flow/kilo-review`         | Diagnostic status for external Kilo review              |
 | `do-not-merge`                | Explicitly block finalizer approval and auto-merge      |
 | `auto-fix-approved`           | Maintainer explicitly approved issue auto-fix execution |
 | `antigravity-review-passed`   | Antigravity AI code review found no blocking issues     |
