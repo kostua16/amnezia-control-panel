@@ -16,8 +16,10 @@ type PullRequestTrigger = {
 
 type Workflow = {
   on?: {
+    issue_comment?: unknown;
     pull_request?: PullRequestTrigger;
     pull_request_target?: PullRequestTrigger;
+    workflow_dispatch?: unknown;
   };
   concurrency?: {
     group?: string;
@@ -98,9 +100,10 @@ describe('workflow trigger policy', () => {
   it('keeps Code Review dispatch-only so /review identity comes from PR Flow', () => {
     const workflow = readWorkflow('code-review.yml');
     const group = workflow.concurrency?.group ?? '';
+    const triggers = workflow.on ?? {};
 
-    assert.equal(workflow.on.issue_comment, undefined);
-    assert.ok(workflow.on.workflow_dispatch);
+    assert.equal(triggers.issue_comment, undefined);
+    assert.ok(triggers.workflow_dispatch);
     assert.match(group, /github\.event\.inputs\.pr_number/);
     assert.match(group, /code-review-\{0\}/);
     assert.equal(workflow.concurrency?.['cancel-in-progress'], true);
