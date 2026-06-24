@@ -34,8 +34,15 @@ function appendOutputs(values) {
 function main() {
   const inPath = getArg('--in', '-');
   const outDir = getArg('--out-dir', '.');
-  const minAgeHours = Number(getArg('--min-age-hours', '23'));
-  const maxGroups = Math.max(1, Number(getArg('--max-groups', '1')));
+  // Coerce free-text dispatch inputs to finite numbers with sane fallbacks. A
+  // raw Number() yields NaN on malformed input, which silently bypasses the caps
+  // (ageHours <= NaN is always false; slice(0, NaN) returns everything).
+  const minAgeHours = ((n) => (Number.isFinite(n) && n >= 0 ? n : 23))(
+    Number(getArg('--min-age-hours', '23')),
+  );
+  const maxGroups = ((n) => (Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1))(
+    Number(getArg('--max-groups', '1')),
+  );
   const groupFilter = getArg('--group-filter', '');
   const now = getArg('--now');
 
