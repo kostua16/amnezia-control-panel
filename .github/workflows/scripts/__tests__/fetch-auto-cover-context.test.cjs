@@ -49,8 +49,8 @@ test('extractAttempts keeps only auto-cover summary comments', () => {
 
 test('fetchPrContext pulls statuses/check-runs from sub-keys and tolerates 404', async () => {
   const calls = [];
-  const fetchJson = async (apiPath, _opts) => {
-    calls.push(apiPath);
+  const fetchJson = async (apiPath, opts = {}) => {
+    calls.push({ apiPath, opts });
     if (apiPath.endsWith('/commits/headsha/status')) {
       return {
         statuses: [{ context: 'pr-flow/kilo-review', state: 'pending' }],
@@ -87,6 +87,39 @@ test('fetchPrContext pulls statuses/check-runs from sub-keys and tolerates 404',
     { name: 'Kilo Code Review', conclusion: 'success' },
   ]);
   assert.deepEqual(ctx.commits, [{ sha: 'headsha' }]);
+  assert.deepEqual(
+    calls.find(({ apiPath }) => apiPath.endsWith('/commits/headsha/check-runs'))
+      ?.opts,
+    { paginate: true },
+  );
+});
+
+test('fetchAutoCoverContext treats an empty scan as a clean no-op', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  let fetched = false;
+  const manifest = await fetchAutoCoverContext({
+    repo: 'owner/repo',
+    prs: [],
+    outDir: dir,
+    fetchJson: async () => {
+      fetched = true;
+      return null;
+    },
+    viewPull: async () => {
+      fetched = true;
+      return {};
+    },
+  });
+
+  assert.equal(fetched, false);
+  assert.deepEqual(manifest.prs, []);
+  assert.deepEqual(manifest.ok, []);
+  assert.equal(
+    fs.readFileSync(path.join(dir, 'prs-to-evaluate.txt'), 'utf8'),
+    '',
+  );
+  assert.ok(fs.existsSync(path.join(dir, 'manifest.json')));
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('fetchAutoCoverContext shares fix-review runs across PRs and writes files', async () => {

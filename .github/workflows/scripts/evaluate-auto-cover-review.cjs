@@ -118,8 +118,10 @@ function evaluateAutoCoverReview({
     };
   }
 
-  const attemptsCount =
-    countFixReviewCommits(commits) + countRecordedAttempts(attempts);
+  const attemptsCount = Math.max(
+    countFixReviewCommits(commits),
+    countRecordedAttempts(attempts),
+  );
   if (Number(maxAttempts) > 0 && attemptsCount >= Number(maxAttempts)) {
     return {
       should_run: false,

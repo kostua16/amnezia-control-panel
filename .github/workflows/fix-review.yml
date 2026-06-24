@@ -1,5 +1,7 @@
 name: Fix Review
 
+run-name: 'Fix Review PR #${{ github.event.issue.number || inputs.pr_number || github.run_id }} @ ${{ inputs.head_sha || github.sha }}'
+
 # Reacts to a maintainer's `/fix-review` (alias `/address-review`) comment on an
 # open same-repo PR: pre-fetches unresolved, non-outdated review feedback, has
 # Claude apply fixes in place, enforces a CI-matching gate, pushes to the SAME PR

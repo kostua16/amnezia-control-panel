@@ -5,7 +5,7 @@
 // these here means the marker and login list can drift in only one place.
 
 const KILO_MARKER = '<!-- kilo-review -->';
-const KILO_LOGINS = ['kilo-code-bot', 'kilo-code-bot[bot]'];
+const KILO_LOGINS = ['kilo-code-bot[bot]'];
 
 function userLogin(user = {}) {
   return String(user.login ?? user.author?.login ?? '');

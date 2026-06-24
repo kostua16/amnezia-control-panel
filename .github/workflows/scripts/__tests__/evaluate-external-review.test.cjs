@@ -33,6 +33,10 @@ test('summaryVerdict detects Kilo pass and block states', () => {
   assert.equal(summaryVerdict('Status: No Issues Found'), 'passed');
   assert.equal(summaryVerdict('Status: 2 Issues Found'), 'blocked');
   assert.equal(
+    summaryVerdict('Status: No Issues Found\nStatus: 1 Issue Found'),
+    'blocked',
+  );
+  assert.equal(
     summaryVerdict('Recommendation: Address before merge'),
     'blocked',
   );
@@ -88,7 +92,7 @@ test('old-head Kilo issues do not block current head', () => {
         body: 'old issue',
       },
     ],
-    comments: [summary('Status: 1 Issue Found')],
+    comments: [summary('Status: 1 Issue Found', '2026-06-24T11:40:00Z')],
     statuses: [
       {
         context: 'pr-flow/kilo-review',
@@ -111,6 +115,52 @@ test('cancelled or skipped Kilo check skips the external gate', () => {
     });
     assert.equal(result.state, 'skipped');
   }
+});
+
+test('current-head Kilo blockers win over cancelled or skipped check-runs', () => {
+  const result = evaluateExternalReview({
+    pr,
+    reviews: [review()],
+    comments: [summary('Status: 1 Issue Found')],
+    checkRuns: [{ name: 'Kilo Code Review', conclusion: 'cancelled' }],
+    now,
+  });
+
+  assert.equal(result.state, 'blocked');
+});
+
+test('marker-only Kilo summary is current when posted after the pending status', () => {
+  const result = evaluateExternalReview({
+    pr,
+    comments: [summary('Status: 1 Issue Found', '2026-06-24T11:50:00Z')],
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T11:45:00Z',
+      },
+    ],
+    now,
+  });
+
+  assert.equal(result.state, 'blocked');
+});
+
+test('marker-only Kilo summary before current pending status is ignored', () => {
+  const result = evaluateExternalReview({
+    pr,
+    comments: [summary('Status: 1 Issue Found', '2026-06-24T11:40:00Z')],
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T11:45:00Z',
+      },
+    ],
+    now,
+  });
+
+  assert.equal(result.state, 'pending');
 });
 
 test('no current-head Kilo reply is pending before 30 minutes', () => {

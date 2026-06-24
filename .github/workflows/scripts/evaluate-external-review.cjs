@@ -58,13 +58,13 @@ function isKiloSummary(comment = {}) {
 
 function summaryVerdict(body) {
   const text = String(body ?? '');
-  if (/No Issues Found/i.test(text)) return 'passed';
   if (
     /\b\d+\s+Issues?\s+Found\b/i.test(text) ||
     /Address before merge/i.test(text)
   ) {
     return 'blocked';
   }
+  if (/No Issues Found/i.test(text)) return 'passed';
   return null;
 }
 
@@ -117,13 +117,22 @@ function currentKiloReview(reviews = [], headSha) {
   )[0];
 }
 
-function currentKiloSummary({ comments = [], reviews = [], headSha }) {
+function currentKiloSummary({
+  comments = [],
+  reviews = [],
+  headSha,
+  pendingStatus = null,
+}) {
   const latestReview = currentKiloReview(reviews, headSha);
   const latestSummary = sortNewest(comments.filter(isKiloSummary))[0];
   if (!latestSummary) return null;
 
   if (isCurrentHead(latestSummary, headSha)) return latestSummary;
-  if (!latestReview) return null;
+  if (!latestReview) {
+    return pendingStatus && itemTime(latestSummary) >= itemTime(pendingStatus)
+      ? latestSummary
+      : null;
+  }
 
   return itemTime(latestSummary) >= itemTime(latestReview)
     ? latestSummary
@@ -153,13 +162,7 @@ function evaluateExternalReview({
   context = DEFAULT_CONTEXT,
 } = {}) {
   const headSha = normalizeHeadSha(pr);
-
-  if (checkSkipped(checkRuns)) {
-    return {
-      state: 'skipped',
-      reason: 'Kilo review check was cancelled or skipped.',
-    };
-  }
+  const pendingStatus = latestPendingStatus(statuses, context);
 
   if (hasCurrentInlineIssues(reviewComments, headSha)) {
     return {
@@ -168,7 +171,12 @@ function evaluateExternalReview({
     };
   }
 
-  const summary = currentKiloSummary({ comments, reviews, headSha });
+  const summary = currentKiloSummary({
+    comments,
+    reviews,
+    headSha,
+    pendingStatus,
+  });
   const verdict = summaryVerdict(summary?.body);
   if (verdict === 'passed') {
     return {
@@ -183,7 +191,13 @@ function evaluateExternalReview({
     };
   }
 
-  const pendingStatus = latestPendingStatus(statuses, context);
+  if (checkSkipped(checkRuns)) {
+    return {
+      state: 'skipped',
+      reason: 'Kilo review check was cancelled or skipped.',
+    };
+  }
+
   const pendingAge = ageMinutes(
     pendingStatus?.created_at ?? pendingStatus?.createdAt,
     now,

@@ -11,11 +11,11 @@ const {
 
 test('KILO_MARKER and KILO_LOGINS are the canonical constants', () => {
   assert.equal(KILO_MARKER, '<!-- kilo-review -->');
-  assert.deepEqual(KILO_LOGINS, ['kilo-code-bot', 'kilo-code-bot[bot]']);
+  assert.deepEqual(KILO_LOGINS, ['kilo-code-bot[bot]']);
 });
 
-test('isKiloUser accepts both Kilo bot login variants', () => {
-  assert.equal(isKiloUser({ login: 'kilo-code-bot' }), true);
+test('isKiloUser accepts only the GitHub App bot login', () => {
+  assert.equal(isKiloUser({ login: 'kilo-code-bot' }), false);
   assert.equal(isKiloUser({ login: 'kilo-code-bot[bot]' }), true);
   assert.equal(isKiloUser({ author: { login: 'kilo-code-bot[bot]' } }), true);
   assert.equal(isKiloUser({ login: 'github-actions[bot]' }), false);
@@ -36,7 +36,7 @@ test('isKiloSummary requires both a Kilo author and the marker', () => {
       author: { login: 'kilo-code-bot' },
       body: '<!-- kilo-review -->\nblocked',
     }),
-    true,
+    false,
   );
   assert.equal(
     isKiloSummary({

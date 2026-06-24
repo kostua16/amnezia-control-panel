@@ -194,6 +194,7 @@ async function fetchPrContext({ fetchJson, viewPull, repo, prNumber }) {
     statuses = statusPayload?.statuses ?? [];
     const checkPayload = await fetchJson(
       `repos/${repo}/commits/${headSha}/check-runs`,
+      { paginate: true },
     );
     checkRuns = checkPayload?.check_runs ?? [];
   }
@@ -244,6 +245,23 @@ async function fetchAutoCoverContext({
   if (!outDir) throw new Error('--out-dir is required.');
   const list = (prs ?? []).map((value) => String(value).trim()).filter(Boolean);
   fs.mkdirSync(outDir, { recursive: true });
+
+  if (list.length === 0) {
+    const manifest = {
+      repo,
+      fetched_at: new Date().toISOString(),
+      prs: [],
+      ok: [],
+      failed: [],
+      count: 0,
+    };
+    fs.writeFileSync(path.join(outDir, 'prs-to-evaluate.txt'), '');
+    fs.writeFileSync(
+      path.join(outDir, 'manifest.json'),
+      JSON.stringify(manifest, null, 2),
+    );
+    return manifest;
+  }
 
   const fetcher = fetchJson || createGhFetcher();
   const viewPr = viewPull || createViewPull();
@@ -325,9 +343,6 @@ async function main() {
   const prs = readPrList(args);
   if (!repo) throw new Error('--repo (or GITHUB_REPOSITORY) is required.');
   if (!outDir) throw new Error('--out-dir is required.');
-  if (prs.length === 0) {
-    throw new Error('No PRs to fetch. Provide --pr-number or --prs-file.');
-  }
   const manifest = await fetchAutoCoverContext({
     repo,
     prs,

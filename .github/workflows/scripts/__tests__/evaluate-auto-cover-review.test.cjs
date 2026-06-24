@@ -115,12 +115,26 @@ test('skips when attempt cap is reached', () => {
     commits: [
       { message: 'fix(review): address review feedback via /fix-review' },
       { message: 'fix(review): address review feedback via /fix-review' },
+      { message: 'fix(review): address review feedback via /fix-review' },
     ],
     attempts: [{ id: 1 }],
   });
 
   assert.equal(result.should_run, false);
   assert.match(result.reason, /cap reached/);
+});
+
+test('counts repair commits and marker comments as the same attempt stream', () => {
+  const result = run({
+    commits: [
+      { message: 'fix(review): address review feedback via /fix-review' },
+      { message: 'fix(review): address review feedback via /fix-review' },
+    ],
+    attempts: [{ id: 1 }, { id: 2 }],
+  });
+
+  assert.equal(result.should_run, true);
+  assert.equal(result.attempt_count, 2);
 });
 
 test('detects active current fix-review runs', () => {
