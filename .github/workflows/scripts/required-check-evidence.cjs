@@ -244,7 +244,12 @@ function findExactHeadWorkflowRun(runs, pr, workflowName) {
   });
 }
 
-function collectChecksFromWorkflowRuns({ pr, config, runJson }) {
+function collectChecksFromWorkflowRuns({
+  pr,
+  config,
+  runJson,
+  existingChecks = [],
+}) {
   const requiredChecks = config.checks?.required ?? [];
   const requiredNames = getRequiredCheckNames(requiredChecks);
   const runListResult = runJson(
@@ -274,10 +279,15 @@ function collectChecksFromWorkflowRuns({ pr, config, runJson }) {
     };
   }
 
-  const jobChecks = [];
+  const jobChecks = [...existingChecks];
 
   for (const group of requiredChecks) {
     const workflowName = group.workflow ?? '';
+    const existingGroupStatus = getRequiredCheckStatus(jobChecks, [group]);
+    if (existingGroupStatus.missing.length === 0) {
+      continue;
+    }
+
     const run = findExactHeadWorkflowRun(
       runListResult.value ?? [],
       pr,
@@ -455,14 +465,24 @@ function collectCheckEvidence({
   const jobCheckStatus = getRequiredCheckStatus(jobChecks, requiredChecks);
 
   if (jobCheckStatus.missing.length > 0) {
+    const broader = collectChecksFromWorkflowRuns({
+      pr,
+      config,
+      runJson,
+      existingChecks: jobChecks,
+    });
+    if (broader.checkStatus.status !== 'unavailable') {
+      return broader;
+    }
+    const unavailableReason = `Completed ${workflowName} workflow_run jobs are missing required checks: ${jobCheckStatus.missing.join(', ')}. Broader workflow-run search also failed: ${broader.checkStatus.reason}`;
     return {
       checks: null,
       checkStatus: getUnavailableCheckStatus(
-        `Completed ${workflowName} workflow_run jobs are missing required checks: ${jobCheckStatus.missing.join(', ')}.`,
+        unavailableReason,
         jobCheckStatus.missing,
       ),
       source: 'unavailable',
-      reason: `Completed ${workflowName} workflow_run jobs are missing required checks: ${jobCheckStatus.missing.join(', ')}.`,
+      reason: unavailableReason,
     };
   }
 
