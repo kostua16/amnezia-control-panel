@@ -196,9 +196,36 @@ jobs:
             npx prettier --write "${changed[@]}"
           fi
 
+      - name: Detect meaningful code changes
+        id: code-changes
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        run: |
+          non_planning=$(git diff --name-only --diff-filter=d -- . ':(exclude).planning/')
+          if [ -z "$non_planning" ]; then
+            echo "has_code_changes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No implementation changes detected — only planning artifacts differ. Skipping PR creation."
+          else
+            echo "has_code_changes=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Implementation changes in $(echo "$non_planning" | wc -l) file(s)."
+          fi
+
+      - name: Persist plan file to main (no-op execution)
+        if: steps.code-changes.outputs.has_code_changes == 'false'
+        run: |
+          plan_file="${{ steps.intake.outputs.plan_path }}"
+          git config user.name "claude[bot]"
+          git config user.email "claude[bot]@users.noreply.github.com"
+          git stash -- "$plan_file"
+          git checkout main
+          git checkout stash -- "$plan_file"
+          git add "$plan_file"
+          git commit -m "chore(planning): track execution queue plan for ${{ steps.intake.outputs.source_title }}"
+          git push origin main
+          echo "::notice::Plan file persisted to main — candidate will not be re-selected."
+
       - name: Validate execution output
         id: validate1
-        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true' && steps.code-changes.outputs.has_code_changes == 'true'
         continue-on-error: true
         uses: ./.github/actions/run-npm-test-validation
         with:
@@ -267,7 +294,7 @@ jobs:
           attempt: '3'
 
       - name: Fail on unfinished validation
-        if: always() && steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true' && steps.validate1.outcome != 'success' && steps.validate2.outcome != 'success' && steps.validate3.outcome != 'success'
+        if: always() && steps.code-changes.outputs.has_code_changes == 'true' && steps.validate1.outcome != 'success' && steps.validate2.outcome != 'success' && steps.validate3.outcome != 'success'
         run: |
           echo "::error::GSD planning execution did not reach a passing npm test after two repair passes."
           exit 1
@@ -365,7 +392,7 @@ jobs:
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        if: steps.code-changes.outputs.has_code_changes == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'feat(gsd): execute planning intake'
