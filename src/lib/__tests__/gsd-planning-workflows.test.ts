@@ -238,6 +238,10 @@ describe('GSD planning workflow automation', () => {
     );
     assert.match(
       workflow,
+      /only planning artifacts differ; persisting planning state through a PR if changes exist/,
+    );
+    assert.match(
+      workflow,
       /if: steps\.code-changes\.outputs\.has_code_changes == 'false'[\s\S]*branch-name: \$\{\{ steps\.branch\.outputs\.branch_name \}\}/,
     );
     assert.match(

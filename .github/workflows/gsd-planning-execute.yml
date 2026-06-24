@@ -206,7 +206,7 @@ jobs:
           non_planning=$(printf '%s\n%s\n' "$tracked_non_planning" "$untracked_non_planning" | sed '/^$/d')
           if [ -z "$non_planning" ]; then
             echo "has_code_changes=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No implementation changes detected — only planning artifacts differ. Persisting planning state through a PR."
+            echo "::notice::No implementation changes detected — only planning artifacts differ; persisting planning state through a PR if changes exist."
           else
             echo "has_code_changes=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Implementation changes in $(echo "$non_planning" | wc -l) file(s)."
