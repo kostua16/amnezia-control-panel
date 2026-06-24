@@ -1632,6 +1632,7 @@ function main() {
         config,
         eventName,
         event,
+        allowRunListFallback: true,
       }),
     );
   }

@@ -455,10 +455,14 @@ function collectCheckEvidence({
   const jobCheckStatus = getRequiredCheckStatus(jobChecks, requiredChecks);
 
   if (jobCheckStatus.missing.length > 0) {
+    const broader = collectChecksFromWorkflowRuns({ pr, config, runJson });
+    if (broader.checkStatus.status !== 'unavailable') {
+      return broader;
+    }
     return {
       checks: null,
       checkStatus: getUnavailableCheckStatus(
-        `Completed ${workflowName} workflow_run jobs are missing required checks: ${jobCheckStatus.missing.join(', ')}.`,
+        `Completed ${workflowName} workflow_run jobs are missing required checks: ${jobCheckStatus.missing.join(', ')}. Broader workflow-run search also failed: ${broader.checkStatus.reason}`,
         jobCheckStatus.missing,
       ),
       source: 'unavailable',
