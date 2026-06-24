@@ -217,6 +217,8 @@ flowchart TD
 | C7  | wake source parametrized (workflow_run / comment / dispatch)       | all collapse via C4                                                                                               | char                                |
 | C8  | worker-completion wake (e.g. Code Review `workflow_run` completed) | re-orchestrate → dispatch next worker                                                                             | char                                |
 | C9  | expired `pr-flow/kilo-review` pending status                       | `pr-flow-watchdog` dispatches PR Flow so the 30-minute Kilo skip is applied                                       | char                                |
+| C10 | `auto-cover-review` scan mode (schedule / unresolved `workflow_run` / empty dispatch) | all scan-mode runs share one `auto-cover-review-scan` group (`cancel-in-progress=true`) so overlapping scans never both pass the eventually-consistent active-run check and dispatch duplicate `fix-review` runs (targeted single-PR paths still get per-PR groups) | char |
+| C11 | per-PR fetch failure during a scan | `fetch-auto-cover-context` isolates the failed PR (skipped + recorded in manifest; not handed to the dispatch loop) so the rest of the scan completes; only the shared `fix-review` runs fetch failing or EVERY PR failing aborts the job (retry next cycle) | char |
 
 ---
 
