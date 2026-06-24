@@ -350,7 +350,13 @@ function writeSelectedPlans({
     const planNumber = nextPlanNumber;
     reserved.add(planNumber);
     nextPlanNumber += 1;
-    const wave = imported.maxWave + index + 1;
+    // Phase 999 intake plans always have depends_on: [], so the GSD executor's
+    // topological-sort assigns them to Wave 1 regardless of any declared wave.
+    // Using the formula `maxWave + index + 1` produced ever-increasing wave
+    // numbers (e.g. wave 10) that never matched the executor's computed Wave 1,
+    // causing --wave N executions to be no-ops. Always emit wave 1 to stay in
+    // sync with the topological assignment.
+    const wave = 1;
     const planPath = path.join(
       queueDir,
       `999-${String(planNumber).padStart(3, '0')}-PLAN.md`,
