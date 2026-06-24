@@ -639,6 +639,16 @@ Source: `/gsd:explore` fifth-pass review (non-duplicative). Artifact: `.planning
 | 14 | **`server-connection.ts` is a non-functional stub** — `executeOnServer()` logs "Would execute on remote server" and returns empty success. No SSH, no real command execution. Multi-server management (Phases 8.1–8.4) silently does nothing on remote servers. Fix: implement `RemoteExecutor` interface with `ssh2`-based production impl. | High (Correctness) | `src/lib/server-connection.ts` (rewrite), `src/lib/remote-executor.ts` (new), `src/lib/vpn-services.ts`, `package.json` | Proposed |
 | 15 | **Panel sync API key lookup is O(n) bcrypt** — `POST /api/sync/receive` loads all active panels and iterates `bcrypt.compare()` per panel. With N panels, each sync costs O(N × 100ms). Fix: add `apiKeyFastHash` (SHA-256) column for O(1) indexed pre-filter, then bcrypt-verify single match. | Medium (Perf) | `prisma/schema.prisma`, `src/app/api/sync/receive/route.ts`, `src/app/api/panels/route.ts`, `src/app/api/panels/[id]/route.ts` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 6 (2026-06-24)
+
+Source: `/gsd:explore` sixth-pass review (non-duplicative). Artifact: `.planning/quick/260624-arch-review-pass6/260624-PLAN.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 16 | **SQLite WAL mode** — `PrismaBetterSqlite3` initialized without WAL; rollback journal locks entire DB on every write. Fix: append `?journal_mode=WAL` to DATABASE_URL or set via pragma after connection. | High (Perf) | `src/lib/prisma.ts` | Proposed |
+| 17 | **Security response headers** — Zero security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) set anywhere. Fix: add header defaults via Next.js middleware. | Medium (Security) | `src/middleware.ts` (new/extend) | Proposed |
+| 18 | **Bounded parallelism for VPN service loops** — User delete and user-sync iterate VPN API calls sequentially in `for` loops. Fix: `Promise.allSettled` for parallel execution with partial-failure tolerance. | Medium (Perf) | `src/app/api/users/[id]/route.ts`, `src/lib/user-sync.ts` | Proposed |
+
 ## Improvement Intake: Consolidated Review Archive (2026-06-17 to 2026-06-21)
 
 Source: consolidated follow-up for PRs #438, #455, and #471. PR #476 was already merged and remains indexed in the 2026-06-22 pass above.
@@ -656,4 +666,4 @@ Notes:
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-06-23 - Added consolidated review archive for PRs #438, #455, and #471; PR #476 was already merged*
+*Last updated: 2026-06-24 - Added architectural review pass 6 (proposals #16-#18: SQLite WAL, security headers, VPN loop parallelism)*
