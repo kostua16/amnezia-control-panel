@@ -69,7 +69,6 @@ const GUIDANCE_BLOCKING_LABELS = [
 ];
 
 const MANUAL_REVIEW_LABELS = new Set(['needs-review']);
-const MAINTAINER_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 const COMMENT_MARKER = '<!-- pr-flow-orchestration -->';
 
@@ -200,9 +199,9 @@ function isBotAccount(user = {}) {
   return type === 'Bot' || /\[bot\]$/.test(login);
 }
 
-function isMaintainerComment(comment = {}) {
+function isMaintainerComment(comment = {}, maintainerAssociations = []) {
   return (
-    MAINTAINER_ASSOCIATIONS.has(comment.author_association) &&
+    maintainerAssociations.includes(comment.author_association) &&
     !isBotAccount(comment.user)
   );
 }
@@ -1339,7 +1338,7 @@ function makeDecision(context) {
   const manualCodeReviewRequested =
     eventName === 'issue_comment' &&
     Boolean(event?.issue?.pull_request) &&
-    isMaintainerComment(event?.comment) &&
+    isMaintainerComment(event?.comment, policy.maintainerAssociations ?? []) &&
     hasStandaloneCommand(event?.comment?.body, '/review') &&
     !policy.dependabot;
   const manualOnly = policy.manual_only || manualReviewLabels.length > 0;

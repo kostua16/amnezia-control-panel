@@ -267,7 +267,10 @@ test('manual /review dispatches Code Review through PR Flow and resets stale rev
       labels: ['ai-review-passed', 'security-review-passed'],
       files: ['src/example.ts'],
     },
-    policy: { blocking_labels_present: [] },
+    policy: {
+      blocking_labels_present: [],
+      maintainerAssociations: ['OWNER', 'MEMBER', 'COLLABORATOR'],
+    },
     workerRuns: { codeReview: [] },
     eventName: 'issue_comment',
     event: {
@@ -295,7 +298,10 @@ test('manual /review dispatches Code Review through PR Flow and resets stale rev
 test('manual /review does not treat old-head failed review runs as current', () => {
   const decision = makePrFlowDecision({
     pr: { ...basePr, labels: [], files: ['src/example.ts'] },
-    policy: { blocking_labels_present: [] },
+    policy: {
+      blocking_labels_present: [],
+      maintainerAssociations: ['OWNER', 'MEMBER', 'COLLABORATOR'],
+    },
     workerRuns: {
       codeReview: [
         {
@@ -357,6 +363,36 @@ test('manual /review is ignored inside PR Flow for bots and non-maintainers', ()
     assert.notEqual(decision.reason, 'Manual code review requested.');
     assert.notEqual(decision.dispatch?.key, 'codeReview');
   }
+});
+
+test('manual /review maintainer check uses policy maintainer associations', () => {
+  const decision = makePrFlowDecision({
+    pr: {
+      ...basePr,
+      labels: ['ai-review-passed', 'security-review-passed'],
+      files: ['src/example.ts'],
+    },
+    policy: {
+      blocking_labels_present: [],
+      maintainerAssociations: ['CONTRIBUTOR'],
+    },
+    workerRuns: { codeReview: [] },
+    eventName: 'issue_comment',
+    event: {
+      issue: { pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/review',
+        author_association: 'CONTRIBUTOR',
+        user: { login: 'trusted-contributor', type: 'User' },
+      },
+    },
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.equal(decision.state, 'flow/review-pending');
+  assert.equal(decision.reason, 'Manual code review requested.');
+  assert.equal(decision.dispatch?.key, 'codeReview');
 });
 
 test('worker run matching requires both PR number and current head SHA', () => {
