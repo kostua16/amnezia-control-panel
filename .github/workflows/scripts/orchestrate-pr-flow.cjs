@@ -355,7 +355,7 @@ function evaluatePolicy(pr, policyFile) {
   try {
     return JSON.parse(
       run('node', [
-        '.github/workflows/scripts/evaluate-pr-policy.cjs',
+        path.join(__dirname, 'evaluate-pr-policy.cjs'),
         '--policy-file',
         policyFile,
         '--pr-file',
@@ -1887,6 +1887,7 @@ module.exports = {
   getWorkerDispatchRef,
   getLabelsForDecision,
   getRequiredCheckStatus,
+  evaluatePolicy,
   makeDecision,
   readConfig,
   renderFlowComment,

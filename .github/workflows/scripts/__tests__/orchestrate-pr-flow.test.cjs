@@ -1,14 +1,18 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 
 const {
   buildFlowGuidance,
+  evaluatePolicy,
   getWorkerDispatchRef,
   makeDecision: makePrFlowDecision,
   renderFlowComment,
   summarizeWorkerRuns,
 } = require('../orchestrate-pr-flow.cjs');
+
+const policyPath = path.join(__dirname, '..', '..', 'policy.json');
 
 const basePr = {
   number: 42,
@@ -391,6 +395,47 @@ test('manual /review maintainer check uses policy maintainer associations', () =
   });
 
   assert.equal(decision.state, 'flow/review-pending');
+  assert.equal(decision.reason, 'Manual code review requested.');
+  assert.equal(decision.dispatch?.key, 'codeReview');
+});
+
+test('manual /review dispatch works with policy from the production evaluator', () => {
+  const pr = {
+    ...basePr,
+    number: 42,
+    title: 'fix: review routing',
+    url: 'https://example/pr/42',
+    headRefName: 'codex/example',
+    baseRefName: 'main',
+    authorLogin: 'kostua16',
+    labels: ['ai-review-passed', 'security-review-passed'],
+    files: ['src/example.ts'],
+    isCrossRepository: false,
+  };
+  const policy = evaluatePolicy(pr, policyPath);
+
+  const decision = makePrFlowDecision({
+    pr,
+    policy,
+    workerRuns: { codeReview: [] },
+    eventName: 'issue_comment',
+    event: {
+      issue: { pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/review',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.deepEqual(policy.maintainerAssociations, [
+    'OWNER',
+    'MEMBER',
+    'COLLABORATOR',
+  ]);
   assert.equal(decision.reason, 'Manual code review requested.');
   assert.equal(decision.dispatch?.key, 'codeReview');
 });

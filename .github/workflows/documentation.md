@@ -65,7 +65,8 @@ pull_request_target lifecycle events
 
 code-review.yml
 -> dispatch-only worker controlled by pr-flow.yml
--> /review issue comments wake pr-flow.yml, which dispatches this worker with the current PR head SHA
+-> /review issue comments wake pr-flow.yml; once required checks are green,
+   pr-flow dispatches this worker with the current PR head SHA
 -> produces ai-review-passed / ai-review-concerns
   -> produces security-review-passed / security-review-concerns
   -> pr-flow.yml consumes those signals
