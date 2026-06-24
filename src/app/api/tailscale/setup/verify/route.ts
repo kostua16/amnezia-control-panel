@@ -8,6 +8,7 @@ import {
   getBackendState,
   getNodes,
 } from '@/lib/tailscale';
+import { isBundledDeployment } from '@/lib/deployment-mode';
 
 const execFileAsync = promisify(execFile);
 
@@ -179,8 +180,9 @@ async function verifyAuthStep() {
         step: 'auth',
         passed: false,
         state,
-        message:
-          'Tailscale daemon is not running. Start with: sudo systemctl start tailscaled',
+        message: isBundledDeployment()
+          ? 'Tailscale daemon is not running. Restart the tailscaled s6 service or recreate the stack container.'
+          : 'Tailscale daemon is not running. Start with: sudo systemctl start tailscaled',
       };
     default:
       return {

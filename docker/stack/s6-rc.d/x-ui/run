@@ -1,0 +1,11 @@
+#!/command/with-contenv bash
+set -e
+
+export XUI_MAIN_FOLDER="${XUI_MAIN_FOLDER:-/opt/acp-stack/x-ui}"
+export XUI_DB_FOLDER="$XUI_MAIN_FOLDER"
+export XUI_IN_DOCKER=true
+export XUI_ENABLE_FAIL2BAN="${XUI_ENABLE_FAIL2BAN:-false}"
+
+mkdir -p "$XUI_MAIN_FOLDER"
+cd /opt/x-ui
+exec ./x-ui

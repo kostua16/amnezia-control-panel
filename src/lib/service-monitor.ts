@@ -1,4 +1,7 @@
+import { readFile } from 'node:fs/promises';
+
 import { execCommand } from '@/lib/command-executor';
+import { isBundledDeployment } from '@/lib/deployment-mode';
 
 export interface ServiceHealth {
   service: string;
@@ -14,14 +17,79 @@ const SERVICE_MAP: Record<ServiceKey, string> = {
   '3x-ui': '3x-ui',
 };
 
-/**
- * Check the current status of a single VPN service via systemctl.
- * Returns 'online' if the service is active, 'offline' otherwise.
- *
- * Async so HTTP handlers (e.g. the service-status route) can await it without
- * blocking the Node event loop while systemctl responds.
- */
-export async function checkServiceStatus(
+const BUNDLED_RESTART_SCRIPT: Record<ServiceKey, string> = {
+  awg: '/docker/stack/scripts/restart-awg.sh',
+  '3x-ui': '/docker/stack/scripts/restart-xui.sh',
+};
+
+function awgInterface(): string {
+  const value = process.env.AWG_INTERFACE?.trim();
+  return value || 'awg0';
+}
+
+function xuiBaseUrl(): string {
+  const value = process.env.XUI_BASE_URL?.trim();
+  return value || 'http://127.0.0.1:2053';
+}
+
+async function checkBundledAwgStatus(): Promise<ServiceHealth> {
+  const systemdName = SERVICE_MAP.awg;
+  const iface = awgInterface();
+
+  try {
+    const operstate = await readFile(
+      `/sys/class/net/${iface}/operstate`,
+      'utf-8',
+    );
+    const online = operstate.trim() === 'unknown' || operstate.trim() === 'up';
+    return {
+      service: 'awg',
+      systemdName,
+      status: online ? 'online' : 'offline',
+      timestamp: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.error(
+      `[service-monitor] Bundled AWG check failed for ${iface}:`,
+      err,
+    );
+    return {
+      service: 'awg',
+      systemdName,
+      status: 'offline',
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+async function checkBundledXuiStatus(): Promise<ServiceHealth> {
+  const systemdName = SERVICE_MAP['3x-ui'];
+  const baseUrl = xuiBaseUrl();
+
+  try {
+    const response = await fetch(`${baseUrl}/login`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    });
+    const online = response.ok || response.status === 404;
+    return {
+      service: '3x-ui',
+      systemdName,
+      status: online ? 'online' : 'offline',
+      timestamp: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.error('[service-monitor] Bundled 3x-ui HTTP check failed:', err);
+    return {
+      service: '3x-ui',
+      systemdName,
+      status: 'offline',
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+async function checkExternalServiceStatus(
   serviceKey: ServiceKey,
 ): Promise<ServiceHealth> {
   const systemdName = SERVICE_MAP[serviceKey];
@@ -57,6 +125,21 @@ export async function checkServiceStatus(
 }
 
 /**
+ * Check the current status of a single VPN service.
+ * External mode uses systemctl; bundled mode probes local CLIs/HTTP.
+ */
+export async function checkServiceStatus(
+  serviceKey: ServiceKey,
+): Promise<ServiceHealth> {
+  if (isBundledDeployment()) {
+    return serviceKey === 'awg'
+      ? checkBundledAwgStatus()
+      : checkBundledXuiStatus();
+  }
+  return checkExternalServiceStatus(serviceKey);
+}
+
+/**
  * Check the status of all VPN services.
  */
 export async function checkAllServices(): Promise<ServiceHealth[]> {
@@ -64,11 +147,29 @@ export async function checkAllServices(): Promise<ServiceHealth[]> {
   return Promise.all(services.map(checkServiceStatus));
 }
 
+async function restartBundledService(serviceKey: ServiceKey): Promise<boolean> {
+  const script = BUNDLED_RESTART_SCRIPT[serviceKey];
+  try {
+    await execCommand('sudo', ['-n', script], { timeoutMs: 15000 });
+    return true;
+  } catch (err) {
+    console.error(
+      `[service-monitor] Bundled restart failed for ${serviceKey}:`,
+      err,
+    );
+    return false;
+  }
+}
+
 /**
- * Attempt to restart a VPN service via systemctl.
- * Returns true if the restart command succeeded, false otherwise.
+ * Attempt to restart a VPN service.
+ * External mode uses systemctl; bundled mode uses stack helper scripts.
  */
 export async function restartService(serviceKey: ServiceKey): Promise<boolean> {
+  if (isBundledDeployment()) {
+    return restartBundledService(serviceKey);
+  }
+
   const systemdName = SERVICE_MAP[serviceKey];
 
   try {
@@ -119,14 +220,11 @@ export class ServiceMonitor {
         const previous = lastStatuses[serviceKey];
 
         if (previous === undefined) {
-          // First check: report initial status regardless.
           await this.onStatusChange(health);
         } else if (previous === 'online' && health.status === 'offline') {
-          // Detect transition from online -> offline
           if (this.autoRestart) {
             const restarted = await restartService(serviceKey);
             if (restarted) {
-              // Re-check after restart
               const newHealth = await checkServiceStatus(serviceKey);
               if (newHealth.status === 'online') {
                 health.status = 'online';
@@ -135,7 +233,6 @@ export class ServiceMonitor {
           }
           await this.onStatusChange(health);
         } else if (previous !== health.status) {
-          // Report any other status change (e.g. offline -> online)
           await this.onStatusChange(health);
         }
 

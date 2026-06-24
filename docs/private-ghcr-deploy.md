@@ -71,6 +71,14 @@ Run install for all enabled servers in the config:
 scripts/deploy-server.sh install
 ```
 
+Bundled VPN stack (AWG + 3x-ui + Tailscale in one privileged container):
+
+```bash
+scripts/deploy-server.sh install --stack vpn-1
+```
+
+This uses `ghcr.io/kostua16/amnezia-control-panel:stack-latest`. See [Bundled stack deployment](bundled-stack.md).
+
 If `GHCR_TOKEN` or `ADMIN_PASSWORD` are not set in the environment, the helper
 prompts once and stores them in the OS credential store:
 

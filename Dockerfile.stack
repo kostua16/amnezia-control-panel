@@ -1,0 +1,146 @@
+# syntax=docker/dockerfile:1
+# Bundled VPN stack image: ACP + AmneziaWG + 3x-ui/Xray + Tailscale.
+# Version pins: docker/stack-pins
+
+ARG XUI_REF=v3.4.0
+ARG TAILSCALE_VERSION=v1.98.3
+ARG AMNEZIAWG_GO_REF=v0.2.19
+ARG AWGTOOLS_RELEASE=1.0.20260618-2
+ARG S6_OVERLAY_VERSION=3.2.0.2
+
+# ─── Stage 1: ACP dependencies ────────────────────────────────────────────────
+FROM node:24-alpine3.22 AS deps
+
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
+RUN --mount=type=cache,target=/root/.npm npm rebuild better-sqlite3
+
+# ─── Stage 2: ACP builder ─────────────────────────────────────────────────────
+FROM deps AS builder
+
+WORKDIR /app
+COPY . .
+RUN npx prisma generate
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# ─── Stage 3: 3x-ui upstream artifacts ──────────────────────────────────────
+FROM ghcr.io/mhsanaei/3x-ui:${XUI_REF} AS xui-upstream
+
+# ─── Stage 4: AmneziaWG go binary ─────────────────────────────────────────────
+FROM golang:1.24-alpine AS awg-go-build
+
+RUN apk add --no-cache git
+ARG AMNEZIAWG_GO_REF
+WORKDIR /src
+RUN git clone --depth 1 --branch "${AMNEZIAWG_GO_REF}" https://github.com/amnezia-vpn/amneziawg-go.git . \
+    && go mod download \
+    && go build -ldflags '-s -w' -o /amneziawg-go .
+
+# ─── Stage 5: Tailscale binaries ──────────────────────────────────────────────
+FROM tailscale/tailscale:${TAILSCALE_VERSION} AS tailscale-upstream
+
+# ─── Stage 6: Stack runner ────────────────────────────────────────────────────
+FROM node:24-alpine3.22 AS stack
+
+ARG AWGTOOLS_RELEASE
+ARG S6_OVERLAY_VERSION
+ARG TARGETARCH
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3333
+ENV HOSTNAME=0.0.0.0
+ENV ACP_DEPLOYMENT_MODE=bundled
+ENV XUI_BASE_URL=http://127.0.0.1:2053
+ENV AWG_INTERFACE=awg0
+ENV AWG_CLI_PATH=/usr/bin/awg
+ENV XUI_MAIN_FOLDER=/opt/acp-stack/x-ui
+ENV TS_STATE_DIR=/opt/acp-stack/tailscale
+ENV TS_SOCKET=/opt/acp-stack/tailscale/tailscaled.sock
+
+RUN apk add --no-cache \
+    bash \
+    ca-certificates \
+    curl \
+    iproute2 \
+    iptables \
+    openssl \
+    sudo \
+    tzdata \
+    unzip \
+    wget \
+    xz \
+    && apk add --no-cache --virtual .build-deps wget xz \
+    && wget -qO /tmp/s6-overlay-noarch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" \
+    && wget -qO /tmp/s6-overlay-arch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-$(apk --print-arch).tar.xz" \
+    && tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz \
+    && tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz \
+    && rm -f /tmp/s6-overlay-noarch.tar.xz /tmp/s6-overlay-arch.tar.xz \
+    && apk del .build-deps
+
+# AmneziaWG CLI tools (awg, awg-quick, wg symlinks)
+RUN cd /usr/bin \
+    && wget -q "https://github.com/amnezia-vpn/amneziawg-tools/releases/download/v${AWGTOOLS_RELEASE}/alpine-3.19-amneziawg-tools.zip" \
+    && unzip -j alpine-3.19-amneziawg-tools.zip \
+    && chmod +x /usr/bin/awg /usr/bin/awg-quick \
+    && ln -sf /usr/bin/awg /usr/bin/wg \
+    && ln -sf /usr/bin/awg-quick /usr/bin/wg-quick \
+    && rm -f alpine-3.19-amneziawg-tools.zip
+
+COPY --from=awg-go-build /amneziawg-go /usr/bin/amneziawg-go
+
+# 3x-ui + Xray bundle
+COPY --from=xui-upstream /app /opt/x-ui
+COPY --from=xui-upstream /usr/bin/x-ui /usr/bin/x-ui
+
+# Tailscale
+COPY --from=tailscale-upstream /usr/local/bin/tailscale /usr/local/bin/tailscale
+COPY --from=tailscale-upstream /usr/local/bin/tailscaled /usr/local/bin/tailscaled
+
+RUN addgroup --system --gid 1001 appgroup \
+    && adduser --system --uid 1001 appuser \
+    && mkdir -p /app/data/geoip /app/prisma /app/logs \
+      /opt/acp-stack/x-ui /opt/acp-stack/awg /opt/acp-stack/tailscale \
+    && chown -R appuser:appgroup /app/data /app/logs /opt/acp-stack
+
+# ACP application (standalone)
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=appuser:appgroup /app/.next/static ./.next/static
+COPY --from=builder /app/server.mjs ./server.mjs
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/src/generated ./src/generated
+COPY --from=builder /app/instrumentation.ts ./instrumentation.ts
+
+# s6 process supervision + stack helpers
+COPY docker/stack/s6-rc.d /etc/s6-overlay/s6-rc.d
+COPY docker/stack/scripts /docker/stack/scripts
+COPY docker/stack/sudoers.d/acp-stack /etc/sudoers.d/acp-stack
+COPY docker/stack-entrypoint.sh ./docker/stack-entrypoint.sh
+RUN chmod 0440 /etc/sudoers.d/acp-stack \
+    && chmod +x ./docker/stack-entrypoint.sh /docker/stack/scripts/*.sh \
+    && find /etc/s6-overlay/s6-rc.d \( -name run -o -name up -o -name finish \) -exec chmod +x {} +
+
+# Build-time smoke checks (no NET_ADMIN required)
+RUN node -e "require('better-sqlite3')" \
+    && awg -v \
+    && /opt/x-ui/x-ui -v \
+    && tailscale version \
+    && test -x /usr/bin/amneziawg-go
+
+EXPOSE 3333 51821/udp
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3333/ || exit 1
+
+ENTRYPOINT ["./docker/stack-entrypoint.sh"]
+CMD []

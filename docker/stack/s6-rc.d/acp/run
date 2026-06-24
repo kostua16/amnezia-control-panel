@@ -1,0 +1,4 @@
+#!/command/with-contenv bash
+set -e
+cd /app
+exec s6-setuidgid appuser node server.mjs

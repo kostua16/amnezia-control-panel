@@ -11,13 +11,17 @@ AGENT_ENV="$CONFIG_DIR/agent.env"
 DEFAULT_APP_DIR="/opt/amnezia-control-panel"
 DEFAULT_GHCR_USER="kostua16"
 DEFAULT_IMAGE_REF="ghcr.io/kostua16/amnezia-control-panel:latest"
+DEFAULT_STACK_IMAGE_REF="ghcr.io/kostua16/amnezia-control-panel:stack-latest"
 DEFAULT_RELEASE_REPO="kostua16/amnezia-control-panel"
 DEFAULT_PORT="3333"
+DEFAULT_AWG_UDP_PORT="51821"
 ROLLBACK_REF="amnezia-control-panel:last-good"
 
 APP_DIR="$DEFAULT_APP_DIR"
 GHCR_USER="$DEFAULT_GHCR_USER"
 IMAGE_REF="$DEFAULT_IMAGE_REF"
+STACK_MODE="0"
+AWG_UDP_PORT="$DEFAULT_AWG_UDP_PORT"
 RELEASE_REPO="$DEFAULT_RELEASE_REPO"
 PORT="$DEFAULT_PORT"
 NEXT_PUBLIC_APP_URL=""
@@ -33,7 +37,7 @@ LAST_GOOD_FILE=""
 usage() {
   cat <<'USAGE'
 Usage:
-  acp-agent bootstrap [--env-stdin] [--install-service|--no-service]
+  acp-agent bootstrap [--env-stdin] [--stack] [--install-service|--no-service]
   acp-agent status
   acp-agent healthcheck
   acp-agent care
@@ -122,8 +126,16 @@ load_config() {
   APP_DIR="${APP_DIR:-$DEFAULT_APP_DIR}"
   GHCR_USER="${GHCR_USER:-$DEFAULT_GHCR_USER}"
   IMAGE_REF="${IMAGE_REF:-$DEFAULT_IMAGE_REF}"
+  if truthy "$STACK_MODE"; then
+    if [ -n "${STACK_IMAGE_REF:-}" ]; then
+      IMAGE_REF="$STACK_IMAGE_REF"
+    elif [ "$IMAGE_REF" = "$DEFAULT_IMAGE_REF" ]; then
+      IMAGE_REF="$DEFAULT_STACK_IMAGE_REF"
+    fi
+  fi
   RELEASE_REPO="${RELEASE_REPO:-$DEFAULT_RELEASE_REPO}"
   PORT="${PORT:-$DEFAULT_PORT}"
+  AWG_UDP_PORT="${AWG_UDP_PORT:-$DEFAULT_AWG_UDP_PORT}"
   NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-http://localhost:$PORT}"
   INSTALL_SERVICE="${INSTALL_SERVICE:-1}"
   refresh_paths
@@ -137,6 +149,8 @@ write_agent_config() {
     write_env_line "APP_DIR" "$APP_DIR"
     write_env_line "GHCR_USER" "$GHCR_USER"
     write_env_line "IMAGE_REF" "$IMAGE_REF"
+    write_env_line "STACK_MODE" "$STACK_MODE"
+    write_env_line "AWG_UDP_PORT" "$AWG_UDP_PORT"
     write_env_line "RELEASE_REPO" "$RELEASE_REPO"
     write_env_line "PORT" "$PORT"
     write_env_line "NEXT_PUBLIC_APP_URL" "$NEXT_PUBLIC_APP_URL"
@@ -172,6 +186,9 @@ parse_env_stdin() {
       GHCR_USER) GHCR_USER="$value" ;;
       GHCR_TOKEN) store_token "$value" ;;
       IMAGE_REF) IMAGE_REF="$value" ;;
+      STACK_MODE) STACK_MODE="$value" ;;
+      STACK_IMAGE_REF) STACK_IMAGE_REF="$value" ;;
+      AWG_UDP_PORT) AWG_UDP_PORT="$value" ;;
       RELEASE_REPO) RELEASE_REPO="$value" ;;
       PORT) PORT="$value" ;;
       NEXT_PUBLIC_APP_URL) NEXT_PUBLIC_APP_URL="$value" ;;
@@ -274,7 +291,7 @@ enable_docker() {
   fi
 }
 
-write_compose() {
+write_compose_panel() {
   install -d -m 755 "$APP_DIR"
   cat >"$COMPOSE_FILE" <<COMPOSE
 services:
@@ -309,6 +326,67 @@ COMPOSE
   chmod 644 "$COMPOSE_FILE"
 }
 
+write_compose_stack() {
+  install -d -m 755 "$APP_DIR"
+  cat >"$COMPOSE_FILE" <<COMPOSE
+services:
+  app:
+    image: "$IMAGE_REF"
+    container_name: amnezia-control-panel-stack
+    restart: unless-stopped
+    pull_policy: always
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      net.ipv4.ip_forward: 1
+      net.ipv4.conf.all.src_valid_mark: 1
+    ports:
+      - "$PORT:3333"
+      - "$AWG_UDP_PORT:${AWG_UDP_PORT:-51821}/udp"
+    env_file:
+      - .env
+    volumes:
+      - db-data:/app/data/prisma
+      - geoip-data:/app/data/geoip
+      - log-data:/app/logs
+      - xui-data:/opt/acp-stack/x-ui
+      - awg-data:/opt/acp-stack/awg
+      - tailscale-data:/opt/acp-stack/tailscale
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3333/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  db-data:
+    driver: local
+  geoip-data:
+    driver: local
+  log-data:
+    driver: local
+  xui-data:
+    driver: local
+  awg-data:
+    driver: local
+  tailscale-data:
+    driver: local
+COMPOSE
+  chmod 644 "$COMPOSE_FILE"
+}
+
+write_compose() {
+  if truthy "$STACK_MODE"; then
+    write_compose_stack
+  else
+    write_compose_panel
+  fi
+}
+
 write_app_env() {
   install -d -m 755 "$APP_DIR"
 
@@ -334,6 +412,13 @@ write_app_env() {
     write_env_line "ADMIN_PASSWORD" "$ADMIN_PASSWORD"
     write_env_line "DATABASE_URL" "file:/app/data/prisma/dev.db"
     write_env_line "NEXT_PUBLIC_APP_URL" "$NEXT_PUBLIC_APP_URL"
+    if truthy "$STACK_MODE"; then
+      write_env_line "ACP_DEPLOYMENT_MODE" "bundled"
+      write_env_line "XUI_BASE_URL" "http://127.0.0.1:2053"
+      write_env_line "AWG_INTERFACE" "awg0"
+      write_env_line "ACP_AWG_UDP_PORT" "$AWG_UDP_PORT"
+      write_env_line "TS_STATE_DIR" "/opt/acp-stack/tailscale"
+    fi
   } >"$tmp"
   install -m 600 -o root -g root "$tmp" "$APP_ENV_FILE"
   rm -f "$tmp"
@@ -470,6 +555,7 @@ bootstrap() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --env-stdin) read_stdin="1" ;;
+      --stack) STACK_MODE="1" ;;
       --install-service) INSTALL_SERVICE="1" ;;
       --no-service) INSTALL_SERVICE="0" ;;
       -h | --help)
