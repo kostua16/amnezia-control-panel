@@ -16,6 +16,7 @@ const STICKY_MARKERS = [
 ];
 const SLASH_COMMAND = /^\s*\/[\w-]+/;
 const MAX_DIFF_CHARS = 30000;
+const KILO_MARKER = '<!-- kilo-review -->';
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -38,9 +39,18 @@ function isBot(user = {}) {
   );
 }
 
+function isTrustedKiloSummary(comment) {
+  const login = String(comment.user?.login ?? '');
+  return (
+    (login === 'kilo-code-bot[bot]' || login === 'kilo-code-bot') &&
+    String(comment.body ?? '').includes(KILO_MARKER)
+  );
+}
+
 // Drop noise: bots, slash-command comments (e.g. the /fix-review trigger itself),
 // and other automation sticky summaries.
 function isNoiseComment(comment) {
+  if (isTrustedKiloSummary(comment)) return false;
   if (isBot(comment.user)) return true;
   const body = String(comment.body ?? '');
   if (SLASH_COMMAND.test(body)) return true;
@@ -177,6 +187,7 @@ module.exports = {
   MAX_DIFF_CHARS,
   parseRepo,
   isBot,
+  isTrustedKiloSummary,
   isNoiseComment,
   formatBundle,
   fetchReviewThreads,

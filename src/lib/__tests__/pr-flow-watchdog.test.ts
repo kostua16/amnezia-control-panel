@@ -6,6 +6,7 @@ import { describe, it } from 'node:test';
 const require = createRequire(import.meta.url);
 const {
   buildDispatchArgs,
+  hasExpiredKiloPendingStatus,
   hasCurrentReadyStatus,
   runWatchdog,
   selectStalePrs,
@@ -156,6 +157,49 @@ describe('PR flow watchdog', () => {
         reasons: pr.recoveryReasons,
       })),
       [{ number: 205, reasons: ['missing-ready-status'] }],
+    );
+  });
+
+  it('selects PRs with expired pending Kilo review status', () => {
+    const selected = selectStalePrs(
+      [
+        prFixture({
+          labels: [],
+          headRefOid: 'abc123',
+        }),
+      ],
+      {
+        now: '2026-06-24T12:00:00Z',
+        getStatuses: () => [
+          {
+            context: 'pr-flow/ready',
+            state: 'pending',
+          },
+          {
+            context: 'pr-flow/kilo-review',
+            state: 'pending',
+            created_at: '2026-06-24T11:29:00Z',
+          },
+        ],
+      },
+    );
+
+    assert.deepEqual(selected[0]?.recoveryReasons, ['expired-kilo-review']);
+  });
+
+  it('does not treat fresh Kilo pending status as expired', () => {
+    assert.equal(
+      hasExpiredKiloPendingStatus(
+        [
+          {
+            context: 'pr-flow/kilo-review',
+            state: 'pending',
+            created_at: '2026-06-24T11:45:00Z',
+          },
+        ],
+        { now: '2026-06-24T12:00:00Z' },
+      ),
+      false,
     );
   });
 

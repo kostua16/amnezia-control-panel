@@ -9,6 +9,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { evaluateExternalReview } = require('../evaluate-external-review.cjs');
+const {
+  evaluateAutoCoverReview,
+} = require('../evaluate-auto-cover-review.cjs');
 
 const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const scriptPath = path.join(
@@ -16,6 +20,7 @@ const scriptPath = path.join(
   '.github/workflows/scripts/evaluate-trigger-policy.cjs',
 );
 const policyPath = path.join(repoRoot, '.github/workflows/policy.json');
+const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
 
 function runMode({ mode, eventName, event }) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-ai-review-'));
@@ -130,6 +135,160 @@ test('R7 char: workflow_dispatch review → should_run + trusted', () => {
   assert.equal(out.should_run, true);
   assert.equal(out.trusted, true);
   assert.equal(out.trigger_source, 'workflow_dispatch');
+});
+
+// ---------- §3 Kilo external review signal ----------
+const kiloUser = { login: 'kilo-code-bot[bot]', type: 'Bot' };
+const kiloHead = 'abc123';
+const kiloPr = { headRefOid: kiloHead };
+
+test('R13 char: current-head Kilo No Issues Found → passed', () => {
+  const out = evaluateExternalReview({
+    pr: kiloPr,
+    reviews: [
+      {
+        user: kiloUser,
+        commit_id: kiloHead,
+        submitted_at: '2026-06-24T12:00:00Z',
+      },
+    ],
+    comments: [
+      {
+        user: kiloUser,
+        body: '<!-- kilo-review -->\nStatus: No Issues Found',
+        created_at: '2026-06-24T12:01:00Z',
+      },
+    ],
+  });
+  assert.equal(out.state, 'passed');
+});
+
+test('R14 char: current-head Kilo issues → blocked', () => {
+  const out = evaluateExternalReview({
+    pr: kiloPr,
+    reviewComments: [{ user: kiloUser, commit_id: kiloHead, body: 'fix this' }],
+  });
+  assert.equal(out.state, 'blocked');
+});
+
+test('R15 char: old-head Kilo issues are ignored', () => {
+  const out = evaluateExternalReview({
+    pr: kiloPr,
+    reviewComments: [{ user: kiloUser, commit_id: 'old', body: 'old issue' }],
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T11:45:00Z',
+      },
+    ],
+    now: '2026-06-24T12:00:00Z',
+  });
+  assert.equal(out.state, 'pending');
+});
+
+test('R16 char: canceled Kilo check → skipped', () => {
+  const out = evaluateExternalReview({
+    pr: kiloPr,
+    checkRuns: [{ name: 'Kilo Review', conclusion: 'cancelled' }],
+  });
+  assert.equal(out.state, 'skipped');
+});
+
+test('R17/R18 char: Kilo no-reply timeout pending then skipped', () => {
+  const fresh = evaluateExternalReview({
+    pr: kiloPr,
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T11:45:00Z',
+      },
+    ],
+    now: '2026-06-24T12:00:00Z',
+  });
+  const expired = evaluateExternalReview({
+    pr: kiloPr,
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T11:29:00Z',
+      },
+    ],
+    now: '2026-06-24T12:00:00Z',
+  });
+  assert.equal(fresh.state, 'pending');
+  assert.equal(expired.state, 'skipped');
+});
+
+// ---------- §6d auto-cover repair ----------
+function autoCoverPr(overrides = {}) {
+  return {
+    number: 507,
+    title: 'ci(workflows): repair review blockers',
+    state: 'OPEN',
+    isDraft: false,
+    isCrossRepository: false,
+    headRefOid: 'abc123',
+    headRefName: 'claude-workflow-optimize-review-loop',
+    baseRefName: 'main',
+    labels: ['ai-review-concerns'],
+    files: ['.planning/example.md'],
+    ...overrides,
+  };
+}
+
+test('FR7/FR8 char: internal or Kilo blockers dispatch auto-cover repair', () => {
+  const internal = evaluateAutoCoverReview({
+    pr: autoCoverPr(),
+    policy,
+    expectedHeadSha: 'abc123',
+  });
+  const kiloOnly = evaluateAutoCoverReview({
+    pr: autoCoverPr({ labels: ['needs-review'] }),
+    policy,
+    externalReview: { state: 'blocked' },
+    expectedHeadSha: 'abc123',
+  });
+
+  assert.equal(internal.should_run, true);
+  assert.equal(kiloOnly.should_run, true);
+});
+
+test('FR9 char: manual-only review blockers are repairable', () => {
+  const out = evaluateAutoCoverReview({
+    pr: autoCoverPr({
+      headRefName: 'claude-audit-fix-1',
+      labels: ['needs-review', 'security-review-concerns'],
+      files: ['.github/workflows/ci.yml'],
+    }),
+    policy,
+    expectedHeadSha: 'abc123',
+  });
+
+  assert.equal(out.should_run, true);
+  assert.equal(out.manual_only, true);
+});
+
+test('FR10/FR11 char: cap reached or active repair no-ops', () => {
+  const capped = evaluateAutoCoverReview({
+    pr: autoCoverPr(),
+    policy,
+    expectedHeadSha: 'abc123',
+    attempts: [{ id: 1 }, { id: 2 }, { id: 3 }],
+  });
+  const active = evaluateAutoCoverReview({
+    pr: autoCoverPr(),
+    policy,
+    expectedHeadSha: 'abc123',
+    fixReviewRuns: [
+      { displayTitle: 'Fix Review PR #507 @ abc123', status: 'queued' },
+    ],
+  });
+
+  assert.equal(capped.should_run, false);
+  assert.equal(active.should_run, false);
 });
 
 // ---------- §6a fix-issue gate ----------

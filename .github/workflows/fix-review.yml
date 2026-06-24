@@ -27,6 +27,11 @@ on:
         description: 'Expected head SHA (stale-guard; leave empty to skip the check)'
         required: false
         type: string
+      automation_review_loop:
+        description: 'Allow the bounded auto-cover review loop to repair review-blocked/manual-only PRs'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -98,9 +103,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
           EXPECTED_HEAD_SHA: ${{ github.event.inputs.head_sha }}
+          AUTOMATION_REVIEW_LOOP: ${{ github.event.inputs.automation_review_loop || 'false' }}
         run: |
           gh pr view "$PR_NUMBER" \
-            --json number,headRefName,headRefOid,state,mergedAt,autoMergeRequest > /tmp/fix-review-pr.json
+            --json number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository,autoMergeRequest > /tmp/fix-review-pr.json
           node .github/workflows/scripts/evaluate-pr-policy.cjs \
             --policy-file .github/workflows/policy.json \
             --pr-file /tmp/fix-review-pr.json > /tmp/fix-review-eval.json
@@ -111,18 +117,29 @@ jobs:
             const automationClasses = ["automation", "dependabot", "planning", "gsd"];
             const human = !automationClasses.includes(String(ev.pr_class || "").toLowerCase());
             const stale = process.env.EXPECTED_HEAD_SHA && process.env.EXPECTED_HEAD_SHA !== pr.headRefOid;
+            const automationLoop = String(process.env.AUTOMATION_REVIEW_LOOP || "").toLowerCase() === "true";
+            const labels = (ev.labels || []).map(String);
+            const hardBlockers = labels.filter((label) =>
+              ["do-not-merge", "deps-review-manual", "deps-review-blocked"].includes(label)
+            );
+            const humanEligible =
+              (ev.blocking_labels_present || []).length === 0 &&
+              human;
+            const automationEligible =
+              automationLoop &&
+              hardBlockers.length === 0;
             const eligible =
               String(pr.state || "").toLowerCase() === "open" &&
               !pr.mergedAt &&
               ev.same_repo === true &&
               ev.is_draft !== true &&
-              (ev.blocking_labels_present || []).length === 0 &&
-              human &&
+              (automationEligible || humanEligible) &&
               !stale;
             process.stdout.write(
               "head_ref=" + pr.headRefName + "\n" +
               "head_sha=" + pr.headRefOid + "\n" +
               "auto_merge_enabled=" + Boolean(pr.autoMergeRequest && pr.autoMergeRequest.enabledAt) + "\n" +
+              "automation_review_loop=" + automationLoop + "\n" +
               "eligible=" + eligible + "\n"
             );
           ' >> "$GITHUB_OUTPUT"
@@ -313,6 +330,13 @@ jobs:
         id: sha
         if: steps.pr.outputs.eligible == 'true' && steps.push.outputs.pushed == 'true'
         run: echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Label review fix
+        if: steps.pr.outputs.eligible == 'true' && steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+        run: gh issue edit "$PR_NUMBER" --add-label "fix-review"
 
       - name: Post finished summary
         if: always() && steps.pr.outputs.eligible == 'true'

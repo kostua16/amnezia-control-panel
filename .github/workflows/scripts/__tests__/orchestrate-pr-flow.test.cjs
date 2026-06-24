@@ -55,6 +55,11 @@ const baseVisibility = {
       description: 'N/A: Dependency review is not required for this PR.',
       targetUrl: '',
     },
+    kiloReview: {
+      displayState: 'N/A',
+      description: 'Kilo review was skipped.',
+      targetUrl: '',
+    },
     prImprove: {
       displayState: 'N/A',
       description: 'N/A: PR Improve is not required for this PR.',
@@ -88,6 +93,10 @@ const testConfig = {
       workflow: 'code-review.yml',
       passLabels: ['ai-review-passed', 'security-review-passed'],
       blockLabels: ['ai-review-concerns', 'security-review-concerns'],
+    },
+    kiloReview: {
+      required: false,
+      external: true,
     },
     finalizer: {
       workflow: 'pr-finalizer.yml',

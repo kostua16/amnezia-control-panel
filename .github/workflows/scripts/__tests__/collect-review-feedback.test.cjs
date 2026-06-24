@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 
 const {
   parseRepo,
+  isTrustedKiloSummary,
   isNoiseComment,
   formatBundle,
 } = require('../collect-review-feedback.cjs');
@@ -20,6 +21,20 @@ test('isNoiseComment drops bots, slash commands, and sticky markers', () => {
       body: 'x',
     }),
     true,
+  );
+  assert.equal(
+    isTrustedKiloSummary({
+      user: { login: 'kilo-code-bot[bot]', type: 'Bot' },
+      body: '<!-- kilo-review -->\nStatus: 1 Issue Found',
+    }),
+    true,
+  );
+  assert.equal(
+    isNoiseComment({
+      user: { login: 'kilo-code-bot[bot]', type: 'Bot' },
+      body: '<!-- kilo-review -->\nStatus: 1 Issue Found',
+    }),
+    false,
   );
   assert.equal(
     isNoiseComment({
