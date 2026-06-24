@@ -316,6 +316,22 @@
     "fix-review": {
       "color": "5319e7",
       "description": "Review feedback addressed in place by the /fix-review workflow"
+    },
+    "fresh/stale": {
+      "color": "fbca04",
+      "description": "Open PR is freshness-stale (older than the freshness cutoff) and a consolidation candidate"
+    },
+    "fresh/consolidation-candidate": {
+      "color": "1d76db",
+      "description": "Open PR grouped as a safe stale-PR consolidation candidate"
+    },
+    "fresh/superseded": {
+      "color": "6e7781",
+      "description": "Source PR was superseded by a consolidation replacement PR"
+    },
+    "stale-pr-consolidation": {
+      "color": "5319e7",
+      "description": "Replacement PR created by the stale-PR consolidation workflow"
     }
   }
 }

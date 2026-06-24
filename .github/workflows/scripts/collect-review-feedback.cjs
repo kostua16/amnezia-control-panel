@@ -12,6 +12,7 @@ const STICKY_MARKERS = [
   '<!-- pr-size-guard -->',
   '<!-- pr-flow-orchestration -->',
   '<!-- fix-review-summary -->',
+  '<!-- rebase-pr-summary -->',
 ];
 const SLASH_COMMAND = /^\s*\/[\w-]+/;
 const MAX_DIFF_CHARS = 30000;
@@ -104,14 +105,16 @@ function fetchComments(repo, pr) {
     .filter((c) => c.body.length > 0);
 }
 
-function fetchDiff(repo, pr) {
+function fetchDiff(repo, pr, maxChars = MAX_DIFF_CHARS) {
+  const limit =
+    Number.isFinite(maxChars) && maxChars > 0 ? maxChars : MAX_DIFF_CHARS;
   const diff = run('gh', ['pr', 'diff', String(pr), '--repo', repo], {
     allowFailure: true,
     fallback: '',
   });
   if (!diff) return '_diff unavailable_';
-  if (diff.length <= MAX_DIFF_CHARS) return diff;
-  return `${diff.slice(0, MAX_DIFF_CHARS)}\n\n…(diff truncated at ${MAX_DIFF_CHARS} chars; use \`git diff\` for the rest)`;
+  if (diff.length <= limit) return diff;
+  return `${diff.slice(0, limit)}\n\n…(diff truncated at ${limit} chars; use \`git diff\` for the rest)`;
 }
 
 function formatBundle({ threads, reviews, comments, diff }) {
@@ -176,4 +179,8 @@ module.exports = {
   isBot,
   isNoiseComment,
   formatBundle,
+  fetchReviewThreads,
+  fetchReviews,
+  fetchComments,
+  fetchDiff,
 };

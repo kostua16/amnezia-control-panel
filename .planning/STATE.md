@@ -150,6 +150,7 @@ Resume file: None
 | 2026-06-12 | 260612-vxj   | Managed private GHCR deployment helper and server agent     |
 | 2026-06-12 | 260613-1cb   | Audit-safe auto-approval allows 10 files / 400 lines        |
 | 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
+| 2026-06-24 | 260624-rebase-pr-workflow | Add /rebase branch-refresh workflow (rebase-pr.yml, force-with-lease) |
 
 ---
 

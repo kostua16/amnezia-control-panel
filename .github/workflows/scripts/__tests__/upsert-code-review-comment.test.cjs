@@ -9,8 +9,10 @@ const {
   verdictIcon,
   quoteBlock,
   isCancelledOutcome,
+  isSkippedOutcome,
   renderStarted,
   renderCancelled,
+  renderSkipped,
   renderComplete,
   renderFailureBody,
   findExistingComment,
@@ -229,9 +231,31 @@ test('renderCancelled renders the cancellation body with a clear reason', () => 
   assert.doesNotMatch(body, /failed to complete/);
 });
 
-test('isCancelledOutcome treats skipped review action as cancellation', () => {
+test('isCancelledOutcome treats only cancelled review action as cancellation', () => {
   assert.equal(isCancelledOutcome('cancelled'), true);
-  assert.equal(isCancelledOutcome('skipped'), true);
+  assert.equal(isCancelledOutcome('skipped'), false);
   assert.equal(isCancelledOutcome('success'), false);
   assert.equal(isCancelledOutcome('failure'), false);
+});
+
+test('renderSkipped explains a prerequisite setup failure, not cancellation', () => {
+  const body = renderSkipped({
+    headSha: 'abc123def456',
+    runUrl: 'https://example/run/10',
+    updatedAt: '2026-06-15T10:04:49.000Z',
+  });
+
+  assert.match(body, new RegExp(`^${COMMENT_MARKER}`));
+  assert.match(body, /⚪ Code review was skipped/);
+  assert.match(body, /`abc123def456`/);
+  assert.match(body, /earlier setup or prerequisite step failed/);
+  assert.match(body, /re-dispatch with `\/review`/);
+  assert.doesNotMatch(body, /timeout|supersed/);
+});
+
+test('isSkippedOutcome treats only skipped review action as skipped', () => {
+  assert.equal(isSkippedOutcome('skipped'), true);
+  assert.equal(isSkippedOutcome('cancelled'), false);
+  assert.equal(isSkippedOutcome('success'), false);
+  assert.equal(isSkippedOutcome('failure'), false);
 });

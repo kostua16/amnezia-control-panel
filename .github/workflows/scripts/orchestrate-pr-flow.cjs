@@ -69,6 +69,7 @@ const GUIDANCE_BLOCKING_LABELS = [
 ];
 
 const MANUAL_REVIEW_LABELS = new Set(['needs-review']);
+const MAINTAINER_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 const COMMENT_MARKER = '<!-- pr-flow-orchestration -->';
 
@@ -190,6 +191,20 @@ function hasStandaloneCommand(body, command) {
   return String(body ?? '')
     .split(/\r?\n/)
     .some((line) => line.trim() === command);
+}
+
+function isBotAccount(user = {}) {
+  const login = String(user.login ?? '');
+  const type = String(user.type ?? '');
+
+  return type === 'Bot' || /\[bot\]$/.test(login);
+}
+
+function isMaintainerComment(comment = {}) {
+  return (
+    MAINTAINER_ASSOCIATIONS.has(comment.author_association) &&
+    !isBotAccount(comment.user)
+  );
 }
 
 function splitBlockingLabels(labels) {
@@ -1324,6 +1339,7 @@ function makeDecision(context) {
   const manualCodeReviewRequested =
     eventName === 'issue_comment' &&
     Boolean(event?.issue?.pull_request) &&
+    isMaintainerComment(event?.comment) &&
     hasStandaloneCommand(event?.comment?.body, '/review') &&
     !policy.dependabot;
   const manualOnly = policy.manual_only || manualReviewLabels.length > 0;
