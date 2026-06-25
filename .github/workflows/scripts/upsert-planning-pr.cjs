@@ -195,7 +195,47 @@ function summarizePhaseSuggestions(phaseSuggestions, sourcePrNumber) {
 function escapeInline(value) {
   return String(value ?? '')
     .replace(/\s+/g, ' ')
+    .replace(/`/g, "'")
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .trim();
+}
+
+function validateQuickTask(task, index) {
+  const errors = [];
+  if (!task || typeof task !== 'object') {
+    return [`quick_tasks[${index}] is not an object`];
+  }
+  if (!task.title || typeof task.title !== 'string') {
+    errors.push(`quick_tasks[${index}].title is missing or not a string`);
+  }
+  if (!task.rationale || typeof task.rationale !== 'string') {
+    errors.push(`quick_tasks[${index}].rationale is missing or not a string`);
+  }
+  return errors;
+}
+
+function validatePhaseSuggestion(suggestion, index) {
+  const errors = [];
+  if (!suggestion || typeof suggestion !== 'object') {
+    return [`phase_suggestions[${index}] is not an object`];
+  }
+  if (!suggestion.title || typeof suggestion.title !== 'string') {
+    errors.push(`phase_suggestions[${index}].title is missing or not a string`);
+  }
+  if (!suggestion.rationale || typeof suggestion.rationale !== 'string') {
+    errors.push(`phase_suggestions[${index}].rationale is missing or not a string`);
+  }
+  if (
+    !suggestion.bucket &&
+    !suggestion.phase &&
+    !normalizeBucketKey(suggestion.bucket ?? suggestion.phase)
+  ) {
+    errors.push(
+      `phase_suggestions[${index}] has no valid bucket or phase identifier`,
+    );
+  }
+  return errors;
 }
 
 function renderQuickPlan({
@@ -316,11 +356,36 @@ function main() {
   const summary = escapeInline(
     suggestions.summary || 'Claude+GSD generated no summary.',
   );
-  const quickTasks = Array.isArray(suggestions.quick_tasks)
+  const rawQuickTasks = Array.isArray(suggestions.quick_tasks)
     ? suggestions.quick_tasks
     : [];
+  const validQuickTasks = [];
+  for (const [i, task] of rawQuickTasks.entries()) {
+    const errors = validateQuickTask(task, i);
+    if (errors.length > 0) {
+      console.warn(`Skipping invalid quick_task: ${errors.join('; ')}`);
+    } else {
+      validQuickTasks.push(task);
+    }
+  }
+  const quickTasks = validQuickTasks;
+
+  const rawPhaseSuggestions = Array.isArray(suggestions.phase_suggestions)
+    ? suggestions.phase_suggestions
+    : [];
+  const validPhaseSuggestions = [];
+  for (const [i, suggestion] of rawPhaseSuggestions.entries()) {
+    const errors = validatePhaseSuggestion(suggestion, i);
+    if (errors.length > 0) {
+      console.warn(
+        `Skipping invalid phase_suggestion: ${errors.join('; ')}`,
+      );
+    } else {
+      validPhaseSuggestions.push(suggestion);
+    }
+  }
   const phaseSuggestions = normalizePhaseSuggestions(
-    suggestions.phase_suggestions,
+    validPhaseSuggestions,
     sourcePrNumber,
   );
 
@@ -554,6 +619,7 @@ module.exports = {
   buildPlanningPrBody,
   collectTrackedPaths,
   ensureRoadmapIntakeMarkers,
+  escapeInline,
   getPhaseDisplayId,
   getPhaseNamespace,
   main,
@@ -564,4 +630,7 @@ module.exports = {
   renderQuickSummary,
   run,
   summarizePhaseSuggestions,
+  upsertSingleLineEntry,
+  validatePhaseSuggestion,
+  validateQuickTask,
 };

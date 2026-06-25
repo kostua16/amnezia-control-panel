@@ -71,6 +71,7 @@ jobs:
             3. Run /gsd:progress to summarize phase completion status
             4. Check for TODO/FIXME comments in recent commits (last 12h): `git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`
             5. Review open issues older than 90 days with /gsd:inbox
+            6. Clean up stale resolved debug docs: find .planning/debug/*.md files with frontmatter `status: resolved` and an `updated` field older than 30 days. Delete them. If any were deleted, commit with message "chore: prune stale resolved debug docs (maintenance)"
 
             For EACH category where findings exist, create a NEW GitHub issue:
             - Security findings: `gh issue create --title "Security: [summary of vulnerabilities]" --label "security" --body "[detailed findings]"`

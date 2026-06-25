@@ -9,11 +9,20 @@ import { describe, it } from 'node:test';
 const require = createRequire(import.meta.url);
 const {
   buildPlanningPrBody,
+  collectTrackedPaths,
+  ensureRoadmapIntakeMarkers,
+  escapeInline,
   getPhaseDisplayId,
+  normalizeBucketKey,
+  normalizePhaseSuggestion,
   normalizePhaseSuggestions,
   renderQuickPlan,
   renderQuickSummary,
   run,
+  summarizePhaseSuggestions,
+  upsertSingleLineEntry,
+  validatePhaseSuggestion,
+  validateQuickTask,
 } = require('../../../.github/workflows/scripts/upsert-planning-pr.cjs');
 
 function makeTempDir() {
@@ -285,5 +294,370 @@ describe('upsert-planning-pr', () => {
       /GSD planning executor imports merged artifacts four times per day/,
     );
     assert.doesNotMatch(body, /draft PR|manual-only/i);
+  });
+
+  // --- escapeInline tests ---
+  describe('escapeInline', () => {
+    it('collapses whitespace and trims', () => {
+      assert.equal(escapeInline('  hello   world  '), 'hello world');
+    });
+
+    it('handles null and undefined', () => {
+      assert.equal(escapeInline(null), '');
+      assert.equal(escapeInline(undefined), '');
+    });
+
+    it('escapes backticks to single quotes', () => {
+      assert.equal(escapeInline('use `npm test` here'), "use 'npm test' here");
+    });
+
+    it('strips HTML comments', () => {
+      assert.equal(escapeInline('before<!-- hidden -->after'), 'beforeafter');
+    });
+
+    it('strips markdown links, keeping link text', () => {
+      assert.equal(
+        escapeInline('see [docs](https://example.com) for help'),
+        'see docs for help',
+      );
+    });
+
+    it('handles combined injection patterns', () => {
+      const result = escapeInline(
+        'title <!-- comment --> [link](http://x) `code`',
+      );
+      assert.equal(result.includes('title'), true);
+      assert.equal(result.includes('link'), true);
+      assert.equal(result.includes("'code'"), true);
+      assert.equal(result.includes('<!--'), false);
+      assert.equal(result.includes('['), false);
+    });
+  });
+
+  // --- upsertSingleLineEntry tests ---
+  describe('upsertSingleLineEntry', () => {
+    it('inserts a new entry between markers', () => {
+      const content = 'header\n<!-- START -->\n<!-- END -->\nfooter';
+      const result = upsertSingleLineEntry(
+        content,
+        '<!-- START -->',
+        '<!-- END -->',
+        'A',
+        'line from A',
+      );
+      assert.match(result, /<!-- A --> line from A/);
+      assert.match(result, /header/);
+      assert.match(result, /footer/);
+    });
+
+    it('updates an existing entry by ID', () => {
+      const content =
+        'header\n<!-- START -->\n<!-- A --> old line\n<!-- END -->\nfooter';
+      const result = upsertSingleLineEntry(
+        content,
+        '<!-- START -->',
+        '<!-- END -->',
+        'A',
+        'new line from A',
+      );
+      assert.equal(result.includes('old line'), false);
+      assert.match(result, /<!-- A --> new line from A/);
+    });
+
+    it('sorts entries alphabetically', () => {
+      const content = 'header\n<!-- START -->\n<!-- END -->\nfooter';
+      const r1 = upsertSingleLineEntry(
+        content,
+        '<!-- START -->',
+        '<!-- END -->',
+        'Z',
+        'z entry',
+      );
+      const r2 = upsertSingleLineEntry(
+        r1,
+        '<!-- START -->',
+        '<!-- END -->',
+        'A',
+        'a entry',
+      );
+      const lines = r2
+        .split('<!-- START -->\n')[1]!
+        .split('\n<!-- END -->')[0]!
+        .split('\n')
+        .filter((l: string) => l.trim().length > 0);
+      assert.match(lines[0], /<!-- A -->/);
+      assert.match(lines[1], /<!-- Z -->/);
+    });
+
+    it('throws on missing markers', () => {
+      assert.throws(
+        () =>
+          upsertSingleLineEntry(
+            'no markers',
+            '<!-- S -->',
+            '<!-- E -->',
+            'A',
+            'line',
+          ),
+        /Missing marker pair/,
+      );
+    });
+  });
+
+  // --- ensureRoadmapIntakeMarkers tests ---
+  describe('ensureRoadmapIntakeMarkers', () => {
+    it('returns content unchanged when markers present', () => {
+      const content =
+        'top\n<!-- AUTO-PR-IMPROVE-INTAKE-START -->\n<!-- AUTO-PR-IMPROVE-INTAKE-END -->\nbot';
+      assert.equal(ensureRoadmapIntakeMarkers(content), content);
+    });
+
+    it('migrates legacy markers', () => {
+      const content =
+        'top\n<!-- AUTO-13X-INTAKE-START -->\n<!-- AUTO-13X-INTAKE-END -->\nbot';
+      const result = ensureRoadmapIntakeMarkers(content);
+      assert.match(result, /AUTO-PR-IMPROVE-INTAKE-START/);
+      assert.equal(result.includes('AUTO-13X-INTAKE'), false);
+    });
+
+    it('throws when markers are missing', () => {
+      assert.throws(
+        () => ensureRoadmapIntakeMarkers('no markers at all'),
+        /Missing roadmap intake markers/,
+      );
+    });
+  });
+
+  // --- collectTrackedPaths tests ---
+  describe('collectTrackedPaths', () => {
+    it('returns expected paths including ROADMAP_PATH', () => {
+      const paths = collectTrackedPaths(
+        '.planning/quick/test-dir',
+        '.planning/quick/test-dir/PLAN.md',
+        '.planning/quick/test-dir/SUMMARY.md',
+      );
+      assert.equal(paths.length, 4);
+      assert.ok(paths.includes('.planning/ROADMAP.md'));
+      assert.ok(paths.includes('.planning/quick/test-dir'));
+      assert.ok(paths.includes('.planning/quick/test-dir/PLAN.md'));
+      assert.ok(paths.includes('.planning/quick/test-dir/SUMMARY.md'));
+    });
+  });
+
+  // --- summarizePhaseSuggestions tests ---
+  describe('summarizePhaseSuggestions', () => {
+    it('returns "no new" for empty suggestions', () => {
+      assert.equal(
+        summarizePhaseSuggestions([], 200),
+        'no new pr200.x milestone suggestions',
+      );
+    });
+
+    it('returns single phase count', () => {
+      const suggestions = [{ phase: 'pr200.1', title: 'test' }];
+      assert.equal(summarizePhaseSuggestions(suggestions, 200), 'pr200.1 x1');
+    });
+
+    it('returns sorted multi-phase summary', () => {
+      const suggestions = [
+        { phase: 'pr200.3', title: 'a' },
+        { phase: 'pr200.1', title: 'b' },
+        { phase: 'pr200.3', title: 'c' },
+      ];
+      assert.equal(
+        summarizePhaseSuggestions(suggestions, 200),
+        'pr200.1 x1, pr200.3 x2',
+      );
+    });
+  });
+
+  // --- normalizePhaseSuggestion tests ---
+  describe('normalizePhaseSuggestion', () => {
+    it('returns null for unknown bucket', () => {
+      assert.equal(
+        normalizePhaseSuggestion({ bucket: 'unknown-bucket' }, 200),
+        null,
+      );
+    });
+
+    it('normalizes valid bucket key', () => {
+      const result = normalizePhaseSuggestion(
+        { bucket: 'ci-correctness', title: 't', rationale: 'r' },
+        200,
+      );
+      assert.equal(result.bucket, 'ci-correctness');
+      assert.equal(result.phase, 'pr200.2');
+    });
+
+    it('normalizes legacy numeric phase alias', () => {
+      const result = normalizePhaseSuggestion(
+        { phase: '13.3', title: 't', rationale: 'r' },
+        200,
+      );
+      assert.equal(result.bucket, 'approval-policy');
+      assert.equal(result.phase, 'pr200.3');
+    });
+  });
+
+  // --- normalizeBucketKey tests ---
+  describe('normalizeBucketKey', () => {
+    it('returns key directly for known buckets', () => {
+      assert.equal(
+        normalizeBucketKey('workflow-governance'),
+        'workflow-governance',
+      );
+      assert.equal(
+        normalizeBucketKey('planning-automation'),
+        'planning-automation',
+      );
+    });
+
+    it('resolves aliases', () => {
+      assert.equal(normalizeBucketKey('13.1'), 'workflow-governance');
+      assert.equal(normalizeBucketKey('13.4'), 'planning-automation');
+    });
+
+    it('resolves pr.N.N pattern', () => {
+      assert.equal(normalizeBucketKey('pr13.2'), 'ci-correctness');
+    });
+
+    it('returns null for unknown values', () => {
+      assert.equal(normalizeBucketKey('nonsense'), null);
+      assert.equal(normalizeBucketKey(null), null);
+      assert.equal(normalizeBucketKey(''), null);
+    });
+  });
+
+  // --- validateQuickTask tests ---
+  describe('validateQuickTask', () => {
+    it('returns errors for non-object', () => {
+      const errors = validateQuickTask('not-an-object', 0);
+      assert.ok(errors.length > 0);
+      assert.match(errors[0], /not an object/);
+    });
+
+    it('returns errors for missing title and rationale', () => {
+      const errors = validateQuickTask({ owner: 'x' }, 0);
+      assert.equal(errors.length, 2);
+      assert.ok(errors.some((e: string) => e.includes('title')));
+      assert.ok(errors.some((e: string) => e.includes('rationale')));
+    });
+
+    it('returns empty for valid task', () => {
+      const errors = validateQuickTask(
+        { title: 't', rationale: 'r', owner: 'm' },
+        0,
+      );
+      assert.equal(errors.length, 0);
+    });
+  });
+
+  // --- validatePhaseSuggestion tests ---
+  describe('validatePhaseSuggestion', () => {
+    it('returns errors for non-object', () => {
+      const errors = validatePhaseSuggestion(null, 0);
+      assert.ok(errors.length > 0);
+      assert.match(errors[0], /not an object/);
+    });
+
+    it('returns errors for missing title, rationale, and bucket', () => {
+      const errors = validatePhaseSuggestion({}, 0);
+      assert.equal(errors.length, 3);
+    });
+
+    it('returns empty for valid suggestion', () => {
+      const errors = validatePhaseSuggestion(
+        { bucket: 'ci-correctness', title: 't', rationale: 'r' },
+        0,
+      );
+      assert.equal(errors.length, 0);
+    });
+
+    it('accepts valid alias phase field', () => {
+      const errors = validatePhaseSuggestion(
+        { phase: '13.2', title: 't', rationale: 'r' },
+        0,
+      );
+      assert.equal(errors.length, 0);
+    });
+  });
+
+  // --- renderQuickPlan full structure tests ---
+  describe('renderQuickPlan', () => {
+    it('includes all required sections', () => {
+      const plan = renderQuickPlan({
+        sourcePrNumber: 100,
+        sourcePrTitle: 'test PR',
+        sourcePrUrl: 'https://example.com/pull/100',
+        summary: 'test summary',
+        quickTasks: [],
+        phaseSuggestions: [],
+      });
+      assert.match(plan, /# Quick Plan: PR #100 workflow improvement intake/);
+      assert.match(plan, /## Source/);
+      assert.match(plan, /## Summary/);
+      assert.match(plan, /## Quick Wins/);
+      assert.match(plan, /## pr100\.x Phase Candidates/);
+    });
+
+    it('shows "None identified" for empty arrays', () => {
+      const plan = renderQuickPlan({
+        sourcePrNumber: 100,
+        sourcePrTitle: 't',
+        sourcePrUrl: 'https://example.com/pull/100',
+        summary: 's',
+        quickTasks: [],
+        phaseSuggestions: [],
+      });
+      assert.match(plan, /Quick Wins[\s\S]*None identified in this run/);
+      assert.match(plan, /Phase Candidates[\s\S]*None identified in this run/);
+    });
+
+    it('renders quick tasks with owner and type', () => {
+      const plan = renderQuickPlan({
+        sourcePrNumber: 100,
+        sourcePrTitle: 't',
+        sourcePrUrl: 'https://example.com/pull/100',
+        summary: 's',
+        quickTasks: [
+          {
+            title: 'Fix X',
+            rationale: 'broken',
+            owner: 'team',
+            artifact_type: 'quick-task',
+          },
+        ],
+        phaseSuggestions: [],
+      });
+      assert.match(plan, /Fix X -- broken \(owner: team, type: quick-task\)/);
+    });
+
+    it('defaults owner to maintainer when missing', () => {
+      const plan = renderQuickPlan({
+        sourcePrNumber: 100,
+        sourcePrTitle: 't',
+        sourcePrUrl: 'https://example.com/pull/100',
+        summary: 's',
+        quickTasks: [{ title: 'Fix X', rationale: 'broken' }],
+        phaseSuggestions: [],
+      });
+      assert.match(plan, /\(owner: maintainer, type: quick task\)/);
+    });
+  });
+
+  // --- renderQuickSummary tests ---
+  describe('renderQuickSummary', () => {
+    it('includes counts and mapping', () => {
+      const summary = renderQuickSummary({
+        sourcePrNumber: 100,
+        sourcePrUrl: 'https://example.com/pull/100',
+        summary: 'test',
+        quickTasks: [{ title: 't', rationale: 'r' }],
+        phaseSuggestions: [],
+      });
+      assert.match(summary, /- Quick tasks: 1/);
+      assert.match(summary, /- Phase suggestions: 0/);
+      assert.match(summary, /no new pr100\.x milestone suggestions/);
+    });
   });
 });
