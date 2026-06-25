@@ -133,6 +133,12 @@ function addFinding(findings, category, severity, message, detail) {
   findings.push({ category, severity, message, detail });
 }
 
+function firstErrorFailureReason(findings) {
+  const finding = findings.find((item) => item.severity === 'error');
+  if (!finding) return '';
+  return sanitizeLogLine(finding.detail || finding.message || '', 300);
+}
+
 function buildFindings({
   metrics = {},
   logText = '',
@@ -258,6 +264,24 @@ function buildFindings({
       'warning',
       'Internal directory mismatch',
       'Internal error: directory mismatch',
+    );
+  }
+
+  const nonHumanActorLine = firstMatchingLine(
+    logText,
+    /Workflow initiated by non-human actor: .*allowed_bots/i,
+  );
+  if (nonHumanActorLine) {
+    const actorReason = String(nonHumanActorLine).replace(
+      /^.*Action failed with error:\s*/,
+      '',
+    );
+    addFinding(
+      findings,
+      'non_human_actor',
+      'error',
+      'Claude action refused bot actor',
+      sanitizeLogLine(actorReason, 300),
     );
   }
 
@@ -414,6 +438,7 @@ function writeGithubOutputs({ scan, outputPath, issuesDir = os.tmpdir() }) {
     'findings_summary',
     errorFindings.map((finding) => finding.category).join(','),
   );
+  appendOutput(lines, 'failure_reason', firstErrorFailureReason(findings));
 
   appendOutput(lines, 'num_turns', formatNullableMetric(metrics.numTurns));
   appendOutput(lines, 'is_error', formatNullableMetric(metrics.isError));
@@ -550,5 +575,6 @@ if (require.main === module) {
 module.exports = {
   buildClaudeLogScan,
   buildFindings,
+  firstErrorFailureReason,
   writeGithubOutputs,
 };
