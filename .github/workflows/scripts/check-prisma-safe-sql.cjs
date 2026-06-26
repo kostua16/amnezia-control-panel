@@ -5,9 +5,23 @@
 // template $queryRaw instead.
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const FORBIDDEN = '$queryRawUnsafe';
-const SCAN_ROOT = path.resolve(process.env.SCAN_ROOT || 'src');
+const DEFAULT_SCAN_ROOT = 'src';
+const SCAN_ROOT = process.env.SCAN_ROOT || DEFAULT_SCAN_ROOT;
+
+function toPosixPath(value) {
+  return value.split(path.sep).join('/');
+}
+
+function normalizeScanRoot(root) {
+  const relative = path.isAbsolute(root)
+    ? path.relative(process.cwd(), root)
+    : root;
+  const normalized = toPosixPath(relative).replace(/\/+$/, '');
+  return normalized || '.';
+}
 
 function walk(dir) {
   const out = [];
@@ -22,12 +36,44 @@ function walk(dir) {
   return out;
 }
 
-function scan(root) {
-  const matches = [];
-  if (!fs.existsSync(root)) {
-    return matches;
+function listTrackedFiles(root) {
+  const scanRoot = normalizeScanRoot(root);
+  try {
+    const output = execFileSync(
+      'git',
+      ['ls-files', '-z', '--', scanRoot === '.' ? '*' : `${scanRoot}/**`],
+      {
+        cwd: process.cwd(),
+        encoding: 'buffer',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+    return output
+      .toString('utf8')
+      .split('\0')
+      .filter(Boolean)
+      .map((file) => path.resolve(process.cwd(), file));
+  } catch {
+    return null;
   }
-  for (const file of walk(root)) {
+}
+
+function listFiles(root) {
+  const tracked = listTrackedFiles(root);
+  if (tracked) {
+    return tracked;
+  }
+
+  const absoluteRoot = path.resolve(root);
+  if (!fs.existsSync(absoluteRoot)) {
+    return [];
+  }
+  return walk(absoluteRoot);
+}
+
+function scan(root = SCAN_ROOT) {
+  const matches = [];
+  for (const file of listFiles(root)) {
     let text;
     try {
       text = fs.readFileSync(file, 'utf8');
@@ -51,6 +97,7 @@ function scan(root) {
 function main() {
   const matches = scan(SCAN_ROOT);
   for (const m of matches) {
+    console.error(`${m.file}:${m.line}: Use Prisma tagged template $queryRaw.`);
     console.log(
       `::error file=${m.file},line=${m.line}::Use Prisma tagged template $queryRaw instead of $queryRawUnsafe.`,
     );
@@ -67,4 +114,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { FORBIDDEN, scan };
+module.exports = { FORBIDDEN, listFiles, listTrackedFiles, scan };
