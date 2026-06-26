@@ -461,6 +461,8 @@ Always manual-only:
 
 - accepts `github-token`; push-capable automation workflows pass `secrets.GH_PAT`
   so branch updates trigger downstream workflows under the trusted PAT actor path
+- scopes explicit-token auth to the push process and does not persist
+  token-derived headers in `.git/config`
 - falls back to the checkout's retained auth only when `github-token` is omitted
 
 `google-github-actions/run-gemini-cli@v0`:

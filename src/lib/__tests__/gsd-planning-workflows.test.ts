@@ -74,7 +74,14 @@ describe('GSD planning workflow automation', () => {
       /GITHUB_TOKEN_VALUE: \$\{\{ inputs\.github-token \}\}/,
     );
     assert.match(action, /GIT_ASKPASS="\$askpass_path"/);
-    assert.match(action, /http\.https:\/\/github\.com\/\.extraheader/);
+    assert.doesNotMatch(
+      action,
+      /git config --local http\.https:\/\/github\.com\/\.extraheader "AUTHORIZATION:/,
+    );
+    assert.match(
+      action,
+      /git -c http\.https:\/\/github\.com\/\.extraheader= push origin "HEAD:\$BRANCH"/,
+    );
     assert.match(action, /commit_created=false/);
     assert.match(action, /origin\/HEAD\.\.HEAD/);
     assert.match(action, /Branch is not ahead of origin\/\$BRANCH/);

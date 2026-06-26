@@ -41,8 +41,6 @@ runs:
           export GIT_ASKPASS="$askpass_path"
           export GIT_TERMINAL_PROMPT=0
           export GITHUB_GIT_PASSWORD="$GITHUB_TOKEN_VALUE"
-          auth_header=$(printf 'x-access-token:%s' "$GITHUB_TOKEN_VALUE" | base64 | tr -d '\n')
-          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $auth_header"
         fi
 
         git add -A
@@ -75,7 +73,12 @@ runs:
 
         PUSHED=false
         for i in 1 2 3; do
-          if git push origin "HEAD:$BRANCH"; then
+          if [ -n "$GITHUB_TOKEN_VALUE" ]; then
+            push_command=(git -c http.https://github.com/.extraheader= push origin "HEAD:$BRANCH")
+          else
+            push_command=(git push origin "HEAD:$BRANCH")
+          fi
+          if "${push_command[@]}"; then
             echo "Push succeeded on attempt $i"
             PUSHED=true
             break
