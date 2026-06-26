@@ -222,6 +222,48 @@ flowchart TD
 
 ---
 
+## §5b Commit-status visibility — `pr-flow.yml` orchestrate → `buildFlowVisibility` → `publishFlowStatuses` + `upsertFlowComment`
+
+Decision basis: `orchestrate-pr-flow.cjs` `buildFlowVisibility` (aggregate `pr-flow/ready` + per-worker statuses), `publishFlowStatuses` (gh api `statuses/{sha}`), `upsertFlowComment` (sticky marker `<!-- pr-flow-orchestration -->`), `pr-flow.json` statuses section (contexts + descriptions). Visibility runs after dispatch+label sync; errors aggregate into status.
+
+```mermaid
+flowchart TD
+  T[pr-flow wake] --> OR[orchestrate-pr-flow]
+  OR --> BM[buildFlowVisibility]
+  BM --> VS[visibility.orderedStatuses]
+  VS --> PFS[publishFlowStatuses]
+  PFS --> AG[aggregate pr-flow/ready]
+  PFS --> WC[worker statuses]
+  WC --> CR[codeReview/securityReview]
+  WC --> DR[dependencyReview]
+  WC --> KR[kiloReview]
+  WC --> PI[prImprove]
+  WC --> FZ[finalizer]
+  OR --> UFC[upsertFlowComment]
+  UFC --> CM[renderFlowComment]
+  CM --> ST[sticky marker + worker table]
+  AG --> PR[PR head commit status UI]
+  WC --> PR
+  ST --> PR
+```
+
+| ID  | Trigger / precondition                                              | Resolution → terminal                                                                                             | Type |
+| --- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---- |
+| V1  | Initial orchestration on draft PR                                   | aggregate=pending, all workers=pending → PR comment shows waiting state                                           | char |
+| V2  | Worker completion wake (e.g., Code Review `workflow_run` completed) | re-orchestrate → buildFlowVisibility → updated statuses (codeReview=success) → PR comment refreshes               | char |
+| V3  | Worker dispatch fails (`gh workflow run` error)                     | aggregate=error, relevant worker=error → status describes failure → PR comment surfaces dispatch error            | char |
+| V4  | Required checks failed                                              | aggregate=failure, workers pending → `pr-flow/ready` blocks merge                                                 | char |
+| V5  | Review passed (`ai-review-passed` + `security-review-passed`)       | workers=success, aggregate=pending (waiting for finalizer) → PR comment shows review success                      | char |
+| V6  | Draft → ready transition                                            | statuses refresh from pending to active state → PR comment updates next steps                                     | char |
+| V7  | Closed/merged PR                                                    | aggregate=success, workers=N/A → final statuses set, PR comment shows terminal state                              | char |
+| V8  | Manual-only policy (`needs-review` label)                           | aggregate=success, finalizer=N/A → `pr-flow/ready` passes, PR comment shows manual-only gate                      | char |
+| V9  | Visibility publish fails (gh api error)                             | error logged, aggregate status updated with error description → PR comment may stale, but status surfaces failure | char |
+| V10 | Dependency review required (dependabot + package.json changed)      | dependencyReview active (not skipped), codeReview=N/A → statuses reflect dependency gate                          | char |
+| V11 | Multiple workers running concurrently                               | each worker shows `running` displayState → PR comment table shows live progress                                   | char |
+| V12 | External Kilo review pending (no current-head reply under 30min)    | kiloReview=pending → `pr-flow/kilo-review` status shows waiting → PR Flow continues to other gates                | char |
+
+---
+
 ## §6a Issue → `/fix-issue` → PR — `fix-issue.yml`
 
 Decision basis: `evaluate-trigger-policy.cjs --mode fix-issue` (`maintainerTriggeredFix` / `labelTriggeredFix`), guard `issue.pull_request == null` (`fix-issue.yml:27-33`). Push is gated by `validate-pr-gate` (`fix-issue.yml`); a gate failure means no fix PR is created.
