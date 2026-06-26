@@ -314,19 +314,19 @@ flowchart TD
   V -->|yes| CP[commit → §1 → merged]
 ```
 
-| ID   | Trigger / precondition                           | Resolution → terminal                                                                                  | Type |
-| ---- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | ---- |
-| FR1  | maintainer `/fix-review`/`/address-review` on PR | ZAI address review → detect-noop → validate-pr-gate → commit → §1 → **merged**                         | char |
-| FR2  | non-maintainer command                           | ignored branch → **no-op**                                                                             | char |
-| FR3  | no review comments to address                    | `no-changes` → **reported**                                                                            | char |
-| FR4  | ZAI fix fails validation                         | `push-rejected` → **reported**                                                                         | char |
-| FR5  | agent changed nothing (no findings / clean tree) | `detect-noop` `has_changes=false` → `renderNoChanges`, no push → **reported**                          | char |
-| FR6  | `validate-pr-gate` fails                         | dual-block summary (agent-reported vs authoritative gate), not pushed → **reported** (re-run to retry) | char |
-| FR7  | internal AI/security concerns on an eligible PR  | `auto-cover-review` dispatches `fix-review` automation mode → gated push → §3 review rerun             | char |
-| FR8  | Kilo-only current-head blocker                   | `auto-cover-review` dispatches `fix-review` automation mode → gated push → §3 review rerun             | char |
-| FR9  | manual-only PR with review blockers              | repair is allowed, but finalizer/auto-merge stay blocked by manual-only policy                         | char |
-| FR10 | auto-cover attempt cap reached                   | no new `fix-review` dispatch → **reported/no-op**                                                      | char |
-| FR11 | active current-head `fix-review` run exists      | no duplicate dispatch → **no-op**                                                                      | char |
+| ID   | Trigger / precondition                           | Resolution → terminal                                                                                                                         | Type |
+| ---- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| FR1  | maintainer `/fix-review`/`/address-review` on PR | ZAI address review → detect-noop → validate-pr-gate → commit → §1 → **merged**                                                                | char |
+| FR2  | non-maintainer command                           | ignored branch → **no-op**                                                                                                                    | char |
+| FR3  | no review comments to address                    | `no-changes` → **reported**                                                                                                                   | char |
+| FR4  | ZAI fix fails validation                         | `push-rejected` → **reported**                                                                                                                | char |
+| FR5  | agent changed nothing (no findings / clean tree) | `detect-noop` `has_changes=false` → `renderNoChanges`, no push → **reported**                                                                 | char |
+| FR6  | `validate-pr-gate` fails                         | `FIX-REVIEW Report` dual-block summary (agent-reported vs authoritative gate), not pushed → **reported** (re-run to retry)                    | char |
+| FR7  | internal AI/security concerns on an eligible PR  | `auto-cover-review` dispatches `fix-review` automation mode and reports both dispatcher + fix-review run links → gated push → §3 review rerun | char |
+| FR8  | Kilo-only current-head blocker                   | `auto-cover-review` dispatches `fix-review` automation mode and reports both dispatcher + fix-review run links → gated push → §3 review rerun | char |
+| FR9  | manual-only PR with review blockers              | repair is allowed, but finalizer/auto-merge stay blocked by manual-only policy                                                                | char |
+| FR10 | auto-cover attempt cap reached                   | no new `fix-review` dispatch → **reported/no-op**                                                                                             | char |
+| FR11 | active current-head `fix-review` run exists      | no duplicate dispatch → **no-op**                                                                                                             | char |
 
 ---
 
