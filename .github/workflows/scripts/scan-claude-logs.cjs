@@ -134,9 +134,15 @@ function addFinding(findings, category, severity, message, detail) {
 }
 
 function firstErrorFailureReason(findings) {
-  const finding = findings.find((item) => item.severity === 'error');
+  const finding =
+    findings.find(
+      (item) =>
+        item.severity === 'error' && item.category === 'non_human_actor',
+    ) || findings.find((item) => item.severity === 'error');
   if (!finding) return '';
-  return sanitizeLogLine(finding.detail || finding.message || '', 300);
+  return sanitizeLogLine(finding.detail || finding.message || '', 300)
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
 }
 
 function buildFindings({

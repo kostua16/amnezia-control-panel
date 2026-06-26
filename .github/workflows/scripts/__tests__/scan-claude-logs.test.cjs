@@ -453,6 +453,104 @@ test('writeGithubOutputs preserves the first error finding as failure_reason', (
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
+test('writeGithubOutputs keeps failure_reason on one physical output line', () => {
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'scan-logs-test-reason-newline-'),
+  );
+  const outputPath = path.join(tempDir, 'output.txt');
+
+  const { output } = writeGithubOutputs({
+    scan: {
+      metrics: {},
+      findings: [
+        {
+          category: 'action_error',
+          severity: 'error',
+          message: 'Claude action failed',
+          detail: 'first line\nsecond line\r\nthird line',
+        },
+      ],
+    },
+    outputPath,
+    issuesDir: tempDir,
+  });
+
+  assert.ok(!output.includes('failure_reason<<'));
+  assert.ok(
+    output.includes('failure_reason=first line second line third line'),
+  );
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('writeGithubOutputs prefers non-human actor over earlier error findings', () => {
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'scan-logs-test-reason-priority-'),
+  );
+  const outputPath = path.join(tempDir, 'output.txt');
+
+  const { output } = writeGithubOutputs({
+    scan: {
+      metrics: {},
+      findings: [
+        {
+          category: 'zero_turns',
+          severity: 'error',
+          message: 'Claude used zero turns',
+          detail: 'num_turns: 0',
+        },
+        {
+          category: 'non_human_actor',
+          severity: 'error',
+          message: 'Claude action refused bot actor',
+          detail:
+            'Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+        },
+      ],
+    },
+    outputPath,
+    issuesDir: tempDir,
+  });
+
+  assert.ok(
+    output.includes(
+      'failure_reason=Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+    ),
+  );
+  assert.ok(!output.includes('failure_reason=num_turns: 0'));
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('buildClaudeLogScan reports bot actor refusal even when zero turns is present', () => {
+  const scan = buildClaudeLogScan({
+    metrics: { numTurns: 0 },
+    logText:
+      '##[error]Action failed with error: Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+    conclusion: 'failure',
+  });
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'scan-logs-test-reason-zero-actor-'),
+  );
+  const outputPath = path.join(tempDir, 'output.txt');
+
+  const { output } = writeGithubOutputs({
+    scan,
+    outputPath,
+    issuesDir: tempDir,
+  });
+
+  assert.ok(scan.findings.some((f) => f.category === 'zero_turns'));
+  assert.ok(scan.findings.some((f) => f.category === 'non_human_actor'));
+  assert.ok(
+    output.includes(
+      'failure_reason=Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+    ),
+  );
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
 test('writeGithubOutputs writes issue file when findings exist', () => {
   const tempDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'scan-logs-test-issues-'),
