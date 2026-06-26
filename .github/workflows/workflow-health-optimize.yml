@@ -10,7 +10,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 40
+  # Bounded to max 3 file edits, minimal diffs (5-10 lines). 25 turns is
+  # sufficient for the assess-plan-execute phases; mirrors the triage.yml
+  # reduction pattern (40 → 15) from PR #185.
+  MAX_TURNS: 25
   NODE_VERSION: '24.x'
 
 permissions:

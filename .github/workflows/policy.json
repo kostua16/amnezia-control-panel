@@ -334,5 +334,9 @@
       "color": "5319e7",
       "description": "Replacement PR created by the stale-PR consolidation workflow"
     }
+  },
+  "_workflowPatterns": {
+    "_comment": "Reference patterns for workflow authors. Not enforced programmatically.",
+    "nullPrGuard": "When a workflow uses the workflow_run trigger, always add a job-level guard to skip execution when the triggering event has no associated pull requests. Pattern (from pr-finalizer.yml): `if: github.event_name != 'workflow_run' || toJSON(github.event.workflow_run.pull_requests) != '[]'`. This prevents wasted runner time on orphaned workflow_run events."
   }
 }
