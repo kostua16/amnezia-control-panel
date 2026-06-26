@@ -9,6 +9,7 @@ const {
   renderStarted,
   renderConflictWorking,
   renderSkipped,
+  renderAncestryFailed,
   renderComplete,
   renderValidationFailed,
   renderPushRejected,
@@ -63,6 +64,27 @@ test('renderSkipped quotes a reason and hints re-run', () => {
   assert.match(body, /cross-repository PR/);
   assert.match(body, /Re-run `\/rebase`/);
   assert.match(body, /do-not-merge/);
+});
+
+test('renderAncestryFailed shows distinct ancestry failure evidence', () => {
+  const body = renderAncestryFailed({
+    headSha: SHA,
+    baseRef: 'main',
+    baseSha: BASE_SHA,
+    mergeBase: '',
+    replayCount: '925',
+    visibleCommitCount: '2',
+    runUrl: RUN,
+    reason: 'could not find merge base between HEAD and origin/main',
+    updatedAt: TS,
+  });
+  assert.match(body, /Rebase ancestry check failed/);
+  assert.match(body, /Base: `origin\/main` @ `0123456789ab`/);
+  assert.match(body, /Merge base: _unavailable_/);
+  assert.match(body, /Replay count: 925/);
+  assert.match(body, /Visible PR commits: 2/);
+  assert.match(body, /could not find merge base/);
+  assert.match(body, /stopped before attempting `git rebase` or invoking ZAI/);
 });
 
 test('renderComplete shows old->new head, base sha, ai-conflicts, pushed, automerge', () => {

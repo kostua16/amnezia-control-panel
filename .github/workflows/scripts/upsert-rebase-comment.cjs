@@ -87,6 +87,38 @@ function renderSkipped({ headSha, runUrl, reason, updatedAt }) {
   ].join('\n');
 }
 
+function renderAncestryFailed({
+  headSha,
+  baseRef,
+  baseSha,
+  mergeBase,
+  replayCount,
+  visibleCommitCount,
+  runUrl,
+  reason,
+  updatedAt,
+}) {
+  const lines = [COMMENT_MARKER, '## 🧭 Rebase ancestry check failed', ''];
+  if (baseRef) lines.push(baseLine(baseRef, baseSha));
+  lines.push(
+    `- Head SHA: \`${shortSha(headSha)}\``,
+    `- Merge base: ${mergeBase ? `\`${shortSha(mergeBase)}\`` : '_unavailable_'}`,
+    `- Replay count: ${replayCount || '_unknown_'}`,
+    `- Visible PR commits: ${visibleCommitCount || '_unknown_'}`,
+    `- Run: ${runUrl || '_n/a_'}`,
+    '',
+    quoteBlock(
+      reason ||
+        'The runner could not prove a sane merge base/replay range for this PR.',
+    ),
+    '',
+    'The workflow stopped before attempting `git rebase` or invoking ZAI. Re-run `/rebase` after the runner can see complete ancestry for the PR head and base branch.',
+    '',
+    '<!-- updated: ' + updatedAt + ' -->',
+  );
+  return lines.join('\n');
+}
+
 function pushedLabel({ pushed, dryRun }) {
   if (isTrue(dryRun)) return 'Pushed: dry-run (not pushed)';
   if (isTrue(pushed)) return 'Pushed: yes (`--force-with-lease`)';
@@ -390,6 +422,19 @@ function main() {
         updatedAt: now,
       });
       break;
+    case 'ancestry-failed':
+      body = renderAncestryFailed({
+        headSha,
+        baseRef,
+        baseSha,
+        mergeBase: getArg('--merge-base'),
+        replayCount: getArg('--replay-count'),
+        visibleCommitCount: getArg('--visible-commit-count'),
+        runUrl,
+        reason: getArg('--reason'),
+        updatedAt: now,
+      });
+      break;
     default:
       body = resolveFinishedBody({
         structured,
@@ -435,6 +480,7 @@ module.exports = {
   renderStarted,
   renderConflictWorking,
   renderSkipped,
+  renderAncestryFailed,
   renderComplete,
   renderValidationFailed,
   renderPushRejected,

@@ -102,7 +102,7 @@ jobs:
           EXPECTED_HEAD_SHA: ${{ github.event.inputs.head_sha }}
         run: |
           gh pr view "$PR_NUMBER" \
-            --json number,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,isCrossRepository,autoMergeRequest,labels > /tmp/rebase-pr.json
+            --json number,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,isCrossRepository,autoMergeRequest,labels,commits > /tmp/rebase-pr.json
           node .github/workflows/scripts/evaluate-pr-policy.cjs \
             --policy-file .github/workflows/policy.json \
             --pr-file /tmp/rebase-pr.json > /tmp/rebase-eval.json
@@ -182,14 +182,52 @@ jobs:
         env:
           BASE_REF: ${{ steps.pr.outputs.base_ref }}
         run: |
-          git fetch origin "$BASE_REF" --depth=1
+          git fetch origin "$BASE_REF"
           git rev-parse HEAD > "$RUNNER_TEMP/original-head.txt"
           git rev-parse "origin/$BASE_REF" > "$RUNNER_TEMP/base-head.txt"
           echo "base_sha=$(git rev-parse "origin/$BASE_REF")" >> "$GITHUB_OUTPUT"
 
+      - name: Check rebase ancestry
+        id: ancestry
+        if: steps.pr.outputs.eligible == 'true'
+        env:
+          BASE_REF: ${{ steps.pr.outputs.base_ref }}
+        run: |
+          node .github/workflows/scripts/analyze-rebase-ancestry.cjs \
+            --pr-file /tmp/rebase-pr.json \
+            --base-ref "$BASE_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Post ancestry failure
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          BASE_REF: ${{ steps.pr.outputs.base_ref }}
+          BASE_SHA: ${{ steps.ancestry.outputs.base_sha }}
+          MERGE_BASE: ${{ steps.ancestry.outputs.merge_base }}
+          REPLAY_COUNT: ${{ steps.ancestry.outputs.replay_count }}
+          VISIBLE_COMMIT_COUNT: ${{ steps.ancestry.outputs.visible_commit_count }}
+          REASON: ${{ steps.ancestry.outputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node .github/workflows/scripts/upsert-rebase-comment.cjs \
+            --pr "$PR_NUMBER" \
+            --head-sha "$HEAD_SHA" \
+            --base-ref "$BASE_REF" \
+            --base-sha "$BASE_SHA" \
+            --merge-base "$MERGE_BASE" \
+            --replay-count "$REPLAY_COUNT" \
+            --visible-commit-count "$VISIBLE_COMMIT_COUNT" \
+            --reason "$REASON" \
+            --run-url "$RUN_URL" \
+            --mode ancestry-failed
+          exit 1
+
       - name: Collect review feedback
         id: feedback
-        if: steps.pr.outputs.eligible == 'true'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -202,20 +240,20 @@ jobs:
 
       - name: Summarize review feedback presence
         id: fbsummary
-        if: steps.pr.outputs.eligible == 'true'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true'
         run: |
           file="${{ steps.feedback.outputs.path }}"
           present=$(node -e '
             const fs=require("fs");
+            const { bundleHasActionableFeedback } = require("./.github/workflows/scripts/collect-review-feedback.cjs");
             const s=fs.existsSync(process.argv[1])?fs.readFileSync(process.argv[1],"utf8"):"";
-            const none=/## Unresolved, non-outdated review threads\n_None\._/.test(s);
-            process.stdout.write(none?"false":"true");
+            process.stdout.write(bundleHasActionableFeedback(s)?"true":"false");
           ' "$file")
           echo "present=$present" >> "$GITHUB_OUTPUT"
 
       - name: Attempt rebase
         id: attempt
-        if: steps.pr.outputs.eligible == 'true'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true'
         env:
           BASE_REF: ${{ steps.pr.outputs.base_ref }}
         run: |
@@ -234,7 +272,7 @@ jobs:
           fi
 
       - name: Post conflict-working
-        if: steps.pr.outputs.eligible == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -249,7 +287,7 @@ jobs:
 
       - name: Resolve conflicts with ZAI
         id: claude
-        if: steps.pr.outputs.eligible == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
         continue-on-error: true
         uses: ./.github/actions/run-zai
         with:
@@ -264,7 +302,7 @@ jobs:
             You are continuing an in-progress git rebase for pull request #${{ needs.authorize.outputs.pr-number }} onto its base branch `${{ steps.pr.outputs.base_ref }}`. The rebase stopped on merge conflicts.
 
             Review feedback has been pre-fetched to: ${{ steps.feedback.outputs.path }}
-            READ THAT FILE FIRST. It contains unresolved, non-outdated review threads plus the diff, so you can preserve or address review findings touched by the conflicts.
+            READ THAT FILE FIRST. It contains unresolved, non-outdated review threads, review submissions, trusted Kilo summaries, non-noise human comments, and the diff, so you can preserve or address review findings touched by the conflicts.
 
             Your job:
             - Resolve each conflict by preserving the source PR intent AND the current base branch behavior. Prefer the PR changes; reconcile with base where they diverge.
@@ -284,7 +322,7 @@ jobs:
 
       - name: Verify rebase completed
         id: verify
-        if: steps.pr.outputs.eligible == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
         run: |
           git_dir=$(git rev-parse --git-dir)
           if [ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ]; then
@@ -298,6 +336,7 @@ jobs:
         id: moved
         if: >-
           steps.pr.outputs.eligible == 'true' &&
+          steps.ancestry.outputs.ok == 'true' &&
           (
             steps.attempt.outputs.rebase_state == 'clean' ||
             (steps.attempt.outputs.rebase_state == 'conflict' && steps.verify.outputs.rebase_complete == 'true')
@@ -315,6 +354,7 @@ jobs:
         id: gate
         if: >-
           steps.pr.outputs.eligible == 'true' &&
+          steps.ancestry.outputs.ok == 'true' &&
           steps.moved.outputs.rebase_moved_head == 'true' &&
           steps.claude.outputs.claude_failed != 'true'
         uses: ./.github/actions/validate-pr-gate
@@ -323,6 +363,7 @@ jobs:
         id: push
         if: >-
           steps.pr.outputs.eligible == 'true' &&
+          steps.ancestry.outputs.ok == 'true' &&
           steps.gate.outputs.gate_passed == 'true' &&
           steps.moved.outputs.rebase_moved_head == 'true' &&
           github.event.inputs.dry_run != 'true'
@@ -346,12 +387,12 @@ jobs:
 
       - name: Capture new head SHA
         id: newhead
-        if: steps.pr.outputs.eligible == 'true' && steps.push.outputs.pushed == 'true'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.push.outputs.pushed == 'true'
         run: echo "new_head_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Disable auto-merge (force re-review of the rebased branch)
         id: automerge
-        if: steps.pr.outputs.eligible == 'true' && steps.push.outputs.pushed == 'true' && steps.pr.outputs.auto_merge_enabled == 'true'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.push.outputs.pushed == 'true' && steps.pr.outputs.auto_merge_enabled == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
@@ -360,7 +401,7 @@ jobs:
           echo "disabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Wake the PR orchestrator
-        if: steps.pr.outputs.eligible == 'true' && steps.push.outputs.pushed == 'true'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.push.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
@@ -368,7 +409,7 @@ jobs:
           gh workflow run pr-flow.yml --ref main -f pr_number="$PR_NUMBER" -f dry_run=false || true
 
       - name: Post summary
-        if: always() && steps.pr.outputs.eligible == 'true'
+        if: always() && steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}

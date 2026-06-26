@@ -157,6 +157,33 @@ function formatBundle({ threads, reviews, comments, diff }) {
   return sections.join('\n');
 }
 
+function hasActionableFeedback({ threads = [], reviews = [], comments = [] }) {
+  return threads.length > 0 || reviews.length > 0 || comments.length > 0;
+}
+
+function sectionBody(bundle, heading) {
+  const marker = `## ${heading}`;
+  const start = bundle.indexOf(marker);
+  if (start === -1) return '';
+  const rest = bundle.slice(start + marker.length);
+  const next = rest.search(/\n## /);
+  return (next === -1 ? rest : rest.slice(0, next)).trim();
+}
+
+function sectionHasFeedback(bundle, heading) {
+  const normalized = sectionBody(bundle, heading).replace(/\s+/g, ' ').trim();
+  return normalized.length > 0 && normalized !== '_None._';
+}
+
+function bundleHasActionableFeedback(bundle) {
+  const markdown = String(bundle ?? '');
+  return (
+    sectionHasFeedback(markdown, 'Unresolved, non-outdated review threads') ||
+    sectionHasFeedback(markdown, 'Review submissions') ||
+    sectionHasFeedback(markdown, 'PR comments (non-command, human)')
+  );
+}
+
 function main() {
   const repo = getArg('--repo') || process.env.GITHUB_REPOSITORY;
   const pr = Number(getArg('--pr', getArg('--pr-number')));
@@ -188,6 +215,8 @@ module.exports = {
   isTrustedKiloSummary,
   isNoiseComment,
   formatBundle,
+  hasActionableFeedback,
+  bundleHasActionableFeedback,
   fetchReviewThreads,
   fetchReviews,
   fetchComments,
