@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   COMMENT_MARKER,
   isTrue,
+  parsePathList,
   repoBaseUrl,
   renderStarted,
   renderConflictWorking,
@@ -95,6 +96,7 @@ test('renderComplete shows old->new head, base sha, ai-conflicts, pushed, autome
     baseSha: BASE_SHA,
     runUrl: RUN,
     conflictsResolvedByAi: 'true',
+    trivialConflictsAutoResolved: 'false',
     pushed: 'true',
     dryRun: 'false',
     automergeDisabled: 'true',
@@ -113,6 +115,7 @@ test('renderComplete shows old->new head, base sha, ai-conflicts, pushed, autome
   assert.match(body, /New head: `abcdef123456`/);
   assert.match(body, /Base: `origin\/main` @ `0123456789ab`/);
   assert.match(body, /Conflicts resolved by AI: yes/);
+  assert.match(body, /Trivial conflicts auto-resolved: no/);
   assert.match(body, /Pushed: yes \(`--force-with-lease`\)/);
   assert.match(body, /Conflicts resolved \(1\)/);
   assert.match(body, /src\/a\.ts/);
@@ -129,6 +132,7 @@ test('renderComplete marks a dry-run and omits the push line', () => {
     baseSha: BASE_SHA,
     runUrl: RUN,
     conflictsResolvedByAi: 'false',
+    trivialConflictsAutoResolved: 'false',
     pushed: 'false',
     dryRun: 'true',
     structured: {},
@@ -136,6 +140,33 @@ test('renderComplete marks a dry-run and omits the push line', () => {
   });
   assert.match(body, /Pushed: dry-run \(not pushed\)/);
   assert.match(body, /Conflicts resolved by AI: no/);
+  assert.match(body, /Trivial conflicts auto-resolved: no/);
+});
+
+test('renderComplete shows trivial conflict auto-resolution evidence', () => {
+  const body = renderComplete({
+    headSha: SHA,
+    newHeadSha: NEW_SHA,
+    baseRef: 'main',
+    baseSha: BASE_SHA,
+    runUrl: RUN,
+    conflictsResolvedByAi: 'false',
+    trivialConflictsAutoResolved: 'true',
+    trivialConflictCount: '2',
+    trivialConflictPaths: JSON.stringify([
+      '.planning/PROJECT.md',
+      '.planning/config.json',
+    ]),
+    pushed: 'true',
+    dryRun: 'false',
+    structured: {},
+    updatedAt: TS,
+  });
+  assert.match(body, /Conflicts resolved by AI: no/);
+  assert.match(body, /Trivial conflicts auto-resolved: yes/);
+  assert.match(body, /Trivial conflicts auto-resolved \(2\)/);
+  assert.match(body, /`\.planning\/PROJECT\.md`/);
+  assert.match(body, /`\.planning\/config\.json`/);
 });
 
 test('renderComplete reports no-changes when the rebase moved nothing', () => {
@@ -288,6 +319,12 @@ test('resolveFinishedBody: green gate, pushed -> complete', () => {
 test('repoBaseUrl strips the actions/runs suffix', () => {
   assert.equal(repoBaseUrl(RUN), 'https://example.com/owner/repo');
   assert.equal(repoBaseUrl(''), '');
+});
+
+test('parsePathList handles JSON arrays and invalid values', () => {
+  assert.deepEqual(parsePathList('["a.md","b.md"]'), ['a.md', 'b.md']);
+  assert.deepEqual(parsePathList('not json'), []);
+  assert.deepEqual(parsePathList(''), []);
 });
 
 test('isTrue matches boolean and string true', () => {

@@ -271,8 +271,14 @@ jobs:
             echo "rebase_state=failed" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Post conflict-working
+      - name: Auto-resolve trivial conflicts
+        id: autoresolve
         if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
+        run: |
+          node .github/workflows/scripts/auto-resolve-trivial-rebase-conflicts.cjs >> "$GITHUB_OUTPUT"
+
+      - name: Post conflict-working
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict' && steps.autoresolve.outputs.rebase_complete != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -287,7 +293,7 @@ jobs:
 
       - name: Resolve conflicts with ZAI
         id: claude
-        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict' && steps.autoresolve.outputs.rebase_complete != 'true'
         continue-on-error: true
         uses: ./.github/actions/run-zai
         with:
@@ -322,7 +328,7 @@ jobs:
 
       - name: Verify rebase completed
         id: verify
-        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict' && steps.autoresolve.outputs.rebase_complete != 'true'
         run: |
           git_dir=$(git rev-parse --git-dir)
           if [ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ]; then
@@ -339,6 +345,7 @@ jobs:
           steps.ancestry.outputs.ok == 'true' &&
           (
             steps.attempt.outputs.rebase_state == 'clean' ||
+            (steps.attempt.outputs.rebase_state == 'conflict' && steps.autoresolve.outputs.rebase_complete == 'true') ||
             (steps.attempt.outputs.rebase_state == 'conflict' && steps.verify.outputs.rebase_complete == 'true')
           )
         run: |
@@ -422,8 +429,11 @@ jobs:
           STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
           REVIEW_FEEDBACK_PRESENT: ${{ steps.fbsummary.outputs.present }}
           NUM_TURNS: ${{ steps.claude.outputs.claude_num_turns }}
-          CONFLICTS_RESOLVED_BY_AI: ${{ steps.attempt.outputs.rebase_state == 'conflict' && steps.verify.outputs.rebase_complete == 'true' }}
-          FAILED: ${{ steps.attempt.outputs.rebase_state == 'failed' || (steps.attempt.outputs.rebase_state == 'conflict' && steps.verify.outputs.rebase_complete != 'true') || steps.claude.outputs.claude_failed == 'true' }}
+          CONFLICTS_RESOLVED_BY_AI: ${{ steps.attempt.outputs.rebase_state == 'conflict' && steps.autoresolve.outputs.rebase_complete != 'true' && steps.verify.outputs.rebase_complete == 'true' }}
+          TRIVIAL_CONFLICTS_AUTO_RESOLVED: ${{ steps.attempt.outputs.rebase_state == 'conflict' && steps.autoresolve.outputs.rebase_complete == 'true' && steps.autoresolve.outputs.resolved == 'true' }}
+          TRIVIAL_CONFLICT_COUNT: ${{ steps.autoresolve.outputs.resolved_count }}
+          TRIVIAL_CONFLICT_PATHS: ${{ steps.autoresolve.outputs.resolved_paths }}
+          FAILED: ${{ steps.attempt.outputs.rebase_state == 'failed' || (steps.attempt.outputs.rebase_state == 'conflict' && steps.autoresolve.outputs.rebase_complete != 'true' && steps.verify.outputs.rebase_complete != 'true') || steps.claude.outputs.claude_failed == 'true' }}
           FAIL_REASON: ${{ steps.claude.outputs.claude_failure_reason || 'the rebase could not be completed (conflicts unresolved or a git error)' }}
           OUTCOME: ${{ steps.claude.outcome }}
           GATE_PASSED: ${{ steps.gate.outputs.gate_passed }}
@@ -450,6 +460,9 @@ jobs:
             --review-feedback-present "$REVIEW_FEEDBACK_PRESENT" \
             --num-turns "$NUM_TURNS" \
             --conflicts-resolved-by-ai "$CONFLICTS_RESOLVED_BY_AI" \
+            --trivial-conflicts-auto-resolved "$TRIVIAL_CONFLICTS_AUTO_RESOLVED" \
+            --trivial-conflict-count "$TRIVIAL_CONFLICT_COUNT" \
+            --trivial-conflict-paths "$TRIVIAL_CONFLICT_PATHS" \
             --failed "$FAILED" \
             --fail-reason "$FAIL_REASON" \
             --outcome "$OUTCOME" \

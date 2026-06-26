@@ -125,6 +125,17 @@ function pushedLabel({ pushed, dryRun }) {
   return 'Pushed: no (no changes after rebase)';
 }
 
+function parsePathList(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function renderComplete({
   structured,
   numTurns,
@@ -134,6 +145,9 @@ function renderComplete({
   baseSha,
   runUrl,
   conflictsResolvedByAi,
+  trivialConflictsAutoResolved,
+  trivialConflictCount,
+  trivialConflictPaths,
   pushed,
   dryRun,
   automergeDisabled,
@@ -158,6 +172,7 @@ function renderComplete({
   }
   lines.push(
     `- Conflicts resolved by AI: ${isTrue(conflictsResolvedByAi) ? 'yes' : 'no'}`,
+    `- Trivial conflicts auto-resolved: ${isTrue(trivialConflictsAutoResolved) ? 'yes' : 'no'}`,
     `- ${pushedLabel({ pushed, dryRun })}`,
     `- Run: ${runUrl || '_n/a_'}`,
   );
@@ -174,6 +189,16 @@ function renderComplete({
     conflicts.forEach((c) =>
       lines.push(`- \`${c.file}\` — ${c.resolution || '(no detail)'}`),
     );
+  }
+  const trivialPaths = parsePathList(trivialConflictPaths);
+  const trivialCount =
+    Number.isFinite(Number(trivialConflictCount)) &&
+    Number(trivialConflictCount) > 0
+      ? Number(trivialConflictCount)
+      : trivialPaths.length;
+  if (isTrue(trivialConflictsAutoResolved) && trivialCount > 0) {
+    lines.push('', `**Trivial conflicts auto-resolved (${trivialCount}):**`);
+    trivialPaths.forEach((filePath) => lines.push(`- \`${filePath}\``));
   }
   if (preserved.length > 0) {
     lines.push('', `**Review findings preserved (${preserved.length}):**`);
@@ -302,6 +327,9 @@ function resolveFinishedBody({
   baseSha,
   runUrl,
   conflictsResolvedByAi,
+  trivialConflictsAutoResolved,
+  trivialConflictCount,
+  trivialConflictPaths,
   automergeDisabled,
   failed,
   failReason,
@@ -329,6 +357,9 @@ function resolveFinishedBody({
       baseSha,
       runUrl,
       conflictsResolvedByAi,
+      trivialConflictsAutoResolved,
+      trivialConflictCount,
+      trivialConflictPaths,
       pushed,
       dryRun,
       automergeDisabled,
@@ -356,6 +387,9 @@ function resolveFinishedBody({
       baseSha,
       runUrl,
       conflictsResolvedByAi,
+      trivialConflictsAutoResolved,
+      trivialConflictCount,
+      trivialConflictPaths,
       pushed: false,
       dryRun: 'true',
       automergeDisabled,
@@ -375,6 +409,9 @@ function resolveFinishedBody({
     baseSha,
     runUrl,
     conflictsResolvedByAi,
+    trivialConflictsAutoResolved,
+    trivialConflictCount,
+    trivialConflictPaths,
     pushed,
     dryRun,
     automergeDisabled,
@@ -445,6 +482,11 @@ function main() {
         baseSha,
         runUrl,
         conflictsResolvedByAi: getArg('--conflicts-resolved-by-ai'),
+        trivialConflictsAutoResolved: getArg(
+          '--trivial-conflicts-auto-resolved',
+        ),
+        trivialConflictCount: getArg('--trivial-conflict-count'),
+        trivialConflictPaths: getArg('--trivial-conflict-paths'),
         automergeDisabled: getArg('--automerge-disabled'),
         failed: getArg('--failed'),
         failReason: getArg('--fail-reason'),
@@ -476,6 +518,7 @@ if (require.main === module) {
 module.exports = {
   COMMENT_MARKER,
   isTrue,
+  parsePathList,
   repoBaseUrl,
   renderStarted,
   renderConflictWorking,
