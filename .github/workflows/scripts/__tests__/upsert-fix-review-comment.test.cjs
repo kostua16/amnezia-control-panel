@@ -29,7 +29,7 @@ test('renderStarted prefixes marker, command and head SHA', () => {
     startedAt: '2026-06-17T00:00:00.000Z',
   });
   assert.match(body, new RegExp(`^${COMMENT_MARKER}`));
-  assert.match(body, /Review fix started/);
+  assert.match(body, /FIX-REVIEW Report: 🔄 Review fix started/);
   assert.match(body, /Command: `\/fix-review`/);
   assert.match(body, /`e699b0871d03`/);
   assert.match(body, /2026-06-17T00:00:00\.000Z/);
@@ -42,7 +42,7 @@ test('renderWorking shows the applying-fixs state', () => {
     command: '/address-review',
     updatedAt: '2026-06-17T00:00:00.000Z',
   });
-  assert.match(body, /Applying review fixes/);
+  assert.match(body, /FIX-REVIEW Report: 🔧 Applying review fixes/);
   assert.match(body, /Command: `\/address-review`/);
 });
 
@@ -53,7 +53,7 @@ test('renderSkipped quotes a reason and hints re-run', () => {
     reason: 'cross-repository PR',
     updatedAt: '2026-06-17T00:00:00.000Z',
   });
-  assert.match(body, /Review fix skipped/);
+  assert.match(body, /FIX-REVIEW Report: ⏭️ Review fix skipped/);
   assert.match(body, /cross-repository PR/);
   assert.match(body, /Re-run `\/fix-review`/);
 });
@@ -66,7 +66,7 @@ test('renderNoChanges states no actionable findings', () => {
     structured: { summary: 'all good' },
     updatedAt: '2026-06-17T00:00:00.000Z',
   });
-  assert.match(body, /No changes needed/);
+  assert.match(body, /FIX-REVIEW Report: ℹ️ No changes needed/);
   assert.match(body, /> all good/);
 });
 
@@ -78,7 +78,10 @@ test('renderPushRejected lists attempted changes and forbids force-push', () => 
     structured: { changed_files: ['src/a.ts', 'src/b.ts'] },
     updatedAt: '2026-06-17T00:00:00.000Z',
   });
-  assert.match(body, /Push rejected \(non-fast-forward\)/);
+  assert.match(
+    body,
+    /FIX-REVIEW Report: 🚫 Push rejected \(non-fast-forward\)/,
+  );
   assert.match(body, /never\s+force-pushes/);
   assert.match(body, /Attempted changes \(2\)/);
   assert.match(body, /- src\/a\.ts/);
@@ -102,7 +105,10 @@ test('renderValidationFailed shows dual-block: agent-reported + authoritative ga
     },
     updatedAt: '2026-06-17T00:00:00.000Z',
   });
-  assert.match(body, /Validation failed — fixes not pushed/);
+  assert.match(
+    body,
+    /FIX-REVIEW Report: ⚠️ Validation failed — fixes not pushed/,
+  );
   assert.match(body, /NOT pushed/);
   // Banner + both labelled blocks present.
   assert.match(body, /Agent self-reported checks can be inaccurate/);
@@ -142,7 +148,7 @@ test('renderFailed uses the provided reason', () => {
     failReason: 'claude-code-action step failed',
     updatedAt: '2026-06-17T00:00:00.000Z',
   });
-  assert.match(body, /Review fix failed/);
+  assert.match(body, /FIX-REVIEW Report: ❌ Review fix failed/);
   assert.match(body, /claude-code-action step failed/);
 });
 
@@ -152,7 +158,7 @@ test('renderCancelled explains the cancellation', () => {
     runUrl: RUN,
     updatedAt: '2026-06-17T00:00:00.000Z',
   });
-  assert.match(body, /Review fix cancelled/);
+  assert.match(body, /FIX-REVIEW Report: 🚫 Review fix cancelled/);
   assert.match(body, /timeout|superseded/);
   assert.doesNotMatch(body, /Review fixes applied/);
 });
@@ -174,7 +180,7 @@ test('renderComplete renders summary, files, findings, commit link and automerge
     automergeDisabled: 'true',
     updatedAt: '2026-06-17T00:00:00.000Z',
   });
-  assert.match(body, /Review fixes applied/);
+  assert.match(body, /FIX-REVIEW Report: ✅ Review fixes applied/);
   assert.match(body, /> fixed the null check/);
   assert.match(body, /Changed files \(1\)/);
   assert.match(
@@ -196,7 +202,7 @@ test('resolveFinishedBody: cancelled wins over everything', () => {
     pushed: 'true',
     structured: {},
   });
-  assert.match(body, /Review fix cancelled/);
+  assert.match(body, /FIX-REVIEW Report: 🚫 Review fix cancelled/);
 });
 
 test('resolveFinishedBody: Claude hard-failure beats a passing gate', () => {
@@ -209,7 +215,7 @@ test('resolveFinishedBody: Claude hard-failure beats a passing gate', () => {
     pushed: 'true',
     structured: {},
   });
-  assert.match(body, /Review fix failed/);
+  assert.match(body, /FIX-REVIEW Report: ❌ Review fix failed/);
   assert.match(body, /api error/);
 });
 
@@ -222,7 +228,7 @@ test('resolveFinishedBody: clean no-op (has_changes=false) -> no-changes, gate s
     pushed: 'false',
     structured: {},
   });
-  assert.match(body, /No changes needed/);
+  assert.match(body, /FIX-REVIEW Report: ℹ️ No changes needed/);
 });
 
 test('resolveFinishedBody: gate failure -> validation-failed, not pushed', () => {
@@ -241,7 +247,7 @@ test('resolveFinishedBody: gate failure -> validation-failed, not pushed', () =>
     },
     structured: { changed_files: ['a.ts'] },
   });
-  assert.match(body, /Validation failed/);
+  assert.match(body, /FIX-REVIEW Report: ⚠️ Validation failed/);
   assert.match(body, /Workflow gate \(authoritative\):/);
 });
 
@@ -254,7 +260,7 @@ test('resolveFinishedBody: green gate, not pushed, with changes -> push-rejected
     pushed: 'false',
     structured: { changed_files: ['a.ts'] },
   });
-  assert.match(body, /Push rejected/);
+  assert.match(body, /FIX-REVIEW Report: 🚫 Push rejected/);
 });
 
 test('resolveFinishedBody: green gate, not pushed, no changed_files -> no-changes', () => {
@@ -266,7 +272,7 @@ test('resolveFinishedBody: green gate, not pushed, no changed_files -> no-change
     pushed: 'false',
     structured: {},
   });
-  assert.match(body, /No changes needed/);
+  assert.match(body, /FIX-REVIEW Report: ℹ️ No changes needed/);
 });
 
 test('resolveFinishedBody: green gate, pushed -> complete', () => {
@@ -280,7 +286,7 @@ test('resolveFinishedBody: green gate, pushed -> complete', () => {
     commitSha: '1234567890abcdef',
     commitUrl: 'https://example.com/owner/repo/commit/1234567890abcdef',
   });
-  assert.match(body, /Review fixes applied/);
+  assert.match(body, /FIX-REVIEW Report: ✅ Review fixes applied/);
 });
 
 test('repoBaseUrl strips the actions/runs suffix', () => {

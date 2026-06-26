@@ -171,6 +171,18 @@ describe('workflow trigger policy', () => {
       /gh workflow run fix-review\.yml\s+\\\n\s+--ref main\s+\\\n\s+-f pr_number="\$pr_number"\s+\\\n\s+-f head_sha="\$head_sha"\s+\\\n\s+-f automation_review_loop=true/,
     );
     assert.match(
+      yaml,
+      /fix_review_title="Fix Review PR #\$\{pr_number\} @ \$\{head_sha\}"/,
+    );
+    assert.match(
+      yaml,
+      /gh run list\s+\\\n\s+--workflow fix-review\.yml\s+\\\n\s+--event workflow_dispatch/,
+    );
+    assert.match(yaml, /\.displayTitle == \$title/);
+    assert.match(yaml, /\.createdAt >= \$started/);
+    assert.match(yaml, /echo "- Dispatcher run:/);
+    assert.match(yaml, /echo "- Fix-review run:/);
+    assert.match(
       fixReviewYaml,
       /allowed-bots:\s+\$\{\{\s+github\.event\.inputs\.automation_review_loop == 'true' && 'github-actions,github-actions\[bot\],claude\[bot\]' \|\| ''\s+\}\}/,
     );

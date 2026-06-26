@@ -15,6 +15,10 @@ const { renderGateSummary } = require('./lib/gate-summary.cjs');
 
 const COMMENT_MARKER = '<!-- fix-review-summary -->';
 
+function reportHeading(state) {
+  return `## FIX-REVIEW Report: ${state}`;
+}
+
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
   if (index === -1) return fallback;
@@ -35,7 +39,7 @@ function repoBaseUrl(runUrl) {
 function renderStarted({ headSha, runUrl, command, startedAt }) {
   return [
     COMMENT_MARKER,
-    '## 🔄 Review fix started',
+    reportHeading('🔄 Review fix started'),
     '',
     `- Command: \`${command || '/fix-review'}\``,
     `- Head SHA: \`${shortSha(headSha)}\``,
@@ -51,7 +55,7 @@ function renderStarted({ headSha, runUrl, command, startedAt }) {
 function renderWorking({ headSha, runUrl, command, updatedAt }) {
   return [
     COMMENT_MARKER,
-    '## 🔧 Applying review fixes…',
+    reportHeading('🔧 Applying review fixes…'),
     '',
     `- Command: \`${command || '/fix-review'}\``,
     `- Head SHA: \`${shortSha(headSha)}\``,
@@ -66,7 +70,7 @@ function renderWorking({ headSha, runUrl, command, updatedAt }) {
 function renderSkipped({ headSha, runUrl, reason, updatedAt }) {
   return [
     COMMENT_MARKER,
-    '## ⏭️ Review fix skipped',
+    reportHeading('⏭️ Review fix skipped'),
     '',
     `- Head SHA: \`${shortSha(headSha)}\``,
     `- Run: ${runUrl || '_n/a_'}`,
@@ -85,7 +89,7 @@ function renderSkipped({ headSha, runUrl, reason, updatedAt }) {
 function renderNoChanges({ headSha, runUrl, command, structured, updatedAt }) {
   const lines = [
     COMMENT_MARKER,
-    '## ℹ️ No changes needed',
+    reportHeading('ℹ️ No changes needed'),
     '',
     `- Command: \`${command || '/fix-review'}\``,
     `- Head SHA: \`${shortSha(headSha)}\``,
@@ -112,7 +116,7 @@ function renderPushRejected({
     : [];
   const lines = [
     COMMENT_MARKER,
-    '## 🚫 Push rejected (non-fast-forward)',
+    reportHeading('🚫 Push rejected (non-fast-forward)'),
     '',
     `- Command: \`${command || '/fix-review'}\``,
     `- Head SHA: \`${shortSha(headSha)}\``,
@@ -148,7 +152,7 @@ function renderValidationFailed({
     : [];
   const lines = [
     COMMENT_MARKER,
-    '## ⚠️ Validation failed — fixes not pushed',
+    reportHeading('⚠️ Validation failed — fixes not pushed'),
     '',
     `- Command: \`${command || '/fix-review'}\``,
     `- Head SHA: \`${shortSha(headSha)}\``,
@@ -182,7 +186,7 @@ function renderFailed({ headSha, runUrl, failReason, updatedAt }) {
   const reason = failReason || 'The fix agent did not complete successfully.';
   return [
     COMMENT_MARKER,
-    '## ❌ Review fix failed',
+    reportHeading('❌ Review fix failed'),
     '',
     `- Head SHA: \`${shortSha(headSha)}\``,
     `- Run: ${runUrl || '_n/a_'}`,
@@ -198,7 +202,7 @@ function renderFailed({ headSha, runUrl, failReason, updatedAt }) {
 function renderCancelled({ headSha, runUrl, updatedAt }) {
   return [
     COMMENT_MARKER,
-    '## 🚫 Review fix cancelled',
+    reportHeading('🚫 Review fix cancelled'),
     '',
     `- Head SHA: \`${shortSha(headSha)}\``,
     `- Run: ${runUrl || '_n/a_'}`,
@@ -236,7 +240,7 @@ function renderComplete({
     : [];
   const lines = [
     COMMENT_MARKER,
-    '## ✅ Review fixes applied',
+    reportHeading('✅ Review fixes applied'),
     '',
     `- Command: \`${command || '/fix-review'}\``,
     `- Head SHA: \`${shortSha(headSha)}\``,
@@ -430,6 +434,7 @@ if (require.main === module) {
 
 module.exports = {
   COMMENT_MARKER,
+  reportHeading,
   isTrue,
   repoBaseUrl,
   renderStarted,
