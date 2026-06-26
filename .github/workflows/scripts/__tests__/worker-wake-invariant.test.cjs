@@ -3,31 +3,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const yaml = require('yaml') || null;
 
 const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const workflowsDir = path.join(repoRoot, '.github/workflows');
-
-/**
- * Minimal YAML parser for workflow files — extracts top-level keys
- * and job names. Avoids a yaml dependency; GitHub Actions YAML is
- * flat enough that regex-based extraction suffices.
- */
-function parseWorkflowJobs(content) {
-  const jobs = [];
-  const lines = content.split('\n');
-  let inJobs = false;
-  for (const line of lines) {
-    if (/^jobs:/.test(line.trim())) {
-      inJobs = true;
-      continue;
-    }
-    if (inJobs && /^\s{2}\S/.test(line) && line.trim().endsWith(':')) {
-      jobs.push(line.trim().replace(/:$/, ''));
-    }
-  }
-  return jobs;
-}
 
 function hasPermission(content, permission) {
   return new RegExp(`^  ${permission}:`, 'm').test(content);
@@ -127,7 +105,9 @@ test('wake-orchestrator jobs dispatch pr-flow.yml with dry_run=false', () => {
           `${wf}: wake-orchestrator does not pass dry_run=false`,
         );
       }
-      if (!/if:.*orchestrated == 'true'/.test(content)) {
+      // Gate may span multiple lines (YAML folded block scalar), so
+      // check for the presence of the pattern anywhere in the file.
+      if (!/orchestrated\s*==\s*'true'/.test(content)) {
         violations.push(
           `${wf}: wake-orchestrator is not gated on orchestrated=true`,
         );
