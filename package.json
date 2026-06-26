@@ -7,15 +7,18 @@
   },
   "scripts": {
     "dev": "node scripts/dev.cjs",
-    "build": "next build",
+    "prisma:generate": "prisma generate",
+    "build:next": "next build",
+    "build": "npm run prisma:generate && npm run build:next",
     "start": "node scripts/start.cjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck:only": "tsc --noEmit",
+    "typecheck": "npm run prisma:generate && npm run typecheck:only",
     "test-only": "node --import tsx --test src/lib/__tests__/*.test.ts src/app/api/__tests__/*.test.ts",
-    "test": "npm run typecheck && npm run test-only && npm run lint && npm run format:check"
+    "test": "npm run prisma:generate && npm run typecheck:only && npm run test-only && npm run lint && npm run format:check"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",

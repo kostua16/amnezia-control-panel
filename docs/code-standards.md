@@ -23,7 +23,8 @@ executed through `tsx` for TypeScript transpilation — **not** Vitest/Jest. The
 - `vi.mock` is unavailable. See [Mocking](#mocking) for the supported
   strategies.
 - The generated Prisma client (`src/generated/prisma/client`) is gitignored.
-  Generate it before running tests: `npx prisma generate`.
+  `npm test`, `npm run typecheck`, and `npm run build` generate it automatically;
+  use `npm run prisma:generate` only when you need explicit regeneration.
 
 ### Route handler tests
 
@@ -118,6 +119,7 @@ Any change to `.github/workflows/**`, `.github/actions/**`, `.github/workflows/s
    - `cd .github/workflows && node --test scripts/__tests__/*.test.cjs` (e2e + script-decision tests; this is the `ci.yml:61` step).
 
    `npm run test-only` alone gives a **false-green** on workflow logic — both are required.
+
 2. **Update `docs/workflow-e2e-scenarios.md`** when behavior intentionally changes; add a characterization case for any new flow.
 3. **Spec tests for in-progress fixes stay `test.todo`/`test.skip`** (visible, CI-green) — never silently delete a spec test; activate it (`test()`) and implement the fix in the same PR.
 
