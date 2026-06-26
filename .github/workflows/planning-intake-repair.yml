@@ -127,6 +127,7 @@ jobs:
         with:
           branch-name: ${{ steps.resolve.outputs.head_branch }}
           commit-message: 'docs(planning): repair milestone namespace for PR #${{ steps.resolve.outputs.source_pr_number }}'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Upsert repair status comment
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3

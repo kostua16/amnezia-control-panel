@@ -8,6 +8,10 @@ inputs:
   commit-message:
     description: 'Commit message'
     default: 'fix(ci): auto-fix CI failures'
+  github-token:
+    description: 'GitHub token used for the final push; pass GH_PAT for automation branches that must trigger downstream workflows'
+    required: false
+    default: ''
 
 outputs:
   pushed:
@@ -23,7 +27,24 @@ runs:
       env:
         BRANCH: ${{ inputs.branch-name }}
         MSG: ${{ inputs.commit-message }}
+        GITHUB_TOKEN_VALUE: ${{ inputs.github-token }}
       run: |
+        if [ -n "$GITHUB_TOKEN_VALUE" ]; then
+          askpass_path="${RUNNER_TEMP:-/tmp}/commit-and-push-askpass.sh"
+          printf '%s\n' '#!/usr/bin/env bash' \
+            'case "${1:-}" in' \
+            '  *Username*) printf "%s\n" x-access-token ;;' \
+            '  *Password*) printf "%s\n" "${GITHUB_GIT_PASSWORD:-}" ;;' \
+            '  *) printf "%s\n" "${GITHUB_GIT_PASSWORD:-}" ;;' \
+            'esac' > "$askpass_path"
+          chmod 0700 "$askpass_path"
+          export GIT_ASKPASS="$askpass_path"
+          export GIT_TERMINAL_PROMPT=0
+          export GITHUB_GIT_PASSWORD="$GITHUB_TOKEN_VALUE"
+          auth_header=$(printf 'x-access-token:%s' "$GITHUB_TOKEN_VALUE" | base64 | tr -d '\n')
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $auth_header"
+        fi
+
         git add -A
         commit_created=false
         if ! git diff --cached --quiet; then

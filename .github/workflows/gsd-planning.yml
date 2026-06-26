@@ -134,6 +134,7 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'docs(planning): refresh GSD phase ${{ needs.authorize.outputs.phase }}'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Build planning PR body
         id: pr-body

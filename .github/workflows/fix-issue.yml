@@ -180,6 +180,7 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix: resolve #${{ github.event.issue.number }}'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Build fix PR body
         if: steps.push.outputs.pushed == 'true'

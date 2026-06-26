@@ -332,6 +332,7 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): hourly optimization pass'
+          github-token: ${{ secrets.GH_PAT }}
       - name: Build optimization PR body
         id: pr-body
         if: steps.push.outputs.pushed == 'true'

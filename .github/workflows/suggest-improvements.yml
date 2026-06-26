@@ -138,6 +138,7 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'docs(planning): propose repo improvement follow-ups'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Log no-changes result
         if: steps.push.outputs.pushed != 'true'

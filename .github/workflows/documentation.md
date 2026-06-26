@@ -459,7 +459,9 @@ Always manual-only:
 
 `commit-and-push`:
 
-- relies on checkout's retained auth for push; no `token` input needed
+- accepts `github-token`; push-capable automation workflows pass `secrets.GH_PAT`
+  so branch updates trigger downstream workflows under the trusted PAT actor path
+- falls back to the checkout's retained auth only when `github-token` is omitted
 
 `google-github-actions/run-gemini-cli@v0`:
 
