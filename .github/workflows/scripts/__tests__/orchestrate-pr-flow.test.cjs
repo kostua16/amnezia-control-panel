@@ -10,6 +10,7 @@ const {
   getWorkerDispatchRef,
   makeDecision: makePrFlowDecision,
   renderFlowComment,
+  resolvePrNumber,
   summarizeWorkerRuns,
 } = require('../orchestrate-pr-flow.cjs');
 
@@ -647,4 +648,94 @@ test('buildFlowVisibility orderedStatuses includes aggregate and all workers', (
   assert.equal(visibility.orderedStatuses[4].context, 'pr-flow/kilo-review');
   assert.equal(visibility.orderedStatuses[5].context, 'pr-flow/pr-improve');
   assert.equal(visibility.orderedStatuses[6].context, 'pr-flow/finalizer');
+});
+
+// ── resolvePrNumber ──────────────────────────────────────────────────
+
+test('resolvePrNumber returns explicit pr_number when provided', () => {
+  assert.equal(resolvePrNumber('push', {}, '99'), 99);
+  assert.equal(resolvePrNumber('workflow_run', {}, '7'), 7);
+});
+
+test('resolvePrNumber extracts from issue_comment with pull_request', () => {
+  const event = {
+    issue: { pull_request: { url: 'https://example/pr/55' }, number: 55 },
+  };
+  assert.equal(resolvePrNumber('issue_comment', event), 55);
+});
+
+test('resolvePrNumber extracts from pull_request_target event', () => {
+  const event = { pull_request: { number: 12 } };
+  assert.equal(resolvePrNumber('pull_request_target', event), 12);
+});
+
+test('resolvePrNumber extracts from pull_request event', () => {
+  const event = { pull_request: { number: 88 } };
+  assert.equal(resolvePrNumber('pull_request', event), 88);
+});
+
+test('resolvePrNumber extracts from workflow_run pull_requests payload', () => {
+  const event = {
+    workflow_run: {
+      pull_requests: [{ number: 33 }],
+      display_title: 'some title',
+    },
+  };
+  assert.equal(resolvePrNumber('workflow_run', event), 33);
+});
+
+test('resolvePrNumber extracts from workflow_run display_title when pull_requests is empty', () => {
+  const event = {
+    workflow_run: {
+      pull_requests: [],
+      display_title: 'PR #77 @ abc123',
+    },
+  };
+  assert.equal(resolvePrNumber('workflow_run', event), 77);
+});
+
+test('resolvePrNumber extracts from workflow_run name when display_title is null', () => {
+  // The ?? operator only skips null/undefined, not empty string.
+  const event = {
+    workflow_run: {
+      pull_requests: [],
+      display_title: null,
+      name: 'PR #44 @ def456',
+    },
+  };
+  assert.equal(resolvePrNumber('workflow_run', event), 44);
+});
+
+test('resolvePrNumber does not fall back to name when display_title is an empty string', () => {
+  // ?? keeps the empty string, so name is never reached and no number parses.
+  const event = {
+    workflow_run: {
+      pull_requests: [],
+      display_title: '',
+      name: 'PR #44 @ def456',
+    },
+  };
+  assert.equal(resolvePrNumber('workflow_run', event), null);
+});
+
+test('resolvePrNumber falls back to inputs.pr_number for non-workflow_run events', () => {
+  // inputs.pr_number is only reachable outside the workflow_run branch.
+  const event = {
+    inputs: { pr_number: '22' },
+  };
+  assert.equal(resolvePrNumber('schedule', event), 22);
+});
+
+test('resolvePrNumber returns null when no source provides a number', () => {
+  assert.equal(resolvePrNumber('push', {}), null);
+  assert.equal(
+    resolvePrNumber('workflow_run', {
+      workflow_run: { pull_requests: [], display_title: 'no-pr-here' },
+    }),
+    null,
+  );
+});
+
+test('resolvePrNumber returns null for non-numeric explicit value', () => {
+  assert.equal(resolvePrNumber('push', {}, 'abc'), null);
 });
