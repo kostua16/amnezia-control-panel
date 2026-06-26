@@ -198,7 +198,7 @@ jobs:
             --base-ref "$BASE_REF" >> "$GITHUB_OUTPUT"
 
       - name: Post ancestry failure
-        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok != 'true'
+        if: always() && steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -274,6 +274,7 @@ jobs:
       - name: Auto-resolve trivial conflicts
         id: autoresolve
         if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
+        continue-on-error: true
         run: |
           node .github/workflows/scripts/auto-resolve-trivial-rebase-conflicts.cjs >> "$GITHUB_OUTPUT"
 
