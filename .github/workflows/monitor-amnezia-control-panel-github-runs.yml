@@ -368,6 +368,7 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix(ci): address monitored GitHub run finding'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Log no-changes result
         if: steps.duplicate.outputs.duplicate_found != 'true' && steps.push.outputs.pushed != 'true'

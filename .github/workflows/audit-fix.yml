@@ -234,6 +234,7 @@ jobs:
         with:
           branch-name: ${{ steps.classify.outputs.branch_name }}
           commit-message: 'fix(audit): address autonomous audit findings'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Log no-changes result
         if: steps.push.outputs.pushed != 'true'

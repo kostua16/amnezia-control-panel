@@ -7,6 +7,14 @@ function readRepoFile(repoPath: string) {
   return fs.readFileSync(path.join(process.cwd(), repoPath), 'utf8');
 }
 
+function listWorkflowFiles() {
+  const workflowsDir = path.join(process.cwd(), '.github/workflows');
+  return fs
+    .readdirSync(workflowsDir)
+    .filter((entry) => entry.endsWith('.yml') || entry.endsWith('.yaml'))
+    .map((entry) => `.github/workflows/${entry}`);
+}
+
 describe('GSD planning workflow automation', () => {
   it('runs the planning executor four times per day and caps scheduled imports to one plan', () => {
     const workflow = readRepoFile('.github/workflows/gsd-planning-execute.yml');
@@ -60,9 +68,52 @@ describe('GSD planning workflow automation', () => {
   it('pushes branches that are already ahead after GSD creates commits', () => {
     const action = readRepoFile('.github/actions/commit-and-push/action.yml');
 
+    assert.match(action, /github-token:/);
+    assert.match(
+      action,
+      /GITHUB_TOKEN_VALUE: \$\{\{ inputs\.github-token \}\}/,
+    );
+    assert.match(action, /GIT_ASKPASS="\$askpass_path"/);
+    assert.doesNotMatch(
+      action,
+      /git config --local http\.https:\/\/github\.com\/\.extraheader "AUTHORIZATION:/,
+    );
+    assert.match(
+      action,
+      /git -c http\.https:\/\/github\.com\/\.extraheader= push origin "HEAD:\$BRANCH"/,
+    );
     assert.match(action, /commit_created=false/);
     assert.match(action, /origin\/HEAD\.\.HEAD/);
     assert.match(action, /Branch is not ahead of origin\/\$BRANCH/);
+  });
+
+  it('passes GH_PAT to every automation commit-and-push callsite', () => {
+    for (const workflowPath of listWorkflowFiles()) {
+      const workflow = readRepoFile(workflowPath);
+      const uses = 'uses: ./.github/actions/commit-and-push';
+      let searchFrom = 0;
+
+      while (true) {
+        const usesIndex = workflow.indexOf(uses, searchFrom);
+        if (usesIndex === -1) {
+          break;
+        }
+
+        const nextStepIndex = workflow.indexOf('\n      - ', usesIndex + 1);
+        const block = workflow.slice(
+          usesIndex,
+          nextStepIndex === -1 ? workflow.length : nextStepIndex,
+        );
+
+        assert.match(
+          block,
+          /github-token: \$\{\{ secrets\.GH_PAT \}\}/,
+          `${workflowPath} commit-and-push callsite must pass GH_PAT`,
+        );
+
+        searchFrom = usesIndex + uses.length;
+      }
+    }
   });
 
   it('validates and repairs GSD executions before pushing a PR branch', () => {

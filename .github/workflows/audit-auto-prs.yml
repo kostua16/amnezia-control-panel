@@ -151,6 +151,7 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): audit automation-created PRs'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Build auto PR audit body
         id: pr-body

@@ -318,6 +318,7 @@ jobs:
         with:
           branch-name: ${{ steps.pr.outputs.head_ref }}
           commit-message: 'fix(review): address review feedback via /fix-review'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Disable auto-merge (force re-review of the bot commit)
         id: automerge

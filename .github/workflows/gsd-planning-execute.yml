@@ -368,6 +368,7 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'feat(gsd): execute planning intake'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Build execution PR body
         id: pr-body

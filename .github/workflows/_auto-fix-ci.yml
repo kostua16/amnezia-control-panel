@@ -247,6 +247,7 @@ jobs:
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: "${{ steps.prettier.outputs.prettier_only == 'true' && 'style: auto-fix prettier formatting' || 'fix(ci): auto-fix CI failures' }}"
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Log no-changes result
         if: steps.failure.outputs.fixable == 'true' && steps.push.outputs.pushed != 'true'
