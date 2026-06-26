@@ -15,11 +15,21 @@ on:
         description: 'PR head SHA for run-name correlation'
         required: false
         type: string
+      base_ref:
+        description: 'Expected PR base ref'
+        required: false
+        type: string
+      orchestrated:
+        description: 'Whether this run was dispatched by PR Orchestrator'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: write
 
 concurrency:
   group: antigravity-code-review-${{ github.event.issue.number || github.event.pull_request.number || github.sha }}
@@ -150,3 +160,27 @@ jobs:
               repo: context.repo.repo,
               labels: [label]
             });
+
+  wake-orchestrator:
+    needs: [authorize, antigravity-review]
+    if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: '24.x'
+          setup-bun: 'false'
+
+      - name: Wake PR Orchestrator
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+        run: |
+          gh workflow run pr-flow.yml \
+            --ref main \
+            -f pr_number="$PR_NUMBER" \
+            -f dry_run=false
