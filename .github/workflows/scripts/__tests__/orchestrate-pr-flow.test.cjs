@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const {
   buildFlowGuidance,
+  buildFlowVisibility,
   evaluatePolicy,
   getWorkerDispatchRef,
   makeDecision: makePrFlowDecision,
@@ -472,4 +473,178 @@ test('worker run matching requires both PR number and current head SHA', () => {
 
   assert.equal(summary.active?.displayTitle, 'PR #42 @ abc123');
   assert.equal(summary.latest?.displayTitle, 'PR #42 @ abc123');
+});
+
+test('buildFlowVisibility returns draft PR with all pending statuses', () => {
+  const visibility = buildFlowVisibility({
+    pr: { ...basePr, isDraft: true, state: 'OPEN', mergedAt: '' },
+    config: testConfig,
+    decision: {
+      state: 'flow/draft',
+      reason: 'PR is draft.',
+      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    },
+    workerRuns: {},
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.aggregate.state, 'pending');
+  assert.equal(visibility.aggregate.displayState, 'pending');
+  assert.equal(visibility.aggregate.context, 'pr-flow/ready');
+  assert.equal(visibility.workers.codeReview.displayState, 'pending');
+  assert.equal(visibility.workers.securityReview.displayState, 'pending');
+  assert.equal(visibility.workers.finalizer.displayState, 'pending');
+});
+
+test('buildFlowVisibility returns failure aggregate when checks failed', () => {
+  const visibility = buildFlowVisibility({
+    pr: { ...basePr, isDraft: false, state: 'OPEN', mergedAt: '' },
+    config: testConfig,
+    decision: {
+      state: 'flow/checks-failed',
+      reason: 'Required checks are failing.',
+      checkStatus: { status: 'failed', failing: ['Lint'], pending: [], missing: [] },
+    },
+    workerRuns: {},
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.aggregate.state, 'failure');
+  assert.equal(visibility.aggregate.displayState, 'failure');
+  assert.equal(visibility.workers.codeReview.displayState, 'pending');
+  assert.equal(visibility.workers.securityReview.displayState, 'pending');
+});
+
+test('buildFlowVisibility returns success workers when review passed', () => {
+  const visibility = buildFlowVisibility({
+    pr: {
+      ...basePr,
+      isDraft: false,
+      state: 'OPEN',
+      mergedAt: '',
+      labels: ['ai-review-passed', 'security-review-passed'],
+    },
+    config: testConfig,
+    decision: {
+      state: 'flow/finalizer-dispatched',
+      reason: 'Finalizer already dispatched for this head SHA.',
+      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    },
+    workerRuns: {
+      codeReview: [{
+        displayTitle: 'PR #42 @ abc123',
+        status: 'completed',
+        conclusion: 'success',
+        url: 'https://github.com/test/repo/actions/runs/456',
+      }],
+    },
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.workers.codeReview.state, 'success');
+  assert.equal(visibility.workers.codeReview.displayState, 'success');
+  assert.equal(visibility.workers.securityReview.state, 'success');
+  assert.equal(visibility.workers.securityReview.displayState, 'success');
+});
+
+test('buildFlowVisibility returns error aggregate when dispatch fails', () => {
+  const visibility = buildFlowVisibility({
+    pr: { ...basePr, isDraft: false, state: 'OPEN', mergedAt: '' },
+    config: testConfig,
+    decision: {
+      state: 'flow/review-pending',
+      reason: 'Manual code review requested.',
+      dispatch: { key: 'codeReview', workflow: 'code-review.yml' },
+      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    },
+    dispatchOutcome: { ok: false, error: 'Workflow not found' },
+    workerRuns: {},
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.aggregate.state, 'error');
+  assert.equal(visibility.aggregate.displayState, 'error');
+  assert.match(visibility.aggregate.description, /Worker dispatch failed/);
+  assert.equal(visibility.workers.codeReview.state, 'error');
+  assert.equal(visibility.workers.codeReview.displayState, 'error');
+});
+
+test('buildFlowVisibility returns success+N/A for closed/merged PR', () => {
+  const visibility = buildFlowVisibility({
+    pr: {
+      ...basePr,
+      isDraft: false,
+      state: 'CLOSED',
+      mergedAt: '2026-06-26T12:00:00Z',
+    },
+    config: testConfig,
+    decision: {
+      state: null,
+      reason: 'PR is closed or already merged.',
+      checkStatus: { status: 'not_requested', failing: [], pending: [], missing: [] },
+    },
+    workerRuns: {},
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.aggregate.state, 'success');
+  assert.equal(visibility.aggregate.displayState, 'success');
+  assert.match(visibility.aggregate.description, /closed or already merged/);
+  assert.equal(visibility.workers.codeReview.displayState, 'N/A');
+  assert.equal(visibility.workers.securityReview.displayState, 'N/A');
+  assert.equal(visibility.workers.finalizer.displayState, 'N/A');
+});
+
+test('buildFlowVisibility returns success aggregate for manual-only decision', () => {
+  const visibility = buildFlowVisibility({
+    pr: {
+      ...basePr,
+      isDraft: false,
+      state: 'OPEN',
+      mergedAt: '',
+      labels: ['needs-review'],
+    },
+    config: testConfig,
+    policy: {
+      manual_only: true,
+      blocking_labels_present: [],
+      maintainerAssociations: [],
+    },
+    decision: {
+      state: 'flow/manual-only',
+      reason: 'Manual review is required by label: needs-review.',
+      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    },
+    workerRuns: {},
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.aggregate.state, 'success');
+  assert.equal(visibility.aggregate.displayState, 'success');
+  assert.match(visibility.aggregate.description, /Manual review is required/);
+  assert.equal(visibility.workers.codeReview.displayState, 'pending');
+  assert.equal(visibility.workers.finalizer.displayState, 'N/A');
+});
+
+test('buildFlowVisibility orderedStatuses includes aggregate and all workers', () => {
+  const visibility = buildFlowVisibility({
+    pr: { ...basePr, isDraft: true, state: 'OPEN', mergedAt: '' },
+    config: testConfig,
+    decision: {
+      state: 'flow/draft',
+      reason: 'PR is draft.',
+      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    },
+    workerRuns: {},
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.orderedStatuses.length, 7);
+  assert.equal(visibility.orderedStatuses[0].context, 'pr-flow/ready');
+  assert.equal(visibility.orderedStatuses[1].context, 'pr-flow/code-review');
+  assert.equal(visibility.orderedStatuses[2].context, 'pr-flow/security-review');
+  assert.equal(visibility.orderedStatuses[3].context, 'pr-flow/dependency-review');
+  assert.equal(visibility.orderedStatuses[4].context, 'pr-flow/kilo-review');
+  assert.equal(visibility.orderedStatuses[5].context, 'pr-flow/pr-improve');
+  assert.equal(visibility.orderedStatuses[6].context, 'pr-flow/finalizer');
 });
