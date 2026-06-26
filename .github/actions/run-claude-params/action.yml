@@ -872,6 +872,7 @@ runs:
         SCAN_IS_ERROR: ${{ steps.scan-logs.outputs.is_error }}
         SCAN_HAS_ERROR_FINDINGS: ${{ steps.scan-logs.outputs.has_error_findings }}
         SCAN_FINDINGS_SUMMARY: ${{ steps.scan-logs.outputs.findings_summary }}
+        SCAN_FAILURE_REASON: ${{ steps.scan-logs.outputs.failure_reason }}
         SCAN_ACTION_ERROR: ${{ steps.scan-logs.outputs.action_error }}
         SCAN_DURATION_MS: ${{ steps.scan-logs.outputs.duration_ms }}
         MAX_TURNS_INPUT: ${{ inputs.max-turns }}
@@ -937,6 +938,8 @@ runs:
           echo "failed=true" >> "$GITHUB_OUTPUT"
           if [[ -n "$SCAN_ACTION_ERROR" ]]; then
             echo "reason=$(reason_with_context "$SCAN_ACTION_ERROR")" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$SCAN_FAILURE_REASON" ]]; then
+            echo "reason=$(reason_with_context "$SCAN_FAILURE_REASON")" >> "$GITHUB_OUTPUT"
           else
             echo "reason=$(reason_with_context "claude-code-action step failed")" >> "$GITHUB_OUTPUT"
           fi
@@ -978,7 +981,11 @@ runs:
         # Rule 7: scan found error-severity findings
         if [[ "$SCAN_HAS_ERROR_FINDINGS" == "true" ]]; then
           echo "failed=true" >> "$GITHUB_OUTPUT"
-          echo "reason=claude log scanner found: $SCAN_FINDINGS_SUMMARY" >> "$GITHUB_OUTPUT"
+          if [[ -n "$SCAN_FAILURE_REASON" ]]; then
+            echo "reason=$(reason_with_context "$SCAN_FAILURE_REASON")" >> "$GITHUB_OUTPUT"
+          else
+            echo "reason=claude log scanner found: $SCAN_FINDINGS_SUMMARY" >> "$GITHUB_OUTPUT"
+          fi
           exit 0
         fi
 

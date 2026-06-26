@@ -116,7 +116,8 @@ test('buildFindings detects failed_tool_calls as error at turn limit with isErro
 test('buildFindings detects git_push_403', () => {
   const findings = buildFindings({
     metrics: {},
-    logText: 'some output\nfatal: unable to access returned error: 403\nmore output',
+    logText:
+      'some output\nfatal: unable to access returned error: 403\nmore output',
   });
   const git = findings.find((f) => f.category === 'git_push_403');
   assert.ok(git);
@@ -178,6 +179,19 @@ test('buildFindings detects internal_error directory mismatch', () => {
   assert.equal(internal.severity, 'warning');
 });
 
+test('buildFindings detects non-human actor refusal as an action error', () => {
+  const findings = buildFindings({
+    metrics: {},
+    logText:
+      '##[error]Action failed with error: Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list or use "*" to allow all bots.',
+  });
+  const actor = findings.find((f) => f.category === 'non_human_actor');
+  assert.ok(actor);
+  assert.equal(actor.severity, 'error');
+  assert.match(actor.detail, /github-actions/);
+  assert.match(actor.detail, /allowed_bots/);
+});
+
 test('buildFindings detects disallowed_tools at info level', () => {
   const findings = buildFindings({
     metrics: {
@@ -214,8 +228,7 @@ test('buildFindings detects graphql user fetch error', () => {
 test('buildFindings detects rate_limited via 3 occurrences', () => {
   const findings = buildFindings({
     metrics: {},
-    logText:
-      'is_rate_limited=true\nis_rate_limited=true\nis_rate_limited=true',
+    logText: 'is_rate_limited=true\nis_rate_limited=true\nis_rate_limited=true',
   });
   const rate = findings.find((f) => f.category === 'rate_limited');
   assert.ok(rate);
@@ -246,9 +259,7 @@ test('buildFindings detects uncategorized errors filtering out benign messages',
     },
     logText: '',
   });
-  const uncategorized = findings.find(
-    (f) => f.category === 'uncategorized',
-  );
+  const uncategorized = findings.find((f) => f.category === 'uncategorized');
   assert.ok(uncategorized);
   // Benign messages (submodule + TAP diagnostic) should be filtered out
   assert.ok(!uncategorized.detail.includes('.gitmodules'));
@@ -329,9 +340,7 @@ test('buildClaudeLogScan passes findings through from buildFindings', () => {
     logText: '',
     conclusion: 'failure',
   });
-  assert.ok(
-    scan.findings.some((f) => f.category === 'zero_turns'),
-  );
+  assert.ok(scan.findings.some((f) => f.category === 'zero_turns'));
 });
 
 // ---------------------------------------------------------------------------
@@ -339,9 +348,7 @@ test('buildClaudeLogScan passes findings through from buildFindings', () => {
 // ---------------------------------------------------------------------------
 
 test('writeGithubOutputs writes correct key=value format', () => {
-  const tempDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'scan-logs-test-'),
-  );
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-logs-test-'));
   const outputPath = path.join(tempDir, 'output.txt');
   const issuesDir = path.join(tempDir, 'issues');
 
@@ -394,6 +401,7 @@ test('writeGithubOutputs writes correct key=value format', () => {
   assert.equal(issueFile, '');
   assert.ok(written.includes('has_findings=false'));
   assert.ok(written.includes('has_error_findings=false'));
+  assert.ok(written.includes('failure_reason='));
   assert.ok(written.includes('num_turns=10'));
   assert.ok(written.includes('is_error=false'));
   assert.ok(written.includes('duration_ms=5000'));
@@ -409,6 +417,137 @@ test('writeGithubOutputs writes correct key=value format', () => {
   assert.ok(output.includes('has_findings=false'));
 
   // Cleanup
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('writeGithubOutputs preserves the first error finding as failure_reason', () => {
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'scan-logs-test-reason-'),
+  );
+  const outputPath = path.join(tempDir, 'output.txt');
+
+  const { output } = writeGithubOutputs({
+    scan: {
+      metrics: {},
+      findings: [
+        {
+          category: 'non_human_actor',
+          severity: 'error',
+          message: 'Claude action refused bot actor',
+          detail:
+            'Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+        },
+      ],
+    },
+    outputPath,
+    issuesDir: tempDir,
+  });
+
+  assert.ok(output.includes('has_error_findings=true'));
+  assert.ok(
+    output.includes(
+      'failure_reason=Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+    ),
+  );
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('writeGithubOutputs keeps failure_reason on one physical output line', () => {
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'scan-logs-test-reason-newline-'),
+  );
+  const outputPath = path.join(tempDir, 'output.txt');
+
+  const { output } = writeGithubOutputs({
+    scan: {
+      metrics: {},
+      findings: [
+        {
+          category: 'action_error',
+          severity: 'error',
+          message: 'Claude action failed',
+          detail: 'first line\nsecond line\r\nthird line',
+        },
+      ],
+    },
+    outputPath,
+    issuesDir: tempDir,
+  });
+
+  assert.ok(!output.includes('failure_reason<<'));
+  assert.ok(
+    output.includes('failure_reason=first line second line third line'),
+  );
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('writeGithubOutputs prefers non-human actor over earlier error findings', () => {
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'scan-logs-test-reason-priority-'),
+  );
+  const outputPath = path.join(tempDir, 'output.txt');
+
+  const { output } = writeGithubOutputs({
+    scan: {
+      metrics: {},
+      findings: [
+        {
+          category: 'zero_turns',
+          severity: 'error',
+          message: 'Claude used zero turns',
+          detail: 'num_turns: 0',
+        },
+        {
+          category: 'non_human_actor',
+          severity: 'error',
+          message: 'Claude action refused bot actor',
+          detail:
+            'Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+        },
+      ],
+    },
+    outputPath,
+    issuesDir: tempDir,
+  });
+
+  assert.ok(
+    output.includes(
+      'failure_reason=Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+    ),
+  );
+  assert.ok(!output.includes('failure_reason=num_turns: 0'));
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('buildClaudeLogScan reports bot actor refusal even when zero turns is present', () => {
+  const scan = buildClaudeLogScan({
+    metrics: { numTurns: 0 },
+    logText:
+      '##[error]Action failed with error: Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+    conclusion: 'failure',
+  });
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'scan-logs-test-reason-zero-actor-'),
+  );
+  const outputPath = path.join(tempDir, 'output.txt');
+
+  const { output } = writeGithubOutputs({
+    scan,
+    outputPath,
+    issuesDir: tempDir,
+  });
+
+  assert.ok(scan.findings.some((f) => f.category === 'zero_turns'));
+  assert.ok(scan.findings.some((f) => f.category === 'non_human_actor'));
+  assert.ok(
+    output.includes(
+      'failure_reason=Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list.',
+    ),
+  );
+
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
@@ -455,9 +594,7 @@ test('writeGithubOutputs writes issue file when findings exist', () => {
   const written = fs.readFileSync(outputPath, 'utf8');
   assert.ok(written.includes('has_findings=true'));
   assert.ok(written.includes('has_error_findings=true'));
-  assert.ok(
-    written.includes('findings_summary=zero_turns'),
-  );
+  assert.ok(written.includes('findings_summary=zero_turns'));
 
   // Cleanup
   fs.rmSync(tempDir, { recursive: true, force: true });

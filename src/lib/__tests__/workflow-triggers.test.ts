@@ -150,6 +150,7 @@ describe('workflow trigger policy', () => {
   it('keeps auto-cover-review event-driven with scheduled fallback and main-ref repair dispatch', () => {
     const workflow = readWorkflow('auto-cover-review.yml');
     const yaml = readWorkflowText('auto-cover-review.yml');
+    const fixReviewYaml = readWorkflowText('fix-review.yml');
 
     assert.ok(workflow.on?.workflow_run);
     assert.ok(workflow.on?.issue_comment);
@@ -168,6 +169,10 @@ describe('workflow trigger policy', () => {
     assert.match(
       yaml,
       /gh workflow run fix-review\.yml\s+\\\n\s+--ref main\s+\\\n\s+-f pr_number="\$pr_number"\s+\\\n\s+-f head_sha="\$head_sha"\s+\\\n\s+-f automation_review_loop=true/,
+    );
+    assert.match(
+      fixReviewYaml,
+      /allowed-bots:\s+\$\{\{\s+github\.event\.inputs\.automation_review_loop == 'true' && 'github-actions,github-actions\[bot\],claude\[bot\]' \|\| ''\s+\}\}/,
     );
   });
 
