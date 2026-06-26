@@ -853,7 +853,7 @@ describe('makeDecision', () => {
     assert.equal(decision.dispatch?.key, 'codeReview');
   });
 
-  it('dispatches code review for manual-only workflow PRs after green CI', () => {
+  it('routes manual-only workflow PRs to flow/manual-only after green CI', () => {
     const decision = decide({
       pr: prFixture({
         headRefName: 'claude-workflow-optimize-181',
@@ -866,12 +866,12 @@ describe('makeDecision', () => {
       }),
     });
 
-    assert.equal(decision.state, 'flow/review-pending');
-    assert.equal(decision.dispatch?.key, 'codeReview');
-    assert.ok(!decision.labelsToAdd.includes('flow/manual-only'));
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(decision.dispatch, null);
+    assert.ok(decision.labelsToAdd.includes('flow/manual-only'));
   });
 
-  it('keeps manual-only PRs in review until both advisory signals pass', () => {
+  it('routes manual-only PRs to flow/manual-only even with partial advisory signals', () => {
     const decision = decide({
       pr: prFixture({
         headRefName: 'claude-workflow-optimize-181',
@@ -884,8 +884,8 @@ describe('makeDecision', () => {
       }),
     });
 
-    assert.equal(decision.state, 'flow/review-pending');
-    assert.equal(decision.dispatch?.key, 'codeReview');
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(decision.dispatch, null);
   });
 
   it('completes reviewed manual-only PRs without dispatching finalizer', () => {
@@ -963,7 +963,10 @@ describe('makeDecision', () => {
     });
 
     assert.equal(decision.state, 'flow/manual-only');
-    assert.equal(decision.reason, 'Manual-only PR: advisory reviews passed.');
+    assert.equal(
+      decision.reason,
+      'audit-fix branches are manual-only by policy',
+    );
     assert.equal(decision.dispatch, null);
   });
 
@@ -982,7 +985,7 @@ describe('makeDecision', () => {
     assert.equal(decision.dispatch?.key, 'codeReview');
   });
 
-  it('dispatches advisory review for needs-review PRs before manual completion', () => {
+  it('routes needs-review audit PRs to flow/manual-only without dispatching review', () => {
     const decision = decide({
       pr: prFixture({
         headRefName: 'claude-audit-fix-26890853027',
@@ -995,8 +998,8 @@ describe('makeDecision', () => {
       }),
     });
 
-    assert.equal(decision.state, 'flow/review-pending');
-    assert.equal(decision.dispatch?.key, 'codeReview');
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(decision.dispatch, null);
   });
 
   it('keeps hard blocking labels blocking after maintainer approval', () => {
@@ -1338,7 +1341,7 @@ describe('buildFlowVisibility', () => {
     );
   });
 
-  it('shows manual-only PRs waiting on advisory reviews before completion', () => {
+  it('routes manual-only PRs to flow/manual-only immediately after CI green', () => {
     const pr = prFixture({
       headRefName: 'claude-audit-fix-26890853027',
       labels: ['needs-review'],
@@ -1360,17 +1363,17 @@ describe('buildFlowVisibility', () => {
       currentRunUrl: 'https://github.example.test/run/orchestrator',
     });
 
-    assert.equal(decision.state, 'flow/review-pending');
-    assert.equal(decision.dispatch?.key, 'codeReview');
-    assert.equal(visibility.aggregate.state, 'pending');
-    assert.equal(visibility.workers.codeReview.state, 'pending');
-    assert.equal(visibility.workers.securityReview.state, 'pending');
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(decision.dispatch, null);
+    assert.equal(visibility.aggregate.state, 'success');
+    assert.equal(visibility.workers.codeReview.displayState, 'N/A');
+    assert.equal(visibility.workers.securityReview.displayState, 'N/A');
     assert.equal(visibility.workers.kiloReview.displayState, 'N/A');
     assert.equal(visibility.workers.prImprove.displayState, 'N/A');
     assert.equal(visibility.workers.finalizer.displayState, 'N/A');
   });
 
-  it('marks reviewed manual-only PRs ready with review success diagnostics', () => {
+  it('continues normal flow when maintainer approves a manual-only PR', () => {
     const pr = prFixture({
       headRefName: 'claude-audit-fix-26890853027',
       labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
@@ -1379,6 +1382,7 @@ describe('buildFlowVisibility', () => {
       manual_only: true,
       blocked_reason: 'audit-fix branches are manual-only by policy',
       blocking_labels_present: ['needs-review'],
+      maintainer_approved: true,
     });
     const decision = decide({ pr, policy });
     const visibility = buildFlowVisibility({
@@ -1392,16 +1396,11 @@ describe('buildFlowVisibility', () => {
       currentRunUrl: 'https://github.example.test/run/orchestrator',
     });
 
-    assert.equal(decision.state, 'flow/manual-only');
-    assert.equal(visibility.aggregate.state, 'success');
-    assert.equal(
-      visibility.aggregate.description,
-      'Manual-only PR: advisory reviews passed. Ready for human merge decision.',
-    );
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch?.key, 'finalizer');
     assert.equal(visibility.workers.codeReview.state, 'success');
     assert.equal(visibility.workers.securityReview.state, 'success');
-    assert.equal(visibility.workers.prImprove.displayState, 'N/A');
-    assert.equal(visibility.workers.finalizer.displayState, 'N/A');
+    assert.ok(!decision.desiredLabels.includes('flow/manual-only'));
   });
 
   it('surfaces dispatch failures as error statuses and a failed flow label', () => {
