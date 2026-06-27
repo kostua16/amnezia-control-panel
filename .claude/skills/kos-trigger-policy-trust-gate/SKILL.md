@@ -2,7 +2,7 @@
 name: kos-trigger-policy-trust-gate
 description: Understand the authorize-job trust gate (evaluate-trigger-policy.cjs + policy.json) that decides whether a comment/issue-triggered zai workflow actually runs, and why most such runs show conclusion=skipped.
 user-invocable: true
-when_to_use: "When a comment/issue-triggered workflow that uses evaluate-trigger-policy.cjs (claude, fix-issue, fix-review, rebase-pr) skipped, or you need to know if a trigger will be trusted."
+when_to_use: "When a comment/issue/PR-triggered workflow that gates via evaluate-trigger-policy.cjs skipped, or you need to know if a trigger will be trusted."
 category: utilities
 argument-hint: "[workflow and trigger event]"
 keywords: [trigger, policy, trust, authorize, gate, skipped, allowed-bots, non-human, author-association]
@@ -16,7 +16,7 @@ metadata:
 
 # Idea
 
-Comment/issue/review-triggered workflows gate before running. **`claude`, `fix-issue`, `fix-review`, and `rebase-pr`** gate via `evaluate-trigger-policy.cjs --mode <workflow> --policy-file .github/workflows/policy.json`, which emits `triggered` and `trusted`; the run proceeds only when **both** are `true`, else the downstream job is `skipped`. (`gsd-planning` and `triage` have their **own** simpler `authorize` jobs — slash-command presence + `author_association` — they do **not** call `evaluate-trigger-policy.cjs`; this skill covers the four that do.) Most runs of these workflows are `skipped` — that is the gate working, not a failure.
+Many comment/issue/PR-triggered workflows gate via `evaluate-trigger-policy.cjs --mode <workflow> --policy-file .github/workflows/policy.json`, which emits `triggered` and `trusted`; the run proceeds only when **both** are `true`, else the downstream job is `skipped`. The current set includes `claude`, `fix-issue`, `fix-review`, `rebase-pr`, `antigravity`(+`-code-review`), `deepseek`, `fix-pr`/`fix-branch`, `approve-auto-fix`, `review-approved`, `planning-intake-repair`, and `pr-flow` — run `grep -l evaluate-trigger-policy.cjs .github/workflows/*.yml` for the authoritative list (it changes as workflows are added). (`gsd-planning` and `triage` have their **own** simpler `authorize` jobs — slash-command presence + `author_association` — and do **not** call it.) Most runs of these workflows are `skipped` — that is the gate working, not a failure.
 
 ## When to invoke this skill directly
 
