@@ -59,5 +59,22 @@ describe('hmac', () => {
     it('returns false for empty signature', () => {
       assert.ok(!verifySignature({ a: 1 }, SECRET, ''));
     });
+
+    it('returns false for wrong-length signature without throwing', () => {
+      // timingSafeEqual throws if buffers differ in length — verifySignature
+      // must catch that and return false instead of propagating.
+      assert.ok(!verifySignature({ a: 1 }, SECRET, 'abcdef'));
+      assert.ok(!verifySignature({ a: 1 }, SECRET, 'a'));
+    });
+
+    it('returns false for non-hex characters without throwing', () => {
+      assert.ok(!verifySignature({ a: 1 }, SECRET, 'gg' + '0'.repeat(62)));
+    });
+
+    it('returns false for null-like signature values', () => {
+      // Empty and whitespace-only should be handled gracefully.
+      assert.ok(!verifySignature({ a: 1 }, SECRET, '   '));
+      assert.ok(!verifySignature({ a: 1 }, SECRET, '\t\n'));
+    });
   });
 });
