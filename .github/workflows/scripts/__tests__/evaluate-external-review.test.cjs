@@ -81,6 +81,44 @@ test('current-head inline Kilo comments block even without a summary', () => {
   assert.equal(result.state, 'blocked');
 });
 
+test('current-head Kilo pass summary clears older inline comments', () => {
+  const result = evaluateExternalReview({
+    pr,
+    reviews: [review(head, '2026-06-24T11:50:00Z')],
+    reviewComments: [
+      {
+        user: kilo,
+        commit_id: head,
+        body: 'old issue',
+        created_at: '2026-06-24T11:55:00Z',
+      },
+    ],
+    comments: [summary('Status: No Issues Found', '2026-06-24T12:00:00Z')],
+    now,
+  });
+
+  assert.equal(result.state, 'passed');
+});
+
+test('newer current-head inline Kilo comments still block after a pass summary', () => {
+  const result = evaluateExternalReview({
+    pr,
+    reviews: [review(head, '2026-06-24T11:40:00Z')],
+    comments: [summary('Status: No Issues Found', '2026-06-24T11:50:00Z')],
+    reviewComments: [
+      {
+        user: kilo,
+        commit_id: head,
+        body: 'new issue',
+        created_at: '2026-06-24T11:55:00Z',
+      },
+    ],
+    now,
+  });
+
+  assert.equal(result.state, 'blocked');
+});
+
 test('old-head Kilo issues do not block current head', () => {
   const result = evaluateExternalReview({
     pr,
