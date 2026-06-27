@@ -296,6 +296,11 @@ describe('workflow trigger policy', () => {
       /github\.event_name == 'workflow_dispatch'/,
       /startsWith\(github\.event\.comment\.body, '\/gsd-plan'\)/,
     ]);
+    expectGuard('triage.yml', [
+      /triage:[\s\S]*?if: \|/,
+      /github\.event\.issue\.pull_request == null/,
+      /startsWith\(github\.event\.comment\.body, '\/triage'\)/,
+    ]);
   });
 
   it('prefilters review and orchestrator issue comments before resolver setup', () => {
