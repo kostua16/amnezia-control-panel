@@ -14,6 +14,7 @@ const MANUAL_REPAIR_CLASS_BLOCKERS = [
   'planning',
   'trusted-planning',
 ];
+// Maintainer-triggered repairs stay limited to human-owned classes; automation-owned classes re-enter through automationReviewLoop.
 const MANUAL_REPAIR_CLASS_ALLOWLIST = ['gsd-planning-execution'];
 
 function getArg(name, fallback = null) {
