@@ -146,6 +146,56 @@ test('M15 char: missing required_pass_label → awaiting_checks', () => {
 // A genuinely-missing check still correctly blocks (pending) — see M12 char tests.
 // Guarded by workflow-triggers.test.ts (heavy jobs need [changes]).
 
+// ---------- maintainer-approved gate preservation ----------
+test('maintainer-approved does NOT bypass hard-blocker label do-not-merge', () => {
+  assert.equal(
+    mg({
+      blocking_labels_present: ['do-not-merge'],
+      maintainer_approved: true,
+    }),
+    'blocked',
+  );
+});
+
+test('maintainer-approved does NOT bypass hard-blocker label ai-review-concerns', () => {
+  assert.equal(
+    mg({
+      blocking_labels_present: ['ai-review-concerns'],
+      maintainer_approved: true,
+    }),
+    'blocked',
+  );
+});
+
+test('maintainer-approved does NOT bypass draft status', () => {
+  assert.equal(
+    mg({ is_draft: true, maintainer_approved: true }),
+    'awaiting_checks',
+  );
+});
+
+test('maintainer-approved does NOT bypass cross-repo restriction', () => {
+  assert.equal(
+    mg({ same_repo: false, maintainer_approved: true }),
+    'manual_only',
+  );
+});
+
+test('maintainer-approved overrides manualOnly policy', () => {
+  assert.equal(
+    mg({ manual_only: true, maintainer_approved: true }),
+    'approve_and_enable_automerge',
+  );
+});
+
+test('maintainer-approved does NOT bypass failing required checks', () => {
+  assert.equal(mg({ maintainer_approved: true }, ciFailing), 'blocked');
+});
+
+test('maintainer-approved does NOT bypass pending required checks', () => {
+  assert.equal(mg({ maintainer_approved: true }, ciPending), 'awaiting_checks');
+});
+
 // ---------- out of scope for the decision function (documented in the catalog) ----------
 // M6/M8 feed the same manual_only branch as M5 (upstream evaluate-pr-policy sets manual_only).
 // M16 auto-merge ENABLEMENT failure is a shell step (pr-finalizer.yml:146), not a decision output.

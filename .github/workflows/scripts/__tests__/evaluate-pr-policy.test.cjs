@@ -49,6 +49,47 @@ test('carries maintainer associations into the evaluated policy output', () => {
   );
 });
 
+test('sets maintainer_approved true when label is present', () => {
+  const result = evaluatePrPolicy(
+    makePr({ labels: ['maintainer-approved'] }),
+    policy,
+    [],
+  );
+
+  assert.equal(result.maintainer_approved, true);
+});
+
+test('defaults required_pass_labels when maintainer-approved on other-class PR', () => {
+  const result = evaluatePrPolicy(
+    makePr({ labels: ['maintainer-approved'], headRefName: 'user/feature' }),
+    policy,
+    [{ filename: 'src/app/page.tsx', additions: 5, deletions: 2 }],
+  );
+
+  assert.equal(result.maintainer_approved, true);
+  assert.deepEqual(result.required_pass_labels, [
+    'ai-review-passed',
+    'security-review-passed',
+  ]);
+});
+
+test('does not override required_pass_labels when maintainer-approved on trusted branch', () => {
+  const result = evaluatePrPolicy(
+    makePr({
+      headRefName: policy.trustedPlanning.branchPrefixes[0] + '123',
+      labels: ['maintainer-approved', 'ai-review-passed'],
+    }),
+    policy,
+    [{ filename: '.planning/roadmap.md', additions: 3, deletions: 1 }],
+  );
+
+  assert.equal(result.maintainer_approved, true);
+  assert.deepEqual(result.required_pass_labels, [
+    'ai-review-passed',
+    'security-review-passed',
+  ]);
+});
+
 test('keeps normal source changes out of generated-state policy', () => {
   const result = evaluatePrPolicy(makePr(), policy, [
     {

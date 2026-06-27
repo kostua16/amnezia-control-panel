@@ -185,7 +185,7 @@ Plans:
 **Goal:** Store canonical execution plans imported from merged `.planning/quick/**` artifacts.
 **Depends on:** Phase 13.4
 **Requirements:** One imported artifact per wave so the scheduled executor can process up to four plans per day.
-**Plans:** 25/32 plans executed
+**Plans:** 28/35 plans executed
 
 ## Phase Details
 
