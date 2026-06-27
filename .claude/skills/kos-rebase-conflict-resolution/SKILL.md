@@ -39,7 +39,8 @@ YAGNI / KISS / DRY. Preserve PR intent + base behavior; prefer PR changes, recon
 2. Enumerate conflicted files (`git diff --name-only --diff-filter=U`).
 3. Resolve each conflict preserving PR intent AND base behavior; if a conflict touches unresolved review feedback, address it as part of the resolution.
 4. Continue via `git -c core.editor=true rebase --continue` (no editor); iterate `npx tsc --noEmit` for fast feedback.
-5. Leave the tree with **no rebase in progress and no unstaged conflict markers**. If a conflict cannot be resolved, stop and report — do not force a bad merge.
+5. Stay inside the rebase workflow Bash allowlist: use relative commands like `node`, `npm`, `npx`, `rtk`, and the explicit `git -c core.editor=true rebase --continue` form. Do not use absolute binaries (`/usr/bin/node`) or shell wrappers (`| tail`, `; echo`) for validation.
+6. Leave the tree with **no rebase in progress and no unstaged conflict markers**. If a conflict cannot be resolved, stop and report — do not force a bad merge.
 
 ## Hard rules (the prompt)
 - **Do NOT push. Do NOT `git commit` or create standalone commits outside the rebase. Do NOT merge/approve/close PRs or post comments.**
@@ -58,7 +59,7 @@ Return **JSON only:** `summary`, `conflicts_resolved[] {file,resolution}`, `revi
 ## Process Flow (Authoritative)
 1. Read pre-fetched feedback file.
 2. Enumerate conflicts; resolve preserving intent+base+review-feedback.
-3. `git -c core.editor=true rebase --continue`; iterate `npx tsc --noEmit`.
+3. `git -c core.editor=true rebase --continue`; iterate `npx tsc --noEmit`; use `rtk node --test ...` for targeted workflow tests when needed.
 4. Ensure clean tree (no rebase in progress, no markers) — or report unresolvable.
 5. Return the JSON; do not push.
 
