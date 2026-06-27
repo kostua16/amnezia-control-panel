@@ -540,6 +540,10 @@ Each workflow's `run-zai` agent run is **driven by the workflow `prompt:` (the m
 
 These `kos-` agents/skills are **knowledge/docs** (not workflow YAML). They reuse the `/gsd:xxx` colon form and must stay aligned with the prompts and the e2e catalog — see `docs/code-standards.md` → Workflow knowledge layer. Prompt-vs-agent compatibility is governed by the review in `.planning/reports/kos-prompt-compatibility-review.md`.
 
+**Invocation (how prompts reach the agent).** Each workflow `prompt:` ends with a one-line wiring: *"Operate as the `kos-<workflow>` agent: first read `.claude/agents/kos-<workflow>.md` and follow it as your operating contract, then perform the task."* So the main `run-zai` agent loads the agent file's contract + run knowledge before doing the task. Each agent file also has a `## Entry command (double-gate)` section restating its `/gsd:*` (or phase-based entry) so the canonical command is anchored in both the prompt and the agent file (a drift detector).
+
+**Future opt-in — Task-tool subagent delegation (not yet wired).** For workflows that benefit from a truly isolated role (e.g. `code-review`, `fix-review`), the prompt can instead delegate via the `Agent`/`Task` tool (already in `run-zai` `allowed-tools`): `Task(subagent_type='kos-<workflow>', prompt='<the /gsd command + task context>')`, returning the subagent's JSON verbatim. This runs the `kos-` agent under its own system prompt/tools/model (from its frontmatter). Trade-offs vs the read-the-file default: stronger isolation, but the `/gsd:*` must be passed as text (slash commands don't fire inside a subagent — the double-gate covers this), all task context (PR #, feedback path, run-data JSON) must be relayed into the subagent prompt, and it doubles the model call (cost/latency), with `structured_output` depending on the main agent relaying the subagent's JSON. Adopt per-workflow only when the isolation is worth the cost.
+
 ---
 
 ## See also
