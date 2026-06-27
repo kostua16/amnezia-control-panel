@@ -87,6 +87,23 @@ test('renderPushRejected lists attempted changes and forbids force-push', () => 
   assert.match(body, /- src\/a\.ts/);
 });
 
+test('renderPushRejected reports a generic push-failed reason without blaming non-fast-forward', () => {
+  const body = renderPushRejected({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    pushFailureReason: 'push-failed',
+    structured: { changed_files: ['src/a.ts'] },
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+
+  assert.match(body, /FIX-REVIEW Report: 🚫 Push rejected \(push failed\)/);
+  assert.match(body, /exact git error is in the run log/);
+  assert.match(body, /never force-pushes/);
+  assert.doesNotMatch(body, /non-fast-forward/);
+  assert.match(body, /Attempted changes \(1\)/);
+});
+
 test('renderPushRejected explains missing workflow-file push grant', () => {
   const body = renderPushRejected({
     headSha: SHA,

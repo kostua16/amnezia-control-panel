@@ -67,6 +67,10 @@ describe('GSD planning workflow automation', () => {
 
   it('pushes branches that are already ahead after GSD creates commits', () => {
     const action = readRepoFile('.github/actions/commit-and-push/action.yml');
+    const workflowReject =
+      'refusing to allow a GitHub App to create or update workflow `.github/workflows/fix-review.yml` without `workflows` permission';
+    const workflowPermissionPattern =
+      /without .*`?workflows`? permission|without .*workflows.*permission/i;
 
     assert.match(action, /github-token:/);
     assert.match(
@@ -88,6 +92,7 @@ describe('GSD planning workflow automation', () => {
     assert.match(action, /failure-reason:/);
     assert.match(action, /workflow-permission/);
     assert.match(action, /Workflows: write/);
+    assert.match(workflowReject, workflowPermissionPattern);
   });
 
   it('surfaces fix-review workflow-file push grant failures in the sticky comment', () => {

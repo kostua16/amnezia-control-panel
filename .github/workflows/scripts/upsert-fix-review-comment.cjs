@@ -115,26 +115,16 @@ function renderPushRejected({
   const changed = Array.isArray(structured.changed_files)
     ? structured.changed_files
     : [];
-  const workflowPermission = pushFailureReason === 'workflow-permission';
+  const copy = pushRejectedCopy(pushFailureReason);
   const lines = [
     COMMENT_MARKER,
-    reportHeading(
-      workflowPermission
-        ? '🚫 Push rejected (workflow permission)'
-        : '🚫 Push rejected (non-fast-forward)',
-    ),
+    reportHeading(copy.heading),
     '',
     `- Command: \`${command || '/fix-review'}\``,
     `- Head SHA: \`${shortSha(headSha)}\``,
     `- Run: ${runUrl || '_n/a_'}`,
     '',
-    quoteBlock(
-      workflowPermission
-        ? 'The fix touched a workflow file under `.github/workflows/**`, but the push credential does not have the GitHub `workflows` grant. Grant `GH_PAT` workflow scope / GitHub App `Workflows: write`, then re-run `/fix-review`.'
-        : 'The branch advanced while the fix ran (likely a concurrent push), so the ' +
-            'commit could not be pushed without overwriting history. The workflow never ' +
-            'force-pushes. Re-run `/fix-review` to reapply on the latest head.',
-    ),
+    quoteBlock(copy.message),
   ];
   if (changed.length > 0) {
     lines.push(
@@ -145,6 +135,32 @@ function renderPushRejected({
   }
   lines.push('', '<!-- updated: ' + updatedAt + ' -->');
   return lines.join('\n');
+}
+
+function pushRejectedCopy(pushFailureReason) {
+  if (pushFailureReason === 'workflow-permission') {
+    return {
+      heading: '🚫 Push rejected (workflow permission)',
+      message:
+        'The fix touched a workflow file under `.github/workflows/**`, but the push credential does not have the GitHub `workflows` grant. Grant `GH_PAT` workflow scope / GitHub App `Workflows: write`, then re-run `/fix-review`.',
+    };
+  }
+
+  if (!pushFailureReason || pushFailureReason === 'non-fast-forward') {
+    return {
+      heading: '🚫 Push rejected (non-fast-forward)',
+      message:
+        'The branch advanced while the fix ran (likely a concurrent push), so the ' +
+        'commit could not be pushed without overwriting history. The workflow never ' +
+        'force-pushes. Re-run `/fix-review` to reapply on the latest head.',
+    };
+  }
+
+  return {
+    heading: '🚫 Push rejected (push failed)',
+    message:
+      'The push to the branch failed; the exact git error is in the run log. The workflow never force-pushes. Resolve the underlying error, then re-run `/fix-review`.',
+  };
 }
 
 function renderValidationFailed({
