@@ -452,6 +452,16 @@ flowchart TD
 | X1   | **Config drift** — `policy.json`/`pr-flow.json` change removes a required label                      | all PRs stuck at missing-label                                                                                                                                             | guard: scenario suite + governance check catch it | **spec** (regression guard) |
 | X2   | **`GH_PAT` expired, stale, shadowed, or insufficient scope**                                         | `upsert-pull-request`/`commit-and-push` fail → report-failure across agents; workflow-file rejects report the active push credential path and required workflow-file grant | reported (no silent corruption)                   | char                        |
 
+### Knowledge-layer alignment (`kos-` agents)
+
+Every characterized workflow above has a `kos-<workflow>` driver agent (`.claude/agents/kos-<workflow>.md`) + reusable `kos-` skills that encode run-mined failure prevention and **enforce the prompt**. The agent's stance must match the characterized behavior here — in particular the **agent-edits-only / workflow-pushes-&-gates** model:
+
+- §3 AI-review (`code-review`, `dependency-review`, `claude`) — the agent returns the JSON verdict and **does not approve/request-changes/edit labels**; the workflow maps verdict → `ai-review-*` / `security-review-*` labels.
+- §4 autonomous-PR fleet (`audit-fix`, `audit-auto-prs`, `suggest-improvements`, `docs-drift`, `monitor-…runs`, `workflow-health-optimize`, `issue-catch-up`, `gsd-planning-execute`, `maintenance`) — the agent edits/analyzes; the workflow commits, pushes, opens PR, reconciles.
+- §6a–§6e entry flows — §6d `fix-review`: agent fixes then the workflow gates (`validate-pr-gate`) + pushes; `detect-noop` posts `renderNoChanges` on empty diff; a gate failure posts a dual-block summary and does **not** push. §6e `rebase-pr`: clean rebases push with **no AI**; `run-zai` is invoked only on conflict; the workflow gates + `--force-with-lease` to the same branch (the agent never pushes).
+
+When a scenario's characterized behavior changes, update the corresponding `kos-` agent to match. Full map + compatibility review: `.github/workflows/documentation.md` → Workflow Knowledge Layer, and `.planning/reports/kos-prompt-compatibility-review.md`.
+
 ---
 
 ## Mapping → tests + gate
