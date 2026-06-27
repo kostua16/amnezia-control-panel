@@ -12,6 +12,10 @@ inputs:
     description: 'GitHub token used for the final push; pass GH_PAT for automation branches that must trigger downstream workflows'
     required: false
     default: ''
+  exclude-paths:
+    description: 'Space-separated path prefixes to unstage after git add -A (e.g. .github/workflows/ when the token lacks workflow scope)'
+    required: false
+    default: ''
 
 outputs:
   pushed:
@@ -28,6 +32,7 @@ runs:
         BRANCH: ${{ inputs.branch-name }}
         MSG: ${{ inputs.commit-message }}
         GITHUB_TOKEN_VALUE: ${{ inputs.github-token }}
+        EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
       run: |
         if [ -n "$GITHUB_TOKEN_VALUE" ]; then
           askpass_path="${RUNNER_TEMP:-/tmp}/commit-and-push-askpass.sh"
@@ -44,6 +49,9 @@ runs:
         fi
 
         git add -A
+        if [ -n "${EXCLUDE_PATHS:-}" ]; then
+          echo "$EXCLUDE_PATHS" | xargs git reset HEAD -- 2>/dev/null || true
+        fi
         commit_created=false
         if ! git diff --cached --quiet; then
           git commit -m "$MSG"
