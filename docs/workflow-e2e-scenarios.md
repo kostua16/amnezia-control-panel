@@ -264,6 +264,45 @@ flowchart TD
 
 ---
 
+## §5c Worker wake-up contract — dispatch chain rule
+
+Decision basis: Every worker dispatched by the orchestrator (`orchestrated=true`) must wake `pr-flow.yml` after completing, so the orchestrator re-evaluates and advances the flow. `workflow_run` on `pr-flow.yml` remains a backup path. Invariant enforced by `worker-wake-invariant.test.cjs`.
+
+### Contract requirements
+
+Each dispatched worker (listed in `pr-flow.json` `workers` with a `workflow:` field) must:
+
+1. **`actions: write`** at the top-level `permissions` block — required for `gh workflow run`.
+2. **`orchestrated`** boolean input in `workflow_dispatch.inputs` — set by the orchestrator to `true`.
+3. **`wake-orchestrator` job** — runs `always()` after all worker jobs, gated on `orchestrated == 'true'` and `pr_number != ''`, dispatches `pr-flow.yml` with `dry_run=false`.
+
+```mermaid
+flowchart LR
+  PF[PR Orchestrator] -->|orchestrated=true| W[Worker]
+  W -->|wake-orchestrator job| PF
+  PF -.->|workflow_run backup| PF
+```
+
+| ID   | Trigger / precondition                                      | Resolution → terminal                                                               | Type  |
+| ---- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ----- |
+| WC1  | Dispatched worker completes (success or failure)             | `wake-orchestrator` job fires `gh workflow run pr-flow.yml` → orchestrator re-evaluates | char  |
+| WC2  | Worker missing `actions: write`                              | `gh workflow run` fails silently → orchestrator never re-woke                     | spec  |
+| WC3  | Worker missing `orchestrated` input                         | wake gate (`orchestrated == 'true'`) never passes → stale flow                      | spec  |
+| WC4  | Worker missing `wake-orchestrator` job                      | only `workflow_run` backup path remains — reliable but slower (polls every ~5min)    | spec  |
+| WC5  | Manual run (not orchestrated)                                | `orchestrated` defaults to `false` → wake-orchestrator skipped → no re-dispatch     | char  |
+
+### Dispatched workers and their wake-up status
+
+| Worker | Workflow | `actions: write` | `orchestrated` input | `wake-orchestrator` |
+| ------ | -------- | ----------------- | -------------------- | -------------------- |
+| codeReview | `code-review.yml` | ✓ | ✓ | ✓ |
+| dependencyReview | `dependency-review.yml` | ✓ | ✓ | ✓ |
+| prImprove | `pr-improve.yml` | ✓ | ✓ | ✓ |
+| finalizer | `pr-finalizer.yml` | ✓ | ✓ | ✓ |
+| antigravityCodeReview | `antigravity-code-review.yml` | ✓ | ✓ | ✓ |
+
+---
+
 ## §6a Issue → `/fix-issue` → PR — `fix-issue.yml`
 
 Decision basis: `evaluate-trigger-policy.cjs --mode fix-issue` (`maintainerTriggeredFix` / `labelTriggeredFix`), guard `issue.pull_request == null` (`fix-issue.yml:27-33`). Push is gated by `validate-pr-gate` (`fix-issue.yml`); a gate failure means no fix PR is created.
