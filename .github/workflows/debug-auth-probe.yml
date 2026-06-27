@@ -1,0 +1,263 @@
+name: Debug Auth Probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Base branch name for probe pushes. Defaults to debug/auth-probe-<run-id>.
+        required: false
+        default: ''
+        type: string
+      cleanup:
+        description: Delete temporary probe branches after each scenario.
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  probe:
+    name: ${{ matrix.case_name }}
+    runs-on: [self-hosted, big]
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case_name: persisted-direct
+            persist_credentials: 'true'
+            push_mode: direct
+          - case_name: no-persist-direct
+            persist_credentials: 'false'
+            push_mode: direct
+          - case_name: persisted-askpass
+            persist_credentials: 'true'
+            push_mode: askpass
+          - case_name: persisted-askpass-clean
+            persist_credentials: 'true'
+            push_mode: askpass-clean
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: ${{ matrix.persist_credentials }}
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          install-deps: 'false'
+          node-version: 24.x
+          setup-bun: 'false'
+          setup-node: 'false'
+
+      - name: Setup bot git identity
+        uses: ./.github/actions/setup-bot-git
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+
+      - name: Run auth probe
+        id: probe
+        shell: bash
+        env:
+          CASE_NAME: ${{ matrix.case_name }}
+          CLEANUP: ${{ inputs.cleanup }}
+          GH_PAT_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN_VALUE: ${{ secrets.GH_PAT }}
+          INPUT_TARGET_BRANCH: ${{ inputs.target_branch }}
+          PUSH_MODE: ${{ matrix.push_mode }}
+        run: |
+          set -euo pipefail
+
+          log_file="${RUNNER_TEMP}/auth-probe-${CASE_NAME}.log"
+          echo "log_file=${log_file}" >> "${GITHUB_OUTPUT}"
+          exec > >(tee "${log_file}") 2>&1
+
+          base_branch="${INPUT_TARGET_BRANCH:-debug/auth-probe-${GITHUB_RUN_ID}}"
+          branch="${base_branch}-${CASE_NAME}"
+          probe_path=".github/workflows/__auth-probe-${GITHUB_RUN_ID}-${CASE_NAME}.yml"
+          git check-ref-format --branch "${branch}" >/dev/null
+          echo "branch=${branch}" >> "${GITHUB_OUTPUT}"
+
+          echo "Probe case: ${CASE_NAME}"
+          echo "Push mode: ${PUSH_MODE}"
+          echo "Target branch: ${branch}"
+          echo "Probe path: ${probe_path}"
+          echo "Cleanup requested: ${CLEANUP}"
+
+          echo "::group::Sanitized gh auth status"
+          gh auth status -h github.com 2>&1 \
+            | sed \
+              -e '/^[[:space:]]*Token:/d' \
+              -e '/^[[:space:]]*Token scopes:/d' \
+              -e '/^[[:space:]]*-[[:space:]]*Token:/d' \
+              -e '/^[[:space:]]*-[[:space:]]*Token scopes:/d' \
+            || true
+          echo "::endgroup::"
+
+          echo "::group::Sanitized gh api identity"
+          if gh api user --jq '{login: .login, type: .type}' 2>"${RUNNER_TEMP}/auth-probe-${CASE_NAME}-gh-api.err"; then
+            echo "gh api user succeeded"
+          else
+            echo "gh api user failed"
+            sed -E 's#(https://)[^/@]+@#\1[redacted]@#g' "${RUNNER_TEMP}/auth-probe-${CASE_NAME}-gh-api.err" || true
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Auth environment presence"
+          for name in GIT_ASKPASS GH_TOKEN GITHUB_GIT_PASSWORD GITHUB_TOKEN_VALUE; do
+            if [ -n "${!name:-}" ]; then
+              echo "${name}=present"
+            else
+              echo "${name}=absent"
+            fi
+          done
+          echo "::endgroup::"
+
+          echo "::group::Git credential config keys"
+          git config --show-origin --name-only --get-regexp '^(includeIf|http\..*\.extraheader|credential\.helper)' || true
+          echo "::endgroup::"
+
+          echo "::group::Redacted git credential config values"
+          git config --show-origin --get-regexp '^(includeIf|http\..*\.extraheader|credential\.helper)' 2>/dev/null \
+            | sed -E \
+              -e 's/(AUTHORIZATION: basic )[A-Za-z0-9+\/=]+/\1[redacted]/g' \
+              -e 's#(https://)[^/@]+@#\1[redacted]@#g' \
+            || true
+          echo "::endgroup::"
+
+          configure_askpass() {
+            if [ -z "${GH_PAT_TOKEN:-}" ]; then
+              echo "GH_PAT_TOKEN is required for ${PUSH_MODE}" >&2
+              exit 1
+            fi
+
+            askpass_path="${RUNNER_TEMP}/auth-probe-askpass-${CASE_NAME}.sh"
+            cat > "${askpass_path}" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' "${GITHUB_GIT_USERNAME:-x-access-token}" ;;
+            *Password*) printf '%s\n' "${GITHUB_GIT_PASSWORD:?GITHUB_GIT_PASSWORD is required}" ;;
+            *) printf '\n' ;;
+          esac
+          ASKPASS
+            chmod 0700 "${askpass_path}"
+            export GIT_ASKPASS="${askpass_path}"
+            export GIT_TERMINAL_PROMPT=0
+            export GITHUB_GIT_USERNAME=x-access-token
+            export GITHUB_GIT_PASSWORD="${GH_PAT_TOKEN}"
+          }
+
+          git switch -c "${branch}"
+          mkdir -p "$(dirname "${probe_path}")"
+          cat > "${probe_path}" <<'PROBE'
+          name: Auth Probe Marker
+
+          on:
+            workflow_dispatch:
+
+          jobs:
+            noop:
+              runs-on: ubuntu-latest
+              steps:
+                - run: echo auth probe marker
+          PROBE
+          git add "${probe_path}"
+          git commit -m "chore(debug): auth probe ${CASE_NAME}"
+
+          push_status=0
+          case "${PUSH_MODE}" in
+            direct)
+              echo "Push command shape: git push origin HEAD:<case-branch>"
+              set +e
+              git push origin "HEAD:${branch}"
+              push_status=$?
+              set -e
+              ;;
+            askpass)
+              configure_askpass
+              echo "Push command shape: GIT_ASKPASS=<set> git push origin HEAD:<case-branch>"
+              set +e
+              git push origin "HEAD:${branch}"
+              push_status=$?
+              set -e
+              ;;
+            askpass-clean)
+              configure_askpass
+              echo "Push command shape: GIT_ASKPASS=<set> git -c http.https://github.com/.extraheader= -c http.extraheader= -c credential.helper= push origin HEAD:<case-branch>"
+              set +e
+              git \
+                -c http.https://github.com/.extraheader= \
+                -c http.extraheader= \
+                -c credential.helper= \
+                push origin "HEAD:${branch}"
+              push_status=$?
+              set -e
+              ;;
+            *)
+              echo "Unknown push mode: ${PUSH_MODE}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "push_status=${push_status}" >> "${GITHUB_OUTPUT}"
+          echo "Push exit code: ${push_status}"
+          {
+            echo "### Debug auth probe: ${CASE_NAME}"
+            echo ""
+            echo "- Push mode: ${PUSH_MODE}"
+            echo "- Branch: ${branch}"
+            echo "- Probe path: ${probe_path}"
+            echo "- Push exit code: ${push_status}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload probe log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: debug-auth-probe-${{ matrix.case_name }}
+          path: ${{ steps.probe.outputs.log_file }}
+          if-no-files-found: warn
+
+      - name: Delete temp branch
+        if: ${{ always() && inputs.cleanup }}
+        shell: bash
+        env:
+          BRANCH: ${{ steps.probe.outputs.branch }}
+          GH_PAT_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BRANCH:-}" ]; then
+            echo "No branch was created; skipping cleanup."
+            exit 0
+          fi
+
+          askpass_path="${RUNNER_TEMP}/auth-probe-cleanup-askpass.sh"
+          cat > "${askpass_path}" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' "${GITHUB_GIT_USERNAME:-x-access-token}" ;;
+            *Password*) printf '%s\n' "${GITHUB_GIT_PASSWORD:?GITHUB_GIT_PASSWORD is required}" ;;
+            *) printf '\n' ;;
+          esac
+          ASKPASS
+          chmod 0700 "${askpass_path}"
+          export GIT_ASKPASS="${askpass_path}"
+          export GIT_TERMINAL_PROMPT=0
+          export GITHUB_GIT_USERNAME=x-access-token
+          export GITHUB_GIT_PASSWORD="${GH_PAT_TOKEN}"
+
+          echo "Cleanup command shape: GIT_ASKPASS=<set> git -c http.https://github.com/.extraheader= -c http.extraheader= -c credential.helper= push origin :refs/heads/<case-branch>"
+          git \
+            -c http.https://github.com/.extraheader= \
+            -c http.extraheader= \
+            -c credential.helper= \
+            push origin ":refs/heads/${BRANCH}" || true
