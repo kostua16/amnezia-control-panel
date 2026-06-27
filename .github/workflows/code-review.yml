@@ -237,6 +237,7 @@ jobs:
             - reviewed_files: array of reviewed changed-file paths
 
             Do NOT approve the PR, request changes, or edit PR labels yourself. The workflow handles review signals.
+            Operate as the `kos-code-review` agent: first read `.claude/agents/kos-code-review.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Apply review signals
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3

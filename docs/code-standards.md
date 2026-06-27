@@ -124,3 +124,15 @@ Any change to `.github/workflows/**`, `.github/actions/**`, `.github/workflows/s
 3. **Spec tests for in-progress fixes stay `test.todo`/`test.skip`** (visible, CI-green) — never silently delete a spec test; activate it (`test()`) and implement the fix in the same PR.
 
 The catalog (`docs/workflow-e2e-scenarios.md`) is the source of truth for what the flows do; the tests are the machine-checked enforcement. Rationale and trade-offs: `docs/adr/0001-e2e-characterization-suite-as-workflow-gate.md`.
+
+### Workflow knowledge layer (`kos-` agents & skills)
+
+The `kos-` agent files (`.claude/agents/kos-<workflow>.md`) and `kos-` skills (`.claude/skills/kos-<capability>/SKILL.md`) are the run-mined knowledge layer that **extends and enforces** each workflow prompt. They are **knowledge/docs, not workflow YAML** — they do not by themselves trigger the e2e suite, but the suite must remain green after edits to them.
+
+Alignment rules:
+
+- **The workflow `prompt:` is master.** A `kos-` agent must **never contradict** its prompt. The zai agent only edits files and returns the prompt's exact JSON/verdict; it never commits/pushes/merges/opens-PRs/mutates PRs or issues unless the prompt explicitly says so (workflow steps own those). The universal enforce layer is `kos-zai-agent-runtime-contract`.
+- **When a workflow prompt changes**, update its `kos-<workflow>` agent + referenced skills to match (same JSON field names, verdict tokens, edit scope, verify commands, tool rules). When a workflow is added, add a `kos-` agent for it.
+- **Compatibility self-check (the gate):** for each workflow, the agent file must not instruct the agent to push/commit/open-PR where the prompt forbids it, and the agent's `## Output Format` must reference the prompt's JSON/verdict tokens. A read-only self-check script enforces this (see `.planning/reports/kos-prompt-compatibility-review.md`).
+- The workflow → agent → skill map and the compatibility review live in `.github/workflows/documentation.md` → Workflow Knowledge Layer and `.planning/reports/kos-prompt-compatibility-review.md`.
+- Do **not** whole-file `prettier --write` these markdown docs (pads every table; CI `format:check` is src-only).

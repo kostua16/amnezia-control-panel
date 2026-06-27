@@ -149,6 +149,7 @@ jobs:
             - risk_notes: short justification
 
             Do NOT approve the PR or edit labels yourself. The workflow handles dependency review signals and comments.
+            Operate as the `kos-dependency-review` agent: first read `.claude/agents/kos-dependency-review.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Apply dependency review signal
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3

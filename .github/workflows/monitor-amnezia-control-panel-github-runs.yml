@@ -204,6 +204,7 @@ jobs:
             - verification commands and results
 
             If there is no actionable change, produce a concise report of runs inspected, status, durations, and why no PR should be created.
+            Operate as the `kos-monitor-amnezia-control-panel-github-runs` agent: first read `.claude/agents/kos-monitor-amnezia-control-panel-github-runs.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Write monitor summary
         if: always()

@@ -125,6 +125,7 @@ jobs:
             - Do NOT commit, push, merge, or open issues/PRs. The workflow handles that.
             - Keep proposals concrete, non-duplicative, and ready for human review.
             - If there are no worthwhile follow-up proposals, make no file changes.
+            Operate as the `kos-suggest-improvements` agent: first read `.claude/agents/kos-suggest-improvements.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail on Claude soft failure
         if: always() && steps.claude_run.outputs.claude_failed == 'true'

@@ -162,6 +162,7 @@ jobs:
             AFTER FIXING:
             - Post a comment on the issue listing any remaining/unresolved issues from the original report
             - Format: "## Fixed\n- [what was fixed]\n## Remaining\n- [unresolved items from the issue]"
+            Operate as the `kos-fix-issue` agent: first read `.claude/agents/kos-fix-issue.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail on Claude soft failure
         if: always() && steps.claude_run.outputs.claude_failed == 'true'

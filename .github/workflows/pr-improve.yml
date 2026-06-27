@@ -190,6 +190,7 @@ jobs:
               - planning-automation: Claude+GSD planning automation, planning PRs, milestone/phase intake
 
             Return JSON only with concrete, repo-specific suggestions.
+            Operate as the `kos-pr-improve` agent: first read `.claude/agents/kos-pr-improve.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail on Claude soft failure
         if: always() && steps.metadata.outputs.should_analyze == 'true' && steps.analyze.outputs.claude_failed == 'true'

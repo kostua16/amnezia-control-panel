@@ -79,6 +79,7 @@ jobs:
 
             Do NOT create issues if no findings exist in that category.
             If critical security issues (HIGH/CRITICAL severity) are found, also comment on all open PRs.
+            Operate as the `kos-maintenance` agent: first read `.claude/agents/kos-maintenance.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail workflow on Claude failure
         if: steps.claude_run.outcome == 'failure' || steps.claude_run.outputs.claude_failed == 'true'

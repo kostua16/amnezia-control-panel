@@ -84,6 +84,7 @@ jobs:
             - Do NOT run `git` or `gh`.
             - Do NOT commit, push, merge, or open a PR. The workflow handles that.
             - If there is no meaningful drift, make no file changes.
+            Operate as the `kos-docs-drift` agent: first read `.claude/agents/kos-docs-drift.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail on Claude soft failure
         if: always() && steps.claude_run.outputs.claude_failed == 'true'

@@ -468,6 +468,7 @@ jobs:
             gh issue comment NUM --body "Manual fix triage needed. This issue is triaged but still has no linked fix PR. A maintainer should decide whether to apply \`auto-fix-approved\` or handle it manually."
             ```
             Stop after 5 manual-fix notices, even if more candidates remain.
+            Operate as the `kos-issue-catch-up` agent: first read `.claude/agents/kos-issue-catch-up.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
   report-failure:
     needs: [collect-issues, analyze-and-act]

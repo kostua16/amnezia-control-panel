@@ -110,6 +110,7 @@ jobs:
             - If multiple existing PRs need human disposition rather than code changes, report the recommended action clearly and make no file changes.
             - If there is no actionable change to make, make no file changes and return a concise report listing the auto PRs inspected, any risk patterns found, why no new PR should be created, and what evidence supports that conclusion.
             - If you do make changes, keep the final report evidence-based and include what was inspected, why the systemic fix is appropriate, changed files, verification performed, and review notes.
+            Operate as the `kos-audit-auto-prs` agent: first read `.claude/agents/kos-audit-auto-prs.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail on Claude soft failure
         if: always() && steps.claude_run.outputs.claude_failed == 'true'

@@ -176,6 +176,7 @@ jobs:
             - In the final response and structured output, list every fixed finding in `fixed_findings` and every unfixed/manual-only finding in `manual_findings`.
             - Each `manual_findings` entry must include `finding_id`, `severity`, `summary`, `details`, and `files` so the workflow can create a follow-up GitHub issue.
             - Also include a Markdown `### Manual-only findings` section in the final response, with one bullet per unfixed finding in the form `- **F-02 (medium):** details`.
+            Operate as the `kos-audit-fix` agent: first read `.claude/agents/kos-audit-fix.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail on Claude soft failure
         if: always() && steps.claude_run.outputs.claude_failed == 'true'
