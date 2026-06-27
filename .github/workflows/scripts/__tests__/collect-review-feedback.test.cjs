@@ -7,6 +7,8 @@ const {
   isTrustedKiloSummary,
   isNoiseComment,
   formatBundle,
+  hasActionableFeedback,
+  bundleHasActionableFeedback,
 } = require('../collect-review-feedback.cjs');
 
 test('parseRepo splits owner/name', () => {
@@ -94,4 +96,65 @@ test('formatBundle labels every section empty when there is no feedback', () => 
   assert.match(md, /review threads\n_None\./);
   assert.match(md, /Review submissions\n_None\./);
   assert.match(md, /PR comments \(non-command, human\)\n_None\./);
+});
+
+test('hasActionableFeedback sees trusted Kilo summaries as feedback', () => {
+  const comments = [
+    {
+      author: 'kilo-code-bot[bot]',
+      body: '<!-- kilo-review -->\nStatus: 1 Issue Found',
+    },
+  ];
+  const md = formatBundle({
+    threads: [],
+    reviews: [],
+    comments,
+    diff: 'diff',
+  });
+  assert.equal(hasActionableFeedback({ comments }), true);
+  assert.equal(bundleHasActionableFeedback(md), true);
+});
+
+test('hasActionableFeedback sees review submission bodies as feedback', () => {
+  const reviews = [
+    { state: 'COMMENTED', author: 'reviewer', body: 'Please tighten this.' },
+  ];
+  const md = formatBundle({
+    threads: [],
+    reviews,
+    comments: [],
+    diff: 'diff',
+  });
+  assert.equal(hasActionableFeedback({ reviews }), true);
+  assert.equal(bundleHasActionableFeedback(md), true);
+});
+
+test('bundleHasActionableFeedback treats all-empty feedback sections as absent', () => {
+  const md = formatBundle({
+    threads: [],
+    reviews: [],
+    comments: [],
+    diff: 'diff still exists',
+  });
+  assert.equal(hasActionableFeedback({}), false);
+  assert.equal(bundleHasActionableFeedback(md), false);
+});
+
+test('sticky summaries and slash commands remain noise', () => {
+  const comments = [
+    {
+      user: { login: 'alice', type: 'User' },
+      body: '<!-- rebase-pr-summary -->\n## Rebase complete',
+    },
+    { user: { login: 'bob', type: 'User' }, body: '/rebase' },
+  ];
+  const actionable = comments.filter((comment) => !isNoiseComment(comment));
+  const md = formatBundle({
+    threads: [],
+    reviews: [],
+    comments: actionable,
+    diff: 'diff',
+  });
+  assert.deepEqual(actionable, []);
+  assert.equal(bundleHasActionableFeedback(md), false);
 });

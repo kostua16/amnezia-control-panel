@@ -212,6 +212,32 @@ describe('workflow trigger policy', () => {
     assert.match(yaml, /--reason "\$REASON"/);
   });
 
+  it('rebase-pr auto-resolves trivial conflicts before invoking ZAI', () => {
+    const yaml = readWorkflowText('rebase-pr.yml');
+
+    assert.match(yaml, /id: autoresolve/);
+    assert.match(
+      yaml,
+      /auto-resolve-trivial-rebase-conflicts\.cjs >> "\$GITHUB_OUTPUT"/,
+    );
+    assert.match(
+      yaml,
+      /Post conflict-working[\s\S]*steps\.autoresolve\.outputs\.rebase_complete != 'true'/,
+    );
+    assert.match(
+      yaml,
+      /Resolve conflicts with ZAI[\s\S]*steps\.autoresolve\.outputs\.rebase_complete != 'true'/,
+    );
+    assert.match(
+      yaml,
+      /steps\.attempt\.outputs\.rebase_state == 'conflict' && steps\.autoresolve\.outputs\.rebase_complete == 'true'/,
+    );
+    assert.match(
+      yaml,
+      /--trivial-conflicts-auto-resolved "\$TRIVIAL_CONFLICTS_AUTO_RESOLVED"/,
+    );
+  });
+
   it('prefilters standalone AI mention workflows before runner checkout', () => {
     expectGuard('claude.yml', [
       /authorize:[\s\S]*?if: >-/,
