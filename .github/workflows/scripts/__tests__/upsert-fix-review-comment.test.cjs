@@ -123,7 +123,9 @@ test('renderPushRejected explains missing workflow-file push grant', () => {
     /FIX-REVIEW Report: 🚫 Push rejected \(workflow permission\)/,
   );
   assert.match(body, /workflow file under `\.github\/workflows\/\*\*`/);
-  assert.match(body, /GH_PAT.*Workflows: write/);
+  assert.match(body, /GitHub rejected the active push credential/);
+  assert.match(body, /intended `GH_PAT`/);
+  assert.match(body, /workflow-file write access/);
   assert.doesNotMatch(body, /non-fast-forward/);
 });
 
@@ -319,7 +321,8 @@ test('resolveFinishedBody: green gate, workflow permission push reject is explic
   });
 
   assert.match(body, /Push rejected \(workflow permission\)/);
-  assert.match(body, /Workflows: write/);
+  assert.match(body, /GitHub rejected the active push credential/);
+  assert.match(body, /intended `GH_PAT`/);
 });
 
 test('resolveFinishedBody: green gate, not pushed, no changed_files -> no-changes', () => {

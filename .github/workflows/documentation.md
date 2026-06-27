@@ -33,7 +33,7 @@ Use `GH_PAT` for:
 - automation-created branches and commits
 - planning intake and GSD execution branches from `pr-improve`, `suggest-improvements`, and `gsd-planning-execute`
 - issue triage/fix flows that create or push automation artifacts
-- `fix-review` updates that touch `.github/workflows/**`; GitHub rejects those pushes unless the token has the workflow-file grant (`workflow` PAT scope or GitHub App `Workflows: write`)
+- `fix-review` updates that touch `.github/workflows/**`; if GitHub rejects that push, the workflow reports the active push credential path and the required workflow-file grant (`workflow` PAT scope or GitHub App `Workflows: write`)
 
 ## Workflow Map
 

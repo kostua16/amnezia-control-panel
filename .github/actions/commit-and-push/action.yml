@@ -45,6 +45,34 @@ runs:
           fi
         }
 
+        print_push_diagnostics() {
+          local token_present=no
+          local askpass_present=no
+          local extraheader_keys
+
+          if [ -n "$GITHUB_TOKEN_VALUE" ]; then
+            token_present=yes
+          fi
+          if [ -n "${GIT_ASKPASS:-}" ]; then
+            askpass_present=yes
+          fi
+
+          echo "::group::Sanitized push auth diagnostics"
+          echo "github-token input present: $token_present"
+          echo "GIT_ASKPASS configured: $askpass_present"
+          echo "target branch: $BRANCH"
+          echo "remote origin url: $(git remote get-url origin | sed -E 's#//[^/@]+@#//[redacted]@#')"
+
+          extraheader_keys="$(git config --name-only --get-regexp '^http\..*\.extraheader$|^http\.extraheader$' 2>/dev/null || true)"
+          if [ -n "$extraheader_keys" ]; then
+            echo "visible git http extraheader keys:"
+            printf '%s\n' "$extraheader_keys" | sed 's/^/- /'
+          else
+            echo "visible git http extraheader keys: none"
+          fi
+          echo "::endgroup::"
+        }
+
         if [ -n "$GITHUB_TOKEN_VALUE" ]; then
           askpass_path="${RUNNER_TEMP:-/tmp}/commit-and-push-askpass.sh"
           printf '%s\n' '#!/usr/bin/env bash' \
@@ -91,7 +119,13 @@ runs:
         failure_reason=push-failed
         for i in 1 2 3; do
           if [ -n "$GITHUB_TOKEN_VALUE" ]; then
-            push_command=(git -c http.https://github.com/.extraheader= push origin "HEAD:$BRANCH")
+            push_command=(
+              git
+              -c http.https://github.com/.extraheader=
+              -c http.extraheader=
+              -c credential.helper=
+              push origin "HEAD:$BRANCH"
+            )
           else
             push_command=(git push origin "HEAD:$BRANCH")
           fi
@@ -103,7 +137,7 @@ runs:
           else
             failure_reason="$(classify_push_failure "$push_log")"
             if [ "$failure_reason" = workflow-permission ]; then
-              echo "::error::Push rejected because the token cannot update workflow files. Grant GH_PAT workflow scope / GitHub App Workflows: write, then rerun."
+              echo "::error::GitHub rejected the active push credential for workflow-file updates. Verify commit-and-push used the intended GH_PAT and that the token/App installation is current with workflow-file write access."
               break
             fi
             echo "Push failed on attempt $i, retrying in 5s..."
@@ -111,6 +145,7 @@ runs:
           fi
         done
         if [ "$PUSHED" = false ]; then
+          print_push_diagnostics
           echo "::error::Push failed after 3 attempts"
           echo "pushed=false" >> "$GITHUB_OUTPUT"
           echo "failure_reason=$failure_reason" >> "$GITHUB_OUTPUT"

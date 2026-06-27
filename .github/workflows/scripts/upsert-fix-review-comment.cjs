@@ -142,7 +142,7 @@ function pushRejectedCopy(pushFailureReason) {
     return {
       heading: '🚫 Push rejected (workflow permission)',
       message:
-        'The fix touched a workflow file under `.github/workflows/**`, but the push credential does not have the GitHub `workflows` grant. Grant `GH_PAT` workflow scope / GitHub App `Workflows: write`, then re-run `/fix-review`.',
+        'The fix touched a workflow file under `.github/workflows/**`, and GitHub rejected the active push credential for workflow-file updates. Verify the run used the intended `GH_PAT` and that the token or App installation is current with workflow-file write access, then re-run `/fix-review`.',
     };
   }
 

@@ -80,14 +80,18 @@ describe('GSD planning workflow automation', () => {
     );
     assert.match(
       action,
-      /git -c http\.https:\/\/github\.com\/\.extraheader= push origin "HEAD:\$BRANCH"/,
+      /git[\s\S]*-c http\.https:\/\/github\.com\/\.extraheader=[\s\S]*-c http\.extraheader=[\s\S]*-c credential\.helper=[\s\S]*push origin "HEAD:\$BRANCH"/,
     );
+    assert.match(action, /Sanitized push auth diagnostics/);
+    assert.match(action, /github-token input present:/);
+    assert.match(action, /GIT_ASKPASS configured:/);
+    assert.match(action, /visible git http extraheader keys:/);
     assert.match(action, /commit_created=false/);
     assert.match(action, /origin\/HEAD\.\.HEAD/);
     assert.match(action, /Branch is not ahead of origin\/\$BRANCH/);
     assert.match(action, /failure-reason:/);
     assert.match(action, /workflow-permission/);
-    assert.match(action, /Workflows: write/);
+    assert.match(action, /GitHub rejected the active push credential/);
   });
 
   it('classifies workflow-file push rejections for GitHub App, OAuth App, and classic PAT tokens', () => {
@@ -125,6 +129,11 @@ describe('GSD planning workflow automation', () => {
       /PUSH_FAILURE_REASON: \$\{\{ steps\.push\.outputs\.failure-reason \}\}/,
     );
     assert.match(workflow, /--push-failure-reason "\$PUSH_FAILURE_REASON"/);
+    assert.doesNotMatch(
+      workflow,
+      /exclude-paths:[\s\S]*\.github\/workflows/,
+      'fix-review must keep workflow-file fixes committable',
+    );
   });
 
   it('passes GH_PAT to every automation commit-and-push callsite', () => {
