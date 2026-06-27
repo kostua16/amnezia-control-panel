@@ -4,7 +4,7 @@ run-name: "PR Orchestrator ${{ github.event.pull_request.number && format('PR #{
 
 on:
   issue_comment:
-    types: [created]
+    types: [created, edited]
   pull_request_target:
     types:
       - opened

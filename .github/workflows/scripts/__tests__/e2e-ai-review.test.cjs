@@ -166,6 +166,31 @@ test('R13 char: current-head Kilo No Issues Found → passed', () => {
   assert.equal(out.state, 'passed');
 });
 
+test('R13b spec: edited Kilo sticky summary after current head → passed', () => {
+  const out = evaluateExternalReview({
+    pr: { ...kiloPr, headCommittedAt: '2026-06-24T12:00:00Z' },
+    comments: [
+      {
+        user: kiloUser,
+        body: `<!-- kilo-review -->
+Status: No Issues Found
+<!-- kilo-review-history -->
+Status: 1 Issue Found`,
+        created_at: '2026-06-24T11:00:00Z',
+        updated_at: '2026-06-24T12:05:00Z',
+      },
+    ],
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T12:10:00Z',
+      },
+    ],
+  });
+  assert.equal(out.state, 'passed');
+});
+
 test('R14 char: current-head Kilo issues → blocked', () => {
   const out = evaluateExternalReview({
     pr: kiloPr,

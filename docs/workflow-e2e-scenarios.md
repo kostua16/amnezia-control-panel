@@ -126,29 +126,30 @@ flowchart TD
   NR -->|re-review clean| LP
 ```
 
-| ID  | Trigger / precondition                                                               | Resolution → terminal                                                                                         | Type          |
-| --- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | ------------- |
-| R1  | maintainer `/review` on PR after required checks are green                           | pr-flow wake → `workflow_dispatch` with current `head_sha` → review → `*-review-passed` → §1 → **merged**     | char          |
-| R1b | maintainer `@provider` on PR (parametrized over provider)                            | provider review → `*-review-passed` → §1 → **merged**                                                         | char          |
-| R2  | review finds concerns                                                                | `*-review-concerns` → needs-review → manual                                                                   | char          |
-| R3  | non-maintainer command                                                               | `should_run=false` (concurrency "ignored" branch) → **no-op**                                                 | char          |
-| R4  | bot comment                                                                          | ignored branch → **no-op** (anti-loop)                                                                        | char          |
-| R5  | provider secret missing                                                              | check-secrets → skip → **reported**                                                                           | char          |
-| R6  | `@provider` on an **issue** (non-PR)                                                 | interactive agent responds (issue flow, not a gate)                                                           | char          |
-| R7  | `workflow_dispatch` orchestrated by pr-flow                                          | trusted → review runs → label → §1                                                                            | char          |
-| R7b | manual `/review` after stale/cancelled current-head review and green required checks | stale review labels removed → Code Review redispatched by pr-flow → `flow/review-pending` until labels return | spec          |
-| R8a | dependency-review: clean                                                             | `deps-review-passed` → §1 → **merged**                                                                        | char          |
-| R8b | dependency-review: manual finding                                                    | `deps-review-manual` → manual (human decides)                                                                 | char          |
-| R8c | dependency-review: blocked                                                           | `deps-review-blocked` → manual (human decides; **not** auto-close)                                            | char          |
-| R9  | review on a **draft** PR                                                             | not orchestrated → **no-op**                                                                                  | char          |
-| R11 | antigravity secret fallback (`GEMINI_API_KEY` ∥ `AV_API_KEY`)                        | runs with whichever present → label                                                                           | char          |
-| R12 | review exceeds `MAX_TURNS`                                                           | truncated → label locked during run                                                                           | char [verify] |
-| R13 | Kilo current-head summary says `No Issues Found`                                     | `pr-flow/kilo-review=success` → PR Flow continues                                                             | char          |
-| R14 | Kilo current-head summary or inline comments contain issues                          | `pr-flow/kilo-review=failure` → `flow/review-blocked`                                                         | char          |
-| R15 | Kilo issues are only on older head commits                                           | stale Kilo findings ignored → waits/passes based on current-head signal                                       | char          |
-| R16 | Kilo check is cancelled/skipped                                                      | `pr-flow/kilo-review=N/A` → PR Flow continues                                                                 | char          |
-| R17 | no current-head Kilo reply under 30 minutes                                          | `pr-flow/kilo-review=pending` → `flow/review-pending`                                                         | char          |
-| R18 | no current-head Kilo reply after 30 minutes                                          | watchdog wakes PR Flow → `pr-flow/kilo-review=N/A` → PR Flow continues                                        | char          |
+| ID   | Trigger / precondition                                                               | Resolution → terminal                                                                                         | Type          |
+| ---- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | ------------- |
+| R1   | maintainer `/review` on PR after required checks are green                           | pr-flow wake → `workflow_dispatch` with current `head_sha` → review → `*-review-passed` → §1 → **merged**     | char          |
+| R1b  | maintainer `@provider` on PR (parametrized over provider)                            | provider review → `*-review-passed` → §1 → **merged**                                                         | char          |
+| R2   | review finds concerns                                                                | `*-review-concerns` → needs-review → manual                                                                   | char          |
+| R3   | non-maintainer command                                                               | `should_run=false` (concurrency "ignored" branch) → **no-op**                                                 | char          |
+| R4   | bot comment                                                                          | ignored branch → **no-op** (anti-loop)                                                                        | char          |
+| R5   | provider secret missing                                                              | check-secrets → skip → **reported**                                                                           | char          |
+| R6   | `@provider` on an **issue** (non-PR)                                                 | interactive agent responds (issue flow, not a gate)                                                           | char          |
+| R7   | `workflow_dispatch` orchestrated by pr-flow                                          | trusted → review runs → label → §1                                                                            | char          |
+| R7b  | manual `/review` after stale/cancelled current-head review and green required checks | stale review labels removed → Code Review redispatched by pr-flow → `flow/review-pending` until labels return | spec          |
+| R8a  | dependency-review: clean                                                             | `deps-review-passed` → §1 → **merged**                                                                        | char          |
+| R8b  | dependency-review: manual finding                                                    | `deps-review-manual` → manual (human decides)                                                                 | char          |
+| R8c  | dependency-review: blocked                                                           | `deps-review-blocked` → manual (human decides; **not** auto-close)                                            | char          |
+| R9   | review on a **draft** PR                                                             | not orchestrated → **no-op**                                                                                  | char          |
+| R11  | antigravity secret fallback (`GEMINI_API_KEY` ∥ `AV_API_KEY`)                        | runs with whichever present → label                                                                           | char          |
+| R12  | review exceeds `MAX_TURNS`                                                           | truncated → label locked during run                                                                           | char [verify] |
+| R13  | Kilo current-head summary says `No Issues Found`                                     | `pr-flow/kilo-review=success` → PR Flow continues                                                             | char          |
+| R13b | Kilo sticky summary is edited after current head with `No Issues Found`              | edited sticky `<!-- kilo-review -->` wakes PR Flow → `pr-flow/kilo-review=success` → PR Flow continues        | spec          |
+| R14  | Kilo current-head summary or inline comments contain issues                          | `pr-flow/kilo-review=failure` → `flow/review-blocked`                                                         | char          |
+| R15  | Kilo issues are only on older head commits                                           | stale Kilo findings ignored → waits/passes based on current-head signal                                       | char          |
+| R16  | Kilo check is cancelled/skipped                                                      | `pr-flow/kilo-review=N/A` → PR Flow continues                                                                 | char          |
+| R17  | no current-head Kilo reply under 30 minutes                                          | `pr-flow/kilo-review=pending` → `flow/review-pending`                                                         | char          |
+| R18  | no current-head Kilo reply after 30 minutes                                          | watchdog wakes PR Flow → `pr-flow/kilo-review=N/A` → PR Flow continues                                        | char          |
 
 ---
 

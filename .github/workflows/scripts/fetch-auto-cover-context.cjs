@@ -167,6 +167,10 @@ function normalizeHeadSha(pr = {}) {
   return pr.headRefOid ?? pr.head?.sha ?? pr.headSha ?? '';
 }
 
+function commitTimestamp(commit = {}) {
+  return commit.commit?.committer?.date ?? commit.commit?.author?.date ?? '';
+}
+
 async function fetchFixReviewRuns(fetchJson, repo, workflow, limit) {
   const data = await fetchJson(
     `repos/${repo}/actions/workflows/${workflow}/runs?per_page=${limit}`,
@@ -187,7 +191,10 @@ async function fetchPrContext({ fetchJson, viewPull, repo, prNumber }) {
   const headSha = normalizeHeadSha(pr);
   let statuses = [];
   let checkRuns = [];
+  let headCommittedAt = '';
   if (headSha) {
+    const commitPayload = await fetchJson(`repos/${repo}/commits/${headSha}`);
+    headCommittedAt = commitTimestamp(commitPayload ?? {});
     const statusPayload = await fetchJson(
       `repos/${repo}/commits/${headSha}/status`,
     );
@@ -199,7 +206,7 @@ async function fetchPrContext({ fetchJson, viewPull, repo, prNumber }) {
     checkRuns = checkPayload?.check_runs ?? [];
   }
   return {
-    pr: pr ?? {},
+    pr: { ...(pr ?? {}), headCommittedAt },
     comments: commentList,
     attempts: extractAttempts(commentList),
     reviewComments: reviewComments ?? [],
@@ -363,6 +370,7 @@ module.exports = {
   mapWithConcurrency,
   extractAttempts,
   normalizeHeadSha,
+  commitTimestamp,
   fetchFixReviewRuns,
   fetchPrContext,
   writeContextFiles,

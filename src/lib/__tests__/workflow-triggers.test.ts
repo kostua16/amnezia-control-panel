@@ -16,7 +16,7 @@ type PullRequestTrigger = {
 
 type Workflow = {
   on?: {
-    issue_comment?: unknown;
+    issue_comment?: PullRequestTrigger;
     pull_request?: PullRequestTrigger;
     pull_request_target?: PullRequestTrigger;
     workflow_run?: unknown;
@@ -153,7 +153,7 @@ describe('workflow trigger policy', () => {
     const fixReviewYaml = readWorkflowText('fix-review.yml');
 
     assert.ok(workflow.on?.workflow_run);
-    assert.ok(workflow.on?.issue_comment);
+    assert.deepEqual(workflow.on?.issue_comment?.types, ['created', 'edited']);
     assert.ok(workflow.on?.schedule);
     assert.ok(workflow.on?.workflow_dispatch);
     assert.match(yaml, /workflows: \['Code Review'\]/);
@@ -185,6 +185,21 @@ describe('workflow trigger policy', () => {
     assert.match(
       fixReviewYaml,
       /allowed-bots:\s+\$\{\{\s+github\.event\.inputs\.automation_review_loop == 'true' && 'github-actions,github-actions\[bot\],claude\[bot\]' \|\| ''\s+\}\}/,
+    );
+  });
+
+  it('wakes PR Flow from created or edited Kilo sticky comments only', () => {
+    const workflow = readWorkflow('pr-flow.yml');
+    const yaml = readWorkflowText('pr-flow.yml');
+
+    assert.deepEqual(workflow.on?.issue_comment?.types, ['created', 'edited']);
+    assert.match(
+      yaml,
+      /github\.event\.comment\.user\.login == 'kilo-code-bot\[bot\]'/,
+    );
+    assert.match(
+      yaml,
+      /contains\(github\.event\.comment\.body, '<!-- kilo-review -->'\)/,
     );
   });
 

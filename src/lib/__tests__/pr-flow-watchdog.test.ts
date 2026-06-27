@@ -358,7 +358,7 @@ describe('PR flow workflow invariants', () => {
   it('keeps maintainer control PR comments wired through PR flow', () => {
     const workflow = readWorkflow('.github/workflows/pr-flow.yml');
 
-    assert.match(workflow, /issue_comment:\s*\n\s+types: \[created\]/);
+    assert.match(workflow, /issue_comment:\s*\n\s+types: \[created, edited\]/);
     assert.match(workflow, /--mode pr-flow-control/);
     assert.match(
       workflow,

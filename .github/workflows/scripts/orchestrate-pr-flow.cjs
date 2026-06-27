@@ -272,6 +272,7 @@ function normalizePr(pr) {
     isDraft: Boolean(pr.isDraft),
     headRefName: pr.headRefName ?? '',
     headSha: pr.headRefOid ?? pr.head?.sha ?? '',
+    headCommittedAt: pr.headCommittedAt ?? pr.head?.commit?.committedDate ?? '',
     baseRefName: pr.baseRefName ?? pr.base?.ref ?? 'main',
     authorLogin: pr.author?.login ?? pr.user?.login ?? null,
     autoMergeRequest: pr.autoMergeRequest ?? null,
@@ -1279,6 +1280,18 @@ function fetchCheckRuns(headSha) {
   return response?.check_runs ?? [];
 }
 
+function fetchHeadCommittedAt(headSha) {
+  if (!headSha) return '';
+  const response = runJson(
+    'gh',
+    ['api', `repos/${getRepoSlug()}/commits/${headSha}`],
+    null,
+  );
+  return (
+    response?.commit?.committer?.date ?? response?.commit?.author?.date ?? ''
+  );
+}
+
 function collectExternalReview(pr) {
   return evaluateExternalReview({
     pr,
@@ -1778,6 +1791,9 @@ function main() {
     const config = readConfig(configFile);
     const rawPr = fetchPullRequest(prNumber);
     const pr = rawPr ? normalizePr(rawPr) : null;
+    if (pr) {
+      pr.headCommittedAt = fetchHeadCommittedAt(pr.headSha);
+    }
     return { prNumber, config, pr };
   });
 
