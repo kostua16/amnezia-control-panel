@@ -57,7 +57,7 @@ function isKiloSummary(comment = {}) {
 }
 
 function summaryVerdict(body) {
-  const text = String(body ?? '');
+  const text = String(body ?? '').split('<!-- kilo-review-history -->')[0];
   if (
     /\b\d+\s+Issues?\s+Found\b/i.test(text) ||
     /Address before merge/i.test(text)

@@ -43,6 +43,16 @@ test('summaryVerdict detects Kilo pass and block states', () => {
   assert.equal(summaryVerdict('Still running'), null);
 });
 
+test('summaryVerdict ignores archived Kilo review history', () => {
+  assert.equal(
+    summaryVerdict(`Status: No Issues Found
+<!-- kilo-review-history -->
+Status: 1 Issue Found
+Recommendation: Address before merge`),
+    'passed',
+  );
+});
+
 test('current-head Kilo No Issues Found passes', () => {
   const result = evaluateExternalReview({
     pr,
