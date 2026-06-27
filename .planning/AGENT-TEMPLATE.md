@@ -12,6 +12,7 @@ hooks:
       hooks:
         - type: command
           command: "npx eslint --fix $FILE 2>/dev/null || true"
+skills: tbd
 ---
 
 # Role
@@ -40,3 +41,6 @@ You are a **Senior SRE** performing incident root cause analysis. You correlate 
 
 ## Memory Maintenance
 
+## Skills to Activate and Use
+
+Activate the skills listed in the `skills` field. Use the skills to perform the task.

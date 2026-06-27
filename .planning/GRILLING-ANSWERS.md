@@ -12,9 +12,9 @@ Q11 - "the agent+skills would have prevented each of the repeated failure modes 
 Q12 - we cant check them locally, so we will check it only after merging PR and first real runs, so only subjective criteria
 Q13 - skill template @.planning/SKILL-TEMPLATE.md, agent template @.planning/AGENT-TEMPLATE.md
 
-
-
-
-
-
-
+R1 - i updated agent template, check it
+R2 - a
+R3 - i - most-descriptive kebab, ii - if more that 70% of the skills purposesare similar, then merge them into one skill
+R4 - "no new lacked-knowledge pattern surfaced in the last review round."
+R5 - "latest min(30, available) runs, all-time, via gh run list --workflow <name> --limit 30 → gh run view --log per run."
+R6 - these are filenames
