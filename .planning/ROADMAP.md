@@ -185,7 +185,7 @@ Plans:
 **Goal:** Store canonical execution plans imported from merged `.planning/quick/**` artifacts.
 **Depends on:** Phase 13.4
 **Requirements:** One imported artifact per wave so the scheduled executor can process up to four plans per day.
-**Plans:** 7/13 plans executed
+**Plans:** 25/32 plans executed
 
 ## Phase Details
 
@@ -654,6 +654,7 @@ Source: `/gsd:explore` sixth-pass review (non-duplicative). Artifact: `.planning
 Source: consolidated follow-up for PRs #438, #455, and #471. PR #476 was already merged and remains indexed in the 2026-06-22 pass above.
 
 Artifacts:
+
 - `.planning/quick/260617-arch-review/260617-PLAN.md`
 - `.planning/quick/260619-arch-review-login-rate-limit/proposal.md`
 - `.planning/quick/260619-arch-review-panel-push-batch/proposal.md`
@@ -661,6 +662,7 @@ Artifacts:
 - `.planning/quick/260621-arch-review-pass5/260621-PLAN.md`
 
 Notes:
+
 - Review corrections are folded into the artifacts: Prisma SQLite enum enforcement, Tailscale command/math framing, panel retry worst-case timing, and duplicate Impact bullets.
 - This archive intentionally does not renumber backlog proposals because several historical artifacts reuse numbers or overlap with already-indexed roadmap entries.
 
