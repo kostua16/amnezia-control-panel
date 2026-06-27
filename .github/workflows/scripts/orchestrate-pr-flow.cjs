@@ -924,8 +924,10 @@ function buildFlowVisibility({
   } else if (manualTerminal) {
     aggregateState = 'success';
     aggregateDisplayState = 'success';
-    // If manual-only PR has completed code review labels, indicate advisory reviews passed
-    if (hasAny(labels, workers.codeReview?.passLabels ?? [])) {
+    // If manual-only PR has completed all advisory review labels, indicate reviews passed.
+    // Mirror makeDecision's hasAll(codeReviewWorker.passLabels) so the aggregate cannot
+    // report "advisory reviews passed" when only a subset of required reviews completed.
+    if (hasAll(labels, workers.codeReview?.passLabels ?? [])) {
       aggregateDescription =
         'Manual-only PR: advisory reviews passed. Ready for human merge decision.';
     } else {
