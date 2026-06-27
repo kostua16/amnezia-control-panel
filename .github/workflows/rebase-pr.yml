@@ -94,6 +94,22 @@ jobs:
     runs-on: [self-hosted, big]
     timeout-minutes: 45
     steps:
+      - name: Checkout trusted workflow revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Export trusted rebase control scripts
+        run: |
+          control_dir="${RUNNER_TEMP:?}/rebase-control"
+          rm -rf "$control_dir"
+          mkdir -p "$control_dir"
+          cp -R .github/workflows/scripts "$control_dir/scripts"
+          cp .github/workflows/policy.json "$control_dir/policy.json"
+          echo "REBASE_CONTROL_DIR=$control_dir" >> "$GITHUB_ENV"
+
       - name: Resolve PR head and eligibility
         id: pr
         env:
@@ -103,10 +119,10 @@ jobs:
         run: |
           gh pr view "$PR_NUMBER" \
             --json number,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,isCrossRepository,autoMergeRequest,labels,commits > /tmp/rebase-pr.json
-          node .github/workflows/scripts/evaluate-pr-policy.cjs \
-            --policy-file .github/workflows/policy.json \
+          node "$REBASE_CONTROL_DIR/scripts/evaluate-pr-policy.cjs" \
+            --policy-file "$REBASE_CONTROL_DIR/policy.json" \
             --pr-file /tmp/rebase-pr.json > /tmp/rebase-eval.json
-          node .github/workflows/scripts/evaluate-rebase-eligibility.cjs \
+          node "$REBASE_CONTROL_DIR/scripts/evaluate-rebase-eligibility.cjs" \
             --pr-file /tmp/rebase-pr.json \
             --eval-file /tmp/rebase-eval.json \
             --expected-head-sha "${EXPECTED_HEAD_SHA:-}" >> "$GITHUB_OUTPUT"
@@ -127,7 +143,7 @@ jobs:
           fi
           # Pass the specific ineligibility cause so the sticky summary names
           # the blocking condition instead of the generic cause list.
-          node .github/workflows/scripts/upsert-rebase-comment.cjs \
+          node "$REBASE_CONTROL_DIR/scripts/upsert-rebase-comment.cjs" \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --reason "$REASON" --mode skipped
           exit 0
 
@@ -149,7 +165,7 @@ jobs:
           BASE_REF: ${{ steps.pr.outputs.base_ref }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node .github/workflows/scripts/upsert-rebase-comment.cjs \
+          node "$REBASE_CONTROL_DIR/scripts/upsert-rebase-comment.cjs" \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --base-ref "$BASE_REF" \
             --run-url "$RUN_URL" --mode started
 
@@ -193,7 +209,7 @@ jobs:
         env:
           BASE_REF: ${{ steps.pr.outputs.base_ref }}
         run: |
-          node .github/workflows/scripts/analyze-rebase-ancestry.cjs \
+          node "$REBASE_CONTROL_DIR/scripts/analyze-rebase-ancestry.cjs" \
             --pr-file /tmp/rebase-pr.json \
             --base-ref "$BASE_REF" >> "$GITHUB_OUTPUT"
 
@@ -212,7 +228,7 @@ jobs:
           REASON: ${{ steps.ancestry.outputs.reason }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node .github/workflows/scripts/upsert-rebase-comment.cjs \
+          node "$REBASE_CONTROL_DIR/scripts/upsert-rebase-comment.cjs" \
             --pr "$PR_NUMBER" \
             --head-sha "$HEAD_SHA" \
             --base-ref "$BASE_REF" \
@@ -234,7 +250,7 @@ jobs:
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
         run: |
           out="$RUNNER_TEMP/rebase-review-feedback.md"
-          node .github/workflows/scripts/collect-review-feedback.cjs \
+          node "$REBASE_CONTROL_DIR/scripts/collect-review-feedback.cjs" \
             --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --out "$out"
           echo "path=$out" >> "$GITHUB_OUTPUT"
 
@@ -245,7 +261,7 @@ jobs:
           file="${{ steps.feedback.outputs.path }}"
           present=$(node -e '
             const fs=require("fs");
-            const { bundleHasActionableFeedback } = require("./.github/workflows/scripts/collect-review-feedback.cjs");
+            const { bundleHasActionableFeedback } = require(process.env.REBASE_CONTROL_DIR + "/scripts/collect-review-feedback.cjs");
             const s=fs.existsSync(process.argv[1])?fs.readFileSync(process.argv[1],"utf8"):"";
             process.stdout.write(bundleHasActionableFeedback(s)?"true":"false");
           ' "$file")
@@ -276,7 +292,7 @@ jobs:
         if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict'
         continue-on-error: true
         run: |
-          node .github/workflows/scripts/auto-resolve-trivial-rebase-conflicts.cjs >> "$GITHUB_OUTPUT"
+          node "$REBASE_CONTROL_DIR/scripts/auto-resolve-trivial-rebase-conflicts.cjs" >> "$GITHUB_OUTPUT"
 
       - name: Post conflict-working
         if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict' && steps.autoresolve.outputs.rebase_complete != 'true'
@@ -288,7 +304,7 @@ jobs:
           BASE_REF: ${{ steps.pr.outputs.base_ref }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node .github/workflows/scripts/upsert-rebase-comment.cjs \
+          node "$REBASE_CONTROL_DIR/scripts/upsert-rebase-comment.cjs" \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --base-ref "$BASE_REF" \
             --run-url "$RUN_URL" --mode conflict-working
 
@@ -450,7 +466,7 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
           AUTOMERGE_DISABLED: ${{ steps.automerge.outputs.disabled }}
         run: |
-          node .github/workflows/scripts/upsert-rebase-comment.cjs \
+          node "$REBASE_CONTROL_DIR/scripts/upsert-rebase-comment.cjs" \
             --pr "$PR_NUMBER" \
             --head-sha "$HEAD_SHA" \
             --new-head-sha "$NEW_HEAD_SHA" \
