@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const {
   COMMENT_MARKER,
@@ -86,6 +88,20 @@ test('renderAncestryFailed shows distinct ancestry failure evidence', () => {
   assert.match(body, /Visible PR commits: 2/);
   assert.match(body, /could not find merge base/);
   assert.match(body, /stopped before attempting `git rebase` or invoking ZAI/);
+  assert.doesNotMatch(body, /Rebase complete/);
+});
+
+test('unknown CLI mode fails closed instead of rendering completion', () => {
+  const script = path.resolve(__dirname, '../upsert-rebase-comment.cjs');
+  const result = spawnSync(
+    process.execPath,
+    [script, '--pr', '1', '--mode', 'ancestry_failed'],
+    { encoding: 'utf8' },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unknown rebase comment mode: ancestry_failed/);
+  assert.doesNotMatch(result.stdout, /Rebase complete/);
 });
 
 test('renderComplete shows old->new head, base sha, ai-conflicts, pushed, automerge', () => {

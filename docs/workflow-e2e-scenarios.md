@@ -283,23 +283,23 @@ flowchart LR
   PF -.->|workflow_run backup| PF
 ```
 
-| ID   | Trigger / precondition                                      | Resolution → terminal                                                               | Type  |
-| ---- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ----- |
-| WC1  | Dispatched worker completes (success or failure)             | `wake-orchestrator` job fires `gh workflow run pr-flow.yml` → orchestrator re-evaluates | char  |
-| WC2  | Worker missing `actions: write`                              | `gh workflow run` fails silently → orchestrator never re-woke                     | spec  |
-| WC3  | Worker missing `orchestrated` input                         | wake gate (`orchestrated == 'true'`) never passes → stale flow                      | spec  |
-| WC4  | Worker missing `wake-orchestrator` job                      | only `workflow_run` backup path remains — reliable but slower (polls every ~5min)    | spec  |
-| WC5  | Manual run (not orchestrated)                                | `orchestrated` defaults to `false` → wake-orchestrator skipped → no re-dispatch     | char  |
+| ID  | Trigger / precondition                           | Resolution → terminal                                                                   | Type |
+| --- | ------------------------------------------------ | --------------------------------------------------------------------------------------- | ---- |
+| WC1 | Dispatched worker completes (success or failure) | `wake-orchestrator` job fires `gh workflow run pr-flow.yml` → orchestrator re-evaluates | char |
+| WC2 | Worker missing `actions: write`                  | `gh workflow run` fails silently → orchestrator never re-woke                           | spec |
+| WC3 | Worker missing `orchestrated` input              | wake gate (`orchestrated == 'true'`) never passes → stale flow                          | spec |
+| WC4 | Worker missing `wake-orchestrator` job           | only `workflow_run` backup path remains — reliable but slower (polls every ~5min)       | spec |
+| WC5 | Manual run (not orchestrated)                    | `orchestrated` defaults to `false` → wake-orchestrator skipped → no re-dispatch         | char |
 
 ### Dispatched workers and their wake-up status
 
-| Worker | Workflow | `actions: write` | `orchestrated` input | `wake-orchestrator` |
-| ------ | -------- | ----------------- | -------------------- | -------------------- |
-| codeReview | `code-review.yml` | ✓ | ✓ | ✓ |
-| dependencyReview | `dependency-review.yml` | ✓ | ✓ | ✓ |
-| prImprove | `pr-improve.yml` | ✓ | ✓ | ✓ |
-| finalizer | `pr-finalizer.yml` | ✓ | ✓ | ✓ |
-| antigravityCodeReview | `antigravity-code-review.yml` | ✓ | ✓ | ✓ |
+| Worker                | Workflow                      | `actions: write` | `orchestrated` input | `wake-orchestrator` |
+| --------------------- | ----------------------------- | ---------------- | -------------------- | ------------------- |
+| codeReview            | `code-review.yml`             | ✓                | ✓                    | ✓                   |
+| dependencyReview      | `dependency-review.yml`       | ✓                | ✓                    | ✓                   |
+| prImprove             | `pr-improve.yml`              | ✓                | ✓                    | ✓                   |
+| finalizer             | `pr-finalizer.yml`            | ✓                | ✓                    | ✓                   |
+| antigravityCodeReview | `antigravity-code-review.yml` | ✓                | ✓                    | ✓                   |
 
 ---
 
@@ -371,7 +371,7 @@ flowchart TD
 
 ## §6e `/rebase` → PR (branch refresh) — `rebase-pr.yml`
 
-Decision basis: `rebase-pr.yml` issue_comment (exact body `/rebase`) + `workflow_dispatch` (`pr_number`, `head_sha`, `dry_run`); concurrency "ignored" branch (mirrors §6d); `evaluate-trigger-policy.cjs --mode rebase-pr` (maintainer-only, PR-only, exact command — rejects prose and `/rebase main`). A **branch-refresh** tool, never a merge tool: it rewrites the SAME PR branch and republishes it with `--force-with-lease`. Eligibility is intentionally narrower than merge: only `do-not-merge` blocks a rebase (`manual-only` / `needs-review` / `ai-review-concerns` / `security-review-concerns` block merge, not refresh). `git rebase origin/<base>` runs first; **clean rebases validate + push with no AI**. `run-zai` (opus) is invoked only when Git enters a conflict state, with review feedback pre-fetched so the agent can preserve/address findings touched by conflicts. Push is gated by `validate-pr-gate` (`id: gate`); a gate failure posts a dual-block summary and does not push. A clean no-op (head already current) skips the gate+push and reports `complete` with `pushed=false`.
+Decision basis: `rebase-pr.yml` issue_comment (exact body `/rebase`) + `workflow_dispatch` (`pr_number`, `head_sha`, `dry_run`); concurrency "ignored" branch (mirrors §6d); `evaluate-trigger-policy.cjs --mode rebase-pr` (maintainer-only, PR-only, exact command — rejects prose and `/rebase main`). A **branch-refresh** tool, never a merge tool: it rewrites the SAME PR branch and republishes it with `--force-with-lease`. Eligibility is intentionally narrower than merge: only `do-not-merge` blocks a rebase (`manual-only` / `needs-review` / `ai-review-concerns` / `security-review-concerns` block merge, not refresh). Workflow control scripts and sticky-comment renderers are exported from the trusted workflow revision before the PR branch checkout; the PR worktree is used for git/rebase/validation contents only. `git rebase origin/<base>` runs first; **clean rebases validate + push with no AI**. `run-zai` (opus) is invoked only when Git enters a conflict state, with review feedback pre-fetched so the agent can preserve/address findings touched by conflicts. Push is gated by `validate-pr-gate` (`id: gate`); a gate failure posts a dual-block summary and does not push. A clean no-op (head already current) skips the gate+push and reports `complete` with `pushed=false`.
 
 ```mermaid
 flowchart TD

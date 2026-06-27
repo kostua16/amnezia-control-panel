@@ -421,7 +421,6 @@ function resolveFinishedBody({
 }
 
 function main() {
-  const repo = getRepoSlug();
   const prNumber = Number(getArg('--pr', getArg('--pr-number')));
   const headSha = getArg('--head-sha');
   const newHeadSha = getArg('--new-head-sha');
@@ -472,7 +471,7 @@ function main() {
         updatedAt: now,
       });
       break;
-    default:
+    case 'complete':
       body = resolveFinishedBody({
         structured,
         numTurns: getArg('--num-turns'),
@@ -506,8 +505,12 @@ function main() {
         dryRun: getArg('--dry-run'),
         reviewFeedbackPresent: getArg('--review-feedback-present'),
       });
+      break;
+    default:
+      throw new Error(`Unknown rebase comment mode: ${mode}`);
   }
 
+  const repo = getRepoSlug();
   upsertComment({ repo, prNumber, marker: COMMENT_MARKER, body });
 }
 

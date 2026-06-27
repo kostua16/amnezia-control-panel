@@ -218,7 +218,7 @@ describe('workflow trigger policy', () => {
     assert.match(yaml, /id: autoresolve/);
     assert.match(
       yaml,
-      /auto-resolve-trivial-rebase-conflicts\.cjs >> "\$GITHUB_OUTPUT"/,
+      /\$REBASE_CONTROL_DIR\/scripts\/auto-resolve-trivial-rebase-conflicts\.cjs" >> "\$GITHUB_OUTPUT"/,
     );
     assert.match(
       yaml,
