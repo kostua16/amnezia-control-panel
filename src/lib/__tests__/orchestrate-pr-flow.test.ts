@@ -963,10 +963,7 @@ describe('makeDecision', () => {
     });
 
     assert.equal(decision.state, 'flow/manual-only');
-    assert.equal(
-      decision.reason,
-      'audit-fix branches are manual-only by policy',
-    );
+    assert.equal(decision.reason, 'Manual-only PR: advisory reviews passed.');
     assert.equal(decision.dispatch, null);
   });
 
@@ -1399,7 +1396,7 @@ describe('buildFlowVisibility', () => {
     assert.equal(visibility.aggregate.state, 'success');
     assert.equal(
       visibility.aggregate.description,
-      'audit-fix branches are manual-only by policy',
+      'Manual-only PR: advisory reviews passed. Ready for human merge decision.',
     );
     assert.equal(visibility.workers.codeReview.state, 'success');
     assert.equal(visibility.workers.securityReview.state, 'success');
