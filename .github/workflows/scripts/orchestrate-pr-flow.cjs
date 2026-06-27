@@ -924,8 +924,14 @@ function buildFlowVisibility({
   } else if (manualTerminal) {
     aggregateState = 'success';
     aggregateDisplayState = 'success';
-    aggregateDescription =
-      decision.reason || 'PR is manual-only; orchestration is complete.';
+    // If manual-only PR has completed code review labels, indicate advisory reviews passed
+    if (hasAny(labels, workers.codeReview?.passLabels ?? [])) {
+      aggregateDescription =
+        'Manual-only PR: advisory reviews passed. Ready for human merge decision.';
+    } else {
+      aggregateDescription =
+        decision.reason || 'PR is manual-only; orchestration is complete.';
+    }
   } else if (manualOnly) {
     aggregateState = 'pending';
     aggregateDisplayState = 'pending';
@@ -1493,6 +1499,14 @@ function makeDecision(context) {
     (manualReviewLabels.length > 0
       ? `Manual review is required by label: ${manualReviewLabels.join(', ')}.`
       : 'PR is manual-only by policy.');
+  // Check if manual-only PR has completed advisory reviews
+  const hasCompletedAdvisoryReviews = hasAll(
+    labels,
+    codeReviewWorker.passLabels ?? [],
+  );
+  const manualOnlyWithReviewsReason = hasCompletedAdvisoryReviews
+    ? 'Manual-only PR: advisory reviews passed.'
+    : manualOnlyReason;
 
   if (nonReviewHardBlockingLabels.length > 0) {
     return finish(
@@ -1604,7 +1618,7 @@ function makeDecision(context) {
   }
 
   if (manualOnly && !maintainerApproved) {
-    return finish('flow/manual-only', manualOnlyReason);
+    return finish('flow/manual-only', manualOnlyWithReviewsReason);
   }
 
   const shouldImprove =
