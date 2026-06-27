@@ -132,6 +132,7 @@ jobs:
 
             IMPORTANT: Only list labels YOU added. If a label was already on the issue, do NOT claim you applied it.
             This provides feedback since automated progress tracking is not available for workflow_dispatch triggers.
+            Operate as the `kos-triage` agent: first read `.claude/agents/kos-triage.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Ensure triaged label
         if: success()

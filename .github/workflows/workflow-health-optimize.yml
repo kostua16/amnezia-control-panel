@@ -288,6 +288,7 @@ jobs:
             - Minimal diffs (5-10 lines), not rewrites
             - Do NOT refactor to shared actions — separate task
             - Do NOT change files outside `.github/workflows/`
+            Operate as the `kos-workflow-health-optimize` agent: first read `.claude/agents/kos-workflow-health-optimize.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Detect exact duplicate optimization PR
         id: duplicate

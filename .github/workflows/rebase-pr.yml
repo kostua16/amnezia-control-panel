@@ -342,6 +342,7 @@ jobs:
             - Do NOT drop source PR intent to make conflicts disappear.
 
             Return JSON only with: summary, conflicts_resolved[] {file,resolution}, review_findings_preserved[], review_findings_addressed[], and validation {typecheck,tests,lint,format,build}.
+            Operate as the `kos-rebase-pr` agent: first read `.claude/agents/kos-rebase-pr.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Verify rebase completed
         id: verify

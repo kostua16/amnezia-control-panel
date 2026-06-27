@@ -127,6 +127,7 @@ jobs:
             - Update phase tracking status, acceptance criteria, and verification checklist when missing.
             - Do not modify application source, package manifests, or workflow logic.
             - Do not commit or push; the workflow handles that.
+            Operate as the `kos-gsd-planning` agent: first read `.claude/agents/kos-gsd-planning.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - uses: ./.github/actions/commit-and-push
         id: push

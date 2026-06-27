@@ -272,6 +272,7 @@ jobs:
             Return JSON only with: summary, changed_files[], findings_addressed[]
             [{file,change}], findings_skipped[] [{file,reason}], and validation
             {tsc,lint,tests,format,build} each "pass"/"fail"/"skipped".
+            Operate as the `kos-fix-review` agent: first read `.claude/agents/kos-fix-review.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Detect no-op (skip the gate when the agent changed nothing)
         id: detect-noop

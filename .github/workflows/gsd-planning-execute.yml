@@ -179,6 +179,7 @@ jobs:
             - Run `npm test` after implementation. Typecheck, unit test, lint, and Prettier failures are unfinished work; fix them before reporting completion.
             - If any source artifact proposal is intentionally left out of scope, include a final `### Proposals deferred` section with one bullet per deferred proposal.
             - Each deferred proposal bullet must include the proposal number, title, and rationale, e.g. `- **Proposal 2 (Decompose vpn-services.ts):** rationale`.
+            Operate as the `kos-gsd-planning-execute` agent: first read `.claude/agents/kos-gsd-planning-execute.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail on GSD soft failure
         if: always() && steps.gsd.outputs.claude_failed == 'true'
