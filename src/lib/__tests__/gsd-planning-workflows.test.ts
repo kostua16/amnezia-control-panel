@@ -99,7 +99,9 @@ describe('GSD planning workflow automation', () => {
 
     // Read the classifier regex straight from the production action so this
     // test fails if the regex drifts away from real GitHub rejection wording.
-    const grepMatch = action.match(/grep -Eqi '([^']*)'/);
+    const grepMatch = action.match(
+      /if grep -Eqi '([^']*)' "\$log_file"; then\s+printf '%s\\n' workflow-permission/,
+    );
     assert.ok(
       grepMatch,
       'classify_push_failure must define a grep -Eqi pattern',
