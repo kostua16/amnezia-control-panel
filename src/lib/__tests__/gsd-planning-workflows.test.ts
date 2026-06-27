@@ -80,11 +80,62 @@ describe('GSD planning workflow automation', () => {
     );
     assert.match(
       action,
-      /git -c http\.https:\/\/github\.com\/\.extraheader= push origin "HEAD:\$BRANCH"/,
+      /git[\s\S]*-c http\.https:\/\/github\.com\/\.extraheader=[\s\S]*-c http\.extraheader=[\s\S]*-c credential\.helper=[\s\S]*push origin "HEAD:\$BRANCH"/,
     );
+    assert.match(action, /Sanitized push auth diagnostics/);
+    assert.match(action, /github-token input present:/);
+    assert.match(action, /GIT_ASKPASS configured:/);
+    assert.match(action, /visible git http extraheader keys:/);
     assert.match(action, /commit_created=false/);
     assert.match(action, /origin\/HEAD\.\.HEAD/);
     assert.match(action, /Branch is not ahead of origin\/\$BRANCH/);
+    assert.match(action, /failure-reason:/);
+    assert.match(action, /workflow-permission/);
+    assert.match(action, /GitHub rejected the active push credential/);
+  });
+
+  it('classifies workflow-file push rejections for GitHub App, OAuth App, and classic PAT tokens', () => {
+    const action = readRepoFile('.github/actions/commit-and-push/action.yml');
+
+    // Read the classifier regex straight from the production action so this
+    // test fails if the regex drifts away from real GitHub rejection wording.
+    const grepMatch = action.match(
+      /if grep -Eqi '([^']*)' "\$log_file"; then\s+printf '%s\\n' workflow-permission/,
+    );
+    assert.ok(
+      grepMatch,
+      'classify_push_failure must define a grep -Eqi pattern',
+    );
+    const classifier = new RegExp(grepMatch[1], 'i');
+
+    const rejections = [
+      'refusing to allow a GitHub App to create or update workflow `.github/workflows/fix-review.yml` without `workflows` permission',
+      'refusing to allow an OAuth App to create or update workflow `.github/workflows/fix-review.yml` without `workflow` scope',
+      'refusing to allow a Personal Access Token to create or update workflow `.github/workflows/fix-review.yml` without `workflow` scope',
+    ];
+    for (const message of rejections) {
+      assert.match(message, classifier, `classifier must catch: ${message}`);
+    }
+
+    assert.doesNotMatch(
+      ' ! [remote rejected] HEAD -> codex/foo (non-fast-forward)',
+      classifier,
+    );
+  });
+
+  it('surfaces fix-review workflow-file push grant failures in the sticky comment', () => {
+    const workflow = readRepoFile('.github/workflows/fix-review.yml');
+
+    assert.match(
+      workflow,
+      /PUSH_FAILURE_REASON: \$\{\{ steps\.push\.outputs\.failure-reason \}\}/,
+    );
+    assert.match(workflow, /--push-failure-reason "\$PUSH_FAILURE_REASON"/);
+    assert.doesNotMatch(
+      workflow,
+      /exclude-paths:[\s\S]*\.github\/workflows/,
+      'fix-review must keep workflow-file fixes committable',
+    );
   });
 
   it('passes GH_PAT to every automation commit-and-push callsite', () => {

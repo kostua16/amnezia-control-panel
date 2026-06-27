@@ -109,24 +109,22 @@ function renderPushRejected({
   runUrl,
   command,
   structured,
+  pushFailureReason,
   updatedAt,
 }) {
   const changed = Array.isArray(structured.changed_files)
     ? structured.changed_files
     : [];
+  const copy = pushRejectedCopy(pushFailureReason);
   const lines = [
     COMMENT_MARKER,
-    reportHeading('🚫 Push rejected (non-fast-forward)'),
+    reportHeading(copy.heading),
     '',
     `- Command: \`${command || '/fix-review'}\``,
     `- Head SHA: \`${shortSha(headSha)}\``,
     `- Run: ${runUrl || '_n/a_'}`,
     '',
-    quoteBlock(
-      'The branch advanced while the fix ran (likely a concurrent push), so the ' +
-        'commit could not be pushed without overwriting history. The workflow never ' +
-        'force-pushes. Re-run `/fix-review` to reapply on the latest head.',
-    ),
+    quoteBlock(copy.message),
   ];
   if (changed.length > 0) {
     lines.push(
@@ -137,6 +135,32 @@ function renderPushRejected({
   }
   lines.push('', '<!-- updated: ' + updatedAt + ' -->');
   return lines.join('\n');
+}
+
+function pushRejectedCopy(pushFailureReason) {
+  if (pushFailureReason === 'workflow-permission') {
+    return {
+      heading: '🚫 Push rejected (workflow permission)',
+      message:
+        'The fix touched a workflow file under `.github/workflows/**`, and GitHub rejected the active push credential for workflow-file updates. Verify the run used the intended `GH_PAT` and that the token or App installation is current with workflow-file write access, then re-run `/fix-review`.',
+    };
+  }
+
+  if (!pushFailureReason || pushFailureReason === 'non-fast-forward') {
+    return {
+      heading: '🚫 Push rejected (non-fast-forward)',
+      message:
+        'The branch advanced while the fix ran (likely a concurrent push), so the ' +
+        'commit could not be pushed without overwriting history. The workflow never ' +
+        'force-pushes. Re-run `/fix-review` to reapply on the latest head.',
+    };
+  }
+
+  return {
+    heading: '🚫 Push rejected (push failed)',
+    message:
+      'The push to the branch failed; the exact git error is in the run log. The workflow never force-pushes. Resolve the underlying error, then re-run `/fix-review`.',
+  };
 }
 
 function renderValidationFailed({
@@ -307,6 +331,7 @@ function resolveFinishedBody({
   gatePassed,
   gateOutcomes = {},
   pushed,
+  pushFailureReason,
 }) {
   const updatedAt = new Date().toISOString();
   if (outcome === 'cancelled') {
@@ -343,6 +368,7 @@ function resolveFinishedBody({
         runUrl,
         command,
         structured,
+        pushFailureReason,
         updatedAt,
       });
     }
@@ -422,6 +448,7 @@ function main() {
           prismaSafe: getArg('--prisma-safe-outcome'),
         },
         pushed: getArg('--pushed'),
+        pushFailureReason: getArg('--push-failure-reason'),
       });
   }
 

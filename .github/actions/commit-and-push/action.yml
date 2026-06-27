@@ -17,6 +17,9 @@ outputs:
   pushed:
     description: "'true' if a commit was created or the branch was already ahead and pushed"
     value: ${{ steps.push.outputs.pushed }}
+  failure-reason:
+    description: 'Stable reason for a failed push, such as workflow-permission or non-fast-forward'
+    value: ${{ steps.push.outputs.failure_reason }}
 
 runs:
   using: composite
@@ -29,6 +32,47 @@ runs:
         MSG: ${{ inputs.commit-message }}
         GITHUB_TOKEN_VALUE: ${{ inputs.github-token }}
       run: |
+        set -o pipefail
+
+        classify_push_failure() {
+          local log_file="$1"
+          if grep -Eqi 'without .*`?workflows?`? (permission|scope)' "$log_file"; then
+            printf '%s\n' workflow-permission
+          elif grep -Eqi 'non-fast-forward|fetch first|stale info' "$log_file"; then
+            printf '%s\n' non-fast-forward
+          else
+            printf '%s\n' push-failed
+          fi
+        }
+
+        print_push_diagnostics() {
+          local token_present=no
+          local askpass_present=no
+          local extraheader_keys
+
+          if [ -n "$GITHUB_TOKEN_VALUE" ]; then
+            token_present=yes
+          fi
+          if [ -n "${GIT_ASKPASS:-}" ]; then
+            askpass_present=yes
+          fi
+
+          echo "::group::Sanitized push auth diagnostics"
+          echo "github-token input present: $token_present"
+          echo "GIT_ASKPASS configured: $askpass_present"
+          echo "target branch: $BRANCH"
+          echo "remote origin url: $(git remote get-url origin | sed -E 's#//[^/@]+@#//[redacted]@#')"
+
+          extraheader_keys="$(git config --name-only --get-regexp '^http\..*\.extraheader$|^http\.extraheader$' 2>/dev/null || true)"
+          if [ -n "$extraheader_keys" ]; then
+            echo "visible git http extraheader keys:"
+            printf '%s\n' "$extraheader_keys" | sed 's/^/- /'
+          else
+            echo "visible git http extraheader keys: none"
+          fi
+          echo "::endgroup::"
+        }
+
         if [ -n "$GITHUB_TOKEN_VALUE" ]; then
           askpass_path="${RUNNER_TEMP:-/tmp}/commit-and-push-askpass.sh"
           printf '%s\n' '#!/usr/bin/env bash' \
@@ -72,24 +116,40 @@ runs:
         fi
 
         PUSHED=false
+        failure_reason=push-failed
         for i in 1 2 3; do
           if [ -n "$GITHUB_TOKEN_VALUE" ]; then
-            push_command=(git -c http.https://github.com/.extraheader= push origin "HEAD:$BRANCH")
+            push_command=(
+              git
+              -c http.https://github.com/.extraheader=
+              -c http.extraheader=
+              -c credential.helper=
+              push origin "HEAD:$BRANCH"
+            )
           else
             push_command=(git push origin "HEAD:$BRANCH")
           fi
-          if "${push_command[@]}"; then
+          push_log="${RUNNER_TEMP:-/tmp}/commit-and-push-${i}.log"
+          if "${push_command[@]}" 2>&1 | tee "$push_log"; then
             echo "Push succeeded on attempt $i"
             PUSHED=true
             break
           else
+            failure_reason="$(classify_push_failure "$push_log")"
+            if [ "$failure_reason" = workflow-permission ]; then
+              echo "::error::GitHub rejected the active push credential for workflow-file updates. Verify commit-and-push used the intended GH_PAT and that the token/App installation is current with workflow-file write access."
+              break
+            fi
             echo "Push failed on attempt $i, retrying in 5s..."
             sleep 5
           fi
         done
         if [ "$PUSHED" = false ]; then
+          print_push_diagnostics
           echo "::error::Push failed after 3 attempts"
           echo "pushed=false" >> "$GITHUB_OUTPUT"
+          echo "failure_reason=$failure_reason" >> "$GITHUB_OUTPUT"
           exit 1
         fi
         echo "pushed=true" >> "$GITHUB_OUTPUT"
+        echo "failure_reason=" >> "$GITHUB_OUTPUT"

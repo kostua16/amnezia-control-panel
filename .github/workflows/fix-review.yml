@@ -352,6 +352,7 @@ jobs:
           SCRIPT_TESTS_OUTCOME: ${{ steps.gate.outputs.script_tests_outcome }}
           PRISMA_SAFE_OUTCOME: ${{ steps.gate.outputs.prisma_safe_outcome }}
           PUSHED: ${{ steps.push.outputs.pushed }}
+          PUSH_FAILURE_REASON: ${{ steps.push.outputs.failure-reason }}
           COMMIT_SHA: ${{ steps.sha.outputs.commit_sha }}
           AUTOMERGE_DISABLED: ${{ steps.automerge.outputs.disabled }}
         run: |
@@ -363,4 +364,5 @@ jobs:
             --format-outcome "$FORMAT_OUTCOME" --test-outcome "$TEST_OUTCOME" \
             --build-outcome "$BUILD_OUTCOME" --script-tests-outcome "$SCRIPT_TESTS_OUTCOME" \
             --prisma-safe-outcome "$PRISMA_SAFE_OUTCOME" --pushed "$PUSHED" \
+            --push-failure-reason "$PUSH_FAILURE_REASON" \
             --commit-sha "$COMMIT_SHA" --automerge-disabled "$AUTOMERGE_DISABLED" --mode complete

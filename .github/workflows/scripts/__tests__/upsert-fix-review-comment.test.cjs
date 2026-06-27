@@ -87,6 +87,48 @@ test('renderPushRejected lists attempted changes and forbids force-push', () => 
   assert.match(body, /- src\/a\.ts/);
 });
 
+test('renderPushRejected reports a generic push-failed reason without blaming non-fast-forward', () => {
+  const body = renderPushRejected({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    pushFailureReason: 'push-failed',
+    structured: { changed_files: ['src/a.ts'] },
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+
+  assert.match(body, /FIX-REVIEW Report: 🚫 Push rejected \(push failed\)/);
+  assert.match(body, /exact git error is in the run log/);
+  assert.match(body, /never force-pushes/);
+  assert.doesNotMatch(body, /non-fast-forward/);
+  assert.match(body, /Attempted changes \(1\)/);
+});
+
+test('renderPushRejected explains missing workflow-file push grant', () => {
+  const body = renderPushRejected({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    pushFailureReason: 'workflow-permission',
+    structured: {
+      changed_files: [
+        '.github/workflows/scripts/__tests__/watch-pr-flow.test.cjs',
+      ],
+    },
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+
+  assert.match(
+    body,
+    /FIX-REVIEW Report: 🚫 Push rejected \(workflow permission\)/,
+  );
+  assert.match(body, /workflow file under `\.github\/workflows\/\*\*`/);
+  assert.match(body, /GitHub rejected the active push credential/);
+  assert.match(body, /intended `GH_PAT`/);
+  assert.match(body, /workflow-file write access/);
+  assert.doesNotMatch(body, /non-fast-forward/);
+});
+
 test('renderValidationFailed shows dual-block: agent-reported + authoritative gate', () => {
   const body = renderValidationFailed({
     headSha: SHA,
@@ -261,6 +303,26 @@ test('resolveFinishedBody: green gate, not pushed, with changes -> push-rejected
     structured: { changed_files: ['a.ts'] },
   });
   assert.match(body, /FIX-REVIEW Report: 🚫 Push rejected/);
+});
+
+test('resolveFinishedBody: green gate, workflow permission push reject is explicit', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    hasChanges: 'true',
+    gatePassed: 'true',
+    pushed: 'false',
+    pushFailureReason: 'workflow-permission',
+    structured: {
+      changed_files: [
+        '.github/workflows/scripts/__tests__/watch-pr-flow.test.cjs',
+      ],
+    },
+  });
+
+  assert.match(body, /Push rejected \(workflow permission\)/);
+  assert.match(body, /GitHub rejected the active push credential/);
+  assert.match(body, /intended `GH_PAT`/);
 });
 
 test('resolveFinishedBody: green gate, not pushed, no changed_files -> no-changes', () => {
