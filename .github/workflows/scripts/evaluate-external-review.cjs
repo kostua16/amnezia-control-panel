@@ -139,15 +139,17 @@ function currentKiloSummary({
     : null;
 }
 
-function hasCurrentInlineIssues(reviewComments = [], headSha) {
-  return reviewComments.some((comment) => {
-    const user = comment.user ?? comment.author ?? {};
-    return (
-      isKiloUser(user) &&
-      isCurrentHead(comment, headSha) &&
-      String(comment.body ?? '').trim().length > 0
-    );
-  });
+function currentInlineIssue(reviewComments = [], headSha) {
+  return sortNewest(
+    reviewComments.filter((comment) => {
+      const user = comment.user ?? comment.author ?? {};
+      return (
+        isKiloUser(user) &&
+        isCurrentHead(comment, headSha) &&
+        String(comment.body ?? '').trim().length > 0
+      );
+    }),
+  )[0];
 }
 
 function evaluateExternalReview({
@@ -163,13 +165,7 @@ function evaluateExternalReview({
 } = {}) {
   const headSha = normalizeHeadSha(pr);
   const pendingStatus = latestPendingStatus(statuses, context);
-
-  if (hasCurrentInlineIssues(reviewComments, headSha)) {
-    return {
-      state: 'blocked',
-      reason: 'Kilo reported current-head inline review issues.',
-    };
-  }
+  const inlineIssue = currentInlineIssue(reviewComments, headSha);
 
   const summary = currentKiloSummary({
     comments,
@@ -179,11 +175,21 @@ function evaluateExternalReview({
   });
   const verdict = summaryVerdict(summary?.body);
   if (verdict === 'passed') {
+    if (!inlineIssue || itemTime(summary) >= itemTime(inlineIssue)) {
+      return {
+        state: 'passed',
+        reason: 'Kilo reported no current-head issues.',
+      };
+    }
+  }
+
+  if (inlineIssue) {
     return {
-      state: 'passed',
-      reason: 'Kilo reported no current-head issues.',
+      state: 'blocked',
+      reason: 'Kilo reported current-head inline review issues.',
     };
   }
+
   if (verdict === 'blocked') {
     return {
       state: 'blocked',
@@ -238,6 +244,7 @@ module.exports = {
   DEFAULT_WAIT_MINUTES,
   KILO_MARKER,
   evaluateExternalReview,
+  currentInlineIssue,
   isKiloSummary,
   isKiloUser,
   summaryVerdict,
