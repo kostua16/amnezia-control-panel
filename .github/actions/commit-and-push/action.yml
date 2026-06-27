@@ -36,7 +36,7 @@ runs:
 
         classify_push_failure() {
           local log_file="$1"
-          if grep -Eqi 'without .*`?workflows`? permission|without .*workflows.*permission' "$log_file"; then
+          if grep -Eqi 'without .*`?workflows?`? (permission|scope)' "$log_file"; then
             printf '%s\n' workflow-permission
           elif grep -Eqi 'non-fast-forward|fetch first|stale info' "$log_file"; then
             printf '%s\n' non-fast-forward

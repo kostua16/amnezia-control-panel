@@ -67,10 +67,6 @@ describe('GSD planning workflow automation', () => {
 
   it('pushes branches that are already ahead after GSD creates commits', () => {
     const action = readRepoFile('.github/actions/commit-and-push/action.yml');
-    const workflowReject =
-      'refusing to allow a GitHub App to create or update workflow `.github/workflows/fix-review.yml` without `workflows` permission';
-    const workflowPermissionPattern =
-      /without .*`?workflows`? permission|without .*workflows.*permission/i;
 
     assert.match(action, /github-token:/);
     assert.match(
@@ -92,7 +88,33 @@ describe('GSD planning workflow automation', () => {
     assert.match(action, /failure-reason:/);
     assert.match(action, /workflow-permission/);
     assert.match(action, /Workflows: write/);
-    assert.match(workflowReject, workflowPermissionPattern);
+  });
+
+  it('classifies workflow-file push rejections for GitHub App, OAuth App, and classic PAT tokens', () => {
+    const action = readRepoFile('.github/actions/commit-and-push/action.yml');
+
+    // Read the classifier regex straight from the production action so this
+    // test fails if the regex drifts away from real GitHub rejection wording.
+    const grepMatch = action.match(/grep -Eqi '([^']*)'/);
+    assert.ok(
+      grepMatch,
+      'classify_push_failure must define a grep -Eqi pattern',
+    );
+    const classifier = new RegExp(grepMatch[1], 'i');
+
+    const rejections = [
+      'refusing to allow a GitHub App to create or update workflow `.github/workflows/fix-review.yml` without `workflows` permission',
+      'refusing to allow an OAuth App to create or update workflow `.github/workflows/fix-review.yml` without `workflow` scope',
+      'refusing to allow a Personal Access Token to create or update workflow `.github/workflows/fix-review.yml` without `workflow` scope',
+    ];
+    for (const message of rejections) {
+      assert.match(message, classifier, `classifier must catch: ${message}`);
+    }
+
+    assert.doesNotMatch(
+      ' ! [remote rejected] HEAD -> codex/foo (non-fast-forward)',
+      classifier,
+    );
   });
 
   it('surfaces fix-review workflow-file push grant failures in the sticky comment', () => {
