@@ -40,6 +40,16 @@ function normalizeHeadSha(pr = {}) {
   return pr.headSha ?? pr.headRefOid ?? pr.head?.sha ?? '';
 }
 
+function normalizeHeadCommittedAt(pr = {}) {
+  return (
+    pr.headCommittedAt ??
+    pr.head_commit?.timestamp ??
+    pr.head?.commit?.committedDate ??
+    pr.head?.commit?.committed_at ??
+    null
+  );
+}
+
 function normalizeCommitId(item = {}) {
   return item.commit_id ?? item.commit?.oid ?? item.commit?.sha ?? null;
 }
@@ -47,6 +57,12 @@ function normalizeCommitId(item = {}) {
 function isCurrentHead(item, headSha) {
   const commitId = normalizeCommitId(item);
   return Boolean(headSha && commitId && commitId === headSha);
+}
+
+function isUpdatedAfterHead(item, headCommittedAt) {
+  const updated = itemTime(item);
+  const headTime = asDate(headCommittedAt);
+  return Boolean(headTime && updated >= headTime);
 }
 
 function isKiloSummary(comment = {}) {
@@ -121,6 +137,7 @@ function currentKiloSummary({
   comments = [],
   reviews = [],
   headSha,
+  headCommittedAt = null,
   pendingStatus = null,
 }) {
   const latestReview = currentKiloReview(reviews, headSha);
@@ -128,6 +145,7 @@ function currentKiloSummary({
   if (!latestSummary) return null;
 
   if (isCurrentHead(latestSummary, headSha)) return latestSummary;
+  if (isUpdatedAfterHead(latestSummary, headCommittedAt)) return latestSummary;
   if (!latestReview) {
     return pendingStatus && itemTime(latestSummary) >= itemTime(pendingStatus)
       ? latestSummary
@@ -164,6 +182,7 @@ function evaluateExternalReview({
   context = DEFAULT_CONTEXT,
 } = {}) {
   const headSha = normalizeHeadSha(pr);
+  const headCommittedAt = normalizeHeadCommittedAt(pr);
   const pendingStatus = latestPendingStatus(statuses, context);
   const inlineIssue = currentInlineIssue(reviewComments, headSha);
 
@@ -171,6 +190,7 @@ function evaluateExternalReview({
     comments,
     reviews,
     headSha,
+    headCommittedAt,
     pendingStatus,
   });
   const verdict = summaryVerdict(summary?.body);

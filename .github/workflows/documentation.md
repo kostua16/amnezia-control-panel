@@ -171,9 +171,11 @@ clears stale review signal labels, and dispatches `code-review.yml` through
 
 Kilo Code is modeled as an external advisory review signal rather than a
 dispatch worker. Current-head `kilo-code-bot` findings block PR Flow as
-`flow/review-blocked`; a current-head `No Issues Found` summary passes; a
-cancelled/skipped Kilo check or no current-head reply after 30 minutes is
-treated as skipped so Kilo cannot wedge the queue. `pr-flow-watchdog.yml`
+`flow/review-blocked`; a current-head `No Issues Found` summary passes. Kilo may
+report by editing its sticky `<!-- kilo-review -->` issue comment; PR Flow treats
+a trusted sticky summary edited after the current head commit as a current-head
+signal. A cancelled/skipped Kilo check or no current-head reply after 30 minutes
+is treated as skipped so Kilo cannot wedge the queue. `pr-flow-watchdog.yml`
 wakes expired `pr-flow/kilo-review` pending states so the timeout is applied.
 
 Worker completion also explicitly wakes `pr-flow.yml` with `workflow_dispatch`

@@ -7,7 +7,7 @@ on:
     workflows: ['Code Review']
     types: [completed]
   issue_comment:
-    types: [created]
+    types: [created, edited]
   schedule:
     - cron: '47 */3 * * *'
   workflow_dispatch:

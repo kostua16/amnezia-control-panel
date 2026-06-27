@@ -75,6 +75,82 @@ test('current-head Kilo issues block', () => {
   assert.equal(result.state, 'blocked');
 });
 
+test('edited Kilo pass summary after the current head passes even when pending status is newer', () => {
+  const result = evaluateExternalReview({
+    pr: { ...pr, headCommittedAt: '2026-06-24T11:45:00Z' },
+    comments: [summary('Status: No Issues Found', '2026-06-24T11:50:00Z')],
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T11:55:00Z',
+      },
+    ],
+    now,
+  });
+
+  assert.equal(result.state, 'passed');
+});
+
+test('edited Kilo issue summary after the current head blocks even when pending status is newer', () => {
+  const result = evaluateExternalReview({
+    pr: { ...pr, headCommittedAt: '2026-06-24T11:45:00Z' },
+    comments: [summary('Status: 1 Issue Found', '2026-06-24T11:50:00Z')],
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T11:55:00Z',
+      },
+    ],
+    now,
+  });
+
+  assert.equal(result.state, 'blocked');
+});
+
+test('edited Kilo summary before the current head remains ignored', () => {
+  const result = evaluateExternalReview({
+    pr: { ...pr, headCommittedAt: '2026-06-24T11:50:00Z' },
+    comments: [summary('Status: 1 Issue Found', '2026-06-24T11:45:00Z')],
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T11:55:00Z',
+      },
+    ],
+    now,
+  });
+
+  assert.equal(result.state, 'pending');
+});
+
+test('edited Kilo pass summary ignores old issue history', () => {
+  const result = evaluateExternalReview({
+    pr: { ...pr, headCommittedAt: '2026-06-24T11:45:00Z' },
+    comments: [
+      summary(
+        `Status: No Issues Found
+<!-- kilo-review-history -->
+Status: 1 Issue Found
+Recommendation: Address before merge`,
+        '2026-06-24T11:50:00Z',
+      ),
+    ],
+    statuses: [
+      {
+        context: 'pr-flow/kilo-review',
+        state: 'pending',
+        created_at: '2026-06-24T11:55:00Z',
+      },
+    ],
+    now,
+  });
+
+  assert.equal(result.state, 'passed');
+});
+
 test('current-head inline Kilo comments block even without a summary', () => {
   const result = evaluateExternalReview({
     pr,

@@ -157,6 +157,7 @@ test('pr-flow-control: bot and non-maintainer /review comments are ignored', () 
 test('pr-flow-control: trusted Kilo review marker wakes PR Flow', () => {
   const out = runPrFlowControl({
     event: {
+      action: 'created',
       issue: { number: 507, pull_request: { url: 'https://example/pr/507' } },
       comment: {
         body: '<!-- kilo-review -->\nStatus: 1 Issue Found',
@@ -172,9 +173,29 @@ test('pr-flow-control: trusted Kilo review marker wakes PR Flow', () => {
   assert.equal(out.pr_number, 507);
 });
 
+test('pr-flow-control: edited trusted Kilo review marker wakes PR Flow', () => {
+  const out = runPrFlowControl({
+    event: {
+      action: 'edited',
+      issue: { number: 507, pull_request: { url: 'https://example/pr/507' } },
+      comment: {
+        body: '<!-- kilo-review -->\nStatus: No Issues Found',
+        author_association: 'NONE',
+        user: { login: 'kilo-code-bot[bot]', type: 'Bot' },
+      },
+    },
+  });
+
+  assert.equal(out.should_run, true);
+  assert.equal(out.trusted, true);
+  assert.equal(out.kilo_review_posted, true);
+  assert.equal(out.pr_number, 507);
+});
+
 test('pr-flow-control: other bot comments remain ignored', () => {
   const out = runPrFlowControl({
     event: {
+      action: 'edited',
       issue: { number: 507, pull_request: { url: 'https://example/pr/507' } },
       comment: {
         body: '<!-- kilo-review -->\nStatus: 1 Issue Found',

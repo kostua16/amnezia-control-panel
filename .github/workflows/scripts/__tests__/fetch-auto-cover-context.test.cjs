@@ -10,6 +10,7 @@ const {
   mapWithConcurrency,
   extractAttempts,
   fetchPrContext,
+  commitTimestamp,
   fetchAutoCoverContext,
   AUTO_COVER_MARKER,
 } = require('../fetch-auto-cover-context.cjs');
@@ -47,10 +48,35 @@ test('extractAttempts keeps only auto-cover summary comments', () => {
   assert.ok(extractAttempts(comments)[0].body.includes(AUTO_COVER_MARKER));
 });
 
+test('commitTimestamp prefers committer date and falls back to author date', () => {
+  assert.equal(
+    commitTimestamp({
+      commit: {
+        author: { date: '2026-06-24T11:59:00Z' },
+        committer: { date: '2026-06-24T12:00:00Z' },
+      },
+    }),
+    '2026-06-24T12:00:00Z',
+  );
+  assert.equal(
+    commitTimestamp({
+      commit: { author: { date: '2026-06-24T11:59:00Z' } },
+    }),
+    '2026-06-24T11:59:00Z',
+  );
+});
+
 test('fetchPrContext pulls statuses/check-runs from sub-keys and tolerates 404', async () => {
   const calls = [];
   const fetchJson = async (apiPath, opts = {}) => {
     calls.push({ apiPath, opts });
+    if (apiPath.endsWith('/commits/headsha')) {
+      return {
+        commit: {
+          committer: { date: '2026-06-24T12:00:00Z' },
+        },
+      };
+    }
     if (apiPath.endsWith('/commits/headsha/status')) {
       return {
         statuses: [{ context: 'pr-flow/kilo-review', state: 'pending' }],
@@ -80,6 +106,7 @@ test('fetchPrContext pulls statuses/check-runs from sub-keys and tolerates 404',
     prNumber: '7',
   });
   assert.equal(ctx.headSha, 'headsha');
+  assert.equal(ctx.pr.headCommittedAt, '2026-06-24T12:00:00Z');
   assert.deepEqual(ctx.statuses, [
     { context: 'pr-flow/kilo-review', state: 'pending' },
   ]);
@@ -134,8 +161,12 @@ test('fetchAutoCoverContext shares fix-review runs across PRs and writes files',
         workflow_runs: [{ display_title: 'PR #1', status: 'in_progress' }],
       };
     }
+    if (apiPath.endsWith('/commits/aaa'))
+      return { commit: { committer: { date: '2026-06-24T12:00:00Z' } } };
     if (apiPath.endsWith('/commits/aaa/status')) return { statuses: [] };
     if (apiPath.endsWith('/commits/aaa/check-runs')) return { check_runs: [] };
+    if (apiPath.endsWith('/commits/bbb'))
+      return { commit: { committer: { date: '2026-06-24T12:01:00Z' } } };
     if (apiPath.endsWith('/commits/bbb/status')) return { statuses: [] };
     if (apiPath.endsWith('/commits/bbb/check-runs')) return { check_runs: [] };
     if (
@@ -176,6 +207,13 @@ test('fetchAutoCoverContext shares fix-review runs across PRs and writes files',
       fs.readFileSync(path.join(dir, `pr-${pr}-head-sha`), 'utf8'),
       pr === '1' ? 'aaa' : 'bbb',
     );
+    const context = JSON.parse(
+      fs.readFileSync(path.join(dir, `pr-${pr}-pr.json`), 'utf8'),
+    );
+    assert.equal(
+      context.headCommittedAt,
+      pr === '1' ? '2026-06-24T12:00:00Z' : '2026-06-24T12:01:00Z',
+    );
   }
   assert.ok(fs.existsSync(path.join(dir, 'manifest.json')));
   fs.rmSync(dir, { recursive: true, force: true });
@@ -192,6 +230,8 @@ test('fetchAutoCoverContext isolates a per-PR failure so the rest of the scan co
       return { workflow_runs: [] };
     }
     // PR 10 succeeds; PR 11's commit-status lookup fails with a transient 5xx.
+    if (apiPath.endsWith('/commits/ccc'))
+      return { commit: { committer: { date: '2026-06-24T12:00:00Z' } } };
     if (apiPath.endsWith('/commits/ccc/status')) return { statuses: [] };
     if (apiPath.endsWith('/commits/ccc/check-runs')) return { check_runs: [] };
     if (apiPath.endsWith('/commits/ddd/status')) {
@@ -243,6 +283,8 @@ test('fetchAutoCoverContext surfaces rate-limit errors instead of masking as emp
     if (apiPath.includes('/pulls/9/')) return [];
     if (apiPath.includes('/issues/9/comments')) return [];
     // commit status lookup fails with a rate-limit error
+    if (apiPath.endsWith('/commits/zzz'))
+      return { commit: { committer: { date: '2026-06-24T12:00:00Z' } } };
     if (apiPath.endsWith('/commits/zzz/status')) {
       throw new Error('gh api failed: gh: HTTP 403: rate limit exceeded');
     }
