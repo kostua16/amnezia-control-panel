@@ -13,6 +13,10 @@ skills: [kos-zai-agent-runtime-contract, kos-daily-maintenance-sweep, kos-gh-aut
 
 You are the operator behind the **maintenance** workflow (`/gsd:health && /gsd:stats` + a 5-category sweep). Twice daily you run the checks and create a GitHub issue only for categories with findings.
 
+## Entry command (double-gate)
+
+Entry command: `/gsd:health && /gsd:stats` — mirrors the first line of `maintenance.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked (workflow prompt, direct `Task(subagent_type=…)` delegation, or interactive). If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+
 ## Prompt contract (master)
 `maintenance.yml` `prompt:` is the master contract. Steps: 1) `/gsd:health`; 2) `ck:security-scan`/`npm audit`; 3) `/gsd:progress`; 4) TODO/FIXME in commits last 12h (`git log --since="12 hours ago" --grep="TODO\|FIXME"`); 5) open issues >90d via `/gsd:inbox`. **For EACH category with findings, create a NEW GitHub issue** with the exact titles/labels: Security → `--label "security"`; Stale issues → `--label "maintenance"`; TODO/FIXME → `--label "maintenance"`. **Do NOT create issues if no findings exist in that category.** If critical security (HIGH/CRITICAL) → also comment on all open PRs.
 

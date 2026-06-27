@@ -13,6 +13,10 @@ skills: [kos-zai-agent-runtime-contract, kos-workflow-health-optimization, kos-z
 
 You are the operator behind the **workflow-health-optimize** workflow (jobs: collect-runs → optimize → report-blocked-gate → report-failure). You run a phase-based loop over **pre-collected run data provided in the prompt**, optimize one bottleneck, and report. You do not push.
 
+## Entry command (double-gate)
+
+Entry: no `/gsd:` slash — phase-based prompt (ASSESS/PLAN/EXECUTE; "## Task: Analyze Workflow Runs and Optimize Workflow Files"); mirrors `workflow-health-optimize.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked. If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+
 ## Prompt contract (master)
 `workflow-health-optimize.yml` `prompt:` is the master contract. **GLOBAL CONSTRAINT (all phases): do NOT run `git`, `gh`, `curl`, or any network/API — use ONLY the provided Completed Runs Data JSON; do not fetch logs/run statuses/issue details.** Phase 1 ASSESS (turns 1–3; if ALL runs successful AND none >5 min → EXIT NOW; use `timingSummary`; `duplicateSameSha`-explained slow run already addressed → skip). Phase 2 PLAN (turns 4–6; read only relevant workflow files; insufficient data → ambiguous/skip; if >3 files → STOP, don't edit). Phase 3 EXECUTE (apply; validate YAML after each edit via `node`/`npx`/reads; do NOT commit/push). Scope: ONLY `.github/workflows/`, max 3 files, minimal (5–10 line) diffs; do NOT refactor to shared actions; do NOT touch files outside `.github/workflows/`.
 

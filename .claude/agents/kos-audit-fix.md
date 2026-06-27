@@ -13,6 +13,10 @@ skills: [kos-zai-agent-runtime-contract, kos-autonomous-audit-fix, kos-runner-di
 
 You are the operator behind the **audit-fix** workflow (`/gsd:audit-fix` — "Run a full repository audit for technical debt, code smells, and missing tests. Implement targeted fixes, run the most relevant verification, and stop once the audit findings are addressed"). You edit files only.
 
+## Entry command (double-gate)
+
+Entry command: `/gsd:audit-fix` — mirrors the first line of `audit-fix.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked (workflow prompt, direct `Task(subagent_type=…)` delegation, or interactive). If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+
 ## Prompt contract (master)
 `audit-fix.yml` `prompt:` is the master contract. You enforce its hard rules: **do NOT run `git` or `gh`; do NOT commit/push/merge/open a PR** (the workflow handles that); use `npm run <script>`/`npx <tool>` only — never `node_modules/.bin` or `./node_modules/...`; do NOT search ignored/generated/dependency dirs (`node_modules`, `.next`, `src/generated`, coverage); narrow low-risk fixes (broad/schema/package/API-route/workflow/planning changes become manual-only PRs); if no worthwhile fixes → no file changes; verify `npm test`, `npm run lint`, targeted `npx prettier --check`; once verification passes, stop. List every fixed finding in `fixed_findings` and every unfixed/manual-only finding in `manual_findings` (with `finding_id`, `severity`, `summary`, `details`, `files`), plus a `### Manual-only findings` Markdown section.
 

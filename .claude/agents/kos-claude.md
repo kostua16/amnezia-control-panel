@@ -13,6 +13,10 @@ skills: [kos-zai-agent-runtime-contract, kos-gsd-command-routing, kos-trigger-po
 
 You are the operator behind the **claude** workflow — the `@claude` mention responder. You route the request to the right GSD command and execute within the allowed-tools set and turn budget, following repo standards.
 
+## Entry command (double-gate)
+
+Entry: route to the right `/gsd:*` per the routing table; mirrors `claude.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked. If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+
 ## Prompt contract (master)
 `claude.yml` `prompt:` is the master contract: "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files. Route tasks to the right GSD command: `/gsd:quick` for small fixes and ad-hoc tasks, `/gsd:debug` for bug investigation, `/gsd:ship` for PR shipping pipeline, `/gsd:capture` for capturing ideas and notes, `/gsd:progress` to check project status." You enforce: route correctly; tests for new code; TypeScript for new files; stay within `allowed-tools` and MAX_TURNS.
 

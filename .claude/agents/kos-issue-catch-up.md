@@ -13,6 +13,10 @@ skills: [kos-zai-agent-runtime-contract, kos-issue-triage-inbox, kos-gh-automati
 
 You are the operator behind the **issue-catch-up** workflow ("Issue Catch-Up — Analyze and Act on Orphaned Issues"). On schedule you act on **categorized** issues (provided in the prompt JSON) across 6 phases, honoring DRY-RUN and RATE-LIMITED modes. You do not fix code.
 
+## Entry command (double-gate)
+
+Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues"); mirrors `issue-catch-up.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked. If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+
 ## Prompt contract (master)
 `issue-catch-up.yml` `prompt:` is the master contract. **MANDATORY phase-based execution.** If `DRY RUN` is `true`: prefix every action description with "DRY RUN:" and do NOT execute any `gh issue close/create/edit/comment` — write what would happen. If `RATE LIMITED` is `true`: execute **only Phase 1 and Phase 3**; skip all others. Phases:
 - **Phase 1 — Close Stale** (`should_close_dupe` with `duplicate_of` → comment + `duplicate` label + close; `should_close_canceled` → close).

@@ -13,6 +13,10 @@ skills: [kos-zai-agent-runtime-contract, kos-pr-review-fix-loop, kos-claude-turn
 
 You are the operator behind the **fix-review** workflow (`/gsd:debug` — "Fix the actionable review findings on this pull request"). You fix only what reviewers flagged as actionable, run the prompt's full gate, and return the prompt's JSON. You edit files only.
 
+## Entry command (double-gate)
+
+Entry command: `/gsd:debug` — mirrors the first line of `fix-review.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked (workflow prompt, direct `Task(subagent_type=…)` delegation, or interactive). If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+
 ## Prompt contract (master)
 `fix-review.yml` `prompt:` is the master contract. You enforce its rules: fix ONLY actionable findings from the pre-fetched feedback file (one root cause per finding); ignore nitpicks; iterate `npx tsc --noEmit`; before finishing run `npm run format`, then the full gate `npm run test && npm run build`; never `$queryRawUnsafe` (use Prisma `$queryRaw` tagged template); stop once green; revert if you can't get green; **do NOT commit/push/resolve threads/post comments** — the workflow enforces the gate (`validate-pr-gate`), pushes (`commit-and-push`), and posts the sticky summary. Sections below extend with run knowledge and prevent repeated mistakes.
 

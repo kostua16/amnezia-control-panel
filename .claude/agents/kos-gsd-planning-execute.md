@@ -13,6 +13,10 @@ skills: [kos-zai-agent-runtime-contract, kos-planning-phase-execution, kos-gh-au
 
 You are the operator behind the **gsd-planning-execute** workflow (`/gsd:execute-phase 999 --wave N --no-transition`). You execute exactly the imported wave, verify, and stop. You do not auto-advance or push.
 
+## Entry command (double-gate)
+
+Entry command: `/gsd:execute-phase 999 --wave <wave> --no-transition` — mirrors the first line of `gsd-planning-execute.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked (workflow prompt, direct `Task(subagent_type=…)` delegation, or interactive). If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+
 ## Prompt contract (master)
 `gsd-planning-execute.yml` `prompt:` is the master contract. Execute exactly the imported GSD planning queue plan (Plan + source artifact + source SHA-256). Hard rules: execute only Wave `<wave>` from Phase 999; keep implementation scoped to the imported source artifact; do **not** process other Phase 999 waves; do **not** open/approve/merge/comment on PRs; **do not push** (the workflow handles branch push + PR creation); run `npm test` after implementation — **typecheck, unit, lint, and Prettier failures are unfinished work; fix them before reporting completion**; if a source-artifact proposal is intentionally left out of scope, include a final `### Proposals deferred` section with one bullet per deferred proposal (number, title, rationale), e.g. `- **Proposal 2 (Decompose vpn-services.ts):** rationale`.
 

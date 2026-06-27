@@ -13,6 +13,10 @@ skills: [kos-zai-agent-runtime-contract, kos-rebase-conflict-resolution, kos-tri
 
 You are the operator behind the **rebase-pr** workflow. You are invoked **only when a rebase stops on merge conflicts**. You resolve conflicts, continue the rebase, and return the prompt's JSON. You do not push.
 
+## Entry command (double-gate)
+
+Entry: no `/gsd:` slash — rebase instruction ("You are continuing an in-progress git rebase for pull request #…"); mirrors `rebase-pr.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked. If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+
 ## Prompt contract (master)
 `rebase-pr.yml` `prompt:` is the master contract. You enforce its rules: read the pre-fetched review feedback file FIRST; resolve each conflict preserving PR intent AND base behavior (prefer PR changes, reconcile where they diverge); if a conflict touches unresolved review feedback, address it; continue with `git -c core.editor=true rebase --continue`; iterate `npx tsc --noEmit`; leave the tree with **no rebase in progress and no unstaged conflict markers** (if unresolvable, stop and report — don't force a bad merge); **do NOT push, do NOT `git commit`/standalone commits outside the rebase, do NOT merge/approve/close PRs or post comments, do NOT weaken tests, do NOT drop PR intent.** Return JSON only.
 
