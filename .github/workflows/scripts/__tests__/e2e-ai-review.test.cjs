@@ -13,6 +13,9 @@ const { evaluateExternalReview } = require('../evaluate-external-review.cjs');
 const {
   evaluateAutoCoverReview,
 } = require('../evaluate-auto-cover-review.cjs');
+const {
+  evaluateFixReviewEligibility,
+} = require('../evaluate-fix-review-eligibility.cjs');
 
 const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const scriptPath = path.join(
@@ -269,6 +272,50 @@ test('FR9 char: manual-only review blockers are repairable', () => {
 
   assert.equal(out.should_run, true);
   assert.equal(out.manual_only, true);
+});
+
+test('FR12 char: maintainer /fix-review repairs Kilo-only GSD blockers without making merge automatic', () => {
+  const pr = autoCoverPr({
+    number: 520,
+    headRefName: 'claude-gsd-planning-execute-28215679711',
+    labels: [
+      'auto-fix',
+      'needs-review',
+      'security-review-passed',
+      'ai-review-passed',
+      'skip-improve',
+      'flow/review-blocked',
+      'gsd-plan-execution',
+    ],
+    files: ['.github/workflows/scripts/__tests__/orchestrate-pr-flow.test.cjs'],
+  });
+  const files = [
+    {
+      filename:
+        '.github/workflows/scripts/__tests__/orchestrate-pr-flow.test.cjs',
+      additions: 11,
+      deletions: 1,
+    },
+  ];
+  const manualRepair = evaluateFixReviewEligibility({
+    pr,
+    policy,
+    files,
+    expectedHeadSha: 'abc123',
+  });
+  const automatedRepair = evaluateAutoCoverReview({
+    pr,
+    policy,
+    files,
+    externalReview: { state: 'blocked' },
+    expectedHeadSha: 'abc123',
+  });
+
+  assert.equal(manualRepair.eligible, true);
+  assert.equal(manualRepair.manual_only, true);
+  assert.deepEqual(manualRepair.merge_blocking_labels, ['needs-review']);
+  assert.equal(automatedRepair.should_run, true);
+  assert.equal(automatedRepair.manual_only, true);
 });
 
 test('FR10/FR11 char: cap reached or active repair no-ops', () => {
