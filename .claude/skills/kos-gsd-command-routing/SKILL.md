@@ -64,7 +64,7 @@ YAGNI / KISS / DRY. Pick the **lightest** command that covers the task. Do not i
 
 ## Output Format
 
-```
+```text
 REQUEST CLASS: <class>  =>  COMMAND: /gsd:<x>  REASON: <short>
 ```
 

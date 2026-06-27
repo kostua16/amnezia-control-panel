@@ -1,86 +1,89 @@
 ---
 name: kos-pr-review-fix-loop
-description: Resolve the actionable review findings on a PR (fix-review / code-review workflows) by collecting feedback, fixing only actionable items, and pushing correctly — without the commit-and-push failure mode.
+description: The PR review/fix discipline for code-review (review-only, return JSON verdict) and fix-review (fix actionable findings, no push, return JSON) — two distinct contracts that share review-evidence handling.
 user-invocable: true
-when_to_use: "When a run must address review findings on a PR (fix-review), or perform a combined code review (code-review), or when such a run failed at commit-and-push / wake-orchestrator."
+when_to_use: "When running code-review (combined AI review of a PR) or fix-review (fix actionable review findings), or when such a run failed at the gate / wake-orchestrator step."
 category: utilities
 argument-hint: "[pr-number]"
-keywords: [review, fix-review, code-review, findings, pr, commit-and-push, actionable]
-related: [kos-commit-and-push-branch, kos-claude-turn-budget, kos-zai-run-failure-prevention, kos-gh-automation-tooling]
+keywords: [code-review, fix-review, review, findings, verdict, passed, concerns, json, no-push, gate]
+related: [kos-zai-agent-runtime-contract, kos-claude-turn-budget, kos-zai-run-failure-prevention, kos-gh-automation-tooling, kos-commit-and-push-branch]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from fix-review.yml / code-review.yml prompts + commit-and-push & wake-orchestrator failures
+  attribution: distilled from code-review.yml + fix-review.yml prompts + gate/wake-orchestrator failures
   license: repo
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Idea
 
-Two PR-focused workflows share a loop: `fix-review` (`/gsd:debug` — "Fix the actionable review findings on this PR") and `code-review` (`/gsd:code-review` — combined review of a PR). Observed failures: fix-review dies at the **commit-and-push** step; code-review dies at **wake-orchestrator**. Both also waste runs by over-fixing (touching non-actionable nits) or under-scoping. This skill is the disciplined loop: gather findings → fix only actionable → push correctly → wake orchestrator safely.
+Two PR-focused workflows share review-evidence handling but have **different jobs and output contracts**:
+- **code-review** (`/gsd:code-review`) — **review only**. Produce a combined general + STRIDE/OWASP security review; return JSON verdict; **do not fix, do not approve/request-changes/edit labels** (the workflow applies `ai-review-*`/`security-review-*` labels).
+- **fix-review** (`/gsd:debug`) — **fix only actionable findings**; iterate `tsc`; run the prompt's gate (`npm run format` then `npm run test && npm run build`); **do not push** (the workflow `commit-and-push` step pushes, gated by `validate-pr-gate`); return JSON.
+
+Both read pre-fetched review feedback. Neither pushes. Observed failures: code-review at the `wake-orchestrator` step (often a tolerated non-zero exit); fix-review at the workflow's commit-and-push/gate step.
 
 ## When to invoke this skill directly
-
-- You are fixing review findings on a PR or running a combined review.
-- A fix-review/code-review run failed at commit-and-push or wake-orchestrator.
+- Running a combined PR review (code-review) or fixing review findings (fix-review).
+- A run failed at wake-orchestrator / commit-and-push / validate-pr-gate.
 
 ## References
-
-- `fix-review.yml`, `code-review.yml` prompts.
-- `.github/workflows/scripts/collect-review-feedback.cjs` / `collect-stale-pr-feedback.cjs` — gather findings.
-- `evaluate-fix-review-eligibility.cjs` — whether a fix-review should run.
-- `commit-and-push` action (the recurring failure point) — see [[kos-commit-and-push-branch]].
-- `wake-orchestrator` step / `orchestrate-pr-flow.cjs`.
+- `code-review.yml`, `fix-review.yml` prompts.
+- `collect-review-feedback.cjs` / `collect-stale-pr-feedback.cjs` — pre-fetched feedback file.
+- `evaluate-fix-review-eligibility.cjs`; `validate-pr-gate` (the gate); `commit-and-push` step (see [[kos-commit-and-push-branch]]).
+- `docs/workflow-e2e-scenarios.md` §3 (AI-review label contract), §6d (fix-review `detect-noop` + gate, no push on noop/gate-fail).
+- [[kos-zai-agent-runtime-contract]].
 
 ## Communication Style
-
-List actionable findings as a checkbox set, fix each, then one push. Cite the review comment per fix.
+code-review: verdict + cited findings. fix-review: actionable set + per-fix change + gate result. No push in either.
 
 ## Core Principles
+YAGNI / KISS / DRY. code-review reviews; fix-review fixes actionable only. Neither pushes. Each emits its own JSON.
 
-YAGNI / KISS / DRY. Fix only what a reviewer flagged as actionable; skip style nits the linter owns. One push at the end, after `setup-bot-git`.
+## code-review contract (enforce)
+- One shared pass: PR metadata + changed files + diff (expand to HEAD reads if needed).
+- General review + **STRIDE + OWASP** security review.
+- Diff hygiene: only flag `+` lines (removed `-` lines are not current); `git show HEAD:<path>` if uncertain.
+- Cross-module accuracy + threat-model awareness (don't flag non-security crypto / env overrides / `process.exit` without an exploit path).
+- Post actionable findings as inline comments; rate security severity none/low/medium/high/critical.
+- **Return JSON only:**
+  - `code_review.{verdict: "passed"|"concerns", summary, blocking_findings_count}`
+  - `security_review.{verdict: "passed"|"concerns", summary, highest_severity: none|low|medium|high|critical}`
+  - `reviewed_files[]` (changed-file manifest considered)
+- **Do NOT approve/request changes/edit labels** — the workflow maps verdict → `ai-review-passed/concerns` + `security-review-passed/concerns` labels.
 
-## The loop
-
-1. **Collect** all open review findings (collect-review-feedback) — inline comments, review bodies, stale threads.
-2. **Triage** each: actionable (correctness/bug/missing test) vs. noise (preference/linter). Fix actionable; document skipped.
-3. **Fix** each actionable item minimally; run lint/typecheck per change.
-4. **Push** once via `commit-and-push` (identity set; real diff only; `GH_PAT`).
-5. **Wake orchestrator** only after push succeeds; tolerate its non-zero exit where auth was pre-verified (the workflows already comment "tolerate non-zero exit").
+## fix-review contract (enforce)
+- Read the pre-fetched feedback file FIRST.
+- Fix ONLY actionable findings; ignore nitpicks; one root cause per finding.
+- Iterate `npx tsc --noEmit`; before finishing run `npm run format`, then `npm run test && npm run build`; never `$queryRawUnsafe` (use Prisma `$queryRaw` tagged template).
+- Stop once the gate is green; if you can't get green, **revert** so the tree is clean (the workflow won't push failing code).
+- >8 files need changes → fix highest-severity, report the rest skipped.
+- **Do NOT commit/push/resolve threads/post comments** — the workflow gates (`validate-pr-gate`), pushes (`commit-and-push`), and posts the sticky summary. Empty diff → workflow `detect-noop` posts `renderNoChanges`.
+- **Return JSON only:** `summary, changed_files[], findings_addressed[{file,change}], findings_skipped[{file,reason}], validation{tsc,lint,tests,format,build}` (each "pass"/"fail"/"skipped").
 
 ## Failure modes to avoid
-
-- **commit-and-push failure** → empty diff (guard with `git diff`), missing bot identity (run `setup-bot-git`), or 403 (use `GH_PAT`).
-- **wake-orchestrator failure** → often a tolerated non-zero exit from pre-auth; confirm it is not a real orchestration error before treating the run as failed.
-- **Over-fixing** → touching files/lines no reviewer flagged (scope creep, bigger diff, slower review).
-- **Turn blowout** → batch fixes; one verify run.
+- **code-review approving/editing labels** — forbidden; only return the JSON verdict.
+- **fix-review pushing** — forbidden; the workflow pushes after the gate.
+- **Wrong verify** — fix-review must run the full gate (`npm run format` + `npm run test && npm run build`), not just `tsc` or `test-only`.
+- **wake-orchestrator misread** — its non-zero exit is often tolerated/pre-auth; confirm it's a real error before declaring failure.
 
 ## Your Approach
-
-1. Pull findings; triage to actionable.
-2. Fix minimally; verify each.
-3. Push once correctly.
-4. Wake orchestrator; classify its exit correctly.
+1. Identify which contract (review vs fix).
+2. Gather evidence (pre-fetched feedback / PR diff).
+3. code-review: review + JSON verdict. fix-review: fix actionable + gate + JSON.
+4. Do not push in either.
 
 ## Process Flow (Authoritative)
-
-1. collect-review-feedback → list findings.
-2. Mark each actionable/noise.
-3. Implement fixes (turn-budget aware).
-4. `npm run lint` + `npm run test-only` for changed area.
-5. commit-and-push (identity + PAT + diff-guard).
-6. wake-orchestrator (tolerate pre-auth non-zero exit).
+1. Read the prompt → pick contract.
+2. (fix-review) read feedback file; (code-review) gather PR metadata + diff.
+3. Execute (review / fix) within turn budget.
+4. Verify (code-review: none beyond review; fix-review: the full gate).
+5. Emit the contract's exact JSON; do not push.
 
 ## Output Format
-
-```
-FINDINGS: n actionable / m skipped
-FIXES: <file:line per fix>
-VERIFY: lint=ok test=ok
-PUSH: <branch> (<n> files)
-```
+- code-review: the JSON above.
+- fix-review: the JSON above.
 
 ## Critical Constraints
-
-- Never push without a real diff; never push without bot identity.
-- Never "fix" nits the linter/formatter owns — run prettier-auto-fix instead.
-- Do not treat a tolerated wake-orchestrator non-zero exit as a hard failure without checking `orchestrate-pr-flow.cjs` output.
+- code-review never approves/edits labels; it returns the verdict JSON.
+- fix-review never pushes; it runs the full gate and returns JSON; empty diff is a clean no-op.
+- Neither resolves threads or posts the sticky summary.

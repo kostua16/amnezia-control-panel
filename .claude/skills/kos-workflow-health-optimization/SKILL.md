@@ -1,74 +1,72 @@
 ---
 name: kos-workflow-health-optimization
-description: Collect workflow run health, optimize flaky/slow workflows, and report through the blocked-gate — the workflow-health-optimize discipline, without turning a tolerated reporting non-zero exit into a false failure.
+description: Run the workflow-health-optimize phase loop (ASSESS/PLAN/EXECUTE) using ONLY the provided Completed Runs Data JSON — never git/gh/curl/network — and edit at most 3 .github/workflows/ files with minimal diffs; do not commit/push.
 user-invocable: true
 when_to_use: "When the workflow-health-optimize workflow runs its scheduled collect→optimize→report cycle, or when a run failed at report-blocked-gate/report-failure."
 category: utilities
 argument-hint: "[workflow-name or 'all']"
-keywords: [workflow-health, optimize, flaky, collect-runs, blocked-gate, health]
-related: [kos-run-log-mining, kos-gh-automation-tooling, kos-zai-run-failure-prevention]
+keywords: [workflow-health, optimize, completed-runs-data, no-gh, phase-based, blocked-gate, asess-plan-execute]
+related: [kos-zai-agent-runtime-contract, kos-gh-automation-tooling, kos-zai-run-failure-prevention, kos-claude-turn-budget]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from workflow-health-optimize.yml (collect-runs/optimize/report-blocked-gate/report-failure) + run analysis scripts
+  attribution: distilled from workflow-health-optimize.yml prompt (GLOBAL CONSTRAINT: no git/gh/curl/network)
   license: repo
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Idea
 
-`workflow-health-optimize` runs a scheduled collect→optimize→report loop over workflow runs: `collect-runs` gathers recent run health, `optimize` acts on flaky/slow/repeatedly-failing workflows, `report-blocked-gate` surfaces anything blocked, `report-failure` files on red. The run mostly succeeds (29/1). The skill is the diagnosis-then-act order: roll up health with the existing analyzer, optimize the real bottleneck (not a vibe), and report accurately — a reporting step's tolerated non-zero exit must not be misread as a workflow failure.
+`workflow-health-optimize` runs a phase-based loop (ASSESS → PLAN → EXECUTE) over **pre-collected run data passed in the prompt** (Completed Runs Data JSON, including `claudeSummary`, `timingSummary`, `duplicateSameSha`). **GLOBAL CONSTRAINT: do NOT run `git`, `gh`, `curl`, or any network/API in any phase.** Use ONLY the provided JSON — no log fetching, no run statuses, no issue details from the API. Edits are confined to `.github/workflows/`, max 3 files, minimal (5–10 line) diffs; no commit/push.
 
 ## When to invoke this skill directly
-
-- You are running the health-optimize cycle.
-- You are deciding which workflow to optimize and how.
+- Running the health-optimize cycle.
+- Deciding which workflow file to optimize and how — from the provided data only.
 
 ## References
-
-- `workflow-health-optimize.yml` (collect-runs, optimize, report-blocked-gate, report-failure).
-- `.github/workflows/scripts/analyze-claude-runs.sh` + `scan-claude-logs.cjs` — health rollup.
-- [[kos-run-log-mining]] — efficient diagnosis feeding optimization.
-- `report-failure` action (mode: issue).
+- `workflow-health-optimize.yml` prompt (the phase loop + GLOBAL CONSTRAINT + scope).
+- Provided inputs: `${{ needs.collect-runs.outputs.runs-data }}` (the only allowed evidence source).
+- [[kos-zai-agent-runtime-contract]] — do NOT run disallowed tools; the prompt forbids gh/git/network.
+- `report-failure` action (only if the optimization itself genuinely failed).
 
 ## Communication Style
-
-Health rollup (per workflow: success/fail/cancel/median duration) → the one bottleneck → the one optimization → report status.
+Per-workflow health from the provided data → the one bottleneck → the one YAML change (cited to the data) → blocked list.
 
 ## Core Principles
+YAGNI / KISS / DRY. Provided-data only — never fetch. One bottleneck, one minimal YAML fix. A reporting-step non-zero exit ≠ a failed optimization.
 
-YAGNI / KISS / DRY. Optimize the highest-impact bottleneck only. Reuse analyze-claude-runs; don't recompute. A reporting non-zero exit ≠ a failed optimization.
+## Phase loop (enforce)
 
-## Your Approach
+**GLOBAL CONSTRAINT (all phases):** do NOT run `git`/`gh`/`curl`/network. Use ONLY the provided Completed Runs Data. Do NOT fetch logs, run statuses, or issue details.
 
-1. **collect-runs:** roll up each workflow's recent conclusions + durations (analyze-claude-runs).
-2. **optimize:** pick the workflow with the worst signal (most fails / slowest / flakiest); apply one targeted fix (allowlist, prompt scope, disk, timeout).
-3. **report-blocked-gate:** list anything still blocked; do not mask it.
-4. **report-failure:** only if the optimization itself failed — not because a reporting step exited non-zero.
+- **Phase 1 — ASSESS (turns 1–3):** read the runs data. Any failures? Slow runs? Use `timingSummary` for queue/runner/job/step bottlenecks (missing timing → mark slow run ambiguous). If a slow successful run is explained by `duplicateSameSha` and CI no longer subscribes to `ready_for_review`, treat that class as already addressed — don't edit. If **ALL runs successful AND none exceeded 5 min → EXIT NOW, no changes.** Do not read files yet.
+- **Phase 2 — PLAN (turns 4–6):** read ONLY the relevant workflow file(s) per problem. Fixable via YAML? If not → skip. If the provided data lacks enough detail for a concrete YAML fix → mark ambiguous, skip. If total edits > 3 files → STOP, exit with notes, don't edit.
+- **Phase 3 — EXECUTE (remaining turns):** apply planned changes; validate YAML after each edit using only local tools (`node`, `npx`, file reads). Do NOT commit or push.
+
+## Scope (enforce)
+- ONLY modify `.github/workflows/` files. Max 3 files per run. Minimal diffs (5–10 lines), not rewrites.
+- Do NOT refactor to shared actions (separate task). Do NOT change files outside `.github/workflows/`.
 
 ## Failure modes to avoid
-
-- **Misreading a reporting non-zero exit** → report-blocked-gate/report steps often tolerate non-zero (pre-auth); confirm the real outcome before filing failure.
-- **Vibe optimization** → optimize without run evidence; always cite the rollup.
-- **Over-optimizing** → touching many workflows at once (unattributable); one bottleneck per cycle.
+- **Running gh/git/curl** — forbidden by the GLOBAL CONSTRAINT; the data is pre-collected.
+- **Vibe optimization** — no provided-data evidence; always cite the JSON.
+- **Over-editing** — >3 files or rewriting instead of minimal diffs.
+- **Misreading a reporting non-zero exit** — report-blocked-gate/report steps may tolerate non-zero (pre-auth); confirm a real error before declaring failure.
 
 ## Process Flow (Authoritative)
-
-1. collect-runs → health rollup per workflow.
-2. rank → pick top bottleneck.
-3. optimize → one targeted change, cited to the rollup.
-4. report-blocked-gate (accurate).
-5. report-failure only on a real optimization failure.
+1. ASSESS provided data → bottleneck (or all-success/<5min → exit).
+2. PLAN → YAML fix per problem (skip ambiguous; stop if >3 files).
+3. EXECUTE → minimal YAML edits; validate each.
+4. report-blocked-gate (accurate); report-failure only on a real optimization failure.
 
 ## Output Format
-
-```
-HEALTH: <wf>: s/f/c/dur  ...  => BOTTLENECK: <wf> (<reason>)
-OPTIMIZE: <one change> (cited: <rollup evidence>)
+```text
+HEALTH (from provided data): <wf>: s/f/c/dur … => BOTTLENECK: <wf> (<reason, cited to timingSummary/claudeSummary>)
+OPTIMIZE: <one minimal YAML change> (file: <wf.yml>)
 BLOCKED: <none|list>
+NETWORK/GH/GIT: not used (per GLOBAL CONSTRAINT)
 ```
 
 ## Critical Constraints
-
-- One optimization per cycle, cited to run evidence.
+- NEVER run git/gh/curl/network — provided data only.
+- One minimal YAML fix per cycle, max 3 files, `.github/workflows/` only.
 - Never file report-failure for a tolerated reporting-step non-zero exit.
-- Never mask a blocked gate in report-blocked-gate — surface it.

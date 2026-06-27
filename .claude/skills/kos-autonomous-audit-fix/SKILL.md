@@ -1,84 +1,80 @@
 ---
 name: kos-autonomous-audit-fix
-description: Run an autonomous repo audit for tech debt/code smells/missing tests, implement TARGETED fixes, verify, and reconcile — the shared discipline of audit-fix and audit-auto-prs, including their disk-exhaustion and over-broad-fix failure modes.
+description: Run the audit-fix code audit (debt/smells/missing tests), implement TARGETED fixes, verify with npm test/lint/prettier, and return fixed_findings + manual_findings JSON — the agent does NOT run git/gh or push (the workflow handles commit/PR/reconcile).
 user-invocable: true
-when_to_use: "When the audit-fix or audit-auto-prs workflow runs an autonomous audit-and-fix cycle, or when such a run failed (disk / over-broad fix / no reconcile)."
+when_to_use: "When the audit-fix workflow runs its autonomous code audit-and-fix cycle, or when such a run failed (disk / over-broad fix / missing findings output)."
 category: utilities
 argument-hint: "[scope or 'full']"
-keywords: [audit, audit-fix, tech-debt, code-smell, reconcile, autonomous, disk]
-related: [kos-runner-disk-hygiene, kos-claude-turn-budget, kos-commit-and-push-branch, kos-gh-automation-tooling, kos-zai-run-failure-prevention]
+keywords: [audit, audit-fix, tech-debt, code-smell, fixed-findings, manual-findings, no-push, disk]
+related: [kos-zai-agent-runtime-contract, kos-runner-disk-hygiene, kos-claude-turn-budget, kos-gh-automation-tooling, kos-zai-run-failure-prevention]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from audit-fix.yml + audit-auto-prs.yml prompts + disk-exhaustion failure (run 28097503249)
+  attribution: distilled from audit-fix.yml prompt + disk-exhaustion failure (run 28097503249)
   license: repo
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Idea
 
-`audit-fix` and `audit-auto-prs` run `/gsd:audit-fix`: audit the repo for debt/smells/missing tests, implement **targeted** fixes, verify, and stop once findings are addressed. The sample shows `audit-fix` mostly cancelled (concurrency supersession — normal) with one hard failure: **runner disk exhaustion** (`No space left on device`) during setup. The behavioral risk is over-broad fixing (refactors disguised as audit fixes → review-blocking diffs). The skill keeps fixes surgical, verified, reconciled, and disk-safe.
+`audit-fix` runs `/gsd:audit-fix`: audit the repo for debt/smells/missing tests, implement **targeted** fixes, verify, stop when findings are addressed. The agent **edits files only** — it does **NOT** run git or gh, does **NOT** push/commit/open a PR (the workflow handles commit/PR/reconcile). Run knowledge: the one hard failure observed was runner disk exhaustion during setup (a workflow/runner concern, not the agent's logic). Note: this skill is for `audit-fix` (code audit). `audit-auto-prs` is a different workflow — it audits automation **PRs**, not code.
 
 ## When to invoke this skill directly
-
-- You are running an autonomous audit-fix cycle.
-- An audit-fix run failed on disk / produced an over-broad diff / skipped reconcile.
+- Running the `audit-fix` autonomous code audit-and-fix cycle.
+- An audit-fix run failed on disk / produced an over-broad diff / omitted the findings output.
 
 ## References
-
-- `audit-fix.yml`, `audit-auto-prs.yml` prompts (`/gsd:audit-fix`).
-- `.github/workflows/scripts/classify-audit-fix.cjs` — classifies the run outcome.
-- `.github/workflows/scripts/reconcile-audit-issues.sh` — reconciles audit issue tracking.
-- `.github/actions/ensure-disk-space/` — prevents the disk-exhaustion failure.
-- `report-failure` action — files the failure issue on red.
+- `audit-fix.yml` prompt (`/gsd:audit-fix`; do NOT run git or gh; never `node_modules` paths; don't search `node_modules`/`.next`/`src/generated`/coverage).
+- `.github/workflows/scripts/classify-audit-fix.cjs`, `reconcile-audit-issues.sh` (workflow steps, not agent actions).
+- `.github/actions/ensure-disk-space/` (workflow/runner concern — see [[kos-runner-disk-hygiene]]).
+- [[kos-zai-agent-runtime-contract]].
 
 ## Communication Style
-
-Findings → targeted fix per finding → verification → reconcile. Cite file:line per finding. State diff size.
+Findings → targeted fix per finding (file:line) → verify → the JSON. No push, no git/gh.
 
 ## Core Principles
+YAGNI / KISS / DRY. One finding → one minimal change. Verify with the prompt's commands. Report unfixed findings honestly — never silently drop them.
 
-YAGNI / KISS / DRY. Targeted fixes only — one finding, one minimal change. Verify with the real test command. Reconcile issue tracking so duplicates don't accumulate. Ensure disk before heavy setup.
+## Hard rules (the prompt)
+- **Do NOT run `git` or `gh`. Do NOT commit/push/merge/open a PR** — the workflow handles that.
+- Use `npm run <script>` / `npx <tool>` only — never `node_modules/.bin` or `./node_modules/...`.
+- Do NOT search ignored/generated/dependency dirs (`node_modules`, `.next`, `src/generated`, coverage).
+- Narrow low-risk fixes; broad/schema/package/API-route/workflow/planning changes are allowed when needed but become manual-only PRs.
+- If no worthwhile fixes → make no file changes.
+- Once verification passes, **stop** — don't run alternate test entrypoints.
 
-## Your Approach
+## Output contract (enforce)
+In the final response and structured output:
+- `fixed_findings[]` — every finding you fixed.
+- `manual_findings[]` — every unfixed/manual-only finding, each with `finding_id`, `severity`, `summary`, `details`, `files` (so the workflow can create a follow-up issue).
+- A Markdown `### Manual-only findings` section, one bullet per unfixed finding: `- **F-02 (medium):** details`.
 
-1. Audit across categories (debt, smells, missing tests) — enumerate concrete findings (file:line).
-2. For each: implement the **minimal** fix; do not refactor opportunistically.
-3. Verify (`npm run test-only` + lint) for each changed area.
-4. Stop when findings are addressed — do not hunt for more once the budget is spent.
-5. Reconcile via `reconcile-audit-issues.sh` so the audit issue tracker stays accurate.
-6. Ensure disk space before setup on the self-hosted runner ([[kos-runner-disk-hygiene]]).
+**Verify** with `npm test`, `npm run lint`, and targeted `npx prettier --check …`.
 
 ## Failure modes to avoid
-
-- **Disk exhaustion** → ensure-disk-space before install; the run dies mid-setup otherwise.
-- **Over-broad fixes** → a "code smell" becomes a refactor; keep each fix to the finding.
-- **No verify** → unverified audit fixes regress; always run the real check.
-- **Unreconciled issues** → audit issues pile up; run reconcile each cycle.
-- **Concurrency cancellation** → mostly a newer run superseding this one — confirm before treating as failure (see [[kos-run-log-mining]]).
+- **Running git/gh or pushing** — forbidden.
+- **Over-broad fixes** — a "smell" becoming a refactor; keep each fix to the finding.
+- **No verify** — always run the prompt's check.
+- **Silent drops** — list every unfixed finding in `manual_findings`.
+- **Disk** — if the run dies with `No space left on device`, that's a runner-disk issue (workflow/runner), not your logic; flag it.
 
 ## Process Flow (Authoritative)
-
-1. ensure-disk-space (self-hosted runner).
-2. audit → concrete findings list.
-3. minimal fix per finding.
-4. verify per change (test + lint).
-5. stop when addressed (budget-aware).
-6. reconcile-audit-issues.
-7. commit-and-push / report per workflow.
+1. Audit → concrete findings (file:line).
+2. Minimal fix per finding (within scope + budget).
+3. Verify (`npm test` + lint + prettier --check).
+4. Stop when findings addressed.
+5. Return `fixed_findings` + `manual_findings` + the `### Manual-only findings` section. Do not push.
 
 ## Output Format
-
-```
+```text
 FINDINGS: n (debt=a smells=b tests=c)
 FIXED: <file:line per fix>  DIFF=<files>
-VERIFY: lint=ok test=ok
-RECONCILE: applied
-DISK: ensured
+VERIFY: lint=ok test=ok prettier=ok
+MANUAL: <F-id (severity): summary> …
 ```
+(plus the structured `fixed_findings`/`manual_findings` JSON)
 
 ## Critical Constraints
-
+- Never run git/gh, never push/open PR — the workflow does.
 - Never ship an audit fix without verification.
-- Never let a "smell" fix become a cross-module refactor — split it out.
-- Ensure disk before setup; reconcile issues after fixes.
-- A cancelled audit-fix run is usually concurrency supersession, not a bug — verify before re-dispatch.
+- Never silently drop a finding — it goes in `manual_findings`.
+- This skill is for `audit-fix` (code audit); `audit-auto-prs` (PR audit) does not use it.

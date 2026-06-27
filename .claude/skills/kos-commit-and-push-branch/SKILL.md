@@ -1,78 +1,68 @@
 ---
 name: kos-commit-and-push-branch
-description: Commit and push changes to the correct PR/automation branch with the bot git identity, avoiding the git_push_403 and "Commit and push" step failures seen in fix-review/code-review runs.
+description: Reference for the workflow's commit-and-push / upsert-PR STEP (the action that runs after the zai agent) — what it does, how it fails (git_push_403, empty diff, non-fast-forward, graphql_pr_fail), and how to diagnose. Agents do NOT push.
 user-invocable: true
-when_to_use: "When a workflow task must persist edits to a PR branch or automation branch, or when a run failed at the 'Commit and push' step."
+when_to_use: "When diagnosing a run that failed at the 'Commit and push' / upsert-PR step, or when reasoning about why an agent's edits did or did not land."
 category: utilities
-argument-hint: "[pr-number or branch]"
-keywords: [commit, push, branch, git-push, 403, bot-identity, automation-pr]
-related: [kos-zai-run-failure-prevention, kos-gh-automation-tooling, kos-runner-disk-hygiene]
+argument-hint: "[run-id or branch]"
+keywords: [commit-and-push, upsert-pull-request, git-push-403, workflow-step, bot-identity, automation-pr, no-push]
+related: [kos-zai-agent-runtime-contract, kos-zai-run-failure-prevention, kos-gh-automation-tooling]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from fix-review commit-and-push failures + commit-and-push/prepare-automation-branch actions
+  attribution: distilled from fix-review/code-review commit-and-push step failures + commit-and-push/prepare-automation-branch actions
   license: repo
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Idea
 
-Several workflows (fix-review, code-review, fix-issue, audit-fix, pr-improve variants) end with a "Commit and push to the PR branch" step. This is a frequent failure point: it dies with HTTP 403 (`git_push_403`), a non-fast-forward rejection, or an empty-diff abort. The repo has dedicated actions for this (`commit-and-push`, `prepare-automation-branch`, `setup-bot-git`) plus a duplicate-PR guard. The skill is using them correctly instead of raw `git push`.
+In these workflows, **the agent does not push.** The zai/agent run only edits files and returns the prompt's output; then a **workflow step** (`commit-and-push`, `prepare-automation-branch`, `upsert-pull-request`) commits the agent's diff and pushes/opens the PR. That step is a frequent failure point — and because it runs *after* the agent, its failure is often misread as an agent problem. This skill is the reference for understanding/diagnosing that **workflow step**, not an instruction for the agent to push. (Agent push discipline lives in [[kos-zai-agent-runtime-contract]].)
 
 ## When to invoke this skill directly
-
-- Your workflow task produced file edits that must land on a PR/automation branch.
-- A run failed at the commit-and-push step (403, rejected, or "nothing to commit").
-- You are wiring up a new automation-PR workflow.
+- A run failed at the "Commit and push to the PR branch" / upsert-PR step.
+- You are reasoning about why an agent's edits did or did not land (empty diff? non-fast-forward? 403?).
+- You are editing a workflow's commit-and-push / upsert-PR steps.
 
 ## References
-
-- `.github/actions/setup-bot-git/` — sets the bot author/committer identity (must run before commit).
-- `.github/actions/prepare-automation-branch/` — creates/switches the automation branch off the right base.
-- `.github/actions/commit-and-push/` — staged commit + push with the right token/remote.
-- `.github/actions/upsert-pull-request/` + `find-duplicate-automation-pr.cjs` — open or reuse the PR (avoid `graphql_pr_fail` / duplicates).
+- `.github/actions/setup-bot-git/` — sets bot identity (must run before the step).
+- `.github/actions/prepare-automation-branch/` — creates/switches the automation branch.
+- `.github/actions/commit-and-push/` — staged commit + push (the recurring failure point).
+- `.github/actions/upsert-pull-request/` + `find-duplicate-automation-pr.cjs` — open/reuse the PR.
 - `scan-claude-logs.cjs` → `git_push_403`, `graphql_pr_fail`.
 
 ## Communication Style
-
-Name the exact step that failed and the one cause (token/identity/non-fast-forward/empty), then the one action to use.
+Name the exact step, the one cause (token/identity/non-fast-forward/empty), and that it is a workflow-step (not agent) failure.
 
 ## Core Principles
+YAGNI / KISS / DRY. Diagnose the step, don't blame the agent. The fix lives in the workflow YAML (token, identity, gate), not in agent cleverness.
 
-YAGNI / KISS / DRY. Use the existing `commit-and-push` action; do not reimplement push. Push to a branch you own, never force to `main`.
+## Step-failure causes → diagnosis
 
-## Failure causes → fix
-
-| Symptom | Cause | Fix |
+| Symptom | Cause | Where the fix lives |
 |---|---|---|
-| `fatal: unable to access … 403` | Push token lacks `contents: write` / wrong remote | Use `GH_PAT` (not `GITHUB_TOKEN`) where write is needed; push via setup-bot-git remote |
-| `Commit and push … failure` (generic) | No bot identity, or staged nothing | Run `setup-bot-git` first; only commit when there is a real diff |
-| `! [rejected] non-fast-forward` | Branch moved under you | Rebase onto latest base (`rebase-pr` flow) or re-prepare automation branch |
-| `pull request create failed: GraphQL:` | Duplicate PR / transient | Use `find-duplicate-automation-pr.cjs` + `upsert-pull-request` |
-| Push of an empty tree | Agent made no net change | Skip push; report "no changes" instead of failing the step |
+| `fatal: unable to access … 403` (`git_push_403`) | Push token lacks `contents: write` / wrong remote | workflow: use `GH_PAT`; `setup-bot-git` remote |
+| `Commit and push … failure` (generic) | No bot identity, or staged nothing | workflow: `setup-bot-git` before; guard step with `if: git diff` |
+| `! [rejected] non-fast-forward` | Branch moved under the agent | workflow: rebase/reprepare branch (rebase-pr flow) |
+| `pull request create failed: GraphQL:` (`graphql_pr_fail`) | Duplicate PR / transient | workflow: `find-duplicate-automation-pr.cjs` + `upsert-pull-request` |
+| Push of an empty tree | Agent made no net change | workflow: `detect-noop` → skip gate+push, post `renderNoChanges` (see fix-review §6d) |
 
-## Your Approach
-
-1. Confirm there is a real `git diff` before committing (empty diff → skip, don't fail).
-2. Ensure `setup-bot-git` ran (identity) and the right token is in the remote.
-3. Push to the PR/automation branch only; never rewrite `main`.
-4. Open/reuse the PR via the upsert+dedupe actions.
+## Your Approach (diagnosis)
+1. Confirm the failure is at the commit-and-push/upsert **step** (after the agent), not during the agent run.
+2. Map the symptom to a row above.
+3. Point the fix at the workflow YAML/step, not the agent.
+4. Note: an empty agent diff is a workflow `detect-noop` success-with-no-changes, not a step failure.
 
 ## Process Flow (Authoritative)
-
-1. `git status --porcelain` → if empty, exit 0 with "no changes".
-2. Stage only the files the task changed.
-3. Commit via the bot identity with a conventional message (no AI references).
-4. Push to the owned branch using `GH_PAT`.
-5. Upsert the PR (dedupe against existing automation PRs).
+1. Identify the failing step + the agent's preceding diff (was there one?).
+2. Classify the step failure (403 / identity / non-fast-forward / graphql / empty).
+3. Recommend the workflow-level fix; confirm the agent's own behavior was correct.
 
 ## Output Format
-
-```
-PUSH <branch>  FILES=<n>  TOKEN=<GH_PAT|GITHUB_TOKEN>  PR=<number|reused|none>
+```text
+STEP: <commit-and-push|upsert-PR>  CAUSE: <403|identity|non-fast-forward|graphql|empty-diff>  FIX-LOC: <workflow step>
 ```
 
 ## Critical Constraints
-
-- Never force-push to `main`/protected branches.
-- Do not commit secrets, lockfile noise, or stray worktree artifacts.
-- An empty diff is a success-with-no-changes, not a step failure — guard the step with `if: git diff`.
+- This skill never instructs an agent to push — agents edit files only ([[kos-zai-agent-runtime-contract]]).
+- An empty diff is a clean no-op (workflow `detect-noop`), not a failure.
+- Distinguish step failures from agent-runtime failures (`kos-zai-run-failure-prevention`).

@@ -1,76 +1,73 @@
 ---
 name: kos-rebase-conflict-resolution
-description: Continue an in-progress git rebase of a PR onto its base branch that stopped on conflicts — resolve trivial conflicts automatically, escalate real ones, and survive the post-ancestry comment step that has failed rebase-pr runs.
+description: Resolve rebase conflicts for a PR (preserve PR intent + base behavior, address unresolved review feedback touched by conflicts), continue the rebase, and return the prompt's JSON — the agent does NOT push (the workflow force-pushes with-lease).
 user-invocable: true
-when_to_use: "When the rebase-pr workflow resumes a stopped rebase, or when a rebase-pr run failed in the post-ancestry / upsert-rebase-comment step."
+when_to_use: "When the rebase-pr workflow resumes a stopped rebase and run-zai is invoked on conflict, or when diagnosing a rebase-pr run."
 category: utilities
 argument-hint: "[pr-number]"
-keywords: [rebase, conflict, merge-conflict, ancestry, upsert-comment, rebase-pr]
-related: [kos-commit-and-push-branch, kos-gh-automation-tooling, kos-zai-run-failure-prevention]
+keywords: [rebase, conflict, merge-conflict, review-feedback, json, no-push, force-with-lease]
+related: [kos-zai-agent-runtime-contract, kos-gh-automation-tooling, kos-zai-run-failure-prevention]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from rebase-pr.yml prompt + upsert-rebase-comment post-ancestry failures
+  attribution: distilled from rebase-pr.yml prompt + docs/workflow-e2e-scenarios.md §6e
   license: repo
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Idea
 
-`rebase-pr` resumes a rebase that stopped on conflicts. The agent must resolve conflicts and finish, then a post-step (`upsert-rebase-comment.cjs`) reports outcome. Observed failure: that post-step exits 1 with **empty ancestry env** (`MERGE_BASE`, `VISIBLE_COMMIT_COUNT`, `REASON` all blank) — meaning the ancestry analysis produced nothing and the comment step choked on it. The skill is: resolve correctly **and** make the ancestry/comment step robust to empty results.
+`rebase-pr` rewrites the SAME PR branch onto its base. Clean rebases validate + push **with no AI**; `run-zai` is invoked **only when Git enters a conflict state**, with review feedback pre-fetched so the agent can preserve/address findings touched by conflicts. The agent **resolves conflicts and returns JSON — it does NOT push** (the workflow `validate-pr-gate` gates, then force-pushes `--force-with-lease` to the same branch). A prior "Post ancestry failure" (`upsert-rebase-comment`) is a workflow step, not the agent's job.
 
 ## When to invoke this skill directly
-
-- You are continuing a stopped rebase for a PR.
-- A rebase-pr run failed in the "Post ancestry failure" / upsert-rebase-comment step.
+- You are the run-zai agent invoked on a rebase conflict for a PR.
+- Diagnosing a rebase-pr run.
 
 ## References
-
-- `rebase-pr.yml` prompt (continue rebase for PR # onto base, stopped on conflicts).
-- `.github/workflows/scripts/analyze-rebase-ancestry.cjs` — computes ancestry env.
-- `.github/workflows/scripts/auto-resolve-trivial-rebase-conflicts.cjs` — resolves trivial conflicts.
-- `.github/workflows/scripts/evaluate-rebase-eligibility.cjs` — whether rebase should run.
-- `.github/workflows/scripts/upsert-rebase-comment.cjs` — posts outcome comment (the failure point).
+- `rebase-pr.yml` prompt (continue rebase stopped on conflicts; read pre-fetched feedback file FIRST).
+- `docs/workflow-e2e-scenarios.md` §6e (branch-refresh tool; clean rebases need no AI; run-zai only on conflict; workflow force-with-lease; gate).
+- `analyze-rebase-ancestry.cjs`, `auto-resolve-trivial-rebase-conflicts.cjs`, `evaluate-rebase-eligibility.cjs`, `upsert-rebase-comment.cjs` (workflow steps).
+- [[kos-zai-agent-runtime-contract]].
 
 ## Communication Style
-
-State conflict count → how many auto-resolved vs. escalated → rebase continued/aborted. Cite the conflict files.
+Conflict count → resolution approach per file → CONTINUED|ABORTED + the JSON. No push.
 
 ## Core Principles
+YAGNI / KISS / DRY. Preserve PR intent + base behavior; prefer PR changes, reconcile where they diverge. Address unresolved review feedback touched by conflicts. Never force-push (the workflow does). Never weaken tests or drop PR intent to end a conflict.
 
-YAGNI / KISS / DRY. Auto-resolve only trivial conflicts (whitespace, moved blocks); escalate semantic ones. Never force-push past a real conflict. The comment step must handle empty ancestry gracefully.
-
-## Your Approach
-
-1. Confirm rebase is in progress (`git status` shows conflict / `.git/rebase-merge`).
+## Your job (enforce)
+1. Read the pre-fetched review feedback file FIRST (unresolved threads, review submissions, diff).
 2. Enumerate conflicted files (`git diff --name-only --diff-filter=U`).
-3. Run the trivial-conflict resolver; for the rest, attempt semantic resolution per file.
-4. If unresolvable: `git rebase --abort`, post a "needs human" comment, exit cleanly (not error).
-5. Continue: `git rebase --continue`; force-push **only** the PR branch (`--force-with-lease`).
+3. Resolve each conflict preserving PR intent AND base behavior; if a conflict touches unresolved review feedback, address it as part of the resolution.
+4. Continue via `git -c core.editor=true rebase --continue` (no editor); iterate `npx tsc --noEmit` for fast feedback.
+5. Leave the tree with **no rebase in progress and no unstaged conflict markers**. If a conflict cannot be resolved, stop and report — do not force a bad merge.
+
+## Hard rules (the prompt)
+- **Do NOT push. Do NOT `git commit` or create standalone commits outside the rebase. Do NOT merge/approve/close PRs or post comments.**
+- Do NOT weaken or delete tests to make conflicts disappear.
+- Do NOT drop source PR intent to make conflicts disappear.
+
+## Output contract (enforce)
+Return **JSON only:** `summary`, `conflicts_resolved[] {file,resolution}`, `review_findings_preserved[]`, `review_findings_addressed[]`, `validation {typecheck,tests,lint,format,build}`.
 
 ## Failure modes to avoid
-
-- **Post-ancestry / upsert-comment exit 1 on empty env** → the comment step must tolerate blank `MERGE_BASE`/`REASON`; guard env reads, post a neutral comment, exit 0. Do not let a reporting step fail the whole run.
-- **Force-push to wrong branch** → only the PR branch, with `--force-with-lease`.
-- **Resolving a semantic conflict as "trivial"** → data loss; escalate instead.
-- **Leaving rebase half-done** → either continue to completion or abort cleanly.
+- **Agent pushing** — forbidden; the workflow gates + force-pushes.
+- **Ignoring review feedback** — conflicts touching unresolved threads must address them.
+- **Leaving a half-done rebase** — either complete (clean tree) or report unresolvable.
+- **Misattributing the post-ancestry step** — `upsert-rebase-comment` is a workflow step; leave a clean tree so it has data.
 
 ## Process Flow (Authoritative)
-
-1. Detect in-progress rebase + conflicted files.
-2. auto-resolve-trivial; manually resolve the rest if safe.
-3. Unresolvable → abort + human comment + exit 0.
-4. Resolvable → `git rebase --continue`, force-with-lease to PR branch.
-5. ancestry/comment step must no-op cleanly on empty ancestry (exit 0).
+1. Read pre-fetched feedback file.
+2. Enumerate conflicts; resolve preserving intent+base+review-feedback.
+3. `git -c core.editor=true rebase --continue`; iterate `npx tsc --noEmit`.
+4. Ensure clean tree (no rebase in progress, no markers) — or report unresolvable.
+5. Return the JSON; do not push.
 
 ## Output Format
-
-```
-REBASE PR #<n> onto <base>: conflicts=<n> auto=<a> manual=<m> => CONTINUED|ABORTED
-ANCESTRY: merge_base=<sha|none> visible=<c|0>
+```json
+{"summary":"…","conflicts_resolved":[{"file":"…","resolution":"…"}],"review_findings_preserved":[],"review_findings_addressed":[],"validation":{"typecheck":"pass|fail","tests":"…","lint":"…","format":"…","build":"…"}}
 ```
 
 ## Critical Constraints
-
-- Never `--force` to `main` or a shared branch; only the PR branch with `--force-with-lease`.
-- Never fail the run from a reporting/comment step on empty data — guard it.
-- A semantic conflict is escalated, never auto-resolved.
+- Never push / commit-outside-rebase / merge / approve / close / comment.
+- Never weaken tests or drop PR intent to end a conflict.
+- Resolve conflicts preserving both PR intent and base behavior; address review feedback touched by them.

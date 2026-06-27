@@ -68,7 +68,7 @@ YAGNI / KISS / DRY. Conclusions before logs. Scanner output before raw grep. One
 
 ## Output Format
 
-```
+```text
 ROLLOP: success=X fail=Y cancel=Z skip=W
 DOMINANT MODE: <category> (n=<count>) — <evidence run-id:line>
 OTHER: <mode> (n) ; <mode> (n)

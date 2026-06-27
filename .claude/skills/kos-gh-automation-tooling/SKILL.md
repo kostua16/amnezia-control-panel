@@ -84,7 +84,7 @@ YAGNI / KISS / DRY. If an action exists for the step, use it. One tool per inten
 
 ## Output Format
 
-```
+```text
 INTENT: <phrase>  =>  TOOL: <action/script>  INPUTS: <key inputs>
 ```
 

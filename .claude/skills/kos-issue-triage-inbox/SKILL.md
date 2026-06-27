@@ -1,78 +1,73 @@
 ---
 name: kos-issue-triage-inbox
-description: Triage incoming and orphaned/stale GitHub issues — label, route, close-as-duplicate, or escalate — the shared discipline of the triage and issue-catch-up workflows.
+description: Triage and catch-up issues per the prompts — triage (classify, exactly-one priority label, dedup, triaged label, summary) and issue-catch-up (6-phase act-on-categorized-issues with DRY-RUN/RATE-LIMITED modes).
 user-invocable: true
-when_to_use: "When the triage workflow handles a new issue, or the issue-catch-up workflow processes orphaned/stale issues on schedule."
+when_to_use: "When the triage workflow handles a new issue, or the issue-catch-up workflow runs its 6-phase sweep on categorized orphaned/stale issues."
 category: utilities
 argument-hint: "[issue-number or 'orphans']"
-keywords: [triage, inbox, issues, orphaned, stale, labeling, routing, catch-up]
-related: [kos-gh-automation-tooling, kos-claude-turn-budget, kos-zai-run-failure-prevention]
+keywords: [triage, inbox, issue-catch-up, phases, dry-run, rate-limited, priority-label, triaged]
+related: [kos-zai-agent-runtime-contract, kos-gh-automation-tooling, kos-zai-run-failure-prevention, kos-claude-turn-budget]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from triage.yml (/gsd:inbox) + issue-catch-up.yml (orphaned issues) prompts
+  attribution: distilled from triage.yml (/gsd:inbox) + issue-catch-up.yml (6-phase) prompts
   license: repo
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Idea
 
-Two workflows share issue-handling: `triage` (`/gsd:inbox` on a new issue — label/route it) and `issue-catch-up` (scheduled sweep of orphaned/stale issues — analyze and act). Both succeed reliably when they make a **decisive, low-touch** action: assign the right label, link a duplicate, escalate a real bug, or close a stale thread. They waste runs when they over-analyze or take no action. The skill is the routing table + the courage to act.
+Two workflows share issue-handling with **different** contracts:
+- **triage** (`/gsd:inbox`) — TRIAGE-ONLY on one new issue: classify, set **exactly one** priority label, dedup, add `triaged`, post the summary. Do NOT fix/read source/suggest code/create PRs.
+- **issue-catch-up** — act on **categorized** orphaned/stale issues across **6 phases**, honoring **DRY-RUN** and **RATE-LIMITED** modes, with exact `gh` commands per phase.
+
+Both execute `gh issue …` mutations (these workflows permit it). Neither fixes code.
 
 ## When to invoke this skill directly
-
-- A new issue arrived and needs triage.
-- The scheduled sweep is processing orphaned/stale issues.
+- triage: a new issue needs classifying + labeling.
+- issue-catch-up: the scheduled sweep runs on categorized issues.
 
 ## References
-
-- `triage.yml` prompt (`/gsd:inbox`, ISSUE NUMBER/TITLE/BODY/AUTHOR).
-- `issue-catch-up.yml` prompt ("Analyze and Act on Orphaned Issues").
-- `policy.json` label set + `ensure-workflow-labels.cjs` (valid labels only).
-- `gh issue edit/view/comment/label/create`.
+- `triage.yml` prompt (exactly-one priority label; serious → `high`; dep-vuln `fixAvailable:false` → also `backlog`; `triaged` via `edit-issue-labels.sh`; read-only via `gh.sh`; duplicate → comment + `duplicate` + close; exact summary format).
+- `issue-catch-up.yml` prompt (6 phases; DRY-RUN; RATE-LIMITED → only Phase 1 + 3).
+- `./.github/workflows/scripts/edit-issue-labels.sh`, `./.github/workflows/scripts/gh.sh`.
+- [[kos-zai-agent-runtime-contract]].
 
 ## Communication Style
+triage: one action + the labels you applied. catch-up: per-phase actions + sweep totals.
 
-Per issue: one action (LABEL / CLOSE-DUPLICATE / ESCALATE / NEEDS-INFO) + one-line reason. Batch summary at the end.
+## triage contract (enforce)
+1. Classify bug/feature/question; assess priority critical/high/medium/low.
+2. Apply **EXACTLY ONE** priority label (serious/high-severity, e.g. CVSS High → `high`). For a dep-vulnerability with advisory `fixAvailable:false`, **also** add `backlog`.
+3. Check duplicates via `gh.sh search issues`.
+4. Add `triaged` via `./.github/workflows/scripts/edit-issue-labels.sh --add-label "triaged"`. Apply other labels via `edit-issue-labels.sh`.
+5. If duplicate: comment "Duplicate of #N. Closing." → add `duplicate` → `gh issue close … --reason "not planned"`.
+6. Post summary comment in the prompt's exact format (only list labels YOU added).
+- **Do NOT** fix, read source, suggest code changes, or create PRs. STOP after labels + summary.
 
-## Core Principles
+## issue-catch-up contract (enforce)
+Modes: **DRY-RUN** (`true` → prefix every action "DRY RUN:", do NOT execute `gh issue close/create/edit/comment` — write what would happen); **RATE-LIMITED** (`true` → only Phase 1 + Phase 3; skip others).
+- **Phase 1 — Close Stale** (`should_close_dupe` with `duplicate_of` → comment+`duplicate`+close; else `should_close_canceled` → close).
+- **Phase 2 — Re-trigger Triage & Dead Letters** (`triage_dead_letter` → `needs-review` + comment; `needs_retriage` → `/triage` + re-triage comment).
+- **Phase 3 — Priority Escalation** (`priority_escalation` → attention comment).
+- **Phase 4 — Orphaned Fixed Reminders** (`orphaned_fixed` → close-or-remove-label reminder).
+- **Phase 5 — Smart Grouping** (only if `groupable_candidates` ≥3: group by classification/priority/root-cause/symptoms; create canonical `[GROUPED]` issue; label originals `duplicate` + close).
+- **Phase 6 — Route Manual Fix Triage & Dead Letters** (`fix_dead_letter` → `needs-review`; `triaged_no_fix`, max 5 → guard then `needs-review` + manual-fix comment).
 
-YAGNI / KISS / DRY. Lowest-touch correct action. Do not draft a fix here (that's fix-issue). Act on the issue object, cite the rule.
-
-## Routing table
-
-| Issue shape | Action |
-|---|---|
-| Bug with clear repro | label `bug`; route to a phase/backlog; escalate if critical |
-| Question / usage | label `question`; answer or link docs; close if resolved |
-| Duplicate | label `duplicate`, link canonical, close |
-| Feature request | label `enhancement`; `/gsd:capture` seed |
-| Stale (90d+, no activity) | label `stale`; close if no response, else keep |
-| Unlabeled orphan | assign best-fit label; ensure it has an owner/phase |
-| Spam / invalid | close `invalid` |
-
-## Your Approach
-
-1. Read title+body+author+comments.
-2. Match a routing row.
-3. Apply the action via `gh issue` (label/close/comment).
-4. If it needs implementation, leave it for `fix-issue`/planning — don't fix here.
+## Failure modes to avoid
+- **triage fixing/reading code** — forbidden; triage-only.
+- **Multiple priority labels** — exactly one (plus `backlog` only for fixAvailable:false dep-vulns).
+- **catch-up ignoring modes** — DRY-RUN must not execute `gh`; RATE-LIMITED must skip to Phase 1+3.
+- **Acting on fresh issues in catch-up** — act only on the categorized set provided.
 
 ## Process Flow (Authoritative)
-
-1. For each issue: classify → action → reason.
-2. Apply via `gh issue edit/label/comment/close`.
-3. For sweeps: group actions; report counts.
-4. Never edit code; never open a PR from triage.
+- triage: classify → one priority label (+`backlog` if fixAvailable:false) → dedup → `triaged` → (duplicate? close) → summary. Stop.
+- catch-up: read modes → execute the applicable phases with exact `gh` commands → sweep totals.
 
 ## Output Format
-
-```
-ISSUE #<n>: <action> — <reason>
-SWEEP (catch-up): labeled=a closed=b escalated=c orphans-remaining=d
-```
+- triage: `ISSUE #<n>: <classification> priority=<label> triaged; duplicates=<none|#n>; summary posted`.
+- catch-up: `SWEEP (dry-run=<bool> rate-limited=<bool>): phase-by-phase actions + totals`.
 
 ## Critical Constraints
-
-- Use only labels defined in `policy.json` (ensure-workflow-labels).
-- Never fix the issue here — that's a separate workflow; triage routes, it doesn't build.
-- A decisive wrong-ish label is recoverable; paralysis is not — act, then correct.
+- triage: exactly one priority label; never fix/read source/create PRs.
+- catch-up: honor DRY-RUN (no `gh` exec) and RATE-LIMITED (Phase 1+3 only) modes; act only on categorized issues.
+- Use `edit-issue-labels.sh` / `gh.sh` as the prompt specifies.

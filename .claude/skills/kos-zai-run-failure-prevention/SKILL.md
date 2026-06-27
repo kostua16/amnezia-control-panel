@@ -73,7 +73,7 @@ Soft failures: a run may exit 1 with `claude_soft_success=true` ("Claude soft fa
 
 ## Output Format
 
-```
+```text
 MODE: <category>  |  EVIDENCE: <metric or log line>  |  FIX: <one-line workflow change>
 ```
 

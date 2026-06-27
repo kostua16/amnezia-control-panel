@@ -1,77 +1,82 @@
 ---
 name: kos-dependency-pr-review
-description: Review a Dependabot dependency-update PR using only local repository context — assess compatibility, breaking changes, and security, then approve/request-changes, and wake the orchestrator safely.
+description: Review a Dependabot PR using only local repository context and return the prompt's JSON verdict (passed|manual|blocked) + update_type + risk_notes; do not approve or edit labels.
 user-invocable: true
 when_to_use: "When the dependency-review workflow reviews a Dependabot PR, or when wiring/repairing its wake-orchestrator step."
 category: utilities
 argument-hint: "[pr-number]"
-keywords: [dependabot, dependency, review, compatibility, breaking-change, supply-chain]
-related: [kos-gh-automation-tooling, kos-zai-run-failure-prevention, kos-claude-turn-budget]
+keywords: [dependabot, dependency, review, compatibility, breaking-change, passed, manual, blocked, json]
+related: [kos-zai-agent-runtime-contract, kos-gh-automation-tooling, kos-zai-run-failure-prevention, kos-claude-turn-budget]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from dependency-review.yml prompt (local-context-only dep review)
+  attribution: distilled from dependency-review.yml prompt (local-context-only dep review + JSON verdict)
   license: repo
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Idea
 
-`dependency-review` runs an AI review of a Dependabot PR using **only local repository context** — no external lookups. The value is a fast, grounded compatibility/breaking-change/security read. Most runs succeed (13 success / 1 skip). The skill keeps the review focused, local, and decisive (approve or request-changes), and posts the outcome via wake-orchestrator without failing the run on a tolerated non-zero exit.
+`dependency-review` runs an AI review of a Dependabot PR using **only local repository context** — no web. The value is a fast, grounded compatibility/breaking-change/security read that returns the prompt's exact JSON verdict. The workflow consumes the verdict; the agent does not approve or label.
 
 ## When to invoke this skill directly
-
-- You are reviewing a Dependabot/dependency-update PR.
-- You need to decide approve vs. request-changes on a version bump.
+- Reviewing a Dependabot/dependency-update PR.
+- Deciding the verdict token for a version bump.
 
 ## References
-
-- `dependency-review.yml` prompt ("Review this Dependabot dependency update PR using only local repository context").
-- Local signals: `package.json` / `package-lock.json`, `src/` usages of the dep, changelog/release notes if vendored, type defs.
+- `dependency-review.yml` prompt (local-context-only; do NOT browse web or claim changelogs).
+- Local signals: `package.json` / `package-lock.json` diff, `src/` usages, `npm audit`, `npm ls`, lockfile/manifest metadata.
 - `evaluate-pr-policy.cjs` / `orchestrate-pr-flow.cjs` (wake-orchestrator path).
-- Companion workflows: `dependency-review.yml` (GitHub's own), `supply-chain.yml`.
+- [[kos-zai-agent-runtime-contract]] — return the prompt's JSON; no approve/label.
 
 ## Communication Style
-
-One verdict (APPROVE / REQUEST_CHANGES) + the 1–3 risks that drive it, each cited to local code.
+One verdict token + 1–3 cited risks. Local evidence only.
 
 ## Core Principles
+YAGNI / KISS / DRY. Local context only. Decide with the prompt's tokens. A patch/minor bump with no removed APIs and no usage of changed APIs → `passed`.
 
-YAGNI / KISS / DRY. Local context only — do not fetch the internet. Decide; don't hedge. A patch/minor bump with no removed APIs and no usage of changed APIs → approve.
+## Output contract (enforce)
+Return **JSON only**:
+- `verdict`: `passed` | `manual` | `blocked`
+- `summary`: one short sentence
+- `update_type`: `patch` | `minor` | `major` | `unknown`
+- `risk_notes`: short justification
 
-## Your Approach
-
-1. Identify the bumped package + version delta (major/minor/patch).
-2. Find usages of the package in `src/` (grep import/require).
-3. Check the delta against the APIs actually used: removed/renamed/changed-signature → risk.
-4. Check security advisories already known locally (audit output if present).
-5. Verdict: APPROVE (low risk) or REQUEST_CHANGES (breaking/used-API changed) with specifics.
+**Do NOT approve the PR or edit labels** — the workflow handles dependency-review signals and comments.
 
 ## Risk triage
 
-| Delta | Default | Flip to REQUEST_CHANGES if |
+| Delta | Default verdict | Flip away from `passed` if |
 |---|---|---|
-| patch | APPROVE | advisory / regression noted locally |
-| minor | APPROVE | a used API is removed/deprecated in the changelog |
-| major | REQUEST_CHANGES unless verified | used API changed/removed; lockfile conflicts |
+| patch | `passed` | advisory / regression noted locally |
+| minor | `passed` | a used API is removed/deprecated |
+| major | `manual` (until verified) | used API changed/removed; lockfile conflicts → `blocked` |
+
+Also weigh: Node 24 / Next.js 16 / React 19 compatibility; auto-merge eligibility.
+
+## Your Approach
+1. Identify bumped package + semver class from manifest/lockfile diff.
+2. Find usages in `src/` (grep import/require).
+3. Map delta to used-API risk; check `npm audit`.
+4. Verdict token + cited risks; return JSON.
+
+## Failure modes to avoid
+- **Wrong tokens** — must be `passed|manual|blocked` (not APPROVE/REQUEST_CHANGES).
+- **Web claims** — local context only; never cite a changelog you didn't read locally.
+- **Approving/labeling** — forbidden; the workflow does it.
+- **wake-orchestrator misread** — tolerate its pre-auth non-zero exit.
 
 ## Process Flow (Authoritative)
-
 1. Parse the bump (package, from→to, semver class).
-2. grep usages in repo.
-3. Map delta to used-API risk.
-4. Verdict + cited risks.
-5. Post review; wake orchestrator (tolerate pre-auth non-zero exit).
+2. grep usages; check `npm audit`/`npm ls`.
+3. Map delta → used-API risk + compat + auto-merge.
+4. Return the JSON verdict; do not approve/label.
 
 ## Output Format
-
-```
-BUMP <pkg> <from>→<to> (<class>)  USAGES=<n files>
-RISK: <none|advisory|breaking-used-api|...>
-VERDICT: APPROVE | REQUEST_CHANGES — <reasons>
+```json
+{"verdict":"passed|manual|blocked","summary":"…","update_type":"patch|minor|major|unknown","risk_notes":"…"}
 ```
 
 ## Critical Constraints
-
-- Local context only; never claim a risk you cannot cite to repo code or vendored changelog.
-- A major bump is REQUEST_CHANGES until explicitly verified safe — do not auto-approve.
-- Do not fail the run from wake-orchestrator's tolerated non-zero exit; confirm it is pre-auth noise.
+- Verdict tokens are `passed|manual|blocked` only.
+- Local context only; never claim a risk you cannot cite to repo code or local lockfile/audit.
+- Never approve the PR or edit labels.

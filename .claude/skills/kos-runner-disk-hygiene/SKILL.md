@@ -54,7 +54,7 @@ YAGNI / KISS / DRY. Reuse the existing ensure-disk-space actions; do not hand-ro
 
 ## Output Format
 
-```
+```text
 DISK_FULL at <step>  =>  ensure <action> runs before <heavy-step>  (runner cleanup if recurring)
 ```
 

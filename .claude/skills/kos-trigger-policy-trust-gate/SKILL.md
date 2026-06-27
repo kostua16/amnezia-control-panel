@@ -63,7 +63,7 @@ YAGNI / KISS / DRY. The gate is authoritative — do not work around it; satisfy
 
 ## Output Format
 
-```
+```text
 EVENT=<type> ACTOR=<login>(<assoc>)  TRIGGERED=<yes/no:reason>  TRUSTED=<yes/no:reason>  => RUN|SKIP
 ```
 

@@ -71,7 +71,7 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 
 ## Output Format
 
-```
+```text
 SWEEP: health=h security=s progress=p todo=t stale=u
 ISSUES: created=a skipped-clean=b skipped-dup=c
 ESCALATION: pr-comments=<n|none>
