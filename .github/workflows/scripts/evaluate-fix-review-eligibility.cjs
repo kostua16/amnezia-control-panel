@@ -7,6 +7,14 @@ const HARD_REPAIR_BLOCKERS = [
   'deps-review-manual',
   'deps-review-blocked',
 ];
+const MANUAL_REPAIR_CLASS_BLOCKERS = [
+  'automation',
+  'automation-fix',
+  'dependabot',
+  'planning',
+  'trusted-planning',
+];
+const MANUAL_REPAIR_CLASS_ALLOWLIST = ['gsd-planning-execution'];
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -33,6 +41,14 @@ function firstReason(reasons) {
   return reasons.find(Boolean) ?? null;
 }
 
+function allowsManualRepairClass(prClass) {
+  const normalized = String(prClass ?? 'other').toLowerCase();
+  return (
+    MANUAL_REPAIR_CLASS_ALLOWLIST.includes(normalized) ||
+    !MANUAL_REPAIR_CLASS_BLOCKERS.includes(normalized)
+  );
+}
+
 function evaluateFixReviewEligibility({
   pr = {},
   policy = {},
@@ -48,6 +64,8 @@ function evaluateFixReviewEligibility({
   const state = String(pr.state ?? '').toLowerCase();
   const stale = Boolean(expectedHeadSha && expectedHeadSha !== pr.headRefOid);
   const automationLoop = normalizeBoolean(automationReviewLoop);
+  const manualClassBlocked =
+    !automationLoop && !allowsManualRepairClass(evaluated.pr_class);
 
   const reason = firstReason([
     state !== 'open' ? 'PR is not open.' : null,
@@ -57,6 +75,9 @@ function evaluateFixReviewEligibility({
     stale ? 'PR head SHA is stale.' : null,
     hardBlockers.length > 0
       ? `Hard repair blocker present: ${hardBlockers.join(', ')}.`
+      : null,
+    manualClassBlocked
+      ? `PR class "${evaluated.pr_class}" requires automation review loop.`
       : null,
   ]);
   const eligible = reason === null;
@@ -97,6 +118,9 @@ if (require.main === module) {
 
 module.exports = {
   HARD_REPAIR_BLOCKERS,
+  MANUAL_REPAIR_CLASS_ALLOWLIST,
+  MANUAL_REPAIR_CLASS_BLOCKERS,
+  allowsManualRepairClass,
   evaluateFixReviewEligibility,
   labelNames,
 };

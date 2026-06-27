@@ -94,3 +94,54 @@ test('automation review loop is retained as metadata, not required for repair', 
   assert.equal(result.eligible, true);
   assert.equal(result.automation_review_loop, true);
 });
+
+test('manual repair skips automation planning and dependency classes', () => {
+  const cases = [
+    {
+      branch: 'claude-auto-fix-ci-review-follow-up',
+      labels: ['needs-review', 'ai-review-concerns'],
+      expectedClass: 'automation-fix',
+    },
+    {
+      branch: 'claude-planning-pr-533',
+      labels: ['needs-review'],
+      expectedClass: 'trusted-planning',
+    },
+    {
+      branch: 'dependabot/npm_and_yarn/eslint-9.0.0',
+      labels: ['needs-review'],
+      expectedClass: 'dependabot',
+    },
+  ];
+
+  for (const item of cases) {
+    const result = evaluateFixReviewEligibility({
+      pr: pr({
+        headRefName: item.branch,
+        labels: item.labels,
+        files: [{ path: '.planning/example.md', additions: 1, deletions: 1 }],
+      }),
+      policy,
+      files: [{ filename: '.planning/example.md', additions: 1, deletions: 1 }],
+    });
+
+    assert.equal(result.eligible, false, item.branch);
+    assert.equal(result.pr_class, item.expectedClass, item.branch);
+    assert.match(result.reason, /requires automation review loop/, item.branch);
+  }
+});
+
+test('automation review loop can repair automation classes selected by auto-cover', () => {
+  const result = evaluateFixReviewEligibility({
+    pr: pr({
+      headRefName: 'claude-auto-fix-ci-review-follow-up',
+      labels: ['needs-review', 'ai-review-concerns'],
+    }),
+    policy,
+    automationReviewLoop: true,
+  });
+
+  assert.equal(result.eligible, true);
+  assert.equal(result.pr_class, 'automation-fix');
+  assert.equal(result.automation_review_loop, true);
+});
