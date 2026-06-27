@@ -109,23 +109,31 @@ function renderPushRejected({
   runUrl,
   command,
   structured,
+  pushFailureReason,
   updatedAt,
 }) {
   const changed = Array.isArray(structured.changed_files)
     ? structured.changed_files
     : [];
+  const workflowPermission = pushFailureReason === 'workflow-permission';
   const lines = [
     COMMENT_MARKER,
-    reportHeading('🚫 Push rejected (non-fast-forward)'),
+    reportHeading(
+      workflowPermission
+        ? '🚫 Push rejected (workflow permission)'
+        : '🚫 Push rejected (non-fast-forward)',
+    ),
     '',
     `- Command: \`${command || '/fix-review'}\``,
     `- Head SHA: \`${shortSha(headSha)}\``,
     `- Run: ${runUrl || '_n/a_'}`,
     '',
     quoteBlock(
-      'The branch advanced while the fix ran (likely a concurrent push), so the ' +
-        'commit could not be pushed without overwriting history. The workflow never ' +
-        'force-pushes. Re-run `/fix-review` to reapply on the latest head.',
+      workflowPermission
+        ? 'The fix touched a workflow file under `.github/workflows/**`, but the push credential does not have the GitHub `workflows` grant. Grant `GH_PAT` workflow scope / GitHub App `Workflows: write`, then re-run `/fix-review`.'
+        : 'The branch advanced while the fix ran (likely a concurrent push), so the ' +
+            'commit could not be pushed without overwriting history. The workflow never ' +
+            'force-pushes. Re-run `/fix-review` to reapply on the latest head.',
     ),
   ];
   if (changed.length > 0) {
@@ -307,6 +315,7 @@ function resolveFinishedBody({
   gatePassed,
   gateOutcomes = {},
   pushed,
+  pushFailureReason,
 }) {
   const updatedAt = new Date().toISOString();
   if (outcome === 'cancelled') {
@@ -343,6 +352,7 @@ function resolveFinishedBody({
         runUrl,
         command,
         structured,
+        pushFailureReason,
         updatedAt,
       });
     }
@@ -422,6 +432,7 @@ function main() {
           prismaSafe: getArg('--prisma-safe-outcome'),
         },
         pushed: getArg('--pushed'),
+        pushFailureReason: getArg('--push-failure-reason'),
       });
   }
 

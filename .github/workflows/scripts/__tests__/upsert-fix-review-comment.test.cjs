@@ -87,6 +87,29 @@ test('renderPushRejected lists attempted changes and forbids force-push', () => 
   assert.match(body, /- src\/a\.ts/);
 });
 
+test('renderPushRejected explains missing workflow-file push grant', () => {
+  const body = renderPushRejected({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    pushFailureReason: 'workflow-permission',
+    structured: {
+      changed_files: [
+        '.github/workflows/scripts/__tests__/watch-pr-flow.test.cjs',
+      ],
+    },
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+
+  assert.match(
+    body,
+    /FIX-REVIEW Report: 🚫 Push rejected \(workflow permission\)/,
+  );
+  assert.match(body, /workflow file under `\.github\/workflows\/\*\*`/);
+  assert.match(body, /GH_PAT.*Workflows: write/);
+  assert.doesNotMatch(body, /non-fast-forward/);
+});
+
 test('renderValidationFailed shows dual-block: agent-reported + authoritative gate', () => {
   const body = renderValidationFailed({
     headSha: SHA,
@@ -261,6 +284,25 @@ test('resolveFinishedBody: green gate, not pushed, with changes -> push-rejected
     structured: { changed_files: ['a.ts'] },
   });
   assert.match(body, /FIX-REVIEW Report: 🚫 Push rejected/);
+});
+
+test('resolveFinishedBody: green gate, workflow permission push reject is explicit', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    hasChanges: 'true',
+    gatePassed: 'true',
+    pushed: 'false',
+    pushFailureReason: 'workflow-permission',
+    structured: {
+      changed_files: [
+        '.github/workflows/scripts/__tests__/watch-pr-flow.test.cjs',
+      ],
+    },
+  });
+
+  assert.match(body, /Push rejected \(workflow permission\)/);
+  assert.match(body, /Workflows: write/);
 });
 
 test('resolveFinishedBody: green gate, not pushed, no changed_files -> no-changes', () => {

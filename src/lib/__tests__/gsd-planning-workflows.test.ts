@@ -85,6 +85,19 @@ describe('GSD planning workflow automation', () => {
     assert.match(action, /commit_created=false/);
     assert.match(action, /origin\/HEAD\.\.HEAD/);
     assert.match(action, /Branch is not ahead of origin\/\$BRANCH/);
+    assert.match(action, /failure-reason:/);
+    assert.match(action, /workflow-permission/);
+    assert.match(action, /Workflows: write/);
+  });
+
+  it('surfaces fix-review workflow-file push grant failures in the sticky comment', () => {
+    const workflow = readRepoFile('.github/workflows/fix-review.yml');
+
+    assert.match(
+      workflow,
+      /PUSH_FAILURE_REASON: \$\{\{ steps\.push\.outputs\.failure-reason \}\}/,
+    );
+    assert.match(workflow, /--push-failure-reason "\$PUSH_FAILURE_REASON"/);
   });
 
   it('passes GH_PAT to every automation commit-and-push callsite', () => {
