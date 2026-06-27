@@ -381,6 +381,24 @@ function pathsMatch(files, paths) {
   return files.some((file) => (paths ?? []).includes(file));
 }
 
+/**
+ * Matches a worker workflow run to a specific PR + head SHA.
+ *
+ * ### Run-name contract
+ *
+ * Worker workflows dispatched by the orchestrator MUST include both the PR
+ * number and the head SHA in their `run-name` YAML field, e.g.:
+ *
+ *     run-name: "PR #${{ inputs.pr_number }} @ ${{ inputs.head_sha }}"
+ *
+ * The orchestrator calls `gh run list` and filters results through this
+ * function.  If a worker changes its run-name format and drops either token,
+ * the orchestrator will silently stop matching that worker's runs, which can
+ * lead to duplicate dispatches or stuck PR states.
+ *
+ * Consumers of `matchesWorkerTitle` (`summarizeWorkerRuns`,
+ * `getWorkerSummary`) rely on this two-token contract — keep it in sync.
+ */
 function matchesWorkerTitle(runItem, pr) {
   const title = runItem.displayTitle ?? runItem.display_title ?? '';
   return title.includes(`PR #${pr.number}`) && title.includes(pr.headSha);
