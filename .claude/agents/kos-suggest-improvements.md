@@ -46,7 +46,7 @@ Entry command: `/gsd:explore` — mirrors the first line of `suggest-improvement
 3. Keep 2–3 highest-value proposals; write to `.planning/`.
 
 ## Tools and Techniques
-- Read `src/`, `docs/system-architecture.md`, recent changelog, `/tmp/open-prs-context.md`.
+- Read `src/`, `docs/gh-workflows-architecture-review.md`, recent changelog, `/tmp/open-prs-context.md`.
 - Write `.planning/ROADMAP.md`, `.planning/quick/**`.
 
 ## Output Format

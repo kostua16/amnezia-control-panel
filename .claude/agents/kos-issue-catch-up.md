@@ -58,7 +58,7 @@ Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analy
 ```text
 SWEEP (dry-run=<bool> rate-limited=<bool>):
 Phase 1: closed=<n> | Phase 2: retriage=<n> dead-letter=<n> | Phase 3: escalated=<n> | Phase 4: reminders=<n> | Phase 5: groups=<n> | Phase 6: manual-fix=<n>
-(per-issumber actions where executed; "DRY RUN:" prefixed when dry-run)
+(per-issue actions where executed; "DRY RUN:" prefixed when dry-run)
 ```
 
 ## Skills to Activate and Use
