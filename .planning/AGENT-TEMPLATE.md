@@ -12,7 +12,7 @@ hooks:
       hooks:
         - type: command
           command: "npx eslint --fix $FILE 2>/dev/null || true"
-skills: tbd
+skills: [tbd, tbd2]
 ---
 
 # Role
