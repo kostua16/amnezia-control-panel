@@ -11,9 +11,6 @@ inputs:
   node-version:
     description: 'Node.js version'
     default: '24.x'
-  prettier-glob:
-    description: 'Glob pattern for prettier --write'
-    default: 'src/**/*.{ts,tsx,css}'
 
 outputs:
   prettier_only:
@@ -68,7 +65,7 @@ runs:
       shell: bash
       run: |
         COUNT_BEFORE=$(git diff --name-only | wc -l)
-        # Quote the glob so Prettier expands recursive patterns instead of Bash.
-        npx prettier --write "${{ inputs.prettier-glob }}"
+        # Use the npm script so the glob pattern matches format:check exactly.
+        npm run format
         COUNT_AFTER=$(git diff --name-only | wc -l)
         echo "::notice::Formatted files changed: $COUNT_AFTER (was $COUNT_BEFORE)"
