@@ -489,3 +489,148 @@ test('rebase-pr: workflow_dispatch runs with the supplied PR number', () => {
   assert.equal(out.pr_number, '472');
   assert.equal(out.trigger_source, 'workflow_dispatch');
 });
+
+// --- pr-flow-pull-request-target trigger gate regression tests ---
+
+function runPrFlowPrt({ action, label, sender }) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-flow-prt-'));
+  const eventPath = path.join(tempDir, 'event.json');
+  const event = { action };
+  if (label) event.label = { name: label };
+  if (sender) event.sender = sender;
+  fs.writeFileSync(eventPath, JSON.stringify(event), 'utf8');
+  const output = execFileSync(
+    process.execPath,
+    [
+      scriptPath,
+      '--mode',
+      'pr-flow-pull-request-target',
+      '--policy-file',
+      policyPath,
+      '--config-file',
+      path.join(repoRoot, '.github/pr-flow.json'),
+      '--event-path',
+      eventPath,
+      '--event-name',
+      'pull_request_target',
+    ],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  return JSON.parse(output);
+}
+
+const ALWAYS_RUN_ACTIONS = [
+  'opened',
+  'synchronize',
+  'reopened',
+  'ready_for_review',
+  'converted_to_draft',
+];
+
+for (const action of ALWAYS_RUN_ACTIONS) {
+  test(`pr-flow-pull-request-target: ${action} always runs PR flow`, () => {
+    const out = runPrFlowPrt({ action });
+    assert.equal(out.should_run, true, `${action} should always run`);
+    assert.equal(out.action, action);
+    assert.equal(out.label, null);
+  });
+}
+
+const GENERIC_LABELS = [
+  'javascript',
+  'auto-fix',
+  'bug',
+  'enhancement',
+  'documentation',
+  'good first issue',
+  'help wanted',
+  'question',
+  'wontfix',
+  'size/S',
+  'size/M',
+  'area/workflows',
+  'area/docs',
+  'area/frontend',
+  'maintenance',
+  'security',
+  'critical',
+  'high',
+  'medium',
+  'low',
+  'backlog',
+  'duplicate',
+  'fixed',
+  'canceled',
+  'triaged',
+  'stale-pr-consolidation',
+];
+
+for (const label of GENERIC_LABELS) {
+  test(`pr-flow-pull-request-target: generic label "${label}" does NOT run PR flow`, () => {
+    const out = runPrFlowPrt({ action: 'labeled', label });
+    assert.equal(
+      out.should_run,
+      false,
+      `generic label "${label}" should not run PR flow`,
+    );
+    assert.equal(out.label, label);
+    assert.equal(out.relevant_label, false);
+  });
+}
+
+const RELEVANT_LABELS = [
+  'do-not-merge',
+  'needs-review',
+  'skip-improve',
+  'ai-review-passed',
+  'ai-review-concerns',
+  'security-review-passed',
+  'security-review-concerns',
+  'deps-review-passed',
+  'deps-review-manual',
+  'deps-review-blocked',
+  'maintainer-approved',
+  'antigravity-review-passed',
+  'antigravity-review-concerns',
+  'deepseek-review-passed',
+  'deepseek-review-concerns',
+  'planning-draft-open',
+  'planning-intake-open',
+];
+
+for (const label of RELEVANT_LABELS) {
+  test(`pr-flow-pull-request-target: relevant label "${label}" DOES run PR flow`, () => {
+    const out = runPrFlowPrt({ action: 'labeled', label });
+    assert.equal(
+      out.should_run,
+      true,
+      `relevant label "${label}" should run PR flow`,
+    );
+    assert.equal(out.label, label);
+    assert.equal(out.relevant_label, true);
+  });
+}
+
+test('pr-flow-pull-request-target: bot-applied relevant label is skipped', () => {
+  const out = runPrFlowPrt({
+    action: 'labeled',
+    label: 'needs-review',
+    sender: { login: 'github-actions[bot]', type: 'Bot' },
+  });
+  assert.equal(out.should_run, false);
+  assert.equal(out.sender_is_bot, true);
+  assert.match(out.reason, /bot/i);
+});
+
+test('pr-flow-pull-request-target: unlabeled relevant label wakes PR flow', () => {
+  const out = runPrFlowPrt({ action: 'unlabeled', label: 'do-not-merge' });
+  assert.equal(out.should_run, true);
+  assert.equal(out.label, 'do-not-merge');
+  assert.equal(out.relevant_label, true);
+});
+
+test('pr-flow-pull-request-target: unlabeled generic label does NOT wake PR flow', () => {
+  const out = runPrFlowPrt({ action: 'unlabeled', label: 'javascript' });
+  assert.equal(out.should_run, false);
+  assert.equal(out.relevant_label, false);
+});
