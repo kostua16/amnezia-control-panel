@@ -101,4 +101,7 @@ if (require.main === module) {
 module.exports = {
   filterRequiredChecks,
   requiredChecksFromConfig,
+  normalizeBucket,
+  normalizeCheck,
+  matchesRequiredCheck,
 };

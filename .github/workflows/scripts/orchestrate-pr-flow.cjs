@@ -441,6 +441,19 @@ function workerRunSucceeded(summary) {
   return summary.latest?.conclusion === 'success';
 }
 
+const MAX_FINALIZER_RETRIES = 3;
+
+function getFinalizerRetryCount(labels) {
+  let maxRetry = 0;
+  for (const label of labels) {
+    const match = label.match(/^flow\/finalizer-retry-(\d+)$/);
+    if (match) {
+      maxRetry = Math.max(maxRetry, parseInt(match[1], 10));
+    }
+  }
+  return maxRetry;
+}
+
 function getWorkerTargetUrl(summary, fallbackUrl) {
   return summary.active?.url || summary.latest?.url || fallbackUrl;
 }
@@ -854,9 +867,12 @@ function buildFlowVisibility({
       'Finalizer was dispatched.',
     );
   } else if (workerRunSucceeded(finalizerRuns)) {
+    const retries = getFinalizerRetryCount(decision.labelsToAdd);
+    const retryInfo =
+      retries > 0 ? ` (attempt ${retries}/${MAX_FINALIZER_RETRIES})` : '';
     statuses.finalizer = waitingStatus(
       'finalizer',
-      'Finalizer completed without enabling auto-merge; waiting to retry.',
+      `Finalizer completed without enabling auto-merge; waiting to retry.${retryInfo}`,
       getWorkerTargetUrl(finalizerRuns, currentRunUrl),
     );
   } else if (finalizerAlreadyDispatched) {
@@ -1354,6 +1370,8 @@ function getLabelsForDecision(pr, config, eventName, event) {
   return pr.labels.filter((label) => {
     if (resetLabelSet.has(label)) return false;
     if (resetLabels.length > 0 && flowLabelSet.has(label)) return false;
+    if (resetLabels.length > 0 && /^flow\/finalizer-retry-\d+$/.test(label))
+      return false;
     return true;
   });
 }
@@ -1628,6 +1646,10 @@ function makeDecision(context) {
   const autoMergeEnabled = Boolean(pr.autoMergeRequest);
   const finalizerCompleted =
     workerRunSucceeded(finalizerRuns) || workerRunFailed(finalizerRuns);
+  const finalizerRetries = getFinalizerRetryCount(currentLabels);
+  const retryLabels = currentLabels.filter((l) =>
+    /^flow\/finalizer-retry-\d+$/.test(l),
+  );
   const manualOnlyLabels =
     manualOnly && !maintainerApproved ? ['flow/manual-only'] : [];
 
@@ -1641,18 +1663,46 @@ function makeDecision(context) {
         ? 'Finalizer completed and auto-merge is enabled.'
         : 'Finalizer completed without enabling auto-merge; manual merge required.'
       : 'Finalizer already dispatched for this head SHA.';
-    return finish('flow/finalizer-dispatched', reason, null, manualOnlyLabels);
+    return finish(
+      'flow/finalizer-dispatched',
+      reason,
+      null,
+      manualOnlyLabels,
+      retryLabels,
+    );
   }
+
+  if (
+    finalizerAlreadyDispatched &&
+    !finalizerCompleted &&
+    finalizerRetries >= MAX_FINALIZER_RETRIES
+  ) {
+    return finish(
+      'flow/manual-only',
+      `Finalizer retry limit (${MAX_FINALIZER_RETRIES}) reached without auto-merge; falling back to manual merge.`,
+      null,
+      ['flow/manual-only'],
+      retryLabels,
+    );
+  }
+
+  const newRetryCount = finalizerRetries + 1;
+  const retryExtraLabels = finalizerAlreadyDispatched
+    ? [`flow/finalizer-retry-${newRetryCount}`]
+    : [];
 
   return finish(
     'flow/finalizer-dispatched',
-    'Dispatching finalizer.',
+    finalizerAlreadyDispatched
+      ? `Dispatching finalizer (attempt ${newRetryCount}/${MAX_FINALIZER_RETRIES}).`
+      : 'Dispatching finalizer.',
     {
       key: 'finalizer',
       workflow: finalizerWorker.workflow,
       inputs: finalizerWorker.inputs,
     },
-    manualOnlyLabels,
+    [...retryExtraLabels, ...manualOnlyLabels],
+    retryLabels,
   );
 }
 
@@ -2044,13 +2094,14 @@ module.exports = {
   buildFlowGuidance,
   buildFlowVisibility,
   collectCheckEvidence,
-  dispatchWorker,
   decisionWithDispatchError,
+  getFinalizerRetryCount,
   getWorkerDispatchRef,
   getLabelsForDecision,
   getRequiredCheckStatus,
   evaluatePolicy,
   makeDecision,
+  MAX_FINALIZER_RETRIES,
   readConfig,
   renderFlowComment,
   resolvePrNumber,

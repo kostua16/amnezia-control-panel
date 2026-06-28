@@ -7,8 +7,10 @@ const {
   buildFlowVisibility,
   collectCheckEvidence,
   decisionWithDispatchError,
+  getFinalizerRetryCount,
   getLabelsForDecision,
   makeDecision,
+  MAX_FINALIZER_RETRIES: _maxFinalizerRetries,
   readConfig,
   renderFlowComment,
   resolvePrNumber,
@@ -1547,6 +1549,230 @@ describe('readConfig', () => {
     assert.equal(
       loaded.statuses.workers.securityReview.context,
       'pr-flow/security-review',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finalizer retry guard — prevents infinite re-dispatch loops
+// ---------------------------------------------------------------------------
+describe('finalizer retry guard', () => {
+  const finalizerLabels = ['ai-review-passed', 'security-review-passed'];
+
+  function decideFinalizer(overrides: DecisionOverrides = {}) {
+    return decide({
+      pr: prFixture({
+        labels: [...finalizerLabels, ...(overrides.pr?.labels ?? [])],
+      }),
+      policy: policyFixture({ eligible: true, maintainer_approved: true }),
+      workerRuns: overrides.workerRuns ?? {},
+      ...overrides,
+    });
+  }
+
+  it('dispatches finalizer on first attempt with no retry label', () => {
+    const decision = decideFinalizer();
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch?.key, 'finalizer');
+    assert.ok(
+      !decision.labelsToAdd.some((l: string) =>
+        l.match(/^flow\/finalizer-retry-/),
+      ),
+    );
+  });
+
+  it('re-dispatches with retry label when dispatched but runs not found', () => {
+    const decision = decideFinalizer({
+      pr: prFixture({
+        labels: [...finalizerLabels, 'flow/finalizer-dispatched'],
+      }),
+      workerRuns: { finalizer: [] },
+    });
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch?.key, 'finalizer');
+    assert.ok(decision.labelsToAdd.includes('flow/finalizer-retry-1'));
+    assert.match(decision.reason, /attempt 1/);
+  });
+
+  it('increments retry label on each re-dispatch', () => {
+    const decision = decideFinalizer({
+      pr: prFixture({
+        labels: [
+          ...finalizerLabels,
+          'flow/finalizer-dispatched',
+          'flow/finalizer-retry-2',
+        ],
+      }),
+      workerRuns: { finalizer: [] },
+    });
+    assert.equal(decision.dispatch?.key, 'finalizer');
+    assert.ok(decision.labelsToAdd.includes('flow/finalizer-retry-3'));
+    assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-2'));
+    assert.match(decision.reason, /attempt 3/);
+  });
+
+  it('falls back to manual-only when retry limit is reached', () => {
+    const decision = decideFinalizer({
+      pr: prFixture({
+        labels: [
+          ...finalizerLabels,
+          'flow/finalizer-dispatched',
+          'flow/finalizer-retry-3',
+        ],
+      }),
+      workerRuns: { finalizer: [] },
+    });
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(decision.dispatch, null);
+    assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-3'));
+    assert.match(decision.reason, /retry limit/);
+    assert.match(decision.reason, /manual merge/);
+  });
+
+  it('does not re-dispatch when finalizer run is active', () => {
+    const decision = decideFinalizer({
+      pr: prFixture({
+        labels: [
+          ...finalizerLabels,
+          'flow/finalizer-dispatched',
+          'flow/finalizer-retry-1',
+        ],
+      }),
+      workerRuns: {
+        finalizer: [
+          {
+            displayTitle: `PR #181 @ ${headSha}`,
+            status: 'in_progress',
+            createdAt: '2026-06-28T10:00:00Z',
+          },
+        ],
+      },
+    });
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch, null);
+    assert.match(decision.reason, /Finalizer already dispatched/);
+  });
+
+  it('does not re-dispatch when finalizer succeeded with auto-merge', () => {
+    const decision = decideFinalizer({
+      pr: prFixture({
+        labels: [
+          ...finalizerLabels,
+          'flow/finalizer-dispatched',
+          'flow/finalizer-retry-1',
+        ],
+        autoMergeRequest: { mergeMethod: 'squash' },
+      }),
+      workerRuns: {
+        finalizer: [
+          {
+            displayTitle: `PR #181 @ ${headSha}`,
+            status: 'completed',
+            conclusion: 'success',
+            createdAt: '2026-06-28T10:00:00Z',
+          },
+        ],
+      },
+    });
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch, null);
+    assert.match(decision.reason, /auto-merge is enabled/);
+  });
+
+  it('does not re-dispatch when finalizer failed', () => {
+    const decision = decideFinalizer({
+      pr: prFixture({
+        labels: [
+          ...finalizerLabels,
+          'flow/finalizer-dispatched',
+          'flow/finalizer-retry-1',
+        ],
+      }),
+      workerRuns: {
+        finalizer: [
+          {
+            displayTitle: `PR #181 @ ${headSha}`,
+            status: 'completed',
+            conclusion: 'failure',
+            createdAt: '2026-06-28T10:00:00Z',
+          },
+        ],
+      },
+    });
+    assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch, null);
+    assert.match(decision.reason, /manual merge required/);
+  });
+
+  it('cleans up retry labels when finalizer completes normally', () => {
+    const decision = decideFinalizer({
+      pr: prFixture({
+        labels: [
+          ...finalizerLabels,
+          'flow/finalizer-dispatched',
+          'flow/finalizer-retry-2',
+        ],
+        autoMergeRequest: { mergeMethod: 'squash' },
+      }),
+      workerRuns: {
+        finalizer: [
+          {
+            displayTitle: `PR #181 @ ${headSha}`,
+            status: 'completed',
+            conclusion: 'success',
+            createdAt: '2026-06-28T10:00:00Z',
+          },
+        ],
+      },
+    });
+    assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-2'));
+  });
+
+  it('filters retry labels on head change via getLabelsForDecision', () => {
+    const filtered = getLabelsForDecision(
+      prFixture({
+        labels: ['flow/finalizer-dispatched', 'flow/finalizer-retry-2'],
+        headSha: 'newcommitsha999',
+      }),
+      config,
+      'pull_request_target',
+      { action: 'synchronize' },
+    );
+    assert.ok(!filtered.includes('flow/finalizer-retry-2'));
+    // flow/finalizer-dispatched IS a flow label, so it's also removed on head reset
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getFinalizerRetryCount helper
+// ---------------------------------------------------------------------------
+describe('getFinalizerRetryCount', () => {
+  it('returns 0 when no retry labels present', () => {
+    assert.equal(getFinalizerRetryCount([]), 0);
+    assert.equal(
+      getFinalizerRetryCount(['flow/finalizer-dispatched', 'flow/draft']),
+      0,
+    );
+  });
+
+  it('returns the highest retry number from labels', () => {
+    assert.equal(
+      getFinalizerRetryCount([
+        'flow/finalizer-retry-1',
+        'flow/finalizer-retry-3',
+      ]),
+      3,
+    );
+  });
+
+  it('ignores non-matching labels', () => {
+    assert.equal(
+      getFinalizerRetryCount([
+        'flow/finalizer-retry-1',
+        'flow/finalizer-retry-abc',
+        'flow/finalizer-dispatched',
+      ]),
+      1,
     );
   });
 });
