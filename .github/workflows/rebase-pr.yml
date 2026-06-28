@@ -320,7 +320,7 @@ jobs:
           max-turns: ${{ env.MAX_TURNS }}
           track-progress: 'false'
           json-schema: '{"type":"object","required":["summary","conflicts_resolved","review_findings_preserved","review_findings_addressed","validation"],"properties":{"summary":{"type":"string"},"conflicts_resolved":{"type":"array","items":{"type":"object","required":["file","resolution"],"properties":{"file":{"type":"string"},"resolution":{"type":"string"}}}},"review_findings_preserved":{"type":"array","items":{"type":"string"}},"review_findings_addressed":{"type":"array","items":{"type":"string"}},"validation":{"type":"object","properties":{"typecheck":{"type":"string"},"tests":{"type":"string"},"lint":{"type":"string"},"format":{"type":"string"},"build":{"type":"string"}}}}}'
-          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git rebase:*),Bash(git log:*),Bash(git show:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*)'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git rebase:*),Bash(git -c core.editor=true rebase --continue:*),Bash(git log:*),Bash(git show:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*)'
           prompt: |
             You are continuing an in-progress git rebase for pull request #${{ needs.authorize.outputs.pr-number }} onto its base branch `${{ steps.pr.outputs.base_ref }}`. The rebase stopped on merge conflicts.
 
@@ -331,7 +331,9 @@ jobs:
             - Resolve each conflict by preserving the source PR intent AND the current base branch behavior. Prefer the PR changes; reconcile with base where they diverge.
             - If a conflict touches a line with unresolved review feedback, address that feedback as part of the resolution.
             - Continue the rebase with `git -c core.editor=true rebase --continue` when Git needs to reuse a commit message without opening an editor.
-            - Iterate with `npx tsc --noEmit` for fast feedback.
+            - Use only allowlisted command forms: `git status`, `git diff`, `git add`, `git rebase`, `git -c core.editor=true rebase --continue`, `git log`, `git show`, `npm ...`, `npx ...`, `node ...`, and `rtk ...`.
+            - Do not call absolute binaries such as `/usr/bin/node`, and do not use pipes, shell control operators, or output-tail wrappers inside Bash commands. Use `rtk node --test ...` or `rtk npm ...` when output may be large.
+            - Iterate with `npx tsc --noEmit` for fast feedback; leave full CI-matching validation to the workflow's `validate-pr-gate` step after the rebase is complete.
 
             Before finishing:
             - Leave the tree with NO rebase in progress and NO unstaged conflict markers. If a conflict cannot be resolved, stop and report it -- do not force a bad merge.

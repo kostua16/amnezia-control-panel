@@ -253,6 +253,22 @@ describe('workflow trigger policy', () => {
     );
   });
 
+  it('keeps rebase-pr resolver commands inside the Bash allowlist', () => {
+    const yaml = readWorkflowText('rebase-pr.yml');
+
+    assert.match(yaml, /Bash\(git -c core\.editor=true rebase --continue:\*\)/);
+    assert.match(
+      yaml,
+      /Do not call absolute binaries such as `\/usr\/bin\/node`/,
+    );
+    assert.match(yaml, /do not use pipes, shell control operators/);
+    assert.match(yaml, /Use `rtk node --test \.\.\.` or `rtk npm \.\.\.`/);
+    assert.match(
+      yaml,
+      /leave full CI-matching validation to the workflow's `validate-pr-gate` step/,
+    );
+  });
+
   it('prefilters standalone AI mention workflows before runner checkout', () => {
     expectGuard('claude.yml', [
       /authorize:[\s\S]*?if: >-/,
