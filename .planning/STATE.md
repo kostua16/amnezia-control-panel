@@ -1,6 +1,6 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
+milestone: post-v1.1
 milestone_name: milestone
 status: executing
 stopped_at: null

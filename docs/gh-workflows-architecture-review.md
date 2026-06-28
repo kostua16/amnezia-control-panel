@@ -1,6 +1,6 @@
 # GitHub Workflows — Architecture Review
 
-**Scope:** 41 workflow YAMLs + 44 scripts (~13.4k LOC) + 20 composite actions in `.github/actions/`, plus co-located `documentation.md` and `policy.json`.
+**Scope:** 45 workflow YAMLs + 44 scripts (~13.4k LOC) + 20 composite actions in `.github/actions/`, plus co-located `documentation.md` and `policy.json`.
 **Hard constraint:** a small pool of **self-hosted runners** (the design doc itself states "at least two … three or more currently" — `documentation.md:265`). Throughput, fast feedback, visibility, and correct flow ordering on that hardware are the primary lens.
 **Lens:** architecture & redundancy · cost & reliability · maintainability.
 **Method:** map-reduce audit — per-workflow fact extraction (triggers, runner tier, concurrency, permissions, secrets, external actions, scripts, load, overlap, red flags) across 6 functional clusters, then synthesis. Every claim cites the workflow file.
@@ -9,7 +9,7 @@
 
 ## 1. Global architecture
 
-The 41 workflows fall into six functional clusters. They are **event-driven and heavily chained**: push/PR events run core CI; comment/label events drive a label-state PR orchestrator; `workflow_run` completions drive an auto-fix loop; and a large fleet of **scheduled autonomous agents** continuously analyze the repo and open "automation PRs."
+The 45 workflows fall into six functional clusters. They are **event-driven and heavily chained**: push/PR events run core CI; comment/label events drive a label-state PR orchestrator; `workflow_run` completions drive an auto-fix loop; and a large fleet of **scheduled autonomous agents** continuously analyze the repo and open "automation PRs."
 
 ### Cluster map
 
@@ -243,4 +243,4 @@ Compact one-liners; see clusters above for grouping.
 
 ---
 
-*Audit method: per-file fact extraction via targeted grep across all 41 YAMLs + referenced scripts + 20 composite actions; runner-load, secret, and trigger-type counts verified by repo-wide grep. Open questions for the operator: (1) how many of the 3 runners carry the `big` label? (2) Is there any global/cross-workflow concurrency gate today, or do all scheduled agents run uncoordinated (each free to open PRs in the same window)? (3) Is there an existing per-PR auto-fix attempt cap elsewhere (e.g. in `policy.json` `gsdExecution`) that this audit should reference?*
+*Audit method: per-file fact extraction via targeted grep across all 45 YAMLs + referenced scripts + 20 composite actions; runner-load, secret, and trigger-type counts verified by repo-wide grep. Open questions for the operator: (1) how many of the 3 runners carry the `big` label? (2) Is there any global/cross-workflow concurrency gate today, or do all scheduled agents run uncoordinated (each free to open PRs in the same window)? (3) Is there an existing per-PR auto-fix attempt cap elsewhere (e.g. in `policy.json` `gsdExecution`) that this audit should reference?*

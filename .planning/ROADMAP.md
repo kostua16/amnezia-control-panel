@@ -294,8 +294,8 @@ Plans:
 - [x] 11.5-01-PLAN.md -- Prisma schema, types, migration from in-memory stores, schema push (Wave 1)
 - [x] 11.5-02-PLAN.md -- GeoIP database manager, v2fly geoip.dat download, lookup service, status/refresh API (Wave 2)
 - [x] 11.5-03-PLAN.md -- Geo rule reorder, IP/domain individual CRUD, batch operations, Prisma-backed rule evaluation (Wave 2)
-- [ ] 11.5-04-PLAN.md -- Routing rules UI: tabs, geo rules list, geo rule drawer, GeoIP status badge (Wave 3)
-- [ ] 11.5-05-PLAN.md -- Templates library, geoip.dat import, template gallery, starter rules (Wave 3)
+- [x] 11.5-04-PLAN.md -- Routing rules UI: tabs, geo rules list, geo rule drawer, GeoIP status badge (Wave 3)
+- [x] 11.5-05-PLAN.md -- Templates library, geoip.dat import, template gallery, starter rules (Wave 3)
 
 ### Phase 11.6: Visual Chain Editor
 
@@ -333,10 +333,10 @@ Plans:
 
 Plans:
 
-- [ ] 11.7-01-PLAN.md -- ChainPreset schema, types, service layer with 3 built-in presets, schema push (Wave 1)
-- [ ] 11.7-02-PLAN.md -- Chain preset API routes (CRUD, seed, apply) and server presets (Wave 2)
-- [ ] 11.7-03-PLAN.md -- Template gallery page with 4 tabbed grids (Wave 3)
-- [ ] 11.7-04-PLAN.md -- Preview modal, save/fork dialogs, navigation entry (Wave 4)
+- [x] 11.7-01-PLAN.md -- ChainPreset schema, types, service layer with 3 built-in presets, schema push (Wave 1)
+- [x] 11.7-02-PLAN.md -- Chain preset API routes (CRUD, seed, apply) and server presets (Wave 2)
+- [x] 11.7-03-PLAN.md -- Template gallery page with 4 tabbed grids (Wave 3)
+- [x] 11.7-04-PLAN.md -- Preview modal, save/fork dialogs, navigation entry (Wave 4)
 
 ### Phase 11.8: Multi-Panel Dashboard
 
