@@ -24,6 +24,11 @@ outputs:
 runs:
   using: composite
   steps:
+    - uses: kostua16/setup-git-credentials@737171e199777ddcc7239325bc693e15183be6a1
+      if: ${{ inputs.github-token != '' }}
+      with:
+        token: ${{ inputs.github-token }}
+
     - name: Commit and push with retry
       id: push
       shell: bash

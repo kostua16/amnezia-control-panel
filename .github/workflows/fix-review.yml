@@ -190,11 +190,6 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
 
-      - uses: kostua16/setup-git-credentials@737171e199777ddcc7239325bc693e15183be6a1
-        if: steps.pr.outputs.eligible == 'true'
-        with:
-          token: ${{ secrets.GH_PAT }}
-
       - name: Collect review feedback
         if: steps.pr.outputs.eligible == 'true'
         id: feedback
