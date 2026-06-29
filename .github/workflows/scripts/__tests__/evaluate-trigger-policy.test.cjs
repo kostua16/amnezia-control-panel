@@ -634,3 +634,46 @@ test('pr-flow-pull-request-target: unlabeled generic label does NOT wake PR flow
   assert.equal(out.should_run, false);
   assert.equal(out.relevant_label, false);
 });
+
+// Non-lifecycle, non-label pull_request_target actions (edited, assigned, ...)
+// fall through to the gate's default-deny branch. Cover them so a future change
+// cannot silently start running PR flow for actions that must be ignored.
+const IGNORED_PR_ACTIONS = [
+  'edited',
+  'assigned',
+  'unassigned',
+  'closed',
+  'review_requested',
+];
+
+for (const action of IGNORED_PR_ACTIONS) {
+  test(`pr-flow-pull-request-target: non-lifecycle action "${action}" is default-denied`, () => {
+    const out = runPrFlowPrt({ action });
+    assert.equal(out.should_run, false, `${action} must not run PR flow`);
+    assert.equal(out.action, action);
+    assert.equal(out.label, null);
+    assert.match(out.reason, /ignored by PR flow/i);
+  });
+}
+
+// Bot-skip must recognize every production bot sender and the [bot]-suffix
+// regex path, not only github-actions[bot] with type 'Bot'. A sender whose
+// type is absent is detected solely via the login-suffix regex.
+const BOT_SENDERS = [
+  { login: 'dependabot[bot]', type: 'Bot' },
+  { login: 'renovate[bot]' },
+  { login: 'mergify[bot]', type: 'Bot' },
+];
+
+for (const sender of BOT_SENDERS) {
+  test(`pr-flow-pull-request-target: bot sender "${sender.login}" applying relevant label is skipped`, () => {
+    const out = runPrFlowPrt({
+      action: 'labeled',
+      label: 'needs-review',
+      sender,
+    });
+    assert.equal(out.should_run, false);
+    assert.equal(out.sender_is_bot, true);
+    assert.match(out.reason, /bot/i);
+  });
+}
