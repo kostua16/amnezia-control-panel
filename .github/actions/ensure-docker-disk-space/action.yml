@@ -73,3 +73,25 @@ runs:
           avail_mb="$(get_available_mb "$df_path")"
           echo "Available Docker disk space after prune: ${avail_mb} MB"
         fi
+
+        # Also check the workspace filesystem (where _temp, _actions live).
+        # Docker buildx and checkout temp dirs can fill this independently of Docker root.
+        workspace="${RUNNER_TEMP:-${HOME}/.cache}"
+        ws_avail_mb="$(get_available_mb "$workspace")"
+        echo "Available workspace disk space at ${workspace}: ${ws_avail_mb} MB"
+
+        if [ "$ws_avail_mb" -lt "$threshold_mb" ]; then
+          echo "Low workspace disk space; cleaning caches and temp files..."
+          rm -rf "${RUNNER_TEMP:-/tmp}/docker-actions-toolkit-*" 2>/dev/null || true
+          rm -rf "${RUNNER_TEMP:-/tmp}"/github-* 2>/dev/null || true
+          npm cache clean --force 2>/dev/null || true
+          rm -rf "${HOME}/.npm/_cacache" 2>/dev/null || true
+
+          # Prune old GitHub Actions caches
+          if command -v gh >/dev/null 2>&1; then
+            gh cache list --json id,createdAt --jq '.[] | select(.createdAt < (now - 86400 | strftime("%Y-%m-%dT%H:%M:%SZ"))) | .id' 2>/dev/null | xargs -r -n1 gh cache delete 2>/dev/null || true
+          fi
+
+          ws_avail_mb="$(get_available_mb "$workspace")"
+          echo "Available workspace disk space after cleanup: ${ws_avail_mb} MB"
+        fi
