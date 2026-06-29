@@ -32,12 +32,23 @@ test('gh pr create must not use --label flag', () => {
 
 test('labels are applied via gh pr edit --add-label (not pr create)', () => {
   const content = lines.join('\n');
-  const hasEditAddLabel = /--add-label/.test(content);
 
-  assert.strictEqual(
-    hasEditAddLabel,
-    true,
-    'upsert-pull-request must apply labels via gh pr edit --add-label',
+  // Labels must use the --add-label flag, accumulated into the
+  // missing_label_args array...
+  const labelArgsBuiltWithAddLabel =
+    /missing_label_args\+=\([^)]*--add-label/.test(content);
+
+  // ...and that array is carried by `gh pr edit`, not `gh pr create`.
+  const editCarriesLabelArgs =
+    /gh\s+pr\s+edit\b[\s\S]{0,200}?\$\{[^}]*missing_label_args/.test(content);
+
+  assert.ok(
+    labelArgsBuiltWithAddLabel,
+    'labels must be accumulated with --add-label in missing_label_args',
+  );
+  assert.ok(
+    editCarriesLabelArgs,
+    'gh pr edit (not gh pr create) must carry the missing_label_args array',
   );
 });
 
