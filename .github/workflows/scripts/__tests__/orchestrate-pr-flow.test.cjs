@@ -504,7 +504,12 @@ test('buildFlowVisibility returns failure aggregate when checks failed', () => {
     decision: {
       state: 'flow/checks-failed',
       reason: 'Required checks are failing.',
-      checkStatus: { status: 'failed', failing: ['Lint'], pending: [], missing: [] },
+      checkStatus: {
+        status: 'failed',
+        failing: ['Lint'],
+        pending: [],
+        missing: [],
+      },
     },
     workerRuns: {},
     currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
@@ -532,12 +537,14 @@ test('buildFlowVisibility returns success workers when review passed', () => {
       checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
     },
     workerRuns: {
-      codeReview: [{
-        displayTitle: 'PR #42 @ abc123',
-        status: 'completed',
-        conclusion: 'success',
-        url: 'https://github.com/test/repo/actions/runs/456',
-      }],
+      codeReview: [
+        {
+          displayTitle: 'PR #42 @ abc123',
+          status: 'completed',
+          conclusion: 'success',
+          url: 'https://github.com/test/repo/actions/runs/456',
+        },
+      ],
     },
     currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
   });
@@ -582,7 +589,12 @@ test('buildFlowVisibility returns success+N/A for closed/merged PR', () => {
     decision: {
       state: null,
       reason: 'PR is closed or already merged.',
-      checkStatus: { status: 'not_requested', failing: [], pending: [], missing: [] },
+      checkStatus: {
+        status: 'not_requested',
+        failing: [],
+        pending: [],
+        missing: [],
+      },
     },
     workerRuns: {},
     currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
@@ -643,8 +655,14 @@ test('buildFlowVisibility orderedStatuses includes aggregate and all workers', (
   assert.equal(visibility.orderedStatuses.length, 7);
   assert.equal(visibility.orderedStatuses[0].context, 'pr-flow/ready');
   assert.equal(visibility.orderedStatuses[1].context, 'pr-flow/code-review');
-  assert.equal(visibility.orderedStatuses[2].context, 'pr-flow/security-review');
-  assert.equal(visibility.orderedStatuses[3].context, 'pr-flow/dependency-review');
+  assert.equal(
+    visibility.orderedStatuses[2].context,
+    'pr-flow/security-review',
+  );
+  assert.equal(
+    visibility.orderedStatuses[3].context,
+    'pr-flow/dependency-review',
+  );
   assert.equal(visibility.orderedStatuses[4].context, 'pr-flow/kilo-review');
   assert.equal(visibility.orderedStatuses[5].context, 'pr-flow/pr-improve');
   assert.equal(visibility.orderedStatuses[6].context, 'pr-flow/finalizer');
@@ -738,4 +756,135 @@ test('resolvePrNumber returns null when no source provides a number', () => {
 
 test('resolvePrNumber returns null for non-numeric explicit value', () => {
   assert.equal(resolvePrNumber('push', {}, 'abc'), null);
+});
+
+// Manual-only PR code review path tests
+
+test('makeDecision dispatches code review for manual-only PR without review labels (after CI passes)', () => {
+  const decision = makePrFlowDecision({
+    pr: {
+      ...basePr,
+      labels: ['needs-review'],
+      files: ['src/example.ts'],
+    },
+    policy: {
+      manual_only: true,
+      blocking_labels_present: [],
+      maintainerAssociations: ['OWNER', 'MEMBER'],
+    },
+    workerRuns: { codeReview: [] },
+    eventName: 'workflow_dispatch',
+    event: {},
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.equal(decision.state, 'flow/review-pending');
+  assert.equal(decision.reason, 'Dispatching code review.');
+  assert.equal(decision.dispatch?.key, 'codeReview');
+  assert.equal(decision.dispatch?.workflow, 'code-review.yml');
+});
+
+test('makeDecision returns flow/manual-only when manual-only PR has review labels', () => {
+  const decision = makePrFlowDecision({
+    pr: {
+      ...basePr,
+      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
+      files: ['src/example.ts'],
+    },
+    policy: {
+      manual_only: true,
+      blocking_labels_present: [],
+      maintainerAssociations: ['OWNER', 'MEMBER'],
+    },
+    workerRuns: { codeReview: [] },
+    eventName: 'workflow_dispatch',
+    event: {},
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.equal(decision.state, 'flow/manual-only');
+  assert.equal(decision.reason, 'Manual-only PR: advisory reviews passed.');
+  assert.equal(decision.dispatch, null);
+});
+
+test('buildFlowVisibility shows code review as success and finalizer as N/A for manual-only PR with review labels', () => {
+  const visibility = buildFlowVisibility({
+    pr: {
+      ...basePr,
+      isDraft: false,
+      state: 'OPEN',
+      mergedAt: '',
+      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
+    },
+    config: testConfig,
+    policy: {
+      manual_only: true,
+      blocking_labels_present: [],
+      maintainerAssociations: [],
+    },
+    decision: {
+      state: 'flow/manual-only',
+      reason: 'Manual-only PR: advisory reviews passed.',
+      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    },
+    workerRuns: {
+      codeReview: [
+        {
+          displayTitle: 'PR #42 @ abc123',
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: '2026-06-23T12:00:00Z',
+        },
+      ],
+    },
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.aggregate.state, 'success');
+  assert.equal(visibility.aggregate.displayState, 'success');
+  assert.match(visibility.aggregate.description, /advisory reviews passed/);
+  assert.equal(visibility.workers.codeReview.displayState, 'success');
+  assert.equal(visibility.workers.finalizer.displayState, 'N/A');
+  assert.match(visibility.workers.finalizer.description, /manual-only/);
+});
+
+test('buildFlowVisibility aggregate description mentions advisory reviews when manual-only has completed reviews', () => {
+  const visibility = buildFlowVisibility({
+    pr: {
+      ...basePr,
+      isDraft: false,
+      state: 'OPEN',
+      mergedAt: '',
+      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
+    },
+    config: testConfig,
+    policy: {
+      manual_only: true,
+      blocking_labels_present: [],
+      maintainerAssociations: [],
+    },
+    decision: {
+      state: 'flow/manual-only',
+      reason: 'Manual-only PR: advisory reviews passed.',
+      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    },
+    workerRuns: {
+      codeReview: [
+        {
+          displayTitle: 'PR #42 @ abc123',
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: '2026-06-23T12:00:00Z',
+        },
+      ],
+    },
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(
+    visibility.aggregate.description,
+    'Manual-only PR: advisory reviews passed. Ready for human merge decision.',
+  );
 });
