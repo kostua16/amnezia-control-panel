@@ -110,7 +110,7 @@ test('selectStalePrs selects PR with stale draft label', (t) => {
   assert.ok(selected[0].recoveryReasons.includes('missing-ready-status'));
 });
 
-test('selectStalePrs selects closed/merged PRs', (t) => {
+test('selectStalePrs skips closed/merged PRs', (t) => {
   const prs = [
     {
       number: 1,
