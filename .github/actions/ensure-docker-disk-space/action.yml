@@ -90,7 +90,7 @@ runs:
           # Prune only this ref's stale Actions caches (>24h); other branches and
           # runners may still depend on their own caches, so keep the scope local.
           if command -v gh >/dev/null 2>&1 && [ -n "${GITHUB_REF_NAME:-}" ]; then
-            gh cache list -B "$GITHUB_REF_NAME" --json id,createdAt --jq '.[] | select(.createdAt < (now - 86400 | strftime("%Y-%m-%dT%H:%M:%SZ"))) | .id' 2>/dev/null | xargs -r -n1 gh cache delete 2>/dev/null || true
+            gh cache list --ref "$GITHUB_REF_NAME" --json id,createdAt --jq '.[] | select(.createdAt < (now - 86400 | strftime("%Y-%m-%dT%H:%M:%SZ"))) | .id' 2>/dev/null | xargs -r -n1 gh cache delete 2>/dev/null || true
           fi
 
           ws_avail_mb="$(get_available_mb "$workspace")"
