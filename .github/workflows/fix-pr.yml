@@ -26,6 +26,8 @@ on:
     workflows: ['CI']
     types:
       - completed
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: write
@@ -34,19 +36,31 @@ permissions:
   issues: write
 
 concurrency:
-  group: fix-pr-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha }}
+  group: fix-pr-${{ github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   evaluate:
     if: |
-      github.event.workflow_run.conclusion == 'failure' &&
-      toJSON(github.event.workflow_run.pull_requests) != '[]'
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'failure' &&
+        toJSON(github.event.workflow_run.pull_requests) != '[]'
+      ) ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        contains(github.event.comment.body, '/fix')
+      )
     runs-on: self-hosted
     timeout-minutes: 10
     outputs:
       should_run: ${{ steps.policy.outputs.should_run }}
       reason: ${{ steps.policy.outputs.reason }}
+      pr_number: ${{ steps.source-pr.outputs.pr-number }}
+      head_branch: ${{ steps.source-pr.outputs.head-branch }}
+      triggering_run_id: ${{ steps.source-pr.outputs.triggering-run-id }}
+      triggering_run_url: ${{ steps.source-pr.outputs.triggering-run-url }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
@@ -57,10 +71,11 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const prNumber = Number(
-              context.payload.workflow_run?.pull_requests?.[0]?.number ?? 0,
+              context.payload.workflow_run?.pull_requests?.[0]?.number ??
+                (context.payload.issue?.pull_request ? context.payload.issue.number : 0),
             );
             if (!prNumber) {
-              core.setFailed('workflow_run did not include a source PR number');
+              core.setFailed('event did not include a source PR number');
               return;
             }
 
@@ -92,6 +107,18 @@ jobs:
             const outputPath = `${process.env.RUNNER_TEMP}/fix-pr-source-pr.json`;
             require('fs').writeFileSync(outputPath, JSON.stringify(pr));
             core.setOutput('path', outputPath);
+            core.setOutput('pr-number', String(prNumber));
+            core.setOutput('head-branch', pr.head.ref);
+            core.setOutput(
+              'triggering-run-id',
+              String(context.payload.workflow_run?.id ?? context.runId),
+            );
+            core.setOutput(
+              'triggering-run-url',
+              context.payload.workflow_run?.html_url ??
+                context.payload.comment?.html_url ??
+                `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            );
 
       - name: Evaluate PR auto-fix policy
         id: policy
@@ -120,10 +147,10 @@ jobs:
     uses: ./.github/workflows/_auto-fix-ci.yml
     with:
       mode: pr
-      head-branch: ${{ github.event.workflow_run.head_branch }}
-      triggering-run-id: ${{ github.event.workflow_run.id }}
-      triggering-run-url: ${{ github.event.workflow_run.html_url }}
-      pr-number: ${{ github.event.workflow_run.pull_requests[0].number }}
+      head-branch: ${{ needs.evaluate.outputs.head_branch }}
+      triggering-run-id: ${{ needs.evaluate.outputs.triggering_run_id }}
+      triggering-run-url: ${{ needs.evaluate.outputs.triggering_run_url }}
+      pr-number: ${{ needs.evaluate.outputs.pr_number }}
     secrets: inherit
 
   report-failure:
@@ -145,9 +172,9 @@ jobs:
         with:
           mode: 'issue'
           auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          triggering-run-url: ${{ github.event.workflow_run.html_url }}
-          branch: ${{ github.event.workflow_run.head_branch }}
-          pr-number: ${{ needs.fix.outputs.pr-number }}
+          triggering-run-url: ${{ needs.evaluate.outputs.triggering_run_url }}
+          branch: ${{ needs.evaluate.outputs.head_branch }}
+          pr-number: ${{ needs.evaluate.outputs.pr_number }}
           claude-step-outcome: ${{ needs.fix.result }}
           claude-turns: ${{ needs.fix.outputs.claude-num-turns }}
           claude-is-error: ${{ needs.fix.outputs.claude-is-error }}

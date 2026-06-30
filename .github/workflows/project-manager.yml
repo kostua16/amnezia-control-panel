@@ -1,0 +1,159 @@
+name: Project Manager
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Plan actions without mutating GitHub state'
+        required: false
+        default: false
+        type: boolean
+      pr_threshold:
+        description: 'Open PR count above which PR queue mode runs'
+        required: false
+        default: '5'
+        type: string
+      issue_threshold:
+        description: 'Open standalone issue count above which issue queue mode runs'
+        required: false
+        default: '5'
+        type: string
+      pr_limit:
+        description: 'Maximum PRs to inspect in PR queue mode'
+        required: false
+        default: '10'
+        type: string
+      issue_limit:
+        description: 'Maximum issues to inspect in issue queue mode'
+        required: false
+        default: '10'
+        type: string
+      route_override:
+        description: 'Optional route override'
+        required: false
+        default: auto
+        type: choice
+        options:
+          - auto
+          - prs
+          - issues
+          - low-load
+
+concurrency:
+  group: project-manager
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: write
+  checks: read
+  statuses: read
+
+env:
+  NODE_VERSION: '24.x'
+  MAX_TURNS: '30'
+
+jobs:
+  manage:
+    runs-on: [self-hosted, big]
+    timeout-minutes: 15
+    outputs:
+      route: ${{ steps.plan.outputs.route }}
+      review-required: ${{ steps.plan.outputs.review_required }}
+      review-pr-number: ${{ steps.plan.outputs.review_pr_number }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-gsd: 'true'
+          install-rtk: 'true'
+
+      - name: Build project-manager plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          ROUTE: ${{ github.event.inputs.route_override || 'auto' }}
+          PR_THRESHOLD: ${{ github.event.inputs.pr_threshold || '5' }}
+          ISSUE_THRESHOLD: ${{ github.event.inputs.issue_threshold || '5' }}
+          PR_LIMIT: ${{ github.event.inputs.pr_limit || '10' }}
+          ISSUE_LIMIT: ${{ github.event.inputs.issue_limit || '10' }}
+        run: |
+          node .github/workflows/scripts/project-manager.cjs \
+            --dry-run "$DRY_RUN" \
+            --route "$ROUTE" \
+            --pr-threshold "$PR_THRESHOLD" \
+            --issue-threshold "$ISSUE_THRESHOLD" \
+            --pr-limit "$PR_LIMIT" \
+            --issue-limit "$ISSUE_LIMIT" \
+            --plan-file "$RUNNER_TEMP/project-manager-plan.json"
+
+      - name: Run project-manager PR review
+        id: review
+        if: steps.plan.outputs.review_required == 'true'
+        uses: ./.github/actions/run-zai
+        with:
+          api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          model: sonnet
+          max-turns: ${{ env.MAX_TURNS }}
+          track-progress: 'false'
+          json-schema: '{"type":"object","required":["decision","reason","risks","required_human_action"],"properties":{"decision":{"type":"string","enum":["merge","hold"]},"reason":{"type":"string"},"risks":{"type":"array","items":{"type":"string"}},"required_human_action":{"type":"string"}},"additionalProperties":false}'
+          allowed-tools: 'Read,Glob,Grep,LS,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr review:*),Bash(gh api:*),Bash(rtk:*)'
+          plugin-marketplaces: |-
+            https://github.com/anthropics/claude-plugins-official.git
+            https://github.com/juliusbrussee/caveman.git
+          plugins: |-
+            serena@claude-plugins-official
+            context7@claude-plugins-official
+            code-review@claude-plugins-official
+            security-guidance@claude-plugins-official
+            caveman@caveman
+          prompt: |
+            Review PR #${{ steps.plan.outputs.review_pr_number }} for a project-manager direct merge fallback.
+
+            Read `.claude/agents/kos-project-manager.md` first and follow it as the operating contract.
+            This is read-only review. Do not edit files, post comments, merge, approve, or change labels.
+            Return JSON only with: decision, reason, risks, required_human_action.
+
+      - name: Apply project-manager plan
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          REVIEW_JSON: ${{ steps.review.outputs.structured_output || '' }}
+        run: |
+          node .github/workflows/scripts/project-manager.cjs \
+            --dry-run "$DRY_RUN" \
+            --apply-plan "$RUNNER_TEMP/project-manager-plan.json" \
+            --review-json "$REVIEW_JSON"
+
+  report-failure:
+    needs: [manage]
+    if: failure()
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: ./.github/actions/report-failure
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: issue
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: '[project-manager] Queue manager workflow failed'
+          labels: auto-fix,ci-failure
+          ensure-labels: auto-fix,ci-failure
+          dispatch-triage: 'true'
+          claude-step-outcome: ${{ needs.manage.result }}

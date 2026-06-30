@@ -35,7 +35,7 @@ function runPrFlowControl({ event, eventName = 'issue_comment' }) {
   return JSON.parse(output);
 }
 
-function runFixPrPolicy({ event, sourcePr }) {
+function runFixPrPolicy({ event, sourcePr, eventName = 'workflow_run' }) {
   const tempDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'evaluate-trigger-policy-'),
   );
@@ -56,7 +56,7 @@ function runFixPrPolicy({ event, sourcePr }) {
       '--event-path',
       eventPath,
       '--event-name',
-      'workflow_run',
+      eventName,
       '--source-pr-file',
       sourcePrPath,
     ],
@@ -90,6 +90,84 @@ test('fix-pr skips bot-authored source PRs before invoking auto-fix', () => {
   assert.equal(result.source_pr_author_login, 'dependabot[bot]');
   assert.equal(result.source_pr_author_type, 'Bot');
   assert.match(result.reason, /skips bot-authored PRs/);
+});
+
+test('fix-pr accepts trusted maintainer /fix on a PR comment', () => {
+  const result = runFixPrPolicy({
+    eventName: 'issue_comment',
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/fix',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+    sourcePr: {
+      headRefName: 'feature/fix-me',
+      user: {
+        login: 'kostua16',
+        type: 'User',
+      },
+      labels: [],
+    },
+  });
+
+  assert.equal(result.should_run, true);
+  assert.equal(result.trigger_source, 'comment');
+  assert.equal(result.trusted, true);
+});
+
+test('fix-pr ignores bot /fix on a PR comment', () => {
+  const result = runFixPrPolicy({
+    eventName: 'issue_comment',
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/fix',
+        author_association: 'OWNER',
+        user: { login: 'github-actions[bot]', type: 'Bot' },
+      },
+    },
+    sourcePr: {
+      headRefName: 'feature/fix-me',
+      user: {
+        login: 'kostua16',
+        type: 'User',
+      },
+      labels: [],
+    },
+  });
+
+  assert.equal(result.should_run, false);
+  assert.equal(result.triggered, true);
+  assert.equal(result.trusted, false);
+});
+
+test('fix-pr ignores non-maintainer /fix on a PR comment', () => {
+  const result = runFixPrPolicy({
+    eventName: 'issue_comment',
+    event: {
+      issue: { number: 42, pull_request: { url: 'https://example/pr/42' } },
+      comment: {
+        body: '/fix',
+        author_association: 'NONE',
+        user: { login: 'someone', type: 'User' },
+      },
+    },
+    sourcePr: {
+      headRefName: 'feature/fix-me',
+      user: {
+        login: 'kostua16',
+        type: 'User',
+      },
+      labels: [],
+    },
+  });
+
+  assert.equal(result.should_run, false);
+  assert.equal(result.triggered, true);
+  assert.equal(result.trusted, false);
 });
 
 test('pr-flow-control: maintainer /review wakes PR Flow without approval', () => {

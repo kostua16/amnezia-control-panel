@@ -482,6 +482,7 @@ The following workflows expose `workflow_dispatch` dry-run inputs for safe testi
 - `pr-finalizer.yml`
 - `pr-improve.yml`
 - `issue-catch-up.yml`
+- `project-manager.yml`
 
 `pr-flow.yml` uses `.github/pr-flow.json` for worker order, required checks, reset labels, and managed `flow/*` labels. Routine runs do not recreate labels; pass `--ensure-labels true` to `.github/workflows/scripts/orchestrate-pr-flow.cjs` only for one-time label setup or repair.
 
@@ -492,6 +493,23 @@ gh workflow run pr-flow.yml --ref main -f pr_number=<PR> -f dry_run=false
 ```
 
 `pr-flow-watchdog.yml` runs every 15 minutes away from the top of the hour and performs the same recovery automatically for open non-draft PRs that still have `flow/draft`.
+
+`project-manager.yml` runs every 15 minutes as the queue manager for open PRs,
+standalone issues, and low-load PR-producing workflows. Its deterministic
+script (`scripts/project-manager.cjs`) selects one route per run:
+
+- PR pressure (`open PRs > threshold`) inspects the latest PRs and chooses at
+  most one action per PR: `@claude` escalation, `/rebase`, `/fix`,
+  `/fix-review`, finalizer dispatch, or direct-merge fallback after
+  `kos-project-manager` review.
+- Issue pressure (`open PRs <= threshold`, `open issues > threshold`) posts
+  trusted `/fix` only to safe standalone issues.
+- Low pressure dispatches exactly one eligible PR-producing workflow from the
+  project-manager registry. Registry coverage tests fail when a new
+  PR-producing workflow is added without classification.
+
+Project-manager is a recovery and queue-management workflow; do **not** add it
+as a required PR check. The preferred merge path remains `pr-finalizer.yml`.
 
 ## GSD Slash Command Format
 
@@ -513,36 +531,37 @@ All GSD slash commands in workflow prompts **must** use the colon namespace form
 
 Each workflow's `run-zai` agent run is **driven by the workflow `prompt:` (the master contract)**. On top of it sits a knowledge layer of `kos-` **agents** (`.claude/agents/kos-<workflow>.md`, one per workflow) and `kos-` **skills** (`.claude/skills/kos-<capability>/SKILL.md`, reusable procedures). Their purpose is to **extend and enforce** the prompt — add run-mined knowledge, prevent repeated mistakes — and **never contradict** it.
 
-**Operating contract (see `kos-zai-agent-runtime-contract`):** the zai agent only analyzes/edits files and returns the prompt's exact JSON/verdict; it never commits, pushes, merges, opens/approves/closes PRs, or mutates PRs/issues unless the prompt explicitly says so. The surrounding workflow steps (`commit-and-push`, `upsert-pull-request`, `validate-pr-gate`, `report-failure`) own all Git/PR/gate mutations. So a "commit-and-push step failure" is a *workflow step* that runs *after* the agent — not an agent action.
+**Operating contract (see `kos-zai-agent-runtime-contract`):** the zai agent only analyzes/edits files and returns the prompt's exact JSON/verdict; it never commits, pushes, merges, opens/approves/closes PRs, or mutates PRs/issues unless the prompt explicitly says so. The surrounding workflow steps (`commit-and-push`, `upsert-pull-request`, `validate-pr-gate`, `report-failure`) own all Git/PR/gate mutations. So a "commit-and-push step failure" is a _workflow step_ that runs _after_ the agent — not an agent action.
 
 **Shared skills (referenced by most agents):** `kos-zai-agent-runtime-contract` (universal), `kos-zai-run-failure-prevention` (canonical run-failure taxonomy), `kos-claude-turn-budget`, `kos-gh-automation-tooling`, `kos-trigger-policy-trust-gate`, `kos-commit-and-push-branch` (the workflow's commit-and-push step — agents do not push), `kos-runner-disk-hygiene`, `kos-run-log-mining`.
 
 **Workflow → driver agent → key skill:**
 
-| Workflow | Driver agent | Workflow-specific skill |
-| --- | --- | --- |
-| `claude` | `kos-claude` | `kos-gsd-command-routing` |
-| `code-review` | `kos-code-review` | `kos-pr-review-fix-loop` |
-| `dependency-review` | `kos-dependency-review` | `kos-dependency-pr-review` |
-| `fix-issue` | `kos-fix-issue` | — (runtime-contract + turn-budget) |
-| `fix-review` | `kos-fix-review` | `kos-pr-review-fix-loop`, `kos-commit-and-push-branch` |
-| `rebase-pr` | `kos-rebase-pr` | `kos-rebase-conflict-resolution` |
-| `triage` | `kos-triage` | `kos-issue-triage-inbox` |
-| `issue-catch-up` | `kos-issue-catch-up` | `kos-issue-triage-inbox` |
-| `audit-fix` | `kos-audit-fix` | `kos-autonomous-audit-fix`, `kos-runner-disk-hygiene` |
-| `audit-auto-prs` | `kos-audit-auto-prs` | — (audits automation PRs; runtime-contract) |
-| `suggest-improvements` | `kos-suggest-improvements` | `kos-improvement-ideation` |
-| `pr-improve` | `kos-pr-improve` | `kos-improvement-ideation` |
-| `docs-drift` | `kos-docs-drift` | `kos-docs-drift-detection` |
-| `maintenance` | `kos-maintenance` | `kos-daily-maintenance-sweep` |
-| `monitor-amnezia-control-panel-github-runs` | `kos-monitor-amnezia-control-panel-github-runs` | `kos-run-monitoring`, `kos-run-log-mining` |
-| `workflow-health-optimize` | `kos-workflow-health-optimize` | `kos-workflow-health-optimization` |
-| `gsd-planning` | `kos-gsd-planning` | `kos-planning-phase-execution` |
-| `gsd-planning-execute` | `kos-gsd-planning-execute` | `kos-planning-phase-execution` |
+| Workflow                                    | Driver agent                                    | Workflow-specific skill                                                                                                               |
+| ------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude`                                    | `kos-claude`                                    | `kos-gsd-command-routing`                                                                                                             |
+| `code-review`                               | `kos-code-review`                               | `kos-pr-review-fix-loop`                                                                                                              |
+| `dependency-review`                         | `kos-dependency-review`                         | `kos-dependency-pr-review`                                                                                                            |
+| `fix-issue`                                 | `kos-fix-issue`                                 | — (runtime-contract + turn-budget)                                                                                                    |
+| `fix-review`                                | `kos-fix-review`                                | `kos-pr-review-fix-loop`, `kos-commit-and-push-branch`                                                                                |
+| `rebase-pr`                                 | `kos-rebase-pr`                                 | `kos-rebase-conflict-resolution`                                                                                                      |
+| `triage`                                    | `kos-triage`                                    | `kos-issue-triage-inbox`                                                                                                              |
+| `issue-catch-up`                            | `kos-issue-catch-up`                            | `kos-issue-triage-inbox`                                                                                                              |
+| `audit-fix`                                 | `kos-audit-fix`                                 | `kos-autonomous-audit-fix`, `kos-runner-disk-hygiene`                                                                                 |
+| `audit-auto-prs`                            | `kos-audit-auto-prs`                            | — (audits automation PRs; runtime-contract)                                                                                           |
+| `suggest-improvements`                      | `kos-suggest-improvements`                      | `kos-improvement-ideation`                                                                                                            |
+| `pr-improve`                                | `kos-pr-improve`                                | `kos-improvement-ideation`                                                                                                            |
+| `docs-drift`                                | `kos-docs-drift`                                | `kos-docs-drift-detection`                                                                                                            |
+| `maintenance`                               | `kos-maintenance`                               | `kos-daily-maintenance-sweep`                                                                                                         |
+| `monitor-amnezia-control-panel-github-runs` | `kos-monitor-amnezia-control-panel-github-runs` | `kos-run-monitoring`, `kos-run-log-mining`                                                                                            |
+| `workflow-health-optimize`                  | `kos-workflow-health-optimize`                  | `kos-workflow-health-optimization`                                                                                                    |
+| `gsd-planning`                              | `kos-gsd-planning`                              | `kos-planning-phase-execution`                                                                                                        |
+| `gsd-planning-execute`                      | `kos-gsd-planning-execute`                      | `kos-planning-phase-execution`                                                                                                        |
+| `project-manager`                           | `kos-project-manager`                           | `kos-project-manager-pr-queue`, `kos-project-manager-issue-queue`, `kos-project-manager-low-load`, `kos-project-manager-direct-merge` |
 
 These `kos-` agents/skills are **knowledge/docs** (not workflow YAML). They reuse the `/gsd:xxx` colon form and must stay aligned with the prompts and the e2e catalog — see `docs/code-standards.md` → Workflow knowledge layer. Prompt-vs-agent compatibility is governed by the review in `.planning/reports/kos-prompt-compatibility-review.md`.
 
-**Invocation (how prompts reach the agent).** Each workflow `prompt:` ends with a one-line wiring: *"Operate as the `kos-<workflow>` agent: first read `.claude/agents/kos-<workflow>.md` and follow it as your operating contract, then perform the task."* So the main `run-zai` agent loads the agent file's contract + run knowledge before doing the task. Each agent file also has a `## Entry command (double-gate)` section restating its `/gsd:*` (or phase-based entry) so the canonical command is anchored in both the prompt and the agent file (a drift detector).
+**Invocation (how prompts reach the agent).** Each workflow `prompt:` ends with a one-line wiring: _"Operate as the `kos-<workflow>` agent: first read `.claude/agents/kos-<workflow>.md` and follow it as your operating contract, then perform the task."_ So the main `run-zai` agent loads the agent file's contract + run knowledge before doing the task. Each agent file also has a `## Entry command (double-gate)` section restating its `/gsd:*` (or phase-based entry) so the canonical command is anchored in both the prompt and the agent file (a drift detector).
 
 **Future opt-in — Task-tool subagent delegation (not yet wired).** For workflows that benefit from a truly isolated role (e.g. `code-review`, `fix-review`), the prompt can instead delegate via the `Agent`/`Task` tool (already in `run-zai` `allowed-tools`): `Task(subagent_type='kos-<workflow>', prompt='<the /gsd command + task context>')`, returning the subagent's JSON verbatim. This runs the `kos-` agent under its own system prompt/tools/model (from its frontmatter). Trade-offs vs the read-the-file default: stronger isolation, but the `/gsd:*` must be passed as text (slash commands don't fire inside a subagent — the double-gate covers this), all task context (PR #, feedback path, run-data JSON) must be relayed into the subagent prompt, and it doubles the model call (cost/latency), with `structured_output` depending on the main agent relaying the subagent's JSON. Adopt per-workflow only when the isolation is worth the cost.
 
