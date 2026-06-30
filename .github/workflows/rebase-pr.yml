@@ -197,6 +197,17 @@ jobs:
         if: steps.pr.outputs.eligible == 'true'
         uses: ./.github/actions/validate-pr-gate
 
+      - name: Restore tracked files after baseline validation
+        if: steps.pr.outputs.eligible == 'true'
+        run: |
+          # Validation commands may regenerate tracked framework artifacts such
+          # as next-env.d.ts. Keep the captured gate outputs, but make the
+          # checkout clean before git rebase inspects the working tree.
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            git status --short
+            git reset --hard HEAD
+          fi
+
       - name: Prepare branch (fetch base, capture heads)
         id: prep
         if: steps.pr.outputs.eligible == 'true'
@@ -390,6 +401,20 @@ jobs:
           steps.moved.outputs.rebase_moved_head == 'true' &&
           steps.claude.outputs.claude_failed != 'true'
         uses: ./.github/actions/validate-pr-gate
+
+      - name: Restore tracked files after post-rebase validation
+        if: >-
+          steps.pr.outputs.eligible == 'true' &&
+          steps.ancestry.outputs.ok == 'true' &&
+          steps.moved.outputs.rebase_moved_head == 'true' &&
+          steps.claude.outputs.claude_failed != 'true'
+        run: |
+          # The post-rebase gate has already exposed its outcomes. Discard any
+          # tracked files changed only by validation before comparing/pushing.
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            git status --short
+            git reset --hard HEAD
+          fi
 
       - name: Compare rebase CI baseline
         id: gate_compare
