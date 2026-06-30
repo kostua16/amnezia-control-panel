@@ -410,6 +410,13 @@ function readRebaseWorkflow() {
   );
 }
 
+function readRebaseAgent() {
+  return fs.readFileSync(
+    path.join(repoRoot, '.claude/agents/kos-rebase-pr.md'),
+    'utf8',
+  );
+}
+
 test('RB5b spec: rebase-pr prepares trusted conflict context before ZAI', () => {
   const workflow = readRebaseWorkflow();
   const contextStep = workflow.indexOf(
@@ -442,6 +449,17 @@ test('RB5b spec: rebase-pr prompt reads context first and forbids shell-wrapper 
   );
   assert.match(workflow, /Do not inspect `\.git\/rebase-\*` directly/);
   assert.match(workflow, /Do not use Grep as a file reader/);
+});
+
+test('RB5b spec: static rebase agent docs refer to runtime prompt paths', () => {
+  const agent = readRebaseAgent();
+
+  assert.doesNotMatch(agent, /\$\{\{/);
+  assert.match(
+    agent,
+    /trusted conflict context path named in the workflow prompt/,
+  );
+  assert.match(agent, /review feedback path named in the workflow prompt/);
 });
 
 test('RB5b spec: rebase-pr resolver allowed-tools stay least-privilege', () => {

@@ -37,8 +37,8 @@ Entry: no `/gsd:` slash — rebase instruction ("You are continuing an in-progre
 
 ## Behavioral Checklist
 
-- [ ] READ `${{ steps.conflict_context.outputs.path }}` first.
-- [ ] READ `${{ steps.feedback.outputs.path }}` second.
+- [ ] READ the trusted conflict context path named in the workflow prompt first.
+- [ ] READ the review feedback path named in the workflow prompt second.
 - [ ] Enumerate conflicts (`git diff --name-only --diff-filter=U`).
 - [ ] Resolve preserving PR intent + base behavior; address review feedback touched by conflicts.
 - [ ] Continue via `git -c core.editor=true rebase --continue`; iterate `npx tsc --noEmit`.
