@@ -348,6 +348,19 @@ jobs:
             rebase_orig_head="$(sed -n '1p' "$git_dir/rebase-apply/orig-head" 2>/dev/null || true)"
           fi
 
+          # Head name, onto, and the original-head subject are ref/commit data
+          # that can carry Markdown-significant characters (git even permits
+          # backticks in ref names). Render each as inline code with backticks
+          # neutralized so the trusted context file stays well-formed regardless
+          # of the PR-controlled branch name.
+          rebase_head_disp="${rebase_head_name:-_unknown_}"
+          rebase_onto_disp="${rebase_onto:-_unknown_}"
+          if [ -n "$rebase_orig_head" ]; then
+            rebase_orig_disp="$(git show --no-patch --format='%H %s' "$rebase_orig_head" 2>/dev/null || printf '%s' "$rebase_orig_head")"
+          else
+            rebase_orig_disp="_unknown_"
+          fi
+
           {
             echo "# Rebase conflict context"
             echo
@@ -355,13 +368,9 @@ jobs:
             echo
             echo "## Rebase state"
             echo "- Backend: \`$rebase_backend\`"
-            echo "- Head name: ${rebase_head_name:-_unknown_}"
-            echo "- Onto: ${rebase_onto:-_unknown_}"
-            if [ -n "$rebase_orig_head" ]; then
-              echo "- Original head: \`$(git show --no-patch --format='%H %s' "$rebase_orig_head" 2>/dev/null || printf '%s' "$rebase_orig_head")\`"
-            else
-              echo "- Original head: _unknown_"
-            fi
+            echo "- Head name: \`${rebase_head_disp//\`/\'}\`"
+            echo "- Onto: \`${rebase_onto_disp//\`/\'}\`"
+            echo "- Original head: \`${rebase_orig_disp//\`/\'}\`"
             echo
             echo "## Git status"
             echo '```text'

@@ -464,7 +464,12 @@ test('RB5b spec: static rebase agent docs refer to runtime prompt paths', () => 
 
 test('RB5b spec: rebase-pr resolver allowed-tools stay least-privilege', () => {
   const workflow = readRebaseWorkflow();
+  // Anchor to the allowed-tools line owned by the ZAI resolver step, not the
+  // first allowed-tools line anywhere in the workflow (another allowlisted
+  // step added above must not change which contract is asserted).
+  const zaiStep = workflow.indexOf('name: Resolve conflicts with ZAI');
   const allowedToolsLine = workflow
+    .slice(zaiStep)
     .split('\n')
     .find((line) => line.includes("allowed-tools: '"));
 
