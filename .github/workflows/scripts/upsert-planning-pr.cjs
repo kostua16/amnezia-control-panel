@@ -224,13 +224,11 @@ function validatePhaseSuggestion(suggestion, index) {
     errors.push(`phase_suggestions[${index}].title is missing or not a string`);
   }
   if (!suggestion.rationale || typeof suggestion.rationale !== 'string') {
-    errors.push(`phase_suggestions[${index}].rationale is missing or not a string`);
+    errors.push(
+      `phase_suggestions[${index}].rationale is missing or not a string`,
+    );
   }
-  if (
-    !suggestion.bucket &&
-    !suggestion.phase &&
-    !normalizeBucketKey(suggestion.bucket ?? suggestion.phase)
-  ) {
+  if (!normalizeBucketKey(suggestion.bucket ?? suggestion.phase)) {
     errors.push(
       `phase_suggestions[${index}] has no valid bucket or phase identifier`,
     );
@@ -265,7 +263,7 @@ function renderQuickPlan({
   } else {
     for (const task of quickTasks) {
       lines.push(
-        `- ${task.title} -- ${task.rationale} (owner: ${task.owner || 'maintainer'}, type: ${task.artifact_type || 'quick task'})`,
+        `- ${escapeInline(task.title)} -- ${escapeInline(task.rationale)} (owner: ${escapeInline(task.owner || 'maintainer')}, type: ${escapeInline(task.artifact_type || 'quick task')})`,
       );
     }
   }
@@ -277,7 +275,7 @@ function renderQuickPlan({
   } else {
     for (const suggestion of phaseSuggestions) {
       lines.push(
-        `- ${suggestion.phase}: ${suggestion.title} -- ${suggestion.rationale} (owner: ${suggestion.owner || 'maintainer'})`,
+        `- ${escapeInline(suggestion.phase)}: ${escapeInline(suggestion.title)} -- ${escapeInline(suggestion.rationale)} (owner: ${escapeInline(suggestion.owner || 'maintainer')})`,
       );
     }
   }
@@ -377,9 +375,7 @@ function main() {
   for (const [i, suggestion] of rawPhaseSuggestions.entries()) {
     const errors = validatePhaseSuggestion(suggestion, i);
     if (errors.length > 0) {
-      console.warn(
-        `Skipping invalid phase_suggestion: ${errors.join('; ')}`,
-      );
+      console.warn(`Skipping invalid phase_suggestion: ${errors.join('; ')}`);
     } else {
       validPhaseSuggestions.push(suggestion);
     }

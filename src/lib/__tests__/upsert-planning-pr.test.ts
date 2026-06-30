@@ -580,6 +580,17 @@ describe('upsert-planning-pr', () => {
       );
       assert.equal(errors.length, 0);
     });
+
+    it('returns an error for unknown non-empty bucket values', () => {
+      const errors = validatePhaseSuggestion(
+        { bucket: 'unknown-bucket', title: 't', rationale: 'r' },
+        0,
+      );
+
+      assert.deepEqual(errors, [
+        'phase_suggestions[0] has no valid bucket or phase identifier',
+      ]);
+    });
   });
 
   // --- renderQuickPlan full structure tests ---
@@ -630,6 +641,42 @@ describe('upsert-planning-pr', () => {
         phaseSuggestions: [],
       });
       assert.match(plan, /Fix X -- broken \(owner: team, type: quick-task\)/);
+    });
+
+    it('escapes rendered quick task and phase suggestion text', () => {
+      const plan = renderQuickPlan({
+        sourcePrNumber: 100,
+        sourcePrTitle: 't',
+        sourcePrUrl: 'https://example.com/pull/100',
+        summary: 's',
+        quickTasks: [
+          {
+            title: 'Fix `marker` <!--hidden-->',
+            rationale: 'see [docs](https://example.com)',
+            owner: '`team`',
+            artifact_type: '[quick](https://example.com)',
+          },
+        ],
+        phaseSuggestions: [
+          {
+            bucket: 'planning-automation',
+            phase: 'pr100.4',
+            title: 'Plan <!--hidden-->',
+            rationale: 'avoid `markers`',
+            owner: '[maintainer](https://example.com)',
+          },
+        ],
+      });
+
+      assert.match(
+        plan,
+        /Fix 'marker' -- see docs \(owner: 'team', type: quick\)/,
+      );
+      assert.match(
+        plan,
+        /pr100\.4: Plan -- avoid 'markers' \(owner: maintainer\)/,
+      );
+      assert.doesNotMatch(plan, /<!--|\[docs\]|\[quick\]|`/);
     });
 
     it('defaults owner to maintainer when missing', () => {

@@ -11,7 +11,9 @@ Each test file uses `createRequire(import.meta.url)` to load CJS modules from th
 ```ts
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { myFunction } = require('../../../.github/workflows/scripts/my-script.cjs');
+const {
+  myFunction,
+} = require('../../../.github/workflows/scripts/my-script.cjs');
 ```
 
 ### Adding Tests for a New Script
