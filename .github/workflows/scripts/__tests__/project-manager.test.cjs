@@ -450,3 +450,44 @@ test('PM23: dry-run plans mutations without executing them', () => {
   assert.equal(plan.actions[0].type, 'comment');
   assert.equal(plan.actions[0].body, '/fix');
 });
+
+test('PM24: stalled ready PR does not re-fire direct-merge within cooldown', () => {
+  const action = decidePrAction(
+    readyPr({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/finalizer-dispatched',
+      ],
+      projectManagerState: {
+        headSha: 'abc123',
+        readySince: READY_2H,
+        cooldowns: { 'direct-merge': NOW },
+      },
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
+test('PM25: persisted directMergeReview decision is consulted without a live review', () => {
+  const action = decidePrAction(
+    readyPr({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/finalizer-dispatched',
+      ],
+      projectManagerState: {
+        headSha: 'abc123',
+        readySince: READY_2H,
+        directMergeReview: { decision: 'merge', reason: 'safe' },
+      },
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(action.actionKey, 'direct-merge');
+  assert(actionTypes(action).includes('merge-pr'));
+});

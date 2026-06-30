@@ -525,8 +525,11 @@ function buildWorkflowIssue(pr, readySince) {
   };
 }
 
-function directMergeReviewDecision(pr) {
-  const review = pr.projectManagerReview ?? pr.directMergeReview;
+function directMergeReviewDecision(pr, state) {
+  // Live review (injected from the workflow run) wins; otherwise consult the
+  // persisted sticky-state decision so prior review verdicts are honored
+  // across runs instead of being write-only.
+  const review = pr.projectManagerReview ?? state?.directMergeReview;
   if (!review) return { decision: 'not-run' };
   if (typeof review === 'string') return { decision: review };
   return review;
@@ -538,7 +541,7 @@ function stalledReadyAction(pr, state, readySince, now) {
   if (hasMaintainerRejection(pr, readySince)) return null;
 
   const issue = buildWorkflowIssue(pr, readySince);
-  const review = directMergeReviewDecision(pr);
+  const review = directMergeReviewDecision(pr, state);
   const actions = [
     {
       type: 'create-or-reuse-issue',
@@ -599,7 +602,7 @@ function manualOnlyAction(pr, state, readySince, now) {
   const agedOut = readySince && hoursBetween(readySince, now) >= 8;
   if (!approved && !agedOut) return null;
 
-  const review = directMergeReviewDecision(pr);
+  const review = directMergeReviewDecision(pr, state);
   if (review.decision !== 'merge') {
     return {
       type: 'direct-merge-review-required',
@@ -777,7 +780,11 @@ function decidePrAction(pr, options = {}) {
     };
   }
 
-  if (isReady(pr) && !isManualOnly(pr)) {
+  if (
+    isReady(pr) &&
+    !isManualOnly(pr) &&
+    !cooldownActive(state, 'direct-merge', now)
+  ) {
     const stalled = stalledReadyAction(pr, state, readySince, now);
     if (stalled) return stalled;
   }
