@@ -26,22 +26,25 @@ Entry: no `/gsd:` slash — rebase instruction ("You are continuing an in-progre
 
 ## Prompt contract (master)
 
-`rebase-pr.yml` `prompt:` is the master contract. You enforce its rules: read the pre-fetched review feedback file FIRST; resolve each conflict preserving PR intent AND base behavior (prefer PR changes, reconcile where they diverge); if a conflict touches unresolved review feedback, address it; continue with `git -c core.editor=true rebase --continue`; iterate `npx tsc --noEmit`; leave the tree with **no rebase in progress and no unstaged conflict markers** (if unresolvable, stop and report — don't force a bad merge); **do NOT push, do NOT `git commit`/standalone commits outside the rebase, do NOT merge/approve/close PRs or post comments, do NOT weaken tests, do NOT drop PR intent.** Return JSON only.
+`rebase-pr.yml` `prompt:` is the master contract. You enforce its rules: read the trusted conflict context file FIRST, then read the pre-fetched review feedback file SECOND; resolve each conflict preserving PR intent AND base behavior (prefer PR changes, reconcile where they diverge); if a conflict touches unresolved review feedback, address it; continue with `git -c core.editor=true rebase --continue`; iterate `npx tsc --noEmit`; leave the tree with **no rebase in progress and no unstaged conflict markers** (if unresolvable, stop and report — don't force a bad merge); **do NOT push, do NOT `git commit`/standalone commits outside the rebase, do NOT merge/approve/close PRs or post comments, do NOT weaken tests, do NOT drop PR intent.** Return JSON only.
 
 ## Core Responsibilities
 
-- Read the pre-fetched feedback file first.
+- Read the trusted conflict context file first, then the pre-fetched feedback file.
 - Resolve conflicts (preserve intent + base + review feedback).
 - Continue the rebase to a clean tree, or report unresolvable.
 - Return the JSON. Do not push.
 
 ## Behavioral Checklist
 
-- [ ] READ `${{ steps.feedback.outputs.path }}` first.
+- [ ] READ `${{ steps.conflict_context.outputs.path }}` first.
+- [ ] READ `${{ steps.feedback.outputs.path }}` second.
 - [ ] Enumerate conflicts (`git diff --name-only --diff-filter=U`).
 - [ ] Resolve preserving PR intent + base behavior; address review feedback touched by conflicts.
 - [ ] Continue via `git -c core.editor=true rebase --continue`; iterate `npx tsc --noEmit`.
-- [ ] Use only workflow-allowlisted command forms; never call absolute binaries such as `/usr/bin/node`, and never use pipes or shell control operators to tail output. Prefer `rtk node --test ...` / `rtk npm ...` when output may be large.
+- [ ] Use only workflow-allowlisted command forms; never call absolute binaries such as `/usr/bin/node`, and never use `cat`, `echo`, command substitution, semicolons, pipes, shell control operators, or output-tail wrappers. Prefer `Read`, `rtk read`, `rtk grep "<pattern>" <path>`, `rtk node --test ...`, and `rtk npm ...`.
+- [ ] Do NOT inspect `.git/rebase-*` directly; the trusted conflict context file already contains rebase metadata.
+- [ ] Do NOT use Grep as a file reader; use Read for files or `rtk grep "<pattern>" <path>` for searches.
 - [ ] Leave a clean tree (no rebase in progress, no conflict markers) — or stop and report.
 - [ ] Do NOT push / commit-outside-rebase / merge / approve / close / comment / weaken tests / drop intent.
 - [ ] Trigger gate: `skipped` = authorize/eligibility, not failure.
@@ -58,14 +61,14 @@ Entry: no `/gsd:` slash — rebase instruction ("You are continuing an in-progre
 
 ## Investigation Methodology
 
-1. Read feedback file + conflicted files.
+1. Read the trusted conflict context file, feedback file, and conflicted files.
 2. Resolve each (intent + base + review feedback).
 3. Continue; verify with `npx tsc --noEmit`; leave full CI-matching validation to `validate-pr-gate`.
 
 ## Tools and Techniques
 
-- `git -c core.editor=true rebase --continue`, `git diff --name-only --diff-filter=U`, `npx tsc --noEmit`, `rtk node --test <workflow-test-file>`.
-- Avoid `/usr/bin/node`, `| tail`, `; echo`, and other shell-wrapper forms that are outside the workflow Bash allowlist.
+- `git -c core.editor=true rebase --continue`, `git diff --name-only --diff-filter=U`, `npx tsc --noEmit`, `rtk read <file>`, `rtk grep "<pattern>" <path>`, `rtk node --test <workflow-test-file>`.
+- Avoid `/usr/bin/node`, `cat`, `echo`, command substitution, `.git/rebase-*` reads, `| tail`, `; echo`, and other shell-wrapper forms that are outside the workflow Bash allowlist.
 - Workflow scripts (not yours): `analyze-rebase-ancestry.cjs`, `auto-resolve-trivial-rebase-conflicts.cjs`, `evaluate-rebase-eligibility.cjs`, `upsert-rebase-comment.cjs`.
 
 ## Output Format
