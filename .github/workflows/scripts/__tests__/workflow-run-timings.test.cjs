@@ -55,13 +55,16 @@ test('secondsBetween handles undefined inputs', () => {
 // ── summarizeStep ────────────────────────────────────────────────
 
 test('summarizeStep extracts step fields', () => {
-  const step = summarizeStep({
-    name: 'Checkout',
-    status: 'completed',
-    conclusion: 'success',
-    started_at: '2025-01-01T00:00:00Z',
-    completed_at: '2025-01-01T00:00:10Z',
-  }, 'build');
+  const step = summarizeStep(
+    {
+      name: 'Checkout',
+      status: 'completed',
+      conclusion: 'success',
+      started_at: '2025-01-01T00:00:00Z',
+      completed_at: '2025-01-01T00:00:10Z',
+    },
+    'build',
+  );
 
   assert.equal(step.name, 'Checkout');
   assert.equal(step.job, 'build');
@@ -71,11 +74,14 @@ test('summarizeStep extracts step fields', () => {
 });
 
 test('summarizeStep uses camelCase fallbacks', () => {
-  const step = summarizeStep({
-    name: 'Build',
-    startedAt: '2025-01-01T00:00:00Z',
-    completedAt: '2025-01-01T00:02:00Z',
-  }, 'ci');
+  const step = summarizeStep(
+    {
+      name: 'Build',
+      startedAt: '2025-01-01T00:00:00Z',
+      completedAt: '2025-01-01T00:02:00Z',
+    },
+    'ci',
+  );
 
   assert.equal(step.durationSec, 120);
 });
@@ -122,9 +128,21 @@ test('summarizeJob picks top slow steps', () => {
     started_at: '2025-01-01T00:00:00Z',
     completed_at: '2025-01-01T00:01:00Z',
     steps: [
-      { name: 'fast', started_at: '2025-01-01T00:00:00Z', completed_at: '2025-01-01T00:00:01Z' },
-      { name: 'slow', started_at: '2025-01-01T00:00:01Z', completed_at: '2025-01-01T00:00:30Z' },
-      { name: 'slowest', started_at: '2025-01-01T00:00:30Z', completed_at: '2025-01-01T00:01:00Z' },
+      {
+        name: 'fast',
+        started_at: '2025-01-01T00:00:00Z',
+        completed_at: '2025-01-01T00:00:01Z',
+      },
+      {
+        name: 'slow',
+        started_at: '2025-01-01T00:00:01Z',
+        completed_at: '2025-01-01T00:00:30Z',
+      },
+      {
+        name: 'slowest',
+        started_at: '2025-01-01T00:00:30Z',
+        completed_at: '2025-01-01T00:01:00Z',
+      },
     ],
   });
 
@@ -142,7 +160,11 @@ test('summarizeJob skips steps with null duration in ranking', () => {
     completed_at: '2025-01-01T00:01:00Z',
     steps: [
       { name: 'no-timing' },
-      { name: 'timed', started_at: '2025-01-01T00:00:00Z', completed_at: '2025-01-01T00:00:10Z' },
+      {
+        name: 'timed',
+        started_at: '2025-01-01T00:00:00Z',
+        completed_at: '2025-01-01T00:00:10Z',
+      },
     ],
   });
 
@@ -157,6 +179,21 @@ test('summarizeJob handles undefined input', () => {
   assert.deepEqual(job.topSlowSteps, []);
 });
 
+test('summarizeJob caps top slow steps at 5', () => {
+  const job = summarizeJob({
+    name: 'long-job',
+    started_at: '2025-01-01T00:00:00Z',
+    completed_at: '2025-01-01T00:10:00Z',
+    steps: Array.from({ length: 8 }, (_, i) => ({
+      name: `step-${i}`,
+      started_at: '2025-01-01T00:00:00Z',
+      completed_at: `2025-01-01T00:00:${10 + i}Z`,
+    })),
+  });
+
+  assert.equal(job.topSlowSteps.length, 5);
+});
+
 // ── summarizeWorkflowRunTiming ──────────────────────────────────
 
 test('summarizeWorkflowRunTiming returns job summaries and top slow steps', () => {
@@ -168,7 +205,11 @@ test('summarizeWorkflowRunTiming returns job summaries and top slow steps', () =
         completed_at: '2025-01-01T00:02:00Z',
         runner_name: 'runner-1',
         steps: [
-          { name: 'compile', started_at: '2025-01-01T00:00:00Z', completed_at: '2025-01-01T00:01:30Z' },
+          {
+            name: 'compile',
+            started_at: '2025-01-01T00:00:00Z',
+            completed_at: '2025-01-01T00:01:30Z',
+          },
         ],
       },
       {
@@ -177,8 +218,16 @@ test('summarizeWorkflowRunTiming returns job summaries and top slow steps', () =
         completed_at: '2025-01-01T00:05:00Z',
         runner_name: 'runner-2',
         steps: [
-          { name: 'unit', started_at: '2025-01-01T00:02:00Z', completed_at: '2025-01-01T00:02:10Z' },
-          { name: 'integration', started_at: '2025-01-01T00:02:10Z', completed_at: '2025-01-01T00:04:50Z' },
+          {
+            name: 'unit',
+            started_at: '2025-01-01T00:02:00Z',
+            completed_at: '2025-01-01T00:02:10Z',
+          },
+          {
+            name: 'integration',
+            started_at: '2025-01-01T00:02:10Z',
+            completed_at: '2025-01-01T00:04:50Z',
+          },
         ],
       },
     ],
@@ -218,7 +267,7 @@ test('summarizeWorkflowRunTiming caps top slow steps globally at 5', () => {
   }));
 
   const result = summarizeWorkflowRunTiming({ jobs });
-  assert.ok(result.topSlowSteps.length <= 5);
+  assert.equal(result.topSlowSteps.length, 5);
 });
 
 // ── duplicateSameSha ──────────────────────────────────────────────
@@ -235,9 +284,24 @@ test('duplicateSameSha returns null when no duplicate SHA exists', () => {
 });
 
 test('duplicateSameSha detects same-SHA duplicates across same workflow', () => {
-  const run1 = { id: 1, name: 'CI', head_sha: 'same-sha', created_at: '2025-01-01T01:00:00Z' };
-  const run2 = { id: 2, name: 'CI', head_sha: 'same-sha', created_at: '2025-01-01T02:00:00Z' };
-  const run3 = { id: 3, name: 'CI', head_sha: 'same-sha', created_at: '2025-01-01T03:00:00Z' };
+  const run1 = {
+    id: 1,
+    name: 'CI',
+    head_sha: 'same-sha',
+    created_at: '2025-01-01T01:00:00Z',
+  };
+  const run2 = {
+    id: 2,
+    name: 'CI',
+    head_sha: 'same-sha',
+    created_at: '2025-01-01T02:00:00Z',
+  };
+  const run3 = {
+    id: 3,
+    name: 'CI',
+    head_sha: 'same-sha',
+    created_at: '2025-01-01T03:00:00Z',
+  };
 
   const result = duplicateSameSha(run1, [run1, run2, run3]);
   assert.ok(result);
@@ -254,8 +318,18 @@ test('duplicateSameSha ignores duplicates from different workflow names', () => 
 });
 
 test('duplicateSameSha handles snake_case and camelCase head_sha', () => {
-  const run1 = { id: 1, name: 'CI', headSha: 'sha-camel', created_at: '2025-01-01T01:00:00Z' };
-  const run2 = { id: 2, name: 'CI', head_sha: 'sha-camel', created_at: '2025-01-01T02:00:00Z' };
+  const run1 = {
+    id: 1,
+    name: 'CI',
+    headSha: 'sha-camel',
+    created_at: '2025-01-01T01:00:00Z',
+  };
+  const run2 = {
+    id: 2,
+    name: 'CI',
+    head_sha: 'sha-camel',
+    created_at: '2025-01-01T02:00:00Z',
+  };
 
   const result = duplicateSameSha(run1, [run1, run2]);
   assert.ok(result);
@@ -272,7 +346,12 @@ test('duplicateSameSha returns null for undefined run', () => {
 });
 
 test('duplicateSameSha caps duplicate run summaries at 5', () => {
-  const base = { id: 0, name: 'CI', head_sha: 'dup', created_at: '2025-01-01T00:00:00Z' };
+  const base = {
+    id: 0,
+    name: 'CI',
+    head_sha: 'dup',
+    created_at: '2025-01-01T00:00:00Z',
+  };
   const duplicates = Array.from({ length: 8 }, (_, i) => ({
     id: i + 1,
     name: 'CI',
