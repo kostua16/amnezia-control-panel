@@ -11,7 +11,10 @@ const {
   quoteBlock,
   shortSha,
 } = require('./lib/sticky-comment.cjs');
-const { renderGateSummary } = require('./lib/gate-summary.cjs');
+const {
+  renderGateComparison,
+  renderGateSummary,
+} = require('./lib/gate-summary.cjs');
 
 const COMMENT_MARKER = '<!-- rebase-pr-summary -->';
 
@@ -136,6 +139,16 @@ function parsePathList(value) {
   }
 }
 
+function parseGateComparison(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function renderComplete({
   structured,
   numTurns,
@@ -152,6 +165,7 @@ function renderComplete({
   dryRun,
   automergeDisabled,
   reviewFeedbackPresent,
+  gateComparison,
   updatedAt,
 }) {
   const conflicts = Array.isArray(structured.conflicts_resolved)
@@ -180,6 +194,10 @@ function renderComplete({
     lines.push(
       `- Unresolved review feedback: ${isTrue(reviewFeedbackPresent) ? 'present' : 'none'}`,
     );
+  }
+  const comparisonSummary = renderGateComparison(gateComparison);
+  if (comparisonSummary) {
+    lines.push('', comparisonSummary);
   }
   if (structured.summary) {
     lines.push('', quoteBlock(structured.summary));
@@ -230,6 +248,7 @@ function renderValidationFailed({
   runUrl,
   structured,
   gateOutcomes = {},
+  gateComparison,
   updatedAt,
 }) {
   const lines = [
@@ -249,6 +268,10 @@ function renderValidationFailed({
       gateOutcomes,
     }),
   ];
+  const comparisonSummary = renderGateComparison(gateComparison);
+  if (comparisonSummary) {
+    lines.push('', comparisonSummary);
+  }
   if (structured.summary) {
     lines.push('', quoteBlock(structured.summary));
   }
@@ -336,6 +359,8 @@ function resolveFinishedBody({
   outcome,
   gatePassed,
   gateOutcomes = {},
+  gateComparison,
+  gateNoNewFailures,
   pushed,
   rebaseMovedHead,
   dryRun,
@@ -365,15 +390,17 @@ function resolveFinishedBody({
       automergeDisabled,
       reviewFeedbackPresent,
       rebaseMovedHead,
+      gateComparison,
       updatedAt,
     });
   }
-  if (!isTrue(gatePassed)) {
+  if (!isTrue(gatePassed) && !isTrue(gateNoNewFailures)) {
     return renderValidationFailed({
       headSha,
       runUrl,
       structured,
       gateOutcomes,
+      gateComparison,
       updatedAt,
     });
   }
@@ -394,6 +421,7 @@ function resolveFinishedBody({
       dryRun: 'true',
       automergeDisabled,
       reviewFeedbackPresent,
+      gateComparison,
       updatedAt,
     });
   }
@@ -416,6 +444,7 @@ function resolveFinishedBody({
     dryRun,
     automergeDisabled,
     reviewFeedbackPresent,
+    gateComparison,
     updatedAt,
   });
 }
@@ -435,6 +464,9 @@ function main() {
 
   const structured = parseStructuredOutput(
     process.env.STRUCTURED_OUTPUT || getArg('--structured-output'),
+  );
+  const gateComparison = parseGateComparison(
+    process.env.GATE_COMPARISON_JSON || getArg('--gate-comparison-json'),
   );
   const now = new Date().toISOString();
   let body;
@@ -500,6 +532,8 @@ function main() {
           scriptTests: getArg('--script-tests-outcome'),
           prismaSafe: getArg('--prisma-safe-outcome'),
         },
+        gateComparison,
+        gateNoNewFailures: getArg('--gate-no-new-failures'),
         pushed: getArg('--pushed'),
         rebaseMovedHead: getArg('--rebase-moved-head'),
         dryRun: getArg('--dry-run'),
@@ -522,6 +556,7 @@ module.exports = {
   COMMENT_MARKER,
   isTrue,
   parsePathList,
+  parseGateComparison,
   repoBaseUrl,
   renderStarted,
   renderConflictWorking,
