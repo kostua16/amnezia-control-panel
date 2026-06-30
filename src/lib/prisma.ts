@@ -35,18 +35,14 @@ export async function checkDatabaseConnection(
 ): Promise<DatabaseHealthResult> {
   const started = Date.now();
   const probe = prisma.$queryRaw`SELECT 1`
-    .then(
-      (): DatabaseHealthResult => ({
-        ok: true,
-        latencyMs: Date.now() - started,
-      }),
-    )
-    .catch(
-      (err: unknown): DatabaseHealthResult => ({
-        ok: false,
-        error: err instanceof Error ? err.message : 'Database probe failed',
-      }),
-    );
+    .then((): DatabaseHealthResult => ({
+      ok: true,
+      latencyMs: Date.now() - started,
+    }))
+    .catch((err: unknown): DatabaseHealthResult => ({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Database probe failed',
+    }));
 
   const timeout = new Promise<DatabaseHealthResult>((resolve) => {
     setTimeout(

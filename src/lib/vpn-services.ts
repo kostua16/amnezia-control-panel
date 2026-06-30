@@ -493,8 +493,7 @@ export async function createAwgUser(
     }
 
     return ok(`Created AWG peer ${username} on ${awgInterface()}`, config) as
-      | VpnServiceResult
-      | (VpnServiceResult & { config?: AwgUserConfig });
+      VpnServiceResult | (VpnServiceResult & { config?: AwgUserConfig });
   } catch (err) {
     return fail(getErrorMessage(err));
   }
@@ -732,8 +731,7 @@ export async function createThreeXuiUser(
       `Created 3x-ui client ${username} on inbound ${inboundId}`,
       config,
     ) as
-      | VpnServiceResult
-      | (VpnServiceResult & { config?: ThreeXuiUserConfig });
+      VpnServiceResult | (VpnServiceResult & { config?: ThreeXuiUserConfig });
   } catch (err) {
     return fail(getErrorMessage(err));
   }
