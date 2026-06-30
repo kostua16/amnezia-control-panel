@@ -29,6 +29,27 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
+type VpnUpdateResult = {
+  serviceType: string;
+  action: 'add' | 'remove';
+  success: boolean;
+  message: string;
+};
+
+function serviceUpdateFailed(
+  serviceType: string,
+  action: VpnUpdateResult['action'],
+  err: unknown,
+): VpnUpdateResult {
+  const message = err instanceof Error ? err.message : String(err);
+  return {
+    serviceType,
+    action,
+    success: false,
+    message: `Failed to ${action} ${serviceType} service: ${message}`,
+  };
+}
+
 // ─── GET: Fetch single user ──────────────────────────────
 
 export async function GET(_request: NextRequest, context: RouteContext) {
@@ -158,12 +179,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
 
     // Update services if provided
-    const vpnResults: Array<{
-      serviceType: string;
-      action: string;
-      success: boolean;
-      message: string;
-    }> = [];
+    const vpnResults: VpnUpdateResult[] = [];
 
     if (services) {
       const currentServices = existing.protocols
@@ -173,7 +189,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       const toAdd = services.filter((s) => !currentServices.includes(s));
       const toRemove = currentServices.filter((s) => !services.includes(s));
 
-      // Remove services that were unchecked — parallel VPN calls
       const removeOps = toRemove.map(async (serviceType) => {
         let vpnResult: VpnServiceResult;
         if (serviceType === 'AWG') {
@@ -199,13 +214,16 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       });
 
       const removeSettled = await Promise.allSettled(removeOps);
-      for (const outcome of removeSettled) {
+      for (const [index, outcome] of removeSettled.entries()) {
         if (outcome.status === 'fulfilled' && outcome.value) {
           vpnResults.push(outcome.value);
+        } else if (outcome.status === 'rejected') {
+          vpnResults.push(
+            serviceUpdateFailed(toRemove[index], 'remove', outcome.reason),
+          );
         }
       }
 
-      // Add new services — parallel VPN calls, sequential DB writes
       const addOps = toAdd.map(async (serviceType) => {
         let vpnResult: VpnServiceResult & { config?: Record<string, unknown> };
         if (serviceType === 'AWG') {
@@ -250,9 +268,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       });
 
       const addSettled = await Promise.allSettled(addOps);
-      for (const outcome of addSettled) {
+      for (const [index, outcome] of addSettled.entries()) {
         if (outcome.status === 'fulfilled' && outcome.value) {
           vpnResults.push(outcome.value);
+        } else if (outcome.status === 'rejected') {
+          vpnResults.push(
+            serviceUpdateFailed(toAdd[index], 'add', outcome.reason),
+          );
         }
       }
     }

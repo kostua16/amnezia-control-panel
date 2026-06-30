@@ -6,18 +6,21 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  const baseUrl = process.env.DATABASE_URL ?? 'file:./prisma/dev.db';
-  // Append WAL mode and busy timeout if not already present in the URL.
-  const url = new URL(baseUrl);
-  if (!url.searchParams.has('journal_mode')) {
-    url.searchParams.set('journal_mode', 'wal');
-  }
-  if (!url.searchParams.has('busy_timeout')) {
-    url.searchParams.set('busy_timeout', '5000');
-  }
+  const adapter = new PrismaBetterSqlite3({
+    url: process.env.DATABASE_URL ?? 'file:./prisma/dev.db',
+  });
+  const client = new PrismaClient({ adapter });
 
-  const adapter = new PrismaBetterSqlite3({ url: url.toString() });
-  return new PrismaClient({ adapter });
+  client
+    .$executeRawUnsafe('PRAGMA journal_mode = WAL')
+    .then(() => client.$executeRawUnsafe('PRAGMA busy_timeout = 5000'))
+    .catch((err: unknown) => {
+      const message =
+        err instanceof Error ? err.message : 'Failed to configure SQLite';
+      console.warn(`[prisma] SQLite PRAGMA setup skipped: ${message}`);
+    });
+
+  return client;
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
@@ -43,18 +46,14 @@ export async function checkDatabaseConnection(
 ): Promise<DatabaseHealthResult> {
   const started = Date.now();
   const probe = prisma.$queryRaw`SELECT 1`
-    .then(
-      (): DatabaseHealthResult => ({
-        ok: true,
-        latencyMs: Date.now() - started,
-      }),
-    )
-    .catch(
-      (err: unknown): DatabaseHealthResult => ({
-        ok: false,
-        error: err instanceof Error ? err.message : 'Database probe failed',
-      }),
-    );
+    .then((): DatabaseHealthResult => ({
+      ok: true,
+      latencyMs: Date.now() - started,
+    }))
+    .catch((err: unknown): DatabaseHealthResult => ({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Database probe failed',
+    }));
 
   const timeout = new Promise<DatabaseHealthResult>((resolve) => {
     setTimeout(

@@ -28,6 +28,31 @@ const PUBLIC_API_ROUTES = [
   '/api/sync/apply',
 ];
 
+const PROTECTED_PAGE_ROUTES = [
+  '/dashboard',
+  '/users',
+  '/services',
+  '/config',
+  '/monitoring',
+  '/panels',
+  '/servers',
+  '/settings',
+  '/templates',
+];
+
+const securityHeaders = new Headers({
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Content-Security-Policy':
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: blob:; " +
+    "connect-src 'self' ws: wss:;",
+});
+
 function isPublicApiRoute(pathname: string): boolean {
   return PUBLIC_API_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(route + '/'),
@@ -38,12 +63,25 @@ function isApiRoute(pathname: string): boolean {
   return pathname.startsWith('/api/');
 }
 
+function isProtectedPageRoute(pathname: string): boolean {
+  return PROTECTED_PAGE_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(route + '/'),
+  );
+}
+
 function getJwtSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error('JWT_SECRET environment variable is not set');
   }
   return new TextEncoder().encode(secret);
+}
+
+function withSecurityHeaders(response: NextResponse): NextResponse {
+  for (const [key, value] of securityHeaders) {
+    response.headers.set(key, value);
+  }
+  return response;
 }
 
 /**
@@ -56,7 +94,7 @@ function withClaims(request: NextRequest, payload: AuthClaims): NextResponse {
   const headers = new Headers(request.headers);
   headers.set('x-user-id', payload.userId);
   headers.set('x-user-name', payload.username);
-  return NextResponse.next({ request: { headers } });
+  return withSecurityHeaders(NextResponse.next({ request: { headers } }));
 }
 
 export async function proxy(request: NextRequest) {
@@ -68,12 +106,12 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/favicon') ||
     pathname.includes('/.') // dotfiles
   ) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
 
   // Skip public API routes entirely
   if (isApiRoute(pathname) && isPublicApiRoute(pathname)) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
 
   // All remaining API routes require JWT
@@ -81,7 +119,9 @@ export async function proxy(request: NextRequest) {
     const token = request.cookies.get('auth-token')?.value;
 
     if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return withSecurityHeaders(
+        NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      );
     }
 
     try {
@@ -89,8 +129,14 @@ export async function proxy(request: NextRequest) {
       const { payload } = await jwtVerify<AuthClaims>(token, secret);
       return withClaims(request, payload);
     } catch {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return withSecurityHeaders(
+        NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      );
     }
+  }
+
+  if (!isProtectedPageRoute(pathname)) {
+    return withSecurityHeaders(NextResponse.next());
   }
 
   // Page routes: redirect to login if not authenticated
@@ -98,7 +144,7 @@ export async function proxy(request: NextRequest) {
 
   if (!token) {
     const loginUrl = new URL('/login', request.url);
-    return NextResponse.redirect(loginUrl);
+    return withSecurityHeaders(NextResponse.redirect(loginUrl));
   }
 
   try {
@@ -108,23 +154,12 @@ export async function proxy(request: NextRequest) {
   } catch {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('expired', 'true');
-    return NextResponse.redirect(loginUrl);
+    return withSecurityHeaders(NextResponse.redirect(loginUrl));
   }
 }
 
 export const config = {
   matcher: [
-    // API routes
-    '/api/:path*',
-    // Page routes that require authentication
-    '/dashboard/:path*',
-    '/users/:path*',
-    '/services/:path*',
-    '/config/:path*',
-    '/monitoring/:path*',
-    '/panels/:path*',
-    '/servers/:path*',
-    '/settings/:path*',
-    '/templates/:path*',
+    '/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };

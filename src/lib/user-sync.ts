@@ -209,30 +209,9 @@ export async function syncUser(userId: number): Promise<SyncReport> {
   return report;
 }
 
-/** Default concurrency cap for batch sync operations. */
-const SYNC_CONCURRENCY = 5;
-
-/**
- * Run promises with a bounded concurrency limit. Respects individual
- * failures via Promise.allSettled so one rejection doesn't abort others.
- */
-async function boundedAllSettled<T>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<unknown>,
-): Promise<PromiseSettledResult<unknown>[]> {
-  const results: PromiseSettledResult<unknown>[] = [];
-  for (let i = 0; i < items.length; i += concurrency) {
-    const batch = items.slice(i, i + concurrency);
-    const settled = await Promise.allSettled(batch.map(fn));
-    results.push(...settled);
-  }
-  return results;
-}
-
 /**
  * Sync all users between DB and VPN services.
- * Processes users in bounded-concurrency batches to limit VPN service load.
+ * Processes users sequentially because VPN services share mutable backends.
  */
 export async function syncAllUsers(): Promise<SyncReport> {
   const totalReport: SyncReport = {
@@ -250,26 +229,17 @@ export async function syncAllUsers(): Promise<SyncReport> {
       },
     });
 
-    console.log(
-      `[user-sync] Starting sync of ${users.length} active users (concurrency: ${SYNC_CONCURRENCY})`,
-    );
+    console.log(`[user-sync] Starting sync of ${users.length} active users`);
 
-    const settled = await boundedAllSettled(users, SYNC_CONCURRENCY, (user) =>
-      syncUser(user.id),
-    );
-
-    for (const outcome of settled) {
-      if (outcome.status === 'fulfilled') {
-        const userReport = outcome.value as SyncReport;
+    for (const user of users) {
+      try {
+        const userReport = await syncUser(user.id);
         totalReport.checked += userReport.checked;
         totalReport.fixed += userReport.fixed;
         totalReport.errors.push(...userReport.errors);
         totalReport.details.push(...userReport.details);
-      } else {
-        const reason =
-          outcome.reason instanceof Error
-            ? outcome.reason.message
-            : String(outcome.reason);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
         totalReport.errors.push(reason);
       }
     }
