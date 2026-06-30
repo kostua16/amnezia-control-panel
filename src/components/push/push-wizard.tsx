@@ -97,8 +97,7 @@ export function PushWizard({ panels }: PushWizardProps) {
   // Handle WebSocket push progress events
   useEffect(() => {
     const progressEvent = lastEvent['panel:push-progress'] as
-      | PushProgressEvent
-      | undefined;
+      PushProgressEvent | undefined;
     if (progressEvent) {
       startTransition(() => {
         setPushProgress((prev) => {

@@ -17,8 +17,7 @@ describe('getSystemResources', () => {
 
   it('dedupes concurrent refreshes after a cache miss', async () => {
     let resolveDiskUsage:
-      | ((value: { stdout: string; stderr: string }) => void)
-      | undefined;
+      ((value: { stdout: string; stderr: string }) => void) | undefined;
     const execCommand = mock.fn(
       async (_cmd: string, _args: string[], _options: { timeoutMs: number }) =>
         new Promise<{ stdout: string; stderr: string }>((resolve) => {

@@ -12,10 +12,7 @@ import type { PanelSyncPayload } from '@/types/panel-sync';
 // ─── Types ──────────────────────────────────────────────
 
 export type PanelConnectionStatus =
-  | 'connected'
-  | 'degraded'
-  | 'offline'
-  | 'unknown';
+  'connected' | 'degraded' | 'offline' | 'unknown';
 type AlertSeverity = Alert['severity'];
 
 // ─── Fallback Detection State ───────────────────────────
