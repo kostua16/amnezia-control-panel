@@ -1,11 +1,6 @@
 export type RuleAction = 'ALLOW' | 'BLOCK' | 'ROUTE';
 export type RuleProtocol =
-  | 'ANY'
-  | 'WIREGUARD'
-  | 'VLESS'
-  | 'VMESS'
-  | 'TROJAN'
-  | 'SHADOWSOCKS';
+  'ANY' | 'WIREGUARD' | 'VLESS' | 'VMESS' | 'TROJAN' | 'SHADOWSOCKS';
 
 export interface RoutingRule {
   id: number;
