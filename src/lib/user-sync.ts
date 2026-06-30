@@ -211,7 +211,7 @@ export async function syncUser(userId: number): Promise<SyncReport> {
 
 /**
  * Sync all users between DB and VPN services.
- * Processes users sequentially to avoid overwhelming VPN services.
+ * Processes users sequentially because VPN services share mutable backends.
  */
 export async function syncAllUsers(): Promise<SyncReport> {
   const totalReport: SyncReport = {
@@ -232,11 +232,16 @@ export async function syncAllUsers(): Promise<SyncReport> {
     console.log(`[user-sync] Starting sync of ${users.length} active users`);
 
     for (const user of users) {
-      const userReport = await syncUser(user.id);
-      totalReport.checked += userReport.checked;
-      totalReport.fixed += userReport.fixed;
-      totalReport.errors.push(...userReport.errors);
-      totalReport.details.push(...userReport.details);
+      try {
+        const userReport = await syncUser(user.id);
+        totalReport.checked += userReport.checked;
+        totalReport.fixed += userReport.fixed;
+        totalReport.errors.push(...userReport.errors);
+        totalReport.details.push(...userReport.details);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        totalReport.errors.push(reason);
+      }
     }
 
     console.log(

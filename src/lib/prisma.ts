@@ -9,7 +9,18 @@ function createPrismaClient() {
   const adapter = new PrismaBetterSqlite3({
     url: process.env.DATABASE_URL ?? 'file:./prisma/dev.db',
   });
-  return new PrismaClient({ adapter });
+  const client = new PrismaClient({ adapter });
+
+  client
+    .$executeRawUnsafe('PRAGMA journal_mode = WAL')
+    .then(() => client.$executeRawUnsafe('PRAGMA busy_timeout = 5000'))
+    .catch((err: unknown) => {
+      const message =
+        err instanceof Error ? err.message : 'Failed to configure SQLite';
+      console.warn(`[prisma] SQLite PRAGMA setup skipped: ${message}`);
+    });
+
+  return client;
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
