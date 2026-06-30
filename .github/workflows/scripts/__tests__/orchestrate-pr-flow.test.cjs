@@ -635,7 +635,11 @@ test('buildFlowVisibility returns success aggregate for manual-only decision', (
   assert.equal(visibility.aggregate.state, 'success');
   assert.equal(visibility.aggregate.displayState, 'success');
   assert.match(visibility.aggregate.description, /Manual review is required/);
-  assert.equal(visibility.workers.codeReview.displayState, 'pending');
+  assert.equal(visibility.workers.codeReview.displayState, 'N/A');
+  assert.equal(visibility.workers.securityReview.displayState, 'N/A');
+  assert.equal(visibility.workers.dependencyReview.displayState, 'N/A');
+  assert.equal(visibility.workers.kiloReview.displayState, 'N/A');
+  assert.equal(visibility.workers.prImprove.displayState, 'N/A');
   assert.equal(visibility.workers.finalizer.displayState, 'N/A');
 });
 
@@ -758,9 +762,11 @@ test('resolvePrNumber returns null for non-numeric explicit value', () => {
   assert.equal(resolvePrNumber('push', {}, 'abc'), null);
 });
 
-// Manual-only PR code review path tests
+// ── Regression tests for PR #209 ──
+// needs-review in blocking_labels_present must route to flow/manual-only
+// immediately after CI is green, without dispatching workers.
 
-test('makeDecision dispatches code review for manual-only PR without review labels (after CI passes)', () => {
+test('makeDecision routes needs-review to flow/manual-only after CI green (PR #209)', () => {
   const decision = makePrFlowDecision({
     pr: {
       ...basePr,
@@ -768,123 +774,125 @@ test('makeDecision dispatches code review for manual-only PR without review labe
       files: ['src/example.ts'],
     },
     policy: {
-      manual_only: true,
-      blocking_labels_present: [],
-      maintainerAssociations: ['OWNER', 'MEMBER'],
+      blocking_labels_present: ['needs-review'],
+      manual_only: false,
+      maintainerAssociations: ['OWNER', 'MEMBER', 'COLLABORATOR'],
     },
-    workerRuns: { codeReview: [] },
-    eventName: 'workflow_dispatch',
-    event: {},
-    config: testConfig,
-    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
-  });
-
-  assert.equal(decision.state, 'flow/review-pending');
-  assert.equal(decision.reason, 'Dispatching code review.');
-  assert.equal(decision.dispatch?.key, 'codeReview');
-  assert.equal(decision.dispatch?.workflow, 'code-review.yml');
-});
-
-test('makeDecision returns flow/manual-only when manual-only PR has review labels', () => {
-  const decision = makePrFlowDecision({
-    pr: {
-      ...basePr,
-      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
-      files: ['src/example.ts'],
-    },
-    policy: {
-      manual_only: true,
-      blocking_labels_present: [],
-      maintainerAssociations: ['OWNER', 'MEMBER'],
-    },
-    workerRuns: { codeReview: [] },
-    eventName: 'workflow_dispatch',
-    event: {},
+    workerRuns: {},
     config: testConfig,
     checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
   });
 
   assert.equal(decision.state, 'flow/manual-only');
-  assert.equal(decision.reason, 'Manual-only PR: advisory reviews passed.');
+  assert.match(
+    decision.reason,
+    /Manual review is required by label: needs-review/,
+  );
+  assert.equal(decision.dispatch, null);
+  assert.ok(decision.desiredLabels.includes('flow/manual-only'));
+});
+
+test('makeDecision does not dispatch workers for needs-review PR (PR #209)', () => {
+  const decision = makePrFlowDecision({
+    pr: {
+      ...basePr,
+      labels: ['needs-review'],
+      files: ['src/app/page.tsx'],
+    },
+    policy: {
+      blocking_labels_present: ['needs-review'],
+      manual_only: false,
+      maintainerAssociations: ['OWNER'],
+    },
+    workerRuns: { codeReview: [] },
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.notEqual(decision.state, 'flow/review-pending');
   assert.equal(decision.dispatch, null);
 });
 
-test('buildFlowVisibility shows code review as success and finalizer as N/A for manual-only PR with review labels', () => {
+test('makeDecision keeps hard blockers as failures even with needs-review', () => {
+  const decision = makePrFlowDecision({
+    pr: {
+      ...basePr,
+      labels: ['needs-review', 'do-not-merge'],
+      files: ['src/example.ts'],
+    },
+    policy: {
+      blocking_labels_present: ['needs-review', 'do-not-merge'],
+      manual_only: false,
+      maintainerAssociations: ['OWNER'],
+    },
+    workerRuns: {},
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.equal(decision.state, 'flow/review-blocked');
+  assert.match(decision.reason, /do-not-merge/);
+});
+
+test('makeDecision keeps ai-review-concerns blocking on a needs-review manual-only PR', () => {
+  const decision = makePrFlowDecision({
+    pr: {
+      ...basePr,
+      labels: ['needs-review', 'ai-review-concerns'],
+      files: ['src/example.ts'],
+    },
+    policy: {
+      blocking_labels_present: ['needs-review', 'ai-review-concerns'],
+      manual_only: false,
+      maintainerAssociations: ['OWNER'],
+    },
+    workerRuns: {},
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.equal(decision.state, 'flow/review-blocked');
+  assert.match(decision.reason, /ai-review-concerns/);
+  assert.equal(decision.dispatch, null);
+});
+
+test('buildFlowVisibility sets all workers N/A for needs-review manual-only (PR #209)', () => {
   const visibility = buildFlowVisibility({
     pr: {
       ...basePr,
       isDraft: false,
       state: 'OPEN',
       mergedAt: '',
-      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
+      labels: ['needs-review'],
     },
     config: testConfig,
     policy: {
-      manual_only: true,
-      blocking_labels_present: [],
+      manual_only: false,
+      blocking_labels_present: ['needs-review'],
       maintainerAssociations: [],
     },
     decision: {
       state: 'flow/manual-only',
-      reason: 'Manual-only PR: advisory reviews passed.',
+      reason: 'Manual review is required by label: needs-review.',
       checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
     },
-    workerRuns: {
-      codeReview: [
-        {
-          displayTitle: 'PR #42 @ abc123',
-          status: 'completed',
-          conclusion: 'success',
-          createdAt: '2026-06-23T12:00:00Z',
-        },
-      ],
-    },
+    workerRuns: {},
     currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
   });
 
   assert.equal(visibility.aggregate.state, 'success');
-  assert.equal(visibility.aggregate.displayState, 'success');
-  assert.match(visibility.aggregate.description, /advisory reviews passed/);
-  assert.equal(visibility.workers.codeReview.displayState, 'success');
-  assert.equal(visibility.workers.finalizer.displayState, 'N/A');
-  assert.match(visibility.workers.finalizer.description, /manual-only/);
-});
-
-test('buildFlowVisibility aggregate description mentions advisory reviews when manual-only has completed reviews', () => {
-  const visibility = buildFlowVisibility({
-    pr: {
-      ...basePr,
-      isDraft: false,
-      state: 'OPEN',
-      mergedAt: '',
-      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
-    },
-    config: testConfig,
-    policy: {
-      manual_only: true,
-      blocking_labels_present: [],
-      maintainerAssociations: [],
-    },
-    decision: {
-      state: 'flow/manual-only',
-      reason: 'Manual-only PR: advisory reviews passed.',
-      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
-    },
-    workerRuns: {
-      codeReview: [
-        {
-          displayTitle: 'PR #42 @ abc123',
-          status: 'completed',
-          conclusion: 'success',
-          createdAt: '2026-06-23T12:00:00Z',
-        },
-      ],
-    },
-    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
-  });
-
-  assert.equal(
-    visibility.aggregate.description,
-    'Manual-only PR: advisory reviews passed. Ready for human merge decision.',
-  );
+  for (const worker of [
+    'codeReview',
+    'securityReview',
+    'dependencyReview',
+    'kiloReview',
+    'prImprove',
+    'finalizer',
+  ]) {
+    assert.equal(
+      visibility.workers[worker].displayState,
+      'N/A',
+      `worker ${worker} should be N/A for manual-only PR`,
+    );
+  }
 });

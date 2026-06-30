@@ -626,7 +626,12 @@ function buildFlowVisibility({
   }
 
   const codeDispatchError = dispatchErrorFor('codeReview');
-  if (policy.dependabot) {
+  if (manualTerminal) {
+    statuses.codeReview = skippedStatus(
+      'codeReview',
+      'N/A: PR is manual-only.',
+    );
+  } else if (policy.dependabot) {
     statuses.codeReview = skippedStatus(
       'codeReview',
       'N/A: Dependabot PRs use dependency review.',
@@ -672,7 +677,12 @@ function buildFlowVisibility({
   }
 
   const securityDispatchError = dispatchErrorFor('securityReview');
-  if (policy.dependabot) {
+  if (manualTerminal) {
+    statuses.securityReview = skippedStatus(
+      'securityReview',
+      'N/A: PR is manual-only.',
+    );
+  } else if (policy.dependabot) {
     statuses.securityReview = skippedStatus(
       'securityReview',
       'N/A: Dependabot PRs use dependency review.',
@@ -718,7 +728,12 @@ function buildFlowVisibility({
   }
 
   const dependencyDispatchError = dispatchErrorFor('dependencyReview');
-  if (!needsDependencyReview) {
+  if (manualTerminal) {
+    statuses.dependencyReview = skippedStatus(
+      'dependencyReview',
+      'N/A: PR is manual-only.',
+    );
+  } else if (!needsDependencyReview) {
     statuses.dependencyReview = skippedStatus(
       'dependencyReview',
       'N/A: Dependency review is not required for this PR.',
@@ -763,7 +778,12 @@ function buildFlowVisibility({
     );
   }
 
-  if (policy.dependabot) {
+  if (manualTerminal) {
+    statuses.kiloReview = skippedStatus(
+      'kiloReview',
+      'N/A: PR is manual-only.',
+    );
+  } else if (policy.dependabot) {
     statuses.kiloReview = skippedStatus(
       'kiloReview',
       'N/A: Dependabot PRs use dependency review.',
@@ -1501,14 +1521,6 @@ function makeDecision(context) {
     (manualReviewLabels.length > 0
       ? `Manual review is required by label: ${manualReviewLabels.join(', ')}.`
       : 'PR is manual-only by policy.');
-  // Check if manual-only PR has completed advisory reviews
-  const hasCompletedAdvisoryReviews = hasAll(
-    labels,
-    codeReviewWorker.passLabels ?? [],
-  );
-  const manualOnlyWithReviewsReason = hasCompletedAdvisoryReviews
-    ? 'Manual-only PR: advisory reviews passed.'
-    : manualOnlyReason;
 
   if (nonReviewHardBlockingLabels.length > 0) {
     return finish(
@@ -1540,6 +1552,29 @@ function makeDecision(context) {
       [],
       reviewSignalLabels,
     );
+  }
+
+  // Advisory review concerns (ai-/security-review-concerns) stay blocking on
+  // manual-only PRs so a needs-review label never masks them as success.
+  if (
+    manualOnly &&
+    !maintainerApproved &&
+    hasAny(labels, codeReviewWorker.blockLabels ?? [])
+  ) {
+    const concernLabels = (codeReviewWorker.blockLabels ?? []).filter((label) =>
+      labels.includes(label),
+    );
+    return finish(
+      'flow/review-blocked',
+      `Blocking labels are present: ${concernLabels.join(', ')}.`,
+    );
+  }
+
+  // Manual-only PRs (needs-review, manual-only policy) reach terminal state
+  // immediately after CI is green, skipping automated worker dispatch.
+  // Diagnostic worker contexts are N/A.
+  if (manualOnly && !maintainerApproved) {
+    return finish('flow/manual-only', manualOnlyReason);
   }
 
   const needsDependencyReview =
@@ -1617,10 +1652,6 @@ function makeDecision(context) {
         externalReview.reason || 'Waiting for Kilo review signal.',
       );
     }
-  }
-
-  if (manualOnly && !maintainerApproved) {
-    return finish('flow/manual-only', manualOnlyWithReviewsReason);
   }
 
   const shouldImprove =
