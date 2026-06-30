@@ -2,7 +2,7 @@
 
 ## Problem
 
-Zero `ErrorBoundary` components and zero `error.tsx` files exist in the codebase. An unhandled rendering error in any React component (bad data shape, null dereference, network timeout during render) crashes the **entire** admin panel with a white screen. For a VPN management tool where the admin may be responding to an outage, this is a reliability gap — the panel itself should never become unavailable due to a UI bug in one widget.
+The dashboard shell already has a reusable `ErrorBoundary` (`src/components/layout/error-boundary.tsx`) mounted in `dashboard-layout.tsx`, but the App Router still has zero route-level `error.tsx` files and individual dashboard widgets are not isolated. An unhandled rendering error outside the dashboard boundary, or inside one widget, can still take down more UI than necessary. For a VPN management tool where the admin may be responding to an outage, this is a reliability gap — the panel itself should degrade locally instead of losing an entire route or dashboard area due to a UI bug in one widget.
 
 ## Scope
 
@@ -21,7 +21,7 @@ Zero `ErrorBoundary` components and zero `error.tsx` files exist in the codebase
 ### 3. Create a reusable `DashboardWidgetError` component
 
 - **files**: `src/components/dashboard-widget-error.tsx` (new)
-- **action**: Small wrapper component with `componentDidCatch` (class component) or React's `ErrorBoundary` pattern. Wrap each dashboard widget (stats cards, chain visualization, traffic chart, alert banner) individually so one widget failure doesn't cascade.
+- **action**: Reuse or extend the existing `ErrorBoundary` pattern for widget-level fallbacks. Wrap each dashboard widget (stats cards, chain visualization, traffic chart, alert banner) individually so one widget failure doesn't cascade.
 - **verify**: Simulate error in stats card → card shows "Stats unavailable" fallback → rest of dashboard renders normally.
 
 ## Acceptance Criteria

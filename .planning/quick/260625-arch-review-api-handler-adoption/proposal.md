@@ -2,7 +2,7 @@
 
 ## Problem
 
-`apiHandler` in `src/lib/api-handler.ts` centralizes Prisma error mapping (unique violation → 409, not-found → 404), Zod error formatting (422), and unknown error logging. Only **2 of ~65 route handlers** use it (`panels/route.ts` GET+POST). The remaining ~60 routes use raw `export async function POST/GET` with manual try/catch, producing inconsistent error responses:
+`apiHandler` in `src/lib/api-handler.ts` centralizes Prisma error mapping (unique violation → 409, not-found → 404), Zod error formatting (422), and unknown error logging. Adoption has started in `users`, `servers`, `panels`, `sync`, and `health` routes (8+ handlers), but most API routes still use raw `export async function POST/GET` with manual try/catch, producing inconsistent error responses:
 
 - A Prisma `P2002` unique violation in `/api/users` returns 409 (via `apiHandler`), but the same violation in `/api/chains/apply` returns a generic 500.
 - Zod parse failures return varying error shapes across routes.
@@ -19,7 +19,7 @@ Priority routes where consistent error responses matter most:
 | Route | Why |
 |-------|-----|
 | `chains/apply/route.ts` (250 lines) | Complex multi-service operation, Prisma writes |
-| `panels/push/route.ts` (511 lines via push-wizard) | Network operations to remote panels |
+| `panels/push/route.ts` (118 lines; called by 511-line `src/components/push/push-wizard.tsx`) | Network operations to remote panels |
 | `panels/[id]/route.ts` (GET/PUT/DELETE) | CRUD with unique constraints |
 | `routing/rules/[id]/route.ts` (GET/PUT/DELETE) | Reorder + priority conflicts |
 | `routing/geo/[id]/route.ts` (GET/PUT/DELETE) | Cascade deletions |
