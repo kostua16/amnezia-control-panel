@@ -61,6 +61,12 @@ function compareGateOutcomes({ baseline = {}, post = {} } = {}) {
       if (baselinePassed && !postPassed) {
         newFailures.push(row);
       } else if (!baselinePassed && !postPassed) {
+        // Red in both baseline and post: classified as pre-existing, which
+        // grants no-worse push permission. The gate exposes only per-check
+        // outcomes (success/failure/skipped), so a new failure hidden within
+        // an already-red check cannot be distinguished here. renderGateComparison
+        // surfaces this caveat in the sticky comment so a reviewer can verify
+        // the rebase did not worsen the pre-existing failure.
         preExistingFailures.push(row);
       } else if (!baselinePassed && postPassed) {
         improvedFailures.push(row);

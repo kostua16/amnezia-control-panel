@@ -105,6 +105,20 @@ function renderGateComparison(comparison = null) {
     ...renderComparisonRows('Improved failures', comparison.improved_failures),
   );
 
+  const preExistingFailures = Array.isArray(comparison.pre_existing_failures)
+    ? comparison.pre_existing_failures
+    : [];
+  // No-worse permission was granted while relying on red->red checks. The
+  // comparison is pass/fail per check, so it cannot see a new failure hidden
+  // inside an already-red check; surface that so a reviewer can verify.
+  if (preExistingFailures.length > 0 && comparison.no_new_failures) {
+    lines.push(
+      '- Caveat: checks are compared at pass/fail granularity. A new failure ' +
+        'hidden inside an already-red check would not be detected, so verify ' +
+        'the rebase did not worsen the pre-existing failures above.',
+    );
+  }
+
   return lines.join('\n');
 }
 

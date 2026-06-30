@@ -92,3 +92,39 @@ test('renderGateComparison explains unavailable baseline with green post gate', 
   );
   assert.ok(!body.includes('fail-closed'));
 });
+
+test('renderGateComparison surfaces masking caveat when relying on pre-existing failures', () => {
+  const body = renderGateComparison({
+    no_new_failures: true,
+    baseline_unavailable: false,
+    post_all_passing: false,
+    new_failures: [],
+    pre_existing_failures: [
+      {
+        key: 'format',
+        label: 'format (prettier)',
+        baseline: 'failure',
+        post: 'failure',
+      },
+    ],
+    improved_failures: [],
+  });
+
+  assert.ok(body.includes('no new failures introduced'));
+  assert.ok(body.includes('Pre-existing failures:'));
+  assert.match(body, /pass\/fail granularity/i);
+  assert.match(body, /already-red check/i);
+});
+
+test('renderGateComparison omits masking caveat without pre-existing failures', () => {
+  const body = renderGateComparison({
+    no_new_failures: true,
+    baseline_unavailable: false,
+    post_all_passing: true,
+    new_failures: [],
+    pre_existing_failures: [],
+    improved_failures: [],
+  });
+
+  assert.ok(!body.includes('already-red check'));
+});
