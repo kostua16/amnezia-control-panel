@@ -192,6 +192,11 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
 
+      - name: Baseline validation (CI-matching gate before rebase)
+        id: baseline_gate
+        if: steps.pr.outputs.eligible == 'true'
+        uses: ./.github/actions/validate-pr-gate
+
       - name: Prepare branch (fetch base, capture heads)
         id: prep
         if: steps.pr.outputs.eligible == 'true'
@@ -386,12 +391,39 @@ jobs:
           steps.claude.outputs.claude_failed != 'true'
         uses: ./.github/actions/validate-pr-gate
 
+      - name: Compare rebase CI baseline
+        id: gate_compare
+        if: >-
+          steps.pr.outputs.eligible == 'true' &&
+          steps.ancestry.outputs.ok == 'true' &&
+          steps.moved.outputs.rebase_moved_head == 'true' &&
+          steps.claude.outputs.claude_failed != 'true'
+        run: |
+          node "$REBASE_CONTROL_DIR/scripts/compare-rebase-gate-outcomes.cjs" \
+            --baseline-lint "${{ steps.baseline_gate.outputs.lint_outcome }}" \
+            --baseline-typecheck "${{ steps.baseline_gate.outputs.typecheck_outcome }}" \
+            --baseline-format "${{ steps.baseline_gate.outputs.format_outcome }}" \
+            --baseline-test "${{ steps.baseline_gate.outputs.test_outcome }}" \
+            --baseline-build "${{ steps.baseline_gate.outputs.build_outcome }}" \
+            --baseline-script-tests "${{ steps.baseline_gate.outputs.script_tests_outcome }}" \
+            --baseline-prisma-safe "${{ steps.baseline_gate.outputs.prisma_safe_outcome }}" \
+            --post-lint "${{ steps.gate.outputs.lint_outcome }}" \
+            --post-typecheck "${{ steps.gate.outputs.typecheck_outcome }}" \
+            --post-format "${{ steps.gate.outputs.format_outcome }}" \
+            --post-test "${{ steps.gate.outputs.test_outcome }}" \
+            --post-build "${{ steps.gate.outputs.build_outcome }}" \
+            --post-script-tests "${{ steps.gate.outputs.script_tests_outcome }}" \
+            --post-prisma-safe "${{ steps.gate.outputs.prisma_safe_outcome }}"
+
       - name: Push rebased branch
         id: push
         if: >-
           steps.pr.outputs.eligible == 'true' &&
           steps.ancestry.outputs.ok == 'true' &&
-          steps.gate.outputs.gate_passed == 'true' &&
+          (
+            steps.gate.outputs.gate_passed == 'true' ||
+            steps.gate_compare.outputs.no_new_failures == 'true'
+          ) &&
           steps.moved.outputs.rebase_moved_head == 'true' &&
           github.event.inputs.dry_run != 'true'
         env:
@@ -464,6 +496,8 @@ jobs:
           BUILD_OUTCOME: ${{ steps.gate.outputs.build_outcome }}
           SCRIPT_TESTS_OUTCOME: ${{ steps.gate.outputs.script_tests_outcome }}
           PRISMA_SAFE_OUTCOME: ${{ steps.gate.outputs.prisma_safe_outcome }}
+          GATE_COMPARISON_JSON: ${{ steps.gate_compare.outputs.comparison_json }}
+          GATE_NO_NEW_FAILURES: ${{ steps.gate_compare.outputs.no_new_failures }}
           PUSHED: ${{ steps.push.outputs.pushed }}
           REBASE_MOVED_HEAD: ${{ steps.moved.outputs.rebase_moved_head }}
           DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
@@ -494,6 +528,8 @@ jobs:
             --build-outcome "$BUILD_OUTCOME" \
             --script-tests-outcome "$SCRIPT_TESTS_OUTCOME" \
             --prisma-safe-outcome "$PRISMA_SAFE_OUTCOME" \
+            --gate-comparison-json "$GATE_COMPARISON_JSON" \
+            --gate-no-new-failures "$GATE_NO_NEW_FAILURES" \
             --pushed "$PUSHED" \
             --rebase-moved-head "$REBASE_MOVED_HEAD" \
             --dry-run "$DRY_RUN" \

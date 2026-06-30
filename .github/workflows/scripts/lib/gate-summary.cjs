@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
 // Shared renderer for the dual-block gate summary used by the code-pushing
 // claude-driven workflows (fix-review, audit-fix, fix-issue, _auto-fix-ci,
 // monitor, workflow-health-optimize). Renders BOTH the agent's self-reported
@@ -58,4 +57,69 @@ function renderGateSummary({ agentValidation = {}, gateOutcomes = {} } = {}) {
   return lines.join('\n');
 }
 
-module.exports = { BANNER, label, renderGateSummary };
+function renderComparisonRows(title, rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  return [
+    `${title}:`,
+    ...rows.map(
+      (row) =>
+        `- ${row.label || row.key}: before **${label(row.baseline)}**, after **${label(row.post)}**`,
+    ),
+  ];
+}
+
+function renderGateComparison(comparison = null) {
+  if (!comparison || typeof comparison !== 'object') return '';
+
+  const lines = ['CI comparison (before vs after rebase):'];
+  if (comparison.no_new_failures) {
+    lines.push('- Verdict: no new failures introduced by the rebase.');
+  } else if (comparison.baseline_unavailable) {
+    lines.push(
+      '- Verdict: baseline unavailable, so red post-rebase checks block push.',
+    );
+  } else {
+    lines.push('- Verdict: new post-rebase failures block push.');
+  }
+
+  if (comparison.post_all_passing) {
+    lines.push('- Post-rebase gate: all checks pass.');
+  }
+  if (comparison.baseline_unavailable) {
+    if (comparison.post_all_passing) {
+      lines.push(
+        '- Baseline gate: unavailable, but post-rebase gate is green.',
+      );
+    } else {
+      lines.push(
+        '- Baseline gate: unavailable or incomplete; no-worse permission is fail-closed.',
+      );
+    }
+  }
+  lines.push(
+    ...renderComparisonRows('New failures', comparison.new_failures),
+    ...renderComparisonRows(
+      'Pre-existing failures',
+      comparison.pre_existing_failures,
+    ),
+    ...renderComparisonRows('Improved failures', comparison.improved_failures),
+  );
+
+  const preExistingFailures = Array.isArray(comparison.pre_existing_failures)
+    ? comparison.pre_existing_failures
+    : [];
+  // No-worse permission was granted while relying on red->red checks. The
+  // comparison is pass/fail per check, so it cannot see a new failure hidden
+  // inside an already-red check; surface that so a reviewer can verify.
+  if (preExistingFailures.length > 0 && comparison.no_new_failures) {
+    lines.push(
+      '- Caveat: checks are compared at pass/fail granularity. A new failure ' +
+        'hidden inside an already-red check would not be detected, so verify ' +
+        'the rebase did not worsen the pre-existing failures above.',
+    );
+  }
+
+  return lines.join('\n');
+}
+
+module.exports = { BANNER, label, renderGateComparison, renderGateSummary };

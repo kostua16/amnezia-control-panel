@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 const {
   COMMENT_MARKER,
   isTrue,
+  parseGateComparison,
   parsePathList,
   repoBaseUrl,
   renderStarted,
@@ -294,6 +295,99 @@ test('resolveFinishedBody: gate failure -> validation-failed, not pushed', () =>
   assert.match(body, /Workflow gate \(authoritative\):/);
 });
 
+test('resolveFinishedBody: pre-existing gate failure can complete when no worse', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    gatePassed: 'false',
+    gateNoNewFailures: 'true',
+    pushed: 'true',
+    rebaseMovedHead: 'true',
+    headSha: SHA,
+    newHeadSha: NEW_SHA,
+    structured: {},
+    gateComparison: {
+      no_new_failures: true,
+      baseline_unavailable: false,
+      post_all_passing: false,
+      new_failures: [],
+      pre_existing_failures: [
+        {
+          key: 'format',
+          label: 'format (prettier)',
+          baseline: 'failure',
+          post: 'failure',
+        },
+      ],
+      improved_failures: [],
+    },
+  });
+
+  assert.match(body, /Rebase complete/);
+  assert.match(body, /CI comparison \(before vs after rebase\):/);
+  assert.match(body, /no new failures introduced/);
+  assert.match(body, /Pre-existing failures:/);
+  assert.match(
+    body,
+    /format \(prettier\): before \*\*fail\*\*, after \*\*fail\*\*/,
+  );
+  assert.doesNotMatch(body, /Validation failed/);
+});
+
+test('renderValidationFailed shows new rebase regression evidence', () => {
+  const body = renderValidationFailed({
+    headSha: SHA,
+    runUrl: RUN,
+    structured: {},
+    gateOutcomes: { format: 'failure' },
+    gateComparison: {
+      no_new_failures: false,
+      baseline_unavailable: false,
+      post_all_passing: false,
+      new_failures: [
+        {
+          key: 'format',
+          label: 'format (prettier)',
+          baseline: 'success',
+          post: 'failure',
+        },
+      ],
+      pre_existing_failures: [],
+      improved_failures: [],
+    },
+    updatedAt: TS,
+  });
+
+  assert.match(body, /Validation failed/);
+  assert.match(body, /new post-rebase failures block push/i);
+  assert.match(body, /New failures:/);
+  assert.match(
+    body,
+    /format \(prettier\): before \*\*pass\*\*, after \*\*fail\*\*/,
+  );
+});
+
+test('renderValidationFailed shows unavailable baseline evidence', () => {
+  const body = renderValidationFailed({
+    headSha: SHA,
+    runUrl: RUN,
+    structured: {},
+    gateOutcomes: { format: 'failure' },
+    gateComparison: {
+      no_new_failures: false,
+      baseline_unavailable: true,
+      post_all_passing: false,
+      new_failures: [],
+      pre_existing_failures: [],
+      improved_failures: [],
+    },
+    updatedAt: TS,
+  });
+
+  assert.match(body, /baseline unavailable/i);
+  assert.match(body, /fail-closed/);
+});
+
 test('resolveFinishedBody: green gate, not pushed, head moved -> push-rejected', () => {
   const body = resolveFinishedBody({
     outcome: 'success',
@@ -341,6 +435,14 @@ test('parsePathList handles JSON arrays and invalid values', () => {
   assert.deepEqual(parsePathList('["a.md","b.md"]'), ['a.md', 'b.md']);
   assert.deepEqual(parsePathList('not json'), []);
   assert.deepEqual(parsePathList(''), []);
+});
+
+test('parseGateComparison handles JSON objects and invalid values', () => {
+  assert.deepEqual(parseGateComparison('{"no_new_failures":true}'), {
+    no_new_failures: true,
+  });
+  assert.equal(parseGateComparison('not json'), null);
+  assert.equal(parseGateComparison(''), null);
 });
 
 test('isTrue matches boolean and string true', () => {

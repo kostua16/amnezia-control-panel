@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   BANNER,
   label,
+  renderGateComparison,
   renderGateSummary,
 } = require('../lib/gate-summary.cjs');
 
@@ -73,4 +74,57 @@ test('renderGateSummary keeps partial agent reports and unknown outcomes', () =>
   assert.ok(body.includes('- build: **pass**'));
   // Missing gate outcomes render as 'unknown' rather than crashing.
   assert.ok(body.includes('- lint (tracked files): **unknown**'));
+});
+
+test('renderGateComparison explains unavailable baseline with green post gate', () => {
+  const body = renderGateComparison({
+    no_new_failures: true,
+    baseline_unavailable: true,
+    post_all_passing: true,
+    new_failures: [],
+    pre_existing_failures: [],
+    improved_failures: [],
+  });
+
+  assert.ok(body.includes('no new failures introduced'));
+  assert.ok(
+    body.includes('Baseline gate: unavailable, but post-rebase gate is green.'),
+  );
+  assert.ok(!body.includes('fail-closed'));
+});
+
+test('renderGateComparison surfaces masking caveat when relying on pre-existing failures', () => {
+  const body = renderGateComparison({
+    no_new_failures: true,
+    baseline_unavailable: false,
+    post_all_passing: false,
+    new_failures: [],
+    pre_existing_failures: [
+      {
+        key: 'format',
+        label: 'format (prettier)',
+        baseline: 'failure',
+        post: 'failure',
+      },
+    ],
+    improved_failures: [],
+  });
+
+  assert.ok(body.includes('no new failures introduced'));
+  assert.ok(body.includes('Pre-existing failures:'));
+  assert.match(body, /pass\/fail granularity/i);
+  assert.match(body, /already-red check/i);
+});
+
+test('renderGateComparison omits masking caveat without pre-existing failures', () => {
+  const body = renderGateComparison({
+    no_new_failures: true,
+    baseline_unavailable: false,
+    post_all_passing: true,
+    new_failures: [],
+    pre_existing_failures: [],
+    improved_failures: [],
+  });
+
+  assert.ok(!body.includes('already-red check'));
 });
