@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
+import { apiHandler, type RouteContext } from '@/lib/api-handler';
+import { error, validationError } from '@/lib/api-response';
 
 const validProtocols = [
   'ANY',
@@ -23,22 +25,15 @@ const updateRuleSchema = z.object({
   userId: z.number().int().positive().nullable().optional(),
 });
 
-interface RouteContext {
-  params: Promise<{ id: string }>;
-}
-
 // ─── GET: Fetch single routing rule ──────────────────────
 
-export async function GET(_request: NextRequest, context: RouteContext) {
-  try {
+export const GET = apiHandler(
+  async (_request: NextRequest, context: RouteContext<{ id: string }>) => {
     const { id } = await context.params;
     const ruleId = parseInt(id, 10);
 
     if (isNaN(ruleId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid rule ID' },
-        { status: 422 },
-      );
+      return error('Invalid rule ID', 422);
     }
 
     const rule = await prisma.routingRule.findUnique({
@@ -51,10 +46,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
 
     if (!rule) {
-      return NextResponse.json(
-        { success: false, error: 'Rule not found' },
-        { status: 404 },
-      );
+      return error('Rule not found', 404);
     }
 
     return NextResponse.json({
@@ -77,39 +69,26 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         createdAt: rule.createdAt.toISOString(),
       },
     });
-  } catch (err) {
-    console.error('[api/routing/rules/[id] GET] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch routing rule' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/routing/rules/[id]',
+);
 
 // ─── PUT: Update routing rule ────────────────────────────
 
-export async function PUT(request: NextRequest, context: RouteContext) {
-  try {
+export const PUT = apiHandler(
+  async (request: NextRequest, context: RouteContext<{ id: string }>) => {
     const { id } = await context.params;
     const ruleId = parseInt(id, 10);
 
     if (isNaN(ruleId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid rule ID' },
-        { status: 422 },
-      );
+      return error('Invalid rule ID', 422);
     }
 
     const body = await request.json();
     const parsed = updateRuleSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError =
-        parsed.error.issues[0]?.message ?? 'Invalid request body';
-      return NextResponse.json(
-        { success: false, error: firstError },
-        { status: 422 },
-      );
+      return validationError(parsed.error);
     }
 
     // Check rule exists
@@ -118,10 +97,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Rule not found' },
-        { status: 404 },
-      );
+      return error('Rule not found', 404);
     }
 
     const { userId, ...ruleData } = parsed.data;
@@ -132,10 +108,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         where: { id: userId },
       });
       if (!user) {
-        return NextResponse.json(
-          { success: false, error: 'User not found' },
-          { status: 404 },
-        );
+        return error('User not found', 404);
       }
     }
 
@@ -185,27 +158,19 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         createdAt: rule.createdAt.toISOString(),
       },
     });
-  } catch (err) {
-    console.error('[api/routing/rules/[id] PUT] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to update routing rule' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/routing/rules/[id]',
+);
 
 // ─── DELETE: Remove routing rule ─────────────────────────
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
-  try {
+export const DELETE = apiHandler(
+  async (_request: NextRequest, context: RouteContext<{ id: string }>) => {
     const { id } = await context.params;
     const ruleId = parseInt(id, 10);
 
     if (isNaN(ruleId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid rule ID' },
-        { status: 422 },
-      );
+      return error('Invalid rule ID', 422);
     }
 
     // Check rule exists
@@ -214,10 +179,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Rule not found' },
-        { status: 404 },
-      );
+      return error('Rule not found', 404);
     }
 
     await prisma.routingRule.delete({
@@ -239,11 +201,6 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       success: true,
       data: { id: ruleId },
     });
-  } catch (err) {
-    console.error('[api/routing/rules/[id] DELETE] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete routing rule' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/routing/rules/[id]',
+);
