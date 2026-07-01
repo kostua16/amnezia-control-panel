@@ -666,6 +666,16 @@ Notes:
 - Review corrections are folded into the artifacts: Prisma SQLite enum enforcement, Tailscale command/math framing, panel retry worst-case timing, and duplicate Impact bullets.
 - This archive intentionally does not renumber backlog proposals because several historical artifacts reuse numbers or overlap with already-indexed roadmap entries.
 
+## Improvement Intake: Architectural Review Pass 7 (2026-07-01)
+
+Source: `/gsd:explore` seventh-pass review (non-duplicative). Artifact: `.planning/quick/260701-arch-review-pass7/proposal.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 19 | **SQLite automated backup strategy** — Zero backup mechanism for single-file SQLite DB; add `better-sqlite3.backup()` + daily scheduled backup via instrumentation.ts so admin has a restore path after corruption | Medium (Ops) | `src/lib/db-backup.ts` (new), `src/instrumentation.ts` | Proposed |
+| 20 | **JWT sliding-session window** — Hard 24h expiry with no refresh; admin loses unsaved work on mid-session expiry. Fix: re-issue JWT in proxy.ts when ≤ 4h remaining (transparent to frontend) | Medium (UX/Security) | `src/proxy.ts`, `src/app/api/auth/login/route.ts` | Proposed |
+| 21 | **CSP nonce-based hardening** — CSP allows `unsafe-inline` and `unsafe-eval`, negating XSS protection. Fix: remove `unsafe-eval` immediately; add per-request nonce for `script-src` to actually block code injection | Low-Medium (Security) | `src/proxy.ts`, `src/app/layout.tsx` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-06-24 - Added architectural review pass 6 (proposals #16-#18: SQLite WAL, security headers, VPN loop parallelism)*
+*Last updated: 2026-07-01 - Added architectural review pass 7 (proposals #19-#21: SQLite backup, JWT sliding session, CSP nonce hardening)*

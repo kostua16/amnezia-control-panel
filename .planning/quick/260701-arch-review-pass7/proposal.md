@@ -1,0 +1,98 @@
+# Architectural Review Pass 7 — 2026-07-01
+
+Source: `/gsd:explore` deep architectural review (7th pass). Non-duplicative with proposals 1–18 and all existing quick tasks.
+
+Deduped vs open PRs: error boundaries (#571), rebase conflict context (#569), Dependabot config (#567/#563), eslint/js-yaml deps (#561/#560), auto-PR audit (#507), Tailscale dedup (#505), batch server lookups (#499), architectural review passes 3/5 (#498/#497/#495), admin password env (#489), VPN service adapter polymorphism (#460), typed API client (#459), user creation consistency (#444), chain-router key generation (#442), schema hygiene (#439).
+
+## Findings
+
+### #19: SQLite automated backup strategy (Medium — Operations)
+
+**Problem:** The panel stores all state (users, servers, VPN configs, routing rules, traffic logs, audit logs, remote panels) in a single SQLite file (`prisma/dev.db`). There is zero backup mechanism — no scheduled `VACUUM INTO`, no `sqlite3 .backup`, no snapshot trigger. If the database file is corrupted (disk failure, OOM during write, WAL checkpoint crash), all panel state is permanently lost.
+
+For a single-admin deployment managing VPN infrastructure, losing the database means losing every user, every routing rule, every chain preset, and every panel registration. There is no restore path.
+
+**Evidence:**
+- `src/lib/prisma.ts` — SQLite connection setup with WAL mode, no backup logic
+- `.planning/quick/` — no backup-related proposal exists
+- ROADMAP — no backup-related phase
+- `docker-compose.yml` — no volume snapshot or backup cron
+- Grep for `backup|snapshot|dump` across `src/` returns zero database backup hits
+
+**Fix:** Add a lightweight backup utility in `src/lib/db-backup.ts`:
+
+1. `backupDatabase(targetPath: string): Promise<string>` — uses `better-sqlite3`'s `backup()` method (built-in, copies to new file without blocking reads). Called via `PRAGMA wal_checkpoint(TRUNCATE)` before backup to flush WAL.
+2. Scheduled via `setInterval` in `instrumentation.ts` (once daily) or exposed as an API endpoint `POST /api/configs/backup` for manual triggers.
+3. Optional: `retentionPolicy` that keeps N most recent backups (default 7), deleting older ones.
+4. Optional: `/api/configs/restore` endpoint that replaces the current DB file with a selected backup (requires server restart via `process.exit(0)` after swap).
+
+**Files:** `src/lib/db-backup.ts` (new), `src/instrumentation.ts` (register scheduled backup — depends on proposal #13), optionally `src/app/api/configs/backup/route.ts` (new).
+
+**Benefit:** Admin has a restore path after database corruption. Automated daily backups mean RPO ≤ 24 hours with zero external tooling.
+
+---
+
+### #20: JWT sliding-session window (Medium — UX/Security)
+
+**Problem:** Login issues a JWT with hard 24-hour expiry (`src/app/api/auth/login/route.ts:66`: `setExpirationTime('24h')`). There is no refresh mechanism. When the token expires mid-session:
+
+1. The admin's next API call returns 401 (silent failure in the UI — TanStack Query retries, then shows error).
+2. The admin is redirected to `/login?expired=true` (proxy.ts:156).
+3. All unsaved form state (chain editor, routing rules draft, push wizard progress) is lost.
+
+For an admin panel managing critical VPN infrastructure, forced re-login every 24 hours during active sessions is a UX problem. Worse, if the admin is mid-push or mid-chain-edit, the session expiry causes data loss.
+
+Additionally, the JWT secret (`JWT_SECRET`) is loaded once at startup. If rotated (good practice), all existing sessions are immediately invalidated with no graceful transition.
+
+**Evidence:**
+- `src/app/api/auth/login/route.ts:60-67` — JWT creation with 24h hard expiry, no refresh token
+- `src/proxy.ts:118-135` — JWT verification with no refresh logic
+- `src/lib/websocket.ts` — Socket.IO auth reads `auth-token` cookie, no re-auth
+- Grep for `refresh.*token|token.*refresh|rotate.*key` across `src/` — zero hits
+
+**Fix:** Implement a sliding-session window:
+
+1. **Option A (simpler, sufficient for single-admin):** In `proxy.ts`, when a JWT is verified and has ≤ 4 hours remaining, re-issue a new JWT with a fresh 24-hour expiry and set it on the response via `Set-Cookie`. This is transparent to the frontend — the session auto-renews on any API call within the last 4 hours.
+2. **Option B (more robust):** Add a `/api/auth/refresh` endpoint that takes the current (non-expired) token and returns a new one. Frontend calls this proactively when the token is near expiry.
+3. Both options need: `maxAge: 86400` cookie path consistency, and a check in the re-issue logic that the admin account still exists and is active.
+
+**Files:** `src/proxy.ts` (re-issue logic), `src/app/api/auth/login/route.ts` (extract token creation helper), optionally `src/app/api/auth/refresh/route.ts` (new, option B only).
+
+**Benefit:** Admin sessions persist across active use. No data loss from mid-session expiry. Simple to implement — option A is ~20 lines in proxy.ts.
+
+---
+
+### #21: CSP nonce-based hardening (Low-Medium — Security)
+
+**Problem:** `src/proxy.ts:48-53` sets a Content-Security-Policy header that includes `'unsafe-inline'` and `'unsafe-eval'` in `script-src`, and `'unsafe-inline'` in `style-src`. These directives effectively disable CSP's XSS protection:
+
+- `unsafe-inline` allows any inline `<script>` tag to execute — the primary vector for reflected and stored XSS.
+- `unsafe-eval` allows `eval()` and `new Function()` — used by some bundlers but eliminates CSP's ability to restrict code injection.
+
+The security headers were added (proposal #17, pass 6), which is good. But the CSP is permissive enough that a DOM XSS vulnerability in any dependency could be exploited to execute arbitrary JavaScript.
+
+**Evidence:**
+- `src/proxy.ts:50` — `"script-src 'self' 'unsafe-inline' 'unsafe-eval';"`
+- `src/proxy.ts:51` — `"style-src 'self' 'unsafe-inline';"`
+- `src/proxy.ts:53` — `"connect-src 'self' ws: wss:;"` — no nonce/hash fallback
+
+**Note:** Next.js App Router with Turbopack may inject inline scripts for HMR (dev) and RSC flight data. A full nonce migration requires generating a per-request nonce in `proxy.ts`, passing it to the `<head>` via Next.js's `<script>` nonce prop, and ensuring all inline scripts (RSC payloads, Next.js internals) use the nonce.
+
+**Fix:** Incremental CSP hardening in two steps:
+
+1. **Short-term:** Remove `'unsafe-eval'` from `script-src`. Verify Turbopack/Next.js works without it in production builds (it should — `unsafe-eval` is primarily needed for webpack dev HMR, not Turbopack or production). If dev breaks, scope `unsafe-eval` to `localhost` only via separate CSP for dev mode.
+2. **Longer-term:** Add per-request nonce generation in `proxy.ts`, pass via response header or `NextResponse.next({ headers: { 'x-csp-nonce': nonce } })`, and set `script-src 'self' 'nonce-{nonce}'` in production. RSC streaming responses need the same nonce. This is ~50-100 lines of changes across proxy.ts, layout.tsx, and next.config.ts.
+
+**Files:** `src/proxy.ts` (nonce generation, CSP update), `src/app/layout.tsx` (nonce prop on `<head>` scripts), `next.config.ts` (if RSC nonce support needed).
+
+**Benefit:** CSP actually blocks XSS injection instead of being a checkbox-only header. Removes `unsafe-eval` eliminates the most dangerous CSP bypass vector.
+
+---
+
+## Summary
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 19 | SQLite automated backup strategy | Medium (Ops) | `src/lib/db-backup.ts` (new), `src/instrumentation.ts` | Proposed |
+| 20 | JWT sliding-session window | Medium (UX/Security) | `src/proxy.ts`, `src/app/api/auth/login/route.ts` | Proposed |
+| 21 | CSP nonce-based hardening | Low-Medium (Security) | `src/proxy.ts`, `src/app/layout.tsx` | Proposed |
