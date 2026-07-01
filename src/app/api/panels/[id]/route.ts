@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { hashValue } from '@/lib/password';
-import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
 import { writeAuditLog } from '@/lib/audit-log';
 import { evictPanel } from '@/lib/panel-health-checker';
-
-type RouteContext = { params: Promise<{ id: string }> };
+import { apiHandler, type RouteContext } from '@/lib/api-handler';
+import { error, validationError } from '@/lib/api-response';
 
 const updatePanelSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -33,15 +32,14 @@ function panelResponse(panel: {
   };
 }
 
-export async function GET(_request: NextRequest, context: RouteContext) {
-  try {
+// ─── GET: Fetch single panel ───────────────────────────
+
+export const GET = apiHandler(
+  async (_request: NextRequest, context: RouteContext<{ id: string }>) => {
     const { id } = await context.params;
     const panelId = Number(id);
     if (Number.isNaN(panelId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid panel ID' },
-        { status: 422 },
-      );
+      return error('Invalid panel ID', 422);
     }
 
     const panel = await prisma.remotePanel.findUnique({
@@ -49,43 +47,29 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
 
     if (!panel) {
-      return NextResponse.json(
-        { success: false, error: 'Panel not found' },
-        { status: 404 },
-      );
+      return error('Panel not found', 404);
     }
 
     return NextResponse.json({ success: true, data: panelResponse(panel) });
-  } catch (err) {
-    console.error('[api/panels/:id GET] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch remote panel' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/panels/[id]',
+);
 
-export async function PUT(request: NextRequest, context: RouteContext) {
-  try {
+// ─── PUT: Update panel ──────────────────────────────────
+
+export const PUT = apiHandler(
+  async (request: NextRequest, context: RouteContext<{ id: string }>) => {
     const { id } = await context.params;
     const panelId = Number(id);
     if (Number.isNaN(panelId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid panel ID' },
-        { status: 422 },
-      );
+      return error('Invalid panel ID', 422);
     }
 
     const body = await request.json();
     const parsed = updatePanelSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError =
-        parsed.error.issues[0]?.message ?? 'Invalid request body';
-      return NextResponse.json(
-        { success: false, error: firstError },
-        { status: 422 },
-      );
+      return validationError(parsed.error);
     }
 
     const { name, panelUrl, apiKey, isActive } = parsed.data;
@@ -94,10 +78,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       where: { id: panelId },
     });
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Panel not found' },
-        { status: 404 },
-      );
+      return error('Panel not found', 404);
     }
 
     const updateData: Record<string, unknown> = {};
@@ -129,42 +110,25 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
 
     return NextResponse.json({ success: true, data: panelResponse(updated) });
-  } catch (err) {
-    console.error('[api/panels/:id PUT] Error:', err);
+  },
+  'api/panels/[id]',
+);
 
-    if (isPrismaUniqueViolation(err)) {
-      return NextResponse.json(
-        { success: false, error: 'Panel URL already exists' },
-        { status: 409 },
-      );
-    }
+// ─── DELETE: Remove panel ──────────────────────────────
 
-    return NextResponse.json(
-      { success: false, error: 'Failed to update remote panel' },
-      { status: 500 },
-    );
-  }
-}
-
-export async function DELETE(_request: NextRequest, context: RouteContext) {
-  try {
+export const DELETE = apiHandler(
+  async (_request: NextRequest, context: RouteContext<{ id: string }>) => {
     const { id } = await context.params;
     const panelId = Number(id);
     if (Number.isNaN(panelId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid panel ID' },
-        { status: 422 },
-      );
+      return error('Invalid panel ID', 422);
     }
 
     const existing = await prisma.remotePanel.findUnique({
       where: { id: panelId },
     });
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Panel not found' },
-        { status: 404 },
-      );
+      return error('Panel not found', 404);
     }
 
     await prisma.remotePanel.delete({ where: { id: panelId } });
@@ -180,11 +144,6 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     });
 
     return NextResponse.json({ success: true, data: { id: panelId } });
-  } catch (err) {
-    console.error('[api/panels/:id DELETE] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete remote panel' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/panels/[id]',
+);
