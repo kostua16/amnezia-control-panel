@@ -136,8 +136,11 @@ test('pr-flow.yml workflow_run trigger includes PR Policy', () => {
     triggerBlock,
     'workflow_run trigger block not found in pr-flow.yml',
   );
+  // Match "PR Policy" regardless of YAML quote style (single, double, or none)
+  // so a formatter-driven quote switch can't make this regression test fail
+  // spuriously while the trigger still lists PR Policy.
   assert.ok(
-    triggerBlock[0].includes("'PR Policy'"),
-    "pr-flow.yml workflow_run trigger must include 'PR Policy' to wake orchestration after policy checks complete",
+    /['"]?PR Policy['"]?/.test(triggerBlock[0]),
+    'pr-flow.yml workflow_run trigger must include PR Policy to wake orchestration after policy checks complete',
   );
 });
