@@ -402,6 +402,17 @@ if (mode === 'planning-intake-repair') {
 if (mode === 'fix-pr') {
   const workflowRun = event.workflow_run ?? {};
   const sourcePr = sourcePrFile ? readJson(sourcePrFile) : {};
+  const isPrFixComment =
+    eventName === 'issue_comment' &&
+    Boolean(event.issue?.pull_request) &&
+    hasStandaloneCommand(commentBody, '/fix');
+  const commentTrusted =
+    isPrFixComment && isMaintainer && !isBotAccount(event.comment?.user);
+  const workflowRunTriggered =
+    eventName === 'workflow_run' &&
+    (!workflowRun.conclusion || workflowRun.conclusion === 'failure') &&
+    (!Array.isArray(workflowRun.pull_requests) ||
+      workflowRun.pull_requests.length > 0);
   const labels = Array.isArray(sourcePr.labels)
     ? sourcePr.labels
         .map((label) =>
@@ -436,6 +447,7 @@ if (mode === 'fix-pr') {
   const maxAttempts = Number(policy.maxAutoFixAttempts ?? 0);
   const capReached = maxAttempts > 0 && attemptCount >= maxAttempts;
   const shouldRun =
+    (workflowRunTriggered || commentTrusted) &&
     !hasAutomationBranchPrefix &&
     !hasAutoFixLabel &&
     !hasBotAuthor &&
@@ -463,6 +475,13 @@ if (mode === 'fix-pr') {
         source_pr_author_type: sourcePrAuthorType || null,
         auto_fix_attempt_count: attemptCount,
         max_auto_fix_attempts: maxAttempts,
+        trigger_source: commentTrusted
+          ? 'comment'
+          : workflowRunTriggered
+            ? 'workflow_run'
+            : null,
+        trusted: commentTrusted || workflowRunTriggered,
+        triggered: workflowRunTriggered || isPrFixComment,
         reason,
       },
       null,

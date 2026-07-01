@@ -448,6 +448,74 @@ flowchart TD
 
 ---
 
+## §8 Project Manager — `project-manager.yml`
+
+Decision basis: `project-manager.cjs` route selection (`prs` / `issues` /
+`low-load`), PR action priority, project-manager sticky state
+`<!-- project-manager-pr-state -->`, PR-producing workflow registry, trusted
+PR `/fix` extension in `fix-pr.yml`, and direct-merge review contract
+`kos-project-manager`.
+
+```mermaid
+flowchart TD
+  T[project-manager schedule or dispatch] --> C[collect live PRs issues runs comments]
+  C --> R{route}
+  R -->|open PRs > threshold| PR[latest PRs]
+  R -->|PRs <= threshold and issues > threshold| IS[latest standalone issues]
+  R -->|both <= threshold| LL[low-load registry]
+  PR --> A{first matching PR action}
+  A -->|failed repair run| CL[@claude fix escalation]
+  A -->|conflict or stale CR| RB[/rebase]
+  A -->|failed checks| FX[/fix]
+  A -->|review blockers| FR[/fix-review]
+  A -->|ready| PF[dispatch pr-finalizer]
+  A -->|ready >1h or manual-only| PMR[kos-project-manager review]
+  PMR -->|merge| MG[direct squash merge]
+  PMR -->|hold| H[reported and waiting]
+  IS --> IFX[/fix on safe issues]
+  LL --> WD[dispatch one eligible PR-producing workflow]
+  CL -->((reported))
+  RB -->((reported))
+  FX -->((reported))
+  FR -->((reported))
+  PF -->((reported))
+  MG -->((merged))
+  H -->((reported))
+  IFX -->((reported))
+  WD -->((reported))
+```
+
+| ID   | Trigger / precondition                                                        | Resolution -> terminal                             | Type |
+| ---- | ----------------------------------------------------------------------------- | -------------------------------------------------- | ---- |
+| PM1  | open PR count `>5`                                                            | latest 10 PRs inspected, one action max per PR     | char |
+| PM2  | open PR count `<=5`, standalone issue count `>5`                              | latest 10 standalone issues inspected              | char |
+| PM3  | open PR count `<=5`, standalone issue count `<=5`                             | low-load registry route                            | char |
+| PM4  | stale current-head Code Review, head older than 5h, rebase not no-op          | trusted `/rebase` comment                          | char |
+| PM5  | stale current-head Code Review but latest current-head rebase no-op           | no repeat `/rebase`                                | char |
+| PM6  | PR mergeable state `CONFLICTING`                                              | trusted `/rebase` comment                          | char |
+| PM7  | required checks failed                                                        | trusted PR `/fix` comment -> `fix-pr.yml`          | spec |
+| PM8  | review blockers (`*-review-concerns`, Kilo blocked, actionable review signal) | trusted `/fix-review` comment                      | char |
+| PM9  | required checks + review signals passed                                       | dispatch `pr-finalizer.yml` first                  | char |
+| PM10 | ready PR still open after 1h, no auto-merge                                   | workflow issue created/reused and `/fix`ed         | spec |
+| PM11 | ready PR still open after 1h, project-manager review returns `merge`          | direct `gh pr merge --squash`                      | spec |
+| PM12 | project-manager review returns `hold`                                         | no direct merge                                    | spec |
+| PM13 | manual-only PR with maintainer approval and review returns `merge`            | direct merge                                       | spec |
+| PM14 | manual-only PR with no maintainer rejection for 8h and review returns `merge` | direct merge                                       | spec |
+| PM15 | manual-only PR has maintainer `project-manager: hold`                         | no direct merge                                    | spec |
+| PM16 | manual-only PR has current-head maintainer `CHANGES_REQUESTED`                | no direct merge                                    | spec |
+| PM17 | manual-only PR has `needs-review` renewed after `ready_since`                 | no direct merge                                    | spec |
+| PM18 | latest `fix-pr` / `fix-review` / `rebase-pr` repair run failed                | one deduped `@claude fix ...` escalation           | char |
+| PM19 | issue queue sees linked PR / active fix / terminal labels                     | issue skipped                                      | char |
+| PM20 | low-load route has eligible PR-producing workflows                            | exactly one workflow dispatched                    | char |
+| PM21 | low-load candidate has active run or duplicate pending PR                     | candidate skipped; next eligible workflow selected | char |
+| PM22 | new workflow uses PR-producing surfaces but is not in registry/exclusion list | registry coverage test fails loudly                | spec |
+| PM23 | `dry_run=true`                                                                | plan rendered, no mutation                         | char |
+
+Project-manager must not be added as a required PR check; otherwise it can
+deadlock the very merge flow it is meant to recover.
+
+---
+
 ## Cross-cutting
 
 | ID   | Scenario                                                                                             | Current behavior                                                                                                                                                           | Intended                                          | Type                        |
@@ -470,7 +538,7 @@ When a scenario's characterized behavior changes, update the corresponding `kos-
 
 ## Mapping → tests + gate
 
-- **Test files:** `scripts/__tests__/e2e-merge-gate.test.cjs`, `e2e-autofix-loop.test.cjs`, `e2e-ai-review.test.cjs`, `e2e-autonomous-pr.test.cjs`, `e2e-cancellation.test.cjs`, `e2e-entry-flows.test.cjs` (§6a/b/c/d), plus §7 pure-logic suites `merge-pr-logic.test.cjs`, `merge-pr-close-guard.test.cjs`, `collect-stale-pr-feedback.test.cjs`, `upsert-merge-pr-report.test.cjs`. YAML/trigger invariants extend `src/lib/__tests__/workflow-triggers.test.ts`.
+- **Test files:** `scripts/__tests__/e2e-merge-gate.test.cjs`, `e2e-autofix-loop.test.cjs`, `e2e-ai-review.test.cjs`, `e2e-autonomous-pr.test.cjs`, `e2e-cancellation.test.cjs`, `e2e-entry-flows.test.cjs` (§6a/b/c/d), `project-manager.test.cjs` (§8), plus §7 pure-logic suites `merge-pr-logic.test.cjs`, `merge-pr-close-guard.test.cjs`, `collect-stale-pr-feedback.test.cjs`, `upsert-merge-pr-report.test.cjs`. YAML/trigger invariants extend `src/lib/__tests__/workflow-triggers.test.ts`.
 - **Flow-simulator:** `scripts/__tests__/e2e/_simulator.cjs` — replays an event sequence through the decision scripts, asserts the terminal decision.
 - **CI gate:** `ci.yml:61` (`node --test .github/workflows/scripts/__tests__/*.test.cjs`) auto-runs the suite; a flow-breaking change fails CI. Local check needs **both** `npm run test-only` **and** that scripts glob.
 - **Phase 1 = all `char` green + `spec`/`TR` red, no behavior change. Phase 2 flips each `spec` green via its tagged fix.**
