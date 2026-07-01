@@ -401,3 +401,87 @@ test('F6 char: /fix on a PR-linked issue → should_run false (open-issue guard)
   });
   assert.equal(out.should_run, false);
 });
+
+// ---------- §6e rebase-pr resolver guardrails ----------
+function readRebaseWorkflow() {
+  return fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/rebase-pr.yml'),
+    'utf8',
+  );
+}
+
+function readRebaseAgent() {
+  return fs.readFileSync(
+    path.join(repoRoot, '.claude/agents/kos-rebase-pr.md'),
+    'utf8',
+  );
+}
+
+test('RB5b spec: rebase-pr prepares trusted conflict context before ZAI', () => {
+  const workflow = readRebaseWorkflow();
+  const contextStep = workflow.indexOf(
+    'name: Prepare conflict context for ZAI',
+  );
+  const zaiStep = workflow.indexOf('name: Resolve conflicts with ZAI');
+
+  assert.notEqual(contextStep, -1);
+  assert.notEqual(zaiStep, -1);
+  assert.ok(contextStep < zaiStep);
+  assert.match(workflow, /rebase-conflict-context\.md/);
+  assert.match(workflow, /git status --short/);
+  assert.match(workflow, /git diff --name-only --diff-filter=U/);
+  assert.ok(
+    workflow.includes(
+      'Do not inspect \\`.git/rebase-*\\` directly from the agent',
+    ),
+  );
+});
+
+test('RB5b spec: rebase-pr prompt reads context first and forbids shell-wrapper diagnostics', () => {
+  const workflow = readRebaseWorkflow();
+
+  assert.match(workflow, /Trusted conflict context has been precomputed to:/);
+  assert.match(workflow, /READ THAT FILE FIRST/);
+  assert.match(workflow, /READ THAT FILE SECOND/);
+  assert.match(
+    workflow,
+    /Do not use `cat`, `echo`, command substitution, semicolons, pipes/,
+  );
+  assert.match(workflow, /Do not inspect `\.git\/rebase-\*` directly/);
+  assert.match(workflow, /Do not use Grep as a file reader/);
+});
+
+test('RB5b spec: static rebase agent docs refer to runtime prompt paths', () => {
+  const agent = readRebaseAgent();
+
+  assert.doesNotMatch(agent, /\$\{\{/);
+  assert.match(
+    agent,
+    /trusted conflict context path named in the workflow prompt/,
+  );
+  assert.match(agent, /review feedback path named in the workflow prompt/);
+});
+
+test('RB5b spec: rebase-pr resolver allowed-tools stay least-privilege', () => {
+  const workflow = readRebaseWorkflow();
+  // Anchor to the allowed-tools line owned by the ZAI resolver step, not the
+  // first allowed-tools line anywhere in the workflow (another allowlisted
+  // step added above must not change which contract is asserted).
+  const zaiStep = workflow.indexOf('name: Resolve conflicts with ZAI');
+  const allowedToolsLine = workflow
+    .slice(zaiStep)
+    .split('\n')
+    .find((line) => line.includes("allowed-tools: '"));
+
+  assert.ok(allowedToolsLine, 'expected rebase-pr allowed-tools line');
+  assert.doesNotMatch(allowedToolsLine, /Bash\(cat:\*\)/);
+  assert.doesNotMatch(allowedToolsLine, /Bash\(echo:\*\)/);
+  assert.doesNotMatch(allowedToolsLine, /Bash\(\*:\*\)/);
+  assert.doesNotMatch(allowedToolsLine, /Bash\(sh:\*\)/);
+  assert.doesNotMatch(allowedToolsLine, /Bash\(bash:\*\)/);
+  assert.match(allowedToolsLine, /Bash\(git status:\*\)/);
+  assert.match(
+    allowedToolsLine,
+    /Bash\(git -c core\.editor=true rebase --continue:\*\)/,
+  );
+});
