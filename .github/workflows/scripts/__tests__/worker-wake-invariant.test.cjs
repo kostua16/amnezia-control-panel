@@ -121,3 +121,23 @@ test('wake-orchestrator jobs dispatch pr-flow.yml with dry_run=false', () => {
     `Wake-orchestrator dispatch violations:\n${violations.join('\n')}`,
   );
 });
+
+test('pr-flow.yml workflow_run trigger includes PR Policy', () => {
+  const prFlowYml = fs.readFileSync(
+    path.join(workflowsDir, 'pr-flow.yml'),
+    'utf8',
+  );
+
+  // Capture the entire workflow_run trigger block (up to the next top-level key).
+  const triggerBlock = prFlowYml.match(
+    /workflow_run:[\s\S]*?(?=\n  workflow_dispatch:|\npermissions:)/,
+  );
+  assert.ok(
+    triggerBlock,
+    'workflow_run trigger block not found in pr-flow.yml',
+  );
+  assert.ok(
+    triggerBlock[0].includes("'PR Policy'"),
+    "pr-flow.yml workflow_run trigger must include 'PR Policy' to wake orchestration after policy checks complete",
+  );
+});
