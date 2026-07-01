@@ -5,6 +5,7 @@ import { hashValue } from '@/lib/password';
 import { writeAuditLog } from '@/lib/audit-log';
 import { apiHandler, type RouteContext } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
+import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
 
 const updateServerSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -113,36 +114,45 @@ export const PUT = apiHandler(
       updateData.apiKeyHash = await hashValue(apiKey);
     }
 
-    const server = await prisma.server.update({
-      where: { id: serverId },
-      data: updateData,
-      include: {
-        services: {
-          select: {
-            id: true,
-            type: true,
-            status: true,
-            port: true,
+    try {
+      const server = await prisma.server.update({
+        where: { id: serverId },
+        data: updateData,
+        include: {
+          services: {
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              port: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    await writeAuditLog({
-      action: 'server.update',
-      resource: 'server',
-      resourceId: serverId,
-      metadata: {
-        name: server.name,
-        hostname: server.hostname,
-        changedFields: Object.keys(updateData).filter(
-          (field) => field !== 'apiKeyHash',
-        ),
-        apiKeyChanged: apiKey !== undefined,
-      },
-    });
+      await writeAuditLog({
+        action: 'server.update',
+        resource: 'server',
+        resourceId: serverId,
+        metadata: {
+          name: server.name,
+          hostname: server.hostname,
+          changedFields: Object.keys(updateData).filter(
+            (field) => field !== 'apiKeyHash',
+          ),
+          apiKeyChanged: apiKey !== undefined,
+        },
+      });
 
-    return NextResponse.json({ success: true, data: serverResponse(server) });
+      return NextResponse.json({ success: true, data: serverResponse(server) });
+    } catch (err) {
+      // Surface the unique constraint as a field-specific message; let
+      // apiHandler map any other Prisma/unknown error.
+      if (isPrismaUniqueViolation(err)) {
+        return error('Server hostname already exists', 409);
+      }
+      throw err;
+    }
   },
   'api/servers/[id]',
 );

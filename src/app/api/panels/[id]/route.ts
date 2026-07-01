@@ -6,6 +6,7 @@ import { writeAuditLog } from '@/lib/audit-log';
 import { evictPanel } from '@/lib/panel-health-checker';
 import { apiHandler, type RouteContext } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
+import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
 
 const updatePanelSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -90,26 +91,35 @@ export const PUT = apiHandler(
       updateData.apiKeyHash = await hashValue(apiKey);
     }
 
-    const updated = await prisma.remotePanel.update({
-      where: { id: panelId },
-      data: updateData,
-    });
+    try {
+      const updated = await prisma.remotePanel.update({
+        where: { id: panelId },
+        data: updateData,
+      });
 
-    await writeAuditLog({
-      action: 'panel.update',
-      resource: 'remotePanel',
-      resourceId: panelId,
-      metadata: {
-        name: updated.name,
-        panelUrl: updated.panelUrl,
-        changedFields: Object.keys(updateData).filter(
-          (field) => field !== 'apiKeyHash',
-        ),
-        apiKeyChanged: apiKey !== undefined,
-      },
-    });
+      await writeAuditLog({
+        action: 'panel.update',
+        resource: 'remotePanel',
+        resourceId: panelId,
+        metadata: {
+          name: updated.name,
+          panelUrl: updated.panelUrl,
+          changedFields: Object.keys(updateData).filter(
+            (field) => field !== 'apiKeyHash',
+          ),
+          apiKeyChanged: apiKey !== undefined,
+        },
+      });
 
-    return NextResponse.json({ success: true, data: panelResponse(updated) });
+      return NextResponse.json({ success: true, data: panelResponse(updated) });
+    } catch (err) {
+      // Surface the unique constraint as a field-specific message; let
+      // apiHandler map any other Prisma/unknown error.
+      if (isPrismaUniqueViolation(err)) {
+        return error('Panel URL already exists', 409);
+      }
+      throw err;
+    }
   },
   'api/panels/[id]',
 );
