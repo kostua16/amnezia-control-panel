@@ -224,6 +224,10 @@ jobs:
           PR_BODY: ${{ steps.classify.outputs.body }}
         run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs --report-only
 
+      - name: Restore composite action files (Claude agent may alter working tree)
+        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        run: git checkout HEAD -- .github/actions/
+
       - name: Validate (CI-matching gate)
         id: gate
         if: steps.claude_run.outputs.claude_changed_files_list != ''
