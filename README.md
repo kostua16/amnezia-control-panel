@@ -135,6 +135,10 @@ docker run -d \
   ghcr.io/kostua16/amnezia-control-panel:latest
 ```
 
+### Branch protection
+
+Enable the **Docker Build** and **Docker Build (Stack)** status checks in branch protection rules for `main`. This ensures every pull request that touches Docker-relevant paths produces a validated image before merge.
+
 ## Other deployment
 
 This project can also be deployed to any platform that supports Node.js. See the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for options. The Docker method above is recommended for production.

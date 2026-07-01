@@ -234,7 +234,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ env.CACHE_SCOPE }}
-          cache-to: type=gha,mode=max,scope=${{ env.CACHE_SCOPE }},ignore-error=true,timeout=5m
 
   docker-build-stack:
     name: Docker Build (Stack)
@@ -271,7 +270,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ env.CACHE_SCOPE }}-stack
-          cache-to: type=gha,mode=max,scope=${{ env.CACHE_SCOPE }}-stack,ignore-error=true,timeout=5m
 
   publish:
     name: Publish GHCR Image
