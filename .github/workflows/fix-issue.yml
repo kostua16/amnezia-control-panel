@@ -170,6 +170,10 @@ jobs:
           echo "::error::Claude soft failure: ${{ steps.claude_run.outputs.claude_failure_reason }}"
           exit 1
 
+      - name: Restore composite action files (Claude agent may alter working tree)
+        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        run: git checkout HEAD -- .github/actions/
+
       - name: Validate (CI-matching gate)
         id: gate
         if: steps.claude_run.outputs.claude_changed_files_list != ''

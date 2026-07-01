@@ -293,6 +293,10 @@ jobs:
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Restore composite action files (Claude agent may alter working tree)
+        if: steps.pr.outputs.eligible == 'true' && steps.detect-noop.outputs.has_changes == 'true'
+        run: git checkout HEAD -- .github/actions/
+
       - name: Validate (CI-matching gate)
         id: gate
         if: steps.pr.outputs.eligible == 'true' && steps.detect-noop.outputs.has_changes == 'true'
