@@ -8,7 +8,32 @@ const path = require('path');
 const STATE_MARKER = '<!-- project-manager-pr-state -->';
 const ISSUE_MARKER = '<!-- project-manager-workflow-issue -->';
 const CLAUDE_ESCALATION_MARKER = '<!-- project-manager-claude-escalation -->';
+const REBASE_SUMMARY_MARKER = '<!-- rebase-pr-summary -->';
+const FIX_REVIEW_SUMMARY_MARKER = '<!-- fix-review-summary -->';
 const DEFAULT_NOW = '2026-01-01T00:00:00.000Z';
+const CANCELLED_ESCALATION_THRESHOLD = 2;
+const ACTIVE_RUN_STATUSES = new Set([
+  'queued',
+  'in_progress',
+  'pending',
+  'waiting',
+  'requested',
+]);
+const FAILURE_CONCLUSIONS = new Set([
+  'failure',
+  'timed_out',
+  'action_required',
+  'startup_failure',
+]);
+
+const REPAIR_WORKFLOWS = [
+  { workflow: 'fix-pr.yml', key: 'fixPr' },
+  { workflow: 'fix-issue.yml', key: 'fixIssue' },
+  { workflow: 'fix-review.yml', key: 'fixReview', summary: 'fixReview' },
+  { workflow: 'rebase-pr.yml', key: 'rebasePr', summary: 'rebase' },
+  { workflow: '_auto-fix-ci.yml', key: 'autoFixCi' },
+  { workflow: 'pr-finalizer.yml', key: 'finalizer' },
+];
 
 const PR_PRODUCER_REGISTRY = [
   {
@@ -218,6 +243,8 @@ function normalizeState(pr) {
       directMergeReview: 'not-run',
       directMergeReviewAt: '',
       cooldowns: {},
+      workflowIssueNumber: raw.workflowIssueNumber,
+      workflowIssueUrl: raw.workflowIssueUrl,
     };
   }
 
@@ -231,6 +258,8 @@ function normalizeState(pr) {
     directMergeReviewAt:
       raw.directMergeReviewAt ?? raw.direct_merge_review_at ?? '',
     cooldowns: raw.cooldowns ?? {},
+    workflowIssueNumber: raw.workflowIssueNumber ?? raw.workflow_issue_number,
+    workflowIssueUrl: raw.workflowIssueUrl ?? raw.workflow_issue_url,
   };
 }
 
@@ -385,35 +414,99 @@ function activeRun(pr, key) {
   return Boolean(pr.runs?.[key]?.active || pr[key]?.active);
 }
 
+function normalizeConclusion(value) {
+  return String(value ?? '').toLowerCase();
+}
+
+function repairRunFailure(run) {
+  if (run?.active) return null;
+  const latest = run?.latest;
+  if (!latest || latest.noop === true) return null;
+  const outcome = normalizeConclusion(latest.outcome);
+  const conclusion = normalizeConclusion(latest.conclusion);
+  if (
+    [
+      'failed',
+      'validation_failed_not_pushed',
+      'push_rejected',
+      'ancestry_failed',
+    ].includes(outcome)
+  ) {
+    return latest.failureSummary ?? latest.outcome;
+  }
+  if (FAILURE_CONCLUSIONS.has(conclusion)) {
+    return latest.failureSummary ?? latest.conclusion;
+  }
+  if (
+    conclusion === 'cancelled' &&
+    Number(run.cancelledCount ?? 0) >= CANCELLED_ESCALATION_THRESHOLD &&
+    !run.active
+  ) {
+    return (
+      latest.failureSummary ??
+      `repair workflow cancelled ${run.cancelledCount} times for this head`
+    );
+  }
+  return null;
+}
+
 function failedRepairRun(pr) {
   const candidates = [
     ['fix-pr.yml', pr.runs?.fixPr],
     ['fix-issue.yml', pr.runs?.fixIssue],
     ['fix-review.yml', pr.runs?.fixReview],
     ['rebase-pr.yml', pr.runs?.rebasePr],
+    ['_auto-fix-ci.yml', pr.runs?.autoFixCi],
   ];
 
   for (const [workflow, run] of candidates) {
-    if (!run?.latest) continue;
-    if (
-      run.latest.conclusion &&
-      !['success', 'skipped', 'cancelled'].includes(run.latest.conclusion)
-    ) {
-      return { workflow, ...run.latest };
-    }
+    const failureSummary = repairRunFailure(run);
+    if (failureSummary) return { workflow, ...run.latest, failureSummary };
   }
 
   return null;
 }
 
+function failureFingerprint(run) {
+  return String(
+    run?.fingerprint ??
+      run?.databaseId ??
+      run?.id ??
+      run?.url ??
+      [
+        run?.workflow,
+        run?.headSha,
+        run?.outcome,
+        run?.failureSummary,
+        run?.conclusion,
+      ]
+        .filter(Boolean)
+        .join(':'),
+  )
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function escalationExists(pr, run) {
   if (!run) return false;
   const runId = String(run.databaseId ?? run.id ?? run.url ?? '');
-  return (pr.comments ?? []).some(
-    (comment) =>
-      String(comment.body ?? '').includes(CLAUDE_ESCALATION_MARKER) &&
-      (!runId || String(comment.body ?? '').includes(runId)),
-  );
+  const workflow = String(run.workflow ?? '').toLowerCase();
+  const headSha = String(
+    run.headSha ?? pr.headRefOid ?? pr.headSha ?? '',
+  ).toLowerCase();
+  const fingerprint = failureFingerprint(run);
+  return (pr.comments ?? []).some((comment) => {
+    const body = String(comment.body ?? '');
+    const lower = body.toLowerCase();
+    if (!body.includes(CLAUDE_ESCALATION_MARKER)) return false;
+    if (runId && body.includes(runId)) return true;
+    return (
+      (!workflow || lower.includes(workflow)) &&
+      (!headSha || lower.includes(headSha)) &&
+      (!fingerprint || lower.includes(fingerprint))
+    );
+  });
 }
 
 function latestRebaseNoop(pr) {
@@ -442,6 +535,21 @@ function staleCodeReviewNeedsRebase(pr, now) {
     !latestRebaseNoop(pr) &&
     !activeRun(pr, 'rebasePr')
   );
+}
+
+function recentCommandCommentExists(pr, command, now, hours = 1) {
+  return (pr.comments ?? []).some((comment) => {
+    if (String(comment.body ?? '').trim() !== command) return false;
+    const association = authorAssociation(comment);
+    const authorType = comment.author?.type ?? comment.user?.type ?? '';
+    const trusted =
+      !authorType ||
+      authorType !== 'Bot' ||
+      ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(association);
+    if (!trusted) return false;
+    const createdAt = comment.createdAt ?? comment.created_at ?? '';
+    return !createdAt || hoursBetween(createdAt, now) < hours;
+  });
 }
 
 function isOpenPr(pr) {
@@ -482,6 +590,32 @@ function makeCommentAction(pr, body, actionKey) {
   };
 }
 
+function shortHeadSha(pr) {
+  return String(pr.headRefOid ?? pr.headSha ?? '').slice(0, 12) || 'unknown';
+}
+
+function buildRepairWorkflowIssue(pr, failedRun) {
+  const workflow = failedRun.workflow ?? 'repair workflow';
+  const headSha = pr.headRefOid ?? pr.headSha ?? '';
+  return {
+    title: `[project-manager] PR #${pr.number} ${workflow} failed for ${shortHeadSha(pr)}`,
+    body: [
+      ISSUE_MARKER,
+      '',
+      `Project-manager detected a failed downstream repair workflow for PR #${pr.number}.`,
+      '',
+      `PR: ${pr.url ?? ''}`,
+      `Head SHA: ${headSha}`,
+      `Workflow: ${workflow}`,
+      `Run: ${failedRun.url ?? failedRun.databaseId ?? failedRun.id ?? '_n/a_'}`,
+      `Observed failure: ${failedRun.failureSummary ?? failedRun.conclusion ?? failedRun.outcome ?? 'workflow failed'}`,
+      `Failure fingerprint: ${failureFingerprint(failedRun)}`,
+      '',
+      'Project-manager will not repeat the same command loop until this workflow failure is repaired.',
+    ].join('\n'),
+  };
+}
+
 function makeStatePatch(pr, state, actionKey, now, extra = {}) {
   return {
     type: 'upsert-pr-state',
@@ -496,6 +630,9 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
         extra.directMergeReview ?? state.directMergeReview ?? 'not-run',
       directMergeReviewAt:
         extra.directMergeReviewAt ?? state.directMergeReviewAt ?? '',
+      workflowIssueNumber:
+        extra.workflowIssueNumber ?? state.workflowIssueNumber ?? '',
+      workflowIssueUrl: extra.workflowIssueUrl ?? state.workflowIssueUrl ?? '',
       cooldowns: {
         ...(state.cooldowns ?? {}),
         [actionKey]: now,
@@ -659,9 +796,11 @@ function decidePrAction(pr, options = {}) {
 
   const failedRun = failedRepairRun(pr);
   if (failedRun && !escalationExists(pr, failedRun)) {
+    const issue = buildRepairWorkflowIssue(pr, failedRun);
     return {
       type: 'compound',
       actionKey: 'claude-escalation',
+      reason: `${failedRun.workflow} failed for the current head; escalating instead of repeating the command loop.`,
       number: pr.number,
       actions: [
         makeCommentAction(
@@ -675,11 +814,28 @@ function decidePrAction(pr, options = {}) {
             `Workflow: ${failedRun.workflow}`,
             `Run: ${failedRun.url ?? failedRun.databaseId ?? failedRun.id ?? ''}`,
             `Observed failure: ${failedRun.failureSummary ?? failedRun.conclusion ?? 'workflow failed'}`,
+            `Failure fingerprint: ${failureFingerprint(failedRun)}`,
             '',
             'Please diagnose the root cause and implement the narrowest workflow/code fix.',
           ].join('\n'),
           'claude-escalation',
         ),
+        {
+          type: 'create-or-reuse-issue',
+          title: issue.title,
+          body: issue.body,
+          labels: ['auto-fix', 'ci-failure'],
+          actionKey: 'workflow-issue',
+          pr: pr.number,
+          headSha: pr.headRefOid ?? pr.headSha ?? '',
+        },
+        {
+          type: 'comment',
+          target: 'issue',
+          issueSelector: { title: issue.title },
+          body: '/fix',
+          actionKey: 'workflow-issue-fix',
+        },
         makeStatePatch(pr, state, 'claude-escalation', now, { readySince }),
       ],
     };
@@ -688,11 +844,13 @@ function decidePrAction(pr, options = {}) {
   if (
     (pr.mergeable === 'CONFLICTING' || pr.conflict === true) &&
     !activeRun(pr, 'rebasePr') &&
-    !cooldownActive(state, 'rebase', now)
+    !cooldownActive(state, 'rebase', now) &&
+    !recentCommandCommentExists(pr, '/rebase', now)
   ) {
     return {
       type: 'compound',
       actionKey: 'rebase',
+      reason: 'PR is conflicting and no same-head rebase repair is active.',
       number: pr.number,
       actions: [
         makeCommentAction(pr, '/rebase', 'rebase'),
@@ -703,11 +861,14 @@ function decidePrAction(pr, options = {}) {
 
   if (
     staleCodeReviewNeedsRebase(pr, now) &&
-    !cooldownActive(state, 'rebase', now)
+    !cooldownActive(state, 'rebase', now) &&
+    !recentCommandCommentExists(pr, '/rebase', now)
   ) {
     return {
       type: 'compound',
       actionKey: 'rebase',
+      reason:
+        'Current-head Code Review is stale and the latest rebase was not a no-op.',
       number: pr.number,
       actions: [
         makeCommentAction(pr, '/rebase', 'rebase'),
@@ -720,11 +881,13 @@ function decidePrAction(pr, options = {}) {
     checksFailed(pr) &&
     !activeRun(pr, 'fixPr') &&
     !activeRun(pr, 'autoFixCi') &&
-    !cooldownActive(state, 'fix', now)
+    !cooldownActive(state, 'fix', now) &&
+    !recentCommandCommentExists(pr, '/fix', now)
   ) {
     return {
       type: 'compound',
       actionKey: 'fix',
+      reason: 'Required checks are failed and no PR fix run is active.',
       number: pr.number,
       actions: [
         makeCommentAction(pr, '/fix', 'fix'),
@@ -737,11 +900,14 @@ function decidePrAction(pr, options = {}) {
     hasReviewBlocker(pr) &&
     !checksFailed(pr) &&
     !activeRun(pr, 'fixReview') &&
-    !cooldownActive(state, 'fix-review', now)
+    !cooldownActive(state, 'fix-review', now) &&
+    !recentCommandCommentExists(pr, '/fix-review', now)
   ) {
     return {
       type: 'compound',
       actionKey: 'fix-review',
+      reason:
+        'Review blockers are present and no same-head fix-review run is active.',
       number: pr.number,
       actions: [
         makeCommentAction(pr, '/fix-review', 'fix-review'),
@@ -760,6 +926,8 @@ function decidePrAction(pr, options = {}) {
     return {
       type: 'compound',
       actionKey: 'finalizer',
+      reason:
+        'Required checks and review signals passed; finalizer remains the preferred merge path.',
       number: pr.number,
       actions: [
         {
@@ -810,6 +978,45 @@ function selectRoute(snapshot, options = {}) {
   return 'low-load';
 }
 
+function noActionReason(pr, decision, state, now) {
+  if (decision?.reason) return decision.reason;
+  if (!isOpenPr(pr)) return 'PR is closed or already merged.';
+  if (pr.isDraft) return 'PR is draft.';
+  if (activeRun(pr, 'rebasePr')) return 'A rebase run is already active.';
+  if (activeRun(pr, 'fixReview')) return 'A fix-review run is already active.';
+  if (activeRun(pr, 'fixPr') || activeRun(pr, 'autoFixCi')) {
+    return 'A fix run is already active.';
+  }
+  if (checksFailed(pr) && cooldownActive(state, 'fix', now)) {
+    return 'Checks are failed, but /fix is inside cooldown.';
+  }
+  if (hasReviewBlocker(pr) && cooldownActive(state, 'fix-review', now)) {
+    return 'Review blockers exist, but /fix-review is inside cooldown.';
+  }
+  if (
+    staleCodeReviewNeedsRebase(pr, now) &&
+    cooldownActive(state, 'rebase', now)
+  ) {
+    return 'Stale Code Review needs rebase, but /rebase is inside cooldown.';
+  }
+  if (isReady(pr) && isManualOnly(pr)) {
+    return 'PR is ready but manual-only direct merge is not eligible yet.';
+  }
+  if (isReady(pr))
+    return 'PR is ready but finalizer/direct-merge conditions did not match.';
+  if (withReviewOrCheckPending(pr))
+    return 'PR is waiting for checks or review signals.';
+  return 'No project-manager action matched this PR state.';
+}
+
+function withReviewOrCheckPending(pr) {
+  return (
+    checkStatus(pr).status === 'pending' ||
+    checkStatus(pr).status === 'unknown' ||
+    !reviewSignalsPassed(pr)
+  );
+}
+
 function flattenAction(action) {
   if (!action) return [];
   if (action.type === 'compound') return action.actions.flatMap(flattenAction);
@@ -828,14 +1035,21 @@ function planPrRoute(snapshot, options = {}) {
 
   for (const pr of prs) {
     const decision = decidePrAction(pr, { ...options, now });
+    const state = normalizeState(pr);
     decisions.push({
       pr: pr.number,
       action: decision?.actionKey ?? decision?.type ?? 'none',
+      reason: noActionReason(pr, decision, state, now),
     });
     actions.push(...flattenAction(decision));
   }
 
-  return { route: 'prs', decisions, actions };
+  return {
+    route: 'prs',
+    decisions,
+    actions,
+    summary: buildPrRouteSummary(snapshot, prs, decisions, actions),
+  };
 }
 
 function issueHasLinkedPr(issue) {
@@ -878,6 +1092,11 @@ function planIssueRoute(snapshot, options = {}) {
       body: '/fix',
       actionKey: 'issue-fix',
     })),
+    summary: {
+      issuesInspected: sortNewest(snapshot.openIssues).length,
+      issuesSelected: issues.length,
+      actionsPlanned: issues.length,
+    },
   };
 }
 
@@ -950,11 +1169,59 @@ function lowLoadEligibleEntries(snapshot) {
   });
 }
 
+function scheduleHealth(snapshot, workflow) {
+  const runs = sortNewest(matchingWorkflowRuns(snapshot, workflow));
+  if (runs.length < 2) {
+    return { workflow, observedRuns: runs.length, latestGapHours: null };
+  }
+  const latestAt = runs[0].createdAt ?? runs[0].updatedAt;
+  const previousAt = runs[1].createdAt ?? runs[1].updatedAt;
+  const gap = hoursBetween(previousAt, latestAt);
+  return {
+    workflow,
+    observedRuns: runs.length,
+    latestGapHours: Number.isFinite(gap) ? Number(gap.toFixed(2)) : null,
+  };
+}
+
+function buildPrRouteSummary(snapshot, prs, decisions, actions) {
+  const nextLowLoad = lowLoadEligibleEntries(snapshot)[0];
+  return {
+    prsInspected: prs.length,
+    actionsPlanned: actions.length,
+    activeRunSkips: decisions.filter((decision) =>
+      String(decision.reason ?? '').includes('already active'),
+    ).length,
+    priorFailedRepairs: decisions.filter(
+      (decision) => decision.action === 'claude-escalation',
+    ).length,
+    escalationsPlanned: actions.filter(
+      (action) => action.actionKey === 'claude-escalation',
+    ).length,
+    readyPrs: prs.filter(isReady).length,
+    finalizerDispatches: actions.filter(
+      (action) => action.actionKey === 'finalizer',
+    ).length,
+    directMergeReviews: actions.filter(
+      (action) => action.type === 'direct-merge-review-required',
+    ).length,
+    manualOnlyReady: prs.filter((pr) => isReady(pr) && isManualOnly(pr)).length,
+    manualOnlyNotReady: prs.filter((pr) => !isReady(pr) && isManualOnly(pr))
+      .length,
+    nextLowLoadWorkflowIfPressureDrops: nextLowLoad?.workflow ?? '',
+  };
+}
+
 function planLowLoadRoute(snapshot) {
   const eligible = lowLoadEligibleEntries(snapshot);
   const entry = eligible[0];
   if (!entry) {
-    return { route: 'low-load', decisions: [], actions: [] };
+    return {
+      route: 'low-load',
+      decisions: [],
+      actions: [],
+      summary: { eligibleWorkflows: 0, actionsPlanned: 0 },
+    };
   }
 
   const inputs = { ...(entry.inputs ?? {}) };
@@ -975,26 +1242,47 @@ function planLowLoadRoute(snapshot) {
         actionKey: 'low-load-dispatch',
       },
     ],
+    summary: {
+      eligibleWorkflows: eligible.length,
+      selectedWorkflow: entry.workflow,
+      actionsPlanned: 1,
+    },
   };
 }
 
-function buildPlan(snapshot, options = {}) {
-  const route = selectRoute(snapshot, options);
-  const routePlan =
-    route === 'prs'
-      ? planPrRoute(snapshot, options)
-      : route === 'issues'
-        ? planIssueRoute(snapshot, options)
-        : planLowLoadRoute(snapshot, options);
-
+function buildPlanSummary(snapshot, route, routePlan) {
+  const workflowGaps = scheduleHealth(snapshot, 'project-manager.yml');
   return {
     route,
-    generatedAt: options.now ?? snapshot.now ?? new Date().toISOString(),
     openPrCount:
       snapshot.openPrCount ?? (snapshot.openPullRequests ?? []).length,
     openIssueCount:
       snapshot.openIssueCount ?? (snapshot.openIssues ?? []).length,
+    actionsPlanned: (routePlan.actions ?? []).length,
+    ...(routePlan.summary ?? {}),
+    projectManagerSchedule: workflowGaps,
+  };
+}
+
+function buildPlan(snapshot, options = {}) {
+  const hydrated = hydrateSnapshot(snapshot);
+  const route = selectRoute(hydrated, options);
+  const routePlan =
+    route === 'prs'
+      ? planPrRoute(hydrated, options)
+      : route === 'issues'
+        ? planIssueRoute(hydrated, options)
+        : planLowLoadRoute(hydrated, options);
+
+  return {
+    route,
+    generatedAt: options.now ?? hydrated.now ?? new Date().toISOString(),
+    openPrCount:
+      hydrated.openPrCount ?? (hydrated.openPullRequests ?? []).length,
+    openIssueCount:
+      hydrated.openIssueCount ?? (hydrated.openIssues ?? []).length,
     ...routePlan,
+    summary: buildPlanSummary(hydrated, route, routePlan),
   };
 }
 
@@ -1073,12 +1361,15 @@ function parseStateComment(body) {
     directMergeReview:
       valueFromLine(lines, '- Direct merge review:') || 'not-run',
     directMergeReviewAt: valueFromLine(lines, '- Direct merge review at:'),
+    workflowIssueNumber: valueFromLine(lines, '- Workflow issue:'),
+    workflowIssueUrl: valueFromLine(lines, '- Workflow issue URL:'),
     cooldowns: {
       rebase: valueFromLine(lines, '- rebase:'),
       fix: valueFromLine(lines, '- fix:'),
       'fix-review': valueFromLine(lines, '- fix-review:'),
       finalizer: valueFromLine(lines, '- finalizer:'),
       'direct-merge': valueFromLine(lines, '- direct-merge:'),
+      'claude-escalation': valueFromLine(lines, '- claude-escalation:'),
     },
   };
 }
@@ -1088,6 +1379,346 @@ function latestProjectManagerState(comments) {
     String(comment.body ?? '').includes(STATE_MARKER),
   );
   return parseStateComment(stateComments[0]?.body);
+}
+
+function stripInlineMarkdown(value) {
+  return String(value ?? '')
+    .replace(/[`*_]/g, '')
+    .trim();
+}
+
+function cleanSummaryValue(value) {
+  const cleaned = stripInlineMarkdown(value);
+  return cleaned === '_n/a_' ? '' : cleaned;
+}
+
+function extractCommentUpdatedAt(body, comment) {
+  return (
+    String(body ?? '').match(/<!--\s*updated:\s*([^>]+?)\s*-->/)?.[1] ??
+    comment?.updatedAt ??
+    comment?.updated_at ??
+    comment?.createdAt ??
+    comment?.created_at ??
+    ''
+  );
+}
+
+function extractRunId(value) {
+  return String(value ?? '').match(/\/actions\/runs\/(\d+)/)?.[1] ?? '';
+}
+
+function summaryHeading(body) {
+  return (
+    String(body ?? '')
+      .split(/\r?\n/)
+      .find((line) => line.startsWith('## ')) ?? ''
+  ).trim();
+}
+
+function summaryBase(comment, marker) {
+  const body = String(comment?.body ?? '');
+  if (!body.includes(marker)) return null;
+  const lines = body.split(/\r?\n/);
+  const runUrl = cleanSummaryValue(valueFromLine(lines, '- Run:'));
+  return {
+    body,
+    databaseId: extractRunId(runUrl),
+    headSha: cleanSummaryValue(
+      valueFromLine(lines, '- Head SHA:') ||
+        valueFromLine(lines, '- Old head:'),
+    ),
+    runUrl,
+    url: runUrl,
+    updatedAt: extractCommentUpdatedAt(body, comment),
+    heading: summaryHeading(body),
+    source: 'summary',
+  };
+}
+
+function withSummaryFingerprint(summary, workflow) {
+  return {
+    ...summary,
+    workflow,
+    fingerprint: failureFingerprint({
+      workflow,
+      headSha: summary.headSha,
+      databaseId: summary.databaseId,
+      url: summary.url,
+      outcome: summary.outcome,
+      failureSummary: summary.failureSummary,
+    }),
+  };
+}
+
+function parseRebaseSummaryComment(comment) {
+  const base = summaryBase(comment, REBASE_SUMMARY_MARKER);
+  if (!base) return null;
+  const heading = base.heading;
+  const body = base.body;
+  let outcome = 'unknown';
+  let conclusion = '';
+  let status = 'completed';
+  let noop = false;
+  let active = false;
+
+  if (heading.includes('Rebase complete')) {
+    noop = body.includes('Pushed: no (no changes after rebase)');
+    outcome = noop ? 'noop' : 'success';
+    conclusion = 'success';
+  } else if (heading.includes('Validation failed')) {
+    outcome = 'validation_failed_not_pushed';
+    conclusion = 'failure';
+  } else if (heading.includes('Push rejected')) {
+    outcome = 'push_rejected';
+    conclusion = 'failure';
+  } else if (heading.includes('Rebase ancestry check failed')) {
+    outcome = 'ancestry_failed';
+    conclusion = 'failure';
+  } else if (heading.includes('Rebase failed')) {
+    outcome = 'failed';
+    conclusion = 'failure';
+  } else if (heading.includes('Rebase cancelled')) {
+    outcome = 'cancelled';
+    conclusion = 'cancelled';
+  } else if (heading.includes('Rebase skipped')) {
+    outcome = 'skipped';
+    conclusion = 'skipped';
+  } else if (
+    heading.includes('Rebase started') ||
+    heading.includes('Resolving rebase conflicts')
+  ) {
+    outcome = 'active';
+    status = 'in_progress';
+    active = true;
+  }
+
+  return withSummaryFingerprint(
+    {
+      ...base,
+      outcome,
+      conclusion,
+      status,
+      noop,
+      active,
+      failureSummary: heading.replace(/^##\s*/, '').trim() || outcome,
+    },
+    'rebase-pr.yml',
+  );
+}
+
+function parseFixReviewSummaryComment(comment) {
+  const base = summaryBase(comment, FIX_REVIEW_SUMMARY_MARKER);
+  if (!base) return null;
+  const heading = base.heading;
+  let outcome = 'unknown';
+  let conclusion = '';
+  let status = 'completed';
+  let noop = false;
+  let active = false;
+
+  if (heading.includes('Review fixes applied')) {
+    outcome = 'success';
+    conclusion = 'success';
+  } else if (heading.includes('No changes needed')) {
+    outcome = 'noop';
+    conclusion = 'success';
+    noop = true;
+  } else if (heading.includes('Validation failed')) {
+    outcome = 'validation_failed_not_pushed';
+    conclusion = 'failure';
+  } else if (heading.includes('Push rejected')) {
+    outcome = 'push_rejected';
+    conclusion = 'failure';
+  } else if (heading.includes('Review fix failed')) {
+    outcome = 'failed';
+    conclusion = 'failure';
+  } else if (heading.includes('Review fix cancelled')) {
+    outcome = 'cancelled';
+    conclusion = 'cancelled';
+  } else if (heading.includes('Review fix skipped')) {
+    outcome = 'skipped';
+    conclusion = 'skipped';
+  } else if (
+    heading.includes('Review fix started') ||
+    heading.includes('Applying review fixes')
+  ) {
+    outcome = 'active';
+    status = 'in_progress';
+    active = true;
+  }
+
+  return withSummaryFingerprint(
+    {
+      ...base,
+      outcome,
+      conclusion,
+      status,
+      noop,
+      active,
+      failureSummary: heading.replace(/^##\s*/, '').trim() || outcome,
+    },
+    'fix-review.yml',
+  );
+}
+
+function headMatches(summaryHead, prHead) {
+  const left = String(summaryHead ?? '').toLowerCase();
+  const right = String(prHead ?? '').toLowerCase();
+  if (!left || !right) return true;
+  return left.startsWith(right) || right.startsWith(left);
+}
+
+function latestSummary(comments, parser, pr) {
+  const headSha = pr.headRefOid ?? pr.headSha ?? '';
+  return sortNewest(
+    (comments ?? [])
+      .map(parser)
+      .filter(Boolean)
+      .filter((summary) => headMatches(summary.headSha, headSha)),
+  )[0];
+}
+
+function isActiveRun(run) {
+  return ACTIVE_RUN_STATUSES.has(normalizeConclusion(run?.status));
+}
+
+function workflowMatches(run, workflow) {
+  return (
+    run.workflow === workflow ||
+    run.workflowName === workflow ||
+    run.name === workflow ||
+    String(run.path ?? '').endsWith(`/${workflow}`)
+  );
+}
+
+function runMatchesSummary(run, summary) {
+  if (!summary) return false;
+  const runId = String(run.databaseId ?? run.id ?? '');
+  return (
+    Boolean(
+      runId && summary.databaseId && runId === String(summary.databaseId),
+    ) || Boolean(run.url && summary.url && run.url === summary.url)
+  );
+}
+
+function runHasPrEvidence(run, pr, summary) {
+  if (runMatchesSummary(run, summary)) return true;
+  const prNumber = String(pr.number ?? '');
+  const title = String(pr.title ?? '').toLowerCase();
+  const text = [
+    run.displayTitle,
+    run.headBranch,
+    run.headSha,
+    run.url,
+    run.name,
+    run.workflowName,
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+
+  if (
+    prNumber &&
+    (text.includes(`#${prNumber}`) || text.includes(`/${prNumber}`))
+  ) {
+    return true;
+  }
+  if (title && text.includes(title)) return true;
+  if (run.headBranch && run.headBranch === pr.headRefName) return true;
+  if (run.headSha && run.headSha === (pr.headRefOid ?? pr.headSha)) return true;
+  return false;
+}
+
+function normalizeWorkflowRun(run, workflow) {
+  return {
+    databaseId: run.databaseId ?? run.id,
+    id: run.id ?? run.databaseId,
+    workflow,
+    name: run.name,
+    workflowName: run.workflowName,
+    displayTitle: run.displayTitle,
+    event: run.event,
+    headBranch: run.headBranch,
+    headSha: run.headSha,
+    status: normalizeConclusion(run.status),
+    conclusion: normalizeConclusion(run.conclusion),
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt ?? run.createdAt,
+    url: run.url,
+    active: isActiveRun(run),
+  };
+}
+
+function mergeRepairBucket(existing, workflow, runCandidates, summary) {
+  const candidates = [];
+  if (existing?.latest) candidates.push(existing.latest);
+  for (const run of runCandidates)
+    candidates.push(normalizeWorkflowRun(run, workflow));
+  if (summary) candidates.push(summary);
+
+  const latest = summary?.active
+    ? (sortNewest(candidates)[0] ?? existing?.latest ?? null)
+    : (summary ?? sortNewest(candidates)[0] ?? existing?.latest ?? null);
+  const cancellationFingerprints = new Set(
+    candidates
+      .filter((item) => normalizeConclusion(item.conclusion) === 'cancelled')
+      .map((item) => failureFingerprint({ ...item, workflow })),
+  );
+
+  return {
+    ...(existing ?? {}),
+    active:
+      Boolean(existing?.active) ||
+      candidates.some((item) => item.active || isActiveRun(item)),
+    latest,
+    cancelledCount: Math.max(
+      Number(existing?.cancelledCount ?? 0),
+      cancellationFingerprints.size,
+    ),
+  };
+}
+
+function attachRepairRunsToPullRequest(pr, workflowRuns = []) {
+  const comments = pr.comments ?? [];
+  const summaries = {
+    rebase: latestSummary(comments, parseRebaseSummaryComment, pr),
+    fixReview: latestSummary(comments, parseFixReviewSummaryComment, pr),
+  };
+  const runs = { ...(pr.runs ?? {}) };
+  for (const entry of REPAIR_WORKFLOWS) {
+    const summary = summaries[entry.summary];
+    const matchingRuns = (workflowRuns ?? []).filter(
+      (run) =>
+        workflowMatches(run, entry.workflow) &&
+        runHasPrEvidence(run, pr, summary),
+    );
+    runs[entry.key] = mergeRepairBucket(
+      runs[entry.key],
+      entry.workflow,
+      matchingRuns,
+      summary,
+    );
+  }
+  return {
+    ...pr,
+    runs,
+    rebase: summaries.rebase
+      ? { ...(pr.rebase ?? {}), latest: summaries.rebase }
+      : pr.rebase,
+    fixReview: summaries.fixReview
+      ? { ...(pr.fixReview ?? {}), latest: summaries.fixReview }
+      : pr.fixReview,
+  };
+}
+
+function hydrateSnapshot(snapshot) {
+  const workflowRuns = snapshot.workflowRuns ?? snapshot.activeRuns ?? [];
+  return {
+    ...snapshot,
+    openPullRequests: (snapshot.openPullRequests ?? []).map((pr) =>
+      attachRepairRunsToPullRequest(pr, workflowRuns),
+    ),
+  };
 }
 
 function latestCommitDate(commits) {
@@ -1196,7 +1827,7 @@ function workflowRuns() {
       '--limit',
       '100',
       '--json',
-      'databaseId,displayTitle,event,headBranch,headSha,name,status,updatedAt,url,workflowName',
+      'conclusion,createdAt,databaseId,displayTitle,event,headBranch,headSha,name,status,updatedAt,url,workflowName',
     ],
     [],
   );
@@ -1243,9 +1874,7 @@ function collectSnapshot(options = {}) {
     openPullRequests: latestPrs,
     openIssues: latestIssues,
     activeRuns: runs.filter((run) =>
-      ['queued', 'in_progress', 'pending', 'waiting', 'requested'].includes(
-        String(run.status ?? '').toLowerCase(),
-      ),
+      ACTIVE_RUN_STATUSES.has(String(run.status ?? '').toLowerCase()),
     ),
     workflowRuns: runs,
   };
@@ -1263,12 +1892,15 @@ function renderStateBody(state) {
     `- Last action at: ${state.lastActionAt ?? ''}`,
     `- Direct merge review: ${state.directMergeReview ?? 'not-run'}`,
     `- Direct merge review at: ${state.directMergeReviewAt ?? ''}`,
+    `- Workflow issue: ${state.workflowIssueNumber ?? ''}`,
+    `- Workflow issue URL: ${state.workflowIssueUrl ?? ''}`,
     '- Cooldowns:',
     `  - rebase: ${cooldowns.rebase ?? ''}`,
     `  - fix: ${cooldowns.fix ?? ''}`,
     `  - fix-review: ${cooldowns['fix-review'] ?? ''}`,
     `  - finalizer: ${cooldowns.finalizer ?? ''}`,
     `  - direct-merge: ${cooldowns['direct-merge'] ?? ''}`,
+    `  - claude-escalation: ${cooldowns['claude-escalation'] ?? ''}`,
   ].join('\n');
 }
 
@@ -1508,18 +2140,23 @@ module.exports = {
   ISSUE_MARKER,
   PR_PRODUCER_REGISTRY,
   STATE_MARKER,
+  attachRepairRunsToPullRequest,
   buildPlan,
   decidePrAction,
   detectPrProducingWorkflows,
   hasMaintainerRejection,
+  hydrateSnapshot,
   latestRebaseNoop,
   lowLoadEligibleEntries,
   planIssueRoute,
   planLowLoadRoute,
   planPrRoute,
+  parseFixReviewSummaryComment,
+  parseRebaseSummaryComment,
   registryCoverage,
   reviewSignalsPassed,
   safeIssueForFix,
+  scheduleHealth,
   selectRoute,
   staleCodeReviewNeedsRebase,
 };
