@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
+import { apiHandler, type RouteContext } from '@/lib/api-handler';
+import { error, validationError } from '@/lib/api-response';
 
 const geoTargetSchema = z
   .object({
@@ -68,18 +70,14 @@ function mapToGeoRoutingRule(row: {
   };
 }
 
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const { id } = await params;
+// ─── GET: Fetch single geo-routing rule ──────────────────
+
+export const GET = apiHandler(
+  async (_request: NextRequest, context: RouteContext<{ id: string }>) => {
+    const { id } = await context.params;
     const ruleId = Number(id);
     if (Number.isNaN(ruleId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid rule ID' },
-        { status: 400 },
-      );
+      return error('Invalid rule ID', 400);
     }
 
     const rule = await prisma.geoRoutingRule.findUnique({
@@ -87,59 +85,39 @@ export async function GET(
     });
 
     if (!rule) {
-      return NextResponse.json(
-        { success: false, error: 'Rule not found' },
-        { status: 404 },
-      );
+      return error('Rule not found', 404);
     }
 
     return NextResponse.json({
       success: true,
       data: mapToGeoRoutingRule(rule),
     });
-  } catch (err) {
-    console.error('[api/routing/geo/[id]] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch geo-routing rule' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/routing/geo/[id]',
+);
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const { id } = await params;
+// ─── PUT: Update geo-routing rule ───────────────────────
+
+export const PUT = apiHandler(
+  async (request: NextRequest, context: RouteContext<{ id: string }>) => {
+    const { id } = await context.params;
     const ruleId = Number(id);
     if (Number.isNaN(ruleId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid rule ID' },
-        { status: 400 },
-      );
+      return error('Invalid rule ID', 400);
     }
 
     const existing = await prisma.geoRoutingRule.findUnique({
       where: { id: ruleId },
     });
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Rule not found' },
-        { status: 404 },
-      );
+      return error('Rule not found', 404);
     }
 
     const body = await request.json();
     const parsed = updateGeoRuleSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError =
-        parsed.error.issues[0]?.message ?? 'Invalid request body';
-      return NextResponse.json(
-        { success: false, error: firstError },
-        { status: 422 },
-      );
+      return validationError(parsed.error);
     }
 
     const { name, target, action, chainId, priority, isActive } = parsed.data;
@@ -181,37 +159,25 @@ export async function PUT(
       success: true,
       data: mapToGeoRoutingRule(rule),
     });
-  } catch (err) {
-    console.error('[api/routing/geo/[id]] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to update geo-routing rule' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/routing/geo/[id]',
+);
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const { id } = await params;
+// ─── DELETE: Remove geo-routing rule ────────────────────
+
+export const DELETE = apiHandler(
+  async (_request: NextRequest, context: RouteContext<{ id: string }>) => {
+    const { id } = await context.params;
     const ruleId = Number(id);
     if (Number.isNaN(ruleId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid rule ID' },
-        { status: 400 },
-      );
+      return error('Invalid rule ID', 400);
     }
 
     const existing = await prisma.geoRoutingRule.findUnique({
       where: { id: ruleId },
     });
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Rule not found' },
-        { status: 404 },
-      );
+      return error('Rule not found', 404);
     }
 
     await prisma.geoRoutingRule.delete({ where: { id: ruleId } });
@@ -228,11 +194,6 @@ export async function DELETE(
     });
 
     return NextResponse.json({ success: true, data: { id: ruleId } });
-  } catch (err) {
-    console.error('[api/routing/geo/[id]] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete geo-routing rule' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/routing/geo/[id]',
+);
