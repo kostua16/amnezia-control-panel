@@ -1516,12 +1516,6 @@ function makeDecision(context) {
     hasStandaloneCommand(event?.comment?.body, '/review') &&
     !policy.dependabot;
   const manualOnly = policy.manual_only || manualReviewLabels.length > 0;
-  const manualOnlyReason =
-    policy.blocked_reason ||
-    (manualReviewLabels.length > 0
-      ? `Manual review is required by label: ${manualReviewLabels.join(', ')}.`
-      : 'PR is manual-only by policy.');
-
   if (nonReviewHardBlockingLabels.length > 0) {
     return finish(
       'flow/review-blocked',
@@ -1568,13 +1562,6 @@ function makeDecision(context) {
       'flow/review-blocked',
       `Blocking labels are present: ${concernLabels.join(', ')}.`,
     );
-  }
-
-  // Manual-only PRs (needs-review, manual-only policy) reach terminal state
-  // immediately after CI is green, skipping automated worker dispatch.
-  // Diagnostic worker contexts are N/A.
-  if (manualOnly && !maintainerApproved) {
-    return finish('flow/manual-only', manualOnlyReason);
   }
 
   const needsDependencyReview =
