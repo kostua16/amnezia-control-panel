@@ -1338,7 +1338,7 @@ describe('buildFlowVisibility', () => {
     );
   });
 
-  it('routes manual-only PRs to flow/manual-only immediately after CI green', () => {
+  it('routes manual-only PRs to flow/review-pending with advisory reviews pending after CI green', () => {
     const pr = prFixture({
       headRefName: 'claude-audit-fix-26890853027',
       labels: ['needs-review'],
