@@ -443,6 +443,8 @@ test('RB5b spec: rebase-pr prompt reads context first and forbids shell-wrapper 
   assert.match(workflow, /Trusted conflict context has been precomputed to:/);
   assert.match(workflow, /READ THAT FILE FIRST/);
   assert.match(workflow, /READ THAT FILE SECOND/);
+  assert.match(workflow, /npm run format:check/);
+  assert.match(workflow, /npm run format/);
   assert.match(
     workflow,
     /Do not use `cat`, `echo`, command substitution, semicolons, pipes/,
@@ -460,6 +462,8 @@ test('RB5b spec: static rebase agent docs refer to runtime prompt paths', () => 
     /trusted conflict context path named in the workflow prompt/,
   );
   assert.match(agent, /review feedback path named in the workflow prompt/);
+  assert.match(agent, /npm run format:check/);
+  assert.match(agent, /npm run format/);
 });
 
 test('RB5b spec: rebase-pr resolver allowed-tools stay least-privilege', () => {

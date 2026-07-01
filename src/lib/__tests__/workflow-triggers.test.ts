@@ -263,9 +263,11 @@ describe('workflow trigger policy', () => {
     );
     assert.match(yaml, /do not use pipes, shell control operators/);
     assert.match(yaml, /Use `rtk node --test \.\.\.` or `rtk npm \.\.\.`/);
+    assert.match(yaml, /run `npm run format:check` before finishing/);
+    assert.match(yaml, /run `npm run format`/);
     assert.match(
       yaml,
-      /leave full CI-matching validation to the workflow's `validate-pr-gate` step/,
+      /Leave full CI-matching validation beyond that targeted fast feedback to the workflow's `validate-pr-gate` step/,
     );
   });
 
