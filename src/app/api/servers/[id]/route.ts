@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { hashValue } from '@/lib/password';
-import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
 import { writeAuditLog } from '@/lib/audit-log';
-
-type RouteContext = { params: Promise<{ id: string }> };
+import { apiHandler, type RouteContext } from '@/lib/api-handler';
+import { error, validationError } from '@/lib/api-response';
 
 const updateServerSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -45,15 +44,14 @@ function serverResponse(server: {
   };
 }
 
-export async function GET(_request: NextRequest, context: RouteContext) {
-  try {
+// ─── GET: Fetch single server ───────────────────────────
+
+export const GET = apiHandler(
+  async (_request: NextRequest, context: RouteContext<{ id: string }>) => {
     const { id } = await context.params;
     const serverId = Number(id);
     if (Number.isNaN(serverId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid server ID' },
-        { status: 422 },
-      );
+      return error('Invalid server ID', 422);
     }
 
     const server = await prisma.server.findUnique({
@@ -71,43 +69,29 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
 
     if (!server) {
-      return NextResponse.json(
-        { success: false, error: 'Server not found' },
-        { status: 404 },
-      );
+      return error('Server not found', 404);
     }
 
     return NextResponse.json({ success: true, data: serverResponse(server) });
-  } catch (err) {
-    console.error('[api/servers/:id GET] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch server' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/servers/[id]',
+);
 
-export async function PUT(request: NextRequest, context: RouteContext) {
-  try {
+// ─── PUT: Update server ─────────────────────────────────
+
+export const PUT = apiHandler(
+  async (request: NextRequest, context: RouteContext<{ id: string }>) => {
     const { id } = await context.params;
     const serverId = Number(id);
     if (Number.isNaN(serverId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid server ID' },
-        { status: 422 },
-      );
+      return error('Invalid server ID', 422);
     }
 
     const body = await request.json();
     const parsed = updateServerSchema.safeParse(body);
 
     if (!parsed.success) {
-      const firstError =
-        parsed.error.issues[0]?.message ?? 'Invalid request body';
-      return NextResponse.json(
-        { success: false, error: firstError },
-        { status: 422 },
-      );
+      return validationError(parsed.error);
     }
 
     const { name, hostname, port, apiKey, isActive } = parsed.data;
@@ -116,10 +100,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       where: { id: serverId },
     });
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Server not found' },
-        { status: 404 },
-      );
+      return error('Server not found', 404);
     }
 
     const updateData: Record<string, unknown> = {};
@@ -162,42 +143,25 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
 
     return NextResponse.json({ success: true, data: serverResponse(server) });
-  } catch (err) {
-    console.error('[api/servers/:id PUT] Error:', err);
+  },
+  'api/servers/[id]',
+);
 
-    if (isPrismaUniqueViolation(err)) {
-      return NextResponse.json(
-        { success: false, error: 'Server hostname already exists' },
-        { status: 409 },
-      );
-    }
+// ─── DELETE: Remove server ──────────────────────────────
 
-    return NextResponse.json(
-      { success: false, error: 'Failed to update server' },
-      { status: 500 },
-    );
-  }
-}
-
-export async function DELETE(_request: NextRequest, context: RouteContext) {
-  try {
+export const DELETE = apiHandler(
+  async (_request: NextRequest, context: RouteContext<{ id: string }>) => {
     const { id } = await context.params;
     const serverId = Number(id);
     if (Number.isNaN(serverId)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid server ID' },
-        { status: 422 },
-      );
+      return error('Invalid server ID', 422);
     }
 
     const existing = await prisma.server.findUnique({
       where: { id: serverId },
     });
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Server not found' },
-        { status: 404 },
-      );
+      return error('Server not found', 404);
     }
 
     await prisma.server.delete({ where: { id: serverId } });
@@ -210,11 +174,6 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     });
 
     return NextResponse.json({ success: true, data: { id: serverId } });
-  } catch (err) {
-    console.error('[api/servers/:id DELETE] Error:', err);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete server' },
-      { status: 500 },
-    );
-  }
-}
+  },
+  'api/servers/[id]',
+);
