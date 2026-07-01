@@ -4,6 +4,7 @@ import { MetricsCards } from '@/components/dashboard/metrics-cards';
 import { MultiPanelSection } from '@/components/dashboard/multi-panel-section';
 import { ResourceMonitor } from '@/components/dashboard/resource-monitor';
 import { TrafficStats } from '@/components/dashboard/traffic-stats';
+import { DashboardWidgetError } from '@/components/dashboard-widget-error';
 
 export default function DashboardPage() {
   return (
@@ -16,20 +17,28 @@ export default function DashboardPage() {
       </div>
 
       {/* Key metrics */}
-      <MetricsCards />
+      <DashboardWidgetError label="Key metrics">
+        <MetricsCards />
+      </DashboardWidgetError>
 
       {/* Two-column layout for resources and traffic */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-1">
-          <ResourceMonitor />
+          <DashboardWidgetError label="System resources">
+            <ResourceMonitor />
+          </DashboardWidgetError>
         </div>
         <div className="lg:col-span-2">
-          <TrafficStats />
+          <DashboardWidgetError label="Traffic overview">
+            <TrafficStats />
+          </DashboardWidgetError>
         </div>
       </div>
 
       {/* Multi-panel fleet overview */}
-      <MultiPanelSection />
+      <DashboardWidgetError label="Fleet overview">
+        <MultiPanelSection />
+      </DashboardWidgetError>
     </div>
   );
 }
