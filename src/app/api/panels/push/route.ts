@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { pushConfigToAllPanels } from '@/lib/panel-sync-client';
 import { cachePanelApiKey } from '@/lib/panel-health-checker';
 import { writeAuditLog } from '@/lib/audit-log';
+import { apiHandler } from '@/lib/api-handler';
+import { error, validationError } from '@/lib/api-response';
 
 // ─── Request Validation ─────────────────────────────────
 
@@ -59,60 +61,42 @@ const pushRequestSchema = z.object({
  * Accepts chainConfig + panelApiKeys, caches keys for auto-resync,
  * and calls pushConfigToAllPanels.
  */
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const parsed = pushRequestSchema.safeParse(body);
+export const POST = apiHandler(async (request: NextRequest) => {
+  const body = await request.json();
+  const parsed = pushRequestSchema.safeParse(body);
 
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid request body',
-          details: parsed.error.flatten(),
-        },
-        { status: 422 },
-      );
-    }
-
-    const { chainConfig, panelApiKeys } = parsed.data;
-
-    // Cache API keys in memory for future auto-resync (never persisted to DB)
-    for (const [panelId, apiKey] of Object.entries(panelApiKeys)) {
-      cachePanelApiKey(Number(panelId), apiKey);
-    }
-
-    // Convert to Map for pushConfigToAllPanels
-    const panelApiKeysMap = new Map<number, string>(
-      Object.entries(panelApiKeys).map(([id, key]) => [Number(id), key]),
-    );
-
-    const pushAllResult = await pushConfigToAllPanels(
-      chainConfig,
-      panelApiKeysMap,
-    );
-
-    await writeAuditLog({
-      action: 'panel.push',
-      resource: 'remotePanel',
-      outcome: pushAllResult.failed === 0 ? 'success' : 'failure',
-      metadata: {
-        templateId: chainConfig.templateId,
-        totalPanels: pushAllResult.totalPanels,
-        succeeded: pushAllResult.succeeded,
-        failed: pushAllResult.failed,
-      },
-    });
-
-    return NextResponse.json({ success: true, data: pushAllResult });
-  } catch (err) {
-    console.error('[api/panels/push] Push failed:', err);
-    return NextResponse.json(
-      {
-        success: false,
-        error: err instanceof Error ? err.message : 'Push failed',
-      },
-      { status: 500 },
-    );
+  if (!parsed.success) {
+    return validationError(parsed.error);
   }
-}
+
+  const { chainConfig, panelApiKeys } = parsed.data;
+
+  // Cache API keys in memory for future auto-resync (never persisted to DB)
+  for (const [panelId, apiKey] of Object.entries(panelApiKeys)) {
+    cachePanelApiKey(Number(panelId), apiKey);
+  }
+
+  // Convert to Map for pushConfigToAllPanels
+  const panelApiKeysMap = new Map<number, string>(
+    Object.entries(panelApiKeys).map(([id, key]) => [Number(id), key]),
+  );
+
+  const pushAllResult = await pushConfigToAllPanels(
+    chainConfig,
+    panelApiKeysMap,
+  );
+
+  await writeAuditLog({
+    action: 'panel.push',
+    resource: 'remotePanel',
+    outcome: pushAllResult.failed === 0 ? 'success' : 'failure',
+    metadata: {
+      templateId: chainConfig.templateId,
+      totalPanels: pushAllResult.totalPanels,
+      succeeded: pushAllResult.succeeded,
+      failed: pushAllResult.failed,
+    },
+  });
+
+  return NextResponse.json({ success: true, data: pushAllResult });
+}, 'api/panels/push');
