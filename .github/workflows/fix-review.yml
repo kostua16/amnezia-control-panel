@@ -297,6 +297,15 @@ jobs:
         if: steps.pr.outputs.eligible == 'true' && steps.detect-noop.outputs.has_changes == 'true'
         run: git checkout HEAD -- .github/actions/
 
+      - name: Ensure gate action exists
+        if: steps.pr.outputs.eligible == 'true'
+        run: |
+          if [ ! -f .github/actions/validate-pr-gate/action.yml ]; then
+            git fetch origin "${{ github.event.repository.default_branch }}" -- \
+              '.github/actions/validate-pr-gate/'
+            git checkout FETCH_HEAD -- .github/actions/validate-pr-gate/
+          fi
+
       - name: Validate (CI-matching gate)
         id: gate
         if: steps.pr.outputs.eligible == 'true' && steps.detect-noop.outputs.has_changes == 'true'
