@@ -5,9 +5,12 @@ const path = require('node:path');
 
 const {
   PR_PRODUCER_REGISTRY,
+  attachRepairRunsToPullRequest,
   buildPlan,
   decidePrAction,
   detectPrProducingWorkflows,
+  parseFixReviewSummaryComment,
+  parseRebaseSummaryComment,
   registryCoverage,
   safeIssueForFix,
   selectRoute,
@@ -61,6 +64,48 @@ function issue(overrides = {}) {
 
 function actionTypes(plan) {
   return plan.actions.map((action) => action.type);
+}
+
+function comment(body, overrides = {}) {
+  return {
+    body,
+    createdAt: '2026-07-01T09:30:00.000Z',
+    updatedAt: '2026-07-01T09:30:00.000Z',
+    author_association: 'OWNER',
+    author: { type: 'User' },
+    ...overrides,
+  };
+}
+
+function rebaseSummary({ heading, head = 'abc123', run = 123, extra = [] }) {
+  return comment(
+    [
+      '<!-- rebase-pr-summary -->',
+      `## ${heading}`,
+      '',
+      `- Head SHA: \`${head}\``,
+      `- Run: https://example.test/actions/runs/${run}`,
+      '',
+      ...extra,
+      '<!-- updated: 2026-07-01T09:30:00.000Z -->',
+    ].join('\n'),
+  );
+}
+
+function fixReviewSummary({ heading, head = 'abc123', run = 123, extra = [] }) {
+  return comment(
+    [
+      '<!-- fix-review-summary -->',
+      `## FIX-REVIEW Report: ${heading}`,
+      '',
+      '- Command: `/fix-review`',
+      `- Head SHA: \`${head}\``,
+      `- Run: https://example.test/actions/runs/${run}`,
+      '',
+      ...extra,
+      '<!-- updated: 2026-07-01T09:30:00.000Z -->',
+    ].join('\n'),
+  );
 }
 
 test('PM1: PR pressure selects latest 10 PRs', () => {
@@ -359,6 +404,293 @@ test('PM18: failed fix-review posts deduped @claude escalation', () => {
 
   assert.equal(action.actionKey, 'claude-escalation');
   assert.match(action.actions[0].body, /@claude fix this workflow failure/);
+});
+
+test('PM18a: rebase summary parser separates failed, not-pushed, and no-op outcomes', () => {
+  const failed = parseRebaseSummaryComment(
+    rebaseSummary({ heading: 'Rebase failed', run: 501 }),
+  );
+  const notPushed = parseRebaseSummaryComment(
+    rebaseSummary({
+      heading: 'Validation failed - rebased branch not pushed',
+      run: 502,
+    }),
+  );
+  const noop = parseRebaseSummaryComment(
+    rebaseSummary({
+      heading: 'Rebase complete',
+      run: 503,
+      extra: ['- Pushed: no (no changes after rebase)'],
+    }),
+  );
+
+  assert.equal(failed.outcome, 'failed');
+  assert.equal(failed.conclusion, 'failure');
+  assert.equal(notPushed.outcome, 'validation_failed_not_pushed');
+  assert.equal(notPushed.conclusion, 'failure');
+  assert.equal(noop.outcome, 'noop');
+  assert.equal(noop.noop, true);
+});
+
+test('PM18b: fix-review summary parser separates no-op, failures, and cancellation', () => {
+  assert.equal(
+    parseFixReviewSummaryComment(
+      fixReviewSummary({ heading: 'No changes needed', run: 601 }),
+    ).outcome,
+    'noop',
+  );
+  assert.equal(
+    parseFixReviewSummaryComment(
+      fixReviewSummary({
+        heading: 'Validation failed - fixes not pushed',
+        run: 602,
+      }),
+    ).outcome,
+    'validation_failed_not_pushed',
+  );
+  assert.equal(
+    parseFixReviewSummaryComment(
+      fixReviewSummary({ heading: 'Push rejected (push failed)', run: 603 }),
+    ).outcome,
+    'push_rejected',
+  );
+  assert.equal(
+    parseFixReviewSummaryComment(
+      fixReviewSummary({ heading: 'Review fix failed', run: 604 }),
+    ).outcome,
+    'failed',
+  );
+  assert.equal(
+    parseFixReviewSummaryComment(
+      fixReviewSummary({ heading: 'Review fix cancelled', run: 605 }),
+    ).outcome,
+    'cancelled',
+  );
+});
+
+test('PM18c: live-shaped rebase failure escalates instead of repeating /rebase', () => {
+  const plan = buildPlan(
+    {
+      now: NOW,
+      openPrCount: 6,
+      openIssueCount: 0,
+      openPullRequests: [
+        pr({
+          number: 507,
+          title: 'ci(workflows): audit automation-created PRs',
+          codeReview: { stale: true },
+          headCommittedAt: OLD_HEAD,
+          checkStatus: { status: 'passed' },
+          comments: [rebaseSummary({ heading: 'Rebase failed', run: 701 })],
+        }),
+      ],
+      workflowRuns: [
+        {
+          workflow: 'rebase-pr.yml',
+          databaseId: 701,
+          displayTitle: 'ci(workflows): audit automation-created PRs',
+          status: 'completed',
+          conclusion: 'success',
+          updatedAt: '2026-07-01T09:31:00.000Z',
+          url: 'https://example.test/actions/runs/701',
+        },
+      ],
+    },
+    { now: NOW },
+  );
+
+  assert.equal(plan.decisions[0].action, 'claude-escalation');
+  assert.match(plan.decisions[0].reason, /rebase-pr\.yml failed/);
+  assert.equal(plan.actions[0].body.includes('@claude fix'), true);
+  assert.equal(
+    plan.actions.some((action) => action.body === '/rebase'),
+    false,
+  );
+});
+
+test('PM18d: validation-failed rebase summary escalates instead of repeating /rebase', () => {
+  const hydrated = attachRepairRunsToPullRequest(
+    pr({
+      codeReview: { stale: true },
+      headCommittedAt: OLD_HEAD,
+      checkStatus: { status: 'passed' },
+      comments: [
+        rebaseSummary({
+          heading: 'Validation failed - rebased branch not pushed',
+          run: 702,
+        }),
+      ],
+    }),
+    [],
+  );
+  const action = decidePrAction(hydrated, { now: NOW });
+
+  assert.equal(
+    hydrated.runs.rebasePr.latest.outcome,
+    'validation_failed_not_pushed',
+  );
+  assert.equal(action.actionKey, 'claude-escalation');
+});
+
+test('PM18e: live-shaped fix-review failure escalates instead of repeating /fix-review', () => {
+  const plan = buildPlan(
+    {
+      now: NOW,
+      openPrCount: 6,
+      openIssueCount: 0,
+      openPullRequests: [
+        pr({
+          number: 489,
+          title: 'workflow repair',
+          labels: ['ai-review-concerns'],
+          checkStatus: { status: 'passed' },
+          comments: [
+            fixReviewSummary({
+              heading: 'Validation failed - fixes not pushed',
+              run: 801,
+            }),
+          ],
+        }),
+      ],
+      workflowRuns: [],
+    },
+    { now: NOW },
+  );
+
+  assert.equal(plan.decisions[0].action, 'claude-escalation');
+  assert.equal(
+    plan.actions.some((action) => action.body === '/fix-review'),
+    false,
+  );
+});
+
+test('PM18f: active same-head fix-review run suppresses another /fix-review', () => {
+  const plan = buildPlan(
+    {
+      now: NOW,
+      openPrCount: 6,
+      openIssueCount: 0,
+      openPullRequests: [
+        pr({
+          title: 'review-blocked feature',
+          labels: ['ai-review-concerns'],
+          checkStatus: { status: 'passed' },
+        }),
+      ],
+      workflowRuns: [
+        {
+          workflow: 'fix-review.yml',
+          displayTitle: 'review-blocked feature',
+          status: 'in_progress',
+          conclusion: '',
+          updatedAt: '2026-07-01T09:45:00.000Z',
+        },
+      ],
+    },
+    { now: NOW },
+  );
+
+  assert.equal(plan.decisions[0].action, 'none');
+  assert.match(plan.decisions[0].reason, /already active/);
+  assert.equal(plan.actions.length, 0);
+});
+
+test('PM18g: repeated cancelled fix-review runs escalate after threshold', () => {
+  const plan = buildPlan(
+    {
+      now: NOW,
+      openPrCount: 6,
+      openIssueCount: 0,
+      openPullRequests: [
+        pr({
+          title: 'cancelled review fix',
+          labels: ['ai-review-concerns'],
+          checkStatus: { status: 'passed' },
+        }),
+      ],
+      workflowRuns: [
+        {
+          workflow: 'fix-review.yml',
+          databaseId: 901,
+          displayTitle: 'cancelled review fix',
+          status: 'completed',
+          conclusion: 'cancelled',
+          updatedAt: '2026-07-01T09:00:00.000Z',
+        },
+        {
+          workflow: 'fix-review.yml',
+          databaseId: 902,
+          displayTitle: 'cancelled review fix',
+          status: 'completed',
+          conclusion: 'cancelled',
+          updatedAt: '2026-07-01T09:30:00.000Z',
+        },
+      ],
+    },
+    { now: NOW },
+  );
+
+  assert.equal(plan.decisions[0].action, 'claude-escalation');
+});
+
+test('PM18h: recent duplicate command comments suppress command reposts', () => {
+  const action = decidePrAction(
+    pr({
+      mergeable: 'CONFLICTING',
+      comments: [comment('/rebase')],
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
+test('PM18i: project-manager summary reports pressure, escalations, and schedule gap', () => {
+  const plan = buildPlan(
+    {
+      now: NOW,
+      openPrCount: 6,
+      openIssueCount: 0,
+      openPullRequests: [
+        pr({
+          number: 560,
+          title: 'deps rebase',
+          codeReview: { stale: true },
+          headCommittedAt: OLD_HEAD,
+          checkStatus: { status: 'passed' },
+          comments: [rebaseSummary({ heading: 'Rebase failed', run: 1001 })],
+        }),
+        readyPr({
+          number: 561,
+          updatedAt: '2026-07-01T08:00:00.000Z',
+        }),
+      ],
+      workflowRuns: [
+        {
+          workflow: 'project-manager.yml',
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: '2026-07-01T08:00:00.000Z',
+          updatedAt: '2026-07-01T08:10:00.000Z',
+        },
+        {
+          workflow: 'project-manager.yml',
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: '2026-07-01T10:00:00.000Z',
+          updatedAt: '2026-07-01T10:05:00.000Z',
+        },
+      ],
+    },
+    { now: NOW },
+  );
+
+  assert.equal(plan.summary.prsInspected, 2);
+  assert.equal(plan.summary.priorFailedRepairs, 1);
+  assert.equal(plan.summary.escalationsPlanned, 1);
+  assert.equal(plan.summary.readyPrs, 1);
+  assert.equal(plan.summary.projectManagerSchedule.latestGapHours, 2);
+  assert.ok(plan.summary.nextLowLoadWorkflowIfPressureDrops);
 });
 
 test('PM19: issue queue skips linked PR, active fix, and terminal labels', () => {

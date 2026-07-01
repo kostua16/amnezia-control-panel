@@ -502,11 +502,21 @@ script (`scripts/project-manager.cjs`) selects one route per run:
   most one action per PR: `@claude` escalation, `/rebase`, `/fix`,
   `/fix-review`, finalizer dispatch, or direct-merge fallback after
   `kos-project-manager` review.
+  It joins global workflow runs with per-PR repair summaries before routing, so
+  a same-head failed `rebase-pr` / `fix-review` / `fix-pr` attempt escalates
+  instead of posting the same command again.
 - Issue pressure (`open PRs <= threshold`, `open issues > threshold`) posts
   trusted `/fix` only to safe standalone issues.
 - Low pressure dispatches exactly one eligible PR-producing workflow from the
   project-manager registry. Registry coverage tests fail when a new
   PR-producing workflow is added without classification.
+
+Repair sticky summaries are authoritative for project-manager routing. For
+example, `rebase-pr.yml` can finish with an overall successful workflow run
+while its summary reports `Rebase failed` or `Validation failed — rebased
+branch not pushed`; project-manager treats that as failed repair evidence,
+creates/reuses a workflow issue, comments `/fix` there, and posts one deduped
+`@claude fix this workflow failure` escalation.
 
 Project-manager is a recovery and queue-management workflow; do **not** add it
 as a required PR check. The preferred merge path remains `pr-finalizer.yml`.
