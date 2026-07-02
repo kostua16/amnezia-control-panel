@@ -1,14 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
-
-const require = createRequire(import.meta.url);
-const yaml = require('js-yaml') as {
-  load(source: string): unknown;
-};
+import { load as loadYaml } from 'js-yaml';
 
 type PullRequestTrigger = {
   types?: string[];
@@ -41,7 +36,7 @@ const repoRoot = path.resolve(
 
 function readWorkflow(fileName: string): Workflow {
   const workflowPath = path.join(repoRoot, '.github/workflows', fileName);
-  return yaml.load(fs.readFileSync(workflowPath, 'utf8')) as Workflow;
+  return loadYaml(fs.readFileSync(workflowPath, 'utf8')) as Workflow;
 }
 
 function readWorkflowText(fileName: string): string {
