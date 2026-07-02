@@ -1,5 +1,8 @@
 import { prisma } from '@/lib/prisma';
-import { getPanelStatus, isPanelInFallback } from '@/lib/panel-health-checker';
+import {
+  isPanelInFallback,
+  getPanelHealthSnapshot,
+} from '@/lib/panel-health-checker';
 import { success, error } from '@/lib/api-response';
 import type {
   FleetAggregatedStatus,
@@ -12,10 +15,11 @@ export async function GET() {
       where: { isActive: true },
     });
 
+    const snapshot = getPanelHealthSnapshot();
+
     const statuses: PanelDashboardStatus[] = await Promise.all(
       panels.map(async (panel) => {
-        const { status, lastRecord } = await getPanelStatus(panel.id);
-        const fallback = isPanelInFallback(panel.id);
+        const cached = snapshot.get(panel.id);
 
         let lastSyncAt: string | null = null;
         try {
@@ -30,13 +34,32 @@ export async function GET() {
           // cachedPanelConfig table may not exist in all environments
         }
 
+        // Use the periodic checker's cached snapshot when available
+        // to avoid redundant HTTP HEAD probes on every request.
+        if (cached) {
+          return {
+            panelId: cached.panelId,
+            panelName: panel.name,
+            panelUrl: panel.panelUrl,
+            status: cached.status,
+            latencyMs: cached.latencyMs,
+            lastCheckedAt: cached.checkedAt,
+            lastSyncAt,
+            servicesOnline: 0,
+            servicesTotal: 0,
+            isFallback: cached.isFallback,
+          };
+        }
+
+        // Fallback when periodic health checks have not started yet.
+        const fallback = isPanelInFallback(panel.id);
         return {
           panelId: panel.id,
           panelName: panel.name,
           panelUrl: panel.panelUrl,
-          status,
-          latencyMs: lastRecord?.latencyMs ?? null,
-          lastCheckedAt: lastRecord?.checkedAt ?? null,
+          status: fallback ? 'degraded' : 'unknown',
+          latencyMs: null,
+          lastCheckedAt: null,
           lastSyncAt,
           servicesOnline: 0,
           servicesTotal: 0,
