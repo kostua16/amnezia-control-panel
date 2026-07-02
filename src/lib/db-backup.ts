@@ -14,10 +14,13 @@ const BACKUP_DIR = 'backups';
  */
 export function resolveDbPath(): string {
   const url = process.env.DATABASE_URL ?? 'file:./prisma/dev.db';
-  if (url.startsWith('file:')) {
-    return url.slice(5);
+  let resolved = url.startsWith('file:') ? url.slice(5) : url;
+  // Drop any `?query` suffix — Prisma connection params are not a valid file path.
+  const queryIndex = resolved.indexOf('?');
+  if (queryIndex !== -1) {
+    resolved = resolved.slice(0, queryIndex);
   }
-  return url;
+  return resolved;
 }
 
 /**
@@ -40,7 +43,10 @@ export async function backupDatabase(targetPath?: string): Promise<string> {
 
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
-    db.backup(backupFile);
+    // better-sqlite3's backup() returns a Promise; awaiting it ensures the
+    // copy completes before db.close() runs in finally — otherwise the backup
+    // is aborted mid-write and the route still reports success.
+    await db.backup(backupFile);
   } finally {
     db.close();
   }

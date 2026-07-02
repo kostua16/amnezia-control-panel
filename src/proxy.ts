@@ -6,6 +6,7 @@ import {
   shouldRefreshToken,
   SESSION_MAX_AGE,
 } from '@/lib/auth-jwt';
+import { prisma } from '@/lib/prisma';
 
 /**
  * Claims embedded in the auth-token JWT. The proxy is the single source
@@ -100,17 +101,33 @@ async function maybeRefreshSession(
   payload: AuthClaims,
 ): Promise<NextResponse> {
   if (payload.exp && shouldRefreshToken(payload.exp)) {
-    const newToken = await createSessionToken({
-      userId: payload.userId,
-      username: payload.username,
-    });
-    response.cookies.set('auth-token', newToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: SESSION_MAX_AGE,
-      secure: process.env.NODE_ENV === 'production',
-    });
+    // Re-verify the admin still exists before minting a fresh token, so a
+    // removed account cannot have its session renewed indefinitely. The
+    // existing token still expires on its own bounded lifetime. The refresh
+    // is opportunistic: if the lookup fails or the admin is gone, skip the
+    // renew rather than failing the request.
+    let admin: { id: string } | null = null;
+    try {
+      admin = await prisma.admin.findUnique({
+        where: { id: payload.userId },
+        select: { id: true },
+      });
+    } catch {
+      admin = null;
+    }
+    if (admin) {
+      const newToken = await createSessionToken({
+        userId: payload.userId,
+        username: payload.username,
+      });
+      response.cookies.set('auth-token', newToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: SESSION_MAX_AGE,
+        secure: process.env.NODE_ENV === 'production',
+      });
+    }
   }
   return response;
 }
