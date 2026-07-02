@@ -762,11 +762,11 @@ test('resolvePrNumber returns null for non-numeric explicit value', () => {
   assert.equal(resolvePrNumber('push', {}, 'abc'), null);
 });
 
-// ── Regression tests for PR #209 ──
-// needs-review in blocking_labels_present must route to flow/manual-only
-// immediately after CI is green, without dispatching workers.
+// ── Manual-only advisory review flow ──
+// Manual-review markers keep the PR out of auto-merge, but should still run
+// advisory review workers after CI is green.
 
-test('makeDecision routes needs-review to flow/manual-only after CI green (PR #209)', () => {
+test('makeDecision dispatches code review for needs-review after CI green', () => {
   const decision = makePrFlowDecision({
     pr: {
       ...basePr,
@@ -783,20 +783,21 @@ test('makeDecision routes needs-review to flow/manual-only after CI green (PR #2
     checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
   });
 
-  assert.equal(decision.state, 'flow/manual-only');
-  assert.match(
-    decision.reason,
-    /Manual review is required by label: needs-review/,
-  );
-  assert.equal(decision.dispatch, null);
-  assert.ok(decision.desiredLabels.includes('flow/manual-only'));
+  assert.equal(decision.state, 'flow/review-pending');
+  assert.equal(decision.reason, 'Dispatching code review.');
+  assert.deepEqual(decision.dispatch, {
+    key: 'codeReview',
+    workflow: 'code-review.yml',
+    inputs: undefined,
+  });
+  assert.ok(!decision.desiredLabels.includes('flow/manual-only'));
 });
 
-test('makeDecision does not dispatch workers for needs-review PR (PR #209)', () => {
+test('makeDecision preserves manual-only label when reviews pass for needs-review PR', () => {
   const decision = makePrFlowDecision({
     pr: {
       ...basePr,
-      labels: ['needs-review'],
+      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
       files: ['src/app/page.tsx'],
     },
     policy: {
@@ -809,8 +810,14 @@ test('makeDecision does not dispatch workers for needs-review PR (PR #209)', () 
     checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
   });
 
-  assert.notEqual(decision.state, 'flow/review-pending');
-  assert.equal(decision.dispatch, null);
+  assert.equal(decision.state, 'flow/finalizer-dispatched');
+  assert.equal(decision.reason, 'Dispatching finalizer.');
+  assert.deepEqual(decision.dispatch, {
+    key: 'finalizer',
+    workflow: 'pr-finalizer.yml',
+    inputs: undefined,
+  });
+  assert.ok(decision.desiredLabels.includes('flow/manual-only'));
 });
 
 test('makeDecision keeps hard blockers as failures even with needs-review', () => {
@@ -856,7 +863,7 @@ test('makeDecision keeps ai-review-concerns blocking on a needs-review manual-on
   assert.equal(decision.dispatch, null);
 });
 
-test('buildFlowVisibility sets all workers N/A for needs-review manual-only (PR #209)', () => {
+test('buildFlowVisibility sets all workers N/A for terminal manual-only', () => {
   const visibility = buildFlowVisibility({
     pr: {
       ...basePr,
