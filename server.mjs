@@ -83,16 +83,26 @@ app.prepare().then(() => {
     }
   });
 
+  // Track connected client count so server-side code (websocket.ts) can check
+  // whether anyone is listening without importing the io instance.
+  globalThis.__wsClientCount = 0;
+
   io.on('connection', (socket) => {
-    console.log(`[ws] Client connected: ${socket.id}`);
+    globalThis.__wsClientCount++;
+    console.log(
+      `[ws] Client connected: ${socket.id} (total: ${globalThis.__wsClientCount})`,
+    );
 
     socket.on('disconnect', (reason) => {
-      console.log(`[ws] Client disconnected: ${socket.id} (${reason})`);
+      globalThis.__wsClientCount--;
+      console.log(
+        `[ws] Client disconnected: ${socket.id} (${reason}, total: ${globalThis.__wsClientCount})`,
+      );
     });
   });
 
-  // Store the io instance globally so that server-side code can access it
-  // This mirrors what src/lib/websocket.ts does, but runs at the right time
+  // Store the io instance globally so that server-side TypeScript code can
+  // access it via globalThis.__socketIO (declared in src/lib/websocket.ts).
   globalThis.__socketIO = io;
 
   // Graceful shutdown (SIGTERM/SIGINT cleanup) is registered in

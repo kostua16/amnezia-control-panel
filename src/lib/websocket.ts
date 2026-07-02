@@ -2,6 +2,8 @@ import { Server as SocketIOServer } from 'socket.io';
 
 declare global {
   var __socketIO: SocketIOServer | undefined;
+  /** Connected WebSocket client count, maintained by server.mjs connection handler. */
+  var __wsClientCount: number;
 }
 
 /** WebSocket event types used across the application */
@@ -16,67 +18,21 @@ export type WsEventType =
 
 export {};
 
-let ioInstance: SocketIOServer | null = null;
-
-/** Track the number of connected WebSocket clients for throttling */
-let connectedClients = 0;
-
 /**
- * Get the Socket.IO server instance.
- * Throws if called before the server is initialized.
+ * Get the Socket.IO server instance set by server.mjs at startup.
+ * Returns undefined when the server has not started (tests, CLI usage).
  */
-export function getWebSocket(): SocketIOServer {
-  if (!ioInstance) {
-    throw new Error(
-      '[ws] Socket.IO not initialized. Ensure the application is started via scripts/dev.cjs or scripts/start.cjs.',
-    );
-  }
-  return ioInstance;
+export function getWebSocket(): SocketIOServer | undefined {
+  return globalThis.__socketIO;
 }
 
 /**
- * Whether the Socket.IO server has been initialized. Lets health checks report
- * WebSocket readiness without throwing when the server is not yet running
- * (e.g. during tests or before server.mjs attaches the instance).
+ * Whether the Socket.IO server has been initialized by server.mjs.
+ * Lets health checks and broadcaster report WebSocket readiness without
+ * throwing during tests or before startup.
  */
 export function isWebSocketReady(): boolean {
-  return ioInstance !== null;
-}
-
-/**
- * Initialize the Socket.IO server.
- * This is called from server.mjs during startup.
- *
- * @param httpServer - The HTTP server to attach Socket.IO to (unused, kept for backward compatibility)
- * @param io - The Socket.IO server instance
- */
-export function initWebSocketServer(
-  _httpServer: unknown,
-  io: SocketIOServer,
-): void {
-  if (ioInstance) {
-    console.warn('[ws] Socket.IO already initialized, skipping');
-    return;
-  }
-
-  ioInstance = io;
-
-  // Set up connection tracking for throttling
-  io.on('connection', (socket) => {
-    connectedClients++;
-    console.log(
-      `[ws] Client connected: ${socket.id} (total: ${connectedClients})`,
-    );
-
-    socket.on('disconnect', (reason) => {
-      connectedClients--;
-      console.log(
-        `[ws] Client disconnected: ${socket.id} (${reason}, total: ${connectedClients})`,
-      );
-    });
-  });
-
-  console.log('[ws] Socket.IO server initialized with connection tracking');
+  return globalThis.__socketIO !== undefined;
 }
 
 /**
@@ -84,23 +40,7 @@ export function initWebSocketServer(
  * Silently no-ops when WebSocket is not initialized (e.g., in tests or CLI usage).
  */
 export function broadcastEvent(event: string, data: unknown): void {
-  if (!ioInstance) return;
-  ioInstance.emit(event, data);
-}
-
-/**
- * Keep initWebSocket as a no-op for backward compatibility.
- * The Socket.IO server is now created in server.mjs.
- */
-export function initWebSocket(
-  _httpServer: import('http').Server,
-): SocketIOServer {
-  const existing = getWebSocket();
-  if (existing) return existing;
-  throw new Error(
-    '[ws] initWebSocket called but Socket.IO was not initialized by server.mjs. ' +
-      'Ensure the application is started via scripts/dev.cjs or scripts/start.cjs.',
-  );
+  globalThis.__socketIO?.emit(event, data);
 }
 
 /** Broadcast an alert to all connected clients. */
@@ -121,7 +61,8 @@ export function broadcastResourceUpdate(data: unknown): void {
 /**
  * Check if any WebSocket clients are currently connected.
  * Used by the broadcaster to skip expensive queries when no one is listening.
+ * Reads the counter maintained by server.mjs' io.on('connection') handler.
  */
 export function hasConnectedClients(): boolean {
-  return connectedClients > 0;
+  return (globalThis.__wsClientCount ?? 0) > 0;
 }

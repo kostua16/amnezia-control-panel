@@ -30,6 +30,32 @@ const panelApiKeyCacheTimestamps = new Map<number, number>();
 /** Max age for API key cache entries (1 hour) */
 const API_KEY_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 
+// ─── Health Snapshot Cache ─────────────────────────────
+
+/**
+ * Cached result from the periodic health checker for each panel.
+ * Populated every 30s by startPanelHealthChecks; read by the status API
+ * to avoid redundant HTTP HEAD probes.
+ */
+export interface PanelHealthSnapshot {
+  panelId: number;
+  status: PanelConnectionStatus;
+  latencyMs: number | null;
+  checkedAt: string;
+  isFallback: boolean;
+}
+
+const healthSnapshotCache = new Map<number, PanelHealthSnapshot>();
+
+/**
+ * Return cached health snapshots for all panels. The periodic checker
+ * updates these every ~30s. Returns an empty map if health checks have
+ * not started yet.
+ */
+export function getPanelHealthSnapshot(): Map<number, PanelHealthSnapshot> {
+  return healthSnapshotCache;
+}
+
 // ─── Health Check Interval ──────────────────────────────
 
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
@@ -75,6 +101,7 @@ export function removePanelApiKey(panelId: number): void {
 export function evictPanel(panelId: number): void {
   consecutiveFailures.delete(panelId);
   fallbackPanels.delete(panelId);
+  healthSnapshotCache.delete(panelId);
   panelApiKeyCache.delete(panelId);
   panelApiKeyCacheTimestamps.delete(panelId);
   console.log(
@@ -326,6 +353,16 @@ export function startPanelHealthChecks(): void {
         try {
           const result = await testPanel(panel.id);
 
+          // Update the snapshot cache so the status API can read it
+          // without re-probing.
+          healthSnapshotCache.set(panel.id, {
+            panelId: panel.id,
+            status: result.success ? 'connected' : 'offline',
+            latencyMs: result.latency,
+            checkedAt: new Date().toISOString(),
+            isFallback: fallbackPanels.has(panel.id),
+          });
+
           // Fallback detection and auto-resync logic
           if (result.success) {
             consecutiveFailures.set(panel.id, 0);
@@ -338,6 +375,16 @@ export function startPanelHealthChecks(): void {
               fallbackPanels.delete(panel.id);
               broadcastFallbackStatusChange(panel.id, panel.name, false);
               triggerAutoResync(panel.id, panel.name);
+              // Sync the snapshot with the fallback-EXIT transition so the
+              // status API does not serve a stale isFallback flag for up to
+              // one interval after the reconnect broadcast.
+              healthSnapshotCache.set(panel.id, {
+                panelId: panel.id,
+                status: 'connected',
+                latencyMs: result.latency,
+                checkedAt: new Date().toISOString(),
+                isFallback: false,
+              });
             }
           } else {
             const failures = (consecutiveFailures.get(panel.id) ?? 0) + 1;
@@ -350,6 +397,15 @@ export function startPanelHealthChecks(): void {
               );
               fallbackPanels.add(panel.id);
               broadcastFallbackStatusChange(panel.id, panel.name, true);
+              // Update snapshot to reflect fallback state
+              const existing = healthSnapshotCache.get(panel.id);
+              if (existing) {
+                healthSnapshotCache.set(panel.id, {
+                  ...existing,
+                  isFallback: true,
+                  status: 'degraded',
+                });
+              }
             }
           }
         } catch (err) {
@@ -382,6 +438,7 @@ export function cleanup(): void {
   stopPanelHealthChecks();
   consecutiveFailures.clear();
   fallbackPanels.clear();
+  healthSnapshotCache.clear();
   panelApiKeyCache.clear();
   panelApiKeyCacheTimestamps.clear();
   console.log('[panel-health] Cleaned up all in-memory state');
