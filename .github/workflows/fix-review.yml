@@ -385,7 +385,7 @@ jobs:
             --push-failure-reason "$PUSH_FAILURE_REASON" \
             --commit-sha "$COMMIT_SHA" --automerge-disabled "$AUTOMERGE_DISABLED" --mode complete
 
-      - name: Clear concern labels and retrigger code-review (false positives confirmed)
+      - name: Retrigger code-review (false positives confirmed)
         if: >-
           always() &&
           steps.pr.outputs.eligible == 'true' &&
@@ -396,12 +396,10 @@ jobs:
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
-          # Swap concern labels to passed — fix-review confirmed false positives
-          gh issue edit "$PR_NUMBER" --remove-label "ai-review-concerns" 2>/dev/null || true
-          gh issue edit "$PR_NUMBER" --remove-label "security-review-concerns" 2>/dev/null || true
-          gh issue edit "$PR_NUMBER" --add-label "ai-review-passed" 2>/dev/null || true
-          gh issue edit "$PR_NUMBER" --add-label "security-review-passed" 2>/dev/null || true
-          # Retrigger code-review so it sees the fix-review comment and updates its verdict
+          # Retrigger code-review so it re-evaluates this head and swaps the
+          # concern labels itself per its fresh verdict. The labels are NOT
+          # touched here: pre-swapping to *-review-passed would open a window
+          # where pr-finalizer could merge before code-review re-runs.
           gh workflow run code-review.yml \
             --ref main \
             -f pr_number="$PR_NUMBER" \

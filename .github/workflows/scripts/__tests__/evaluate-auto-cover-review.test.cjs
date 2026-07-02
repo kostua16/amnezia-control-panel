@@ -166,14 +166,12 @@ test('detects active current fix-review runs', () => {
 });
 
 test('hasFixReviewNoOp detects no-changes fix-review comment', () => {
-  assert.equal(
-    hasFixReviewNoOp([
-      {
-        body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed',
-      },
-    ]),
-    true,
-  );
+  const noOpBody = (headSha) =>
+    `<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed\n\n- Head SHA: \`${headSha}\``;
+  assert.equal(hasFixReviewNoOp([{ body: noOpBody('abc123') }]), true);
+  assert.equal(hasFixReviewNoOp([{ body: noOpBody('abc123') }], 'abc123'), true);
+  // Stale no-op from a prior commit must not match the current head.
+  assert.equal(hasFixReviewNoOp([{ body: noOpBody('oldheadsha12') }], 'abc123'), false);
   assert.equal(
     hasFixReviewNoOp([
       {
@@ -189,7 +187,7 @@ test('hasFixReviewNoOp detects no-changes fix-review comment', () => {
 test('skips dispatch when latest fix-review confirmed false positives', () => {
   const comments = [
     {
-      body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed',
+      body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed\n\n- Head SHA: `abc123`',
     },
   ];
   const result = evaluateAutoCoverReview({
@@ -202,4 +200,21 @@ test('skips dispatch when latest fix-review confirmed false positives', () => {
 
   assert.equal(result.should_run, false);
   assert.match(result.reason, /false positive/);
+});
+
+test('stale no-op comment does not suppress dispatch for a newer commit', () => {
+  const comments = [
+    {
+      body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed\n\n- Head SHA: `oldheadsha1`',
+    },
+  ];
+  const result = evaluateAutoCoverReview({
+    pr: pr(),
+    policy,
+    comments,
+    attempts: [],
+    fixReviewRuns: [],
+  });
+
+  assert.equal(result.should_run, true);
 });
