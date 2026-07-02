@@ -163,6 +163,7 @@ function renderComplete({
   trivialConflictPaths,
   pushed,
   dryRun,
+  force,
   automergeDisabled,
   reviewFeedbackPresent,
   gateComparison,
@@ -190,6 +191,9 @@ function renderComplete({
     `- ${pushedLabel({ pushed, dryRun })}`,
     `- Run: ${runUrl || '_n/a_'}`,
   );
+  if (isTrue(force)) {
+    lines.push('- ⚡ **Force mode**: post-rebase validation gate skipped');
+  }
   if (reviewFeedbackPresent !== null && reviewFeedbackPresent !== undefined) {
     lines.push(
       `- Unresolved review feedback: ${isTrue(reviewFeedbackPresent) ? 'present' : 'none'}`,
@@ -537,6 +541,7 @@ function main() {
         pushed: getArg('--pushed'),
         rebaseMovedHead: getArg('--rebase-moved-head'),
         dryRun: getArg('--dry-run'),
+        force: getArg('--force'),
         reviewFeedbackPresent: getArg('--review-feedback-present'),
       });
       break;
