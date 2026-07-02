@@ -522,7 +522,7 @@ jobs:
           steps.ancestry.outputs.ok == 'true' &&
           steps.moved.outputs.rebase_moved_head == 'true' &&
           steps.claude.outputs.claude_failed != 'true' &&
-          steps.authorize.outputs.force != 'true'
+          needs.authorize.outputs.force != 'true'
         uses: ./.github/actions/validate-pr-gate
 
       - name: Restore tracked files after post-rebase validation
@@ -531,7 +531,7 @@ jobs:
           steps.ancestry.outputs.ok == 'true' &&
           steps.moved.outputs.rebase_moved_head == 'true' &&
           steps.claude.outputs.claude_failed != 'true' &&
-          steps.authorize.outputs.force != 'true'
+          needs.authorize.outputs.force != 'true'
         run: |
           # The post-rebase gate has already exposed its outcomes. Discard any
           # tracked files changed only by validation before comparing/pushing.
@@ -547,7 +547,7 @@ jobs:
           steps.ancestry.outputs.ok == 'true' &&
           steps.moved.outputs.rebase_moved_head == 'true' &&
           steps.claude.outputs.claude_failed != 'true' &&
-          steps.authorize.outputs.force != 'true'
+          needs.authorize.outputs.force != 'true'
         run: |
           node "$REBASE_CONTROL_DIR/scripts/compare-rebase-gate-outcomes.cjs" \
             --baseline-lint "${{ steps.baseline_gate.outputs.lint_outcome }}" \
@@ -575,7 +575,7 @@ jobs:
           (
             steps.gate.outputs.gate_passed == 'true' ||
             steps.gate_compare.outputs.no_new_failures == 'true' ||
-            steps.authorize.outputs.force == 'true'
+            needs.authorize.outputs.force == 'true'
           )
         env:
           HEAD_REF: ${{ steps.pr.outputs.head_ref }}
