@@ -386,3 +386,24 @@ jobs:
             --prisma-safe-outcome "$PRISMA_SAFE_OUTCOME" --pushed "$PUSHED" \
             --push-failure-reason "$PUSH_FAILURE_REASON" \
             --commit-sha "$COMMIT_SHA" --automerge-disabled "$AUTOMERGE_DISABLED" --mode complete
+
+      - name: Retrigger code-review (false positives confirmed)
+        if: >-
+          always() &&
+          steps.pr.outputs.eligible == 'true' &&
+          steps.detect-noop.outputs.has_changes == 'false' &&
+          steps.claude.outputs.claude_failed != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          # Retrigger code-review so it re-evaluates this head and swaps the
+          # concern labels itself per its fresh verdict. The labels are NOT
+          # touched here: pre-swapping to *-review-passed would open a window
+          # where pr-finalizer could merge before code-review re-runs.
+          gh workflow run code-review.yml \
+            --ref main \
+            -f pr_number="$PR_NUMBER" \
+            -f head_sha="$HEAD_SHA" \
+            -f orchestrated=true

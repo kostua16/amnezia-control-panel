@@ -53,6 +53,24 @@ function countRecordedAttempts(attempts = []) {
   return attempts.filter(Boolean).length;
 }
 
+const FIX_REVIEW_NOOP_MARKER = '<!-- fix-review-summary -->';
+const FIX_REVIEW_NOOP_TEXT = 'No changes needed';
+// The fix-review summary embeds the head SHA via shortSha() (first 12 chars),
+// so a no-op verdict is only authoritative for the commit it was posted for.
+const HEAD_SHA_SLICE = 12;
+
+function hasFixReviewNoOp(comments = [], headSha = '') {
+  const headToken = headSha ? String(headSha).slice(0, HEAD_SHA_SLICE) : '';
+  return comments.some((c) => {
+    const body = String(c.body ?? '');
+    return (
+      body.includes(FIX_REVIEW_NOOP_MARKER) &&
+      body.includes(FIX_REVIEW_NOOP_TEXT) &&
+      (!headToken || body.includes(headToken))
+    );
+  });
+}
+
 function hasActiveFixReviewRun(runs = [], prNumber, headSha) {
   return runs.some((run) => {
     const title = run.displayTitle ?? run.display_title ?? '';
@@ -75,6 +93,7 @@ function evaluateAutoCoverReview({
   commits = [],
   attempts = [],
   fixReviewRuns = [],
+  comments = [],
   expectedHeadSha = '',
   maxAttempts = policy.maxAutoReviewFixAttempts ?? DEFAULT_MAX_ATTEMPTS,
 } = {}) {
@@ -131,6 +150,14 @@ function evaluateAutoCoverReview({
     };
   }
 
+  if (hasFixReviewNoOp(comments, headSha)) {
+    return {
+      should_run: false,
+      reason:
+        'Latest fix-review confirmed false positives — no actionable findings.',
+    };
+  }
+
   if (hasActiveFixReviewRun(fixReviewRuns, pr.number, headSha)) {
     return {
       should_run: false,
@@ -161,6 +188,7 @@ function main() {
     policy,
     files: readJson(getArg('--files-file'), null),
     externalReview: readJson(getArg('--external-review-file'), null),
+    comments: readJson(getArg('--comments-file'), []),
     commits: readJson(getArg('--commits-file'), []),
     attempts: readJson(getArg('--attempts-file'), []),
     fixReviewRuns: readJson(getArg('--fix-review-runs-file'), []),
@@ -182,7 +210,10 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_MAX_ATTEMPTS,
   FIX_REVIEW_COMMIT,
+  FIX_REVIEW_NOOP_MARKER,
+  FIX_REVIEW_NOOP_TEXT,
   countFixReviewCommits,
   evaluateAutoCoverReview,
   hasActiveFixReviewRun,
+  hasFixReviewNoOp,
 };
