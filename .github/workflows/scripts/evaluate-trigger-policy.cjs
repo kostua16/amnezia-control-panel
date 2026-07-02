@@ -584,12 +584,15 @@ if (mode === 'fix-review') {
 if (mode === 'rebase-pr') {
   const isPrComment = Boolean(event.issue?.pull_request);
   // Accept "/rebase" (normal) or "/rebase --force" (skip post-rebase validation
-  // gate). Exact match rejects prose mentions and stays in lockstep with the
-  // rebase-pr.yml concurrency guard.
-  const trimmedBody = String(commentBody ?? '').trim();
+  // gate). Exact match (no trim) rejects prose mentions and stays in lockstep
+  // with the rebase-pr.yml concurrency guard and authorize job `if`, which both
+  // compare the untrimmed comment body. By the time this script runs, the
+  // gatekeepers have already exact-matched, so trimming here would only imply
+  // whitespace tolerance the workflow never provides.
+  const commentText = String(commentBody ?? '');
   const wantsRebase =
-    trimmedBody === '/rebase' || trimmedBody === '/rebase --force';
-  const force = trimmedBody === '/rebase --force';
+    commentText === '/rebase' || commentText === '/rebase --force';
+  const force = commentText === '/rebase --force';
   const commenterIsBot = isBotAccount(event.comment?.user);
   const commentTriggered =
     eventName === 'issue_comment' &&
