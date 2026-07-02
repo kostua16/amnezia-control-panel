@@ -7,6 +7,7 @@ const path = require('node:path');
 const {
   evaluateAutoCoverReview,
   hasActiveFixReviewRun,
+  hasFixReviewNoOp,
 } = require('../evaluate-auto-cover-review.cjs');
 
 const policy = JSON.parse(
@@ -162,4 +163,43 @@ test('detects active current fix-review runs', () => {
     }).should_run,
     false,
   );
+});
+
+test('hasFixReviewNoOp detects no-changes fix-review comment', () => {
+  assert.equal(
+    hasFixReviewNoOp([
+      {
+        body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed',
+      },
+    ]),
+    true,
+  );
+  assert.equal(
+    hasFixReviewNoOp([
+      {
+        body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ✅ Review fixes applied',
+      },
+    ]),
+    false,
+  );
+  assert.equal(hasFixReviewNoOp([]), false);
+  assert.equal(hasFixReviewNoOp([{ body: 'unrelated comment' }]), false);
+});
+
+test('skips dispatch when latest fix-review confirmed false positives', () => {
+  const comments = [
+    {
+      body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed',
+    },
+  ];
+  const result = evaluateAutoCoverReview({
+    pr: pr(),
+    policy,
+    comments,
+    attempts: [],
+    fixReviewRuns: [],
+  });
+
+  assert.equal(result.should_run, false);
+  assert.match(result.reason, /false positive/);
 });

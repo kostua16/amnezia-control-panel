@@ -146,6 +146,7 @@ jobs:
               --policy-file .github/workflows/policy.json \
               --pr-file "$prefix-pr.json" \
               --external-review-file "$prefix-external-review.json" \
+              --comments-file "$prefix-comments.json" \
               --commits-file "$prefix-commits.json" \
               --attempts-file "$prefix-attempts.json" \
               --fix-review-runs-file "$prefix-fix-review-runs.json" \

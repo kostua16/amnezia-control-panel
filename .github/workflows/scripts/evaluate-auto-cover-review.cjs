@@ -53,6 +53,17 @@ function countRecordedAttempts(attempts = []) {
   return attempts.filter(Boolean).length;
 }
 
+const FIX_REVIEW_NOOP_MARKER = '<!-- fix-review-summary -->';
+const FIX_REVIEW_NOOP_TEXT = 'No changes needed';
+
+function hasFixReviewNoOp(comments = []) {
+  return comments.some(
+    (c) =>
+      String(c.body ?? '').includes(FIX_REVIEW_NOOP_MARKER) &&
+      String(c.body ?? '').includes(FIX_REVIEW_NOOP_TEXT),
+  );
+}
+
 function hasActiveFixReviewRun(runs = [], prNumber, headSha) {
   return runs.some((run) => {
     const title = run.displayTitle ?? run.display_title ?? '';
@@ -75,6 +86,7 @@ function evaluateAutoCoverReview({
   commits = [],
   attempts = [],
   fixReviewRuns = [],
+  comments = [],
   expectedHeadSha = '',
   maxAttempts = policy.maxAutoReviewFixAttempts ?? DEFAULT_MAX_ATTEMPTS,
 } = {}) {
@@ -131,6 +143,14 @@ function evaluateAutoCoverReview({
     };
   }
 
+  if (hasFixReviewNoOp(comments)) {
+    return {
+      should_run: false,
+      reason:
+        'Latest fix-review confirmed false positives — no actionable findings.',
+    };
+  }
+
   if (hasActiveFixReviewRun(fixReviewRuns, pr.number, headSha)) {
     return {
       should_run: false,
@@ -161,6 +181,7 @@ function main() {
     policy,
     files: readJson(getArg('--files-file'), null),
     externalReview: readJson(getArg('--external-review-file'), null),
+    comments: readJson(getArg('--comments-file'), []),
     commits: readJson(getArg('--commits-file'), []),
     attempts: readJson(getArg('--attempts-file'), []),
     fixReviewRuns: readJson(getArg('--fix-review-runs-file'), []),
@@ -182,7 +203,10 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_MAX_ATTEMPTS,
   FIX_REVIEW_COMMIT,
+  FIX_REVIEW_NOOP_MARKER,
+  FIX_REVIEW_NOOP_TEXT,
   countFixReviewCommits,
   evaluateAutoCoverReview,
   hasActiveFixReviewRun,
+  hasFixReviewNoOp,
 };
