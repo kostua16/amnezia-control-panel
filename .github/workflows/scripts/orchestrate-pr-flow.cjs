@@ -1785,13 +1785,17 @@ function syncLabels(prNumber, decision) {
   }
 
   if (decision.labelsToAdd.length > 0) {
-    run('gh', [
-      'issue',
-      'edit',
-      String(prNumber),
-      '--add-label',
-      decision.labelsToAdd.join(','),
-    ]);
+    run(
+      'gh',
+      [
+        'issue',
+        'edit',
+        String(prNumber),
+        '--add-label',
+        decision.labelsToAdd.join(','),
+      ],
+      { allowFailure: true },
+    );
   }
 }
 
