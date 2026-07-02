@@ -481,6 +481,22 @@ jobs:
             echo "rebase_moved_head=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Ensure gate action exists (post-rebase)
+        # The pre-rebase fallback is wiped by the baseline "Restore tracked
+        # files" reset and the rebase rewrites the working tree, so the
+        # post-rebase gate can find no local action unless base_ref already
+        # carries it. Re-establish the fallback before the gate runs.
+        if: >-
+          steps.pr.outputs.eligible == 'true' &&
+          steps.ancestry.outputs.ok == 'true' &&
+          steps.moved.outputs.rebase_moved_head == 'true' &&
+          steps.claude.outputs.claude_failed != 'true'
+        run: |
+          if [ ! -f .github/actions/validate-pr-gate/action.yml ]; then
+            git fetch origin "${{ github.event.repository.default_branch }}"
+            git checkout FETCH_HEAD -- .github/actions/validate-pr-gate/
+          fi
+
       - name: Validate (CI-matching gate)
         id: gate
         if: >-
