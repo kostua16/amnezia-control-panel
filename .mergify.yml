@@ -1,0 +1,20 @@
+queue_rules: []
+merge_queue:
+  max_parallel_checks: 6
+scopes:
+  source:
+    files:
+      workflows:
+        include:
+          - .github/actions/*
+          - .github/actions/**/*
+          - .github/workflows/*
+          - .github/workflows/**/*
+      other:
+        include:
+          - "*"
+        exclude:
+          - .github/actions/*
+          - .github/actions/**/*
+          - .github/workflows/*
+          - .github/workflows/**/*
