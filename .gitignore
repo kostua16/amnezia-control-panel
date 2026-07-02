@@ -48,6 +48,9 @@ yarn-error.log*
 /prisma/dev.db-wal
 /src/generated/
 
+# backups — contain full DB (creds, users); never commit
+/backups/
+
 # vercel
 .vercel
 

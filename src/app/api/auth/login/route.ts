@@ -1,22 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SignJWT } from 'jose';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { seedAdmin } from '@/lib/seed';
 import { verifyValue } from '@/lib/password';
+import { createSessionToken, SESSION_MAX_AGE } from '@/lib/auth-jwt';
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
 });
-
-function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET environment variable is not set');
-  }
-  return new TextEncoder().encode(secret);
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -56,15 +48,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const secret = getJwtSecret();
-    const token = await new SignJWT({
+    const token = await createSessionToken({
       userId: admin.id,
       username: admin.username,
-    })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setIssuedAt()
-      .setExpirationTime('24h')
-      .sign(secret);
+    });
 
     const response = NextResponse.json({
       user: {
@@ -77,7 +64,7 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       sameSite: 'lax',
       path: '/',
-      maxAge: 86400,
+      maxAge: SESSION_MAX_AGE,
       secure: process.env.NODE_ENV === 'production',
     });
 

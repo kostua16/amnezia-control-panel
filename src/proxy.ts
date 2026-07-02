@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify, type JWTPayload } from 'jose';
+import {
+  getJwtSecret,
+  createSessionToken,
+  shouldRefreshToken,
+  SESSION_MAX_AGE,
+} from '@/lib/auth-jwt';
+import { prisma } from '@/lib/prisma';
 
 /**
  * Claims embedded in the auth-token JWT. The proxy is the single source
@@ -40,18 +47,33 @@ const PROTECTED_PAGE_ROUTES = [
   '/templates',
 ];
 
-const securityHeaders = new Headers({
+const STATIC_SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy':
-    "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-    "style-src 'self' 'unsafe-inline'; " +
-    "img-src 'self' data: blob:; " +
-    "connect-src 'self' ws: wss:;",
-});
+};
+
+/**
+ * Build CSP headers. `unsafe-eval` is included only in development for
+ * Turbopack HMR; production drops it to harden XSS protections.
+ */
+function buildSecurityHeaders(): Headers {
+  const headers = new Headers(STATIC_SECURITY_HEADERS);
+  const evalDirective =
+    process.env.NODE_ENV !== 'production' ? " 'unsafe-eval'" : '';
+  headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self';",
+      `script-src 'self' 'unsafe-inline'${evalDirective};`,
+      "style-src 'self' 'unsafe-inline';",
+      "img-src 'self' data: blob:;",
+      "connect-src 'self' ws: wss:;",
+    ].join(' '),
+  );
+  return headers;
+}
 
 function isPublicApiRoute(pathname: string): boolean {
   return PUBLIC_API_ROUTES.some(
@@ -69,16 +91,49 @@ function isProtectedPageRoute(pathname: string): boolean {
   );
 }
 
-function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET environment variable is not set');
+/**
+ * Re-issue a fresh JWT when the current token is within the sliding-window
+ * threshold (≤ 4 h remaining). The new cookie is set on the response
+ * transparently — no frontend change required.
+ */
+async function maybeRefreshSession(
+  response: NextResponse,
+  payload: AuthClaims,
+): Promise<NextResponse> {
+  if (payload.exp && shouldRefreshToken(payload.exp)) {
+    // Re-verify the admin still exists before minting a fresh token, so a
+    // removed account cannot have its session renewed indefinitely. The
+    // existing token still expires on its own bounded lifetime. The refresh
+    // is opportunistic: if the lookup fails or the admin is gone, skip the
+    // renew rather than failing the request.
+    let admin: { id: string } | null = null;
+    try {
+      admin = await prisma.admin.findUnique({
+        where: { id: payload.userId },
+        select: { id: true },
+      });
+    } catch {
+      admin = null;
+    }
+    if (admin) {
+      const newToken = await createSessionToken({
+        userId: payload.userId,
+        username: payload.username,
+      });
+      response.cookies.set('auth-token', newToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: SESSION_MAX_AGE,
+        secure: process.env.NODE_ENV === 'production',
+      });
+    }
   }
-  return new TextEncoder().encode(secret);
+  return response;
 }
 
 function withSecurityHeaders(response: NextResponse): NextResponse {
-  for (const [key, value] of securityHeaders) {
+  for (const [key, value] of buildSecurityHeaders()) {
     response.headers.set(key, value);
   }
   return response;
@@ -127,7 +182,8 @@ export async function proxy(request: NextRequest) {
     try {
       const secret = getJwtSecret();
       const { payload } = await jwtVerify<AuthClaims>(token, secret);
-      return withClaims(request, payload);
+      const response = withClaims(request, payload);
+      return maybeRefreshSession(response, payload);
     } catch {
       return withSecurityHeaders(
         NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
@@ -150,7 +206,8 @@ export async function proxy(request: NextRequest) {
   try {
     const secret = getJwtSecret();
     const { payload } = await jwtVerify<AuthClaims>(token, secret);
-    return withClaims(request, payload);
+    const response = withClaims(request, payload);
+    return maybeRefreshSession(response, payload);
   } catch {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('expired', 'true');
