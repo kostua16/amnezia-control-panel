@@ -427,7 +427,9 @@ jobs:
             - Do not use `cat`, `echo`, command substitution, semicolons, pipes, shell control operators, command chaining, or output-tail wrappers inside Bash commands; in short, do not use pipes, shell control operators, or command substitution for diagnostics. Use `rtk node --test ...` or `rtk npm ...` when output may be large.
             - Do not inspect `.git/rebase-*` directly. Use the trusted conflict context file instead.
             - Do not use Grep as a file reader. Use Read for files, or use `rtk grep "<pattern>" <path>` for searches.
-            - Iterate with `npx tsc --noEmit` for fast feedback; leave full CI-matching validation to the workflow's `validate-pr-gate` step after the rebase is complete.
+            - Iterate with `npx tsc --noEmit` for fast feedback.
+            - If conflicts touch `package.json`, `package-lock.json`, formatter/tooling dependencies, or `src/**/*.{ts,tsx,css}`, run `npm run format:check` before finishing. If it fails, run `npm run format`, review the resulting diff, then rerun `npm run format:check`.
+            - Leave full CI-matching validation beyond that targeted fast feedback to the workflow's `validate-pr-gate` step after the rebase is complete.
 
             Before finishing:
             - Leave the tree with NO rebase in progress and NO unstaged conflict markers. If a conflict cannot be resolved, stop and report it -- do not force a bad merge.
