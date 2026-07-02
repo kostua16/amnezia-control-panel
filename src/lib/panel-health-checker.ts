@@ -101,6 +101,7 @@ export function removePanelApiKey(panelId: number): void {
 export function evictPanel(panelId: number): void {
   consecutiveFailures.delete(panelId);
   fallbackPanels.delete(panelId);
+  healthSnapshotCache.delete(panelId);
   panelApiKeyCache.delete(panelId);
   panelApiKeyCacheTimestamps.delete(panelId);
   console.log(
@@ -374,6 +375,16 @@ export function startPanelHealthChecks(): void {
               fallbackPanels.delete(panel.id);
               broadcastFallbackStatusChange(panel.id, panel.name, false);
               triggerAutoResync(panel.id, panel.name);
+              // Sync the snapshot with the fallback-EXIT transition so the
+              // status API does not serve a stale isFallback flag for up to
+              // one interval after the reconnect broadcast.
+              healthSnapshotCache.set(panel.id, {
+                panelId: panel.id,
+                status: 'connected',
+                latencyMs: result.latency,
+                checkedAt: new Date().toISOString(),
+                isFallback: false,
+              });
             }
           } else {
             const failures = (consecutiveFailures.get(panel.id) ?? 0) + 1;
