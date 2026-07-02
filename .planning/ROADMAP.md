@@ -676,6 +676,16 @@ Source: `/gsd:explore` seventh-pass review (non-duplicative). Artifact: `.planni
 | 20 | **JWT sliding-session window** — Hard 24h expiry with no refresh; admin loses unsaved work on mid-session expiry. Fix: re-issue JWT in proxy.ts when ≤ 4h remaining (transparent to frontend) | Medium (UX/Security) | `src/proxy.ts`, `src/app/api/auth/login/route.ts` | Proposed |
 | 21 | **CSP nonce-based hardening** — CSP allows `unsafe-inline` and `unsafe-eval`, negating XSS protection. Fix: remove `unsafe-eval` immediately; add per-request nonce for `script-src` to actually block code injection | Low-Medium (Security) | `src/proxy.ts`, `src/app/layout.tsx` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 8 (2026-07-02)
+
+Source: `/gsd:explore` eighth-pass review (non-duplicative vs open PRs and proposals #1-#21). Artifact: `.planning/quick/260702-arch-review-pass8/proposal.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 22 | **Dead WebSocket broadcast bridge** — `broadcastEvent()` checks module-local `ioInstance` (never set) instead of `globalThis.__socketIO` (set by server.mjs). All real-time push (stats, resources, alerts, push progress, fallback changes) silently no-ops even though instrumentation.ts now starts the broadcaster. Fix: read from `globalThis.__socketIO` | Critical (Runtime) | `src/lib/websocket.ts`, `server.mjs` | Proposed |
+| 23 | **Component mutations bypass React Query cache** — 20+ components use raw `fetch()` for POST/PUT/DELETE instead of `useMutation` hooks. No `onSuccess` cache invalidation; data stays stale up to 30s after user actions. Fix: extract mutation hooks with `httpClient` + `onSuccess` invalidation | Medium (UX) | `src/components/**/*.tsx`, `src/hooks/` (new) | Proposed |
+| 24 | **Redundant panel health probing** — Periodic health checker (30s) AND `GET /api/panels/status` (polled 30s by frontend) both run independent HTTP HEAD probes per panel. ~4 requests/panel/30s. Fix: status API reads from checker's cached snapshot instead of re-probing | Medium (Perf) | `src/lib/panel-health-checker.ts`, `src/app/api/panels/status/route.ts` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-01 - Added architectural review pass 7 (proposals #19-#21: SQLite backup, JWT sliding session, CSP nonce hardening)*
+*Last updated: 2026-07-02 - Added architectural review pass 8 (proposals #22-#24: dead WS broadcast bridge, component mutations bypass RQ cache, redundant panel health probing)*
