@@ -30,6 +30,11 @@ on:
         required: false
         default: false
         type: boolean
+      force:
+        description: 'Skip post-rebase validation gate and push anyway'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -40,10 +45,10 @@ permissions:
 concurrency:
   # Non-command, bot, or non-PR comments get a unique group so they cannot
   # cancel an in-progress run. Mirrors fix-review.yml: only a human "/rebase"
-  # PR comment (or a workflow_dispatch) shares the PR-wide group. The exact-body
-  # match (== '/rebase') stays in lockstep with evaluate-trigger-policy.cjs
-  # mode rebase-pr.
-  group: ${{ ((github.event_name == 'issue_comment' && !(github.event.issue.pull_request != null && github.event.comment.user.type != 'Bot' && github.event.comment.body == '/rebase')) && format('rebase-pr-ignored-{0}', github.run_id)) || format('rebase-pr-{0}', github.event.issue.number || github.event.inputs.pr_number || github.run_id) }}
+  # (or "/rebase --force") PR comment (or a workflow_dispatch) shares the
+  # PR-wide group. Stays in lockstep with evaluate-trigger-policy.cjs mode
+  # rebase-pr.
+  group: ${{ ((github.event_name == 'issue_comment' && !(github.event.issue.pull_request != null && github.event.comment.user.type != 'Bot' && (github.event.comment.body == '/rebase' || github.event.comment.body == '/rebase --force'))) && format('rebase-pr-ignored-{0}', github.run_id)) || format('rebase-pr-{0}', github.event.issue.number || github.event.inputs.pr_number || github.run_id) }}
   cancel-in-progress: true
 
 env:
@@ -56,7 +61,10 @@ jobs:
       github.event_name != 'issue_comment' ||
       (
         github.event.issue.pull_request != null &&
-        github.event.comment.body == '/rebase' &&
+        (
+          github.event.comment.body == '/rebase' ||
+          github.event.comment.body == '/rebase --force'
+        ) &&
         github.event.comment.user.type != 'Bot'
       )
     runs-on: self-hosted
@@ -66,6 +74,7 @@ jobs:
       trusted: ${{ steps.gate.outputs.trusted }}
       pr-number: ${{ steps.gate.outputs.pr_number }}
       command: ${{ steps.gate.outputs.command }}
+      force: ${{ steps.gate.outputs.force }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - uses: ./.github/actions/setup-environment
@@ -75,6 +84,8 @@ jobs:
       - name: Evaluate trigger trust
         id: gate
         shell: bash
+        env:
+          DISPATCH_FORCE: ${{ github.event.inputs.force }}
         run: |
           node .github/workflows/scripts/evaluate-trigger-policy.cjs \
             --mode rebase-pr \
@@ -87,6 +98,13 @@ jobs:
             echo "pr_number=$(jq -r '.pr_number // empty' /tmp/rebase-pr-gate.json)"
             echo "command=$(jq -r '.command // empty' /tmp/rebase-pr-gate.json)"
           } >> "$GITHUB_OUTPUT"
+          # Force comes from comment parse OR workflow_dispatch input
+          comment_force=$(jq -r '.force // false' /tmp/rebase-pr-gate.json)
+          if [ "$DISPATCH_FORCE" = 'true' ] || [ "$comment_force" = 'true' ]; then
+            echo "force=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "force=false" >> "$GITHUB_OUTPUT"
+          fi
 
   rebase:
     needs: [authorize]
@@ -503,7 +521,8 @@ jobs:
           steps.pr.outputs.eligible == 'true' &&
           steps.ancestry.outputs.ok == 'true' &&
           steps.moved.outputs.rebase_moved_head == 'true' &&
-          steps.claude.outputs.claude_failed != 'true'
+          steps.claude.outputs.claude_failed != 'true' &&
+          needs.authorize.outputs.force != 'true'
         uses: ./.github/actions/validate-pr-gate
 
       - name: Restore tracked files after post-rebase validation
@@ -511,7 +530,8 @@ jobs:
           steps.pr.outputs.eligible == 'true' &&
           steps.ancestry.outputs.ok == 'true' &&
           steps.moved.outputs.rebase_moved_head == 'true' &&
-          steps.claude.outputs.claude_failed != 'true'
+          steps.claude.outputs.claude_failed != 'true' &&
+          needs.authorize.outputs.force != 'true'
         run: |
           # The post-rebase gate has already exposed its outcomes. Discard any
           # tracked files changed only by validation before comparing/pushing.
@@ -526,7 +546,8 @@ jobs:
           steps.pr.outputs.eligible == 'true' &&
           steps.ancestry.outputs.ok == 'true' &&
           steps.moved.outputs.rebase_moved_head == 'true' &&
-          steps.claude.outputs.claude_failed != 'true'
+          steps.claude.outputs.claude_failed != 'true' &&
+          needs.authorize.outputs.force != 'true'
         run: |
           node "$REBASE_CONTROL_DIR/scripts/compare-rebase-gate-outcomes.cjs" \
             --baseline-lint "${{ steps.baseline_gate.outputs.lint_outcome }}" \
@@ -549,12 +570,13 @@ jobs:
         if: >-
           steps.pr.outputs.eligible == 'true' &&
           steps.ancestry.outputs.ok == 'true' &&
+          steps.moved.outputs.rebase_moved_head == 'true' &&
+          github.event.inputs.dry_run != 'true' &&
           (
             steps.gate.outputs.gate_passed == 'true' ||
-            steps.gate_compare.outputs.no_new_failures == 'true'
-          ) &&
-          steps.moved.outputs.rebase_moved_head == 'true' &&
-          github.event.inputs.dry_run != 'true'
+            steps.gate_compare.outputs.no_new_failures == 'true' ||
+            needs.authorize.outputs.force == 'true'
+          )
         env:
           HEAD_REF: ${{ steps.pr.outputs.head_ref }}
         run: |
@@ -630,6 +652,7 @@ jobs:
           PUSHED: ${{ steps.push.outputs.pushed }}
           REBASE_MOVED_HEAD: ${{ steps.moved.outputs.rebase_moved_head }}
           DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
+          FORCE: ${{ needs.authorize.outputs.force == 'true' }}
           AUTOMERGE_DISABLED: ${{ steps.automerge.outputs.disabled }}
         run: |
           node "$REBASE_CONTROL_DIR/scripts/upsert-rebase-comment.cjs" \
@@ -662,5 +685,6 @@ jobs:
             --pushed "$PUSHED" \
             --rebase-moved-head "$REBASE_MOVED_HEAD" \
             --dry-run "$DRY_RUN" \
+            --force "$FORCE" \
             --automerge-disabled "$AUTOMERGE_DISABLED" \
             --mode complete
