@@ -35,6 +35,27 @@ const REPAIR_WORKFLOWS = [
   { workflow: 'pr-finalizer.yml', key: 'finalizer' },
 ];
 
+const WORKFLOW_RUN_COLLECTION_WORKFLOWS = [
+  'project-manager.yml',
+  'fix-pr.yml',
+  'fix-issue.yml',
+  'fix-review.yml',
+  'rebase-pr.yml',
+  '_auto-fix-ci.yml',
+  'pr-finalizer.yml',
+];
+
+const WORKFLOW_NAME_ALIASES = new Map([
+  ['project manager', 'project-manager.yml'],
+  ['fix pr', 'fix-pr.yml'],
+  ['fix issue', 'fix-issue.yml'],
+  ['fix review', 'fix-review.yml'],
+  ['rebase pr', 'rebase-pr.yml'],
+  ['auto fix ci', '_auto-fix-ci.yml'],
+  ['auto-fix ci', '_auto-fix-ci.yml'],
+  ['pr finalizer', 'pr-finalizer.yml'],
+]);
+
 const PR_PRODUCER_REGISTRY = [
   {
     workflow: 'audit-auto-prs.yml',
@@ -270,8 +291,14 @@ function cooldownActive(state, key, now, hours = 1) {
 
 function checkStatus(pr) {
   const status = pr.checkStatus ?? pr.requiredCheckStatus ?? {};
-  if (typeof status === 'string') return { status };
-  return { status: status.status ?? 'unknown', ...status };
+  const normalized =
+    typeof status === 'string'
+      ? { status }
+      : { status: status.status ?? 'unknown', ...status };
+  if (normalized.status && normalized.status !== 'unknown') return normalized;
+
+  const labelStatus = deriveCheckStatusFromLabels(pr.labels);
+  return labelStatus.status !== 'unknown' ? labelStatus : normalized;
 }
 
 function statusCheckItems(rollup) {
@@ -325,6 +352,21 @@ function deriveCheckStatusFromRollup(rollup) {
   if (pending) return { status: 'pending' };
 
   return { status: 'passed' };
+}
+
+function deriveCheckStatusFromLabels(labels) {
+  const names = normalizeLabels(labels);
+  if (names.includes('flow/checks-failed')) {
+    return {
+      status: 'failed',
+      source: 'flow-label',
+      failed: ['flow/checks-failed'],
+    };
+  }
+  if (names.includes('flow/checks-pending')) {
+    return { status: 'pending', source: 'flow-label' };
+  }
+  return { status: 'unknown' };
 }
 
 function checksPassed(pr) {
@@ -548,7 +590,8 @@ function recentCommandCommentExists(pr, command, now, hours = 1) {
       ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(association);
     if (!trusted) return false;
     const createdAt = comment.createdAt ?? comment.created_at ?? '';
-    return !createdAt || hoursBetween(createdAt, now) < hours;
+    if (!parseDate(createdAt)) return false;
+    return hoursBetween(createdAt, now) < hours;
   });
 }
 
@@ -1103,7 +1146,7 @@ function planIssueRoute(snapshot, options = {}) {
 function isWorkflowActive(snapshot, workflow) {
   return (snapshot.activeRuns ?? []).some(
     (run) =>
-      run.workflow === workflow &&
+      workflowMatches(run, workflow) &&
       ['queued', 'in_progress', 'pending', 'waiting', 'requested'].includes(
         String(run.status ?? '').toLowerCase(),
       ),
@@ -1111,12 +1154,8 @@ function isWorkflowActive(snapshot, workflow) {
 }
 
 function matchingWorkflowRuns(snapshot, workflow) {
-  return (snapshot.workflowRuns ?? snapshot.activeRuns ?? []).filter(
-    (run) =>
-      run.workflow === workflow ||
-      run.workflowName === workflow ||
-      run.name === workflow ||
-      String(run.path ?? '').endsWith(`/${workflow}`),
+  return (snapshot.workflowRuns ?? snapshot.activeRuns ?? []).filter((run) =>
+    workflowMatches(run, workflow),
   );
 }
 
@@ -1186,6 +1225,20 @@ function scheduleHealth(snapshot, workflow) {
 
 function buildPrRouteSummary(snapshot, prs, decisions, actions) {
   const nextLowLoad = lowLoadEligibleEntries(snapshot)[0];
+  const activeRepairRuns = Object.fromEntries(
+    REPAIR_WORKFLOWS.map((entry) => [
+      entry.workflow,
+      matchingWorkflowRuns(snapshot, entry.workflow).filter(isActiveRun).length,
+    ]).filter(([, count]) => count > 0),
+  );
+  const unknownCheckStatus = prs.filter(
+    (pr) => checkStatus(pr).status === 'unknown',
+  ).length;
+  const checksFailedLabelFallbacks = prs.filter((pr) => {
+    const status = checkStatus(pr);
+    return status.status === 'failed' && status.source === 'flow-label';
+  }).length;
+
   return {
     prsInspected: prs.length,
     actionsPlanned: actions.length,
@@ -1208,6 +1261,9 @@ function buildPrRouteSummary(snapshot, prs, decisions, actions) {
     manualOnlyReady: prs.filter((pr) => isReady(pr) && isManualOnly(pr)).length,
     manualOnlyNotReady: prs.filter((pr) => !isReady(pr) && isManualOnly(pr))
       .length,
+    unknownCheckStatus,
+    checksFailedLabelFallbacks,
+    activeRepairRuns,
     nextLowLoadWorkflowIfPressureDrops: nextLowLoad?.workflow ?? '',
   };
 }
@@ -1583,12 +1639,18 @@ function isActiveRun(run) {
 }
 
 function workflowMatches(run, workflow) {
-  return (
-    run.workflow === workflow ||
-    run.workflowName === workflow ||
-    run.name === workflow ||
-    String(run.path ?? '').endsWith(`/${workflow}`)
+  const expected = normalizeWorkflowIdentity(workflow);
+  return [run.workflow, run.workflowName, run.name, run.path].some(
+    (value) => normalizeWorkflowIdentity(value) === expected,
   );
+}
+
+function normalizeWorkflowIdentity(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const file = raw.split('/').pop().toLowerCase();
+  if (file.endsWith('.yml') || file.endsWith('.yaml')) return file;
+  return WORKFLOW_NAME_ALIASES.get(file) ?? file;
 }
 
 function runMatchesSummary(run, summary) {
@@ -1656,9 +1718,7 @@ function mergeRepairBucket(existing, workflow, runCandidates, summary) {
     candidates.push(normalizeWorkflowRun(run, workflow));
   if (summary) candidates.push(summary);
 
-  const latest = summary?.active
-    ? (sortNewest(candidates)[0] ?? existing?.latest ?? null)
-    : (summary ?? sortNewest(candidates)[0] ?? existing?.latest ?? null);
+  const latest = chooseRepairLatest(candidates, summary, existing?.latest);
   const cancellationFingerprints = new Set(
     candidates
       .filter((item) => normalizeConclusion(item.conclusion) === 'cancelled')
@@ -1676,6 +1736,31 @@ function mergeRepairBucket(existing, workflow, runCandidates, summary) {
       cancellationFingerprints.size,
     ),
   };
+}
+
+function chooseRepairLatest(candidates, summary, existingLatest) {
+  const newest = sortNewest(candidates)[0] ?? existingLatest ?? null;
+  if (!summary) return newest;
+  if (summary.active) return newest;
+  if (!newest) return summary;
+  if (runMatchesSummary(newest, summary)) return summary;
+
+  const newestUpdatedAt = parseDate(
+    newest.updatedAt ?? newest.createdAt ?? newest.startedAt,
+  );
+  const summaryUpdatedAt = parseDate(summary.updatedAt ?? summary.createdAt);
+  const newer = Boolean(
+    newestUpdatedAt && summaryUpdatedAt && newestUpdatedAt > summaryUpdatedAt,
+  );
+  // A newer different live run may supersede a sticky summary only when it
+  // represents a successful repair. A newer cancelled/skipped/neutral/failing
+  // run carries no repair outcome, so letting it override the summary would
+  // mask an unresolved hard failure and suppress @claude escalation.
+  if (newer && normalizeConclusion(newest.conclusion) === 'success') {
+    return newest;
+  }
+
+  return summary;
 }
 
 function attachRepairRunsToPullRequest(pr, workflowRuns = []) {
@@ -1820,7 +1905,7 @@ function workflowFileByName() {
 
 function workflowRuns() {
   const nameToFile = workflowFileByName();
-  const runs = ghJson(
+  const globalRuns = ghJson(
     [
       'run',
       'list',
@@ -1831,13 +1916,60 @@ function workflowRuns() {
     ],
     [],
   );
-  return runs.map((run) => ({
+  const namedRuns = WORKFLOW_RUN_COLLECTION_WORKFLOWS.flatMap((workflow) =>
+    ghJson(
+      [
+        'run',
+        'list',
+        '--workflow',
+        workflow,
+        '--limit',
+        '50',
+        '--json',
+        'conclusion,createdAt,databaseId,displayTitle,event,headBranch,headSha,name,status,updatedAt,url,workflowName',
+      ],
+      [],
+    ).map((run) => normalizeLiveWorkflowRun(run, nameToFile, workflow)),
+  );
+
+  return uniqueWorkflowRuns([
+    ...globalRuns.map((run) => normalizeLiveWorkflowRun(run, nameToFile)),
+    ...namedRuns,
+  ]);
+}
+
+function normalizeLiveWorkflowRun(run, nameToFile, workflowOverride = '') {
+  return {
     ...run,
     workflow:
-      nameToFile.get(run.workflowName ?? run.name) ??
-      run.workflowName ??
-      run.name,
-  }));
+      workflowOverride ||
+      (nameToFile.get(run.workflowName ?? run.name) ??
+        run.workflowName ??
+        run.name),
+  };
+}
+
+function uniqueWorkflowRuns(runs) {
+  const byKey = new Map();
+  for (const run of runs) {
+    const key =
+      String(run.databaseId ?? run.id ?? '') ||
+      run.url ||
+      [
+        run.workflow,
+        run.workflowName,
+        run.name,
+        run.displayTitle,
+        run.createdAt,
+        run.headSha,
+      ].join('|');
+    if (!byKey.has(key)) {
+      byKey.set(key, run);
+      continue;
+    }
+    byKey.set(key, { ...byKey.get(key), ...run });
+  }
+  return [...byKey.values()];
 }
 
 function collectSnapshot(options = {}) {

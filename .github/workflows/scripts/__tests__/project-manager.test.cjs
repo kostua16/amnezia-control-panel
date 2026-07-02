@@ -13,6 +13,7 @@ const {
   parseRebaseSummaryComment,
   registryCoverage,
   safeIssueForFix,
+  scheduleHealth,
   selectRoute,
 } = require('../project-manager.cjs');
 
@@ -691,6 +692,175 @@ test('PM18i: project-manager summary reports pressure, escalations, and schedule
   assert.equal(plan.summary.readyPrs, 1);
   assert.equal(plan.summary.projectManagerSchedule.latestGapHours, 2);
   assert.ok(plan.summary.nextLowLoadWorkflowIfPressureDrops);
+});
+
+test('PM18j: human workflow names still attach active repair runs', () => {
+  const plan = buildPlan(
+    {
+      now: NOW,
+      openPrCount: 6,
+      openIssueCount: 0,
+      openPullRequests: [
+        pr({
+          title: 'review-blocked feature',
+          labels: ['ai-review-concerns'],
+          checkStatus: { status: 'passed' },
+        }),
+      ],
+      workflowRuns: [
+        {
+          workflowName: 'Fix Review',
+          displayTitle: 'Fix Review PR #42 @ abc123',
+          status: 'queued',
+          conclusion: '',
+          updatedAt: '2026-07-01T09:45:00.000Z',
+        },
+      ],
+    },
+    { now: NOW },
+  );
+
+  assert.equal(plan.decisions[0].action, 'none');
+  assert.match(plan.decisions[0].reason, /already active/);
+  assert.equal(plan.summary.activeRepairRuns['fix-review.yml'], 1);
+});
+
+test('PM18k: newer live run supersedes stale repair summary', () => {
+  const hydrated = attachRepairRunsToPullRequest(
+    pr({
+      comments: [
+        fixReviewSummary({
+          heading: 'Validation failed - fixes not pushed',
+          run: 1101,
+        }),
+      ],
+    }),
+    [
+      {
+        workflowName: 'Fix Review',
+        databaseId: 1102,
+        displayTitle: 'Fix Review PR #42 @ abc123',
+        status: 'completed',
+        conclusion: 'success',
+        updatedAt: '2026-07-01T09:45:00.000Z',
+        url: 'https://example.test/actions/runs/1102',
+      },
+    ],
+  );
+
+  assert.equal(hydrated.runs.fixReview.latest.databaseId, 1102);
+  assert.equal(hydrated.runs.fixReview.latest.conclusion, 'success');
+});
+
+test('PM18l: flow checks-failed label falls back when rollup is unknown', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['flow/checks-failed'],
+      checkStatus: { status: 'unknown' },
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(action.actionKey, 'fix');
+  assert.equal(action.actions[0].body, '/fix');
+});
+
+test('PM18m: command comments without timestamps do not suppress forever', () => {
+  const action = decidePrAction(
+    pr({
+      mergeable: 'CONFLICTING',
+      comments: [comment('/rebase', { createdAt: '', updatedAt: '' })],
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(action.actionKey, 'rebase');
+  assert.equal(action.actions[0].body, '/rebase');
+});
+
+test('PM18n: schedule health canonicalizes workflow names and paths', () => {
+  const health = scheduleHealth(
+    {
+      workflowRuns: [
+        {
+          workflowName: 'Project Manager',
+          createdAt: '2026-07-01T08:00:00.000Z',
+          updatedAt: '2026-07-01T08:05:00.000Z',
+        },
+        {
+          path: '.github/workflows/project-manager.yml',
+          createdAt: '2026-07-01T10:00:00.000Z',
+          updatedAt: '2026-07-01T10:05:00.000Z',
+        },
+      ],
+    },
+    'project-manager.yml',
+  );
+
+  assert.equal(health.observedRuns, 2);
+  assert.equal(health.latestGapHours, 2);
+});
+
+test('PM18o: summary exposes unknown checks and label fallbacks', () => {
+  const plan = buildPlan(
+    {
+      now: NOW,
+      openPrCount: 6,
+      openIssueCount: 0,
+      openPullRequests: [
+        pr({
+          number: 1201,
+          labels: ['flow/checks-failed'],
+          checkStatus: { status: 'unknown' },
+        }),
+        pr({
+          number: 1202,
+          checkStatus: { status: 'unknown' },
+          updatedAt: '2026-07-01T08:00:00.000Z',
+        }),
+      ],
+      workflowRuns: [
+        {
+          workflowName: 'Rebase PR',
+          displayTitle: 'Rebase PR #999',
+          status: 'in_progress',
+          updatedAt: '2026-07-01T09:50:00.000Z',
+        },
+      ],
+    },
+    { now: NOW },
+  );
+
+  assert.equal(plan.summary.checksFailedLabelFallbacks, 1);
+  assert.equal(plan.summary.unknownCheckStatus, 1);
+  assert.equal(plan.summary.activeRepairRuns['rebase-pr.yml'], 1);
+});
+
+test('PM18p: newer non-success run does not mask a failed repair summary', () => {
+  const hydrated = attachRepairRunsToPullRequest(
+    pr({
+      comments: [
+        fixReviewSummary({
+          heading: 'Validation failed - fixes not pushed',
+          run: 1101,
+        }),
+      ],
+    }),
+    [
+      {
+        workflowName: 'Fix Review',
+        databaseId: 1102,
+        displayTitle: 'Fix Review PR #42 @ abc123',
+        status: 'completed',
+        conclusion: 'cancelled',
+        updatedAt: '2026-07-01T09:45:00.000Z',
+        url: 'https://example.test/actions/runs/1102',
+      },
+    ],
+  );
+
+  assert.equal(hydrated.runs.fixReview.latest.databaseId, '1101');
+  assert.equal(hydrated.runs.fixReview.latest.conclusion, 'failure');
 });
 
 test('PM19: issue queue skips linked PR, active fix, and terminal labels', () => {

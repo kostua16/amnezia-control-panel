@@ -513,15 +513,30 @@ flowchart TD
 | PM21 | low-load candidate has active run or duplicate pending PR                                                                                 | candidate skipped; next eligible workflow selected                                          | char |
 | PM22 | new workflow uses PR-producing surfaces but is not in registry/exclusion list                                                             | registry coverage test fails loudly                                                         | spec |
 | PM23 | `dry_run=true`                                                                                                                            | plan rendered, no mutation                                                                  | char |
+| PM24 | stalled ready PR has a recent project-manager `direct-merge` cooldown                                                                     | no repeated direct-merge fallback in the cooldown window                                    | char |
+| PM25 | sticky state stores a previous project-manager review decision                                                                            | direct-merge logic reuses the persisted decision when no live review JSON is present        | char |
+| PM26 | live run evidence uses human workflow names such as `Fix Review` or paths such as `.github/workflows/project-manager.yml`                 | workflow identity is canonicalized to the workflow file before matching                     | spec |
+| PM27 | sticky repair summary failed, but a newer different same-head live run exists                                                             | newer live run supersedes the stale summary instead of escalating old evidence              | spec |
+| PM28 | check rollup is unavailable or unknown while pr-flow labels include `flow/checks-failed`                                                  | project-manager treats checks as failed and posts `/fix`                                    | spec |
+| PM29 | trusted command comment exists but GitHub returned no timestamp                                                                           | command is not deduped forever; cooldown/state and recent dated comments still guard loops  | spec |
+| PM30 | global run window is too noisy to include more than one project-manager run                                                               | schedule health uses workflow-specific/canonical run evidence for observed run gaps         | spec |
 
 Project-manager must not be added as a required PR check; otherwise it can
 deadlock the very merge flow it is meant to recover.
 
-Live repair evidence is head-aware and summary-authoritative: a GitHub Actions
-run may conclude `success` while the repair summary reports `Rebase failed` or
-`Validation failed — rebased branch not pushed`. Project-manager treats those
-summaries as failed repair evidence and escalates before considering another
-`/rebase`, `/fix`, or `/fix-review`.
+Live repair evidence is head-aware. A repair summary is authoritative for the
+run it identifies: a GitHub Actions run may conclude `success` while the repair
+summary reports `Rebase failed` or `Validation failed — rebased branch not
+pushed`, and project-manager must escalate that failure before considering
+another `/rebase`, `/fix`, or `/fix-review`. A newer different same-head live
+run may supersede an older sticky summary, preventing stale escalation after a
+later successful repair.
+
+Project-manager run summaries are also diagnostic output. They should expose
+unknown check-state counts, `flow/checks-failed` label fallbacks, active repair
+run counts, and project-manager schedule gaps so a “no visible PR change” run
+explains whether it waited, skipped for an active downstream workflow, or acted
+through a sticky/comment mutation.
 
 ---
 
