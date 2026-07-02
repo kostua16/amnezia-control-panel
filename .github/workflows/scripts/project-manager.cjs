@@ -1749,11 +1749,14 @@ function chooseRepairLatest(candidates, summary, existingLatest) {
     newest.updatedAt ?? newest.createdAt ?? newest.startedAt,
   );
   const summaryUpdatedAt = parseDate(summary.updatedAt ?? summary.createdAt);
-  if (
-    newestUpdatedAt &&
-    summaryUpdatedAt &&
-    newestUpdatedAt > summaryUpdatedAt
-  ) {
+  const newer = Boolean(
+    newestUpdatedAt && summaryUpdatedAt && newestUpdatedAt > summaryUpdatedAt,
+  );
+  // A newer different live run may supersede a sticky summary only when it
+  // represents a successful repair. A newer cancelled/skipped/neutral/failing
+  // run carries no repair outcome, so letting it override the summary would
+  // mask an unresolved hard failure and suppress @claude escalation.
+  if (newer && normalizeConclusion(newest.conclusion) === 'success') {
     return newest;
   }
 

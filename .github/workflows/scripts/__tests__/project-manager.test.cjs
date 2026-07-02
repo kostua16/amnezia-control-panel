@@ -836,6 +836,33 @@ test('PM18o: summary exposes unknown checks and label fallbacks', () => {
   assert.equal(plan.summary.activeRepairRuns['rebase-pr.yml'], 1);
 });
 
+test('PM18p: newer non-success run does not mask a failed repair summary', () => {
+  const hydrated = attachRepairRunsToPullRequest(
+    pr({
+      comments: [
+        fixReviewSummary({
+          heading: 'Validation failed - fixes not pushed',
+          run: 1101,
+        }),
+      ],
+    }),
+    [
+      {
+        workflowName: 'Fix Review',
+        databaseId: 1102,
+        displayTitle: 'Fix Review PR #42 @ abc123',
+        status: 'completed',
+        conclusion: 'cancelled',
+        updatedAt: '2026-07-01T09:45:00.000Z',
+        url: 'https://example.test/actions/runs/1102',
+      },
+    ],
+  );
+
+  assert.equal(hydrated.runs.fixReview.latest.databaseId, '1101');
+  assert.equal(hydrated.runs.fixReview.latest.conclusion, 'failure');
+});
+
 test('PM19: issue queue skips linked PR, active fix, and terminal labels', () => {
   assert.equal(safeIssueForFix(issue()), true);
   assert.equal(safeIssueForFix(issue({ body: 'Fixes #123' })), false);
