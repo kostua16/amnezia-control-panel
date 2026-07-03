@@ -33,6 +33,21 @@ const API_KEY_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 // ─── Health Snapshot Cache ─────────────────────────────
 
 /**
+ * TTL cache for the active panel list fetched each health-check tick.
+ * Avoids repeated findMany queries within the same 60s window.
+ */
+const PANEL_LIST_TTL_MS = 60_000;
+let panelListCache: {
+  panels: Array<{ id: number; name: string }>;
+  expiry: number;
+} | null = null;
+
+/** Invalidate the active panel list cache (call on panel CRUD). */
+export function invalidatePanelListCache(): void {
+  panelListCache = null;
+}
+
+/**
  * Cached result from the periodic health checker for each panel.
  * Populated every 30s by startPanelHealthChecks; read by the status API
  * to avoid redundant HTTP HEAD probes.
@@ -104,6 +119,7 @@ export function evictPanel(panelId: number): void {
   healthSnapshotCache.delete(panelId);
   panelApiKeyCache.delete(panelId);
   panelApiKeyCacheTimestamps.delete(panelId);
+  invalidatePanelListCache();
   console.log(
     `[panel-health] Evicted all in-memory state for panel ${panelId}`,
   );
@@ -345,11 +361,20 @@ export function startPanelHealthChecks(): void {
       // Evict API key cache entries that have exceeded their 1-hour max-age.
       cleanupExpiredApiKeys();
 
-      const panels = await prisma.remotePanel.findMany({
-        where: { isActive: true },
-      });
+      // Use cached panel list when fresh, otherwise fetch from DB.
+      const now = Date.now();
+      if (!panelListCache || panelListCache.expiry <= now) {
+        const dbPanels = await prisma.remotePanel.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+        });
+        panelListCache = {
+          panels: dbPanels,
+          expiry: now + PANEL_LIST_TTL_MS,
+        };
+      }
 
-      for (const panel of panels) {
+      for (const panel of panelListCache.panels) {
         try {
           const result = await testPanel(panel.id);
 

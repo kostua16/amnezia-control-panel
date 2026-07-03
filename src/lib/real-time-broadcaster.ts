@@ -3,6 +3,7 @@ import type { DashboardStats } from '@/types/monitoring';
 import { getSystemResources } from '@/lib/resource-monitor';
 import { broadcastEvent, hasConnectedClients } from '@/lib/websocket';
 import { cleanupOldTrafficLogs } from '@/lib/traffic-log-cleanup';
+import { cleanupOldAlerts } from '@/lib/alert-service';
 
 let statsInterval: ReturnType<typeof setInterval> | null = null;
 let resourcesInterval: ReturnType<typeof setInterval> | null = null;
@@ -75,8 +76,9 @@ export function startBroadcaster(): void {
     async () => {
       try {
         await cleanupOldTrafficLogs();
+        await cleanupOldAlerts();
       } catch (err) {
-        console.error('[broadcaster] Traffic log cleanup failed:', err);
+        console.error('[broadcaster] Cleanup failed:', err);
       }
     },
     24 * 60 * 60 * 1000,
@@ -87,8 +89,9 @@ export function startBroadcaster(): void {
     initialCleanupTimeout = null;
     try {
       await cleanupOldTrafficLogs();
+      await cleanupOldAlerts();
     } catch (err) {
-      console.error('[broadcaster] Initial traffic log cleanup failed:', err);
+      console.error('[broadcaster] Initial cleanup failed:', err);
     }
   }, 5000);
 }

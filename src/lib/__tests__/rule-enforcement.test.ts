@@ -33,12 +33,17 @@ describe('enforceXrayRules', () => {
     assert.ok(result.reason?.includes('No matching'));
   });
 
-  it('matches when destIp starts with the IP portion of the rule value', () => {
-    // enforceXrayRules does destIp.startsWith(value.split('/')[0])
-    const rule = makeRule({ nodeId: 'node-1', value: '10.0.0.5/32' });
+  it('matches when destIp falls within the CIDR range', () => {
+    const rule = makeRule({ nodeId: 'node-1', value: '10.0.0.0/24' });
     const result = enforceXrayRules('10.0.0.5', [rule]);
     assert.strictEqual(result.allowed, true);
     assert.strictEqual(result.matchedRule, 'node-1');
+  });
+
+  it('does NOT false-positive on string prefix overlap (CIDR /24 boundary)', () => {
+    // 192.168.10.0 must NOT match 192.168.1.0/24 (original startsWith bug)
+    const rule = makeRule({ nodeId: 'node-b', value: '192.168.1.0/24' });
+    assert.strictEqual(enforceXrayRules('192.168.10.0', [rule]).allowed, false);
   });
 
   it('does not match when IP string prefix differs', () => {

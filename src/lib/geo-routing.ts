@@ -2,6 +2,20 @@ import { prisma } from '@/lib/prisma';
 import type { GeoRoutingRule, GeoTarget } from '@/types/geo-routing';
 import { lookupGeoIP as geoIPLookup } from '@/lib/geoip-manager';
 
+// ─── TTL cache for geo-routing rules ────────────────────────
+
+const GEO_RULE_CACHE_TTL_MS = 60_000; // 60 seconds
+
+let geoRuleCache: {
+  rules: GeoRoutingRule[];
+  expiry: number;
+} | null = null;
+
+/** Invalidate the geo-routing rule cache (call on CRUD operations). */
+export function invalidateGeoRuleCache(): void {
+  geoRuleCache = null;
+}
+
 export interface GeoRoutingResult {
   matched: boolean;
   rule?: GeoRoutingRule;
@@ -97,10 +111,18 @@ export function classifyDomesticForeign(
  *
  * Rules are evaluated by priority (ascending). First matching rule wins.
  * Per D-04: if no rules match, returns default ALLOW (fail open).
+ *
+ * Results are cached in-memory for 60s to avoid repeated full-table scans.
+ * Call invalidateGeoRuleCache() after any rule CRUD to bust the cache.
  */
 export async function evaluateGeoRulesFromDB(
   destination: GeoTarget,
 ): Promise<GeoRoutingResult> {
+  const now = Date.now();
+  if (geoRuleCache && geoRuleCache.expiry > now) {
+    return evaluateGeoRules(destination, geoRuleCache.rules);
+  }
+
   const rules = await prisma.geoRoutingRule.findMany({
     where: { isActive: true },
     orderBy: { priority: 'asc' },
@@ -124,6 +146,8 @@ export async function evaluateGeoRulesFromDB(
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   }));
+
+  geoRuleCache = { rules: typedRules, expiry: now + GEO_RULE_CACHE_TTL_MS };
 
   return evaluateGeoRules(destination, typedRules);
 }
