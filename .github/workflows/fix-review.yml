@@ -232,7 +232,7 @@ jobs:
         uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GH_PAT }}
           model: 'opus'
           max-turns: ${{ env.MAX_TURNS }}
           track-progress: 'false'
