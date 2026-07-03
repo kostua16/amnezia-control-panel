@@ -182,7 +182,12 @@ INSERT INTO "new_services" ("config", "createdAt", "id", "lastCheckedAt", "port"
 DROP TABLE "services";
 ALTER TABLE "new_services" RENAME TO "services";
 
--- user_protocols: add updatedAt
+-- user_protocols: add updatedAt.
+-- Unlike alerts/routing_rules/servers/services, the source "user_protocols"
+-- table has no "createdAt" column (it was created without one), so seed
+-- "updatedAt" with CURRENT_TIMESTAMP instead of copying from a nonexistent
+-- column (referencing "createdAt" here aborts the migration at parse time,
+-- after earlier tables are already dropped/renamed).
 CREATE TABLE "new_user_protocols" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "serviceType" TEXT NOT NULL,
@@ -193,7 +198,7 @@ CREATE TABLE "new_user_protocols" (
     "userId" INTEGER NOT NULL,
     CONSTRAINT "user_protocols_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-INSERT INTO "new_user_protocols" ("config", "id", "isActive", "protocol", "serviceType", "userId", "updatedAt") SELECT "config", "id", "isActive", "protocol", "serviceType", "userId", "createdAt" FROM "user_protocols";
+INSERT INTO "new_user_protocols" ("config", "id", "isActive", "protocol", "serviceType", "userId", "updatedAt") SELECT "config", "id", "isActive", "protocol", "serviceType", "userId", CURRENT_TIMESTAMP FROM "user_protocols";
 DROP TABLE "user_protocols";
 ALTER TABLE "new_user_protocols" RENAME TO "user_protocols";
 CREATE UNIQUE INDEX "user_protocols_userId_serviceType_key" ON "user_protocols"("userId", "serviceType");
