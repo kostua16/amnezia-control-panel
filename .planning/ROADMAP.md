@@ -688,6 +688,16 @@ Source: `/gsd:explore` eighth-pass review (non-duplicative vs open PRs and propo
 | 23 | **Component mutations bypass React Query cache** — 20+ components use raw `fetch()` for POST/PUT/DELETE instead of `useMutation` hooks. No `onSuccess` cache invalidation; data stays stale up to 30s after user actions. Fix: extract mutation hooks with `httpClient` + `onSuccess` invalidation | Medium (UX) | `src/components/**/*.tsx`, `src/hooks/` (new) | Proposed |
 | 24 | **Redundant panel health probing** — Periodic health checker (30s) AND `GET /api/panels/status` (polled 30s by frontend) both run independent HTTP HEAD probes per panel. ~4 requests/panel/30s. Fix: status API reads from checker's cached snapshot instead of re-probing | Medium (Perf) | `src/lib/panel-health-checker.ts`, `src/app/api/panels/status/route.ts` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 9 (2026-07-03)
+
+Source: `/gsd:explore` ninth-pass review (non-duplicative vs proposals #1-#24 and open PRs). Artifact: `.planning/quick/260703-arch-review-pass9/proposal.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 25 | **Alert table unbounded growth** — No retention cleanup; quota alerts alone generate 150+/month with no expiry. Add `cleanupOldAlerts()` with configurable `ALERT_RETENTION_DAYS` (default 90), wired into broadcaster daily cycle alongside traffic-log cleanup | Medium (Ops) | `src/lib/alert-service.ts`, `src/lib/real-time-broadcaster.ts` | Proposed |
+| 26 | **Broken CIDR matching in `enforceXrayRules`** — `destIp.startsWith(rule.value.split('/')[0'))` is string prefix, not subnet matching. `192.168.1.0/24` falsely matches `192.168.10.0`; `10.0.0.0/8` misses `10.1.2.3`. Replace with proper `ipaddr.js` CIDR subnet check | High (Correctness) | `src/lib/rule-enforcement.ts:31` | Proposed |
+| 27 | **Geo-routing rule DB cache** — `evaluateGeoRulesFromDB()` does full `findMany` per resolution. With 100+ imported rules, every geo-route lookup re-scans the active rule set. Add 60s TTL in-memory cache, invalidate on rule CRUD | Medium (Perf) | `src/lib/geo-routing.ts:104` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-02 - Added architectural review pass 8 (proposals #22-#24: dead WS broadcast bridge, component mutations bypass RQ cache, redundant panel health probing)*
+*Last updated: 2026-07-03 - Added architectural review pass 9 (proposals #25-#27: alert table unbounded growth, broken CIDR matching, geo-routing rule DB cache)*
