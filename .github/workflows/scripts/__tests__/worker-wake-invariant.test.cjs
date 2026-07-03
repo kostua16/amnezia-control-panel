@@ -101,9 +101,7 @@ test('wake-orchestrator jobs dispatch pr-flow.yml with dry_run=false', () => {
         );
       }
       if (!/-f dry_run=false/.test(content)) {
-        violations.push(
-          `${wf}: wake-orchestrator does not pass dry_run=false`,
-        );
+        violations.push(`${wf}: wake-orchestrator does not pass dry_run=false`);
       }
       // Gate may span multiple lines (YAML folded block scalar), so
       // check for the presence of the pattern anywhere in the file.
@@ -142,5 +140,30 @@ test('pr-flow.yml workflow_run trigger includes PR Policy', () => {
   assert.ok(
     /['"]?PR Policy['"]?/.test(triggerBlock[0]),
     'pr-flow.yml workflow_run trigger must include PR Policy to wake orchestration after policy checks complete',
+  );
+});
+
+test('edit-capable fix-review agent uses workflow-triggering credentials', () => {
+  const fixReviewYml = fs.readFileSync(
+    path.join(workflowsDir, 'fix-review.yml'),
+    'utf8',
+  );
+
+  const applyReviewFixesStep = fixReviewYml.match(
+    /- name: Apply review fixes[\s\S]*?(?=\n      - name:|\n      - uses:|\n  [a-zA-Z0-9_-]+:|$)/,
+  );
+  assert.ok(
+    applyReviewFixesStep,
+    'fix-review.yml must define the Apply review fixes step',
+  );
+  assert.match(
+    applyReviewFixesStep[0],
+    /github-token:\s*\$\{\{\s*secrets\.GH_PAT\s*\}\}/,
+    'fix-review.yml Apply review fixes must pass GH_PAT so any edit-capable agent tooling uses a credential that wakes downstream PR checks',
+  );
+  assert.doesNotMatch(
+    applyReviewFixesStep[0],
+    /github-token:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/,
+    'fix-review.yml Apply review fixes must not pass GITHUB_TOKEN to edit-capable agent tooling',
   );
 });
