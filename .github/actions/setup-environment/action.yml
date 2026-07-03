@@ -214,7 +214,7 @@ runs:
     # ...:443: i/o timeout"), killing the whole job. Make the first attempt
     # non-fatal so one retry can absorb the blip before require-gh-auth decides.
     - id: setup_gh
-      uses: kostua16/setup-gh@bd07f8bef16d6973adb48d8d3f22f99125a95058
+      uses: kostua16/setup-gh@55cc7662a66e327280ca51930c27d09e4f7113db
       continue-on-error: true
       with:
         gh-version: ${{ inputs.gh-version }}
@@ -238,7 +238,7 @@ runs:
     - id: setup_gh_retry
       name: Retry setup-gh (transient network)
       if: steps.setup_gh.outcome == 'failure'
-      uses: kostua16/setup-gh@bd07f8bef16d6973adb48d8d3f22f99125a95058
+      uses: kostua16/setup-gh@55cc7662a66e327280ca51930c27d09e4f7113db
       continue-on-error: ${{ inputs.require-gh-auth != 'true' }}
       with:
         # Composite actions cannot share a step-input block, so these inputs are
