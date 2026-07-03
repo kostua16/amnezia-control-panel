@@ -22,7 +22,14 @@ const createGeoRuleSchema = z.object({
   chainId: z.number().int().positive().optional(),
   priority: z.number().int().min(0).default(0),
   isActive: z.boolean().default(true),
-  source: z.enum(['CUSTOM', 'IMPORTED', 'TEMPLATE']).default('CUSTOM'),
+  // The DB enum stores UPPERCASE values, but UI callers (geo-rule-drawer,
+  // geo-routing-form) still send lowercase. Normalize at the API boundary so
+  // both cases validate; omitting source defaults to CUSTOM.
+  source: z
+    .string()
+    .optional()
+    .transform((s) => (s ?? 'CUSTOM').toUpperCase())
+    .pipe(z.enum(['CUSTOM', 'IMPORTED', 'TEMPLATE'])),
 });
 
 /** Derive matchType from which target field is set */

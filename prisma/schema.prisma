@@ -71,6 +71,8 @@ model Admin {
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("admins")
 }
 
 // ─── User ────────────────────────────────────────────
@@ -209,6 +211,7 @@ model RoutingRule {
 
   user        User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId      Int?
+  @@index([userId])
   @@index([priority])
   @@map("routing_rules")
 }
@@ -305,6 +308,7 @@ model Alert {
   isRead    Boolean       @default(false)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+  @@index([isRead])
   @@index([severity])
   @@index([createdAt])
   @@map("alerts")
@@ -321,6 +325,8 @@ model UserQuota {
 
   user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId     Int          @unique
+
+  @@map("user_quotas")
 }
 
 // ─── UserProtocol ────────────────────────────────────
@@ -335,6 +341,7 @@ model UserProtocol {
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId      Int
+  @@unique([userId, serviceType])
   @@index([userId])
   @@index([isActive])
   @@map("user_protocols")

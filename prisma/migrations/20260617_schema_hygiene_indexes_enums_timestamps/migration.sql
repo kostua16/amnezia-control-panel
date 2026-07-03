@@ -2,26 +2,10 @@
 -- Generated: 2026-06-17
 -- Scope: covers drift from 20260428191601_init + 20260611000000_add_audit_logs + 20260614000000_add_traffic_log_user_timestamp_index
 
--- DropIndex
-DROP INDEX IF EXISTS "admins_username_key";
-
--- DropIndex
-DROP INDEX IF EXISTS "user_quotas_userId_key";
-
--- DropTable
-PRAGMA foreign_keys=off;
-DROP TABLE IF EXISTS "admins";
-DROP TABLE IF EXISTS "user_quotas";
-PRAGMA foreign_keys=on;
-
--- CreateTable: Admin (renamed from admins for Prisma model convention)
-CREATE TABLE "Admin" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "username" TEXT NOT NULL,
-    "password" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
-);
+-- AddColumn: Admin.updatedAt — the "admins" table is kept in place (no rename),
+-- so existing admin credentials are preserved. The @unique(username) index
+-- admins_username_key from the init migration already covers the model.
+ALTER TABLE "admins" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
 -- CreateTable: ConfigTemplate
 CREATE TABLE "config_templates" (
@@ -82,16 +66,10 @@ CREATE TABLE "chain_presets" (
     "updatedAt" DATETIME NOT NULL
 );
 
--- CreateTable: UserQuota (renamed from user_quotas for Prisma model convention)
-CREATE TABLE "UserQuota" (
-    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "quotaBytes" INTEGER NOT NULL DEFAULT 0,
-    "period" TEXT NOT NULL DEFAULT 'MONTHLY',
-    "resetAt" DATETIME,
-    "updatedAt" DATETIME NOT NULL,
-    "userId" INTEGER NOT NULL,
-    CONSTRAINT "UserQuota_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
+-- AddColumn: UserQuota.updatedAt — the "user_quotas" table is kept in place
+-- (no rename), preserving existing quota rows and the user_quotas_userId_key
+-- unique index from the init migration.
+ALTER TABLE "user_quotas" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
 -- CreateTable: RemotePanel
 CREATE TABLE "remote_panels" (
@@ -142,7 +120,7 @@ CREATE TABLE "new_alerts" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 );
-INSERT INTO "new_alerts" ("createdAt", "id", "isRead", "message", "severity", "type") SELECT "createdAt", "id", "isRead", "message", "severity", "type" FROM "alerts";
+INSERT INTO "new_alerts" ("createdAt", "id", "isRead", "message", "severity", "type", "updatedAt") SELECT "createdAt", "id", "isRead", "message", "severity", "type", "createdAt" FROM "alerts";
 DROP TABLE "alerts";
 ALTER TABLE "new_alerts" RENAME TO "alerts";
 CREATE INDEX "alerts_isRead_idx" ON "alerts"("isRead");
@@ -162,7 +140,7 @@ CREATE TABLE "new_routing_rules" (
     "userId" INTEGER,
     CONSTRAINT "routing_rules_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-INSERT INTO "new_routing_rules" ("action", "createdAt", "destination", "id", "isActive", "priority", "protocol", "userId") SELECT "action", "createdAt", "destination", "id", "isActive", "priority", "protocol", "userId" FROM "routing_rules";
+INSERT INTO "new_routing_rules" ("action", "createdAt", "destination", "id", "isActive", "priority", "protocol", "userId", "updatedAt") SELECT "action", "createdAt", "destination", "id", "isActive", "priority", "protocol", "userId", "createdAt" FROM "routing_rules";
 DROP TABLE "routing_rules";
 ALTER TABLE "new_routing_rules" RENAME TO "routing_rules";
 CREATE INDEX "routing_rules_userId_idx" ON "routing_rules"("userId");
@@ -183,7 +161,7 @@ CREATE TABLE "new_servers" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 );
-INSERT INTO "new_servers" ("apiKeyHash", "createdAt", "hostname", "id", "isActive", "name", "port") SELECT "apiKeyHash", "createdAt", "hostname", "id", "isActive", "name", "port" FROM "servers";
+INSERT INTO "new_servers" ("apiKeyHash", "createdAt", "hostname", "id", "isActive", "name", "port", "updatedAt") SELECT "apiKeyHash", "createdAt", "hostname", "id", "isActive", "name", "port", "createdAt" FROM "servers";
 DROP TABLE "servers";
 ALTER TABLE "new_servers" RENAME TO "servers";
 
@@ -200,7 +178,7 @@ CREATE TABLE "new_services" (
     "serverId" INTEGER NOT NULL,
     CONSTRAINT "services_serverId_fkey" FOREIGN KEY ("serverId") REFERENCES "servers" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-INSERT INTO "new_services" ("config", "createdAt", "id", "lastCheckedAt", "port", "serverId", "status", "type") SELECT "config", "createdAt", "id", "lastCheckedAt", "port", "serverId", "status", "type" FROM "services";
+INSERT INTO "new_services" ("config", "createdAt", "id", "lastCheckedAt", "port", "serverId", "status", "type", "updatedAt") SELECT "config", "createdAt", "id", "lastCheckedAt", "port", "serverId", "status", "type", "createdAt" FROM "services";
 DROP TABLE "services";
 ALTER TABLE "new_services" RENAME TO "services";
 
@@ -215,7 +193,7 @@ CREATE TABLE "new_user_protocols" (
     "userId" INTEGER NOT NULL,
     CONSTRAINT "user_protocols_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-INSERT INTO "new_user_protocols" ("config", "id", "isActive", "protocol", "serviceType", "userId") SELECT "config", "id", "isActive", "protocol", "serviceType", "userId" FROM "user_protocols";
+INSERT INTO "new_user_protocols" ("config", "id", "isActive", "protocol", "serviceType", "userId", "updatedAt") SELECT "config", "id", "isActive", "protocol", "serviceType", "userId", "createdAt" FROM "user_protocols";
 DROP TABLE "user_protocols";
 ALTER TABLE "new_user_protocols" RENAME TO "user_protocols";
 CREATE UNIQUE INDEX "user_protocols_userId_serviceType_key" ON "user_protocols"("userId", "serviceType");
@@ -224,14 +202,10 @@ PRAGMA foreign_keys=ON;
 PRAGMA defer_foreign_keys=OFF;
 
 -- CreateIndex: new performance indexes
-CREATE UNIQUE INDEX "Admin_username_key" ON "Admin"("username");
-
 CREATE INDEX "geo_routing_rules_priority_idx" ON "geo_routing_rules"("priority");
 CREATE INDEX "geo_routing_rules_matchType_idx" ON "geo_routing_rules"("matchType");
 CREATE INDEX "geo_routing_rules_isActive_idx" ON "geo_routing_rules"("isActive");
 CREATE INDEX "geo_routing_rules_source_idx" ON "geo_routing_rules"("source");
-
-CREATE UNIQUE INDEX "UserQuota_userId_key" ON "UserQuota"("userId");
 
 CREATE UNIQUE INDEX "remote_panels_panelUrl_key" ON "remote_panels"("panelUrl");
 
