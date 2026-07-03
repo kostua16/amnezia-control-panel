@@ -4,6 +4,12 @@ import { prisma } from '@/lib/prisma';
 import { seedAdmin } from '@/lib/seed';
 import { verifyValue } from '@/lib/password';
 import { createSessionToken, SESSION_MAX_AGE } from '@/lib/auth-jwt';
+import {
+  checkLoginRateLimit,
+  recordLoginFailure,
+  clearLoginAttempts,
+  getClientIp,
+} from '@/lib/login-rate-limit';
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -29,11 +35,26 @@ export async function POST(request: NextRequest) {
 
     const { username, password } = parsed.data;
 
+    const clientIp = getClientIp(request);
+    const rateCheck = checkLoginRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Too many login attempts. Please try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil(rateCheck.retryAfterMs / 1000)),
+          },
+        },
+      );
+    }
+
     const admin = await prisma.admin.findUnique({
       where: { username },
     });
 
     if (!admin) {
+      recordLoginFailure(clientIp);
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 },
@@ -42,11 +63,14 @@ export async function POST(request: NextRequest) {
 
     const isValid = await verifyValue(password, admin.password);
     if (!isValid) {
+      recordLoginFailure(clientIp);
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 },
       );
     }
+
+    clearLoginAttempts(clientIp);
 
     const token = await createSessionToken({
       userId: admin.id,
