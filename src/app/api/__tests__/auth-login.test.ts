@@ -270,4 +270,38 @@ describe('POST /api/auth/login rate limiting', () => {
       );
     }
   });
+
+  it('blocks spoofed-IP floods via the global backstop', async () => {
+    // Each request sends a unique spoofed `x-forwarded-for`, so every request
+    // gets a fresh per-IP bucket (one attempt, well under the per-IP limit).
+    // Without the global backstop this would never trip the limiter and every
+    // request would proceed to bcrypt, exhausting CPU. The global cap must
+    // throttle the flood regardless of the spoofed source IP.
+    const GLOBAL_CAP = 50;
+
+    for (let i = 0; i < GLOBAL_CAP; i++) {
+      const { status } = await readJson<LoginErrorBody>(
+        await POST(
+          postRequest(
+            LOGIN_PATH,
+            { username: 'user', password: 'wrong' },
+            { 'x-forwarded-for': `10.0.0.${i}` },
+          ),
+        ),
+      );
+      assert.strictEqual(status, 401, `spoofed attempt ${i + 1} allowed`);
+    }
+
+    const { status, body } = await readJson<LoginErrorBody>(
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          { 'x-forwarded-for': '10.0.0.250' },
+        ),
+      ),
+    );
+    assert.strictEqual(status, 429);
+    assert.ok(body.error.includes('Too many'));
+  });
 });
