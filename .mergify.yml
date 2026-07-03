@@ -1,6 +1,16 @@
-queue_rules: []
+queue_rules:
+  - name: main
+    queue_conditions:
+      - check-success = pr-flow/code-review
+      - check-success = pr-flow/security-review
+      - check-success = Kilo Code Review
+      - check-success = pr-flow/kilo-review
+      - check-success = CI / Lint (pull_request)
+      - check-success = CI / Security Audit (pull_request)
+    merge_conditions:
+      - draft = false
 merge_queue:
-  max_parallel_checks: 6
+  max_parallel_checks: 1
 scopes:
   source:
     files:
