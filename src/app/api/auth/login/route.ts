@@ -6,7 +6,6 @@ import { verifyValue } from '@/lib/password';
 import { createSessionToken, SESSION_MAX_AGE } from '@/lib/auth-jwt';
 import {
   checkLoginRateLimit,
-  recordLoginFailure,
   clearLoginAttempts,
   getClientIp,
 } from '@/lib/login-rate-limit';
@@ -54,7 +53,6 @@ export async function POST(request: NextRequest) {
     });
 
     if (!admin) {
-      recordLoginFailure(clientIp);
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 },
@@ -63,7 +61,6 @@ export async function POST(request: NextRequest) {
 
     const isValid = await verifyValue(password, admin.password);
     if (!isValid) {
-      recordLoginFailure(clientIp);
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 },
