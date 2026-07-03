@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { invalidateGeoRuleCache } from '@/lib/geo-routing';
 
 // ─── Built-in template definitions ─────────────────────
 
@@ -240,6 +241,10 @@ export async function applyTemplateRules(
     }
   }
 
+  if (result.created > 0) {
+    invalidateGeoRuleCache();
+  }
+
   return result;
 }
 
@@ -346,6 +351,10 @@ export async function importFromGeoIPDat(
     result.errors.push(
       `Import failed: ${err instanceof Error ? err.message : String(err)}`,
     );
+  }
+
+  if (result.imported > 0) {
+    invalidateGeoRuleCache();
   }
 
   return result;
@@ -479,6 +488,10 @@ export async function importFromRulite(
     result.errors.push(
       `Import failed: ${err instanceof Error ? err.message : String(err)}`,
     );
+  }
+
+  if (result.imported > 0) {
+    invalidateGeoRuleCache();
   }
 
   return result;

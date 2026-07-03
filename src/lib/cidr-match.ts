@@ -11,7 +11,12 @@ export function matchesCIDR(ip: string, cidr: string): boolean {
 
   const networkStr = cidr.slice(0, slashIndex);
   const prefixLen = Number.parseInt(cidr.slice(slashIndex + 1), 10);
-  if (prefixLen < 0 || prefixLen > 32) return false;
+  // parseInt returns NaN for a non-numeric prefix (e.g. "10.0.0.0/abc");
+  // NaN comparisons are always false, so guard explicitly to honor the
+  // "returns false for malformed input" contract.
+  if (!Number.isFinite(prefixLen) || prefixLen < 0 || prefixLen > 32) {
+    return false;
+  }
 
   const ipNum = parseIPv4(ip);
   const netNum = parseIPv4(networkStr);

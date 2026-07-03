@@ -74,11 +74,17 @@ export function startBroadcaster(): void {
   // Traffic log cleanup — once daily (24 hours)
   cleanupInterval = setInterval(
     async () => {
+      // Run each cleanup independently so a failure in one does not skip the
+      // other.
       try {
         await cleanupOldTrafficLogs();
+      } catch (err) {
+        console.error('[broadcaster] Traffic log cleanup failed:', err);
+      }
+      try {
         await cleanupOldAlerts();
       } catch (err) {
-        console.error('[broadcaster] Cleanup failed:', err);
+        console.error('[broadcaster] Alert cleanup failed:', err);
       }
     },
     24 * 60 * 60 * 1000,
@@ -89,9 +95,13 @@ export function startBroadcaster(): void {
     initialCleanupTimeout = null;
     try {
       await cleanupOldTrafficLogs();
+    } catch (err) {
+      console.error('[broadcaster] Initial traffic log cleanup failed:', err);
+    }
+    try {
       await cleanupOldAlerts();
     } catch (err) {
-      console.error('[broadcaster] Initial cleanup failed:', err);
+      console.error('[broadcaster] Initial alert cleanup failed:', err);
     }
   }, 5000);
 }

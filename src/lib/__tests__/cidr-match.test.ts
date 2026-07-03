@@ -42,6 +42,13 @@ describe('matchesCIDR', () => {
     assert.strictEqual(matchesCIDR('10.0.0.1', '10.0.0.0/-1'), false);
   });
 
+  it('returns false for non-numeric prefix (NaN)', () => {
+    // parseInt yields NaN for a non-numeric prefix; must not fall through to
+    // exact-match semantics.
+    assert.strictEqual(matchesCIDR('10.0.0.1', '10.0.0.0/abc'), false);
+    assert.strictEqual(matchesCIDR('10.0.0.1', '10.0.0.0/'), false);
+  });
+
   it('returns false for malformed IP', () => {
     assert.strictEqual(matchesCIDR('not-an-ip', '10.0.0.0/8'), false);
     assert.strictEqual(matchesCIDR('10.0.0', '10.0.0.0/8'), false);

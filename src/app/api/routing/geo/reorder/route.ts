@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { invalidateGeoRuleCache } from '@/lib/geo-routing';
 import { writeAuditLog } from '@/lib/audit-log';
 
 const reorderItemSchema = z.object({
@@ -56,6 +57,8 @@ export async function POST(request: NextRequest) {
         }),
       ),
     );
+
+    invalidateGeoRuleCache();
 
     await writeAuditLog({
       action: 'routing.geo.reorder',

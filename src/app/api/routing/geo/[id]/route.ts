@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { invalidateGeoRuleCache } from '@/lib/geo-routing';
 import { writeAuditLog } from '@/lib/audit-log';
 import { apiHandler, type RouteContext } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
@@ -143,6 +144,8 @@ export const PUT = apiHandler(
       data: updateData,
     });
 
+    invalidateGeoRuleCache();
+
     await writeAuditLog({
       action: 'routing.geo.update',
       resource: 'geoRoutingRule',
@@ -181,6 +184,8 @@ export const DELETE = apiHandler(
     }
 
     await prisma.geoRoutingRule.delete({ where: { id: ruleId } });
+
+    invalidateGeoRuleCache();
 
     await writeAuditLog({
       action: 'routing.geo.delete',

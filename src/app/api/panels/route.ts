@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
 import { hashValue } from '@/lib/password';
 import { apiHandler } from '@/lib/api-handler';
+import { invalidatePanelListCache } from '@/lib/panel-health-checker';
 import { validationError } from '@/lib/api-response';
 
 const createPanelSchema = z.object({
@@ -51,6 +52,8 @@ export const POST = apiHandler(async (request: NextRequest) => {
   const panel = await prisma.remotePanel.create({
     data: { name, panelUrl, apiKeyHash },
   });
+
+  invalidatePanelListCache();
 
   await writeAuditLog({
     action: 'panel.create',
