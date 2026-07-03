@@ -216,6 +216,7 @@ jobs:
         id: push-plan-state
         if: steps.code-changes.outputs.has_code_changes == 'false'
         with:
+          github-token: ${{ secrets.GH_PAT }}
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'chore(planning): track execution queue plan'
 
