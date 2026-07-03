@@ -34,6 +34,8 @@ permissions:
   pull-requests: write
   actions: write
   issues: write
+  checks: read
+  statuses: write
 
 concurrency:
   group: fix-pr-${{ github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha || github.run_id }}

@@ -12,8 +12,11 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
   issues: write
+  pull-requests: write
+  actions: write
+  checks: read
+  statuses: write
 
 concurrency:
   group: antigravity-${{ github.event.issue.number || github.event.pull_request.number || github.sha }}

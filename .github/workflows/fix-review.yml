@@ -39,7 +39,9 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  actions: read
+  actions: write
+  checks: read
+  statuses: write
 
 concurrency:
   # Non-command, bot-authored, or non-PR comments get a unique group so they

@@ -11,9 +11,12 @@ on:
     types: [submitted]
 
 permissions:
-  contents: read
-  issues: read
-  pull-requests: read
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+  checks: read
+  statuses: write
 
 concurrency:
   group: deepseek-${{ github.event.issue.number || github.event.pull_request.number || github.sha }}

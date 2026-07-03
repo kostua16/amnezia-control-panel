@@ -12,7 +12,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
+  checks: read
+  statuses: write
 
 concurrency:
   group: workflow-governance-${{ github.ref }}

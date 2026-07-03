@@ -52,9 +52,12 @@ env:
   MERGE_PR_SCHEDULE_DRY_RUN: 'true'
 
 permissions:
-  contents: read
-  pull-requests: read
+  contents: write
+  pull-requests: write
   issues: write
+  actions: write
+  checks: read
+  statuses: write
 
 jobs:
   consolidate:

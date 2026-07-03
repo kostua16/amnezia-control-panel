@@ -15,10 +15,12 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   issues: write
-  pull-requests: read
+  pull-requests: write
   actions: write
+  checks: read
+  statuses: write
 
 env:
   NODE_VERSION: '24.x'

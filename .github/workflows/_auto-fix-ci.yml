@@ -49,7 +49,11 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
+  checks: read
+  statuses: write
+  issues: write
+  pull-requests: write
 
 env:
   NODE_VERSION: '24.x'

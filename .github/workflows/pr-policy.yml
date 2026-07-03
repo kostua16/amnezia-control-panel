@@ -12,6 +12,7 @@ permissions:
   pull-requests: write
   issues: write
   statuses: write
+  checks: read
 
 concurrency:
   group: pr-policy-${{ github.event.pull_request.number }}
