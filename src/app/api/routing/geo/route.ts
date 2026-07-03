@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { ensureGeoRulesMigrated } from '@/lib/geo-rule-migration';
+import { invalidateGeoRuleCache } from '@/lib/geo-routing';
 import { writeAuditLog } from '@/lib/audit-log';
 
 const geoTargetSchema = z
@@ -124,6 +125,8 @@ export async function POST(request: NextRequest) {
         source,
       },
     });
+
+    invalidateGeoRuleCache();
 
     await writeAuditLog({
       action: 'routing.geo.create',

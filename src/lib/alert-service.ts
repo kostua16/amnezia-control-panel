@@ -2,6 +2,15 @@ import { prisma } from '@/lib/prisma';
 import { broadcastEvent } from '@/lib/websocket';
 import type { AlertSeverity } from '@/generated/prisma/enums';
 
+/**
+ * Retention period for alerts in days (default: 90 days).
+ * Configure via ALERT_RETENTION_DAYS environment variable.
+ */
+export const ALERT_RETENTION_DAYS = (() => {
+  const parsed = Number.parseInt(process.env.ALERT_RETENTION_DAYS ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 90;
+})();
+
 export interface AlertData {
   id: number;
   type: string;
@@ -115,6 +124,31 @@ export async function deleteAlert(id: number): Promise<boolean> {
  */
 export async function getUnreadCount(): Promise<number> {
   return prisma.alert.count({ where: { isRead: false } });
+}
+
+/**
+ * Delete alert entries older than the retention period.
+ * Modeled on cleanupOldTrafficLogs(). Call once daily from startBroadcaster().
+ */
+export async function cleanupOldAlerts(): Promise<number> {
+  const retentionDate = new Date();
+  retentionDate.setDate(retentionDate.getDate() - ALERT_RETENTION_DAYS);
+
+  const result = await prisma.alert.deleteMany({
+    where: {
+      createdAt: {
+        lt: retentionDate,
+      },
+    },
+  });
+
+  if (result.count > 0) {
+    console.log(
+      `[alert-cleanup] Deleted ${result.count} alerts older than ${ALERT_RETENTION_DAYS} days`,
+    );
+  }
+
+  return result.count;
 }
 
 function toAlertData(alert: {

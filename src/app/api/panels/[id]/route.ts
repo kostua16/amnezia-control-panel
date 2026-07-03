@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { hashValue } from '@/lib/password';
 import { writeAuditLog } from '@/lib/audit-log';
-import { evictPanel } from '@/lib/panel-health-checker';
+import {
+  evictPanel,
+  invalidatePanelListCache,
+} from '@/lib/panel-health-checker';
 import { apiHandler, type RouteContext } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
 import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
@@ -96,6 +99,8 @@ export const PUT = apiHandler(
         where: { id: panelId },
         data: updateData,
       });
+
+      invalidatePanelListCache();
 
       await writeAuditLog({
         action: 'panel.update',

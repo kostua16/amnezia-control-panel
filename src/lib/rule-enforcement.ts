@@ -3,6 +3,7 @@ import {
   resolveGeoRoute,
   type GeoRoutingResult as GeoRoutingResultInternal,
 } from '@/lib/geo-routing';
+import { matchesCIDR } from '@/lib/cidr-match';
 import type { XrayRoutingRule } from '@/types/chain';
 
 // ─── Types ──────────────────────────────────────────────
@@ -25,10 +26,8 @@ export function enforceXrayRules(
   destIp: string,
   rules: XrayRoutingRule[],
 ): RuleEnforcementResult {
-  // Simple implementation: check if IP matches any rule
-  // In production, this would use more sophisticated IP matching
   for (const rule of rules) {
-    if (rule.type === 'ip' && destIp.startsWith(rule.value.split('/')[0])) {
+    if (rule.type === 'ip' && matchesCIDR(destIp, rule.value)) {
       return {
         allowed: true,
         matchedRule: rule.nodeId,
