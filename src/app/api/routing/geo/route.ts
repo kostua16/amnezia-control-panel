@@ -62,7 +62,11 @@ function mapToGeoRoutingRule(row: {
   return {
     id: row.id,
     name: row.name,
-    matchType: row.matchType as 'COUNTRY' | 'REGION' | 'SPECIAL',
+    // The DB enum stores UPPERCASE, but the public API/UI contract is lowercase
+    // (GeoMatchType/GeoRuleSource in src/types/geo-routing.ts). Lowercase at the
+    // output boundary so edit-mode radios select and list detail renders.
+    // Idempotent on any pre-existing lowercase rows.
+    matchType: row.matchType.toLowerCase() as 'country' | 'region' | 'special',
     target: {
       countryCode: row.countryCode ?? undefined,
       region: row.region ?? undefined,
@@ -72,7 +76,7 @@ function mapToGeoRoutingRule(row: {
     chainId: row.chainId ?? undefined,
     priority: row.priority,
     isActive: row.isActive,
-    source: row.source as 'CUSTOM' | 'IMPORTED' | 'TEMPLATE',
+    source: row.source.toLowerCase() as 'custom' | 'imported' | 'template',
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
