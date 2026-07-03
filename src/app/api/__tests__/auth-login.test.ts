@@ -304,4 +304,35 @@ describe('POST /api/auth/login rate limiting', () => {
     assert.strictEqual(status, 429);
     assert.ok(body.error.includes('Too many'));
   });
+
+  it('does not let one blocked IP exhaust the global cap (no lockout DoS)', async () => {
+    // A single attacker IP hits its per-IP limit after MAX_ATTEMPTS and is then
+    // blocked on every subsequent request. Those blocked requests never reach
+    // bcrypt, so they must not consume global slots — otherwise one IP sending
+    // enough requests burns the whole global cap and locks out every other
+    // client (including the admin) for the window.
+    const attackerHeaders = { 'x-forwarded-for': RATE_LIMIT_IP };
+    for (let i = 0; i < 50; i++) {
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          attackerHeaders,
+        ),
+      );
+    }
+
+    // A different IP must still be allowed to proceed (401 = bad credentials,
+    // i.e. it reached bcrypt) rather than globally locked out (429).
+    const { status } = await readJson<LoginErrorBody>(
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          { 'x-forwarded-for': OTHER_IP },
+        ),
+      ),
+    );
+    assert.strictEqual(status, 401);
+  });
 });
