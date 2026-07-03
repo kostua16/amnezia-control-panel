@@ -65,6 +65,18 @@ jobs:
           require-gh-auth: 'false'
       - run: npm run lint
       - run: npm run format:check
+      - name: Check shell script syntax
+        run: |
+          set -euo pipefail
+          failed=0
+          for script in scripts/*.sh docker-entrypoint.sh docker/stack-entrypoint.sh; do
+            [ -f "$script" ] || continue
+            if ! bash -n "$script"; then
+              echo "::error file=$script::shell syntax check failed"
+              failed=1
+            fi
+          done
+          exit "$failed"
       - name: Block Prisma unsafe raw SQL
         run: node .github/workflows/scripts/check-prisma-safe-sql.cjs
 
