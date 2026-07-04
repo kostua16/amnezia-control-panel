@@ -1,0 +1,133 @@
+name: Debug Auth Probe
+
+# Temporary diagnostic: identifies which credential raw `git push` uses when
+# updating `.github/workflows/**` from the fix-review path.
+# Uses `secrets.GH_PAT` identically to fix-review, uploads sanitized push
+# logs, and cleans temporary branches by default.
+# Remove after diagnosis is complete.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Log auth state only — skip push attempts"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: debug-auth-probe-${{ github.run_id }}
+  cancel-in-progress: true
+
+env:
+  GH_PAT_PRESENT: ${{ secrets.GH_PAT != '' }}
+
+jobs:
+  probe:
+    name: "S${{ matrix.scenario }}: ${{ matrix.name }}"
+    runs-on: self-hosted
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: 1
+            name: "Persisted Checkout Direct Push"
+            persist: true
+            askpass: false
+            cleanup_flags: false
+          - scenario: 2
+            name: "Non-Persisted Checkout Direct Push"
+            persist: false
+            askpass: false
+            cleanup_flags: false
+          - scenario: 3
+            name: "Explicit GIT_ASKPASS"
+            persist: false
+            askpass: true
+            cleanup_flags: false
+          - scenario: 4
+            name: "GIT_ASKPASS + Auth Cleanup Flags"
+            persist: false
+            askpass: true
+            cleanup_flags: true
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1991bb908d89e4e9dddfe3e0
+        with:
+          token: ${{ secrets.GH_PAT }}
+          persist-credentials: ${{ matrix.persist }}
+
+      - name: Setup GIT_ASKPASS
+        if: ${{ matrix.askpass }}
+        run: |
+          askpass_path="${RUNNER_TEMP}/askpass-s${{ matrix.scenario }}.sh"
+          cat > "$askpass_path" <<'ASKEOF'
+          #!/usr/bin/env bash
+          case "${1:-}" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "${GITHUB_GIT_PASSWORD:-}" ;;
+            *) printf '%s\n' "${GITHUB_GIT_PASSWORD:-}" ;;
+          esac
+          ASKEOF
+          chmod 0700 "$askpass_path"
+          {
+            echo "GIT_ASKPASS=$askpass_path"
+            echo "GIT_TERMINAL_PROMPT=0"
+            echo "GITHUB_GIT_USERNAME=x-access-token"
+            echo "GITHUB_GIT_PASSWORD=${{ secrets.GH_PAT }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Log sanitized auth state
+        id: auth
+        run: |
+          BRANCH="debug-auth-probe/s${{ matrix.scenario }}-${{ github.run_id }}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "::group::S${{ matrix.scenario }} Auth state (sanitized)"
+          echo "GH_PAT provided: $GH_PAT_PRESENT"
+          echo "persist-credentials: ${{ matrix.persist }}"
+          echo "GIT_ASKPASS: ${GIT_ASKPASS:-<unset>}"
+          echo "GIT_TERMINAL_PROMPT: ${GIT_TERMINAL_PROMPT:-<unset>}"
+          echo "GITHUB_GIT_USERNAME: ${GITHUB_GIT_USERNAME:-<unset>}"
+          echo "credential.helper: $(git config credential.helper || echo '<unset>')"
+          echo "http.extraheader: $(git config http.extraheader || echo '<unset>')"
+          echo "http.https://github.com/.extraheader: $(git config --get http.https://github.com/.extraheader || echo '<unset>')"
+          echo "remote origin: $(git remote get-url origin | sed -E 's#//[^/@]+@#//[redacted]@#')"
+          echo "::endgroup::"
+
+      - name: Attempt push
+        id: push
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          BRANCH="${{ steps.auth.outputs.branch }}"
+          echo "probe-marker: s${{ matrix.scenario }} ${{ github.run_id }}" > .auth-probe-marker
+          git add .auth-probe-marker
+          git commit -m "chore: auth probe S${{ matrix.scenario }} marker"
+          LOG="${RUNNER_TEMP}/push-s${{ matrix.scenario }}.log"
+          if [ "${{ matrix.cleanup_flags }}" = "true" ]; then
+            PUSH_CMD=(git -c http.https://github.com/.extraheader= -c http.extraheader= -c credential.helper= push origin "HEAD:$BRANCH")
+          else
+            PUSH_CMD=(git push origin "HEAD:$BRANCH")
+          fi
+          if "${PUSH_CMD[@]}" 2>&1 | tee "$LOG"; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failed" >> "$GITHUB_OUTPUT"
+          fi
+          echo "::group::S${{ matrix.scenario }} Push log (sanitized)"
+          sed -E 's/[a-f0-9]{40}/[SHA]/g; s/(x-access-token:)[^ ]+/\1[REDACTED]/g' "$LOG"
+          echo "::endgroup::"
+
+      - uses: actions/upload-artifact@ea16557c6436588529ecdaf27e31fcd76543c077
+        if: always()
+        with:
+          name: "push-log-s${{ matrix.scenario }}-${{ matrix.name }}"
+          path: "${{ runner.temp }}/push-s${{ matrix.scenario }}.log"
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Cleanup temp branch
+        if: always() && inputs.dry_run != true
+        run: git push origin --delete "debug-auth-probe/s${{ matrix.scenario }}-${{ github.run_id }}" 2>/dev/null || true
