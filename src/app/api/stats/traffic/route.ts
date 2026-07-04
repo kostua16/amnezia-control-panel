@@ -1,8 +1,16 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
-import { success, error } from '@/lib/api-response';
+import { error } from '@/lib/api-response';
+import { RETENTION_DAYS } from '@/lib/traffic-log-cleanup';
+
+/**
+ * Hard cap on the number of time-bucket rows a single query may return.
+ * Prevents unbounded memory growth when the retention window is large or
+ * the chosen period (hourly) produces many buckets.
+ */
+const QUERY_RESULT_LIMIT = 10000;
 
 const trafficStatsSchema = z.object({
   userId: z.coerce.number().int().min(1).optional(),
@@ -23,6 +31,41 @@ const TRUNC_EXPRS: Record<Period, string> = {
   monthly: "strftime('%Y-%m', timestamp)",
 };
 
+/**
+ * Clamp the requested date range to the retention window.
+ * Returns { clampedFrom, clampedTo } or an error response if the
+ * requested range exceeds the maximum allowed span.
+ */
+function clampDateRange(
+  startDate: Date | undefined,
+  endDate: Date | undefined,
+): { clampedFrom: Date; clampedTo: Date } | NextResponse {
+  const now = new Date();
+  const maxFrom = new Date(now);
+  maxFrom.setDate(maxFrom.getDate() - RETENTION_DAYS);
+
+  // If caller passed dates, validate the range before clamping.
+  if (startDate && endDate) {
+    const rangeMs = endDate.getTime() - startDate.getTime();
+    const maxRangeMs = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    if (rangeMs > maxRangeMs) {
+      return error(
+        `Requested date range exceeds the ${RETENTION_DAYS}-day maximum`,
+        422,
+      );
+    }
+  }
+
+  const clampedFrom = startDate
+    ? new Date(Math.max(startDate.getTime(), maxFrom.getTime()))
+    : maxFrom;
+  const clampedTo = endDate
+    ? new Date(Math.min(endDate.getTime(), now.getTime()))
+    : now;
+
+  return { clampedFrom, clampedTo };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -33,7 +76,19 @@ export async function GET(request: NextRequest) {
       return error('Invalid query parameters', 422);
     }
 
-    const { userId, period, startDate, endDate } = parsed.data;
+    const {
+      userId,
+      period,
+      startDate: startDateStr,
+      endDate: endDateStr,
+    } = parsed.data;
+
+    // Parse and clamp the date range to the retention window.
+    const start = startDateStr ? new Date(startDateStr) : undefined;
+    const end = endDateStr ? new Date(endDateStr) : undefined;
+    const clamped = clampDateRange(start, end);
+    if (clamped instanceof NextResponse) return clamped;
+    const { clampedFrom, clampedTo } = clamped;
 
     // Build parameterized query using Prisma tagged template.
     // truncExpr comes from a fixed map (not user input), so Prisma.raw is safe.
@@ -44,23 +99,10 @@ export async function GET(request: NextRequest) {
     if (userId) {
       conditions.push(Prisma.sql`userId = ${userId}`);
     }
-    if (startDate) {
-      const sd = new Date(startDate);
-      if (!isNaN(sd.getTime())) {
-        conditions.push(Prisma.sql`timestamp >= ${sd.toISOString()}`);
-      }
-    }
-    if (endDate) {
-      const ed = new Date(endDate);
-      if (!isNaN(ed.getTime())) {
-        conditions.push(Prisma.sql`timestamp <= ${ed.toISOString()}`);
-      }
-    }
+    conditions.push(Prisma.sql`timestamp >= ${clampedFrom.toISOString()}`);
+    conditions.push(Prisma.sql`timestamp <= ${clampedTo.toISOString()}`);
 
-    const whereClause =
-      conditions.length > 0
-        ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
-        : Prisma.empty;
+    const whereClause = Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
 
     const bucketsRaw: Array<{
       bucket: string;
@@ -68,7 +110,11 @@ export async function GET(request: NextRequest) {
       bytesOut: bigint;
       userCount: bigint;
     }> = await prisma.$queryRaw`
-      SELECT ${Prisma.raw(truncExpr)} as bucket, SUM(bytesIn) as "bytesIn", SUM(bytesOut) as "bytesOut", COUNT(DISTINCT userId) as "userCount" FROM traffic_logs ${whereClause} GROUP BY bucket ORDER BY bucket ASC
+      SELECT ${Prisma.raw(truncExpr)} as bucket, SUM(bytesIn) as "bytesIn", SUM(bytesOut) as "bytesOut", COUNT(DISTINCT userId) as "userCount"
+      FROM traffic_logs ${whereClause}
+      GROUP BY bucket
+      ORDER BY bucket ASC
+      LIMIT ${QUERY_RESULT_LIMIT}
     `;
 
     const buckets = bucketsRaw.map((row) => ({
@@ -81,11 +127,15 @@ export async function GET(request: NextRequest) {
     const totalIn = buckets.reduce((sum, b) => sum + b.bytesIn, 0);
     const totalOut = buckets.reduce((sum, b) => sum + b.bytesOut, 0);
 
-    return success({
-      buckets,
-      totalIn,
-      totalOut,
-    });
+    const truncated = bucketsRaw.length >= QUERY_RESULT_LIMIT;
+
+    return NextResponse.json(
+      { success: true, data: { buckets, totalIn, totalOut } },
+      {
+        status: 200,
+        headers: truncated ? { 'X-Result-Truncated': 'true' } : {},
+      },
+    );
   } catch (err) {
     console.error('[api/stats/traffic] Error:', err);
     return error('Failed to fetch traffic statistics');

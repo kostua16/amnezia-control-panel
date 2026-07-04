@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { GET } from '../stats/traffic/route';
+import { RETENTION_DAYS } from '@/lib/traffic-log-cleanup';
 
 type TrafficRow = {
   bucket: string;
@@ -25,21 +26,23 @@ function makeRequest(params: Record<string, string>) {
   return new NextRequest(url);
 }
 
+const SAMPLE_ROWS: TrafficRow[] = [
+  {
+    bucket: '2025-01-15',
+    bytesIn: BigInt(1024),
+    bytesOut: BigInt(2048),
+    userCount: BigInt(3),
+  },
+  {
+    bucket: '2025-01-16',
+    bytesIn: BigInt(512),
+    bytesOut: BigInt(1024),
+    userCount: BigInt(2),
+  },
+];
+
 beforeEach(() => {
-  stubTrafficQuery([
-    {
-      bucket: '2025-01-15',
-      bytesIn: BigInt(1024),
-      bytesOut: BigInt(2048),
-      userCount: BigInt(3),
-    },
-    {
-      bucket: '2025-01-16',
-      bytesIn: BigInt(512),
-      bytesOut: BigInt(1024),
-      userCount: BigInt(2),
-    },
-  ]);
+  stubTrafficQuery(SAMPLE_ROWS);
 });
 
 afterEach(() => {
@@ -71,7 +74,6 @@ describe('GET /api/stats/traffic', () => {
   });
 
   it('defaults period to daily', async () => {
-    // No period param — should default to 'daily' and succeed
     const res = await GET(makeRequest({}));
     assert.strictEqual(res.status, 200);
   });
@@ -102,5 +104,69 @@ describe('GET /api/stats/traffic', () => {
     prisma.$queryRaw = (() => Promise.reject(new Error('db down'))) as never;
     const res = await GET(makeRequest({}));
     assert.strictEqual(res.status, 500);
+  });
+});
+
+describe('GET /api/stats/traffic — date range safety', () => {
+  it('returns 422 when requested range exceeds retention limit', async () => {
+    const now = new Date();
+    const from = new Date(now);
+    from.setDate(from.getDate() - RETENTION_DAYS - 30);
+    const to = new Date(now);
+
+    const res = await GET(
+      makeRequest({
+        startDate: from.toISOString().split('T')[0],
+        endDate: to.toISOString().split('T')[0],
+      }),
+    );
+
+    assert.strictEqual(res.status, 422);
+    const body = await res.json();
+    assert.ok(
+      body.error.includes(`${RETENTION_DAYS}-day`),
+      `error should mention ${RETENTION_DAYS}-day limit`,
+    );
+  });
+
+  it('returns 200 when range is within the retention window', async () => {
+    const now = new Date();
+    const from = new Date(now);
+    from.setDate(from.getDate() - 30);
+    const to = new Date(now);
+
+    const res = await GET(
+      makeRequest({
+        startDate: from.toISOString().split('T')[0],
+        endDate: to.toISOString().split('T')[0],
+      }),
+    );
+
+    assert.strictEqual(res.status, 200);
+  });
+
+  it('returns 200 when no dates provided (defaults to retention window)', async () => {
+    const res = await GET(makeRequest({}));
+    assert.strictEqual(res.status, 200);
+  });
+
+  it('omits X-Result-Truncated header when results are under limit', async () => {
+    const res = await GET(makeRequest({}));
+    assert.strictEqual(res.headers.get('X-Result-Truncated'), null);
+  });
+
+  it('sets X-Result-Truncated header when results hit the limit', async () => {
+    // Stub 10000 rows to simulate a truncated result set
+    const manyRows: TrafficRow[] = Array.from({ length: 10000 }, (_, i) => ({
+      bucket: `2025-01-${String(i + 1).padStart(2, '0')}`,
+      bytesIn: BigInt(100),
+      bytesOut: BigInt(200),
+      userCount: BigInt(1),
+    }));
+    stubTrafficQuery(manyRows);
+
+    const res = await GET(makeRequest({}));
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.headers.get('X-Result-Truncated'), 'true');
   });
 });
