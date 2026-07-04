@@ -64,20 +64,21 @@ jobs:
         if: ${{ matrix.askpass }}
         run: |
           askpass_path="${RUNNER_TEMP}/askpass-s${{ matrix.scenario }}.sh"
-          cat > "$askpass_path" <<'ASKEOF'
+          # Token is embedded directly into the 0700 askpass script rather than
+          # exported via $GITHUB_ENV, so it does not persist in the runner env
+          # for the rest of the job.
+          cat > "$askpass_path" <<ASKEOF
           #!/usr/bin/env bash
-          case "${1:-}" in
+          case "\${1:-}" in
             *Username*) printf '%s\n' x-access-token ;;
-            *Password*) printf '%s\n' "${GITHUB_GIT_PASSWORD:-}" ;;
-            *) printf '%s\n' "${GITHUB_GIT_PASSWORD:-}" ;;
+            *Password*) printf '%s\n' '${{ secrets.GH_PAT }}' ;;
+            *) printf '%s\n' '${{ secrets.GH_PAT }}' ;;
           esac
           ASKEOF
           chmod 0700 "$askpass_path"
           {
             echo "GIT_ASKPASS=$askpass_path"
             echo "GIT_TERMINAL_PROMPT=0"
-            echo "GITHUB_GIT_USERNAME=x-access-token"
-            echo "GITHUB_GIT_PASSWORD=${{ secrets.GH_PAT }}"
           } >> "$GITHUB_ENV"
 
       - name: Log sanitized auth state
@@ -111,7 +112,12 @@ jobs:
           else
             PUSH_CMD=(git push origin "HEAD:$BRANCH")
           fi
-          if "${PUSH_CMD[@]}" 2>&1 | tee "$LOG"; then
+          # Capture the push exit code instead of swallowing it in an if/else
+          # so a failed push turns this step red. pipefail (GHA default shell)
+          # propagates git's failure through tee.
+          push_status=0
+          "${PUSH_CMD[@]}" 2>&1 | tee "$LOG" || push_status=$?
+          if [ "$push_status" -eq 0 ]; then
             echo "result=success" >> "$GITHUB_OUTPUT"
           else
             echo "result=failed" >> "$GITHUB_OUTPUT"
@@ -119,6 +125,7 @@ jobs:
           echo "::group::S${{ matrix.scenario }} Push log (sanitized)"
           sed -E 's/[a-f0-9]{40}/[SHA]/g; s/(x-access-token:)[^ ]+/\1[REDACTED]/g' "$LOG"
           echo "::endgroup::"
+          exit "$push_status"
 
       - uses: actions/upload-artifact@ea16557c6436588529ecdaf27e31fcd76543c077
         if: always()
