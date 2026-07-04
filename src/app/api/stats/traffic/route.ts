@@ -86,6 +86,11 @@ export async function GET(request: NextRequest) {
     // Parse and clamp the date range to the retention window.
     const start = startDateStr ? new Date(startDateStr) : undefined;
     const end = endDateStr ? new Date(endDateStr) : undefined;
+    // Reject invalid date strings with 422 rather than letting toISOString()
+    // throw and surface as a 500.
+    if ((start && isNaN(start.getTime())) || (end && isNaN(end.getTime()))) {
+      return error('Invalid date format', 422);
+    }
     const clamped = clampDateRange(start, end);
     if (clamped instanceof NextResponse) return clamped;
     const { clampedFrom, clampedTo } = clamped;

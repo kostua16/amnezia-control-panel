@@ -145,6 +145,13 @@ describe('GET /api/stats/traffic — date range safety', () => {
     assert.strictEqual(res.status, 200);
   });
 
+  it('rejects invalid date strings with 422', async () => {
+    const res = await GET(
+      makeRequest({ startDate: 'not-a-date', endDate: 'also-bad' }),
+    );
+    assert.strictEqual(res.status, 422);
+  });
+
   it('returns 200 when no dates provided (defaults to retention window)', async () => {
     const res = await GET(makeRequest({}));
     assert.strictEqual(res.status, 200);
