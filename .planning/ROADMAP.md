@@ -698,6 +698,16 @@ Source: `/gsd:explore` ninth-pass review (non-duplicative vs proposals #1-#24 an
 | 26 | **Broken CIDR matching in `enforceXrayRules`** — `destIp.startsWith(rule.value.split('/')[0'))` is string prefix, not subnet matching. `192.168.1.0/24` falsely matches `192.168.10.0`; `10.0.0.0/8` misses `10.1.2.3`. Replace with proper `ipaddr.js` CIDR subnet check | High (Correctness) | `src/lib/rule-enforcement.ts:31` | Proposed |
 | 27 | **Geo-routing rule DB cache** — `evaluateGeoRulesFromDB()` does full `findMany` per resolution. With 100+ imported rules, every geo-route lookup re-scans the active rule set. Add 60s TTL in-memory cache, invalidate on rule CRUD | Medium (Perf) | `src/lib/geo-routing.ts:104` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 10 (2026-07-04)
+
+Source: `/gsd:explore` tenth-pass review (non-duplicative vs proposals #1-#27 and open PRs). Artifact: `.planning/quick/260704-arch-review-pass10/proposal.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 28 | **Remove dead PanelConnectionHistory model** — Zero `create()` calls; two read queries wrapped in "table may not exist" catch blocks; health checker uses in-memory snapshot instead. Remove model, relation, indexes, and dead reads | Low (Cleanup) | `prisma/schema.prisma`, `src/lib/panel-health-checker.ts`, `src/app/api/panels/[id]/status/route.ts` | Proposed |
+| 29 | **Config import payload size guard** — Unbounded JSON arrays accepted via multipart/raw body; no max entries cap; 10k-entry import → 20k sequential DB queries. Add `MAX_IMPORT_ENTRIES` (500) + 5 MB file size limit | Medium (Ops/Security) | `src/app/api/configs/import/route.ts`, `src/lib/config-import.ts` | Proposed |
+| 30 | **Unique constraint on Configuration.name** — Import dedup uses `findFirst` by name but schema lacks `@unique`; duplicate names make import idempotency unreliable. Add unique index + switch to `findUnique` | Low-Medium (Correctness) | `prisma/schema.prisma`, `src/lib/config-import.ts` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-03 - Added architectural review pass 9 (proposals #25-#27: alert table unbounded growth, broken CIDR matching, geo-routing rule DB cache)*
+*Last updated: 2026-07-04 - Added architectural review pass 10 (proposals #28-#30: dead PanelConnectionHistory model, config import size guard, Configuration.name unique constraint)*
