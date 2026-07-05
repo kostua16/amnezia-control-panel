@@ -45,8 +45,28 @@ export async function POST(request: NextRequest) {
         );
       }
     } else {
-      // Handle raw JSON body
-      data = await request.json();
+      // Handle raw JSON body — bound the payload size before parsing to avoid
+      // OOM on oversized POSTs (mirrors the multipart file-size guard above).
+      const bytes = await request.arrayBuffer();
+      if (bytes.byteLength > MAX_IMPORT_FILE_SIZE_BYTES) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Payload too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is ${MAX_IMPORT_FILE_SIZE_BYTES / 1024 / 1024} MB.`,
+          },
+          { status: 413 },
+        );
+      }
+
+      const text = new TextDecoder().decode(bytes);
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return NextResponse.json(
+          { success: false, error: 'Invalid JSON body' },
+          { status: 422 },
+        );
+      }
     }
 
     const report = await importConfigs(data);

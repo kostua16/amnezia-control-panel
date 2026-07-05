@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Clock, Zap, Hash } from 'lucide-react';
+import { X } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface PanelDetailsDrawerProps {
@@ -12,21 +12,6 @@ interface PanelDetailsDrawerProps {
 interface StatusData {
   panelId: number;
   status: string;
-  lastRecord: {
-    success: boolean;
-    latencyMs: number | null;
-    message: string;
-    version: string | null;
-    checkedAt: string;
-  } | null;
-  history: Array<{
-    id: number;
-    success: boolean;
-    latencyMs: number | null;
-    message: string;
-    version: string | null;
-    checkedAt: string;
-  }>;
 }
 
 export function PanelDetailsDrawer({
@@ -114,74 +99,6 @@ export function PanelDetailsDrawer({
                 </span>
               </div>
             </div>
-
-            {/* Details */}
-            {data.lastRecord && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-foreground">
-                  Last Check
-                </h3>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span>
-                    {new Date(data.lastRecord.checkedAt).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Zap className="h-4 w-4" />
-                  <span>
-                    Latency:{' '}
-                    {data.lastRecord.latencyMs !== null
-                      ? `${data.lastRecord.latencyMs}ms`
-                      : 'N/A'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Hash className="h-4 w-4" />
-                  <span>Version: {data.lastRecord.version ?? 'Unknown'}</span>
-                </div>
-              </div>
-            )}
-
-            {/* History */}
-            {data.history.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-foreground">
-                  Recent History
-                </h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {data.history.map((record) => (
-                    <div
-                      key={record.id}
-                      className="flex items-center justify-between text-sm py-1.5 border-b border-border last:border-0"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={clsx(
-                            'h-2 w-2 rounded-full',
-                            record.success ? 'bg-green-500' : 'bg-red-500',
-                          )}
-                        />
-                        <span className="text-muted-foreground">
-                          {new Date(record.checkedAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <span className="text-muted-foreground">
-                        {record.latencyMs !== null
-                          ? `${record.latencyMs}ms`
-                          : 'Failed'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {!data.lastRecord && (
-              <p className="text-sm text-muted-foreground">
-                No connection history yet.
-              </p>
-            )}
           </>
         ) : (
           <p className="text-sm text-destructive">
