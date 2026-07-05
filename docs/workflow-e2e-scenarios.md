@@ -392,7 +392,7 @@ flowchart TD
   V2 -->|yes| M
   M -->|no| NO[complete pushed=false: reported]
   M -->|yes| FRC{force mode?}
-  FRC -->|yes| FW[skip gate, force-with-lease push, force indicator in comment]
+  FRC -->|yes| FW[skip gate, force-with-lease push, disable automerge, wake pr-flow to §1, force indicator in comment]
   FRC -->|no| V{post gate green or no worse than baseline?}
   V -->|no| VF[validation-failed: reported]
   V -->|yes| P{dry-run?}
