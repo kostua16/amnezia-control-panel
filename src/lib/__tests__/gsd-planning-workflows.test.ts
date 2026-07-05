@@ -170,10 +170,15 @@ describe('GSD planning workflow automation', () => {
   it('validates and repairs GSD executions before pushing a PR branch', () => {
     const workflow = readRepoFile('.github/workflows/gsd-planning-execute.yml');
     const validateIndex = workflow.indexOf('name: Validate execution output');
-    const commitIndex = workflow.indexOf('./.github/actions/commit-and-push');
+    const executionCommitIndex = workflow.indexOf(
+      "commit-message: 'feat(gsd): execute planning intake'",
+    );
 
     assert.ok(validateIndex > 0, 'validation step must exist');
-    assert.ok(commitIndex > validateIndex, 'validation must run before commit');
+    assert.ok(
+      executionCommitIndex > validateIndex,
+      'validation must run before execution commit',
+    );
     assert.match(
       workflow,
       /uses: \.\/\.github\/actions\/run-npm-test-validation/,
@@ -206,6 +211,44 @@ describe('GSD planning workflow automation', () => {
       workflow,
       /changed-files: \$\{\{ steps\.final-zai\.outputs\.changed_files \}\}/,
     );
+  });
+
+  it('persists no-op planning execution state through a reviewable PR', () => {
+    const workflow = readRepoFile('.github/workflows/gsd-planning-execute.yml');
+    const detectIndex = workflow.indexOf('id: code-changes');
+    const noOpPushIndex = workflow.indexOf('id: push-plan-state');
+    const noOpPrIndex = workflow.indexOf('name: Create no-op persistence PR');
+
+    assert.ok(detectIndex > 0, 'code change detection must exist');
+    assert.ok(
+      noOpPushIndex > detectIndex,
+      'no-op planning state push must run after change detection',
+    );
+    assert.ok(
+      noOpPrIndex > noOpPushIndex,
+      'no-op persistence PR must be created after push',
+    );
+    assert.match(
+      workflow,
+      /git diff --name-only HEAD -- \. ':\(exclude\)\.planning\/'/,
+    );
+    assert.match(
+      workflow,
+      /git ls-files --others --exclude-standard -- \. ':\(exclude\)\.planning\/'/,
+    );
+    assert.match(
+      workflow,
+      /only planning artifacts differ; persisting planning state through a PR if changes exist/,
+    );
+    assert.match(
+      workflow,
+      /if: steps\.code-changes\.outputs\.has_code_changes == 'false'[\s\S]*branch-name: \$\{\{ steps\.branch\.outputs\.branch_name \}\}/,
+    );
+    assert.match(
+      workflow,
+      /title: 'chore\(planning\): track execution queue plan - \$\{\{ steps\.intake\.outputs\.source_title \}\}'/,
+    );
+    assert.doesNotMatch(workflow, /git push origin main/);
   });
 
   it('creates follow-up issues for deferred GSD planning proposals', () => {

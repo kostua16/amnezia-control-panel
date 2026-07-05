@@ -321,13 +321,14 @@ Decision basis: `evaluate-trigger-policy.cjs --mode fix-issue` (`maintainerTrigg
 
 Decision basis: `evaluate-pr-policy.cjs` `gsdExecution` (`safeAllowedPathGlobs`, `manualOnlyPathGlobs`), `policy.json trustedPlanning` (`.planning/**`, `requiredPassLabels`). Lane classification for execute-PRs is shared with §4 P7/P8.
 
-| ID  | Trigger / precondition                           | Resolution → terminal                                                        | Type          |
-| --- | ------------------------------------------------ | ---------------------------------------------------------------------------- | ------------- |
-| G1  | maintainer `/plan` / dispatch on issue           | plan → `claude-planning-pr-` PR (`.planning/**`) → trusted → §1 → **merged** | char          |
-| G2  | planning PR touches paths outside `.planning/**` | manual-only paths → manual                                                   | char          |
-| G3  | `gsd-planning-execute` cron (6h)                 | execute run → execute PR created (lane classified per P7/P8) → §1            | char          |
-| G4  | execute validation fails                         | `continue-on-error` loops → report-failure or commit _(lock during run)_     | char [verify] |
-| G5  | `/planning-rename-milestones`                    | `planning-intake-repair` → commit/PR                                         | char          |
+| ID  | Trigger / precondition                                                                                     | Resolution → terminal                                                                                                   | Type          |
+| --- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------- |
+| G1  | maintainer `/plan` / dispatch on issue                                                                     | plan → `claude-planning-pr-` PR (`.planning/**`) → trusted → §1 → **merged**                                            | char          |
+| G2  | planning PR touches paths outside `.planning/**`                                                           | manual-only paths → manual                                                                                              | char          |
+| G3a | `gsd-planning-execute` cron (6h), implementation changes detected                                          | execute run → execution PR created (lane classified per P7/P8) → §1                                                     | char          |
+| G3b | `gsd-planning-execute` cron (6h), no implementation changes detected but planning/state persistence exists | no-op persistence PR created (`chore(planning): track execution queue plan`, `gsd-plan-execution`, `skip-improve`) → §1 | char          |
+| G4  | execute validation fails                                                                                   | `continue-on-error` loops → report-failure or commit _(lock during run)_                                                | char [verify] |
+| G5  | `/planning-rename-milestones`                                                                              | `planning-intake-repair` → commit/PR                                                                                    | char          |
 
 ## §6c Release → release-notes — `release-notes.yml`
 

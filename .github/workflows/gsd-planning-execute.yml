@@ -196,9 +196,63 @@ jobs:
             npx prettier --write "${changed[@]}"
           fi
 
+      - name: Detect meaningful code changes
+        id: code-changes
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        run: |
+          set -euo pipefail
+          tracked_non_planning=$(git diff --name-only HEAD -- . ':(exclude).planning/')
+          untracked_non_planning=$(git ls-files --others --exclude-standard -- . ':(exclude).planning/')
+          non_planning=$(printf '%s\n%s\n' "$tracked_non_planning" "$untracked_non_planning" | sed '/^$/d')
+          if [ -z "$non_planning" ]; then
+            echo "has_code_changes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No implementation changes detected — only planning artifacts differ; persisting planning state through a PR if changes exist."
+          else
+            echo "has_code_changes=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Implementation changes in $(echo "$non_planning" | wc -l) file(s)."
+          fi
+
+      - uses: ./.github/actions/commit-and-push
+        id: push-plan-state
+        if: steps.code-changes.outputs.has_code_changes == 'false'
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'chore(planning): track execution queue plan'
+
+      - name: Build no-op persistence PR body
+        id: no-op-pr-body
+        if: steps.push-plan-state.outputs.pushed == 'true'
+        uses: ./.github/actions/build-automation-pr-body
+        with:
+          workflow-name: gsd-planning-execute
+          problem: 'GSD planning executor imported a merged planning artifact, but execution produced only planning-state changes.'
+          source-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          base-ref: main
+          changed-files: ${{ steps.intake.outputs.plan_path }}
+          changes: 'Persist the imported planning artifact state through a reviewable PR so it is not selected again.'
+          review-notes: |
+            No implementation changes were detected outside `.planning/`.
+            Source artifact: `${{ steps.intake.outputs.source_path }}`
+            Imported plan: `${{ steps.intake.outputs.plan_path }}`
+            <!-- gsd-planning-source-sha256: ${{ steps.intake.outputs.source_hash }} -->
+
+      - name: Create no-op persistence PR
+        if: steps.push-plan-state.outputs.pushed == 'true'
+        uses: ./.github/actions/upsert-pull-request
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'chore(planning): track execution queue plan - ${{ steps.intake.outputs.source_title }}'
+          body: ${{ steps.no-op-pr-body.outputs.body }}
+          labels: auto-fix,gsd-plan-execution,skip-improve
+          draft: 'false'
+          require-rich-body: 'true'
+
       - name: Validate execution output
         id: validate1
-        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true' && steps.code-changes.outputs.has_code_changes == 'true'
         continue-on-error: true
         uses: ./.github/actions/run-npm-test-validation
         with:
@@ -267,7 +321,7 @@ jobs:
           attempt: '3'
 
       - name: Fail on unfinished validation
-        if: always() && steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true' && steps.validate1.outcome != 'success' && steps.validate2.outcome != 'success' && steps.validate3.outcome != 'success'
+        if: always() && steps.code-changes.outputs.has_code_changes == 'true' && steps.validate1.outcome != 'success' && steps.validate2.outcome != 'success' && steps.validate3.outcome != 'success'
         run: |
           echo "::error::GSD planning execution did not reach a passing npm test after two repair passes."
           exit 1
@@ -365,7 +419,7 @@ jobs:
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        if: steps.code-changes.outputs.has_code_changes == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'feat(gsd): execute planning intake'
