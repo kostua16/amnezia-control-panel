@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { POST } from '../auth/login/route';
 import { postRequest, readJson } from '@/lib/__tests__/helpers/test-server';
+import { resetLoginRateLimiter } from '@/lib/login-rate-limit';
 
 // The login handler reads JWT_SECRET at call time; provide one for tests.
 process.env.JWT_SECRET = 'test-jwt-secret-for-route-tests';
@@ -121,5 +122,217 @@ describe('POST /api/auth/login', () => {
       setCookie.toLowerCase().includes('httponly'),
       'session cookie is HttpOnly',
     );
+  });
+});
+
+describe('POST /api/auth/login rate limiting', () => {
+  const RATE_LIMIT_IP = '192.168.1.100';
+  const OTHER_IP = '192.168.1.200';
+
+  beforeEach(() => {
+    resetLoginRateLimiter();
+    stubAdminLookup((u) =>
+      u === 'admin' ? { id: 0, username: 'admin', password: 'x' } : null,
+    );
+  });
+
+  it('returns 429 after 5 failed login attempts from same IP', async () => {
+    const headers = { 'x-forwarded-for': RATE_LIMIT_IP };
+
+    for (let i = 0; i < 5; i++) {
+      const { status } = await readJson<LoginErrorBody>(
+        await POST(
+          postRequest(
+            LOGIN_PATH,
+            { username: 'user', password: 'wrong' },
+            headers,
+          ),
+        ),
+      );
+      assert.strictEqual(status, 401);
+    }
+
+    const { status, body } = await readJson<LoginErrorBody>(
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          headers,
+        ),
+      ),
+    );
+    assert.strictEqual(status, 429);
+    assert.ok(body.error.includes('Too many'));
+  });
+
+  it('includes Retry-After header in 429 response', async () => {
+    const headers = { 'x-forwarded-for': RATE_LIMIT_IP };
+
+    for (let i = 0; i < 5; i++) {
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          headers,
+        ),
+      );
+    }
+
+    const res = await POST(
+      postRequest(LOGIN_PATH, { username: 'user', password: 'wrong' }, headers),
+    );
+    assert.strictEqual(res.status, 429);
+    const retryAfter = res.headers.get('retry-after');
+    assert.ok(retryAfter, 'Retry-After header present');
+    assert.ok(Number(retryAfter) > 0, 'Retry-After is positive seconds');
+  });
+
+  it('allows login from different IP after rate limit', async () => {
+    const headersA = { 'x-forwarded-for': RATE_LIMIT_IP };
+    const headersB = { 'x-forwarded-for': OTHER_IP };
+
+    for (let i = 0; i < 5; i++) {
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          headersA,
+        ),
+      );
+    }
+
+    const blocked = await readJson<LoginErrorBody>(
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          headersA,
+        ),
+      ),
+    );
+    assert.strictEqual(blocked.status, 429);
+
+    const allowed = await readJson<LoginErrorBody>(
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          headersB,
+        ),
+      ),
+    );
+    assert.strictEqual(allowed.status, 401);
+  });
+
+  it('resets rate limit counter on successful login', async () => {
+    const headers = { 'x-forwarded-for': RATE_LIMIT_IP };
+    const password = 'valid-password';
+    const hash = await bcrypt.hash(password, 4);
+
+    prisma.admin.findUnique = ((args: { where: { username: string } }) =>
+      Promise.resolve(
+        args.where.username === 'realadmin'
+          ? { id: 7, username: 'realadmin', password: hash }
+          : args.where.username === 'admin'
+            ? { id: 0, username: 'admin', password: 'x' }
+            : null,
+      )) as never;
+
+    for (let i = 0; i < 3; i++) {
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'ghost', password: 'wrong' },
+          headers,
+        ),
+      );
+    }
+
+    const successRes = await POST(
+      postRequest(LOGIN_PATH, { username: 'realadmin', password }, headers),
+    );
+    assert.strictEqual(successRes.status, 200);
+
+    for (let i = 0; i < 5; i++) {
+      const { status } = await readJson<LoginErrorBody>(
+        await POST(
+          postRequest(
+            LOGIN_PATH,
+            { username: 'ghost', password: 'wrong' },
+            headers,
+          ),
+        ),
+      );
+      assert.strictEqual(
+        status,
+        401,
+        `attempt ${i + 1} should not be rate limited`,
+      );
+    }
+  });
+
+  it('blocks spoofed-IP floods via the global backstop', async () => {
+    // Each request sends a unique spoofed `x-forwarded-for`, so every request
+    // gets a fresh per-IP bucket (one attempt, well under the per-IP limit).
+    // Without the global backstop this would never trip the limiter and every
+    // request would proceed to bcrypt, exhausting CPU. The global cap must
+    // throttle the flood regardless of the spoofed source IP.
+    const GLOBAL_CAP = 50;
+
+    for (let i = 0; i < GLOBAL_CAP; i++) {
+      const { status } = await readJson<LoginErrorBody>(
+        await POST(
+          postRequest(
+            LOGIN_PATH,
+            { username: 'user', password: 'wrong' },
+            { 'x-forwarded-for': `10.0.0.${i}` },
+          ),
+        ),
+      );
+      assert.strictEqual(status, 401, `spoofed attempt ${i + 1} allowed`);
+    }
+
+    const { status, body } = await readJson<LoginErrorBody>(
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          { 'x-forwarded-for': '10.0.0.250' },
+        ),
+      ),
+    );
+    assert.strictEqual(status, 429);
+    assert.ok(body.error.includes('Too many'));
+  });
+
+  it('does not let one blocked IP exhaust the global cap (no lockout DoS)', async () => {
+    // A single attacker IP hits its per-IP limit after MAX_ATTEMPTS and is then
+    // blocked on every subsequent request. Those blocked requests never reach
+    // bcrypt, so they must not consume global slots — otherwise one IP sending
+    // enough requests burns the whole global cap and locks out every other
+    // client (including the admin) for the window.
+    const attackerHeaders = { 'x-forwarded-for': RATE_LIMIT_IP };
+    for (let i = 0; i < 50; i++) {
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          attackerHeaders,
+        ),
+      );
+    }
+
+    // A different IP must still be allowed to proceed (401 = bad credentials,
+    // i.e. it reached bcrypt) rather than globally locked out (429).
+    const { status } = await readJson<LoginErrorBody>(
+      await POST(
+        postRequest(
+          LOGIN_PATH,
+          { username: 'user', password: 'wrong' },
+          { 'x-forwarded-for': OTHER_IP },
+        ),
+      ),
+    );
+    assert.strictEqual(status, 401);
   });
 });
