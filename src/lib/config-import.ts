@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import type { ConfigImportReport } from '@/types/config';
 
+/** Maximum number of entries allowed in a single import payload. */
+const MAX_IMPORT_ENTRIES = 500;
+
 // ─── Import Functions ────────────────────────────────────
 
 export async function importConfigs(
@@ -51,6 +54,13 @@ async function importConfigurationList(
   configs: unknown[],
   report: ConfigImportReport,
 ): Promise<void> {
+  if (configs.length > MAX_IMPORT_ENTRIES) {
+    report.errors.push(
+      `Configuration list exceeds maximum of ${MAX_IMPORT_ENTRIES} entries (${configs.length} provided)`,
+    );
+    return;
+  }
+
   for (const item of configs) {
     if (!item || typeof item !== 'object') {
       report.errors.push('Invalid configuration entry: expected an object');
@@ -79,7 +89,7 @@ async function importConfigurationList(
       const isActive = config.isActive !== false;
 
       // Check for existing configuration with same name
-      const existing = await prisma.configuration.findFirst({
+      const existing = await prisma.configuration.findUnique({
         where: { name },
       });
 
@@ -128,6 +138,13 @@ async function importTemplateList(
   templates: unknown[],
   report: ConfigImportReport,
 ): Promise<void> {
+  if (templates.length > MAX_IMPORT_ENTRIES) {
+    report.errors.push(
+      `Template list exceeds maximum of ${MAX_IMPORT_ENTRIES} entries (${templates.length} provided)`,
+    );
+    return;
+  }
+
   for (const item of templates) {
     if (!item || typeof item !== 'object') {
       report.errors.push('Invalid template entry: expected an object');

@@ -7,10 +7,6 @@ export interface RemotePanel {
   updatedAt: Date;
 }
 
-export interface RemotePanelWithHistory extends RemotePanel {
-  connectionHistory: PanelConnectionRecord[];
-}
-
 export interface RemotePanelCreate {
   name: string;
   panelUrl: string;
@@ -22,15 +18,6 @@ export interface RemotePanelUpdate {
   panelUrl?: string;
   apiKey?: string;
   isActive?: boolean;
-}
-
-export interface PanelConnectionRecord {
-  id: number;
-  success: boolean;
-  latencyMs: number | null;
-  message: string;
-  version: string | null;
-  checkedAt: string;
 }
 
 export interface PanelTestResult {

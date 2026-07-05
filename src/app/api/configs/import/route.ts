@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { importConfigs } from '@/lib/config-import';
 
+/** Maximum upload file size in bytes (5 MB). */
+const MAX_IMPORT_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+
 export async function POST(request: NextRequest) {
   try {
     let data: unknown;
@@ -19,6 +22,16 @@ export async function POST(request: NextRequest) {
             error: 'No file provided. Send a JSON file as "file" field.',
           },
           { status: 422 },
+        );
+      }
+
+      if (file.size > MAX_IMPORT_FILE_SIZE_BYTES) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is ${MAX_IMPORT_FILE_SIZE_BYTES / 1024 / 1024} MB.`,
+          },
+          { status: 413 },
         );
       }
 
