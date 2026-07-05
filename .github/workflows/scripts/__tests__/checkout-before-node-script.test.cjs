@@ -56,17 +56,17 @@ function parseWorkflowJobs(content) {
       const sEnd = si + 1 < stepStartIndices.length ? stepStartIndices[si + 1] : endLine;
       const stepBlock = lines.slice(sStart, sEnd).join('\n');
       const usesMatch = stepBlock.match(/uses:\s*(\S+)/);
-      // run: can be "run: |" (multiline) or "run: <inline>"
+      // run: can be a block scalar ("run: |" or "run: >") spanning multiple
+      // lines, or an inline single-line command. Check block scalars FIRST —
+      // the inline regex below would otherwise capture "|" / ">" as the literal
+      // run content and silently skip the dominant multiline form.
       let runContent = null;
-      const runInline = stepBlock.match(/^        run:\s*(.+)$/m);
-      if (runInline) {
-        runContent = runInline[1];
-      } else if (/^        run:\s*\|/m.test(stepBlock)) {
-        // Multiline: collect lines indented 10+ spaces after "run: |"
+      if (/^        run:\s*[|>]/m.test(stepBlock)) {
+        // Multiline block scalar: collect lines indented 10+ spaces under the indicator
         const runLines = [];
         let inRun = false;
         for (const line of stepBlock.split('\n')) {
-          if (/^        run:\s*\|/.test(line)) { inRun = true; continue; }
+          if (/^        run:\s*[|>]/.test(line)) { inRun = true; continue; }
           if (inRun) {
             if (/^        \S/.test(line) && !/^          /.test(line)) break;
             if (line.trim() === '') { runLines.push(''); continue; }
@@ -74,6 +74,11 @@ function parseWorkflowJobs(content) {
           }
         }
         if (runLines.length) runContent = runLines.join('\n');
+      } else {
+        const runInline = stepBlock.match(/^        run:\s*(.+)$/m);
+        if (runInline) {
+          runContent = runInline[1];
+        }
       }
       steps.push({
         uses: usesMatch ? usesMatch[1] : null,
