@@ -22,7 +22,7 @@ Excluded topics already covered:
 |---|----------|----------|------|--------|
 | 31 | **Quota monitor N+1 → batch queries** | High (Perf) | `src/lib/quota-monitor.ts` | Proposed |
 | 32 | **Missing `Alert.type` index** | Medium (Perf) | `prisma/schema.prisma` | Proposed |
-| 33 | **No graceful shutdown handler** | Medium (Reliability) | `src/instrumentation.ts` (extend) | Proposed |
+| 33 | **Graceful shutdown gaps: prisma disconnect + WebSocket close** | Medium (Reliability) | `instrumentation.ts` (extend) | Proposed |
 
 ---
 
@@ -56,21 +56,19 @@ Additionally, the broadcaster's `broadcastAlert` → `createAlert` path and any 
 
 ---
 
-### Proposal #33: No graceful shutdown handler
+### Proposal #33: Graceful shutdown gaps — prisma disconnect + WebSocket close
 
-**Problem:** No `process.on('SIGTERM')` or `process.on('SIGINT')` handler exists. When the container/process receives a termination signal:
-- `real-time-broadcaster` intervals keep firing (no `stopBroadcaster()`)
-- `panel-health-checker` intervals keep firing (no `stopPanelHealthChecks()`)
-- `geoip-manager` has no cleanup hook
-- SQLite connection is not explicitly closed — WAL checkpoint may not complete before SIGKILL
+**Problem:** The repo-root `instrumentation.ts` **already** registers `SIGTERM`/`SIGINT` handlers (via `registerGracefulShutdown()`) and on shutdown already calls `cleanupPanelHealth()` (which internally calls `stopPanelHealthChecks()`), `stopBroadcaster()`, `cleanupConnections()` (server-connection), and `cleanupGeoIP()` (geoip-manager). The original "no handler exists" premise was wrong — verified against `instrumentation.ts:55-60`.
 
-In containerized deployments (Docker/K8s), the orchestrator sends SIGTERM, waits a grace period (typically 10s), then SIGKILL. Without cleanup, SQLite may leave the WAL file in an inconsistent state, losing the last few writes.
+The remaining gaps in that existing handler:
+- `prisma.$disconnect()` is never awaited — SQLite WAL checkpoint may not complete before SIGKILL in containerized deployments (Docker/K8s send SIGTERM, wait a grace period, then SIGKILL).
+- The WebSocket server (`globalThis.__socketIO`, see `src/lib/websocket.ts`) is never explicitly closed.
 
-**Fix:** Add a shutdown handler in `instrumentation.ts` (or a dedicated `src/lib/graceful-shutdown.ts`) that:
-1. Calls `stopBroadcaster()` and `stopPanelHealthChecks()`
-2. Closes the WebSocket server (`globalThis.__socketIO?.close()`)
-3. Awaits `prisma.$disconnect()` with a bounded timeout (3s)
-4. Registers via `process.on('SIGTERM', shutdown)` and `process.on('SIGINT', shutdown)`
+**Fix:** Extend the existing `registerGracefulShutdown` cleanup callback in `instrumentation.ts` (repo root — there is no `src/instrumentation.ts`) to additionally:
+1. Close the WebSocket server (`globalThis.__socketIO?.close()`).
+2. Await `prisma.$disconnect()` (with a bounded timeout, e.g. 3s) — using the Prisma client already imported elsewhere; import `@/lib/prisma` lazily inside the callback.
 
-**Files:** `src/instrumentation.ts` (or `src/lib/graceful-shutdown.ts` new), `server.mjs`
-**Benefit:** Clean shutdown prevents WAL corruption, stops all intervals/connections, and ensures SQLite checkpoint completes before process exit.
+No new handler or new file needed — this is an additive change to the existing handler.
+
+**Files:** `instrumentation.ts` (extend existing cleanup callback)
+**Benefit:** Ensures the SQLite WAL checkpoint completes and the WebSocket server closes cleanly before process exit, preventing potential last-write loss in containerized deployments.

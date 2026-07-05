@@ -716,8 +716,8 @@ Source: `/gsd:explore` eleventh-pass review (non-duplicative vs proposals #1-#30
 |---|----------|----------|------|--------|
 | 31 | **Quota monitor N+1 → batch queries** — Replace 200 sequential per-user queries per 5-min tick with 2 batch queries (grouped traffic aggregate + batch alert duplicate check) | High (Perf) | `src/lib/quota-monitor.ts` | Proposed |
 | 32 | **Missing `Alert.type` index** — `checkQuotaThreshold()` queries by `type` with no index; add `@@index([type])` to Alert model for index-scan duplicate detection | Medium (Perf) | `prisma/schema.prisma` | Proposed |
-| 33 | **No graceful shutdown handler** — No SIGTERM/SIGINT handler; broadcasters keep firing, SQLite WAL may not checkpoint before SIGKILL. Add shutdown hook in instrumentation.ts | Medium (Reliability) | `src/instrumentation.ts` (extend) | Proposed |
+| 33 | **Graceful shutdown gaps: prisma disconnect + WebSocket close** — Repo-root `instrumentation.ts` already registers SIGTERM/SIGINT handlers calling stopBroadcaster/cleanupPanelHealth/cleanupConnections/cleanupGeoIP; only `prisma.$disconnect()` and WebSocket `close()` are missing. Extend the existing handler | Medium (Reliability) | `instrumentation.ts` (extend) | Proposed |
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-05 - Added architectural review pass 11 (proposals #31-#33: quota monitor batch queries, Alert.type index, graceful shutdown handler)*
+*Last updated: 2026-07-05 - Added architectural review pass 11 (proposals #31-#33: quota monitor batch queries, Alert.type index, graceful shutdown disconnect/WS-close gaps)*
