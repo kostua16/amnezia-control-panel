@@ -368,6 +368,7 @@ function resolveFinishedBody({
   pushed,
   rebaseMovedHead,
   dryRun,
+  force,
   reviewFeedbackPresent,
 }) {
   const updatedAt = new Date().toISOString();
@@ -395,10 +396,14 @@ function resolveFinishedBody({
       reviewFeedbackPresent,
       rebaseMovedHead,
       gateComparison,
+      force,
       updatedAt,
     });
   }
-  if (!isTrue(gatePassed) && !isTrue(gateNoNewFailures)) {
+  // Force mode skips the post-rebase validation gate — the workflow
+  // never runs validate-pr-gate when force=true, so gate outcomes are
+  // absent/unreliable. Fall through to push/complete with force indicator.
+  if (!isTrue(force) && !isTrue(gatePassed) && !isTrue(gateNoNewFailures)) {
     return renderValidationFailed({
       headSha,
       runUrl,
@@ -426,6 +431,7 @@ function resolveFinishedBody({
       automergeDisabled,
       reviewFeedbackPresent,
       gateComparison,
+      force,
       updatedAt,
     });
   }
@@ -449,6 +455,7 @@ function resolveFinishedBody({
     automergeDisabled,
     reviewFeedbackPresent,
     gateComparison,
+    force,
     updatedAt,
   });
 }
