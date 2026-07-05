@@ -708,6 +708,16 @@ Source: `/gsd:explore` tenth-pass review (non-duplicative vs proposals #1-#27 an
 | 29 | **Config import payload size guard** — Unbounded JSON arrays accepted via multipart/raw body; no max entries cap; 10k-entry import → 20k sequential DB queries. Add `MAX_IMPORT_ENTRIES` (500) + 5 MB file size limit | Medium (Ops/Security) | `src/app/api/configs/import/route.ts`, `src/lib/config-import.ts` | Proposed |
 | 30 | **Unique constraint on Configuration.name** — Import dedup uses `findFirst` by name but schema lacks `@unique`; duplicate names make import idempotency unreliable. Add unique index + switch to `findUnique` | Low-Medium (Correctness) | `prisma/schema.prisma`, `src/lib/config-import.ts` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 11 (2026-07-05)
+
+Source: `/gsd:explore` eleventh-pass review (non-duplicative vs proposals #1-#30 and open PRs). Artifact: `.planning/quick/260705-arch-review-pass11/proposal.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 31 | **Quota monitor N+1 → batch queries** — Replace 200 sequential per-user queries per 5-min tick with 2 batch queries (grouped traffic aggregate + batch alert duplicate check) | High (Perf) | `src/lib/quota-monitor.ts` | Proposed |
+| 32 | **Missing `Alert.type` index** — `checkQuotaThreshold()` queries by `type` with no index; add `@@index([type])` to Alert model for index-scan duplicate detection | Medium (Perf) | `prisma/schema.prisma` | Proposed |
+| 33 | **No graceful shutdown handler** — No SIGTERM/SIGINT handler; broadcasters keep firing, SQLite WAL may not checkpoint before SIGKILL. Add shutdown hook in instrumentation.ts | Medium (Reliability) | `src/instrumentation.ts` (extend) | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-04 - Added architectural review pass 10 (proposals #28-#30: dead PanelConnectionHistory model, config import size guard, Configuration.name unique constraint)*
+*Last updated: 2026-07-05 - Added architectural review pass 11 (proposals #31-#33: quota monitor batch queries, Alert.type index, graceful shutdown handler)*
