@@ -2,7 +2,7 @@ name: Project Manager
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -23,12 +23,12 @@ on:
       pr_limit:
         description: 'Maximum PRs to inspect in PR queue mode'
         required: false
-        default: '10'
+        default: '15'
         type: string
       issue_limit:
         description: 'Maximum issues to inspect in issue queue mode'
         required: false
-        default: '10'
+        default: '15'
         type: string
       route_override:
         description: 'Optional route override'
@@ -83,8 +83,8 @@ jobs:
           ROUTE: ${{ github.event.inputs.route_override || 'auto' }}
           PR_THRESHOLD: ${{ github.event.inputs.pr_threshold || '5' }}
           ISSUE_THRESHOLD: ${{ github.event.inputs.issue_threshold || '5' }}
-          PR_LIMIT: ${{ github.event.inputs.pr_limit || '10' }}
-          ISSUE_LIMIT: ${{ github.event.inputs.issue_limit || '10' }}
+          PR_LIMIT: ${{ github.event.inputs.pr_limit || '15' }}
+          ISSUE_LIMIT: ${{ github.event.inputs.issue_limit || '15' }}
         run: |
           node .github/workflows/scripts/project-manager.cjs \
             --dry-run "$DRY_RUN" \
