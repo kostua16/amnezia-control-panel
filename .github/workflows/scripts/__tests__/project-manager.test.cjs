@@ -14,6 +14,7 @@ const {
   registryCoverage,
   safeIssueForFix,
   scheduleHealth,
+  selectPrInspectionCandidates,
   selectRoute,
 } = require('../project-manager.cjs');
 
@@ -126,6 +127,22 @@ test('PM1: PR pressure selects latest 10 PRs', () => {
   assert.deepEqual(
     plan.decisions.map((decision) => decision.pr),
     [12, 11, 10, 9, 8, 7, 6, 5, 4, 3],
+  );
+});
+
+test('PM1b: PR pressure keeps older stateful PRs in the inspection set', () => {
+  const prs = Array.from({ length: 12 }, (_, index) =>
+    pr({
+      number: index + 1,
+      updatedAt: `2026-07-01T09:${String(index).padStart(2, '0')}:00.000Z`,
+      labels: index === 0 ? ['flow/manual-only'] : [],
+    }),
+  );
+  const candidates = selectPrInspectionCandidates(prs, 10);
+
+  assert.deepEqual(
+    candidates.map((candidate) => candidate.number),
+    [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 1],
   );
 });
 
@@ -377,6 +394,26 @@ test('PM17: manual-only PR with renewed needs-review does not merge', () => {
         'security-review-passed',
         'flow/manual-only',
         { name: 'needs-review', updatedAt: '2026-07-01T09:00:00.000Z' },
+      ],
+      projectManagerState: { headSha: 'abc123', readySince: READY_9H },
+      projectManagerReview: { decision: 'merge' },
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
+test('PM17b: manual-only PR with undated needs-review does not merge', () => {
+  // gh pr view --json labels omits label timestamps in production, so an
+  // undated needs-review must be treated as active and block direct merge.
+  const action = decidePrAction(
+    readyPr({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+        'needs-review',
       ],
       projectManagerState: { headSha: 'abc123', readySince: READY_9H },
       projectManagerReview: { decision: 'merge' },

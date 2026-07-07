@@ -400,6 +400,33 @@ function hasReviewBlocker(pr) {
   );
 }
 
+function needsProjectManagerAttention(pr) {
+  const labels = normalizeLabels(pr.labels);
+  return [
+    'flow/finalizer-dispatched',
+    'flow/manual-only',
+    'flow/checks-failed',
+    'flow/checks-pending',
+    'ai-review-concerns',
+    'security-review-concerns',
+    'deps-review-manual',
+    'deps-review-blocked',
+    'antigravity-review-concerns',
+  ].some((label) => labels.includes(label));
+}
+
+function selectPrInspectionCandidates(prs, limit) {
+  const sorted = sortNewest(prs);
+  const byNumber = new Map();
+  for (const pr of sorted.slice(0, Number(limit ?? 10))) {
+    byNumber.set(pr.number, pr);
+  }
+  for (const pr of sorted) {
+    if (needsProjectManagerAttention(pr)) byNumber.set(pr.number, pr);
+  }
+  return [...byNumber.values()];
+}
+
 function isManualOnly(pr) {
   return (
     pr.manualOnly === true ||
@@ -423,6 +450,8 @@ function labelUpdatedAfter(pr, labelName, timestamp) {
   return labelObjects(pr.labels).some((label) => {
     if (label.name !== labelName) return false;
     const updatedAt = parseDate(label.updatedAt ?? label.updated_at);
+    // gh pr view --json labels omits label timestamps, so an undated label is
+    // treated as active: needs-review must keep blocking direct merge in prod.
     return updatedAt ? updatedAt > since : true;
   });
 }
@@ -1069,9 +1098,9 @@ function flattenAction(action) {
 
 function planPrRoute(snapshot, options = {}) {
   const now = options.now ?? snapshot.now ?? DEFAULT_NOW;
-  const prs = sortNewest(snapshot.openPullRequests).slice(
-    0,
-    Number(options.prLimit ?? 10),
+  const prs = selectPrInspectionCandidates(
+    snapshot.openPullRequests,
+    options.prLimit,
   );
   const decisions = [];
   const actions = [];
@@ -1995,7 +2024,9 @@ function collectSnapshot(options = {}) {
     '--json',
     'number,title,url,state,labels,updatedAt,createdAt,body',
   ]).filter((issue) => !issue.pull_request);
-  const latestPrs = sortNewest(prs).slice(0, prLimit).map(enrichPullRequest);
+  const latestPrs = selectPrInspectionCandidates(prs, prLimit).map(
+    enrichPullRequest,
+  );
   const latestIssues = sortNewest(issues).slice(0, issueLimit).map(enrichIssue);
   const runs = workflowRuns();
 
@@ -2289,6 +2320,7 @@ module.exports = {
   reviewSignalsPassed,
   safeIssueForFix,
   scheduleHealth,
+  selectPrInspectionCandidates,
   selectRoute,
   staleCodeReviewNeedsRebase,
 };
