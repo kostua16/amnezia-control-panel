@@ -345,7 +345,7 @@ function writeSelectedPlans({
   // numbers that skip every reserved slot instead of counting up blindly.
   const reserved = new Set(reservedPlanNumbers);
   let nextPlanNumber = imported.maxPlanNumber + 1;
-  return selected.map((candidate, index) => {
+  return selected.map((candidate) => {
     while (reserved.has(nextPlanNumber)) nextPlanNumber += 1;
     const planNumber = nextPlanNumber;
     reserved.add(planNumber);
