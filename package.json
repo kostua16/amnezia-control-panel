@@ -49,12 +49,12 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9.39.4",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "16.2.10",
     "eslint-config-prettier": "^10.1.8",
-    "js-yaml": "^5.2.0",
+    "js-yaml": "^5.2.1",
     "prettier": "^3.9.3",
     "tailwindcss": "^4",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.0",
     "typescript": "^6"
   },
   "overrides": {
