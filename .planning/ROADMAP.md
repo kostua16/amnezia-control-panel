@@ -152,6 +152,7 @@ Plans:
 <!-- PR-IMPROVE:352 --> - PR #352: fix: resolve #347 - Security: esbuild RCE + arbitrary file read (HIGH) and postcss XSS (moderate) -- pr352.1 x1, pr352.2 x1, pr352.3 x1, pr352.4 x1. Quick artifact: `.planning/quick/260612-pr352-workflow-improve/260612-pr352-PLAN.md`.
 <!-- PR-IMPROVE:596 --> - PR #596: fix: resolve #544 - [claude-health] CI Claude Issue Tracker -- pr596.2 x1. Quick artifact: `.planning/quick/260702-pr596-workflow-improve/260702-pr596-PLAN.md`.
 <!-- PR-IMPROVE:603 --> - PR #603: fix: resolve #601 - feature: enhance review workflow to be able to run rebase with force -- pr603.1 x1, pr603.2 x1. Quick artifact: `.planning/quick/260702-pr603-workflow-improve/260702-pr603-PLAN.md`.
+<!-- PR-IMPROVE:640 --> - PR #640: fix(workflows): keep stateful PRs in project-manager scope -- pr640.1 x1, pr640.3 x1. Quick artifact: `.planning/quick/260707-pr640-workflow-improve/260707-pr640-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
