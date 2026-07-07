@@ -557,6 +557,83 @@ test('rebase-pr: /rebase with arguments is rejected in v1', () => {
   assert.equal(out.should_run, false);
 });
 
+test('rebase-pr: maintainer /rebase --force sets force flag and reports command', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: '/rebase --force',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+  assert.equal(out.should_run, true);
+  assert.equal(out.trusted, true);
+  assert.equal(out.pr_number, 472);
+  assert.equal(out.command, '/rebase --force');
+  assert.equal(out.force, true);
+  assert.equal(out.trigger_source, 'comment');
+});
+
+test('rebase-pr: /rebase (no force) returns force=false', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: '/rebase',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+  assert.equal(out.force, false);
+  assert.equal(out.command, '/rebase');
+});
+
+test('rebase-pr: bot /rebase --force is ignored', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: '/rebase --force',
+        author_association: 'COLLABORATOR',
+        user: { login: 'dependabot[bot]', type: 'Bot' },
+      },
+    },
+  });
+  assert.equal(out.should_run, false);
+});
+
+test('rebase-pr: non-maintainer /rebase --force is ignored', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: '/rebase --force',
+        author_association: 'NONE',
+        user: { login: 'contrib', type: 'User' },
+      },
+    },
+  });
+  assert.equal(out.should_run, false);
+  assert.equal(out.trusted, false);
+});
+
+test('rebase-pr: /rebase --force-trailing is rejected (exact match only)', () => {
+  const out = runRebasePr({
+    event: {
+      issue: { number: 472, pull_request: {} },
+      comment: {
+        body: '/rebase --force-trailing',
+        author_association: 'OWNER',
+        user: { login: 'kostua16', type: 'User' },
+      },
+    },
+  });
+  assert.equal(out.should_run, false);
+});
+
 test('rebase-pr: workflow_dispatch runs with the supplied PR number', () => {
   const out = runRebasePr({
     event: { inputs: { pr_number: '472' } },

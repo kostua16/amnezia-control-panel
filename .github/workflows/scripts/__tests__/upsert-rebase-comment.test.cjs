@@ -452,6 +452,70 @@ test('isTrue matches boolean and string true', () => {
   assert.equal(isTrue(undefined), false);
 });
 
+test('renderComplete shows force-mode indicator when force is true', () => {
+  const body = renderComplete({
+    headSha: SHA,
+    newHeadSha: NEW_SHA,
+    baseRef: 'main',
+    baseSha: BASE_SHA,
+    runUrl: RUN,
+    pushed: 'true',
+    dryRun: 'false',
+    force: 'true',
+    structured: { summary: 'force-pushed' },
+    updatedAt: TS,
+  });
+  assert.match(body, /Rebase complete/);
+  assert.match(body, /Force mode.*post-rebase validation gate skipped/);
+});
+
+test('renderComplete omits force-mode indicator when force is absent', () => {
+  const body = renderComplete({
+    headSha: SHA,
+    newHeadSha: NEW_SHA,
+    baseRef: 'main',
+    baseSha: BASE_SHA,
+    runUrl: RUN,
+    pushed: 'true',
+    dryRun: 'false',
+    structured: { summary: 'normal rebase' },
+    updatedAt: TS,
+  });
+  assert.doesNotMatch(body, /Force mode/);
+});
+
+test('resolveFinishedBody: force skips gate failure and pushes', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    gatePassed: 'false',
+    pushed: 'true',
+    force: 'true',
+    rebaseMovedHead: 'true',
+    headSha: SHA,
+    newHeadSha: NEW_SHA,
+    structured: { summary: 'force push' },
+  });
+  // Force mode skips validation gate — should be complete, not validation-failed
+  assert.match(body, /Rebase complete/);
+  assert.match(body, /Force mode.*post-rebase validation gate skipped/);
+  assert.doesNotMatch(body, /Validation failed/);
+});
+
+test('resolveFinishedBody: force=false + gate failure still shows validation-failed', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    gatePassed: 'false',
+    pushed: 'false',
+    rebaseMovedHead: 'true',
+    force: 'false',
+    gateOutcomes: { lint: 'failure' },
+    structured: { summary: 'x' },
+  });
+  assert.match(body, /Validation failed/);
+});
+
 test('renderComplete surfaces unresolved review feedback presence when provided', () => {
   const body = renderComplete({
     headSha: SHA,
