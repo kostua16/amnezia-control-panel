@@ -494,9 +494,10 @@ gh workflow run pr-flow.yml --ref main -f pr_number=<PR> -f dry_run=false
 
 `pr-flow-watchdog.yml` runs every 15 minutes away from the top of the hour and performs the same recovery automatically for open non-draft PRs that still have `flow/draft`.
 
-`project-manager.yml` runs every 15 minutes as the queue manager for open PRs,
-standalone issues, and low-load PR-producing workflows. Its deterministic
-script (`scripts/project-manager.cjs`) selects one route per run:
+`project-manager.yml` runs every 10 minutes as the queue manager for open PRs,
+standalone issues, and low-load PR-producing workflows. By default it inspects
+up to 15 PRs or 15 issues in the selected queue route. Its deterministic script
+(`scripts/project-manager.cjs`) selects one route per run:
 
 - PR pressure (`open PRs > threshold`) inspects the latest PRs and chooses at
   most one action per PR: `@claude` escalation, `/rebase`, `/fix`,
