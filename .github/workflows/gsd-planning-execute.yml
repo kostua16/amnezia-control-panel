@@ -212,9 +212,23 @@ jobs:
             echo "::notice::Implementation changes in $(echo "$non_planning" | wc -l) file(s)."
           fi
 
+      - name: Detect duplicate or overlapping no-op PR
+        id: duplicate-noop
+        if: steps.code-changes.outputs.has_code_changes == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/find-duplicate-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --detect-overlap \
+            --overlap-label auto-fix \
+            --github-output "$GITHUB_OUTPUT"
+
       - uses: ./.github/actions/commit-and-push
         id: push-plan-state
-        if: steps.code-changes.outputs.has_code_changes == 'false'
+        if: steps.code-changes.outputs.has_code_changes == 'false' && steps.duplicate-noop.outputs.duplicate_found != 'true' && steps.duplicate-noop.outputs.overlap_found != 'true'
         with:
           github-token: ${{ secrets.GH_PAT }}
           branch-name: ${{ steps.branch.outputs.branch_name }}
@@ -222,7 +236,7 @@ jobs:
 
       - name: Build no-op persistence PR body
         id: no-op-pr-body
-        if: steps.push-plan-state.outputs.pushed == 'true'
+        if: steps.push-plan-state.outputs.pushed == 'true' && steps.duplicate-noop.outputs.duplicate_found != 'true' && steps.duplicate-noop.outputs.overlap_found != 'true'
         uses: ./.github/actions/build-automation-pr-body
         with:
           workflow-name: gsd-planning-execute
@@ -238,7 +252,7 @@ jobs:
             <!-- gsd-planning-source-sha256: ${{ steps.intake.outputs.source_hash }} -->
 
       - name: Create no-op persistence PR
-        if: steps.push-plan-state.outputs.pushed == 'true'
+        if: steps.push-plan-state.outputs.pushed == 'true' && steps.duplicate-noop.outputs.duplicate_found != 'true' && steps.duplicate-noop.outputs.overlap_found != 'true'
         uses: ./.github/actions/upsert-pull-request
         with:
           github-token: ${{ secrets.GH_PAT }}
@@ -417,9 +431,23 @@ jobs:
           CHANGED_FILES: ${{ steps.final-zai.outputs.changed_files }}
         run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs --mode gsd-deferred-proposals
 
+      - name: Detect duplicate or overlapping execution PR
+        id: duplicate-exec
+        if: steps.code-changes.outputs.has_code_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/find-duplicate-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --detect-overlap \
+            --overlap-label auto-fix \
+            --github-output "$GITHUB_OUTPUT"
+
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.code-changes.outputs.has_code_changes == 'true'
+        if: steps.code-changes.outputs.has_code_changes == 'true' && steps.duplicate-exec.outputs.duplicate_found != 'true' && steps.duplicate-exec.outputs.overlap_found != 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'feat(gsd): execute planning intake'
@@ -427,7 +455,7 @@ jobs:
 
       - name: Build execution PR body
         id: pr-body
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.push.outputs.pushed == 'true' && steps.duplicate-exec.outputs.duplicate_found != 'true' && steps.duplicate-exec.outputs.overlap_found != 'true'
         uses: ./.github/actions/build-automation-pr-body
         with:
           workflow-name: gsd-planning-execute
@@ -445,7 +473,7 @@ jobs:
             <!-- gsd-planning-source-sha256: ${{ steps.intake.outputs.source_hash }} -->
 
       - name: Create GSD planning execution PR
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.push.outputs.pushed == 'true' && steps.duplicate-exec.outputs.duplicate_found != 'true' && steps.duplicate-exec.outputs.overlap_found != 'true'
         uses: ./.github/actions/upsert-pull-request
         with:
           github-token: ${{ secrets.GH_PAT }}
