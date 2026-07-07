@@ -25,29 +25,13 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       );
     }
 
-    const { status, lastRecord } = await getPanelStatus(panelId);
-
-    // Also fetch last 10 history records for display
-    const history = await prisma.panelConnectionHistory.findMany({
-      where: { panelId },
-      orderBy: { checkedAt: 'desc' },
-      take: 10,
-    });
+    const { status } = await getPanelStatus(panelId);
 
     return NextResponse.json({
       success: true,
       data: {
         panelId,
         status,
-        lastRecord,
-        history: history.map((h) => ({
-          id: h.id,
-          success: h.success,
-          latencyMs: h.latencyMs,
-          message: h.message,
-          version: h.version,
-          checkedAt: h.checkedAt.toISOString(),
-        })),
       },
     });
   } catch (err) {

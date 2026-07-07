@@ -164,7 +164,7 @@ model ConfigTemplate {
 model Configuration {
   id        Int      @id @default(autoincrement())
   type      String
-  name      String
+  name      String   @unique
   content   Json
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -358,25 +358,7 @@ model RemotePanel {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  connectionHistory PanelConnectionHistory[]
-
   @@map("remote_panels")
-}
-
-model PanelConnectionHistory {
-  id        Int      @id @default(autoincrement())
-  success   Boolean
-  latencyMs Int?
-  message   String
-  version   String?
-  checkedAt DateTime @default(now())
-
-  panel     RemotePanel @relation(fields: [panelId], references: [id], onDelete: Cascade)
-  panelId   Int
-
-  @@index([panelId])
-  @@index([checkedAt])
-  @@map("panel_connection_history")
 }
 
 // --- CachedPanelConfig ---

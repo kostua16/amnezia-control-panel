@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { importConfigs } from '@/lib/config-import';
 
+/** Maximum upload file size in bytes (5 MB). */
+const MAX_IMPORT_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+
 export async function POST(request: NextRequest) {
   try {
     let data: unknown;
@@ -22,6 +25,16 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (file.size > MAX_IMPORT_FILE_SIZE_BYTES) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is ${MAX_IMPORT_FILE_SIZE_BYTES / 1024 / 1024} MB.`,
+          },
+          { status: 413 },
+        );
+      }
+
       const text = await file.text();
       try {
         data = JSON.parse(text);
@@ -32,8 +45,28 @@ export async function POST(request: NextRequest) {
         );
       }
     } else {
-      // Handle raw JSON body
-      data = await request.json();
+      // Handle raw JSON body — bound the payload size before parsing to avoid
+      // OOM on oversized POSTs (mirrors the multipart file-size guard above).
+      const bytes = await request.arrayBuffer();
+      if (bytes.byteLength > MAX_IMPORT_FILE_SIZE_BYTES) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Payload too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is ${MAX_IMPORT_FILE_SIZE_BYTES / 1024 / 1024} MB.`,
+          },
+          { status: 413 },
+        );
+      }
+
+      const text = new TextDecoder().decode(bytes);
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return NextResponse.json(
+          { success: false, error: 'Invalid JSON body' },
+          { status: 422 },
+        );
+      }
     }
 
     const report = await importConfigs(data);

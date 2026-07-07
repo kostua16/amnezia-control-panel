@@ -3,10 +3,7 @@ import { broadcastEvent } from '@/lib/websocket';
 import { createAlert } from '@/lib/alert-service';
 import { httpClient } from '@/lib/http-client';
 import type { Alert } from '@/types/alert';
-import type {
-  PanelTestResult,
-  PanelConnectionRecord,
-} from '@/types/remote-panel';
+import type { PanelTestResult } from '@/types/remote-panel';
 import type { PanelSyncPayload } from '@/types/panel-sync';
 
 // ─── Types ──────────────────────────────────────────────
@@ -470,63 +467,15 @@ export function cleanup(): void {
 }
 
 /**
- * Get status for a single panel with latest connection record.
+ * Get status for a single panel.
  * Used by API routes to provide per-panel status data.
  */
-export async function getPanelStatus(panelId: number): Promise<{
-  status: PanelConnectionStatus;
-  lastRecord: PanelConnectionRecord | null;
-}> {
+export async function getPanelStatus(
+  panelId: number,
+): Promise<{ status: PanelConnectionStatus }> {
   const result = await testPanel(panelId);
-
-  let lastRecord: PanelConnectionRecord | null = null;
-  try {
-    const history = await prisma.panelConnectionHistory.findFirst({
-      where: { panelId },
-      orderBy: { checkedAt: 'desc' },
-    });
-    if (history) {
-      lastRecord = {
-        id: history.id,
-        success: history.success,
-        latencyMs: history.latencyMs,
-        message: history.message,
-        version: history.version,
-        checkedAt: history.checkedAt.toISOString(),
-      };
-    }
-  } catch {
-    // panelConnectionHistory table may not exist
-  }
 
   return {
     status: result.success ? 'connected' : 'offline',
-    lastRecord,
   };
-}
-
-/**
- * Get connection status records for all active panels.
- * Maps test results to PanelConnectionRecord format.
- */
-export async function getPanelConnectionRecords(): Promise<
-  PanelConnectionRecord[]
-> {
-  const panels = await prisma.remotePanel.findMany({
-    where: { isActive: true },
-  });
-
-  const testResults = await Promise.all(
-    panels.map((panel: { id: number }) => testPanel(panel.id)),
-  );
-
-  const now = new Date().toISOString();
-  return testResults.map((result: PanelTestResult, index: number) => ({
-    id: panels[index]?.id ?? 0,
-    success: result.success,
-    latencyMs: result.latency,
-    message: result.error ?? (result.success ? 'OK' : 'Failed'),
-    version: null,
-    checkedAt: now,
-  }));
 }
