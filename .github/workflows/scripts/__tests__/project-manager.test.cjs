@@ -404,7 +404,9 @@ test('PM17: manual-only PR with renewed needs-review does not merge', () => {
   assert.equal(action?.actionKey ?? 'none', 'none');
 });
 
-test('PM17b: manual-only PR with undated needs-review can direct-merge after review', () => {
+test('PM17b: manual-only PR with undated needs-review does not merge', () => {
+  // gh pr view --json labels omits label timestamps in production, so an
+  // undated needs-review must be treated as active and block direct merge.
   const action = decidePrAction(
     readyPr({
       labels: [
@@ -414,13 +416,12 @@ test('PM17b: manual-only PR with undated needs-review can direct-merge after rev
         'needs-review',
       ],
       projectManagerState: { headSha: 'abc123', readySince: READY_9H },
-      projectManagerReview: { decision: 'merge', reason: 'aged out' },
+      projectManagerReview: { decision: 'merge' },
     }),
     { now: NOW },
   );
 
-  assert.equal(action.actionKey, 'manual-direct-merge');
-  assert(actionTypes(action).includes('merge-pr'));
+  assert.equal(action?.actionKey ?? 'none', 'none');
 });
 
 test('PM18: failed fix-review posts deduped @claude escalation', () => {

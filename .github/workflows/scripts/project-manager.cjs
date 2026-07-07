@@ -450,7 +450,9 @@ function labelUpdatedAfter(pr, labelName, timestamp) {
   return labelObjects(pr.labels).some((label) => {
     if (label.name !== labelName) return false;
     const updatedAt = parseDate(label.updatedAt ?? label.updated_at);
-    return updatedAt ? updatedAt > since : false;
+    // gh pr view --json labels omits label timestamps, so an undated label is
+    // treated as active: needs-review must keep blocking direct merge in prod.
+    return updatedAt ? updatedAt > since : true;
   });
 }
 
