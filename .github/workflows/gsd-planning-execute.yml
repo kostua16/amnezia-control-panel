@@ -220,9 +220,23 @@ jobs:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'chore(planning): track execution queue plan'
 
+      - name: Detect duplicate or overlapping no-op PR
+        id: duplicate-noop
+        if: steps.push-plan-state.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/find-duplicate-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --detect-overlap \
+            --overlap-label auto-fix \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Build no-op persistence PR body
         id: no-op-pr-body
-        if: steps.push-plan-state.outputs.pushed == 'true'
+        if: steps.push-plan-state.outputs.pushed == 'true' && steps.duplicate-noop.outputs.duplicate_found != 'true' && steps.duplicate-noop.outputs.overlap_found != 'true'
         uses: ./.github/actions/build-automation-pr-body
         with:
           workflow-name: gsd-planning-execute
@@ -238,7 +252,7 @@ jobs:
             <!-- gsd-planning-source-sha256: ${{ steps.intake.outputs.source_hash }} -->
 
       - name: Create no-op persistence PR
-        if: steps.push-plan-state.outputs.pushed == 'true'
+        if: steps.push-plan-state.outputs.pushed == 'true' && steps.duplicate-noop.outputs.duplicate_found != 'true' && steps.duplicate-noop.outputs.overlap_found != 'true'
         uses: ./.github/actions/upsert-pull-request
         with:
           github-token: ${{ secrets.GH_PAT }}
@@ -425,9 +439,23 @@ jobs:
           commit-message: 'feat(gsd): execute planning intake'
           github-token: ${{ secrets.GH_PAT }}
 
+      - name: Detect duplicate or overlapping execution PR
+        id: duplicate-exec
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/find-duplicate-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --detect-overlap \
+            --overlap-label auto-fix \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Build execution PR body
         id: pr-body
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.push.outputs.pushed == 'true' && steps.duplicate-exec.outputs.duplicate_found != 'true' && steps.duplicate-exec.outputs.overlap_found != 'true'
         uses: ./.github/actions/build-automation-pr-body
         with:
           workflow-name: gsd-planning-execute
@@ -445,7 +473,7 @@ jobs:
             <!-- gsd-planning-source-sha256: ${{ steps.intake.outputs.source_hash }} -->
 
       - name: Create GSD planning execution PR
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.push.outputs.pushed == 'true' && steps.duplicate-exec.outputs.duplicate_found != 'true' && steps.duplicate-exec.outputs.overlap_found != 'true'
         uses: ./.github/actions/upsert-pull-request
         with:
           github-token: ${{ secrets.GH_PAT }}
