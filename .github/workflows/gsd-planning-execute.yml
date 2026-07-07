@@ -212,17 +212,9 @@ jobs:
             echo "::notice::Implementation changes in $(echo "$non_planning" | wc -l) file(s)."
           fi
 
-      - uses: ./.github/actions/commit-and-push
-        id: push-plan-state
-        if: steps.code-changes.outputs.has_code_changes == 'false'
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          branch-name: ${{ steps.branch.outputs.branch_name }}
-          commit-message: 'chore(planning): track execution queue plan'
-
       - name: Detect duplicate or overlapping no-op PR
         id: duplicate-noop
-        if: steps.push-plan-state.outputs.pushed == 'true'
+        if: steps.code-changes.outputs.has_code_changes == 'false'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
@@ -233,6 +225,14 @@ jobs:
             --detect-overlap \
             --overlap-label auto-fix \
             --github-output "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/commit-and-push
+        id: push-plan-state
+        if: steps.code-changes.outputs.has_code_changes == 'false' && steps.duplicate-noop.outputs.duplicate_found != 'true' && steps.duplicate-noop.outputs.overlap_found != 'true'
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'chore(planning): track execution queue plan'
 
       - name: Build no-op persistence PR body
         id: no-op-pr-body
@@ -431,17 +431,9 @@ jobs:
           CHANGED_FILES: ${{ steps.final-zai.outputs.changed_files }}
         run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs --mode gsd-deferred-proposals
 
-      - uses: ./.github/actions/commit-and-push
-        id: push
-        if: steps.code-changes.outputs.has_code_changes == 'true'
-        with:
-          branch-name: ${{ steps.branch.outputs.branch_name }}
-          commit-message: 'feat(gsd): execute planning intake'
-          github-token: ${{ secrets.GH_PAT }}
-
       - name: Detect duplicate or overlapping execution PR
         id: duplicate-exec
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.code-changes.outputs.has_code_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
@@ -452,6 +444,14 @@ jobs:
             --detect-overlap \
             --overlap-label auto-fix \
             --github-output "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/commit-and-push
+        id: push
+        if: steps.code-changes.outputs.has_code_changes == 'true' && steps.duplicate-exec.outputs.duplicate_found != 'true' && steps.duplicate-exec.outputs.overlap_found != 'true'
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'feat(gsd): execute planning intake'
+          github-token: ${{ secrets.GH_PAT }}
 
       - name: Build execution PR body
         id: pr-body
