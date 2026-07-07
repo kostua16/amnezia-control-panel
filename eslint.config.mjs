@@ -30,6 +30,8 @@ const eslintConfig = defineConfig([
     // Untracked, never committed; ignored so eslint . / next build never trip
     // on its vendored .cjs tooling. See docs/adr/0002-pre-push-gate-for-claude-driven-workflows.md
     '.claude-pr/**',
+    // Prisma client output (gitignored generated code), not hand-written source.
+    'src/generated/**',
     // CommonJS launch scripts use require() by design:
     'scripts/dev.cjs',
     'scripts/start.cjs',

@@ -7,7 +7,7 @@ export interface ChainPresetDef {
   id: string;
   name: string;
   description: string;
-  topology: 'linear' | 'split' | 'mesh';
+  topology: 'LINEAR' | 'SPLIT' | 'MESH';
   nodeCount: number;
   chainTemplateId: string;
   routingBundleId: string | null;
@@ -20,7 +20,7 @@ export const BUILTIN_CHAIN_PRESETS: ChainPresetDef[] = [
     name: 'Simple Relay',
     description:
       '2-node linear chain using VLESS-REALITY for high performance with minimal overhead. Best for general browsing.',
-    topology: 'linear',
+    topology: 'LINEAR',
     nodeCount: 2,
     chainTemplateId: '2hop-linear',
     routingBundleId: 'russia-direct',
@@ -34,7 +34,7 @@ export const BUILTIN_CHAIN_PRESETS: ChainPresetDef[] = [
     name: 'Privacy Chain',
     description:
       '3-node chain with dedicated entry, middle relay, and exit servers. Maximum anonymity with routing through privacy-friendly jurisdiction.',
-    topology: 'linear',
+    topology: 'LINEAR',
     nodeCount: 3,
     chainTemplateId: '3hop-linear',
     routingBundleId: 'eu-privacy',
@@ -49,7 +49,7 @@ export const BUILTIN_CHAIN_PRESETS: ChainPresetDef[] = [
     name: 'High Performance',
     description:
       'Optimized 2-node chain with VLESS-REALITY and aggressive MTU tuning. Lowest latency for streaming and gaming.',
-    topology: 'linear',
+    topology: 'LINEAR',
     nodeCount: 2,
     chainTemplateId: '2hop-linear',
     routingBundleId: 'full-tunnel',
@@ -118,7 +118,7 @@ export async function createChainPreset(
     data: {
       name: data.name,
       description: data.description ?? '',
-      topology: data.topology ?? 'linear',
+      topology: data.topology ?? 'LINEAR',
       nodeCount: data.nodeCount ?? 2,
       chainTemplateId: data.chainTemplateId ?? '2hop-linear',
       routingBundleId: data.routingBundleId ?? null,

@@ -5,7 +5,7 @@ import { invalidateGeoRuleCache } from '@/lib/geo-routing';
 
 export interface TemplateRuleDef {
   name: string;
-  matchType: 'country' | 'region' | 'special';
+  matchType: 'COUNTRY' | 'REGION' | 'SPECIAL';
   countryCode?: string;
   region?: string;
   special?: 'domestic' | 'foreign';
@@ -18,7 +18,7 @@ export interface TemplateDef {
   id: string;
   name: string;
   description: string;
-  category: 'geo' | 'ip' | 'domain' | 'bundle';
+  category: 'GEO' | 'IP' | 'DOMAIN' | 'BUNDLE';
   rules: TemplateRuleDef[];
 }
 
@@ -28,18 +28,18 @@ export const BUILTIN_GEO_TEMPLATES: TemplateDef[] = [
     name: 'Russia Direct',
     description:
       'Route Russian traffic directly (bypass VPN). Block known Russian surveillance IPs.',
-    category: 'geo',
+    category: 'GEO',
     rules: [
       {
         name: 'Allow Russia domestic',
-        matchType: 'country',
+        matchType: 'COUNTRY',
         countryCode: 'RU',
         action: 'ALLOW',
         priority: 10,
       },
       {
         name: 'Block RU surveillance',
-        matchType: 'country',
+        matchType: 'COUNTRY',
         countryCode: 'RU',
         action: 'BLOCK',
         priority: 11,
@@ -51,18 +51,18 @@ export const BUILTIN_GEO_TEMPLATES: TemplateDef[] = [
     name: 'EU Privacy',
     description:
       'Route EU traffic through VPN for GDPR-aligned privacy. Direct all other traffic.',
-    category: 'geo',
+    category: 'GEO',
     rules: [
       {
         name: 'Route EU via VPN',
-        matchType: 'region',
+        matchType: 'REGION',
         region: 'Europe',
         action: 'ROUTE',
         priority: 10,
       },
       {
         name: 'Allow all other traffic',
-        matchType: 'special',
+        matchType: 'SPECIAL',
         special: 'foreign',
         action: 'ALLOW',
         priority: 100,
@@ -74,18 +74,18 @@ export const BUILTIN_GEO_TEMPLATES: TemplateDef[] = [
     name: 'Full Tunnel',
     description:
       'Route all foreign traffic through VPN. Allow domestic traffic directly.',
-    category: 'bundle',
+    category: 'BUNDLE',
     rules: [
       {
         name: 'Allow domestic traffic',
-        matchType: 'special',
+        matchType: 'SPECIAL',
         special: 'domestic',
         action: 'ALLOW',
         priority: 0,
       },
       {
         name: 'Route foreign via VPN',
-        matchType: 'special',
+        matchType: 'SPECIAL',
         special: 'foreign',
         action: 'ROUTE',
         priority: 100,
@@ -97,18 +97,18 @@ export const BUILTIN_GEO_TEMPLATES: TemplateDef[] = [
     name: 'Asia-Pacific VPN',
     description:
       'Route Asia-Pacific traffic through VPN for better connectivity. Direct everything else.',
-    category: 'geo',
+    category: 'GEO',
     rules: [
       {
         name: 'Route Asia-Pacific via VPN',
-        matchType: 'region',
+        matchType: 'REGION',
         region: 'Asia-Pacific',
         action: 'ROUTE',
         priority: 10,
       },
       {
         name: 'Allow all other traffic',
-        matchType: 'special',
+        matchType: 'SPECIAL',
         special: 'foreign',
         action: 'ALLOW',
         priority: 100,
@@ -120,18 +120,18 @@ export const BUILTIN_GEO_TEMPLATES: TemplateDef[] = [
     name: 'Block Ad Networks',
     description:
       'Block traffic to known ad server countries. Allow everything else.',
-    category: 'geo',
+    category: 'GEO',
     rules: [
       {
         name: 'Block ad traffic',
-        matchType: 'country',
+        matchType: 'COUNTRY',
         countryCode: 'US',
         action: 'BLOCK',
         priority: 5,
       },
       {
         name: 'Allow all traffic',
-        matchType: 'special',
+        matchType: 'SPECIAL',
         special: 'foreign',
         action: 'ALLOW',
         priority: 100,
@@ -186,7 +186,7 @@ export interface ApplyTemplateResult {
 
 /**
  * Apply a template's rules as geo-routing rules.
- * Per D-09: template rules get source='template'.
+ * Per D-09: template rules get source='TEMPLATE'.
  * Per D-10: if a rule with the same name+matchType+countryCode already exists, skip it.
  */
 export async function applyTemplateRules(
@@ -230,7 +230,7 @@ export async function applyTemplateRules(
           chainId: ruleDef.chainId ?? null,
           priority: ruleDef.priority,
           isActive: true,
-          source: 'template',
+          source: 'TEMPLATE',
         },
       });
       result.created++;
@@ -260,7 +260,7 @@ export interface ImportResult {
 /**
  * Parse a v2fly geoip.dat file and import country entries as geo-routing rules.
  *
- * Per D-09: imported rules get source='imported'. Custom rules (source='custom')
+ * Per D-09: imported rules get source='IMPORTED'. Custom rules (source='CUSTOM')
  * are never touched.
  * Per D-10: if an imported rule collides with an existing imported rule on the same
  * countryCode, overwrite it (with confirmation from the UI).
@@ -294,9 +294,9 @@ export async function importFromGeoIPDat(
       try {
         const existing = await prisma.geoRoutingRule.findFirst({
           where: {
-            matchType: 'country',
+            matchType: 'COUNTRY',
             countryCode: countryCode,
-            source: 'imported',
+            source: 'IMPORTED',
           },
         });
 
@@ -318,9 +318,9 @@ export async function importFromGeoIPDat(
 
         const customExists = await prisma.geoRoutingRule.findFirst({
           where: {
-            matchType: 'country',
+            matchType: 'COUNTRY',
             countryCode: countryCode,
-            source: 'custom',
+            source: 'CUSTOM',
           },
         });
 
@@ -332,12 +332,12 @@ export async function importFromGeoIPDat(
         await prisma.geoRoutingRule.create({
           data: {
             name: `Imported: ${countryCode}`,
-            matchType: 'country',
+            matchType: 'COUNTRY',
             countryCode: countryCode,
             action: 'ALLOW',
             priority: 500,
             isActive: true,
-            source: 'imported',
+            source: 'IMPORTED',
           },
         });
         result.imported++;
@@ -370,7 +370,7 @@ export async function importFromGeoIPDat(
  * lines. This importer accepts both from data/geoip/rulite/ and imports only
  * two-letter country geoip codes; service/category lists are skipped.
  *
- * Per D-09: imported rules get source='imported'. Custom rules (source='custom')
+ * Per D-09: imported rules get source='IMPORTED'. Custom rules (source='CUSTOM')
  * are never touched.
  * Per D-10: if an imported rule collides with an existing imported rule on the same
  * countryCode, overwrite it when requested by the UI.
@@ -431,9 +431,9 @@ export async function importFromRulite(
       try {
         const existing = await prisma.geoRoutingRule.findFirst({
           where: {
-            matchType: 'country',
+            matchType: 'COUNTRY',
             countryCode: countryCode,
-            source: 'imported',
+            source: 'IMPORTED',
           },
         });
 
@@ -455,9 +455,9 @@ export async function importFromRulite(
 
         const customExists = await prisma.geoRoutingRule.findFirst({
           where: {
-            matchType: 'country',
+            matchType: 'COUNTRY',
             countryCode: countryCode,
-            source: 'custom',
+            source: 'CUSTOM',
           },
         });
 
@@ -469,12 +469,12 @@ export async function importFromRulite(
         await prisma.geoRoutingRule.create({
           data: {
             name: `Imported: ${countryCode}`,
-            matchType: 'country',
+            matchType: 'COUNTRY',
             countryCode: countryCode,
             action: 'ALLOW',
             priority: 500,
             isActive: true,
-            source: 'imported',
+            source: 'IMPORTED',
           },
         });
         result.imported++;

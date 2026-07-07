@@ -28,6 +28,11 @@ function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      // Skip generated code (e.g. the Prisma client output under src/generated).
+      // That output legitimately defines $queryRawUnsafe as part of its public
+      // API; this guard targets hand-written application code, not vendored
+      // generators, so walking into it produces false positives.
+      if (entry.name === 'generated') continue;
       out.push(...walk(full));
     } else if (entry.isFile()) {
       out.push(full);

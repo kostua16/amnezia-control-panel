@@ -38,6 +38,31 @@ enum RoutingAction {
   ROUTE
 }
 
+enum GeoMatchType {
+  COUNTRY
+  REGION
+  SPECIAL
+}
+
+enum GeoRuleSource {
+  CUSTOM
+  IMPORTED
+  TEMPLATE
+}
+
+enum ChainTopology {
+  LINEAR
+  SPLIT
+  MESH
+}
+
+enum RoutingTemplateCategory {
+  GEO
+  IP
+  DOMAIN
+  BUNDLE
+}
+
 // ─── Admin ────────────────────────────────────────────
 
 model Admin {
@@ -45,6 +70,7 @@ model Admin {
   username  String   @unique
   password  String
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("admins")
 }
@@ -68,6 +94,8 @@ model User {
   protocols       UserProtocol[]
   routingRules    RoutingRule[]
 
+  @@index([isActive])
+  @@index([isBlocked])
   @@map("users")
 }
 
@@ -85,6 +113,7 @@ model Server {
   advertisedSubnets String   @default("[]")
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   services     Service[]
   trafficLogs  TrafficLog[]
@@ -102,11 +131,14 @@ model Service {
   port          Int?
   lastCheckedAt DateTime?
   createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   server        Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
   serverId      Int
   configurations Configuration[]
 
+  @@index([type])
+  @@index([status])
   @@map("services")
 }
 
@@ -141,6 +173,7 @@ model Configuration {
   service   Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   serviceId Int?
 
+  @@index([isActive])
   @@map("configurations")
 }
 
@@ -174,10 +207,10 @@ model RoutingRule {
   priority    Int           @default(0)
   isActive    Boolean       @default(true)
   createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   user        User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId      Int?
-
   @@index([userId])
   @@index([priority])
   @@map("routing_rules")
@@ -190,7 +223,7 @@ model GeoRoutingRule {
   /** Human-readable rule name, e.g. "Block RU traffic" */
   name        String
   /** Match type: country, region, or special (domestic/foreign) per D-06, D-07 */
-  matchType   String        // "country" | "region" | "special"
+  matchType   GeoMatchType
   /** ISO 3166-1 alpha-2 country code, e.g. "US", "DE" (null if matchType != "country") */
   countryCode String?
   /** Region name, e.g. "Europe", "Asia-Pacific" (null if matchType != "region") */
@@ -206,7 +239,7 @@ model GeoRoutingRule {
   /** Whether this rule is active */
   isActive    Boolean       @default(true)
   /** Source: "custom" for admin-created, "imported" for v2fly/rulite imports, "template" for template-applied (per D-09) */
-  source      String        @default("custom")
+  source      GeoRuleSource @default(CUSTOM)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -226,7 +259,7 @@ model RoutingRuleTemplate {
   /** Template description */
   description String   @default("")
   /** Category: "geo", "ip", "domain", "bundle" */
-  category    String   @default("geo")
+  category    RoutingTemplateCategory @default(GEO)
   /** Number of rules in this template */
   ruleCount   Int      @default(0)
   /** Whether this is a built-in template (not user-editable) */
@@ -248,7 +281,7 @@ model ChainPreset {
   /** Preset description */
   description String   @default("")
   /** Topology type: linear, split, mesh */
-  topology    String   @default("linear")
+  topology    ChainTopology @default(LINEAR)
   /** Number of nodes in the chain */
   nodeCount   Int      @default(2)
   /** Chain template ID reference (from BUILTIN_CHAIN_TEMPLATES) */
@@ -274,7 +307,7 @@ model Alert {
   message   String
   isRead    Boolean       @default(false)
   createdAt DateTime      @default(now())
-
+  updatedAt DateTime      @updatedAt
   @@index([isRead])
   @@index([severity])
   @@index([createdAt])
@@ -288,6 +321,7 @@ model UserQuota {
   quotaBytes Int          @default(0)
   period     QuotaPeriod  @default(MONTHLY)
   resetAt    DateTime?
+  updatedAt  DateTime     @updatedAt
 
   user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId     Int          @unique
@@ -303,12 +337,13 @@ model UserProtocol {
   protocol    String
   config      Json
   isActive    Boolean     @default(true)
+  updatedAt   DateTime    @updatedAt
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId      Int
-
   @@unique([userId, serviceType])
   @@index([userId])
+  @@index([isActive])
   @@map("user_protocols")
 }
 

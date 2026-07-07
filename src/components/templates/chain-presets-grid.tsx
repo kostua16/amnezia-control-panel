@@ -11,16 +11,19 @@ interface ChainPresetsGridProps {
   onFork?: (name: string, description: string) => void;
 }
 
+// ChainPreset.topology is promoted to UPPERCASE (LINEAR/SPLIT/MESH) across the
+// type, Zod schema, lib, and DB. Key these maps by UPPERCASE so the badge keeps
+// its color class and the label renders instead of falling back to raw value.
 const topologyBadgeClasses: Record<string, string> = {
-  linear: 'bg-blue-500/10 text-blue-400',
-  split: 'bg-amber-500/10 text-amber-400',
-  mesh: 'bg-green-500/10 text-green-400',
+  LINEAR: 'bg-blue-500/10 text-blue-400',
+  SPLIT: 'bg-amber-500/10 text-amber-400',
+  MESH: 'bg-green-500/10 text-green-400',
 };
 
 const topologyLabels: Record<string, string> = {
-  linear: 'Linear',
-  split: 'Split',
-  mesh: 'Mesh',
+  LINEAR: 'Linear',
+  SPLIT: 'Split',
+  MESH: 'Mesh',
 };
 
 export function ChainPresetsGrid({ onPreview, onFork }: ChainPresetsGridProps) {

@@ -8,7 +8,7 @@ const createSchema = z.object({
     .min(1, 'Name is required')
     .max(128, 'Name must be at most 128 characters'),
   description: z.string().max(500).optional(),
-  topology: z.enum(['linear', 'split', 'mesh']).optional(),
+  topology: z.enum(['LINEAR', 'SPLIT', 'MESH']).optional(),
   nodeCount: z.number().int().min(1).max(10).optional(),
   chainTemplateId: z.string().max(64).optional(),
   routingBundleId: z.string().max(64).nullable().optional(),
