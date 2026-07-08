@@ -4,7 +4,9 @@ import { signPayload, verifySignature } from '../hmac';
 import {
   generatePerPanelConfig,
   pushConfigToPanel,
+  findServerByHost,
 } from '../panel-sync-client';
+import type { ServerRecord } from '../panel-sync-client';
 import { __setDeps, __resetDeps } from '../transport-resolver';
 import type { ChainConfig } from '@/types/chain';
 import type { PanelSyncPayload } from '@/types/panel-sync';
@@ -404,5 +406,86 @@ describe('transport resolution integration', () => {
     } finally {
       __resetDeps();
     }
+  });
+});
+
+// ─── findServerByHost Tests ─────────────────────────────
+
+describe('findServerByHost', () => {
+  const servers: ServerRecord[] = [
+    {
+      id: 1,
+      tailnetIP: '100.64.0.1',
+      tailnetHostname: 'node-a',
+      hostname: 'VPN-Server-1.tail-scale.ts.net',
+    },
+    {
+      id: 2,
+      tailnetIP: null,
+      tailnetHostname: null,
+      hostname: 'node-b.example.com',
+    },
+    {
+      id: 3,
+      tailnetIP: '100.64.0.3',
+      tailnetHostname: 'node-c',
+      hostname: 'standalone-host',
+    },
+  ];
+
+  it('matches a server whose tailnetIP equals the URL hostname exactly', () => {
+    const result = findServerByHost(servers, '100.64.0.1');
+    assert.equal(result?.id, 1);
+  });
+
+  it('matches a server whose hostname contains the URL hostname (substring)', () => {
+    // Panel URL host "vpn-server-1" is a substring of stored hostname
+    const result = findServerByHost(servers, 'vpn-server-1');
+    assert.equal(result?.id, 1);
+  });
+
+  it('matches case-insensitively, preserving SQLite LIKE semantics', () => {
+    // Prisma `contains` on SQLite compiles to a case-insensitive LIKE;
+    // mixed-case stored hostnames must still match the lowercased URL host.
+    const result = findServerByHost(servers, 'VPN-server-1');
+    assert.equal(result?.id, 1);
+  });
+
+  it('prefers an exact tailnetIP match over a substring hostname match', () => {
+    // Query "shared" is an exact tailnetIP of A and a substring of B's
+    // hostname; the exact IP match (A) must win over the substring (B).
+    const local: ServerRecord[] = [
+      {
+        id: 10,
+        tailnetIP: 'shared',
+        tailnetHostname: null,
+        hostname: 'a.example.net',
+      },
+      {
+        id: 20,
+        tailnetIP: null,
+        tailnetHostname: null,
+        hostname: 'shared-host.local',
+      },
+    ];
+    const result = findServerByHost(local, 'shared');
+    assert.equal(result?.id, 10);
+  });
+
+  it('returns undefined when no server matches by IP or hostname substring', () => {
+    const result = findServerByHost(servers, 'no-such-host');
+    assert.equal(result, undefined);
+  });
+
+  it('returns undefined for an empty server list', () => {
+    const result = findServerByHost([], '100.64.0.1');
+    assert.equal(result, undefined);
+  });
+
+  it('does not crash when server tailnetIP is null', () => {
+    // Server 2 has null tailnetIP; a query that matches its hostname must
+    // still resolve without the null tailnetIP short-circuiting the lookup.
+    const result = findServerByHost(servers, 'node-b.example.com');
+    assert.equal(result?.id, 2);
   });
 });

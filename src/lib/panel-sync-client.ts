@@ -75,25 +75,35 @@ function isTransientFailure(status: number | null): boolean {
   return status >= 500; // 5xx is transient; 4xx is a deterministic client/config fault
 }
 
-interface ServerRecord {
+export interface ServerRecord {
   id: number;
   tailnetIP: string | null;
   tailnetHostname: string | null;
-  hostname: string | null;
+  // `hostname` is non-nullable in the Prisma `Server` model, so it stays
+  // non-null here — this keeps ServerRecord assignable to the
+  // resolvePanelTransport server param without an unsafe cast.
+  hostname: string;
 }
 
 /**
- * In-memory server lookup that mirrors Prisma's `hostname: { contains }` +
- * `tailnetIP: { equals }` semantics. Exact tailnetIP match wins, then
- * substring hostname match.
+ * In-memory server lookup for Tailscale transport resolution.
+ *
+ * Match order (deterministic — NOT identical to Prisma's unordered OR):
+ *   1. Exact `tailnetIP` equality — mirrors `tailnetIP: { equals }`.
+ *   2. Case-insensitive substring match on `hostname` — Prisma `contains`
+ *      compiles to a case-insensitive `LIKE` on SQLite, so both sides are
+ *      lowercased to preserve that match mode for mixed-case hostnames.
+ *
+ * Returns the first server matching either rule, or `undefined`.
  */
-function findServerByHost(
+export function findServerByHost(
   servers: ServerRecord[],
   urlHostname: string,
 ): ServerRecord | undefined {
   const byIP = servers.find((s) => s.tailnetIP === urlHostname);
   if (byIP) return byIP;
-  return servers.find((s) => s.hostname?.includes(urlHostname));
+  const needle = urlHostname.toLowerCase();
+  return servers.find((s) => s.hostname.toLowerCase().includes(needle));
 }
 
 // ─── generatePerPanelConfig ─────────────────────────────
@@ -296,17 +306,31 @@ export async function pushConfigToAllPanels(
 ): Promise<PushAllResult> {
   const { prisma } = await import('./prisma');
 
-  const [panels, allServers] = await Promise.all([
-    prisma.remotePanel.findMany({ where: { isActive: true } }),
-    prisma.server.findMany({
+  const panels = await prisma.remotePanel.findMany({
+    where: { isActive: true },
+  });
+
+  // Fetch all servers up front so transport resolution is an in-memory
+  // lookup (avoids an N+1 per-panel query). Wrapped so a server-fetch
+  // failure degrades to per-panel `panelUrl` fallback instead of failing
+  // the entire push — matching the original per-panel findFirst behavior,
+  // where each lookup failure was caught individually.
+  let allServers: ServerRecord[] = [];
+  try {
+    allServers = await prisma.server.findMany({
       select: {
         id: true,
         tailnetIP: true,
         tailnetHostname: true,
         hostname: true,
       },
-    }),
-  ]);
+    });
+  } catch (err) {
+    console.warn(
+      '[panel-sync] Server fetch failed; falling back to panelUrl for transport resolution:',
+      err,
+    );
+  }
 
   const results: PushResult[] = [];
   let configVersion = 0;
@@ -342,13 +366,10 @@ export async function pushConfigToAllPanels(
       const urlHostname = new URL(panel.panelUrl).hostname;
       const server = findServerByHost(allServers, urlHostname);
 
-      if (server && server.hostname) {
-        const transport = await resolvePanelTransport(
-          server as Parameters<typeof resolvePanelTransport>[0],
-          {
-            panelUrl: panel.panelUrl,
-          },
-        );
+      if (server) {
+        const transport = await resolvePanelTransport(server, {
+          panelUrl: panel.panelUrl,
+        });
         if (transport) {
           panelUrl = transport.panelUrl;
         }
