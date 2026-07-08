@@ -186,6 +186,8 @@ flowchart TD
 | P9  | two agents run in same window                                               | no cross-workflow gate → **multiple distinct PRs created, each → §1** (contention is the spec motivation) | **spec P0-3** |
 | P10 | agent updates an existing open PR on same branch                            | upsert (not create) → §1                                                                                  | char          |
 | P11 | agent comments/labels-only (e.g. issue-catch-up clusters ≥3 similar issues) | comment / label / close duplicate issues (not a PR)                                                       | char [verify] |
+| P11b | issue-catch-up `triaged_no_fix` issue with `auto_fix_eligible` (automation-authored, priority low/medium/high, no security/critical) | `/fix` posted via GH_PAT (OWNER association passes trust gate) → §6a fix-issue flow; max 5 per run, 6h `/fix` cooldown | char |
+| P11c | issue-catch-up `triaged_no_fix` issue NOT `auto_fix_eligible` (security/critical, missing priority, or human-authored) | `needs-review` + manual-fix-triage comment (human terminal, unchanged)                                    | char |
 | P12 | dependabot PR                                                               | npm→auto; `github_actions/`→manual-only (`policy.json dependabot`)                                        | char          |
 | P13 | agent commits generated state (`graphify-out/**`)                           | blocked by `generatedStatePathGlobs`                                                                      | char          |
 
@@ -516,6 +518,7 @@ flowchart TD
 | PM17 | manual-only PR has `needs-review` renewed after `ready_since`                                                                             | no direct merge                                                                             | spec |
 | PM18 | latest same-head `fix-pr` / `fix-review` / `rebase-pr` repair run or sticky summary failed, including rebase validation-failed-not-pushed | one deduped `@claude fix ...` escalation plus workflow issue `/fix`; no repeat command loop | char |
 | PM19 | issue queue sees linked PR / active fix / terminal labels                                                                                 | issue skipped                                                                               | char |
+| PM19b | issue has prior `/fix` comments: `<3` attempts and oldest outside the 6h cooldown                                                        | issue eligible again (retry); `>=3` attempts or `/fix` inside 6h or undated comment -> skip | char |
 | PM20 | low-load route has eligible PR-producing workflows                                                                                        | exactly one workflow dispatched                                                             | char |
 | PM21 | low-load candidate has active run or duplicate pending PR                                                                                 | candidate skipped; next eligible workflow selected                                          | char |
 | PM22 | new workflow uses PR-producing surfaces but is not in registry/exclusion list                                                             | registry coverage test fails loudly                                                         | spec |

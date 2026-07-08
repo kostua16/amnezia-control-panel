@@ -1131,7 +1131,16 @@ function issueHasLinkedPr(issue) {
   return /pull\/\d+|Fixes #\d+|PR:\s*#\d+/i.test(text);
 }
 
-function safeIssueForFix(issue) {
+const MAX_ISSUE_FIX_ATTEMPTS = 3;
+const ISSUE_FIX_COOLDOWN_HOURS = 6;
+
+function issueFixAttemptComments(issue) {
+  return (issue.comments ?? []).filter((comment) =>
+    String(comment.body ?? '').includes('/fix'),
+  );
+}
+
+function safeIssueForFix(issue, options = {}) {
   const labels = normalizeLabels(issue.labels);
   const terminal = [
     'fixed',
@@ -1145,14 +1154,28 @@ function safeIssueForFix(issue) {
   if (issue.pull_request) return false;
   if (issueHasLinkedPr(issue)) return false;
   if (issue.activeFixRun || issue.activeFixBranch) return false;
-  return !(issue.comments ?? []).some((comment) =>
-    String(comment.body ?? '').includes('/fix'),
+  const attempts = issueFixAttemptComments(issue);
+  const maxAttempts = Number(
+    options.maxIssueFixAttempts ?? MAX_ISSUE_FIX_ATTEMPTS,
   );
+  if (attempts.length >= maxAttempts) return false;
+  const cooldownHours = Number(
+    options.issueFixCooldownHours ?? ISSUE_FIX_COOLDOWN_HOURS,
+  );
+  const now = options.now ?? DEFAULT_NOW;
+  return !attempts.some((comment) => {
+    const createdAt = comment.createdAt ?? comment.created_at ?? '';
+    // Comments without a parseable timestamp count as recent so a retry
+    // never fires on unknown-age attempts.
+    if (!parseDate(createdAt)) return true;
+    return hoursBetween(createdAt, now) < cooldownHours;
+  });
 }
 
 function planIssueRoute(snapshot, options = {}) {
+  const now = options.now ?? snapshot.now ?? DEFAULT_NOW;
   const issues = sortNewest(snapshot.openIssues)
-    .filter(safeIssueForFix)
+    .filter((issue) => safeIssueForFix(issue, { ...options, now }))
     .slice(0, Number(options.issueLimit ?? 10));
   return {
     route: 'issues',

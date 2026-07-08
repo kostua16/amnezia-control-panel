@@ -907,6 +907,25 @@ test('PM19: issue queue skips linked PR, active fix, and terminal labels', () =>
   assert.equal(safeIssueForFix(issue({ labels: ['fixed'] })), false);
 });
 
+test('PM19b: issue queue retries /fix after cooldown, capped at max attempts', () => {
+  const now = '2026-07-01T12:00:00.000Z';
+  const oldFix = { body: '/fix', createdAt: '2026-07-01T01:00:00.000Z' };
+  const recentFix = { body: '/fix', createdAt: '2026-07-01T11:30:00.000Z' };
+  assert.equal(safeIssueForFix(issue({ comments: [oldFix] }), { now }), true);
+  assert.equal(
+    safeIssueForFix(issue({ comments: [recentFix] }), { now }),
+    false,
+  );
+  assert.equal(
+    safeIssueForFix(issue({ comments: [{ body: '/fix' }] }), { now }),
+    false,
+  );
+  assert.equal(
+    safeIssueForFix(issue({ comments: [oldFix, oldFix, oldFix] }), { now }),
+    false,
+  );
+});
+
 test('PM20: low-load dispatches exactly one eligible PR-producing workflow', () => {
   const plan = buildPlan({
     openPrCount: 1,

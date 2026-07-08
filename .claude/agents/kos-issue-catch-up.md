@@ -24,7 +24,7 @@ Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analy
 - **Phase 3 — Priority Escalation** (`priority_escalation` → attention comment).
 - **Phase 4 — Orphaned Fixed Reminders** (`orphaned_fixed` → close-or-remove-label reminder).
 - **Phase 5 — Smart Grouping** (only if `groupable_candidates` ≥3: group by classification/priority/root-cause/symptoms; create canonical `[GROUPED]` issue; label originals `duplicate` + close).
-- **Phase 6 — Route Manual Fix Triage & Dead Letters** (`fix_dead_letter` → `needs-review`; `triaged_no_fix` max 5 → guard then `needs-review` + manual-fix comment).
+- **Phase 6 — Route Fix Authorization & Dead Letters** (`fix_dead_letter` → `needs-review`; `triaged_no_fix` max 5 total → guard, then if `auto_fix_eligible` (automation-authored, triaged low/medium/high, no security/critical) post `/fix` + rationale comment, else `needs-review` + manual-fix comment).
 
 ## Core Responsibilities
 - Read DRY-RUN + RATE-LIMITED flags; apply the applicable phases.
@@ -35,7 +35,7 @@ Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analy
 - [ ] Honor DRY-RUN (no `gh` exec; prefix "DRY RUN:") and RATE-LIMITED (Phase 1 + 3 only).
 - [ ] Act only on the categorized JSON set provided.
 - [ ] Use the exact `gh` commands per phase.
-- [ ] Phase 5 only if `groupable_candidates` ≥3; Phase 6 max 5 manual-fix notices.
+- [ ] Phase 5 only if `groupable_candidates` ≥3; Phase 6 max 5 triaged_no_fix actions (auto-fix + manual combined); `/fix` only when `auto_fix_eligible` is true and no `/fix` was posted in the last 6 hours.
 - [ ] Do not fix code or open PRs.
 
 ## Core Competencies
