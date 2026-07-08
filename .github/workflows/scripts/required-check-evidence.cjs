@@ -244,6 +244,24 @@ function findExactHeadWorkflowRun(runs, pr, workflowName) {
   });
 }
 
+function findExactHeadWorkflowRunAnyStatus(runs, pr, workflowName) {
+  return (runs ?? []).find(
+    (run) =>
+      workflowRunHeadSha(run) === pr.headSha &&
+      workflowRunName(run) === workflowName,
+  );
+}
+
+function pendingChecksForWorkflowRun(group, run) {
+  const state = String(run.status ?? '').toLowerCase() || 'pending';
+  return (group.names ?? []).map((name) => ({
+    name,
+    workflow: group.workflow ?? '',
+    bucket: 'pending',
+    state,
+  }));
+}
+
 function collectChecksFromWorkflowRuns({
   pr,
   config,
@@ -295,6 +313,16 @@ function collectChecksFromWorkflowRuns({
     );
 
     if (!run) {
+      const inFlightRun = findExactHeadWorkflowRunAnyStatus(
+        runListResult.value ?? [],
+        pr,
+        workflowName,
+      );
+      if (inFlightRun) {
+        jobChecks.push(...pendingChecksForWorkflowRun(group, inFlightRun));
+        continue;
+      }
+
       return {
         checks: null,
         checkStatus: getUnavailableCheckStatus(
@@ -398,9 +426,16 @@ function collectCheckEvidence({
         `Unable to read PR checks: ${prChecksResult.error}`,
         requiredNames,
       );
+  const requiredWorkflowRunCompleted = workflowRunMatchesRequiredChecks(
+    eventName,
+    event,
+    pr,
+    config,
+  );
   const shouldFallback =
-    workflowRunMatchesRequiredChecks(eventName, event, pr, config) &&
+    requiredWorkflowRunCompleted &&
     (!prChecksResult.ok ||
+      prCheckStatus.status === 'pending' ||
       areAllRequiredChecksMissing(prCheckStatus, requiredChecks));
 
   if (
@@ -469,7 +504,7 @@ function collectCheckEvidence({
       pr,
       config,
       runJson,
-      existingChecks: jobChecks,
+      existingChecks: [...jobChecks, ...prChecks],
     });
     if (broader.checkStatus.status !== 'unavailable') {
       return broader;
@@ -499,6 +534,7 @@ module.exports = {
   collectCheckEvidence,
   collectChecksFromWorkflowRuns,
   findExactHeadWorkflowRun,
+  findExactHeadWorkflowRunAnyStatus,
   getRequiredCheckNames,
   getRequiredCheckStatus,
   getRequiredWorkflowNames,
@@ -506,6 +542,7 @@ module.exports = {
   getWorkflowRunId,
   getWorkflowRunName,
   mapJobConclusion,
+  pendingChecksForWorkflowRun,
   runJsonResult,
   workflowRunDatabaseId,
   workflowRunJobsToChecks,
