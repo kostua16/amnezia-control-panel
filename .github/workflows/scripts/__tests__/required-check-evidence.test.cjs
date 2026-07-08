@@ -514,6 +514,63 @@ test('collectCheckEvidence preserves pending sibling workflow checks during work
   );
 });
 
+test('collectCheckEvidence preserves in-flight sibling workflow runs as pending', () => {
+  const event = {
+    workflow_run: {
+      status: 'completed',
+      head_sha: BASE_PR.headSha,
+      workflow_name: 'CI',
+      database_id: 200,
+      pull_requests: [{ number: BASE_PR.number }],
+    },
+  };
+  const pendingPrChecks = [
+    { name: 'Lint', workflow: 'CI', bucket: 'pending', state: 'pending' },
+    {
+      name: 'Type Check',
+      workflow: 'CI',
+      bucket: 'pending',
+      state: 'pending',
+    },
+    { name: 'Test', workflow: 'CI', bucket: 'pending', state: 'pending' },
+    { name: 'Build', workflow: 'CI', bucket: 'pending', state: 'pending' },
+  ];
+  let policyRunViewed = false;
+  const runJson = (cmd, args) => {
+    if (args[0] === 'pr') return runJsonOk(pendingPrChecks);
+    if (args[0] === 'run' && args[1] === 'view' && args[2] === '200') {
+      return runJsonOk(ciJobs(['skipped', 'skipped', 'skipped', 'skipped']));
+    }
+    if (args[0] === 'run' && args[1] === 'list') {
+      return runJsonOk([
+        ...completedRunList('CI', 200),
+        {
+          databaseId: 201,
+          status: 'in_progress',
+          conclusion: '',
+          workflowName: 'PR Policy',
+          headSha: BASE_PR.headSha,
+          name: 'PR Policy run',
+        },
+      ]);
+    }
+    if (args[0] === 'run' && args[1] === 'view' && args[2] !== '200') {
+      policyRunViewed = true;
+    }
+    return runJsonFail('unexpected');
+  };
+
+  const result = collectWith({ eventName: 'workflow_run', event, runJson });
+  assert.equal(result.checkStatus.status, 'pending');
+  assert.deepEqual(result.checkStatus.pending, ['label-and-validate']);
+  assert.equal(result.source, 'workflow-run-jobs');
+  assert.equal(
+    policyRunViewed,
+    false,
+    'in-flight sibling workflow should stay pending without requiring job details',
+  );
+});
+
 test('collectCheckEvidence chains to broader fallback when workflow_run jobs are missing checks', () => {
   const event = {
     workflow_run: {
