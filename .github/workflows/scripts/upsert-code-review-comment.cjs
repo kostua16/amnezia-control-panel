@@ -265,7 +265,12 @@ function main() {
     }
   }
 
-  upsertComment({ repo, prNumber, marker: COMMENT_MARKER, body });
+  upsertComment({
+    repo,
+    prNumber,
+    marker: COMMENT_MARKER,
+    body,
+  });
 }
 
 if (require.main === module) {

@@ -198,6 +198,7 @@ jobs:
             const issueNumber = Number(process.env.PR_NUMBER);
             const review = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
             const marker = '<!-- dependency-review-signal -->';
+            const replaceExistingComment = true;
             const body = [
               marker,
               '## Dependency Review Signal',
@@ -220,20 +221,29 @@ jobs:
             );
 
             if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body
-              });
-            } else {
-              await github.rest.issues.createComment({
+              if (replaceExistingComment) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id
+                });
+              } else {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body
+                });
+                return;
+              }
+            }
+
+            await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
                 body
               });
-            }
 
   wake-orchestrator:
     needs: [resolve-pr, ai-dependency-review]

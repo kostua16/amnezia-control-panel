@@ -182,6 +182,7 @@ jobs:
             const applyStatus = process.env.APPLY_STATUS || 'not_requested';
             const applyDetails = process.env.APPLY_DETAILS || '';
             const marker = '<!-- pr-finalizer -->';
+            const replaceExistingComment = true;
             const lines = [
               marker,
               '## PR Finalizer',
@@ -210,26 +211,35 @@ jobs:
               comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
             );
 
-            if (existing?.body === body) {
+            if (!replaceExistingComment && existing?.body === body) {
               core.info('Finalizer comment already up to date.');
               return;
             }
 
             if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body
-              });
-            } else {
-              await github.rest.issues.createComment({
+              if (replaceExistingComment) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id
+                });
+              } else {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body
+                });
+                return;
+              }
+            }
+
+            await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
                 body
               });
-            }
 
       - name: Fail on finalizer apply error
         if: steps.apply.outputs.status == 'failed'

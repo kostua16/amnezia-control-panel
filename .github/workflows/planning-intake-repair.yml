@@ -142,6 +142,7 @@ jobs:
           script: |
             const issueNumber = Number(process.env.PR_NUMBER);
             const marker = '<!-- planning-intake-repair -->';
+            const replaceExistingComment = true;
             const body = [
               marker,
               '## Planning Intake Repair',
@@ -164,17 +165,26 @@ jobs:
             );
 
             if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body
-              });
-            } else {
-              await github.rest.issues.createComment({
+              if (replaceExistingComment) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id
+                });
+              } else {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body
+                });
+                return;
+              }
+            }
+
+            await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
                 body
               });
-            }
