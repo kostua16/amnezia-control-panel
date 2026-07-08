@@ -9,11 +9,14 @@ patterns stabilize.
 
 Tests use **Node's built-in test runner** (`node:test` + `node:assert/strict`),
 executed through `tsx` for TypeScript transpilation — **not** Vitest/Jest. The
-`npm test` script globs two flat directories:
+`npm run test-only` script globs two flat directories:
 
 ```json
-"test": "node --import tsx --test src/lib/__tests__/*.test.ts src/app/api/__tests__/*.test.ts"
+"test-only": "node --import tsx --test src/lib/__tests__/*.test.ts src/app/api/__tests__/*.test.ts"
 ```
+
+`npm test` chains `prisma:generate`, `typecheck:only`, `test-only`, `lint`, and
+`format:check`.
 
 **Implications:**
 

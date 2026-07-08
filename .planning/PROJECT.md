@@ -45,7 +45,7 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 
 ## Context
 
-- **Stack**: Next.js 15 + React 19 + TypeScript + Prisma + SQLite + Socket.io + Tailwind CSS
+- **Stack**: Next.js 16 + React 19 + TypeScript + Prisma + SQLite + Socket.io + Tailwind CSS
 - **Scale**: 1-3 VPN servers, up to 50 users, single admin
 - **Deployment**: Same server as VPN services (Linux)
 - **Database**: SQLite via Prisma with better-sqlite3 adapter
@@ -63,7 +63,7 @@ One panel, both VPN systems — users synchronized between Amnezia AWG and 3x-ui
 |----------|-----------|---------|
 | Deploy on same server as VPN | Simplifies management, no remote API needed | ✓ Working |
 | Single admin, no roles | Small scale, single operator | ✓ Working |
-| Stack: Next.js 15 + React 19 + TypeScript | Full-stack framework with SSR and API routes | ✓ Working |
+| Stack: Next.js 16 + React 19 + TypeScript | Full-stack framework with SSR and API routes | ✓ Working |
 | SQLite over PostgreSQL | Small scale, single-server, zero config | ✓ Working |
 | JWT in httpOnly cookies | Secure session persistence, no localStorage XSS risk | ✓ Working |
 | In-memory stores for geo-routing/whitelist | Simplified MVP — needs DB persistence in v1.2 | — Tech debt |
