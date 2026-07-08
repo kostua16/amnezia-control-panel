@@ -9,12 +9,42 @@ const {
   evaluatePolicy,
   getWorkerDispatchRef,
   makeDecision: makePrFlowDecision,
+  pathsMatch,
   renderFlowComment,
   resolvePrNumber,
   summarizeWorkerRuns,
 } = require('../orchestrate-pr-flow.cjs');
 
 const policyPath = path.join(__dirname, '..', '..', 'policy.json');
+
+test('pathsMatch supports exact paths and directory-prefix globs', () => {
+  const paths = ['package.json', 'package-lock.json', '.github/workflows/**'];
+  assert.equal(pathsMatch(['package.json'], paths), true);
+  assert.equal(pathsMatch(['.github/workflows/ci.yml'], paths), true);
+  assert.equal(pathsMatch(['.github/dependabot.yml'], paths), false);
+  assert.equal(pathsMatch(['src/app/page.tsx'], paths), false);
+  assert.equal(pathsMatch([], paths), false);
+});
+
+test('dependencyReview worker paths cover github_actions Dependabot bumps', () => {
+  const config = JSON.parse(
+    require('node:fs').readFileSync(
+      path.join(__dirname, '..', '..', '..', 'pr-flow.json'),
+      'utf8',
+    ),
+  );
+  const workerPaths = config.workers.dependencyReview.paths;
+  assert.equal(
+    pathsMatch(['.github/workflows/ci.yml'], workerPaths),
+    true,
+    'workflow-only Dependabot diffs must dispatch dependency review',
+  );
+  assert.equal(
+    pathsMatch(['.github/actions/run-zai/action.yml'], workerPaths),
+    true,
+  );
+  assert.equal(pathsMatch(['package-lock.json'], workerPaths), true);
+});
 
 const basePr = {
   number: 42,

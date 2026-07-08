@@ -139,7 +139,7 @@ flowchart TD
 | R7   | `workflow_dispatch` orchestrated by pr-flow                                          | trusted → review runs → label → §1                                                                            | char          |
 | R7b  | manual `/review` after stale/cancelled current-head review and green required checks | stale review labels removed → Code Review redispatched by pr-flow → `flow/review-pending` until labels return | spec          |
 | R8a  | dependency-review: clean                                                             | `deps-review-passed` → §1 → **merged**                                                                        | char          |
-| R8b  | dependency-review: manual finding                                                    | `deps-review-manual` → manual (human decides)                                                                 | char          |
+| R8b  | dependency-review: manual finding                                                    | `deps-review-manual` → manual (human decides); after 72h project-manager redispatches dependency review once per head, then escalates (PM34/PM32) | char          |
 | R8c  | dependency-review: blocked                                                           | `deps-review-blocked` → manual (human decides; **not** auto-close)                                            | char          |
 | R9   | review on a **draft** PR                                                             | not orchestrated → **no-op**                                                                                  | char          |
 | R11  | antigravity secret fallback (`GEMINI_API_KEY` ∥ `AV_API_KEY`)                        | runs with whichever present → label                                                                           | char          |
@@ -188,7 +188,9 @@ flowchart TD
 | P11 | agent comments/labels-only (e.g. issue-catch-up clusters ≥3 similar issues) | comment / label / close duplicate issues (not a PR)                                                       | char [verify] |
 | P11b | issue-catch-up `triaged_no_fix` issue with `auto_fix_eligible` (automation-authored, priority low/medium/high, no security/critical) | `/fix` posted via GH_PAT (OWNER association passes trust gate) → §6a fix-issue flow; max 5 per run, 6h `/fix` cooldown | char |
 | P11c | issue-catch-up `triaged_no_fix` issue NOT `auto_fix_eligible` (security/critical, missing priority, or human-authored) | `needs-review` + manual-fix-triage comment (human terminal, unchanged)                                    | char |
-| P12 | dependabot PR                                                               | npm→auto; `github_actions/`→manual-only (`policy.json dependabot`)                                        | char          |
+| P12 | dependabot PR                                                               | npm→auto; `github_actions/`→manual-only branch (`policy.json dependabot`)                                 | char          |
+| P12b | dependabot github_actions bump, digest-only or patch of a SHA-pinned action | dependency-review dispatched via `.github/workflows/**` worker paths → `deps-review-passed` → PR becomes ready → PM manual-only 8h age-out + direct-merge review (PM14) → **merged** | char          |
+| P12c | dependabot github_actions bump that unpins, jumps minor/major, or edits beyond `uses:` lines | `deps-review-manual` → human merge                                                                        | char          |
 | P13 | agent commits generated state (`graphify-out/**`)                           | blocked by `generatedStatePathGlobs`                                                                      | char          |
 
 ---

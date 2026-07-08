@@ -379,7 +379,15 @@ function getNotRequestedCheckStatus() {
 }
 
 function pathsMatch(files, paths) {
-  return files.some((file) => (paths ?? []).includes(file));
+  // Entries ending in `/**` match any file under that directory prefix;
+  // everything else stays an exact-path match.
+  return files.some((file) =>
+    (paths ?? []).some((pattern) =>
+      pattern.endsWith('/**')
+        ? file.startsWith(pattern.slice(0, -2))
+        : pattern === file,
+    ),
+  );
 }
 
 /**
@@ -2140,6 +2148,7 @@ module.exports = {
   evaluatePolicy,
   makeDecision,
   MAX_FINALIZER_RETRIES,
+  pathsMatch,
   readConfig,
   renderFlowComment,
   resolvePrNumber,
