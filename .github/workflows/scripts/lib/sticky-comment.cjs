@@ -97,27 +97,20 @@ function upsertComment({
   const payloadPath = writeTempJson('sticky-comment', { body });
 
   try {
-    if (existing) {
-      if (replaceExisting) {
-        run('gh', [
-          'api',
-          '-X',
-          'DELETE',
-          `repos/${repo}/issues/comments/${existing.id}`,
-        ]);
-      } else {
-        run('gh', [
-          'api',
-          '-X',
-          'PATCH',
-          `repos/${repo}/issues/comments/${existing.id}`,
-          '--input',
-          payloadPath,
-        ]);
-        return;
-      }
+    if (existing && !replaceExisting) {
+      run('gh', [
+        'api',
+        '-X',
+        'PATCH',
+        `repos/${repo}/issues/comments/${existing.id}`,
+        '--input',
+        payloadPath,
+      ]);
+      return;
     }
 
+    // Create the replacement before deleting the prior comment so the marker
+    // is never absent if the create fails (delete-then-create would lose it).
     run('gh', [
       'api',
       '-X',
@@ -126,6 +119,15 @@ function upsertComment({
       '--input',
       payloadPath,
     ]);
+
+    if (existing) {
+      run('gh', [
+        'api',
+        '-X',
+        'DELETE',
+        `repos/${repo}/issues/comments/${existing.id}`,
+      ]);
+    }
   } finally {
     fs.rmSync(payloadPath, { force: true });
   }

@@ -211,35 +211,35 @@ jobs:
               comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
             );
 
-            if (!replaceExistingComment && existing?.body === body) {
+            if (existing?.body === body) {
               core.info('Finalizer comment already up to date.');
               return;
             }
 
-            if (existing) {
-              if (replaceExistingComment) {
-                await github.rest.issues.deleteComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: existing.id
-                });
-              } else {
-                await github.rest.issues.updateComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: existing.id,
-                  body
-                });
-                return;
-              }
+            if (existing && !replaceExistingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+              return;
             }
 
             await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body
+            });
+
+            if (existing) {
+              await github.rest.issues.deleteComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: issueNumber,
-                body
+                comment_id: existing.id
               });
+            }
 
       - name: Fail on finalizer apply error
         if: steps.apply.outputs.status == 'failed'

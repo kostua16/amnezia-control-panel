@@ -76,8 +76,8 @@ test('upsertComment replaces an existing sticky comment by default', () => {
       gh.readCalls().map((args) => args.slice(0, 4)),
       [
         ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
-        ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/42'],
         ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+        ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/42'],
       ],
     );
   } finally {
