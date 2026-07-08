@@ -726,7 +726,7 @@ Source: `/gsd:explore` twelfth-pass review (non-duplicative vs proposals #1-#33 
 | # | Proposal | Severity | Area | Status |
 |---|----------|----------|------|--------|
 | 34 | **No CSRF protection for state-changing API routes** — `sameSite: 'lax'` cookie does not protect POST/PUT/DELETE from cross-site form submissions. Fix: Origin header validation in middleware or double-submit cookie pattern | Medium (Security) | `src/app/api/auth/login/route.ts`, `src/middleware.ts` | Proposed |
-| 35 | **Server-timezone-dependent traffic aggregation boundary** — `quota-monitor.ts` and `dashboard-stats.ts` compute month start with local TZ, not UTC/admin TZ. Fix: UTC-based boundaries or configurable `PANEL_TIMEZONE` env var | Medium (Correctness) | `src/lib/quota-monitor.ts:133`, `src/lib/dashboard-stats.ts` | Proposed |
+| 35 | **Server-timezone-dependent traffic aggregation boundary** — `quota-monitor.ts` computes the month-start boundary with local TZ, not UTC/admin TZ (the dashboard `TRAFFIC_STATS_WINDOW_HOURS` window is relative and unaffected). Fix: UTC-based boundaries or configurable `PANEL_TIMEZONE` env var | Medium (Correctness) | `src/lib/quota-monitor.ts:133`, `src/lib/traffic-log-cleanup.ts` | Proposed |
 
 ---
 *Roadmap created: 2026-04-27*

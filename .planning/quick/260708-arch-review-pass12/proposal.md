@@ -44,17 +44,17 @@ Source: `/gsd:explore` twelfth-pass review (non-duplicative vs proposals #1-#33 
 
 **Severity:** Medium (Correctness)
 
-**Problem:** Dashboard traffic stats and quota monitoring compute month boundaries using `new Date(now.getFullYear(), now.getMonth(), 1)` which uses the **server's local timezone**, not the admin's configured timezone or UTC. This means:
+**Problem:** Quota monitoring (and the traffic-log retention boundary) compute calendar boundaries using the server's local timezone — `new Date(now.getFullYear(), now.getMonth(), 1)` for the quota month-start — not the admin's configured timezone or UTC. This means:
 - Monthly quota resets happen at midnight server-time, not admin midnight
-- Dashboard traffic window (`TRAFFIC_STATS_WINDOW_HOURS`) is server-TZ-dependent
-- An admin in UTC+3 sees their "monthly" traffic window shift by 3 hours from expected
+- An admin in UTC+3 sees their "monthly" quota window shift by 3 hours from expected
+
+The dashboard `TRAFFIC_STATS_WINDOW_HOURS` window is a relative `Date.now() - N ms` query (`dashboard-stats.ts:25`) and is TZ-independent — it is not affected.
 
 **Evidence:**
-- `src/lib/dashboard-stats.ts:4-10` — `TRAFFIC_STATS_WINDOW_HOURS` config exists but window boundary uses server local time
-- `src/lib/dashboard-stats.ts:25` — `new Date(Date.now() - TRAFFIC_STATS_WINDOW_MS)` — this is relative (OK), but month-start below is not
+- `src/lib/dashboard-stats.ts:4-10,25` — `TRAFFIC_STATS_WINDOW_HOURS` window is relative (`new Date(Date.now() - TRAFFIC_STATS_WINDOW_MS)`), TZ-independent (not affected)
 - `src/lib/quota-monitor.ts:133-134` — `new Date(now.getFullYear(), now.getMonth(), 1)` — month start uses server local TZ
-- `src/lib/traffic-log-cleanup.ts` — likely has same pattern (cleanup boundary)
+- `src/lib/traffic-log-cleanup.ts` — retention boundary (`now - RETENTION_DAYS`); likely has same pattern (cleanup boundary)
 
 **Fix:** Use UTC-based month boundaries (`Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)`) as default, or add a `TZ` env var (`process.env.PANEL_TIMEZONE`) parsed via `Intl.DateTimeFormat` for admin-configurable timezone. The relative window in dashboard-stats is unaffected (it's `Date.now() - N ms`), but quota month-start and traffic-log cleanup need the fix.
 
-**Files:** `src/lib/quota-monitor.ts:133`, `src/lib/dashboard-stats.ts`, `src/lib/traffic-log-cleanup.ts`
+**Files:** `src/lib/quota-monitor.ts:133`, `src/lib/traffic-log-cleanup.ts`
