@@ -16,10 +16,63 @@ import { httpClient } from './http-client';
 
 const RETRY_DELAYS = [1000, 2000, 4000];
 
+// Circuit breaker: track consecutive failures per panel
+const panelFailures = new Map<number, number[]>();
+const FAILURE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_CONSECUTIVE_FAILURES = 3;
+
 // ─── Helpers ────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Check if a panel is degraded due to consecutive failures.
+ * Tracks failures within a 5-minute window.
+ */
+function isPanelDegraded(panelId: number): boolean {
+  const failures = panelFailures.get(panelId) || [];
+  const now = Date.now();
+
+  // Filter out old failures outside the window
+  const recentFailures = failures.filter((ts) => now - ts < FAILURE_WINDOW_MS);
+  panelFailures.set(panelId, recentFailures);
+
+  return recentFailures.length >= MAX_CONSECUTIVE_FAILURES;
+}
+
+/**
+ * Record a panel failure for circuit breaker tracking.
+ */
+function recordPanelFailure(panelId: number): void {
+  const failures = panelFailures.get(panelId) || [];
+  const now = Date.now();
+
+  // Filter out old failures and add new one
+  const recentFailures = failures.filter((ts) => now - ts < FAILURE_WINDOW_MS);
+  recentFailures.push(now);
+  panelFailures.set(panelId, recentFailures);
+}
+
+/**
+ * Clear failure history for a panel (called on success).
+ */
+function clearPanelFailures(panelId: number): void {
+  panelFailures.delete(panelId);
+}
+
+/**
+ * Classify a push outcome as transient (worth retrying / tripping the breaker)
+ * or deterministic. Network/timeout failures carry no HTTP status; 5xx responses
+ * indicate a temporarily unavailable remote. 4xx client errors (401 auth, 403,
+ * 400 bad config) are deterministic — retrying will not change the outcome, and
+ * tripping the circuit breaker on them would mask the real cause behind a
+ * misleading "degraded" state instead of letting each push surface the error.
+ */
+function isTransientFailure(status: number | null): boolean {
+  if (status === null) return true; // network error / timeout (no response)
+  return status >= 500; // 5xx is transient; 4xx is a deterministic client/config fault
 }
 
 // ─── generatePerPanelConfig ─────────────────────────────
@@ -100,8 +153,31 @@ export async function pushConfigToPanel(
   };
 
   let lastError: string | null = null;
+  // null = network/timeout failure (no HTTP response); otherwise the last HTTP status.
+  let lastStatus: number | null = null;
   let retries = 0;
   const startTime = Date.now();
+
+  // Check circuit breaker
+  if (isPanelDegraded(panel.id)) {
+    broadcastEvent('panel:push-progress', {
+      panelId: panel.id,
+      panelName: panel.name,
+      status: 'degraded',
+      error: `Panel degraded after ${MAX_CONSECUTIVE_FAILURES} consecutive failures. Check connectivity.`,
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      panelId: panel.id,
+      panelName: panel.name,
+      success: false,
+      configVersion: null,
+      latencyMs: 0,
+      error: `Panel degraded (${MAX_CONSECUTIVE_FAILURES} consecutive failures)`,
+      retries: 0,
+    };
+  }
 
   // Initial attempt + up to 2 retries = 3 total attempts
   broadcastEvent('panel:push-progress', {
@@ -111,13 +187,14 @@ export async function pushConfigToPanel(
     timestamp: new Date().toISOString(),
   });
 
-  for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+  // Fix: use strict inequality to make exactly 3 attempts (attempt 0, 1, 2)
+  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
     try {
       const response = await httpClient(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
-        timeoutMs: 15_000,
+        timeoutMs: 8000, // Reduced from 15s to 8s per Proposal 13
         retries: 0,
       });
 
@@ -126,6 +203,7 @@ export async function pushConfigToPanel(
         const data = resp.data;
         if (data?.applied && typeof data.configVersion === 'number') {
           const latencyMs = Date.now() - startTime;
+          clearPanelFailures(panel.id); // Clear failures on success
           broadcastEvent('panel:push-progress', {
             panelId: panel.id,
             panelName: panel.name,
@@ -146,15 +224,24 @@ export async function pushConfigToPanel(
       }
 
       lastError = `HTTP ${response.status}: ${response.statusText}`;
+      lastStatus = response.status;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
+      lastStatus = null; // network/timeout failure — no HTTP response received
     }
 
     // If we have retries left, wait before trying again
-    if (attempt < RETRY_DELAYS.length) {
+    if (attempt < RETRY_DELAYS.length - 1) {
       retries++;
       await sleep(RETRY_DELAYS[attempt]);
     }
+  }
+
+  // Only transient failures (network/timeout/5xx) count toward the circuit breaker.
+  // Deterministic 4xx client errors (auth, config) are not retried-away and must keep
+  // surfacing per push so the admin sees the real cause rather than a "degraded" mask.
+  if (isTransientFailure(lastStatus)) {
+    recordPanelFailure(panel.id);
   }
 
   broadcastEvent('panel:push-progress', {
@@ -179,7 +266,7 @@ export async function pushConfigToPanel(
 // ─── pushConfigToAllPanels ──────────────────────────────
 
 /**
- * Push chain config to all active remote panels sequentially.
+ * Push chain config to all active remote panels in parallel.
  * Increments configVersion starting from 1 for each panel in the batch.
  */
 export async function pushConfigToAllPanels(
@@ -195,17 +282,18 @@ export async function pushConfigToAllPanels(
   const results: PushResult[] = [];
   let configVersion = 0;
 
-  for (const panel of panels) {
+  // Prepare all panel pushes
+  const pushPromises = panels.map(async (panel) => {
     const panelConfig = generatePerPanelConfig(chainConfig, panel.id);
 
     if (!panelConfig) {
       // Panel has no role in this chain — skip
-      continue;
+      return null;
     }
 
     const apiKey = panelApiKeys.get(panel.id);
     if (!apiKey) {
-      results.push({
+      return {
         panelId: panel.id,
         panelName: panel.name,
         success: false,
@@ -213,8 +301,7 @@ export async function pushConfigToAllPanels(
         latencyMs: null,
         error: 'No API key provided for panel',
         retries: 0,
-      });
-      continue;
+      };
     }
 
     configVersion++;
@@ -253,12 +340,22 @@ export async function pushConfigToAllPanels(
       );
     }
 
-    const result = await pushConfigToPanel(
+    return pushConfigToPanel(
       { id: panel.id, name: panel.name, panelUrl, apiKey },
       panelConfig,
     );
+  });
 
-    results.push(result);
+  // Execute all pushes in parallel and collect results
+  const settleResults = await Promise.allSettled(pushPromises);
+
+  for (const settleResult of settleResults) {
+    if (settleResult.status === 'fulfilled' && settleResult.value !== null) {
+      results.push(settleResult.value);
+    } else if (settleResult.status === 'rejected') {
+      // Handle rejected promises (should be rare with our error handling)
+      console.error('[panel-sync] Push promise rejected:', settleResult.reason);
+    }
   }
 
   const succeeded = results.filter((r) => r.success).length;

@@ -48,6 +48,17 @@ export async function checkUserQuotas(): Promise<{
     },
   });
 
+  // Bulk-fetch all recent quota alerts for dedup (Proposal 14: avoid N+1 queries)
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const recentAlerts = await prisma.alert.findMany({
+    where: {
+      type: { startsWith: 'quota_' },
+      createdAt: { gte: oneHourAgo },
+    },
+    select: { type: true },
+  });
+  const recentAlertTypes = new Set(recentAlerts.map((a) => a.type));
+
   const results = {
     checked: usersWithQuotas.length,
     alertsCreated: 0,
@@ -67,59 +78,29 @@ export async function checkUserQuotas(): Promise<{
     const usagePercent = await getUserUsagePercent(user.id, quota.quotaBytes);
 
     for (const threshold of getExceededQuotaThresholds(usagePercent)) {
-      const created = await checkQuotaThreshold(
-        user.id,
-        user.username,
-        usagePercent,
-        threshold.percent,
-        threshold.severity,
-      );
+      const alertType = `quota_${threshold.percent}%_user${user.id}`;
 
-      if (created) {
-        results.alertsCreated++;
-        results.details.push({
-          userId: user.id,
-          username: user.username,
-          percent: usagePercent,
-          severity: threshold.severity,
-        });
+      // Use in-memory set lookup instead of database query (Proposal 14)
+      if (recentAlertTypes.has(alertType)) {
+        continue; // Duplicate alert suppressed
       }
+
+      const message = `User "${user.username}" has used ${usagePercent}% of traffic quota (${threshold.percent}% threshold exceeded)`;
+
+      await createAlert(alertType, threshold.severity, message);
+      recentAlertTypes.add(alertType); // Add to set to prevent duplicates in this run
+
+      results.alertsCreated++;
+      results.details.push({
+        userId: user.id,
+        username: user.username,
+        percent: usagePercent,
+        severity: threshold.severity,
+      });
     }
   }
 
   return results;
-}
-
-/**
- * Check if a specific user exceeds a quota threshold and create alert if needed.
- * Prevents duplicate alerts within the same quota period.
- */
-async function checkQuotaThreshold(
-  userId: number,
-  username: string,
-  usagePercent: number,
-  thresholdPercent: number,
-  severity: AlertSeverity,
-): Promise<boolean> {
-  const alertType = `quota_${thresholdPercent}%_user${userId}`;
-
-  // Check for a recent alert of the same type to prevent duplicates
-  const recentAlert = await prisma.alert.findFirst({
-    where: {
-      type: alertType,
-      createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }, // Within last hour
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  if (recentAlert) {
-    return false; // Duplicate alert suppressed
-  }
-
-  const message = `User "${username}" has used ${usagePercent}% of traffic quota (${thresholdPercent}% threshold exceeded)`;
-
-  await createAlert(alertType, severity, message);
-  return true;
 }
 
 /**
