@@ -198,6 +198,7 @@ jobs:
             const issueNumber = Number(process.env.PR_NUMBER);
             const review = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
             const marker = '<!-- dependency-review-signal -->';
+            const replaceExistingComment = true;
             const body = [
               marker,
               '## Dependency Review Signal',
@@ -219,19 +220,28 @@ jobs:
               comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
             );
 
-            if (existing) {
+            if (existing && !replaceExistingComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 comment_id: existing.id,
                 body
               });
-            } else {
-              await github.rest.issues.createComment({
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body
+            });
+
+            if (existing) {
+              await github.rest.issues.deleteComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: issueNumber,
-                body
+                comment_id: existing.id
               });
             }
 

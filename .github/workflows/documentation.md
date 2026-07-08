@@ -61,7 +61,7 @@ pull_request_target lifecycle events
   -> pr-flow.yml
   -> reads .github/pr-flow.json, classifies the PR, syncs one flow/* state label, and dispatches one next worker
   -> publishes commit statuses on the PR head SHA for pr-flow/ready and worker visibility
-  -> upserts one PR Flow Orchestration comment with worker links and latest decisions
+  -> replaces one PR Flow Orchestration comment with worker links and latest decisions so the refreshed report is latest in the PR timeline
   -> treats draft-to-ready as orchestration only; CI reruns require a new commit
 
 code-review.yml
@@ -104,7 +104,7 @@ fix-review.yml
   -> applies fixes in place on the SAME PR head branch (never a new branch, never force-pushes)
   -> CI-matching gate (npm run test && npm run build + script tests + Prisma-safe check) must pass before push
   -> disables auto-merge after a fix push so the bot commit is re-reviewed before merge
-  -> sticky summary comment: started -> working -> finished (or skipped / no-changes / push-rejected / validation-failed / failed / cancelled)
+  -> sticky summary comment: started -> working -> finished (or skipped / no-changes / push-rejected / validation-failed / failed / cancelled); each refresh replaces the old comment so the current summary is latest in the PR timeline
   -> human command path remains standalone; automation_review_loop is dispatched
      by auto-cover-review.yml
 
@@ -157,12 +157,13 @@ Dispatch-only workers run through `workflow_dispatch`. GitHub associates a
 `workflow_dispatch` run with the dispatched ref, which is normally `main` here,
 not with the PR head commit. That means dispatched worker runs do not naturally
 appear as native PR checks for the head SHA. `pr-flow.yml` bridges that gap by
-writing commit statuses directly to the PR head SHA and by updating the sticky
+writing commit statuses directly to the PR head SHA and by replacing the sticky
 `<!-- pr-flow-orchestration -->` PR comment.
 
 The sticky PR Flow comment also renders state-specific next steps and relevant
-operator controls. It is rebuilt on each orchestrator run, including worker
-wakeups, so labels such as `skip-improve`, `needs-review`, `do-not-merge`, and
+operator controls. It is rebuilt on each orchestrator run by deleting the prior
+marker-owned comment and posting the replacement, including worker wakeups, so
+labels such as `skip-improve`, `needs-review`, `do-not-merge`, and
 `maintainer-approved`, plus PR comments such as `/approve` and `/review`, are
 reflected in the guidance as the PR moves through the flow. Manual `/review`
 comments are PR Flow control inputs: PR Flow resolves the current PR head,

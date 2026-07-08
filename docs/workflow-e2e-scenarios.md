@@ -249,20 +249,20 @@ flowchart TD
   ST --> PR
 ```
 
-| ID  | Trigger / precondition                                              | Resolution → terminal                                                                                             | Type |
-| --- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---- |
-| V1  | Initial orchestration on draft PR                                   | aggregate=pending, all workers=pending → PR comment shows waiting state                                           | char |
-| V2  | Worker completion wake (e.g., Code Review `workflow_run` completed) | re-orchestrate → buildFlowVisibility → updated statuses (codeReview=success) → PR comment refreshes               | char |
-| V3  | Worker dispatch fails (`gh workflow run` error)                     | aggregate=error, relevant worker=error → status describes failure → PR comment surfaces dispatch error            | char |
-| V4  | Required checks failed                                              | aggregate=failure, workers pending → `pr-flow/ready` blocks merge                                                 | char |
-| V5  | Review passed (`ai-review-passed` + `security-review-passed`)       | workers=success, aggregate=pending (waiting for finalizer) → PR comment shows review success                      | char |
-| V6  | Draft → ready transition                                            | statuses refresh from pending to active state → PR comment updates next steps                                     | char |
-| V7  | Closed/merged PR                                                    | aggregate=success, workers=N/A → final statuses set, PR comment shows terminal state                              | char |
-| V8  | Manual-only policy (`needs-review` label)                           | aggregate=success, finalizer=N/A → `pr-flow/ready` passes, PR comment shows manual-only gate                      | char |
-| V9  | Visibility publish fails (gh api error)                             | error logged, aggregate status updated with error description → PR comment may stale, but status surfaces failure | char |
-| V10 | Dependency review required (dependabot + package.json changed)      | dependencyReview active (not skipped), codeReview=N/A → statuses reflect dependency gate                          | char |
-| V11 | Multiple workers running concurrently                               | each worker shows `running` displayState → PR comment table shows live progress                                   | char |
-| V12 | External Kilo review pending (no current-head reply under 30min)    | kiloReview=pending → `pr-flow/kilo-review` status shows waiting → PR Flow continues to other gates                | char |
+| ID  | Trigger / precondition                                              | Resolution → terminal                                                                                                                                 | Type |
+| --- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| V1  | Initial orchestration on draft PR                                   | aggregate=pending, all workers=pending → PR comment shows waiting state                                                                               | char |
+| V2  | Worker completion wake (e.g., Code Review `workflow_run` completed) | re-orchestrate → buildFlowVisibility → updated statuses (codeReview=success) → old PR comment is deleted and refreshed as the latest timeline comment | char |
+| V3  | Worker dispatch fails (`gh workflow run` error)                     | aggregate=error, relevant worker=error → status describes failure → PR comment surfaces dispatch error                                                | char |
+| V4  | Required checks failed                                              | aggregate=failure, workers pending → `pr-flow/ready` blocks merge                                                                                     | char |
+| V5  | Review passed (`ai-review-passed` + `security-review-passed`)       | workers=success, aggregate=pending (waiting for finalizer) → PR comment shows review success                                                          | char |
+| V6  | Draft → ready transition                                            | statuses refresh from pending to active state → replacement PR comment shows next steps as latest timeline comment                                    | char |
+| V7  | Closed/merged PR                                                    | aggregate=success, workers=N/A → final statuses set, PR comment shows terminal state                                                                  | char |
+| V8  | Manual-only policy (`needs-review` label)                           | aggregate=success, finalizer=N/A → `pr-flow/ready` passes, PR comment shows manual-only gate                                                          | char |
+| V9  | Visibility publish fails (gh api error)                             | error logged, aggregate status updated with error description → PR comment may stale, but status surfaces failure                                     | char |
+| V10 | Dependency review required (dependabot + package.json changed)      | dependencyReview active (not skipped), codeReview=N/A → statuses reflect dependency gate                                                              | char |
+| V11 | Multiple workers running concurrently                               | each worker shows `running` displayState → PR comment table shows live progress                                                                       | char |
+| V12 | External Kilo review pending (no current-head reply under 30min)    | kiloReview=pending → `pr-flow/kilo-review` status shows waiting → PR Flow continues to other gates                                                    | char |
 
 ---
 

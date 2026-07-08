@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 // Shared infrastructure for "sticky" PR comments: find one bot-authored comment
-// by its hidden HTML marker, then create-or-update it in place. Extracted from
+// by its hidden HTML marker, then create-or-update it. Extracted from
 // upsert-code-review-comment.cjs / upsert-pr-size-comment.cjs /
 // orchestrate-pr-flow.cjs so the marker-upsert logic lives in one place.
 //
@@ -82,14 +82,22 @@ function findExistingComment(
   );
 }
 
-// Create the sticky comment if absent, otherwise overwrite the existing one.
+// Create the sticky comment if absent, otherwise replace the existing one so
+// the refreshed report appears as the latest PR timeline comment. Callers can
+// opt out with replaceExisting: false when they need to preserve comment URLs.
 // `marker` identifies which sticky comment family to update.
-function upsertComment({ repo, prNumber, marker, body }) {
+function upsertComment({
+  repo,
+  prNumber,
+  marker,
+  body,
+  replaceExisting = true,
+}) {
   const existing = findExistingComment(listComments(repo, prNumber), marker);
   const payloadPath = writeTempJson('sticky-comment', { body });
 
   try {
-    if (existing) {
+    if (existing && !replaceExisting) {
       run('gh', [
         'api',
         '-X',
@@ -100,6 +108,9 @@ function upsertComment({ repo, prNumber, marker, body }) {
       ]);
       return;
     }
+
+    // Create the replacement before deleting the prior comment so the marker
+    // is never absent if the create fails (delete-then-create would lose it).
     run('gh', [
       'api',
       '-X',
@@ -108,6 +119,15 @@ function upsertComment({ repo, prNumber, marker, body }) {
       '--input',
       payloadPath,
     ]);
+
+    if (existing) {
+      run('gh', [
+        'api',
+        '-X',
+        'DELETE',
+        `repos/${repo}/issues/comments/${existing.id}`,
+      ]);
+    }
   } finally {
     fs.rmSync(payloadPath, { force: true });
   }

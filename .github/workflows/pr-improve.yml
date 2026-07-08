@@ -242,6 +242,7 @@ jobs:
             const issueNumber = Number(process.env.PR_NUMBER);
             const analysis = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
             const marker = '<!-- pr-improve -->';
+            const replaceExistingComment = true;
             const body = [
               marker,
               '## Claude+GSD Improvement Intake',
@@ -267,7 +268,7 @@ jobs:
               comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
             );
 
-            if (existing) {
+            if (existing && !replaceExistingComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -281,6 +282,14 @@ jobs:
                 issue_number: issueNumber,
                 body
               });
+
+              if (existing) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id
+                });
+              }
             }
 
             await github.rest.issues.addLabels({
