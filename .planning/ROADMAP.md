@@ -720,6 +720,15 @@ Source: `/gsd:explore` eleventh-pass review (non-duplicative vs proposals #1-#30
 | 32 | **Missing `Alert.type` index** — `checkQuotaThreshold()` queries by `type` with no index; add `@@index([type])` to Alert model for index-scan duplicate detection | Medium (Perf) | `prisma/schema.prisma` | Proposed |
 | 33 | **Graceful shutdown gaps: prisma disconnect + WebSocket close** — Repo-root `instrumentation.ts` already registers SIGTERM/SIGINT handlers calling stopBroadcaster/cleanupPanelHealth/cleanupConnections/cleanupGeoIP; only `prisma.$disconnect()` and WebSocket `close()` are missing. Extend the existing handler | Medium (Reliability) | `instrumentation.ts` (extend) | Proposed |
 
+## Improvement Intake: Architectural Review Pass 12 (2026-07-08)
+
+Source: `/gsd:explore` twelfth-pass review (non-duplicative vs proposals #1-#33 and open PRs). Artifact: `.planning/quick/260708-arch-review-pass12/proposal.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 34 | **No CSRF protection for state-changing API routes** — `sameSite: 'lax'` cookie does not protect POST/PUT/DELETE from cross-site form submissions. Fix: Origin header validation in middleware or double-submit cookie pattern | Medium (Security) | `src/app/api/auth/login/route.ts`, `src/middleware.ts` | Proposed |
+| 35 | **Server-timezone-dependent traffic aggregation boundary** — `quota-monitor.ts` computes the month-start boundary with local TZ, not UTC/admin TZ (the dashboard `TRAFFIC_STATS_WINDOW_HOURS` window is relative and unaffected). Fix: UTC-based boundaries or configurable `PANEL_TIMEZONE` env var | Medium (Correctness) | `src/lib/quota-monitor.ts:133`, `src/lib/traffic-log-cleanup.ts` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-05 - Added architectural review pass 11 (proposals #31-#33: quota monitor batch queries, Alert.type index, graceful shutdown disconnect/WS-close gaps)*
+*Last updated: 2026-07-08 - Added architectural review pass 12 (proposals #34-#35: CSRF protection for state-changing routes, server-timezone-dependent traffic/quota boundaries)*
