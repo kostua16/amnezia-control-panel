@@ -530,6 +530,11 @@ flowchart TD
 | PM28 | check rollup is unavailable or unknown while pr-flow labels include `flow/checks-failed`                                                  | project-manager treats checks as failed and posts `/fix`                                    | spec |
 | PM29 | trusted command comment exists but GitHub returned no timestamp                                                                           | command is not deduped forever; cooldown/state and recent dated comments still guard loops  | spec |
 | PM30 | global run window is too noisy to include more than one project-manager run                                                               | schedule health uses workflow-specific/canonical run evidence for observed run gaps         | spec |
+| PM31 | PR carries `needs-review` / `deps-review-manual` / `deps-review-blocked` and no blocked clock is recorded                                 | sticky state records `blockedSince` (clock start; resets on new head)                       | char |
+| PM32 | blocked clock older than 72h, not yet escalated                                                                                           | one sticky escalation comment on the PR + entry appended to `[project-manager] Attention` digest issue; `blockedEscalatedAt` recorded | char |
+| PM33 | blocked PR already escalated for the current head                                                                                         | no repeat escalation (state-deduped)                                                        | char |
+| PM34 | `deps-review-manual` persisted past 72h, dependency review not yet redispatched for this head                                             | `dependency-review.yml` redispatched once before any human escalation                       | char |
+| PM35 | blocked PR also carries `do-not-merge`                                                                                                    | explicit human hold: no clock, no escalation, no digest                                     | char |
 
 Project-manager must not be added as a required PR check; otherwise it can
 deadlock the very merge flow it is meant to recover.

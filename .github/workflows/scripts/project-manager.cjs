@@ -266,6 +266,9 @@ function normalizeState(pr) {
       cooldowns: {},
       workflowIssueNumber: raw.workflowIssueNumber,
       workflowIssueUrl: raw.workflowIssueUrl,
+      blockedSince: '',
+      blockedEscalatedAt: '',
+      depsReviewRedispatchedAt: '',
     };
   }
 
@@ -281,6 +284,11 @@ function normalizeState(pr) {
     cooldowns: raw.cooldowns ?? {},
     workflowIssueNumber: raw.workflowIssueNumber ?? raw.workflow_issue_number,
     workflowIssueUrl: raw.workflowIssueUrl ?? raw.workflow_issue_url,
+    blockedSince: raw.blockedSince ?? raw.blocked_since ?? '',
+    blockedEscalatedAt:
+      raw.blockedEscalatedAt ?? raw.blocked_escalated_at ?? '',
+    depsReviewRedispatchedAt:
+      raw.depsReviewRedispatchedAt ?? raw.deps_review_redispatched_at ?? '',
   };
 }
 
@@ -705,6 +713,11 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
       workflowIssueNumber:
         extra.workflowIssueNumber ?? state.workflowIssueNumber ?? '',
       workflowIssueUrl: extra.workflowIssueUrl ?? state.workflowIssueUrl ?? '',
+      blockedSince: extra.blockedSince ?? state.blockedSince ?? '',
+      blockedEscalatedAt:
+        extra.blockedEscalatedAt ?? state.blockedEscalatedAt ?? '',
+      depsReviewRedispatchedAt:
+        extra.depsReviewRedispatchedAt ?? state.depsReviewRedispatchedAt ?? '',
       cooldowns: {
         ...(state.cooldowns ?? {}),
         [actionKey]: now,
@@ -856,6 +869,118 @@ function manualOnlyAction(pr, state, readySince, now) {
   };
 }
 
+const BLOCKED_ESCALATION_HOURS = 72;
+const BLOCKED_ESCALATION_LABELS = [
+  'needs-review',
+  'deps-review-manual',
+  'deps-review-blocked',
+];
+const BLOCKED_ESCALATION_MARKER = '<!-- project-manager-blocked-escalation -->';
+const ATTENTION_DIGEST_TITLE =
+  '[project-manager] Attention: PRs blocked on maintainer';
+
+function blockedEscalationLabels(pr) {
+  // do-not-merge is an explicit human hold; never remind about it.
+  if (hasLabel(pr, 'do-not-merge')) return [];
+  return BLOCKED_ESCALATION_LABELS.filter((label) => hasLabel(pr, label));
+}
+
+function blockedClockPatch(pr, state, readySince, now) {
+  if (blockedEscalationLabels(pr).length === 0) return null;
+  if (state.blockedSince) return null;
+  return makeStatePatch(pr, state, 'blocked-clock', now, {
+    readySince,
+    blockedSince: now,
+  });
+}
+
+function blockedEscalationAction(pr, state, now) {
+  const blocked = blockedEscalationLabels(pr);
+  if (blocked.length === 0) return null;
+  if (!state.blockedSince) return null;
+  if (hoursBetween(state.blockedSince, now) < BLOCKED_ESCALATION_HOURS) {
+    return null;
+  }
+
+  // A deps-review-manual verdict can be transient (context-starved run):
+  // redispatch dependency review once per head before asking a human.
+  if (
+    blocked.includes('deps-review-manual') &&
+    !state.depsReviewRedispatchedAt
+  ) {
+    return {
+      type: 'compound',
+      actionKey: 'deps-review-redispatch',
+      reason:
+        'deps-review-manual persisted past the escalation window; redispatching dependency review once before escalating.',
+      number: pr.number,
+      actions: [
+        {
+          type: 'dispatch-workflow',
+          workflow: 'dependency-review.yml',
+          ref: pr.baseRefName ?? 'main',
+          inputs: {
+            pr_number: String(pr.number),
+            head_sha: pr.headRefOid ?? pr.headSha ?? '',
+            base_ref: pr.baseRefName ?? 'main',
+          },
+          actionKey: 'deps-review-redispatch',
+        },
+        makeStatePatch(pr, state, 'deps-review-redispatch', now, {
+          depsReviewRedispatchedAt: now,
+        }),
+      ],
+    };
+  }
+
+  if (state.blockedEscalatedAt) return null;
+
+  const days = Math.floor(hoursBetween(state.blockedSince, now) / 24);
+  return {
+    type: 'compound',
+    actionKey: 'blocked-escalation',
+    reason: `Blocking labels (${blocked.join(', ')}) persisted ${days} day(s) with no maintainer action; escalating once per head.`,
+    number: pr.number,
+    actions: [
+      makeCommentAction(
+        pr,
+        [
+          BLOCKED_ESCALATION_MARKER,
+          `This PR has been waiting on a maintainer for ${days} day(s) (labels: ${blocked.join(', ')}).`,
+          '',
+          'To unblock: approve the PR or remove the blocking label.',
+          'Add `do-not-merge` to hold it deliberately and silence this reminder.',
+        ].join('\n'),
+        'blocked-escalation',
+      ),
+      {
+        type: 'create-or-reuse-issue',
+        title: ATTENTION_DIGEST_TITLE,
+        body: [
+          ISSUE_MARKER,
+          '',
+          'PRs waiting on maintainer attention, escalated by project-manager.',
+          'One comment is appended per escalated PR; close this issue once the queue is handled.',
+        ].join('\n'),
+        labels: ['needs-review'],
+        actionKey: 'attention-digest',
+        pr: pr.number,
+        headSha: pr.headRefOid ?? pr.headSha ?? '',
+      },
+      {
+        type: 'comment',
+        target: 'issue',
+        issueSelector: { title: ATTENTION_DIGEST_TITLE },
+        body: `PR #${pr.number} blocked on ${blocked.join(', ')} for ${days} day(s): ${pr.url ?? ''}`,
+        actionKey: 'attention-digest-entry',
+      },
+      makeStatePatch(pr, state, 'blocked-escalation', now, {
+        blockedEscalatedAt: now,
+      }),
+    ],
+  };
+}
+
 function decidePrAction(pr, options = {}) {
   const now = options.now ?? DEFAULT_NOW;
   if (!isOpenPr(pr)) return null;
@@ -968,6 +1093,11 @@ function decidePrAction(pr, options = {}) {
     };
   }
 
+  // Due blocked-PR escalation runs before /fix-review so a PR stuck on
+  // deps-review-manual/-blocked stops re-triggering futile review repairs.
+  const blockedEscalation = blockedEscalationAction(pr, state, now);
+  if (blockedEscalation) return blockedEscalation;
+
   if (
     hasReviewBlocker(pr) &&
     !checksFailed(pr) &&
@@ -1031,6 +1161,9 @@ function decidePrAction(pr, options = {}) {
 
   const manual = manualOnlyAction(pr, state, readySince, now);
   if (manual) return manual;
+
+  const blockedClock = blockedClockPatch(pr, state, readySince, now);
+  if (blockedClock) return blockedClock;
 
   return withReadyState;
 }

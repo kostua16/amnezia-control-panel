@@ -926,6 +926,97 @@ test('PM19b: issue queue retries /fix after cooldown, capped at max attempts', (
   );
 });
 
+const BLOCKED_96H_AGO = '2026-06-27T10:00:00.000Z';
+
+test('PM31: first sighting of a blocking label starts the blocked clock', () => {
+  const action = decidePrAction(
+    pr({ labels: ['needs-review'], checkStatus: { status: 'passed' } }),
+    { now: NOW },
+  );
+  assert.equal(action.type, 'upsert-pr-state');
+  assert.equal(action.state.lastAction, 'blocked-clock');
+  assert.equal(action.state.blockedSince, NOW);
+});
+
+test('PM32: blocked PR escalates once after 72h with comment and digest', () => {
+  const blocked = pr({
+    labels: ['needs-review'],
+    checkStatus: { status: 'passed' },
+    projectManagerState: { headSha: 'abc123', blockedSince: BLOCKED_96H_AGO },
+  });
+  const action = decidePrAction(blocked, { now: NOW });
+  assert.equal(action.actionKey, 'blocked-escalation');
+  const keys = action.actions.map((entry) => entry.actionKey ?? entry.type);
+  assert.deepEqual(keys, [
+    'blocked-escalation',
+    'attention-digest',
+    'attention-digest-entry',
+    'upsert-pr-state',
+  ]);
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.blockedEscalatedAt, NOW);
+});
+
+test('PM33: already-escalated blocked PR does not re-escalate', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: BLOCKED_96H_AGO,
+        blockedEscalatedAt: '2026-06-30T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action, null);
+});
+
+test('PM34: deps-review-manual redispatches dependency review once before escalating', () => {
+  const base = {
+    labels: ['deps-review-manual'],
+    checkStatus: { status: 'passed' },
+  };
+  const first = decidePrAction(
+    pr({
+      ...base,
+      projectManagerState: { headSha: 'abc123', blockedSince: BLOCKED_96H_AGO },
+    }),
+    { now: NOW },
+  );
+  assert.equal(first.actionKey, 'deps-review-redispatch');
+  const dispatch = first.actions.find(
+    (entry) => entry.type === 'dispatch-workflow',
+  );
+  assert.equal(dispatch.workflow, 'dependency-review.yml');
+
+  const second = decidePrAction(
+    pr({
+      ...base,
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: BLOCKED_96H_AGO,
+        depsReviewRedispatchedAt: '2026-06-30T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.equal(second.actionKey, 'blocked-escalation');
+});
+
+test('PM35: do-not-merge silences the blocked escalation entirely', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review', 'do-not-merge'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: { headSha: 'abc123', blockedSince: BLOCKED_96H_AGO },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action, null);
+});
+
 test('PM20: low-load dispatches exactly one eligible PR-producing workflow', () => {
   const plan = buildPlan({
     openPrCount: 1,
