@@ -451,6 +451,7 @@ flowchart TD
 | RB8  | `--force-with-lease` rejected (branch advanced / protection)                           | `push-rejected` (no plain-force retry) → **reported**                                                                  | char                                                  |
 | RB9  | `dry_run` dispatch                                                                     | validate-pr-gate → `complete` `dry-run` (not pushed) → **reported**                                                    | char                                                  |
 | MP1  | `dry_run=true` (default)                                                               | select + group + report; no push/open/close → **reported**                                                             | char                                                  |
+| MP1b | daily `schedule` trigger                                                               | `MERGE_PR_SCHEDULE_DRY_RUN=true` forces dry-run → report issue upserted daily → **reported** (write path stays operator-dispatch only) | char                                                  |
 | MP2  | no `consolidate` group (only rebase-first / manual-review / report-only)               | report selected + skipped reasons → **reported**                                                                       | char                                                  |
 | MP3  | safe group + `dry_run=false`                                                           | feedback → run-zai → validate → push → open replacement (`flow/manual-only`) → guard                                   | **spec** (write path inert until Rollout activation)  |
 | MP4  | `validate-pr-gate` fails after run-zai                                                 | not pushed, sources stay open → **reported**                                                                           | char                                                  |
@@ -537,6 +538,7 @@ flowchart TD
 | PM33 | blocked PR already escalated for the current head                                                                                         | no repeat escalation (state-deduped)                                                        | char |
 | PM34 | `deps-review-manual` persisted past 72h, dependency review not yet redispatched for this head                                             | `dependency-review.yml` redispatched once before any human escalation                       | char |
 | PM35 | blocked PR also carries `do-not-merge`                                                                                                    | explicit human hold: no clock, no escalation, no digest                                     | char |
+| PM36 | two open automation PRs share a normalized title (older appears superseded by newer)                                                     | older PR flagged once in the attention digest (`duplicateFlaggedAt` state-deduped); no auto-close | char |
 
 Project-manager must not be added as a required PR check; otherwise it can
 deadlock the very merge flow it is meant to recover.

@@ -269,6 +269,7 @@ function normalizeState(pr) {
       blockedSince: '',
       blockedEscalatedAt: '',
       depsReviewRedispatchedAt: '',
+      duplicateFlaggedAt: '',
     };
   }
 
@@ -289,6 +290,8 @@ function normalizeState(pr) {
       raw.blockedEscalatedAt ?? raw.blocked_escalated_at ?? '',
     depsReviewRedispatchedAt:
       raw.depsReviewRedispatchedAt ?? raw.deps_review_redispatched_at ?? '',
+    duplicateFlaggedAt:
+      raw.duplicateFlaggedAt ?? raw.duplicate_flagged_at ?? '',
   };
 }
 
@@ -718,6 +721,8 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
         extra.blockedEscalatedAt ?? state.blockedEscalatedAt ?? '',
       depsReviewRedispatchedAt:
         extra.depsReviewRedispatchedAt ?? state.depsReviewRedispatchedAt ?? '',
+      duplicateFlaggedAt:
+        extra.duplicateFlaggedAt ?? state.duplicateFlaggedAt ?? '',
       cooldowns: {
         ...(state.cooldowns ?? {}),
         [actionKey]: now,
@@ -879,6 +884,32 @@ const BLOCKED_ESCALATION_MARKER = '<!-- project-manager-blocked-escalation -->';
 const ATTENTION_DIGEST_TITLE =
   '[project-manager] Attention: PRs blocked on maintainer';
 
+function attentionDigestActions(pr, entryBody) {
+  return [
+    {
+      type: 'create-or-reuse-issue',
+      title: ATTENTION_DIGEST_TITLE,
+      body: [
+        ISSUE_MARKER,
+        '',
+        'PRs waiting on maintainer attention, escalated by project-manager.',
+        'One comment is appended per escalated PR; close this issue once the queue is handled.',
+      ].join('\n'),
+      labels: ['needs-review'],
+      actionKey: 'attention-digest',
+      pr: pr.number,
+      headSha: pr.headRefOid ?? pr.headSha ?? '',
+    },
+    {
+      type: 'comment',
+      target: 'issue',
+      issueSelector: { title: ATTENTION_DIGEST_TITLE },
+      body: entryBody,
+      actionKey: 'attention-digest-entry',
+    },
+  ];
+}
+
 function blockedEscalationLabels(pr) {
   // do-not-merge is an explicit human hold; never remind about it.
   if (hasLabel(pr, 'do-not-merge')) return [];
@@ -953,32 +984,64 @@ function blockedEscalationAction(pr, state, now) {
         ].join('\n'),
         'blocked-escalation',
       ),
-      {
-        type: 'create-or-reuse-issue',
-        title: ATTENTION_DIGEST_TITLE,
-        body: [
-          ISSUE_MARKER,
-          '',
-          'PRs waiting on maintainer attention, escalated by project-manager.',
-          'One comment is appended per escalated PR; close this issue once the queue is handled.',
-        ].join('\n'),
-        labels: ['needs-review'],
-        actionKey: 'attention-digest',
-        pr: pr.number,
-        headSha: pr.headRefOid ?? pr.headSha ?? '',
-      },
-      {
-        type: 'comment',
-        target: 'issue',
-        issueSelector: { title: ATTENTION_DIGEST_TITLE },
-        body: `PR #${pr.number} blocked on ${blocked.join(', ')} for ${days} day(s): ${pr.url ?? ''}`,
-        actionKey: 'attention-digest-entry',
-      },
+      ...attentionDigestActions(
+        pr,
+        `PR #${pr.number} blocked on ${blocked.join(', ')} for ${days} day(s): ${pr.url ?? ''}`,
+      ),
       makeStatePatch(pr, state, 'blocked-escalation', now, {
         blockedEscalatedAt: now,
       }),
     ],
   };
+}
+
+const AUTOMATION_BRANCH_PREFIXES = [
+  'claude-',
+  'claude/',
+  'codex/',
+  'dependabot/',
+];
+
+function isAutomationPr(pr) {
+  const branch = String(pr.headRefName ?? '');
+  return AUTOMATION_BRANCH_PREFIXES.some((prefix) => branch.startsWith(prefix));
+}
+
+function duplicateAutomationPrActions(prs, now) {
+  const groups = new Map();
+  for (const pr of prs) {
+    if (!isOpenPr(pr) || pr.isDraft || !isAutomationPr(pr)) continue;
+    const key = String(pr.title ?? '')
+      .trim()
+      .toLowerCase();
+    if (!key) continue;
+    groups.set(key, [...(groups.get(key) ?? []), pr]);
+  }
+
+  const actions = [];
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort(
+      (a, b) =>
+        (parseDate(b.createdAt)?.getTime() ?? 0) -
+        (parseDate(a.createdAt)?.getTime() ?? 0),
+    );
+    const canonical = sorted[0];
+    for (const dup of sorted.slice(1)) {
+      const state = normalizeState(dup);
+      if (state.duplicateFlaggedAt) continue;
+      actions.push(
+        ...attentionDigestActions(
+          dup,
+          `PR #${dup.number} appears superseded by #${canonical.number} (same automation title): ${dup.url ?? ''}`,
+        ),
+        makeStatePatch(dup, state, 'duplicate-flag', now, {
+          duplicateFlaggedAt: now,
+        }),
+      );
+    }
+  }
+  return actions;
 }
 
 function decidePrAction(pr, options = {}) {
@@ -1248,6 +1311,8 @@ function planPrRoute(snapshot, options = {}) {
     });
     actions.push(...flattenAction(decision));
   }
+
+  actions.push(...duplicateAutomationPrActions(prs, now));
 
   return {
     route: 'prs',
@@ -2474,6 +2539,7 @@ module.exports = {
   parseRebaseSummaryComment,
   registryCoverage,
   reviewSignalsPassed,
+  duplicateAutomationPrActions,
   safeIssueForFix,
   scheduleHealth,
   selectPrInspectionCandidates,

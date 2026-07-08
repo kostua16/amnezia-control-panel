@@ -9,6 +9,7 @@ const {
   buildPlan,
   decidePrAction,
   detectPrProducingWorkflows,
+  duplicateAutomationPrActions,
   parseFixReviewSummaryComment,
   parseRebaseSummaryComment,
   registryCoverage,
@@ -1003,6 +1004,46 @@ test('PM34: deps-review-manual redispatches dependency review once before escala
     { now: NOW },
   );
   assert.equal(second.actionKey, 'blocked-escalation');
+});
+
+test('PM36: duplicate automation PRs are flagged once in the attention digest', () => {
+  const older = pr({
+    number: 40,
+    title: 'chore: audit fixes',
+    headRefName: 'claude-audit-fix-1',
+    createdAt: '2026-06-28T10:00:00.000Z',
+    url: 'https://example.test/pull/40',
+  });
+  const newer = pr({
+    number: 41,
+    title: 'chore: audit fixes',
+    headRefName: 'claude-audit-fix-2',
+    createdAt: '2026-06-30T10:00:00.000Z',
+  });
+  const human = pr({
+    number: 43,
+    title: 'chore: audit fixes',
+    headRefName: 'feature/manual-work',
+  });
+
+  const actions = duplicateAutomationPrActions([older, newer, human], NOW);
+  const entry = actions.find(
+    (action) => action.actionKey === 'attention-digest-entry',
+  );
+  assert.match(entry.body, /PR #40 appears superseded by #41/);
+  const patch = actions.find((action) => action.type === 'upsert-pr-state');
+  assert.equal(patch.number, 40);
+  assert.equal(patch.state.duplicateFlaggedAt, NOW);
+
+  // Already-flagged duplicate stays silent.
+  const flagged = {
+    ...older,
+    projectManagerState: {
+      headSha: 'abc123',
+      duplicateFlaggedAt: '2026-06-30T12:00:00.000Z',
+    },
+  };
+  assert.deepEqual(duplicateAutomationPrActions([flagged, newer], NOW), []);
 });
 
 test('PM35: do-not-merge silences the blocked escalation entirely', () => {
