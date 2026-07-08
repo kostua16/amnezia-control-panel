@@ -62,6 +62,19 @@ function clearPanelFailures(panelId: number): void {
   panelFailures.delete(panelId);
 }
 
+/**
+ * Classify a push outcome as transient (worth retrying / tripping the breaker)
+ * or deterministic. Network/timeout failures carry no HTTP status; 5xx responses
+ * indicate a temporarily unavailable remote. 4xx client errors (401 auth, 403,
+ * 400 bad config) are deterministic — retrying will not change the outcome, and
+ * tripping the circuit breaker on them would mask the real cause behind a
+ * misleading "degraded" state instead of letting each push surface the error.
+ */
+function isTransientFailure(status: number | null): boolean {
+  if (status === null) return true; // network error / timeout (no response)
+  return status >= 500; // 5xx is transient; 4xx is a deterministic client/config fault
+}
+
 // ─── generatePerPanelConfig ─────────────────────────────
 
 /**
@@ -140,6 +153,8 @@ export async function pushConfigToPanel(
   };
 
   let lastError: string | null = null;
+  // null = network/timeout failure (no HTTP response); otherwise the last HTTP status.
+  let lastStatus: number | null = null;
   let retries = 0;
   const startTime = Date.now();
 
@@ -209,8 +224,10 @@ export async function pushConfigToPanel(
       }
 
       lastError = `HTTP ${response.status}: ${response.statusText}`;
+      lastStatus = response.status;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
+      lastStatus = null; // network/timeout failure — no HTTP response received
     }
 
     // If we have retries left, wait before trying again
@@ -220,7 +237,12 @@ export async function pushConfigToPanel(
     }
   }
 
-  recordPanelFailure(panel.id); // Record failure for circuit breaker
+  // Only transient failures (network/timeout/5xx) count toward the circuit breaker.
+  // Deterministic 4xx client errors (auth, config) are not retried-away and must keep
+  // surfacing per push so the admin sees the real cause rather than a "degraded" mask.
+  if (isTransientFailure(lastStatus)) {
+    recordPanelFailure(panel.id);
+  }
 
   broadcastEvent('panel:push-progress', {
     panelId: panel.id,

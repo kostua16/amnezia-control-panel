@@ -336,6 +336,37 @@ describe('pushConfigToPanel', () => {
     assert.equal(result.configVersion, 2);
     assert.equal(result.retries, 1);
   });
+
+  it('does not trip circuit breaker on deterministic 4xx (auth/config surfaces each push)', async () => {
+    // Unique panel id isolates this test from the module-level failure Map
+    // populated by the id=1 network-error tests above. A persistent 401 is a
+    // deterministic auth/config fault: it must keep surfacing the real HTTP
+    // error on every push instead of collapsing into a "degraded" short-circuit.
+    const panel = { ...mockPanel, id: 401 };
+    let fetchCalls = 0;
+    globalThis.fetch = mock.fn(async () => {
+      fetchCalls++;
+      return new Response(JSON.stringify({ success: false }), { status: 401 });
+    });
+
+    // Three consecutive 401s would trip a breaker that counted all failures;
+    // only transient failures (network/timeout/5xx) should count.
+    for (let i = 0; i < 3; i++) {
+      const result = await pushConfigToPanel(panel, mockPayload);
+      assert.equal(result.success, false);
+      assert.match(result.error || '', /401/); // real auth error surfaces
+      assert.equal(result.retries, 2); // full retry loop ran, not short-circuited
+    }
+
+    // 3 pushes × 3 attempts = 9 calls; breaker never short-circuited.
+    assert.equal(fetchCalls, 9);
+
+    // A fourth push still reaches the network — the 4xx did not trip the breaker.
+    const fourth = await pushConfigToPanel(panel, mockPayload);
+    assert.equal(fourth.success, false);
+    assert.match(fourth.error || '', /401/);
+    assert.ok(fetchCalls > 9, 'subsequent push should still hit the network');
+  });
 });
 
 // ─── Transport Resolution Tests ───────────────────────────
