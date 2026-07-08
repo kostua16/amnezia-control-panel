@@ -476,7 +476,7 @@ function collectCheckEvidence({
       pr,
       config,
       runJson,
-      existingChecks: jobChecks,
+      existingChecks: [...jobChecks, ...prChecks],
     });
     if (broader.checkStatus.status !== 'unavailable') {
       return broader;
