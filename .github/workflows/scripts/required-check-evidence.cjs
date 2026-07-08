@@ -398,9 +398,16 @@ function collectCheckEvidence({
         `Unable to read PR checks: ${prChecksResult.error}`,
         requiredNames,
       );
+  const requiredWorkflowRunCompleted = workflowRunMatchesRequiredChecks(
+    eventName,
+    event,
+    pr,
+    config,
+  );
   const shouldFallback =
-    workflowRunMatchesRequiredChecks(eventName, event, pr, config) &&
+    requiredWorkflowRunCompleted &&
     (!prChecksResult.ok ||
+      prCheckStatus.status === 'pending' ||
       areAllRequiredChecksMissing(prCheckStatus, requiredChecks));
 
   if (
