@@ -154,6 +154,7 @@ Plans:
 <!-- PR-IMPROVE:603 --> - PR #603: fix: resolve #601 - feature: enhance review workflow to be able to run rebase with force -- pr603.1 x1, pr603.2 x1. Quick artifact: `.planning/quick/260702-pr603-workflow-improve/260702-pr603-PLAN.md`.
 <!-- PR-IMPROVE:640 --> - PR #640: fix(workflows): keep stateful PRs in project-manager scope -- pr640.1 x1, pr640.3 x1. Quick artifact: `.planning/quick/260707-pr640-workflow-improve/260707-pr640-PLAN.md`.
 <!-- PR-IMPROVE:645 --> - PR #645: fix(workflows): reconcile stale pending PR checks -- pr645.1 x1, pr645.2 x1, pr645.3 x1. Quick artifact: `.planning/quick/260708-pr645-workflow-improve/260708-pr645-PLAN.md`.
+<!-- PR-IMPROVE:647 --> - PR #647: feat: replace sticky workflow comments on refresh -- pr647.1 x1, pr647.2 x1. Quick artifact: `.planning/quick/260708-pr647-workflow-improve/260708-pr647-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
