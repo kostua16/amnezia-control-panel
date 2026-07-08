@@ -75,6 +75,37 @@ function isTransientFailure(status: number | null): boolean {
   return status >= 500; // 5xx is transient; 4xx is a deterministic client/config fault
 }
 
+export interface ServerRecord {
+  id: number;
+  tailnetIP: string | null;
+  tailnetHostname: string | null;
+  // `hostname` is non-nullable in the Prisma `Server` model, so it stays
+  // non-null here — this keeps ServerRecord assignable to the
+  // resolvePanelTransport server param without an unsafe cast.
+  hostname: string;
+}
+
+/**
+ * In-memory server lookup for Tailscale transport resolution.
+ *
+ * Match order (deterministic — NOT identical to Prisma's unordered OR):
+ *   1. Exact `tailnetIP` equality — mirrors `tailnetIP: { equals }`.
+ *   2. Case-insensitive substring match on `hostname` — Prisma `contains`
+ *      compiles to a case-insensitive `LIKE` on SQLite, so both sides are
+ *      lowercased to preserve that match mode for mixed-case hostnames.
+ *
+ * Returns the first server matching either rule, or `undefined`.
+ */
+export function findServerByHost(
+  servers: ServerRecord[],
+  urlHostname: string,
+): ServerRecord | undefined {
+  const byIP = servers.find((s) => s.tailnetIP === urlHostname);
+  if (byIP) return byIP;
+  const needle = urlHostname.toLowerCase();
+  return servers.find((s) => s.hostname.toLowerCase().includes(needle));
+}
+
 // ─── generatePerPanelConfig ─────────────────────────────
 
 /**
@@ -279,6 +310,28 @@ export async function pushConfigToAllPanels(
     where: { isActive: true },
   });
 
+  // Fetch all servers up front so transport resolution is an in-memory
+  // lookup (avoids an N+1 per-panel query). Wrapped so a server-fetch
+  // failure degrades to per-panel `panelUrl` fallback instead of failing
+  // the entire push — matching the original per-panel findFirst behavior,
+  // where each lookup failure was caught individually.
+  let allServers: ServerRecord[] = [];
+  try {
+    allServers = await prisma.server.findMany({
+      select: {
+        id: true,
+        tailnetIP: true,
+        tailnetHostname: true,
+        hostname: true,
+      },
+    });
+  } catch (err) {
+    console.warn(
+      '[panel-sync] Server fetch failed; falling back to panelUrl for transport resolution:',
+      err,
+    );
+  }
+
   const results: PushResult[] = [];
   let configVersion = 0;
 
@@ -307,23 +360,11 @@ export async function pushConfigToAllPanels(
     configVersion++;
     panelConfig.configVersion = configVersion;
 
-    // Resolve Tailscale transport address for this panel
+    // Resolve Tailscale transport address for this panel (in-memory lookup)
     let panelUrl = panel.panelUrl;
     try {
-      const server = await prisma.server.findFirst({
-        where: {
-          OR: [
-            { hostname: { contains: new URL(panel.panelUrl).hostname } },
-            { tailnetIP: { equals: new URL(panel.panelUrl).hostname } },
-          ],
-        },
-        select: {
-          id: true,
-          tailnetIP: true,
-          tailnetHostname: true,
-          hostname: true,
-        },
-      });
+      const urlHostname = new URL(panel.panelUrl).hostname;
+      const server = findServerByHost(allServers, urlHostname);
 
       if (server) {
         const transport = await resolvePanelTransport(server, {
