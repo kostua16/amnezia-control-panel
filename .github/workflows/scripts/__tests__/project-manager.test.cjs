@@ -12,6 +12,8 @@ const {
   duplicateAutomationPrActions,
   parseFixReviewSummaryComment,
   parseRebaseSummaryComment,
+  parseStateComment,
+  renderStateBody,
   registryCoverage,
   safeIssueForFix,
   scheduleHealth,
@@ -1056,6 +1058,29 @@ test('PM35: do-not-merge silences the blocked escalation entirely', () => {
     { now: NOW },
   );
   assert.equal(action, null);
+});
+
+test('PM state comment round-trips blocked/escalation timestamps', () => {
+  const state = {
+    headSha: 'abc123',
+    readySince: NOW,
+    lastAction: 'blocked-escalation',
+    lastActionAt: NOW,
+    directMergeReview: 'not-run',
+    directMergeReviewAt: '',
+    workflowIssueNumber: '7',
+    workflowIssueUrl: 'https://example.test/issues/7',
+    blockedSince: BLOCKED_96H_AGO,
+    blockedEscalatedAt: NOW,
+    depsReviewRedispatchedAt: OLD_HEAD,
+    duplicateFlaggedAt: READY_2H,
+    cooldowns: { rebase: READY_2H, 'blocked-escalation': NOW },
+  };
+  const parsed = parseStateComment(renderStateBody(state));
+  assert.equal(parsed.blockedSince, BLOCKED_96H_AGO);
+  assert.equal(parsed.blockedEscalatedAt, NOW);
+  assert.equal(parsed.depsReviewRedispatchedAt, OLD_HEAD);
+  assert.equal(parsed.duplicateFlaggedAt, READY_2H);
 });
 
 test('PM20: low-load dispatches exactly one eligible PR-producing workflow', () => {
