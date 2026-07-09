@@ -382,7 +382,7 @@ flowchart TD
 | FR9  | manual-only PR with review blockers                                                                | repair is allowed, but finalizer/auto-merge stay blocked by manual-only policy                                                                                                                  | char |
 | FR10 | auto-cover attempt cap reached                                                                     | no new `fix-review` dispatch → **reported/no-op**                                                                                                                                               | char |
 | FR11 | active current-head `fix-review` run exists                                                        | no duplicate dispatch → **no-op**                                                                                                                                                               | char |
-| FR12 | maintainer `/fix-review` on GSD PR where internal review passed but Kilo says address before merge | Kilo feedback is collected and repair is allowed; after gated push or no-change report, PR Flow still requires both reviews to pass and keeps manual-only / human merge when policy requires it | char |
+| FR12 | maintainer `/fix-review` on GSD PR where internal review passed but Kilo says address before merge | Unresolved, non-outdated Kilo review-thread issues/warnings/suggestions are collected as actionable feedback and repair is allowed; after gated push or no-change report, PR Flow still requires both reviews to pass and keeps manual-only / human merge when policy requires it | char |
 
 ---
 

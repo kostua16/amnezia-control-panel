@@ -62,16 +62,20 @@ function fetchReviewThreads(owner, name, pr) {
     `query { repository(owner: "${owner}", name: "${name}") {` +
     ` pullRequest(number: ${pr}) {` +
     ` reviewThreads(first: 100) { nodes { isResolved isOutdated path line` +
-    ` comments(first: 50) { nodes { body author { login } } } } } } }`;
-  const data = runJson('gh', ['api', 'graphql', '-f', `query=${query}`], {});
+    ` comments(first: 50) { nodes { body author { login } } } } } } } }`;
+  const output = run('gh', ['api', 'graphql', '-f', `query=${query}`]);
+  const data = JSON.parse(output);
   if (data?.errors) {
-    console.warn(
-      'review-feedback GraphQL errors:',
-      JSON.stringify(data.errors),
+    throw new Error(
+      `review-feedback GraphQL errors: ${JSON.stringify(data.errors)}`,
     );
   }
   const threads =
     data?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+  return extractReviewThreads(threads);
+}
+
+function extractReviewThreads(threads = []) {
   return threads
     .filter((t) => !t.isResolved && !t.isOutdated)
     .flatMap((t) =>
@@ -217,6 +221,7 @@ module.exports = {
   formatBundle,
   hasActionableFeedback,
   bundleHasActionableFeedback,
+  extractReviewThreads,
   fetchReviewThreads,
   fetchReviews,
   fetchComments,

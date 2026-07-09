@@ -265,6 +265,9 @@ jobs:
             Rules:
             - Fix ONLY actionable findings from the feedback file. Ignore nitpicks
               unless explicitly requested. One root cause per finding.
+            - Kilo Code review comments marked as issues, bugs, warnings, or
+              suggestions are actionable feedback. Do not skip them as nitpicks;
+              only skip stale history or explicit nitpick-only comments.
             - Iterate with `npx tsc --noEmit` for fast feedback.
             - Before finishing, run `npm run format`, then the full gate:
               `npm run test && npm run build`. Never use $queryRawUnsafe (use the
