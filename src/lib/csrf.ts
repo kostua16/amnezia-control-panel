@@ -31,7 +31,7 @@ export function isValidOrigin(request: NextRequest): boolean {
   // Unparseable Origin or missing host → treat as cross-origin (reject).
   if (!originHost || !requestHost) return false;
 
-  return originHost === requestHost;
+  return normalizeHost(originHost) === normalizeHost(requestHost);
 }
 
 /** Extract the host (hostname:port) from an origin URL string, or null. */
@@ -41,6 +41,17 @@ function hostOf(origin: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Strip an explicit default HTTP/HTTPS port. `new URL().host` omits the
+ * default port for the parsed scheme, but `request.nextUrl.host` reflects
+ * the raw `Host` header, which a reverse proxy may forward with an explicit
+ * default port (e.g. `Host: panel.example.com:443`). Normalizing both sides
+ * prevents a false cross-origin rejection in that case.
+ */
+function normalizeHost(host: string): string {
+  return host.replace(/:(80|443)$/, '');
 }
 
 /** HTTP methods that mutate server state. */

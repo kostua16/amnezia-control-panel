@@ -55,6 +55,17 @@ describe('isValidOrigin', () => {
     assert.strictEqual(isValidOrigin(req), true);
   });
 
+  it('allows same-host when request carries explicit default port', () => {
+    // A TLS-terminating reverse proxy may forward `Host: panel.example.com:443`;
+    // the browser's Origin omits the default port. Both must normalize to the
+    // same host so the legitimate mutating request is not falsely rejected.
+    const req = new NextRequest('http://panel.example.com:443/api/users', {
+      method: 'POST',
+      headers: { Origin: 'https://panel.example.com' },
+    });
+    assert.strictEqual(isValidOrigin(req), true);
+  });
+
   it('rejects malformed Origin header', () => {
     const req = new NextRequest(`${panelUrl}/api/users`, {
       method: 'POST',
