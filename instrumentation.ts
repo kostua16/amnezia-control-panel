@@ -60,12 +60,18 @@ export async function register() {
 
     // Close the WebSocket server so clients see a proper disconnect. The close
     // callback fires only after pending connections drain, so await it before
-    // process exit to ensure clients receive disconnect packets.
+    // process exit to ensure clients receive disconnect packets. Bound the wait
+    // at 3s (matching prisma.$disconnect) so a non-draining client cannot stall
+    // graceful shutdown until the container's SIGKILL grace period.
     const socketIO = (globalThis as Record<string, unknown>).__socketIO as
       { close: (cb: () => void) => void } | undefined;
     if (socketIO) {
       await new Promise<void>((resolve) => {
-        socketIO.close(() => resolve());
+        const timer = setTimeout(resolve, 3_000);
+        socketIO.close(() => {
+          clearTimeout(timer);
+          resolve();
+        });
       });
     }
 
