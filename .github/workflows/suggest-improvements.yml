@@ -54,6 +54,7 @@ jobs:
             --base-ref main \
             --title-prefix 'planning: repo-wide improvement follow-ups' \
             --exclude-head 'claude-workflow-optimize-${{ github.run_id }}' \
+            --max-open-automation-prs "${{ github.event_name == 'schedule' && '8' || '0' }}" \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Gather open PR context for dedup

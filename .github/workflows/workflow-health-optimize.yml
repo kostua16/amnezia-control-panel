@@ -23,7 +23,36 @@ permissions:
   issues: write
 
 jobs:
+  fleet-gate:
+    name: Fleet back-pressure gate
+    runs-on: self-hosted
+    timeout-minutes: 5
+    outputs:
+      skip: ${{ steps.gate.outputs.pending }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          install-deps: 'false'
+
+      - name: Check fleet back-pressure
+        id: gate
+        # Only scheduled runs are throttled; a manual dispatch always runs.
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .github/workflows/scripts/check-pending-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --max-open-automation-prs 8 \
+            --github-output "$GITHUB_OUTPUT"
+
   collect-runs:
+    needs: [fleet-gate]
+    if: needs.fleet-gate.outputs.skip != 'true'
     name: Collect Workflow Runs
     runs-on: self-hosted
     timeout-minutes: 10
