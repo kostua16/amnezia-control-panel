@@ -130,3 +130,11 @@ test('P9b: excludeHead removes this run’s own branch from the count', () => {
 test('P9b: empty list counts zero', () => {
   assert.equal(countOpenAutomationPrs([]), 0);
 });
+
+test('returns null when no title prefix is given, so a back-pressure-only gate does not trip on any open PR', () => {
+  const prs = [
+    { number: 1, title: 'unrelated human PR', headRefName: 'feature/x' },
+    { number: 2, title: 'another PR', headRefName: 'dependabot/y' },
+  ];
+  assert.equal(findPendingPullRequest(prs, { excludeHead: 'self' }), null);
+});

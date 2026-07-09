@@ -58,6 +58,12 @@ function findPendingPullRequest(pullRequests, options = {}) {
   const titlePrefix = String(options.titlePrefix ?? '');
   const excludeHead = String(options.excludeHead ?? '');
 
+  // Without a title prefix there is no "same family" to detect. Fleet
+  // back-pressure-only callers pass --max-open-automation-prs with no
+  // --title-prefix; returning null here keeps `pending` false so those gates
+  // trip only on the automation-PR count, not on the first open PR of any kind.
+  if (!titlePrefix) return null;
+
   for (const pullRequest of pullRequests) {
     if (!pullRequest || typeof pullRequest !== 'object') continue;
 
@@ -71,7 +77,7 @@ function findPendingPullRequest(pullRequests, options = {}) {
 
     // Anchored prefix match (equivalent to the original ^regex), literal so it
     // needs no escaping.
-    if (titlePrefix && !title.startsWith(titlePrefix)) continue;
+    if (!title.startsWith(titlePrefix)) continue;
 
     return pullRequest;
   }
