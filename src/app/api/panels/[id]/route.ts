@@ -9,7 +9,10 @@ import {
 } from '@/lib/panel-health-checker';
 import { apiHandler, type RouteContext } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
-import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
+import {
+  isPrismaUniqueViolation,
+  uniqueViolationTarget,
+} from '@/lib/prisma-errors';
 
 const updatePanelSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -119,9 +122,13 @@ export const PUT = apiHandler(
 
       return NextResponse.json({ success: true, data: panelResponse(updated) });
     } catch (err) {
-      // Surface the unique constraint as a field-specific message; let
-      // apiHandler map any other Prisma/unknown error.
+      // Surface the unique constraint as a field-specific message. panelUrl and
+      // apiKeyFastHash are both unique, so distinguish the violated column;
+      // let apiHandler map any other Prisma/unknown error.
       if (isPrismaUniqueViolation(err)) {
+        if (uniqueViolationTarget(err)?.includes('apiKeyFastHash')) {
+          return error('A panel with this API key already exists', 409);
+        }
         return error('Panel URL already exists', 409);
       }
       throw err;

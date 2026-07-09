@@ -81,15 +81,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const matchedPanel = candidate;
-
-    if (!matchedPanel) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid API key' },
-        { status: 401 },
-      );
-    }
-
     // 3. Parse request body
     const body = await request.json();
 
@@ -116,7 +107,7 @@ export async function POST(request: NextRequest) {
 
     // 6. Idempotency check: skip if same configVersion already cached
     const existingConfig = await prisma.cachedPanelConfig.findUnique({
-      where: { panelId: matchedPanel.id },
+      where: { panelId: candidate.id },
     });
 
     if (
@@ -126,9 +117,9 @@ export async function POST(request: NextRequest) {
       await writeAuditLog({
         action: 'sync.receive.idempotent',
         resource: 'cachedPanelConfig',
-        resourceId: matchedPanel.id,
+        resourceId: candidate.id,
         metadata: {
-          panelId: matchedPanel.id,
+          panelId: candidate.id,
           configVersion: configData.configVersion,
         },
       });
@@ -172,9 +163,9 @@ export async function POST(request: NextRequest) {
       await writeAuditLog({
         action: 'sync.receive.stale-version',
         resource: 'cachedPanelConfig',
-        resourceId: matchedPanel.id,
+        resourceId: candidate.id,
         metadata: {
-          panelId: matchedPanel.id,
+          panelId: candidate.id,
           receivedVersion: configData.configVersion,
           currentVersion: existingConfig.configVersion,
         },
@@ -192,7 +183,7 @@ export async function POST(request: NextRequest) {
 
     // 7. Preserve current config as previous before overwrite (rollback support)
     if (existingConfig) {
-      await storePreviousConfig(matchedPanel.id);
+      await storePreviousConfig(candidate.id);
     }
 
     // 8. Store config via upsert
@@ -208,7 +199,7 @@ export async function POST(request: NextRequest) {
     } else {
       await prisma.cachedPanelConfig.create({
         data: {
-          panelId: matchedPanel.id,
+          panelId: candidate.id,
           configVersion: configData.configVersion,
           config: configData,
           receivedAt: new Date(),
@@ -219,9 +210,9 @@ export async function POST(request: NextRequest) {
     await writeAuditLog({
       action: 'sync.receive',
       resource: 'cachedPanelConfig',
-      resourceId: matchedPanel.id,
+      resourceId: candidate.id,
       metadata: {
-        panelId: matchedPanel.id,
+        panelId: candidate.id,
         configVersion: configData.configVersion,
         panelRole: configData.panelRole,
       },

@@ -48,6 +48,12 @@ yarn-error.log*
 /prisma/dev.db-wal
 /src/generated/
 
+# root-level SQLite DBs (local dev artifact); must never be committed
+/dev.db
+/dev.db-journal
+/dev.db-shm
+/dev.db-wal
+
 # backups — contain full DB (creds, users); never commit
 /backups/
 
