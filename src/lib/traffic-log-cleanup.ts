@@ -19,8 +19,9 @@ export const RETENTION_DAYS = (() => {
  * deletes to bound the lock duration.
  */
 export async function cleanupOldTrafficLogs(): Promise<number> {
-  const retentionDate = new Date();
-  retentionDate.setDate(retentionDate.getDate() - RETENTION_DAYS);
+  const now = Date.now();
+  const retentionMs = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const retentionDate = new Date(now - retentionMs);
 
   const result = await prisma.trafficLog.deleteMany({
     where: {
