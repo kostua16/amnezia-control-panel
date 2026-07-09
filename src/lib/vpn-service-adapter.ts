@@ -74,7 +74,7 @@ const ADAPTERS: Readonly<Record<ServiceType, VpnServiceAdapter>> = {
 export function isSupportedServiceType(
   serviceType: string,
 ): serviceType is ServiceType {
-  return serviceType in ADAPTERS;
+  return Object.prototype.hasOwnProperty.call(ADAPTERS, serviceType);
 }
 
 /**

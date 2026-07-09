@@ -4,6 +4,7 @@ import {
   getAdapter,
   AwgAdapter,
   ThreeXuiAdapter,
+  isSupportedServiceType,
 } from '../vpn-service-adapter';
 
 /**
@@ -33,6 +34,16 @@ describe('vpn-service-adapter: getAdapter registry', () => {
       () => getAdapter('UNKNOWN_TYPE'),
       /Unknown VPN service type/i,
       'Unknown service type must throw',
+    );
+  });
+
+  it('rejects inherited Object prototype keys as service types', () => {
+    assert.equal(isSupportedServiceType('toString'), false);
+    assert.equal(isSupportedServiceType('constructor'), false);
+    assert.throws(
+      () => getAdapter('toString'),
+      /Unknown VPN service type/i,
+      'Inherited prototype keys must not resolve to adapters',
     );
   });
 
