@@ -58,13 +58,15 @@ export async function register() {
     cleanupConnections();
     cleanupGeoIP();
 
-    // Close the WebSocket server so clients see a proper disconnect.
-    const socketIO = (globalThis as Record<string, unknown>)
-      .__socketIO as
-      | { close: (cb: () => void) => void }
-      | undefined;
+    // Close the WebSocket server so clients see a proper disconnect. The close
+    // callback fires only after pending connections drain, so await it before
+    // process exit to ensure clients receive disconnect packets.
+    const socketIO = (globalThis as Record<string, unknown>).__socketIO as
+      { close: (cb: () => void) => void } | undefined;
     if (socketIO) {
-      socketIO.close(() => {});
+      await new Promise<void>((resolve) => {
+        socketIO.close(() => resolve());
+      });
     }
 
     // Await prisma disconnect with a 3s timeout so the SQLite WAL
