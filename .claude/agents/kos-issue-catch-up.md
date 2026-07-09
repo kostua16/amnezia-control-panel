@@ -25,6 +25,7 @@ Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analy
 - **Phase 4 — Orphaned Fixed Reminders** (`orphaned_fixed` → close-or-remove-label reminder).
 - **Phase 5 — Smart Grouping** (only if `groupable_candidates` ≥3: group by classification/priority/root-cause/symptoms; create canonical `[GROUPED]` issue; label originals `duplicate` + close).
 - **Phase 6 — Route Fix Authorization & Dead Letters** (`fix_dead_letter` → `needs-review`; `triaged_no_fix` max 5 total → guard, then if `auto_fix_eligible` (automation-authored, triaged low/medium/high, no security/critical) post `/fix` + rationale comment, else `needs-review` + manual-fix comment).
+- **Phase 7 — Dead-Letter Fresh-Context Retry** (`dead_letter_retry` max 2 → guard for `<!-- dead-letter-retry -->` marker / linked PR, then remove `needs-review`, post the marker comment, and `/triage` or `/fix` per `kind`; parked permanently if this cycle also fails).
 
 ## Core Responsibilities
 - Read DRY-RUN + RATE-LIMITED flags; apply the applicable phases.
@@ -36,6 +37,7 @@ Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analy
 - [ ] Act only on the categorized JSON set provided.
 - [ ] Use the exact `gh` commands per phase.
 - [ ] Phase 5 only if `groupable_candidates` ≥3; Phase 6 max 5 triaged_no_fix actions (auto-fix + manual combined); `/fix` only when `auto_fix_eligible` is true and no `/fix` was posted in the last 6 hours.
+- [ ] Phase 7 max 2 dead-letter retries; never retry an issue already carrying the `<!-- dead-letter-retry -->` marker.
 - [ ] Do not fix code or open PRs.
 
 ## Core Competencies

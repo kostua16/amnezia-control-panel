@@ -128,7 +128,8 @@ jobs:
               priority_escalation: [],
               groupable_candidates: [],
               triaged_no_fix: [],
-              fix_dead_letter: []
+              fix_dead_letter: [],
+              dead_letter_retry: []
             };
 
             const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
@@ -197,6 +198,44 @@ jobs:
               const fixComments = comments.filter(c =>
                 c.body.includes('/fix')
               );
+
+              // Parked dead letters: issues needs-review'd after repeated
+              // automation failures get exactly ONE fresh-context retry after
+              // 7 days (failures are often transient: turn limits, runner
+              // pressure). The retry marker makes a second cycle impossible.
+              const RETRY_MARKER = '<!-- dead-letter-retry -->';
+              const hasRetryMarker = comments.some(c =>
+                (c.body || '').includes(RETRY_MARKER)
+              );
+              const deadLetterComment = comments.find(c =>
+                /attempted 2x without success/i.test(c.body || '')
+              );
+              if (hasNeedsReview && deadLetterComment) {
+                const DL_AUTO_GEN = [/\[auto-fix\]/, /\[workflow-health\]/];
+                const parkedLongEnough =
+                  new Date(deadLetterComment.created_at) < sevenDaysAgo;
+                const kind = /^Triage/i.test(deadLetterComment.body || '')
+                  ? 'triage'
+                  : 'fix';
+                const dlAutomationAuthored =
+                  ['maintenance', 'auto-fix', 'ci-failure'].some(l => labels.includes(l)) ||
+                  issue.user?.type === 'Bot';
+                const dlFixEligible =
+                  dlAutomationAuthored &&
+                  ['low', 'medium', 'high'].some(p => labels.includes(p)) &&
+                  !labels.includes('security') &&
+                  !labels.includes('critical') &&
+                  !DL_AUTO_GEN.some(p => p.test(issue.title));
+                const retryEligible = kind === 'triage' || dlFixEligible;
+                if (!hasRetryMarker && parkedLongEnough && retryEligible) {
+                  buckets.dead_letter_retry.push({
+                    number: num,
+                    title: issue.title,
+                    kind
+                  });
+                }
+                continue;
+              }
 
               if (!hasTriaged) {
                 // Check triage cooldown — skip if /triage posted in last 2h
@@ -315,7 +354,8 @@ jobs:
               buckets.priority_escalation.length +
               buckets.triaged_no_fix.length +
               buckets.triage_dead_letter.length +
-              buckets.fix_dead_letter.length;
+              buckets.fix_dead_letter.length +
+              buckets.dead_letter_retry.length;
 
             const rateLimited = totalActions > MAX_ACTIONS;
             if (rateLimited) {
@@ -488,6 +528,19 @@ jobs:
             gh issue comment NUM --body "Manual fix triage needed. This issue is triaged but still has no linked fix PR. A maintainer should decide whether to apply \`auto-fix-approved\` or handle it manually."
             ```
             Stop after 5 triaged_no_fix actions, even if more candidates remain.
+
+            ### Phase 7: Dead-Letter Fresh-Context Retry (turns 51-55)
+
+            For each `dead_letter_retry` issue (max 2 per run):
+            - First check: `gh issue view NUM --json body,comments` — skip if any comment contains `<!-- dead-letter-retry -->`, or body/comments contain a PR URL or "Fixes #"
+            - If safe to proceed:
+            ```
+            gh issue edit NUM --remove-label "needs-review"
+            gh issue comment NUM --body "<!-- dead-letter-retry --> One-time fresh-context retry: this issue was parked after repeated automation failures, which are often transient (turn limits, runner pressure). Retrying once; it will park permanently if this attempt also fails."
+            ```
+            - Then, if `kind` is "triage": `gh issue comment NUM --body "/triage"`
+            - If `kind` is "fix": `gh issue comment NUM --body "/fix"`
+            Stop after 2 dead-letter retries, even if more candidates remain.
             Operate as the `kos-issue-catch-up` agent: first read `.claude/agents/kos-issue-catch-up.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
   report-failure:
