@@ -80,8 +80,11 @@ export async function register() {
     const { prisma } = await import('@/lib/prisma');
     const disconnectWithTimeout = () =>
       new Promise<void>((resolve) => {
-        const timer = setTimeout(() => resolve(), 3_000);
-        prisma.$disconnect().finally(() => clearTimeout(timer));
+        const timer = setTimeout(resolve, 3_000);
+        prisma.$disconnect().finally(() => {
+          clearTimeout(timer);
+          resolve();
+        });
       });
     await disconnectWithTimeout();
   });
