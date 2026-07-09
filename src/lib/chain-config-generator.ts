@@ -13,7 +13,9 @@ import { generateKeypair } from './wireguard-keys';
  * resolved for it. Both chain generation call sites (the live apply path in
  * chain-router and the push-wizard preview path) produce nodes of this shape,
  * so the generators below are shared between them to keep preview and apply
- * output identical.
+ * output structurally identical (topology, endpoints, allowed IPs) — but the
+ * emitted WireGuard keys are fresh per call, so the two peer sets are not
+ * byte-identical.
  */
 export type ResolvedChainNode = ChainNode & { hostname: string; port: number };
 
@@ -45,10 +47,14 @@ export function normalizeChainRoutingOptions(
 /**
  * Generate WireGuard peer configurations for a chain topology.
  *
- * Each peer receives a unique Curve25519 keypair. The public key is embedded
- * in the peer config; the private key is included so the panel can configure
- * its local WireGuard interface. Shared by the chain apply path and the
- * push-wizard preview so both paths emit identical peer sets.
+ * Each peer receives a fresh Curve25519 keypair generated on every call, so
+ * two invocations (the push-wizard preview and the live apply) yield peer sets
+ * that are structurally identical but whose keys differ. Callers that need to
+ * compare two generated peer sets must compare the structural fields (nodeId,
+ * allowedIPs, endpoint, persistentKeepalive), not the keys.
+ *
+ * The public key is embedded in the peer config; the private key is included
+ * so a panel can configure its local WireGuard interface.
  */
 export function generateWireGuardPeers(
   template: ChainTemplate,

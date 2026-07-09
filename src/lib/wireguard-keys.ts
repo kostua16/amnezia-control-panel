@@ -11,26 +11,29 @@ const WG_KEY_PATTERN = /^[A-Za-z0-9+/]{43}=$/;
 /**
  * Generate a WireGuard Curve25519 (x25519) keypair.
  *
- * Uses Node.js `crypto.generateKeyPairSync` with the `x25519` curve and
- * exports the raw public/private keys, then base64-encodes them to the
- * WireGuard wire format.
+ * Exports the keypair as JWK so the raw Curve25519 key material is delivered
+ * directly (`x` = public, `d` = private) as base64url, with no DER/SPKI/PKCS8
+ * framing to slice. Extraction therefore does not assume a specific DER prefix
+ * length and stays stable across Node versions.
  */
 export function generateKeypair(): {
   publicKey: string;
   privateKey: string;
 } {
-  const { publicKey, privateKey } = generateKeyPairSync('x25519', {
-    publicKeyEncoding: { type: 'spki', format: 'der' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'der' },
+  const pair = generateKeyPairSync('x25519', {
+    publicKeyEncoding: { format: 'jwk' },
+    privateKeyEncoding: { format: 'jwk' },
   });
 
-  // DER-encoded SPKI for x25519: 44 bytes. Raw key is the last 32 bytes.
-  const pubRaw = Buffer.from(publicKey).subarray(-32);
-  const privRaw = Buffer.from(privateKey).subarray(-32);
+  const pubX = pair.publicKey.x;
+  const privD = pair.privateKey.d;
+  if (typeof pubX !== 'string' || typeof privD !== 'string') {
+    throw new Error('x25519 JWK export missing key material');
+  }
 
   return {
-    publicKey: pubRaw.toString('base64'),
-    privateKey: privRaw.toString('base64'),
+    publicKey: Buffer.from(pubX, 'base64url').toString('base64'),
+    privateKey: Buffer.from(privD, 'base64url').toString('base64'),
   };
 }
 
