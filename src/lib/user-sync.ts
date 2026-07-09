@@ -119,7 +119,7 @@ export async function syncUser(userId: number): Promise<SyncReport> {
     if (user.isBlocked) {
       // User is blocked in DB — ensure blocked in VPN services
       for (const protocol of user.protocols) {
-      if (!isSupportedServiceType(protocol.serviceType)) continue;
+        if (!isSupportedServiceType(protocol.serviceType)) continue;
         try {
           const result = await deps.blockUser(
             user.username,
@@ -149,7 +149,7 @@ export async function syncUser(userId: number): Promise<SyncReport> {
     } else {
       // User is active in DB — ensure unblocked in VPN services
       for (const protocol of user.protocols) {
-      if (!isSupportedServiceType(protocol.serviceType)) continue;
+        if (!isSupportedServiceType(protocol.serviceType)) continue;
         try {
           const result = await deps.unblockUser(
             user.username,

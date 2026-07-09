@@ -20,6 +20,8 @@ Entry: no `/gsd:` slash — review instruction ("Review this Dependabot dependen
 ## Prompt contract (master)
 `dependency-review.yml` `prompt:` is the master contract. Review criteria: breaking-change risk from manifest/lockfile diff; security advisories resolved/introduced per `npm audit`; Node 24 / Next.js 16 / React 19 compatibility; whether the update stays auto-merge eligible or needs manual review. Use **local evidence only** (package.json/package-lock.json diff, `npm audit`, `npm ls`, lockfile/manifest metadata). **Do NOT browse the web or claim you checked changelogs.** Return JSON only: `verdict` (passed|manual|blocked), `summary`, `update_type` (patch|minor|major|unknown), `risk_notes`. **Do NOT approve the PR or edit labels** — the workflow handles dependency-review signals and comments.
 
+**GitHub Actions updates** (diff in `.github/workflows/**` / `.github/actions/**`, no npm manifest changes): `passed` ONLY when every changed line is a pinned-digest bump (full-length SHA → full-length SHA, optionally with an updated version comment) or a patch-level bump of an action that stays SHA-pinned; any newly unpinned action, tag-only reference, minor/major jump, or edit beyond `uses:` lines → `manual`. Digest-only bumps report `update_type: patch`.
+
 ## Core Responsibilities
 - Parse the bump (package, from→to, semver class).
 - Map the delta to the APIs actually used; check `npm audit`.
