@@ -252,10 +252,22 @@ jobs:
                 : createdAt;
               const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
               if (triagedAt < oneHourAgo && !hasNeedsReview && !AUTO_GEN_PATTERNS.some(p => p.test(issue.title))) {
+                // Auto-fix authorization: automation-authored issues triaged
+                // low/medium/high may receive /fix without a maintainer;
+                // security/critical (and human-authored) issues stay manual.
+                const automationAuthored =
+                  ['maintenance', 'auto-fix', 'ci-failure'].some(l => labels.includes(l)) ||
+                  issue.user?.type === 'Bot';
+                const autoFixEligible =
+                  automationAuthored &&
+                  ['low', 'medium', 'high'].some(p => labels.includes(p)) &&
+                  !labels.includes('security') &&
+                  !labels.includes('critical');
                 buckets.triaged_no_fix.push({
                   number: num,
                   title: issue.title,
-                  attempt: fixComments.length + 1
+                  attempt: fixComments.length + 1,
+                  auto_fix_eligible: autoFixEligible
                 });
                 continue;
               }
@@ -454,7 +466,7 @@ jobs:
                gh issue close NUM --reason "not planned"
                ```
 
-            ### Phase 6: Route Manual Fix Triage & Handle Dead Letters (turns 46-50)
+            ### Phase 6: Route Fix Authorization & Handle Dead Letters (turns 46-50)
 
             For each `fix_dead_letter` issue:
             ```
@@ -462,14 +474,20 @@ jobs:
             gh issue comment NUM --body "Fix attempted 2x without success. Manual review needed."
             ```
 
-            For each `triaged_no_fix` issue (max 5 per run):
-            - First check: `gh issue view NUM --json body,comments` — skip if body/comments contain PR URL, "Fixes #", the issue already has the `needs-review` label, or a prior "Manual fix triage needed." comment exists
-            - If safe to proceed:
+            For each `triaged_no_fix` issue (max 5 actions per run, auto-fix and manual combined):
+            - First check: `gh issue view NUM --json body,comments` — skip if body/comments contain PR URL, "Fixes #", the issue already has the `needs-review` label, a prior "Manual fix triage needed." comment exists, or a `/fix` comment was posted in the last 6 hours
+            - If `auto_fix_eligible` is true in the JSON data (automation-authored, triaged low/medium/high, no security/critical label):
+            ```
+            gh issue comment NUM --body "/fix"
+            gh issue comment NUM --body "Fix auto-authorized (catch-up workflow, attempt N): automation-authored issue triaged low/medium/high with no security or critical label. The resulting PR still passes CI, AI review, and merge policy before merging."
+            ```
+            Where N is the attempt number from the JSON data.
+            - If `auto_fix_eligible` is false:
             ```
             gh issue edit NUM --add-label "needs-review"
             gh issue comment NUM --body "Manual fix triage needed. This issue is triaged but still has no linked fix PR. A maintainer should decide whether to apply \`auto-fix-approved\` or handle it manually."
             ```
-            Stop after 5 manual-fix notices, even if more candidates remain.
+            Stop after 5 triaged_no_fix actions, even if more candidates remain.
             Operate as the `kos-issue-catch-up` agent: first read `.claude/agents/kos-issue-catch-up.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
   report-failure:

@@ -103,7 +103,7 @@ jobs:
           BASE_REF: ${{ needs.resolve-pr.outputs.base-ref }}
         run: |
           git fetch origin "$BASE_REF" --depth=1
-          git diff "origin/$BASE_REF" -- package.json package-lock.json > /tmp/dep-diff.txt
+          git diff "origin/$BASE_REF" -- package.json package-lock.json .github/workflows .github/actions > /tmp/dep-diff.txt
           {
             DELIM="EOF-$(openssl rand -hex 8)"
             echo "diff<<$DELIM"
@@ -130,6 +130,11 @@ jobs:
             2. Security advisories resolved or introduced according to `npm audit`
             3. Potential compatibility issues with Node 24 / Next.js 16 / React 19
             4. Whether the update should stay auto-merge eligible or require manual review
+
+            GitHub Actions updates (diff touches `.github/workflows/**` or `.github/actions/**` instead of npm manifests):
+            - verdict `passed` ONLY when every changed line is a pinned-digest bump (one full-length commit SHA replaced by another full-length SHA, optionally with an updated version comment) or a patch-level version bump of an action that stays pinned to a full-length SHA
+            - any newly unpinned action, tag-only reference, minor/major version jump, or edit beyond the `uses:` lines and their version comments → verdict `manual`
+            - use update_type `patch` for digest-only bumps
 
             Dependency diff:
             ${{ steps.diff.outputs.diff }}

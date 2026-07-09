@@ -9,8 +9,11 @@ const {
   buildPlan,
   decidePrAction,
   detectPrProducingWorkflows,
+  duplicateAutomationPrActions,
   parseFixReviewSummaryComment,
   parseRebaseSummaryComment,
+  parseStateComment,
+  renderStateBody,
   registryCoverage,
   safeIssueForFix,
   scheduleHealth,
@@ -905,6 +908,179 @@ test('PM19: issue queue skips linked PR, active fix, and terminal labels', () =>
   assert.equal(safeIssueForFix(issue({ body: 'Fixes #123' })), false);
   assert.equal(safeIssueForFix(issue({ activeFixRun: true })), false);
   assert.equal(safeIssueForFix(issue({ labels: ['fixed'] })), false);
+});
+
+test('PM19b: issue queue retries /fix after cooldown, capped at max attempts', () => {
+  const now = '2026-07-01T12:00:00.000Z';
+  const oldFix = { body: '/fix', createdAt: '2026-07-01T01:00:00.000Z' };
+  const recentFix = { body: '/fix', createdAt: '2026-07-01T11:30:00.000Z' };
+  assert.equal(safeIssueForFix(issue({ comments: [oldFix] }), { now }), true);
+  assert.equal(
+    safeIssueForFix(issue({ comments: [recentFix] }), { now }),
+    false,
+  );
+  assert.equal(
+    safeIssueForFix(issue({ comments: [{ body: '/fix' }] }), { now }),
+    false,
+  );
+  assert.equal(
+    safeIssueForFix(issue({ comments: [oldFix, oldFix, oldFix] }), { now }),
+    false,
+  );
+});
+
+const BLOCKED_96H_AGO = '2026-06-27T10:00:00.000Z';
+
+test('PM31: first sighting of a blocking label starts the blocked clock', () => {
+  const action = decidePrAction(
+    pr({ labels: ['needs-review'], checkStatus: { status: 'passed' } }),
+    { now: NOW },
+  );
+  assert.equal(action.type, 'upsert-pr-state');
+  assert.equal(action.state.lastAction, 'blocked-clock');
+  assert.equal(action.state.blockedSince, NOW);
+});
+
+test('PM32: blocked PR escalates once after 72h with comment and digest', () => {
+  const blocked = pr({
+    labels: ['needs-review'],
+    checkStatus: { status: 'passed' },
+    projectManagerState: { headSha: 'abc123', blockedSince: BLOCKED_96H_AGO },
+  });
+  const action = decidePrAction(blocked, { now: NOW });
+  assert.equal(action.actionKey, 'blocked-escalation');
+  const keys = action.actions.map((entry) => entry.actionKey ?? entry.type);
+  assert.deepEqual(keys, [
+    'blocked-escalation',
+    'attention-digest',
+    'attention-digest-entry',
+    'upsert-pr-state',
+  ]);
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.blockedEscalatedAt, NOW);
+});
+
+test('PM33: already-escalated blocked PR does not re-escalate', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: BLOCKED_96H_AGO,
+        blockedEscalatedAt: '2026-06-30T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action, null);
+});
+
+test('PM34: deps-review-manual redispatches dependency review once before escalating', () => {
+  const base = {
+    labels: ['deps-review-manual'],
+    checkStatus: { status: 'passed' },
+  };
+  const first = decidePrAction(
+    pr({
+      ...base,
+      projectManagerState: { headSha: 'abc123', blockedSince: BLOCKED_96H_AGO },
+    }),
+    { now: NOW },
+  );
+  assert.equal(first.actionKey, 'deps-review-redispatch');
+  const dispatch = first.actions.find(
+    (entry) => entry.type === 'dispatch-workflow',
+  );
+  assert.equal(dispatch.workflow, 'dependency-review.yml');
+
+  const second = decidePrAction(
+    pr({
+      ...base,
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: BLOCKED_96H_AGO,
+        depsReviewRedispatchedAt: '2026-06-30T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.equal(second.actionKey, 'blocked-escalation');
+});
+
+test('PM36: duplicate automation PRs are flagged once in the attention digest', () => {
+  const older = pr({
+    number: 40,
+    title: 'chore: audit fixes',
+    headRefName: 'claude-audit-fix-1',
+    createdAt: '2026-06-28T10:00:00.000Z',
+    url: 'https://example.test/pull/40',
+  });
+  const newer = pr({
+    number: 41,
+    title: 'chore: audit fixes',
+    headRefName: 'claude-audit-fix-2',
+    createdAt: '2026-06-30T10:00:00.000Z',
+  });
+  const human = pr({
+    number: 43,
+    title: 'chore: audit fixes',
+    headRefName: 'feature/manual-work',
+  });
+
+  const actions = duplicateAutomationPrActions([older, newer, human], NOW);
+  const entry = actions.find(
+    (action) => action.actionKey === 'attention-digest-entry',
+  );
+  assert.match(entry.body, /PR #40 appears superseded by #41/);
+  const patch = actions.find((action) => action.type === 'upsert-pr-state');
+  assert.equal(patch.number, 40);
+  assert.equal(patch.state.duplicateFlaggedAt, NOW);
+
+  // Already-flagged duplicate stays silent.
+  const flagged = {
+    ...older,
+    projectManagerState: {
+      headSha: 'abc123',
+      duplicateFlaggedAt: '2026-06-30T12:00:00.000Z',
+    },
+  };
+  assert.deepEqual(duplicateAutomationPrActions([flagged, newer], NOW), []);
+});
+
+test('PM35: do-not-merge silences the blocked escalation entirely', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review', 'do-not-merge'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: { headSha: 'abc123', blockedSince: BLOCKED_96H_AGO },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action, null);
+});
+
+test('PM state comment round-trips blocked/escalation timestamps', () => {
+  const state = {
+    headSha: 'abc123',
+    readySince: NOW,
+    lastAction: 'blocked-escalation',
+    lastActionAt: NOW,
+    directMergeReview: 'not-run',
+    directMergeReviewAt: '',
+    workflowIssueNumber: '7',
+    workflowIssueUrl: 'https://example.test/issues/7',
+    blockedSince: BLOCKED_96H_AGO,
+    blockedEscalatedAt: NOW,
+    depsReviewRedispatchedAt: OLD_HEAD,
+    duplicateFlaggedAt: READY_2H,
+    cooldowns: { rebase: READY_2H, 'blocked-escalation': NOW },
+  };
+  const parsed = parseStateComment(renderStateBody(state));
+  assert.equal(parsed.blockedSince, BLOCKED_96H_AGO);
+  assert.equal(parsed.blockedEscalatedAt, NOW);
+  assert.equal(parsed.depsReviewRedispatchedAt, OLD_HEAD);
+  assert.equal(parsed.duplicateFlaggedAt, READY_2H);
 });
 
 test('PM20: low-load dispatches exactly one eligible PR-producing workflow', () => {

@@ -16,6 +16,10 @@ name: Stale PR Consolidation
 # merge-pr-close-guard.cjs) ships + is unit-tested now for reuse there.
 # See .planning/ideas/merge-pr-plan.md and docs/workflow-e2e-scenarios.md (S7).
 on:
+  schedule:
+    # Daily consolidation REPORT (MERGE_PR_SCHEDULE_DRY_RUN forces dry-run on
+    # schedule events; the write path stays operator-dispatch only).
+    - cron: '43 5 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -47,8 +51,8 @@ concurrency:
 
 env:
   NODE_VERSION: '24.x'
-  # Scheduled runs (added in a later rollout step) resolve to this. Keep true so
-  # a future schedule cannot mutate until an operator explicitly flips it.
+  # Scheduled runs resolve to this. Keep true so the daily schedule cannot
+  # mutate anything until an operator explicitly flips it.
   MERGE_PR_SCHEDULE_DRY_RUN: 'true'
 
 permissions:

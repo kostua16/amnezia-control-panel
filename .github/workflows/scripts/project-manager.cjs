@@ -266,6 +266,10 @@ function normalizeState(pr) {
       cooldowns: {},
       workflowIssueNumber: raw.workflowIssueNumber,
       workflowIssueUrl: raw.workflowIssueUrl,
+      blockedSince: '',
+      blockedEscalatedAt: '',
+      depsReviewRedispatchedAt: '',
+      duplicateFlaggedAt: '',
     };
   }
 
@@ -281,6 +285,13 @@ function normalizeState(pr) {
     cooldowns: raw.cooldowns ?? {},
     workflowIssueNumber: raw.workflowIssueNumber ?? raw.workflow_issue_number,
     workflowIssueUrl: raw.workflowIssueUrl ?? raw.workflow_issue_url,
+    blockedSince: raw.blockedSince ?? raw.blocked_since ?? '',
+    blockedEscalatedAt:
+      raw.blockedEscalatedAt ?? raw.blocked_escalated_at ?? '',
+    depsReviewRedispatchedAt:
+      raw.depsReviewRedispatchedAt ?? raw.deps_review_redispatched_at ?? '',
+    duplicateFlaggedAt:
+      raw.duplicateFlaggedAt ?? raw.duplicate_flagged_at ?? '',
   };
 }
 
@@ -705,6 +716,13 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
       workflowIssueNumber:
         extra.workflowIssueNumber ?? state.workflowIssueNumber ?? '',
       workflowIssueUrl: extra.workflowIssueUrl ?? state.workflowIssueUrl ?? '',
+      blockedSince: extra.blockedSince ?? state.blockedSince ?? '',
+      blockedEscalatedAt:
+        extra.blockedEscalatedAt ?? state.blockedEscalatedAt ?? '',
+      depsReviewRedispatchedAt:
+        extra.depsReviewRedispatchedAt ?? state.depsReviewRedispatchedAt ?? '',
+      duplicateFlaggedAt:
+        extra.duplicateFlaggedAt ?? state.duplicateFlaggedAt ?? '',
       cooldowns: {
         ...(state.cooldowns ?? {}),
         [actionKey]: now,
@@ -856,6 +874,176 @@ function manualOnlyAction(pr, state, readySince, now) {
   };
 }
 
+const BLOCKED_ESCALATION_HOURS = 72;
+const BLOCKED_ESCALATION_LABELS = [
+  'needs-review',
+  'deps-review-manual',
+  'deps-review-blocked',
+];
+const BLOCKED_ESCALATION_MARKER = '<!-- project-manager-blocked-escalation -->';
+const ATTENTION_DIGEST_TITLE =
+  '[project-manager] Attention: PRs blocked on maintainer';
+
+function attentionDigestActions(pr, entryBody) {
+  return [
+    {
+      type: 'create-or-reuse-issue',
+      title: ATTENTION_DIGEST_TITLE,
+      body: [
+        ISSUE_MARKER,
+        '',
+        'PRs waiting on maintainer attention, escalated by project-manager.',
+        'One comment is appended per escalated PR; close this issue once the queue is handled.',
+      ].join('\n'),
+      labels: ['needs-review'],
+      actionKey: 'attention-digest',
+      pr: pr.number,
+      headSha: pr.headRefOid ?? pr.headSha ?? '',
+    },
+    {
+      type: 'comment',
+      target: 'issue',
+      issueSelector: { title: ATTENTION_DIGEST_TITLE },
+      body: entryBody,
+      actionKey: 'attention-digest-entry',
+    },
+  ];
+}
+
+function blockedEscalationLabels(pr) {
+  // do-not-merge is an explicit human hold; never remind about it.
+  if (hasLabel(pr, 'do-not-merge')) return [];
+  return BLOCKED_ESCALATION_LABELS.filter((label) => hasLabel(pr, label));
+}
+
+function blockedClockPatch(pr, state, readySince, now) {
+  if (blockedEscalationLabels(pr).length === 0) return null;
+  if (state.blockedSince) return null;
+  return makeStatePatch(pr, state, 'blocked-clock', now, {
+    readySince,
+    blockedSince: now,
+  });
+}
+
+function blockedEscalationAction(pr, state, now) {
+  const blocked = blockedEscalationLabels(pr);
+  if (blocked.length === 0) return null;
+  if (!state.blockedSince) return null;
+  if (hoursBetween(state.blockedSince, now) < BLOCKED_ESCALATION_HOURS) {
+    return null;
+  }
+
+  // A deps-review-manual verdict can be transient (context-starved run):
+  // redispatch dependency review once per head before asking a human.
+  if (
+    blocked.includes('deps-review-manual') &&
+    !state.depsReviewRedispatchedAt
+  ) {
+    return {
+      type: 'compound',
+      actionKey: 'deps-review-redispatch',
+      reason:
+        'deps-review-manual persisted past the escalation window; redispatching dependency review once before escalating.',
+      number: pr.number,
+      actions: [
+        {
+          type: 'dispatch-workflow',
+          workflow: 'dependency-review.yml',
+          ref: pr.baseRefName ?? 'main',
+          inputs: {
+            pr_number: String(pr.number),
+            head_sha: pr.headRefOid ?? pr.headSha ?? '',
+            base_ref: pr.baseRefName ?? 'main',
+          },
+          actionKey: 'deps-review-redispatch',
+        },
+        makeStatePatch(pr, state, 'deps-review-redispatch', now, {
+          depsReviewRedispatchedAt: now,
+        }),
+      ],
+    };
+  }
+
+  if (state.blockedEscalatedAt) return null;
+
+  const days = Math.floor(hoursBetween(state.blockedSince, now) / 24);
+  return {
+    type: 'compound',
+    actionKey: 'blocked-escalation',
+    reason: `Blocking labels (${blocked.join(', ')}) persisted ${days} day(s) with no maintainer action; escalating once per head.`,
+    number: pr.number,
+    actions: [
+      makeCommentAction(
+        pr,
+        [
+          BLOCKED_ESCALATION_MARKER,
+          `This PR has been waiting on a maintainer for ${days} day(s) (labels: ${blocked.join(', ')}).`,
+          '',
+          'To unblock: approve the PR or remove the blocking label.',
+          'Add `do-not-merge` to hold it deliberately and silence this reminder.',
+        ].join('\n'),
+        'blocked-escalation',
+      ),
+      ...attentionDigestActions(
+        pr,
+        `PR #${pr.number} blocked on ${blocked.join(', ')} for ${days} day(s): ${pr.url ?? ''}`,
+      ),
+      makeStatePatch(pr, state, 'blocked-escalation', now, {
+        blockedEscalatedAt: now,
+      }),
+    ],
+  };
+}
+
+const AUTOMATION_BRANCH_PREFIXES = [
+  'claude-',
+  'claude/',
+  'codex/',
+  'dependabot/',
+];
+
+function isAutomationPr(pr) {
+  const branch = String(pr.headRefName ?? '');
+  return AUTOMATION_BRANCH_PREFIXES.some((prefix) => branch.startsWith(prefix));
+}
+
+function duplicateAutomationPrActions(prs, now) {
+  const groups = new Map();
+  for (const pr of prs) {
+    if (!isOpenPr(pr) || pr.isDraft || !isAutomationPr(pr)) continue;
+    const key = String(pr.title ?? '')
+      .trim()
+      .toLowerCase();
+    if (!key) continue;
+    groups.set(key, [...(groups.get(key) ?? []), pr]);
+  }
+
+  const actions = [];
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort(
+      (a, b) =>
+        (parseDate(b.createdAt)?.getTime() ?? 0) -
+        (parseDate(a.createdAt)?.getTime() ?? 0),
+    );
+    const canonical = sorted[0];
+    for (const dup of sorted.slice(1)) {
+      const state = normalizeState(dup);
+      if (state.duplicateFlaggedAt) continue;
+      actions.push(
+        ...attentionDigestActions(
+          dup,
+          `PR #${dup.number} appears superseded by #${canonical.number} (same automation title): ${dup.url ?? ''}`,
+        ),
+        makeStatePatch(dup, state, 'duplicate-flag', now, {
+          duplicateFlaggedAt: now,
+        }),
+      );
+    }
+  }
+  return actions;
+}
+
 function decidePrAction(pr, options = {}) {
   const now = options.now ?? DEFAULT_NOW;
   if (!isOpenPr(pr)) return null;
@@ -968,6 +1156,11 @@ function decidePrAction(pr, options = {}) {
     };
   }
 
+  // Due blocked-PR escalation runs before /fix-review so a PR stuck on
+  // deps-review-manual/-blocked stops re-triggering futile review repairs.
+  const blockedEscalation = blockedEscalationAction(pr, state, now);
+  if (blockedEscalation) return blockedEscalation;
+
   if (
     hasReviewBlocker(pr) &&
     !checksFailed(pr) &&
@@ -1031,6 +1224,9 @@ function decidePrAction(pr, options = {}) {
 
   const manual = manualOnlyAction(pr, state, readySince, now);
   if (manual) return manual;
+
+  const blockedClock = blockedClockPatch(pr, state, readySince, now);
+  if (blockedClock) return blockedClock;
 
   return withReadyState;
 }
@@ -1116,6 +1312,8 @@ function planPrRoute(snapshot, options = {}) {
     actions.push(...flattenAction(decision));
   }
 
+  actions.push(...duplicateAutomationPrActions(prs, now));
+
   return {
     route: 'prs',
     decisions,
@@ -1131,7 +1329,16 @@ function issueHasLinkedPr(issue) {
   return /pull\/\d+|Fixes #\d+|PR:\s*#\d+/i.test(text);
 }
 
-function safeIssueForFix(issue) {
+const MAX_ISSUE_FIX_ATTEMPTS = 3;
+const ISSUE_FIX_COOLDOWN_HOURS = 6;
+
+function issueFixAttemptComments(issue) {
+  return (issue.comments ?? []).filter((comment) =>
+    String(comment.body ?? '').includes('/fix'),
+  );
+}
+
+function safeIssueForFix(issue, options = {}) {
   const labels = normalizeLabels(issue.labels);
   const terminal = [
     'fixed',
@@ -1145,14 +1352,28 @@ function safeIssueForFix(issue) {
   if (issue.pull_request) return false;
   if (issueHasLinkedPr(issue)) return false;
   if (issue.activeFixRun || issue.activeFixBranch) return false;
-  return !(issue.comments ?? []).some((comment) =>
-    String(comment.body ?? '').includes('/fix'),
+  const attempts = issueFixAttemptComments(issue);
+  const maxAttempts = Number(
+    options.maxIssueFixAttempts ?? MAX_ISSUE_FIX_ATTEMPTS,
   );
+  if (attempts.length >= maxAttempts) return false;
+  const cooldownHours = Number(
+    options.issueFixCooldownHours ?? ISSUE_FIX_COOLDOWN_HOURS,
+  );
+  const now = options.now ?? DEFAULT_NOW;
+  return !attempts.some((comment) => {
+    const createdAt = comment.createdAt ?? comment.created_at ?? '';
+    // Comments without a parseable timestamp count as recent so a retry
+    // never fires on unknown-age attempts.
+    if (!parseDate(createdAt)) return true;
+    return hoursBetween(createdAt, now) < cooldownHours;
+  });
 }
 
 function planIssueRoute(snapshot, options = {}) {
+  const now = options.now ?? snapshot.now ?? DEFAULT_NOW;
   const issues = sortNewest(snapshot.openIssues)
-    .filter(safeIssueForFix)
+    .filter((issue) => safeIssueForFix(issue, { ...options, now }))
     .slice(0, Number(options.issueLimit ?? 10));
   return {
     route: 'issues',
@@ -1448,6 +1669,13 @@ function parseStateComment(body) {
     directMergeReviewAt: valueFromLine(lines, '- Direct merge review at:'),
     workflowIssueNumber: valueFromLine(lines, '- Workflow issue:'),
     workflowIssueUrl: valueFromLine(lines, '- Workflow issue URL:'),
+    blockedSince: valueFromLine(lines, '- Blocked since:'),
+    blockedEscalatedAt: valueFromLine(lines, '- Blocked escalated at:'),
+    depsReviewRedispatchedAt: valueFromLine(
+      lines,
+      '- Deps review redispatched at:',
+    ),
+    duplicateFlaggedAt: valueFromLine(lines, '- Duplicate flagged at:'),
     cooldowns: {
       rebase: valueFromLine(lines, '- rebase:'),
       fix: valueFromLine(lines, '- fix:'),
@@ -2057,6 +2285,10 @@ function renderStateBody(state) {
     `- Direct merge review at: ${state.directMergeReviewAt ?? ''}`,
     `- Workflow issue: ${state.workflowIssueNumber ?? ''}`,
     `- Workflow issue URL: ${state.workflowIssueUrl ?? ''}`,
+    `- Blocked since: ${state.blockedSince ?? ''}`,
+    `- Blocked escalated at: ${state.blockedEscalatedAt ?? ''}`,
+    `- Deps review redispatched at: ${state.depsReviewRedispatchedAt ?? ''}`,
+    `- Duplicate flagged at: ${state.duplicateFlaggedAt ?? ''}`,
     '- Cooldowns:',
     `  - rebase: ${cooldowns.rebase ?? ''}`,
     `  - fix: ${cooldowns.fix ?? ''}`,
@@ -2316,8 +2548,11 @@ module.exports = {
   planPrRoute,
   parseFixReviewSummaryComment,
   parseRebaseSummaryComment,
+  parseStateComment,
+  renderStateBody,
   registryCoverage,
   reviewSignalsPassed,
+  duplicateAutomationPrActions,
   safeIssueForFix,
   scheduleHealth,
   selectPrInspectionCandidates,

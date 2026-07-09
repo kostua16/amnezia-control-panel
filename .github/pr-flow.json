@@ -121,7 +121,12 @@
     },
     "dependencyReview": {
       "workflow": "dependency-review.yml",
-      "paths": ["package.json", "package-lock.json"],
+      "paths": [
+        "package.json",
+        "package-lock.json",
+        ".github/workflows/**",
+        ".github/actions/**"
+      ],
       "passLabels": ["deps-review-passed"],
       "blockLabels": ["deps-review-manual", "deps-review-blocked"]
     },
