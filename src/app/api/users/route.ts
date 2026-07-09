@@ -10,6 +10,7 @@ import { apiHandler } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
 import { createAlert } from '@/lib/alert-service';
 import { AlertSeverity } from '@/generated/prisma/enums';
+import { hasPartialProvisioning } from '@/lib/provisioning-state';
 
 const listUsersSchema = z.object({
   search: z.string().optional().default(''),
@@ -35,15 +36,6 @@ const createUserSchema = z.object({
   speedLimitKbps: z.number().int().min(0).optional(),
   services: z.array(serviceTypeEnum).optional().default(['AWG', 'THREE_XUI']),
 });
-
-function hasProvisioningConfig(config: Prisma.JsonValue): boolean {
-  return (
-    !!config &&
-    typeof config === 'object' &&
-    !Array.isArray(config) &&
-    Object.keys(config).length > 0
-  );
-}
 
 export const GET = apiHandler(async (request: NextRequest) => {
   const { searchParams } = new URL(request.url);
@@ -92,9 +84,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
       trafficQuotaBytes: user.trafficQuotaBytes,
       speedLimitKbps: user.speedLimitKbps,
       assignedServices: activeProtocols.map((p) => p.serviceType),
-      hasPartialProvisioning: user.protocols.some(
-        (p) => !p.isActive && !hasProvisioningConfig(p.config),
-      ),
+      hasPartialProvisioning: hasPartialProvisioning(user.protocols),
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
     };

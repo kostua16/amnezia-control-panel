@@ -6,15 +6,10 @@ import { error } from '@/lib/api-response';
 import { syncUser } from '@/lib/user-sync';
 import { createAwgUser, createThreeXuiUser } from '@/lib/vpn-services';
 import type { VpnServiceResult } from '@/lib/vpn-services';
-
-function hasProvisioningConfig(config: Prisma.JsonValue): boolean {
-  return (
-    !!config &&
-    typeof config === 'object' &&
-    !Array.isArray(config) &&
-    Object.keys(config).length > 0
-  );
-}
+import {
+  isPendingProvisioning,
+  shouldReactivateAfterProvisioningRetry,
+} from '@/lib/provisioning-state';
 
 export const POST = apiHandler(
   async (
@@ -48,7 +43,7 @@ export const POST = apiHandler(
     }> = [];
 
     for (const protocol of user.protocols) {
-      if (protocol.isActive || hasProvisioningConfig(protocol.config)) {
+      if (!isPendingProvisioning(protocol)) {
         continue;
       }
 
@@ -83,7 +78,10 @@ export const POST = apiHandler(
       }
     }
 
-    if (!user.isActive && provisioningFixed > 0) {
+    if (
+      !user.isActive &&
+      shouldReactivateAfterProvisioningRetry(user.protocols, provisioningFixed)
+    ) {
       await prisma.user.update({
         where: { id: user.id },
         data: { isActive: true },
