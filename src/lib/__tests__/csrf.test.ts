@@ -45,10 +45,20 @@ describe('isValidOrigin', () => {
     assert.strictEqual(isValidOrigin(req), true);
   });
 
-  it('rejects http Origin when panel is https', () => {
+  it('allows same-host Origin across scheme (TLS-terminating proxy)', () => {
+    // Behind a TLS-terminating reverse proxy the app sees http while the
+    // browser sends https for the same host. Host match is the CSRF boundary.
     const req = new NextRequest('https://panel.example.com/api/users', {
       method: 'POST',
       headers: { Origin: 'http://panel.example.com' },
+    });
+    assert.strictEqual(isValidOrigin(req), true);
+  });
+
+  it('rejects malformed Origin header', () => {
+    const req = new NextRequest(`${panelUrl}/api/users`, {
+      method: 'POST',
+      headers: { Origin: 'not-a-valid-origin' },
     });
     assert.strictEqual(isValidOrigin(req), false);
   });
