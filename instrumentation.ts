@@ -52,10 +52,29 @@ export async function register() {
 
   // Each cleanup function stops its own interval and clears its in-memory
   // state, so they are idempotent and safe to call together on shutdown.
-  registerGracefulShutdown(() => {
+  registerGracefulShutdown(async () => {
     cleanupPanelHealth();
     stopBroadcaster();
     cleanupConnections();
     cleanupGeoIP();
+
+    // Close the WebSocket server so clients see a proper disconnect.
+    const socketIO = (globalThis as Record<string, unknown>)
+      .__socketIO as
+      | { close: (cb: () => void) => void }
+      | undefined;
+    if (socketIO) {
+      socketIO.close(() => {});
+    }
+
+    // Await prisma disconnect with a 3s timeout so the SQLite WAL
+    // checkpoint can complete before the container receives SIGKILL.
+    const { prisma } = await import('@/lib/prisma');
+    const disconnectWithTimeout = () =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(() => resolve(), 3_000);
+        prisma.$disconnect().finally(() => clearTimeout(timer));
+      });
+    await disconnectWithTimeout();
   });
 }
