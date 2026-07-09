@@ -29,6 +29,8 @@ export interface PanelPushResult {
   error: import('@/types/config-push').StructuredPushError | null;
   /** Parsed response data from the remote panel */
   data?: Record<string, unknown>;
+  /** HTTP status from the last attempt; null if no response was received */
+  status: number | null;
   /** Number of retries consumed */
   retries: number;
 }
@@ -74,6 +76,7 @@ export async function pushToPanel(
   const startTime = Date.now();
 
   let lastError: string | null = null;
+  let lastStatus: number | null = null;
   let attemptRetries = 0;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -90,6 +93,8 @@ export async function pushToPanel(
         retries: 0,
       });
 
+      lastStatus = response.status;
+
       if (response.ok) {
         const resp = await response.json();
         return {
@@ -97,11 +102,17 @@ export async function pushToPanel(
           latencyMs: Date.now() - startTime,
           error: null,
           data: resp.data,
+          status: lastStatus,
           retries: attemptRetries,
         };
       }
 
-      lastError = `HTTP ${response.status}: ${response.statusText}`;
+      // Surface the remote error text so callers can diagnose failures;
+      // fall back to status text when the body is empty or unreadable.
+      const bodyText = await response.text().catch(() => '');
+      lastError = bodyText
+        ? `HTTP ${response.status}: ${bodyText}`
+        : `HTTP ${response.status}: ${response.statusText}`;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
     }
@@ -116,6 +127,7 @@ export async function pushToPanel(
     success: false,
     latencyMs: Date.now() - startTime,
     error: enrichError(lastError || 'Unknown error', panelName),
+    status: lastStatus,
     retries: attemptRetries,
   };
 }

@@ -1,5 +1,6 @@
 import type { PanelSyncPayload } from '@/types/panel-sync';
 import type { ConfigApplierResult } from '@/types/config-push';
+import { enrichError } from './error-reporter';
 import { pushToPanel } from './panel-push';
 
 // ─── Shell Metacharacter Guard ────────────────────────────
@@ -49,8 +50,13 @@ async function pushToRemotePanel(params: {
     retries: 0,
   });
 
-  if (result.success && result.data) {
-    if (result.data.applied) {
+  // Success path: the remote panel responded 2xx. Interpret the body the same
+  // way the original inline implementation did — `data.applied` gates success,
+  // and a missing/empty body is treated as "not applied" (descriptive message)
+  // rather than falling through to an opaque "Unknown error".
+  if (result.success) {
+    const data = result.data;
+    if (data?.applied) {
       return {
         success: true,
         service,
@@ -59,26 +65,19 @@ async function pushToRemotePanel(params: {
         error: null,
       };
     }
-    // Remote returned applied=false
+    // Remote returned applied=false (or sent no usable data)
     const msg =
-      (result.data.message as string) ||
-      'Remote panel did not apply the config';
+      (data?.message as string) || 'Remote panel did not apply the config';
     return {
       success: false,
       service,
       panelName,
       latencyMs: result.latencyMs,
-      error: result.error ?? {
-        type: 'unknown',
-        message: msg,
-        recommendation: '',
-        knownFix: null,
-        rawError: null,
-      },
+      error: enrichError(msg, panelName),
     };
   }
 
-  if (result.error && result.error.rawError?.startsWith('HTTP 404')) {
+  if (result.status === 404) {
     // Remote panel does not have the apply endpoint -- this is a real failure
     console.error(
       `[config-applier] Remote panel ${panelName} returned 404 for /api/sync/apply. Config was NOT applied.`,
