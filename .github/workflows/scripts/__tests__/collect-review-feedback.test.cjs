@@ -10,6 +10,7 @@ const {
   hasActionableFeedback,
   bundleHasActionableFeedback,
   extractReviewThreads,
+  REVIEW_THREAD_FETCH_FAILURE_POLICY,
 } = require('../collect-review-feedback.cjs');
 
 test('parseRepo splits owner/name', () => {
@@ -176,6 +177,10 @@ test('extractReviewThreads keeps unresolved Kilo issue and suggestion comments',
       body: '**Severity**: suggestion\n\n**The Fix**: add coverage',
     },
   ]);
+});
+
+test('review thread collection is intentionally fail-closed', () => {
+  assert.equal(REVIEW_THREAD_FETCH_FAILURE_POLICY, 'fail-closed');
 });
 
 test('hasActionableFeedback sees review submission bodies as feedback', () => {
