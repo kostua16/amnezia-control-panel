@@ -46,6 +46,23 @@ function gh(args, options = {}) {
   });
 }
 
+function isGhNotFoundError(error) {
+  const output = [
+    error?.stdout,
+    error?.stderr,
+    Array.isArray(error?.output) ? error.output.join('\n') : '',
+    error?.message,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return (
+    /\bHTTP 404\b/.test(output) ||
+    /"status"\s*:\s*"?404"?/.test(output) ||
+    /"message"\s*:\s*"Not Found"/.test(output)
+  );
+}
+
 function normalizePatch(patch) {
   return String(patch || '')
     .replace(/\r/g, '')
@@ -216,6 +233,40 @@ function findDuplicatePullRequest(localFiles, pullRequests, getFiles) {
   return equivalentDuplicate;
 }
 
+function createPullRequestFileGetter(
+  repo,
+  ghCommand = gh,
+  warn = console.warn,
+) {
+  const pullRequestFiles = new Map();
+
+  return (pullRequest) => {
+    const number = Number(pullRequest.number);
+    if (!pullRequestFiles.has(number)) {
+      try {
+        pullRequestFiles.set(
+          number,
+          parseJson(
+            ghCommand([
+              'api',
+              `repos/${repo}/pulls/${number}/files?per_page=100`,
+            ]),
+          ) || [],
+        );
+      } catch (error) {
+        if (!isGhNotFoundError(error)) {
+          throw error;
+        }
+        warn(
+          `Skipping PR #${number}; GitHub no longer exposes its files payload.`,
+        );
+        pullRequestFiles.set(number, []);
+      }
+    }
+    return pullRequestFiles.get(number);
+  };
+}
+
 function run() {
   const repo = getArg('--repo') || process.env.GITHUB_REPOSITORY;
   const baseRef = getArg('--base-ref') || 'main';
@@ -272,19 +323,7 @@ function run() {
       return true;
     });
 
-    const pullRequestFiles = new Map();
-    const getPullRequestFiles = (pullRequest) => {
-      const number = Number(pullRequest.number);
-      if (!pullRequestFiles.has(number)) {
-        pullRequestFiles.set(
-          number,
-          parseJson(
-            gh(['api', `repos/${repo}/pulls/${number}/files?per_page=100`]),
-          ) || [],
-        );
-      }
-      return pullRequestFiles.get(number);
-    };
+    const getPullRequestFiles = createPullRequestFileGetter(repo);
 
     const duplicate = findDuplicatePullRequest(
       localFiles,
@@ -364,11 +403,13 @@ function run() {
 
 module.exports = {
   collectLocalFilePatches,
+  createPullRequestFileGetter,
   extractPatchFromGitDiff,
   findDuplicatePullRequest,
   hasExactDuplicate,
   hasEquivalentDuplicate,
   hasFileOverlap,
+  isGhNotFoundError,
   normalizePatch,
   normalizeSubstantivePatch,
   sortedFilePatches,
