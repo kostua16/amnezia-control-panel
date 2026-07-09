@@ -15,8 +15,82 @@ on:
 permissions:
   contents: write
   pull-requests: read
+  issues: write
 
 jobs:
+  restore-deferred-proposal:
+    # A deferred-proposal promotion PR carries the source issue's `in-progress`
+    # label while in flight. Closing it WITHOUT merging would otherwise strand
+    # the issue under `in-progress` (excluded from future promotion) with no
+    # recovery path. Restore it so the next promotion run can re-select it.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.merged != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed('pull_request payload missing');
+              return;
+            }
+
+            const labels = (pr.labels ?? [])
+              .map((label) => label?.name)
+              .filter(Boolean);
+            if (!labels.includes('planning-intake-open')) {
+              core.info('Not a planning-intake promotion PR; nothing to restore.');
+              return;
+            }
+
+            // The promotion PR body is built by gsd-planning-execute.yml and
+            // reads "Promotes deferred proposal issue #<n>". Only that exact
+            // phrasing ties the PR back to a deferred-proposal source issue, so
+            // unrelated planning-intake PRs are left untouched. The capture is
+            // digits-only, so the value is safe to use as an issue number.
+            const match = /Promotes deferred proposal issue #(\d+)/.exec(
+              pr.body ?? '',
+            );
+            if (!match) {
+              core.info('No deferred-proposal issue reference in PR body.');
+              return;
+            }
+            const issueNumber = Number(match[1]);
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            try {
+              await github.rest.issues.removeLabel({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                name: 'in-progress',
+              });
+            } catch (error) {
+              // The label may already be gone; only 404 is safe to ignore.
+              if (error.status !== 404) throw error;
+            }
+
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              labels: ['needs-review'],
+            });
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              body: `Promotion PR #${pr.number} was closed without merging; removed \`in-progress\` and restored this proposal to the promotion queue.`,
+            });
+            core.notice(
+              `Restored deferred-proposal issue #${issueNumber} after PR #${pr.number} closed unmerged.`,
+            );
+
   delete-generated-branch:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest

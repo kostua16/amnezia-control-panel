@@ -36,7 +36,112 @@ env:
   NODE_VERSION: '24.x'
 
 jobs:
+  fleet-gate:
+    name: Fleet back-pressure gate
+    runs-on: self-hosted
+    timeout-minutes: 5
+    outputs:
+      skip: ${{ steps.gate.outputs.pending }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          install-deps: 'false'
+
+      - name: Check fleet back-pressure
+        id: gate
+        # Only scheduled runs are throttled; a manual dispatch always runs.
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .github/workflows/scripts/check-pending-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --max-open-automation-prs 8 \
+            --github-output "$GITHUB_OUTPUT"
+
+  promote-deferred:
+    name: Promote deferred proposal
+    needs: [fleet-gate]
+    if: needs.fleet-gate.outputs.skip != 'true'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'false'
+
+      - uses: ./.github/actions/setup-bot-git
+
+      - name: Prepare promotion branch
+        id: branch
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-planning-pr-deferred-${{ github.run_id }}
+          github-token: ${{ secrets.GH_PAT }}
+
+      - name: Promote oldest eligible deferred proposal
+        id: promote
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/promote-deferred-proposal.cjs \
+            --github-output "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/commit-and-push
+        id: push
+        if: steps.promote.outputs.promoted == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'docs(planning): promote deferred proposal from issue #${{ steps.promote.outputs.issue_number }}'
+          github-token: ${{ secrets.GH_PAT }}
+
+      - name: Build promotion PR body
+        id: pr-body
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/build-automation-pr-body
+        with:
+          workflow-name: gsd-planning-execute
+          problem: 'Promotes deferred proposal issue #${{ steps.promote.outputs.issue_number }} into the executable planning queue. Fixes #${{ steps.promote.outputs.issue_number }}.'
+          source-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          base-ref: main
+          changed-files: ${{ steps.promote.outputs.artifact_path }}
+          review-notes: 'Planning intake PR (planning artifacts only). Merge is automated after CI, PR Policy, core review, and security review pass; the merged artifact is imported into Phase 999 by the next executor run.'
+
+      - name: Create promotion PR
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/upsert-pull-request
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'planning: promote deferred proposal #${{ steps.promote.outputs.issue_number }}'
+          body: ${{ steps.pr-body.outputs.body }}
+          labels: planning-intake-open
+          draft: 'false'
+          require-rich-body: 'true'
+
+      - name: Mark source issue as in progress
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh issue edit "${{ steps.promote.outputs.issue_number }}" --add-label "in-progress"
+          gh issue comment "${{ steps.promote.outputs.issue_number }}" --body "Promoted into the executable planning queue by [this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}); the promotion PR closes this issue when it merges."
+
   execute:
+    needs: [fleet-gate]
+    if: needs.fleet-gate.outputs.skip != 'true'
     runs-on: [self-hosted, big]
     timeout-minutes: 60
     outputs:
