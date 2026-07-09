@@ -187,6 +187,7 @@ flowchart TD
 | P8  | gsd-execute diff outside safe globs                                         | manual-only paths → manual                                                                                | char          |
 | P9  | two agents run in same window                                               | mitigated by fleet back-pressure (P9b) + per-family title dedup + post-run patch dedup; a true cross-workflow mutex remains out of scope | char          |
 | P9b | scheduled agent ticks while >=8 automation PRs (`claude-`/`claude/`/`codex/` heads) are open | `check-pending-automation-pr.cjs` back-pressure trips -> run skipped (**no-op**, logged reason); manual `workflow_dispatch` bypasses the gate | char          |
+| P14 | >=2 recent failed runs show disk-exhaustion signatures (`No space left on device`/`ENOSPC`) | monitor's scheduled run dispatches `cleanup-runner.yml` (npm + Next.js caches) instead of only reporting | char          |
 | P10 | agent updates an existing open PR on same branch                            | upsert (not create) → §1                                                                                  | char          |
 | P11 | agent comments/labels-only (e.g. issue-catch-up clusters ≥3 similar issues) | comment / label / close duplicate issues (not a PR)                                                       | char [verify] |
 | P11b | issue-catch-up `triaged_no_fix` issue with `auto_fix_eligible` (automation-authored, priority low/medium/high, no security/critical) | `/fix` posted via GH_PAT (OWNER association passes trust gate) → §6a fix-issue flow; max 5 per run, 6h `/fix` cooldown | char |
@@ -542,6 +543,8 @@ flowchart TD
 | PM34 | `deps-review-manual` persisted past 72h, dependency review not yet redispatched for this head                                             | `dependency-review.yml` redispatched once before any human escalation                       | char |
 | PM35 | blocked PR also carries `do-not-merge`                                                                                                    | explicit human hold: no clock, no escalation, no digest                                     | char |
 | PM36 | two open automation PRs share a normalized title (older appears superseded by newer)                                                     | older PR flagged once in the attention digest (`duplicateFlaggedAt` state-deduped); no auto-close | char |
+| PM37 | latest CI run for the current head completed `cancelled` (transient infra)                                                                | `gh run rerun --failed` once per head (`ciRerunAt` state); genuine `failure` conclusions keep the /fix lane | char |
+| PM38 | PR carries `flow/review-failed` (code-review retries + advisory fallback exhausted)                                                       | joins the 72h blocked-escalation clock -> reminder comment + attention digest (PM31-PM33 machinery) | char |
 
 Project-manager must not be added as a required PR check; otherwise it can
 deadlock the very merge flow it is meant to recover.

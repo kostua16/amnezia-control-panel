@@ -257,6 +257,31 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Self-heal runner disk pressure
+        # Deterministic recovery: when recent failed runs show disk-exhaustion
+        # signatures, dispatch the cleanup workflow instead of only reporting.
+        if: always() && github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          matches=0
+          for run_id in $(gh run list --status failure --limit 15 --json databaseId --jq '.[].databaseId'); do
+            if gh run view "$run_id" --log-failed 2>/dev/null | grep -qiE 'no space left on device|ENOSPC'; then
+              matches=$((matches + 1))
+            fi
+            if [ "$matches" -ge 2 ]; then
+              break
+            fi
+          done
+          if [ "$matches" -ge 2 ]; then
+            echo "Disk-pressure signature found in $matches recent failed runs; dispatching cleanup-runner.yml"
+            gh workflow run cleanup-runner.yml -f clear_npm_cache=true -f clear_next_cache=true
+          else
+            echo "No disk-pressure pattern detected (matches=$matches)"
+          fi
+
       - name: Fail on ZAI failure
         if: steps.claude_run.outcome == 'failure' || steps.claude_run.outputs.claude_failed == 'true'
         run: |

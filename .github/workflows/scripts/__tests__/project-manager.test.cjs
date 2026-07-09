@@ -1048,6 +1048,67 @@ test('PM36: duplicate automation PRs are flagged once in the attention digest', 
   assert.deepEqual(duplicateAutomationPrActions([flagged, newer], NOW), []);
 });
 
+test('PM37: cancelled CI run is re-run once per head before /fix', () => {
+  const cancelledRun = {
+    databaseId: 555,
+    workflowName: 'CI',
+    status: 'completed',
+    conclusion: 'cancelled',
+    headSha: 'abc123',
+    createdAt: '2026-07-01T09:30:00.000Z',
+  };
+
+  const first = decidePrAction(pr({ checkStatus: { status: 'failed' } }), {
+    now: NOW,
+    workflowRuns: [cancelledRun],
+  });
+  assert.equal(first.actionKey, 'ci-rerun');
+  const rerun = first.actions.find(
+    (entry) => entry.type === 'rerun-workflow-run',
+  );
+  assert.equal(rerun.runId, '555');
+
+  const second = decidePrAction(
+    pr({
+      checkStatus: { status: 'failed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        ciRerunAt: '2026-07-01T09:40:00.000Z',
+      },
+    }),
+    { now: NOW, workflowRuns: [cancelledRun] },
+  );
+  assert.equal(second.actionKey, 'fix');
+
+  const genuineFailure = decidePrAction(
+    pr({ checkStatus: { status: 'failed' } }),
+    {
+      now: NOW,
+      workflowRuns: [{ ...cancelledRun, conclusion: 'failure' }],
+    },
+  );
+  assert.equal(genuineFailure.actionKey, 'fix');
+});
+
+test('PM38: flow/review-failed joins the blocked-escalation clock and digest', () => {
+  const clock = decidePrAction(
+    pr({ labels: ['flow/review-failed'], checkStatus: { status: 'passed' } }),
+    { now: NOW },
+  );
+  assert.equal(clock.type, 'upsert-pr-state');
+  assert.equal(clock.state.blockedSince, NOW);
+
+  const escalation = decidePrAction(
+    pr({
+      labels: ['flow/review-failed'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: { headSha: 'abc123', blockedSince: BLOCKED_96H_AGO },
+    }),
+    { now: NOW },
+  );
+  assert.equal(escalation.actionKey, 'blocked-escalation');
+});
+
 test('PM35: do-not-merge silences the blocked escalation entirely', () => {
   const action = decidePrAction(
     pr({

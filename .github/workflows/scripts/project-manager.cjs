@@ -46,6 +46,7 @@ const WORKFLOW_RUN_COLLECTION_WORKFLOWS = [
 ];
 
 const WORKFLOW_NAME_ALIASES = new Map([
+  ['ci', 'ci.yml'],
   ['project manager', 'project-manager.yml'],
   ['fix pr', 'fix-pr.yml'],
   ['fix issue', 'fix-issue.yml'],
@@ -270,6 +271,7 @@ function normalizeState(pr) {
       blockedEscalatedAt: '',
       depsReviewRedispatchedAt: '',
       duplicateFlaggedAt: '',
+      ciRerunAt: '',
     };
   }
 
@@ -292,6 +294,7 @@ function normalizeState(pr) {
       raw.depsReviewRedispatchedAt ?? raw.deps_review_redispatched_at ?? '',
     duplicateFlaggedAt:
       raw.duplicateFlaggedAt ?? raw.duplicate_flagged_at ?? '',
+    ciRerunAt: raw.ciRerunAt ?? raw.ci_rerun_at ?? '',
   };
 }
 
@@ -723,6 +726,7 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
         extra.depsReviewRedispatchedAt ?? state.depsReviewRedispatchedAt ?? '',
       duplicateFlaggedAt:
         extra.duplicateFlaggedAt ?? state.duplicateFlaggedAt ?? '',
+      ciRerunAt: extra.ciRerunAt ?? state.ciRerunAt ?? '',
       cooldowns: {
         ...(state.cooldowns ?? {}),
         [actionKey]: now,
@@ -879,6 +883,7 @@ const BLOCKED_ESCALATION_LABELS = [
   'needs-review',
   'deps-review-manual',
   'deps-review-blocked',
+  'flow/review-failed',
 ];
 const BLOCKED_ESCALATION_MARKER = '<!-- project-manager-blocked-escalation -->';
 const ATTENTION_DIGEST_TITLE =
@@ -991,6 +996,49 @@ function blockedEscalationAction(pr, state, now) {
       makeStatePatch(pr, state, 'blocked-escalation', now, {
         blockedEscalatedAt: now,
       }),
+    ],
+  };
+}
+
+function latestCiRunForHead(pr, workflowRuns) {
+  const headSha = pr.headRefOid ?? pr.headSha ?? '';
+  if (!headSha) return null;
+  const runs = (workflowRuns ?? [])
+    .filter(
+      (run) =>
+        workflowMatches(run, 'ci.yml') && String(run.headSha ?? '') === headSha,
+    )
+    .sort((a, b) =>
+      String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')),
+    );
+  return runs[0] ?? null;
+}
+
+function ciCancelledRerunAction(pr, state, now, workflowRuns) {
+  // A cancelled CI run is usually transient infrastructure (runner reboot,
+  // eviction, disk pressure), not a code failure: re-run once per head
+  // before the /fix repair lane treats it as a genuine failure.
+  if (state.ciRerunAt) return null;
+  const latest = latestCiRunForHead(pr, workflowRuns);
+  if (!latest) return null;
+  if (String(latest.status ?? '').toLowerCase() !== 'completed') return null;
+  if (String(latest.conclusion ?? '').toLowerCase() !== 'cancelled') {
+    return null;
+  }
+  return {
+    type: 'compound',
+    actionKey: 'ci-rerun',
+    reason:
+      'Latest CI run for this head was cancelled (transient infra); re-running once before any fix escalation.',
+    number: pr.number,
+    actions: [
+      {
+        type: 'rerun-workflow-run',
+        runId: String(latest.databaseId ?? ''),
+        actionKey: 'ci-rerun',
+        number: pr.number,
+      },
+      makeStatePatch(pr, state, 'ci-rerun', now, { ciRerunAt: now }),
     ],
   };
 }
@@ -1135,6 +1183,16 @@ function decidePrAction(pr, options = {}) {
         makeStatePatch(pr, state, 'rebase', now, { readySince }),
       ],
     };
+  }
+
+  if (checksFailed(pr)) {
+    const ciRerun = ciCancelledRerunAction(
+      pr,
+      state,
+      now,
+      options.workflowRuns,
+    );
+    if (ciRerun) return ciRerun;
   }
 
   if (
@@ -1301,8 +1359,9 @@ function planPrRoute(snapshot, options = {}) {
   const decisions = [];
   const actions = [];
 
+  const workflowRuns = snapshot.workflowRuns ?? snapshot.activeRuns ?? [];
   for (const pr of prs) {
-    const decision = decidePrAction(pr, { ...options, now });
+    const decision = decidePrAction(pr, { ...options, now, workflowRuns });
     const state = normalizeState(pr);
     decisions.push({
       pr: pr.number,
@@ -2424,6 +2483,11 @@ function applyAction(action, options = {}) {
 
   if (action.type === 'merge-pr') {
     gh(['pr', 'merge', String(action.number), '--squash'], { dryRun });
+    return;
+  }
+
+  if (action.type === 'rerun-workflow-run') {
+    gh(['run', 'rerun', String(action.runId), '--failed'], { dryRun });
     return;
   }
 
