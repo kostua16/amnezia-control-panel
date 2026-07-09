@@ -4,7 +4,7 @@
  * Centralizes fetch boilerplate that was duplicated across 10+ hooks:
  * - URL construction with query params
  * - Consistent error parsing (reads server error JSON)
- * - Configurable timeout (15s default)
+ * - Configurable timeout for reads and opt-in timeout for mutations
  * - Generic response typing
  *
  * Usage:
@@ -111,13 +111,15 @@ export async function apiGet<T>(
 }
 
 /**
- * Typed mutation request (POST/PUT/DELETE/PATCH) with timeout and error handling.
+ * Typed mutation request (POST/PUT/DELETE/PATCH) with error handling.
  *
  * @template T - Expected response data type
  * @param path - API path (e.g., '/api/users')
  * @param method - HTTP method ('POST', 'PUT', 'DELETE', 'PATCH')
  * @param body - Request body (will be JSON-stringified)
- * @param timeoutMs - Request timeout in milliseconds (default: 15000)
+ * @param timeoutMs - Optional request timeout in milliseconds. Mutations do not
+ * timeout by default because provisioning operations can legitimately take
+ * longer than ordinary reads.
  * @returns Typed response data
  * @throws Error with server-provided message on failure
  */
@@ -125,10 +127,13 @@ export async function apiMutate<T>(
   path: string,
   method: 'POST' | 'PUT' | 'DELETE' | 'PATCH',
   body?: unknown,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  timeoutMs: number | null = null,
 ): Promise<T> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const hasTimeout = typeof timeoutMs === 'number';
+  const controller = hasTimeout ? new AbortController() : undefined;
+  const timeoutId = hasTimeout
+    ? setTimeout(() => controller?.abort(), timeoutMs)
+    : undefined;
 
   try {
     const response = await fetch(path, {
@@ -136,7 +141,7 @@ export async function apiMutate<T>(
       headers: {
         'Content-Type': 'application/json',
       },
-      signal: controller.signal,
+      signal: controller?.signal,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
@@ -147,11 +152,13 @@ export async function apiMutate<T>(
     const json = await response.json();
     return json as T;
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError' && hasTimeout) {
       throw new Error(`Request timeout after ${timeoutMs}ms`);
     }
     throw error;
   } finally {
-    clearTimeout(timeoutId);
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
   }
 }
