@@ -6,18 +6,39 @@ import type {
   XrayRoutingRule,
 } from '@/types/chain';
 import { normalizeDirectGeoipTagsInput } from './chain-routing-options';
-import { generateKeypair } from './wireguard-keys';
+import { generateDeterministicPublicKey } from './wireguard-keys';
 
 /**
  * Resolved chain node: the template node plus the transport endpoint that was
  * resolved for it. Both chain generation call sites (the live apply path in
  * chain-router and the push-wizard preview path) produce nodes of this shape,
  * so the generators below are shared between them to keep preview and apply
- * output structurally identical (topology, endpoints, allowed IPs) — but the
- * emitted WireGuard keys are fresh per call, so the two peer sets are not
- * byte-identical.
+ * output identical.
  */
 export type ResolvedChainNode = ChainNode & { hostname: string; port: number };
+
+function peerPublicKey(
+  template: ChainTemplate,
+  current: ResolvedChainNode,
+  peer: ResolvedChainNode,
+  direction: string,
+): string {
+  return generateDeterministicPublicKey(
+    [
+      template.id,
+      template.topology,
+      direction,
+      current.label,
+      current.serverId,
+      current.hostname,
+      current.port,
+      peer.label,
+      peer.serverId,
+      peer.hostname,
+      peer.port,
+    ].join('|'),
+  );
+}
 
 export function normalizeChainRoutingOptions(
   template: ChainTemplate,
@@ -47,14 +68,9 @@ export function normalizeChainRoutingOptions(
 /**
  * Generate WireGuard peer configurations for a chain topology.
  *
- * Each peer receives a fresh Curve25519 keypair generated on every call, so
- * two invocations (the push-wizard preview and the live apply) yield peer sets
- * that are structurally identical but whose keys differ. Callers that need to
- * compare two generated peer sets must compare the structural fields (nodeId,
- * allowedIPs, endpoint, persistentKeepalive), not the keys.
- *
- * The public key is embedded in the peer config; the private key is included
- * so a panel can configure its local WireGuard interface.
+ * Each peer receives a stable Curve25519 public key derived from the template
+ * and endpoint data. Shared by the chain apply path and the push-wizard preview
+ * so both paths emit identical peer sets.
  */
 export function generateWireGuardPeers(
   template: ChainTemplate,
@@ -69,13 +85,14 @@ export function generateWireGuardPeers(
         const current = nodes[i];
         const next = nodes[i + 1];
 
-        const forward = generateKeypair();
-        const reverse = generateKeypair();
-
         peers.push({
           nodeId: current.label,
-          publicKey: forward.publicKey,
-          privateKey: forward.privateKey,
+          publicKey: peerPublicKey(
+            template,
+            current,
+            next,
+            `linear:${i}:forward`,
+          ),
           allowedIPs: '0.0.0.0/0',
           endpoint: `${next.hostname}:${next.port}`,
           persistentKeepalive: 25,
@@ -83,8 +100,12 @@ export function generateWireGuardPeers(
 
         peers.push({
           nodeId: next.label,
-          publicKey: reverse.publicKey,
-          privateKey: reverse.privateKey,
+          publicKey: peerPublicKey(
+            template,
+            next,
+            current,
+            `linear:${i}:reverse`,
+          ),
           allowedIPs: `10.0.0.${i + 1}/32`,
           endpoint: `${current.hostname}:${current.port}`,
           persistentKeepalive: 25,
@@ -98,11 +119,9 @@ export function generateWireGuardPeers(
       // populate from the template definition.
       const foreign = nodes.find((n) => n.role === 'foreign');
       if (foreign) {
-        const keypair = generateKeypair();
         peers.push({
           nodeId: foreign.label,
-          publicKey: keypair.publicKey,
-          privateKey: keypair.privateKey,
+          publicKey: peerPublicKey(template, foreign, foreign, 'split:foreign'),
           allowedIPs: '0.0.0.0/0',
           endpoint: `${foreign.hostname}:${foreign.port}`,
           persistentKeepalive: 25,
@@ -118,11 +137,9 @@ export function generateWireGuardPeers(
           const current = nodes[i];
           const peer = nodes[j];
 
-          const keypair = generateKeypair();
           peers.push({
             nodeId: current.label,
-            publicKey: keypair.publicKey,
-            privateKey: keypair.privateKey,
+            publicKey: peerPublicKey(template, current, peer, `mesh:${i}:${j}`),
             allowedIPs: `10.0.0.${j + 1}/32`,
             endpoint: `${peer.hostname}:${peer.port}`,
             persistentKeepalive: 25,

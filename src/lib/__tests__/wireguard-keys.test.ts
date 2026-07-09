@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeypair, isValidWireGuardKey } from '../wireguard-keys';
+import {
+  generateDeterministicPublicKey,
+  generateKeypair,
+  isValidWireGuardKey,
+} from '../wireguard-keys';
 
 describe('generateKeypair', () => {
   it('returns a publicKey and privateKey', () => {
@@ -73,7 +77,31 @@ describe('isValidWireGuardKey', () => {
     );
   });
 
-  it('rejects null-like values coerced to string', () => {
+  it('rejects non-key strings', () => {
     assert.ok(!isValidWireGuardKey('STUB_PUBLIC_KEY'));
+  });
+
+  it('rejects null-like values without throwing', () => {
+    assert.ok(!isValidWireGuardKey(undefined));
+    assert.ok(!isValidWireGuardKey(null));
+  });
+});
+
+describe('generateDeterministicPublicKey', () => {
+  it('returns the same valid key for the same seed', () => {
+    const first = generateDeterministicPublicKey('template|entry|exit');
+    const second = generateDeterministicPublicKey('template|entry|exit');
+
+    assert.equal(first, second);
+    assert.ok(isValidWireGuardKey(first));
+  });
+
+  it('returns different valid keys for different seeds', () => {
+    const first = generateDeterministicPublicKey('template|entry|exit');
+    const second = generateDeterministicPublicKey('template|exit|entry');
+
+    assert.notEqual(first, second);
+    assert.ok(isValidWireGuardKey(first));
+    assert.ok(isValidWireGuardKey(second));
   });
 });

@@ -52,8 +52,8 @@ describe('generateWireGuardPeers', () => {
         `linear peer ${p.nodeId} publicKey is not a valid WG key: ${p.publicKey}`,
       );
       assert.ok(
-        p.privateKey !== undefined,
-        `linear peer ${p.nodeId} missing privateKey`,
+        !('privateKey' in p),
+        `linear peer ${p.nodeId} leaked privateKey`,
       );
     }
   });
@@ -81,10 +81,7 @@ describe('generateWireGuardPeers', () => {
       WG_KEY_RE.test(peers[0].publicKey),
       'split peer publicKey is not a valid WG key',
     );
-    assert.ok(
-      peers[0].privateKey !== undefined,
-      'split peer missing privateKey',
-    );
+    assert.ok(!('privateKey' in peers[0]), 'split peer leaked privateKey');
   });
 
   it('mesh: fully meshed directed peers', () => {
@@ -114,10 +111,31 @@ describe('generateWireGuardPeers', () => {
         `mesh peer ${p.nodeId} publicKey is not a valid WG key: ${p.publicKey}`,
       );
       assert.ok(
-        p.privateKey !== undefined,
-        `mesh peer ${p.nodeId} missing privateKey`,
+        !('privateKey' in p),
+        `mesh peer ${p.nodeId} leaked privateKey`,
       );
     }
+  });
+
+  it('produces stable peer keys for repeated generation', () => {
+    const template: ChainTemplate = {
+      id: 't',
+      name: 't',
+      description: '',
+      topology: 'linear',
+      requiredServers: 2,
+      nodes: [],
+      icon: '',
+    };
+    const nodes = [
+      node({ label: 'Entry', role: 'entry', serverId: 1 }),
+      node({ label: 'Exit', role: 'exit', serverId: 2 }),
+    ];
+
+    assert.deepEqual(
+      generateWireGuardPeers(template, nodes),
+      generateWireGuardPeers(template, nodes),
+    );
   });
 });
 
@@ -305,23 +323,12 @@ describe('chain-config-generator — preview/apply parity', () => {
       isActive: true,
     }));
 
-    // WireGuard peers generate fresh keypairs each call, so compare
-    // structural fields (nodeId, allowedIPs, endpoint, persistentKeepalive)
-    // rather than the full deep-equal which would differ on publicKey/privateKey.
     const applyPeers = generateWireGuardPeers(template, applyShape);
     const previewPeers = generateWireGuardPeers(template, previewShape);
-    assert.equal(applyPeers.length, previewPeers.length);
+    assert.deepEqual(applyPeers, previewPeers);
     for (let i = 0; i < applyPeers.length; i++) {
-      assert.equal(applyPeers[i].nodeId, previewPeers[i].nodeId);
-      assert.equal(applyPeers[i].allowedIPs, previewPeers[i].allowedIPs);
-      assert.equal(applyPeers[i].endpoint, previewPeers[i].endpoint);
-      assert.equal(
-        applyPeers[i].persistentKeepalive,
-        previewPeers[i].persistentKeepalive,
-      );
-      // Both peers must have real keys (not stubs).
       assert.ok(WG_KEY_RE.test(applyPeers[i].publicKey));
-      assert.ok(WG_KEY_RE.test(previewPeers[i].publicKey));
+      assert.ok(!('privateKey' in applyPeers[i]));
     }
 
     assert.deepEqual(
