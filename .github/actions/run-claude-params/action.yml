@@ -736,31 +736,42 @@ runs:
       with:
         github-token: ${{ inputs.github-token }}
         policy-file: .github/workflows/policy.json
-        names: ci-failure,claude-health,claude-health-critical
+        names: ci-failure,claude-health
 
     - name: report-claude-issues
-      if: always() && steps.scan-logs.outputs.has_findings == 'true'
+      if: always()
       uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
       env:
         ISSUES_FILE: ${{ steps.scan-logs.outputs.claude_issues_file }}
+        HAS_FINDINGS: ${{ steps.scan-logs.outputs.has_findings }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
           const fs = require('fs');
           const { renderClaudeExecutionSection } = require('./.github/workflows/scripts/render-claude-report.cjs');
           const issuesFile = process.env.ISSUES_FILE;
-          if (!issuesFile || !fs.existsSync(issuesFile)) {
-            core.info('No issues file — skipping report.');
-            return;
-          }
-
-          const data = JSON.parse(fs.readFileSync(issuesFile, 'utf8'));
-          if (!data.findings || data.findings.length === 0) {
-            core.info('No findings — skipping report.');
-            return;
-          }
+          const hasFindings = process.env.HAS_FINDINGS === 'true';
 
           const { owner, repo } = context.repo;
+
+          async function syncCriticalLabel(issueNumber, hasError) {
+            try {
+              if (hasError) {
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: issueNumber, labels: ['claude-health-critical']
+                });
+                return;
+              }
+
+              await github.rest.issues.removeLabel({
+                owner, repo, issue_number: issueNumber, name: 'claude-health-critical'
+              });
+            } catch (e) {
+              if (!hasError && e.status === 404) return;
+              const action = hasError ? 'add' : 'remove';
+              core.warning(`Failed to ${action} critical label: ${e.message}`);
+            }
+          }
 
           // Find existing rolling issue
           let issueNumber = null;
@@ -772,6 +783,27 @@ runs:
             if (tracker) issueNumber = tracker.number;
           } catch (e) {
             core.warning(`Failed to search for tracker issue: ${e.message}`);
+          }
+
+          if (!hasFindings) {
+            if (issueNumber) {
+              await syncCriticalLabel(issueNumber, false);
+              core.info(`Cleared stale critical label on tracker issue #${issueNumber}.`);
+            } else {
+              core.info('No findings and no tracker issue — skipping report.');
+            }
+            return;
+          }
+
+          if (!issuesFile || !fs.existsSync(issuesFile)) {
+            core.warning('Claude findings were reported but no issues file was found.');
+            return;
+          }
+
+          const data = JSON.parse(fs.readFileSync(issuesFile, 'utf8'));
+          if (!data.findings || data.findings.length === 0) {
+            core.info('No findings in issues file — skipping report.');
+            return;
           }
 
           // Create if not found
@@ -788,7 +820,7 @@ runs:
                   '',
                   'Labels:',
                   '- `claude-health` — this tracker',
-                  '- `claude-health-critical` — auto-added when a finding has severity `error`',
+                  '- `claude-health-critical` — present while the latest scan has an error-severity finding',
                   '- `ci-failure` — general CI failure tag',
                 ].join('\n'),
                 labels: ['ci-failure', 'claude-health']
@@ -839,16 +871,7 @@ runs:
             core.warning(`Failed to post comment: ${e.message}`);
           }
 
-          // Add critical label if error-severity finding
-          if (hasError) {
-            try {
-              await github.rest.issues.addLabels({
-                owner, repo, issue_number: issueNumber, labels: ['claude-health-critical']
-              });
-            } catch (e) {
-              core.warning(`Failed to add critical label: ${e.message}`);
-            }
-          }
+          await syncCriticalLabel(issueNumber, hasError);
 
           // Clean up temp file
           try { fs.unlinkSync(issuesFile); } catch (_) {}
