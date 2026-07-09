@@ -16,12 +16,19 @@ export async function seedAdmin(): Promise<void> {
     });
 
     if (!existing) {
-      if (!process.env.ADMIN_PASSWORD) {
-        throw new Error(
-          '[seed] ADMIN_PASSWORD environment variable is not set. Refusing to create admin with insecure default.',
+      const adminPassword = process.env.ADMIN_PASSWORD;
+      if (!adminPassword) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(
+            'ADMIN_PASSWORD environment variable must be set in production',
+          );
+        }
+        console.warn(
+          '[seed] ADMIN_PASSWORD not set — using insecure default "admin". ' +
+            'Set ADMIN_PASSWORD in production.',
         );
       }
-      const passwordHash = await hash(process.env.ADMIN_PASSWORD, 10);
+      const passwordHash = await hash(adminPassword || 'admin', 10);
       await prisma.admin.create({
         data: {
           username: 'admin',
