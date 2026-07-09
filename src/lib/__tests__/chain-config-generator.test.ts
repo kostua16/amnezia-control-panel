@@ -137,6 +137,40 @@ describe('generateWireGuardPeers', () => {
       generateWireGuardPeers(template, nodes),
     );
   });
+
+  it('uses collision-free seed encoding for delimiter-bearing hostnames and labels', () => {
+    const template: ChainTemplate = {
+      id: 't',
+      name: 't',
+      description: '',
+      topology: 'linear',
+      requiredServers: 2,
+      nodes: [],
+      icon: '',
+    };
+    const firstPeers = generateWireGuardPeers(template, [
+      node({
+        label: 'Entry',
+        role: 'entry',
+        serverId: 1,
+        hostname: 'host|51820',
+        port: 1,
+      }),
+      node({ label: 'peer', role: 'exit', serverId: 2 }),
+    ]);
+    const secondPeers = generateWireGuardPeers(template, [
+      node({
+        label: 'Entry',
+        role: 'entry',
+        serverId: 1,
+        hostname: 'host',
+        port: 51820,
+      }),
+      node({ label: '1|peer', role: 'exit', serverId: 2 }),
+    ]);
+
+    assert.notEqual(firstPeers[0].publicKey, secondPeers[0].publicKey);
+  });
 });
 
 describe('generateXrayRoutingRules — canonical behavior', () => {

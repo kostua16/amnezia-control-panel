@@ -24,7 +24,7 @@ function peerPublicKey(
   direction: string,
 ): string {
   return generateDeterministicPublicKey(
-    [
+    JSON.stringify([
       template.id,
       template.topology,
       direction,
@@ -36,7 +36,7 @@ function peerPublicKey(
       peer.serverId,
       peer.hostname,
       peer.port,
-    ].join('|'),
+    ]),
   );
 }
 
