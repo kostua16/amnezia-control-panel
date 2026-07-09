@@ -9,7 +9,7 @@ status: complete
 ## Summary
 
 Executed the merged planning artifact (260617-arch-review) containing 3 proposals.
-Implemented 2 proposals; 1 was already complete from prior work.
+Proposal 1 already complete from prior work; Proposal 2 fully implemented; Proposal 3 partially implemented (primitive extracted and one consumer migrated, the other deferred — see below).
 
 ## Changes
 
@@ -25,11 +25,10 @@ Implemented 2 proposals; 1 was already complete from prior work.
 - Compile-time safety: invalid values like `matchType: 'banana'` now produce TypeScript errors at the Prisma query boundary
 
 ### Proposal 3: Deduplicate Panel HTTP Push Pattern
-- **Status:** ✓ Implemented
+- **Status:** Partially implemented — primitive extracted, one consumer migrated
 - Created `src/lib/panel-push.ts` (~95 lines): shared `pushToPanel()` primitive handling signing, headers, fetch, retry, and error enrichment
-- Refactored `panel-sync-client.ts`: delegates to `pushToPanel()` with `retries=3`, keeps WebSocket broadcast and `PushResult` shaping
-- Refactored `config-applier.ts`: delegates to `pushToPanel()` with `retries=0`, keeps 404 handling and `ConfigApplierResult` shaping
-- No behavioral change — retry and broadcast semantics preserved
+- Refactored `config-applier.ts`: delegates to `pushToPanel()` with `retries=0`, keeps 404 handling and `ConfigApplierResult` shaping (no behavioral change on this path)
+- `panel-sync-client.ts` was NOT migrated in this PR — it retains its own inline push loop. That path carries behavior the shared primitive does not model (circuit breaker, transport resolution, per-stage WebSocket broadcast, 8s timeout, `configVersion` extraction), so migrating it would risk a behavioral regression. Migration is deferred to a follow-up.
 
 ## Self-Check: PASSED
 
@@ -46,9 +45,8 @@ Implemented 2 proposals; 1 was already complete from prior work.
 ## Key Files Modified
 
 - `prisma/schema.prisma` — 4 enums added, 4 fields updated
-- `src/lib/panel-sync-client.ts` — delegates to shared pushToPanel()
 - `src/lib/config-applier.ts` — delegates to shared pushToPanel()
 
 ## Proposals deferred
 
-None — all in-scope proposals addressed (Proposal 1 already implemented, Proposals 2 and 3 implemented).
+- Proposal 3 (partial): `panel-sync-client.ts` migration to the shared `pushToPanel()` primitive. The primitive was extracted and `config-applier.ts` migrated; `panel-sync-client.ts` retains its inline push because its circuit-breaker, transport-resolution, broadcast, and timeout behavior is not modeled by the shared primitive. Follow-up required to either extend the primitive or refactor the client.
