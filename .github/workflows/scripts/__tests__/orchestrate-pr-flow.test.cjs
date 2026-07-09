@@ -22,6 +22,10 @@ test('pathsMatch supports exact paths and directory-prefix globs', () => {
   assert.equal(pathsMatch(['package.json'], paths), true);
   assert.equal(pathsMatch(['.github/workflows/ci.yml'], paths), true);
   assert.equal(pathsMatch(['.github/dependabot.yml'], paths), false);
+  // Sibling files that share the directory name as a prefix (no trailing
+  // slash) must NOT match the `/**` glob — the match is bound to the
+  // directory separator, never a bare string prefix.
+  assert.equal(pathsMatch(['.github/workflows.bak'], paths), false);
   assert.equal(pathsMatch(['src/app/page.tsx'], paths), false);
   assert.equal(pathsMatch([], paths), false);
 });
