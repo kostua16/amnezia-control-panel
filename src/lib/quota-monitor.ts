@@ -48,7 +48,26 @@ export async function checkUserQuotas(): Promise<{
     },
   });
 
-  // Bulk-fetch all recent quota alerts for dedup (Proposal 14: avoid N+1 queries)
+  if (usersWithQuotas.length === 0) {
+    return { checked: 0, alertsCreated: 0, details: [] };
+  }
+
+  // Batch 1: single grouped traffic aggregate replaces N per-user queries
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const trafficByUser = await prisma.trafficLog.groupBy({
+    by: ['userId'],
+    _sum: { bytesIn: true, bytesOut: true },
+    where: { timestamp: { gte: monthStart } },
+  });
+  const trafficMap = new Map<number, number>(
+    trafficByUser.map((r) => [
+      r.userId,
+      (r._sum.bytesIn ?? 0) + (r._sum.bytesOut ?? 0),
+    ]),
+  );
+
+  // Batch 2: single fetch of all recent quota alerts for dedup
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   const recentAlerts = await prisma.alert.findMany({
     where: {
@@ -71,24 +90,26 @@ export async function checkUserQuotas(): Promise<{
   };
 
   for (const user of usersWithQuotas) {
-    // quotas is an array (one-to-many relation in Prisma)
     const quota = user.quotas.at(0);
     if (!quota || quota.quotaBytes <= 0) continue;
 
-    const usagePercent = await getUserUsagePercent(user.id, quota.quotaBytes);
+    const totalBytes = trafficMap.get(user.id) ?? 0;
+    const usagePercent =
+      quota.quotaBytes > 0
+        ? Math.round((totalBytes / quota.quotaBytes) * 100)
+        : 0;
 
     for (const threshold of getExceededQuotaThresholds(usagePercent)) {
       const alertType = `quota_${threshold.percent}%_user${user.id}`;
 
-      // Use in-memory set lookup instead of database query (Proposal 14)
       if (recentAlertTypes.has(alertType)) {
-        continue; // Duplicate alert suppressed
+        continue;
       }
 
       const message = `User "${user.username}" has used ${usagePercent}% of traffic quota (${threshold.percent}% threshold exceeded)`;
 
       await createAlert(alertType, threshold.severity, message);
-      recentAlertTypes.add(alertType); // Add to set to prevent duplicates in this run
+      recentAlertTypes.add(alertType);
 
       results.alertsCreated++;
       results.details.push({
@@ -101,27 +122,4 @@ export async function checkUserQuotas(): Promise<{
   }
 
   return results;
-}
-
-/**
- * Calculate a user's traffic usage as a percentage of their quota.
- */
-async function getUserUsagePercent(
-  userId: number,
-  quotaBytes: number,
-): Promise<number> {
-  // Sum traffic for the current month
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  const traffic = await prisma.trafficLog.aggregate({
-    _sum: { bytesIn: true, bytesOut: true },
-    where: {
-      userId,
-      timestamp: { gte: monthStart },
-    },
-  });
-
-  const totalBytes = (traffic._sum.bytesIn ?? 0) + (traffic._sum.bytesOut ?? 0);
-  return quotaBytes > 0 ? Math.round((totalBytes / quotaBytes) * 100) : 0;
 }
