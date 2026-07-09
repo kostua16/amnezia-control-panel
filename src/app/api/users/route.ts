@@ -165,8 +165,12 @@ export const POST = apiHandler(async (request: NextRequest) => {
     try {
       const adapter = getAdapter(protocol.serviceType);
       result = await adapter.create(username);
-    } catch {
-      continue;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'VPN service creation threw an unknown error';
+      result = { success: false, message };
     }
 
     // A protocol counts as provisioned only when the remote service both

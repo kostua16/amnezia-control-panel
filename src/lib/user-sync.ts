@@ -1,9 +1,6 @@
-import type { ServiceType } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
-import { getAdapter } from '@/lib/vpn-service-adapter';
+import { getAdapter, isSupportedServiceType } from '@/lib/vpn-service-adapter';
 import type { VpnServiceResult } from '@/lib/vpn-services';
-
-const SUPPORTED_SERVICE_TYPES = new Set<string>(['AWG', 'THREE_XUI']);
 
 export interface SyncReport {
   checked: number;
@@ -76,9 +73,9 @@ function resolveDeps(): UserSyncDeps {
     _deps ?? {
       findUser: defaultFindUser,
       blockUser: (username, serviceType) =>
-        getAdapter(serviceType as ServiceType).block(username),
+        getAdapter(serviceType).block(username),
       unblockUser: (username, serviceType) =>
-        getAdapter(serviceType as ServiceType).unblock(username),
+        getAdapter(serviceType).unblock(username),
     }
   );
 }
@@ -122,7 +119,7 @@ export async function syncUser(userId: number): Promise<SyncReport> {
     if (user.isBlocked) {
       // User is blocked in DB — ensure blocked in VPN services
       for (const protocol of user.protocols) {
-        if (!SUPPORTED_SERVICE_TYPES.has(protocol.serviceType)) continue;
+      if (!isSupportedServiceType(protocol.serviceType)) continue;
         try {
           const result = await deps.blockUser(
             user.username,
@@ -152,7 +149,7 @@ export async function syncUser(userId: number): Promise<SyncReport> {
     } else {
       // User is active in DB — ensure unblocked in VPN services
       for (const protocol of user.protocols) {
-        if (!SUPPORTED_SERVICE_TYPES.has(protocol.serviceType)) continue;
+      if (!isSupportedServiceType(protocol.serviceType)) continue;
         try {
           const result = await deps.unblockUser(
             user.username,

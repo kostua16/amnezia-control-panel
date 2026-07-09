@@ -66,22 +66,27 @@ class ThreeXuiAdapter implements VpnServiceAdapter {
   }
 }
 
-const ADAPTERS: Readonly<Record<string, VpnServiceAdapter>> = {
+const ADAPTERS: Readonly<Record<ServiceType, VpnServiceAdapter>> = {
   AWG: new AwgAdapter(),
   THREE_XUI: new ThreeXuiAdapter(),
 };
+
+export function isSupportedServiceType(
+  serviceType: string,
+): serviceType is ServiceType {
+  return serviceType in ADAPTERS;
+}
 
 /**
  * Return the adapter for a known service type.
  *
  * @throws Error for unknown service types
  */
-export function getAdapter(serviceType: ServiceType): VpnServiceAdapter {
-  const adapter = ADAPTERS[serviceType];
-  if (!adapter) {
+export function getAdapter(serviceType: string): VpnServiceAdapter {
+  if (!isSupportedServiceType(serviceType)) {
     throw new Error(`Unknown VPN service type: ${serviceType}`);
   }
-  return adapter;
+  return ADAPTERS[serviceType];
 }
 
 export { AwgAdapter, ThreeXuiAdapter };

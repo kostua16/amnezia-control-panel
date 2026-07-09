@@ -30,7 +30,7 @@ describe('vpn-service-adapter: getAdapter registry', () => {
 
   it('throws for an unknown service type', () => {
     assert.throws(
-      () => getAdapter('UNKNOWN_TYPE' as 'AWG'),
+      () => getAdapter('UNKNOWN_TYPE'),
       /Unknown VPN service type/i,
       'Unknown service type must throw',
     );
