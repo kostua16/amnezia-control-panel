@@ -85,6 +85,32 @@ describe('GET /api/users — list (mocked DB)', () => {
     assert.strictEqual(body.pagination.totalPages, 1);
   });
 
+  it('flags only unprovisioned inactive protocols as partial provisioning', async () => {
+    prisma.user.findMany = (async () => [
+      fakeUser({
+        protocols: [
+          { serviceType: 'AWG', isActive: true, config: { peer: 'awg' } },
+          { serviceType: 'THREE_XUI', isActive: false, config: {} },
+        ],
+      }),
+      fakeUser({
+        username: 'bob',
+        protocols: [
+          { serviceType: 'AWG', isActive: false, config: { removed: true } },
+        ],
+      }),
+    ]) as never;
+    prisma.user.count = (async () => 2) as never;
+
+    const { status, body } = await readJson<UserListBody>(
+      await GET(getRequest('/api/users', { page: 1, limit: 10 })),
+    );
+
+    assert.strictEqual(status, 200);
+    assert.strictEqual(body.data[0].hasPartialProvisioning, true);
+    assert.strictEqual(body.data[1].hasPartialProvisioning, false);
+  });
+
   it('propagates a search term into the result set', async () => {
     let capturedWhere: unknown;
     prisma.user.findMany = (async (args: { where: unknown }) => {

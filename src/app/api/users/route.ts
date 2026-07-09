@@ -8,9 +8,8 @@ import { createAwgUser, createThreeXuiUser } from '@/lib/vpn-services';
 import type { VpnServiceResult } from '@/lib/vpn-services';
 import { apiHandler } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
-import { createAlert, markAlertRead } from '@/lib/alert-service';
+import { createAlert } from '@/lib/alert-service';
 import { AlertSeverity } from '@/generated/prisma/enums';
-import { syncUser } from '@/lib/user-sync';
 
 const listUsersSchema = z.object({
   search: z.string().optional().default(''),
@@ -36,6 +35,15 @@ const createUserSchema = z.object({
   speedLimitKbps: z.number().int().min(0).optional(),
   services: z.array(serviceTypeEnum).optional().default(['AWG', 'THREE_XUI']),
 });
+
+function hasProvisioningConfig(config: Prisma.JsonValue): boolean {
+  return (
+    !!config &&
+    typeof config === 'object' &&
+    !Array.isArray(config) &&
+    Object.keys(config).length > 0
+  );
+}
 
 export const GET = apiHandler(async (request: NextRequest) => {
   const { searchParams } = new URL(request.url);
@@ -63,7 +71,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
       where,
       include: {
         protocols: {
-          select: { serviceType: true, isActive: true },
+          select: { serviceType: true, isActive: true, config: true },
         },
       },
       orderBy: { [sortBy]: sortOrder },
@@ -84,7 +92,9 @@ export const GET = apiHandler(async (request: NextRequest) => {
       trafficQuotaBytes: user.trafficQuotaBytes,
       speedLimitKbps: user.speedLimitKbps,
       assignedServices: activeProtocols.map((p) => p.serviceType),
-      hasPartialProvisioning: user.protocols.some((p) => !p.isActive),
+      hasPartialProvisioning: user.protocols.some(
+        (p) => !p.isActive && !hasProvisioningConfig(p.config),
+      ),
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
     };
@@ -205,46 +215,6 @@ export const POST = apiHandler(async (request: NextRequest) => {
   const allVpnSuccess =
     vpnResults.length > 0 && vpnResults.every((r) => r.success);
 
-  // Create a WARNING alert if any VPN service provisioning failed
-  let alertId: number | null = null;
-  if (!allVpnSuccess) {
-    const failedServices = vpnResults
-      .filter((r) => !r.success)
-      .map((r) => r.serviceType);
-    const alert = await createAlert(
-      'vpn-provisioning',
-      AlertSeverity.WARNING,
-      `User "${username}" created but VPN provisioning incomplete: ${failedServices.join(', ')}`,
-    );
-    alertId = alert.id;
-    console.log(
-      `[api/users POST] Created alert ${alert.id} for partial VPN provisioning failure`,
-    );
-  }
-
-  // Trigger immediate retry via syncUser if provisioning failed
-  if (alertId !== null) {
-    try {
-      const syncReport = await syncUser(user.id);
-      if (syncReport.errors.length === 0) {
-        // Retry succeeded - resolve the alert
-        await markAlertRead(alertId);
-        console.log(
-          `[api/users POST] Retry succeeded for ${username}, resolved alert ${alertId}`,
-        );
-      } else {
-        console.log(
-          `[api/users POST] Retry failed for ${username}, alert ${alertId} remains visible`,
-        );
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[api/users POST] Retry attempt failed for ${username}: ${msg}`,
-      );
-    }
-  }
-
   // Compensating transaction for failed provisioning: mark every protocol
   // whose remote service could not be created as inactive. If no service
   // succeeded at all, the user has no working VPN access and is marked inactive
@@ -264,6 +234,20 @@ export const POST = apiHandler(async (request: NextRequest) => {
       });
       userIsActive = false;
     }
+  }
+
+  if (!allVpnSuccess) {
+    const failedServices = vpnResults
+      .filter((r) => !r.success)
+      .map((r) => r.serviceType);
+    const alert = await createAlert(
+      'vpn-provisioning',
+      AlertSeverity.WARNING,
+      `User "${username}" created but VPN provisioning incomplete: ${failedServices.join(', ')}`,
+    );
+    console.log(
+      `[api/users POST] Created alert ${alert.id} for partial VPN provisioning failure`,
+    );
   }
 
   await writeAuditLog({
