@@ -151,6 +151,8 @@ flowchart TD
 | R16  | Kilo check is cancelled/skipped                                                      | `pr-flow/kilo-review=N/A` → PR Flow continues                                                                 | char          |
 | R17  | no current-head Kilo reply under 30 minutes                                          | `pr-flow/kilo-review=pending` → `flow/review-pending`                                                         | char          |
 | R18  | no current-head Kilo reply after 30 minutes                                          | watchdog wakes PR Flow → `pr-flow/kilo-review=N/A` → PR Flow continues                                        | char          |
+| R19  | codeReview run fails for the current head, retries remain (< 3 total attempts)       | `flow/review-pending` → codeReview redispatched (retry N of 3)                                                | char          |
+| R20  | codeReview run fails for the current head, retries exhausted (3rd failure)           | `flow/review-failed` → advisory `antigravity-code-review.yml` dispatched once (informational only; merge gate still requires ai-/security-review-passed) | char          |
 
 ---
 

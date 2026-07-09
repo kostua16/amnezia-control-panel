@@ -54,6 +54,76 @@ const basePr = {
   labels: [],
 };
 
+function completedWorkerRun(
+  conclusion,
+  createdAt = '2026-07-01T09:00:00.000Z',
+) {
+  return {
+    databaseId: 900,
+    status: 'completed',
+    conclusion,
+    displayTitle: 'PR #42 @ abc123',
+    createdAt,
+    url: 'https://example.test/run/900',
+  };
+}
+
+test('R19/R20: failed code review retries up to the cap, then dispatches the advisory fallback reviewer', () => {
+  const config = JSON.parse(
+    require('node:fs').readFileSync(
+      path.join(__dirname, '..', '..', '..', 'pr-flow.json'),
+      'utf8',
+    ),
+  );
+  const pr = {
+    ...basePr,
+    isDraft: false,
+    isCrossRepository: false,
+    baseRefName: 'main',
+    headRefName: 'feature',
+    files: ['src/app/page.tsx'],
+  };
+  const context = (workerRuns) => ({
+    pr,
+    config,
+    eventName: 'workflow_dispatch',
+    event: {},
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    workerRuns,
+    externalReview: { state: 'skipped', reason: 'not required' },
+  });
+
+  const retry = makePrFlowDecision(
+    context({
+      codeReview: [completedWorkerRun('failure')],
+      antigravityCodeReview: [],
+    }),
+  );
+  assert.equal(retry.state, 'flow/review-pending');
+  assert.equal(retry.dispatch?.key, 'codeReview');
+  assert.match(retry.reason, /retrying/i);
+
+  const exhausted = [
+    completedWorkerRun('failure', '2026-07-01T09:00:00.000Z'),
+    completedWorkerRun('failure', '2026-07-01T08:00:00.000Z'),
+    completedWorkerRun('failure', '2026-07-01T07:00:00.000Z'),
+  ];
+  const fallback = makePrFlowDecision(
+    context({ codeReview: exhausted, antigravityCodeReview: [] }),
+  );
+  assert.equal(fallback.state, 'flow/review-failed');
+  assert.equal(fallback.dispatch?.key, 'antigravityCodeReview');
+
+  const settled = makePrFlowDecision(
+    context({
+      codeReview: exhausted,
+      antigravityCodeReview: [completedWorkerRun('success')],
+    }),
+  );
+  assert.equal(settled.state, 'flow/review-failed');
+  assert.equal(settled.dispatch, null);
+});
+
 const baseDecision = {
   state: 'flow/review-pending',
   reason: 'Waiting for review automation.',

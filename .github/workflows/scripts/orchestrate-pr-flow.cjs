@@ -427,9 +427,14 @@ function summarizeWorkerRuns(workerRuns, workerName, pr) {
     ),
   );
 
+  const failedCount = runs.filter(
+    (runItem) => runItem.conclusion && runItem.conclusion !== 'success',
+  ).length;
+
   return {
     active,
     latest: runs[0] ?? null,
+    failedCount,
   };
 }
 
@@ -450,6 +455,10 @@ function workerRunSucceeded(summary) {
 }
 
 const MAX_FINALIZER_RETRIES = 3;
+
+// Maximum automatic re-dispatches of a failed code-review run per head SHA
+// (so at most MAX_CODE_REVIEW_RETRIES + 1 runs happen without a human).
+const MAX_CODE_REVIEW_RETRIES = 2;
 
 function getFinalizerRetryCount(labels) {
   let maxRetry = 0;
@@ -1622,6 +1631,45 @@ function makeDecision(context) {
         codeReviewRuns.latest.conclusion &&
         codeReviewRuns.latest.conclusion !== 'success'
       ) {
+        const failedAttempts = codeReviewRuns.failedCount ?? 1;
+        if (failedAttempts <= MAX_CODE_REVIEW_RETRIES) {
+          return finish(
+            'flow/review-pending',
+            `Code review failed; retrying (attempt ${failedAttempts + 1} of ${MAX_CODE_REVIEW_RETRIES + 1}).`,
+            {
+              key: 'codeReview',
+              workflow: codeReviewWorker.workflow,
+              inputs: codeReviewWorker.inputs,
+            },
+          );
+        }
+
+        // Retries exhausted: dispatch the advisory fallback reviewer once so
+        // the maintainer gets a second opinion while the flow stays failed.
+        // The merge gate still requires the primary review pass labels.
+        const antigravityWorker = workers.antigravityCodeReview ?? {};
+        const antigravitySignalLabels = [
+          ...(antigravityWorker.passLabels ?? []),
+          ...(antigravityWorker.blockLabels ?? []),
+        ];
+        if (antigravityWorker.workflow) {
+          const antigravityRuns = getWorkerSummary('antigravityCodeReview');
+          if (
+            !antigravityRuns.active &&
+            !antigravityRuns.latest &&
+            !hasAny(labels, antigravitySignalLabels)
+          ) {
+            return finish(
+              'flow/review-failed',
+              'Code review failed after retries; dispatching advisory Antigravity review.',
+              {
+                key: 'antigravityCodeReview',
+                workflow: antigravityWorker.workflow,
+                inputs: antigravityWorker.inputs,
+              },
+            );
+          }
+        }
         return finish('flow/review-failed', 'Code review workflow failed.');
       }
 
@@ -2147,6 +2195,7 @@ module.exports = {
   getRequiredCheckStatus,
   evaluatePolicy,
   makeDecision,
+  MAX_CODE_REVIEW_RETRIES,
   MAX_FINALIZER_RETRIES,
   pathsMatch,
   readConfig,
