@@ -17,8 +17,12 @@ function hasProvisioningConfig(config: Prisma.JsonValue): boolean {
 }
 
 export const POST = apiHandler(
-  async (_request: NextRequest, { params }: { params: { id: string } }) => {
-    const userId = Number.parseInt(params.id, 10);
+  async (
+    _request: NextRequest,
+    { params }: { params: Promise<{ id: string }> },
+  ) => {
+    const { id } = await params;
+    const userId = Number.parseInt(id, 10);
 
     if (Number.isNaN(userId)) {
       return error('Invalid user ID', 422);
