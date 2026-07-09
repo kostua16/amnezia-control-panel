@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
-import { verifyValue } from '@/lib/password';
+import { verifyValue, fastHash } from '@/lib/password';
 import { storePreviousConfig } from '@/lib/rollback-manager';
 import { writeAuditLog } from '@/lib/audit-log';
 
@@ -61,21 +61,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Auth check: find panel by API key hash
-    const panels = await prisma.remotePanel.findMany({
-      where: { isActive: true },
+    // 2. Auth check: O(1) fast-hash lookup, then bcrypt verify on match
+    const candidate = await prisma.remotePanel.findFirst({
+      where: { isActive: true, apiKeyFastHash: fastHash(apiKey) },
     });
 
-    let matchedPanel: (typeof panels)[number] | null = null;
-    for (const panel of panels) {
-      const isValid = await verifyValue(apiKey, panel.apiKeyHash);
-      if (isValid) {
-        matchedPanel = panel;
-        break;
-      }
+    if (!candidate) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid API key' },
+        { status: 401 },
+      );
     }
 
-    if (!matchedPanel) {
+    const isValid = await verifyValue(apiKey, candidate.apiKeyHash);
+    if (!isValid) {
       return NextResponse.json(
         { success: false, error: 'Invalid API key' },
         { status: 401 },
@@ -108,7 +107,7 @@ export async function POST(request: NextRequest) {
 
     // 6. Idempotency check: skip if same configVersion already cached
     const existingConfig = await prisma.cachedPanelConfig.findUnique({
-      where: { panelId: matchedPanel.id },
+      where: { panelId: candidate.id },
     });
 
     if (
@@ -118,9 +117,9 @@ export async function POST(request: NextRequest) {
       await writeAuditLog({
         action: 'sync.receive.idempotent',
         resource: 'cachedPanelConfig',
-        resourceId: matchedPanel.id,
+        resourceId: candidate.id,
         metadata: {
-          panelId: matchedPanel.id,
+          panelId: candidate.id,
           configVersion: configData.configVersion,
         },
       });
@@ -164,9 +163,9 @@ export async function POST(request: NextRequest) {
       await writeAuditLog({
         action: 'sync.receive.stale-version',
         resource: 'cachedPanelConfig',
-        resourceId: matchedPanel.id,
+        resourceId: candidate.id,
         metadata: {
-          panelId: matchedPanel.id,
+          panelId: candidate.id,
           receivedVersion: configData.configVersion,
           currentVersion: existingConfig.configVersion,
         },
@@ -184,7 +183,7 @@ export async function POST(request: NextRequest) {
 
     // 7. Preserve current config as previous before overwrite (rollback support)
     if (existingConfig) {
-      await storePreviousConfig(matchedPanel.id);
+      await storePreviousConfig(candidate.id);
     }
 
     // 8. Store config via upsert
@@ -200,7 +199,7 @@ export async function POST(request: NextRequest) {
     } else {
       await prisma.cachedPanelConfig.create({
         data: {
-          panelId: matchedPanel.id,
+          panelId: candidate.id,
           configVersion: configData.configVersion,
           config: configData,
           receivedAt: new Date(),
@@ -211,9 +210,9 @@ export async function POST(request: NextRequest) {
     await writeAuditLog({
       action: 'sync.receive',
       resource: 'cachedPanelConfig',
-      resourceId: matchedPanel.id,
+      resourceId: candidate.id,
       metadata: {
-        panelId: matchedPanel.id,
+        panelId: candidate.id,
         configVersion: configData.configVersion,
         panelRole: configData.panelRole,
       },

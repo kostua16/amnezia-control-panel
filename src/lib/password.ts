@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { hash, compare } from 'bcryptjs';
 
 /** Hash a plaintext value using bcrypt with 10 salt rounds. */
@@ -11,4 +12,12 @@ export async function verifyValue(
   hashStr: string,
 ): Promise<boolean> {
   return compare(plaintext, hashStr);
+}
+
+/**
+ * Compute a fast SHA-256 hash of a plaintext value.
+ * Used for O(1) indexed lookups before expensive bcrypt verification.
+ */
+export function fastHash(plaintext: string): string {
+  return createHash('sha256').update(plaintext).digest('hex');
 }

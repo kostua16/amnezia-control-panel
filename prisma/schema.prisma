@@ -351,13 +351,15 @@ model UserProtocol {
 // ─── RemotePanel ─────────────────────────────────────
 
 model RemotePanel {
-  id          Int      @id @default(autoincrement())
-  name        String
-  panelUrl    String   @unique
-  apiKeyHash  String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              Int      @id @default(autoincrement())
+  name            String
+  panelUrl        String   @unique
+  apiKeyHash      String
+  /** SHA-256 fast-hash of the plaintext API key for O(1) indexed lookup before bcrypt verify. */
+  apiKeyFastHash  String   @unique
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("remote_panels")
 }
