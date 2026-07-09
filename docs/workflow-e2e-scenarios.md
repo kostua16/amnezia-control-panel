@@ -340,6 +340,8 @@ Decision basis: `evaluate-pr-policy.cjs` `gsdExecution` (`safeAllowedPathGlobs`,
 | G3b | `gsd-planning-execute` cron (6h), no implementation changes detected but planning/state persistence exists | no-op persistence PR created (`chore(planning): track execution queue plan`, `gsd-plan-execution`, `skip-improve`) → §1 | char          |
 | G4  | execute validation fails                                                                                   | `continue-on-error` loops → report-failure or commit _(lock during run)_                                                | char [verify] |
 | G5  | `/planning-rename-milestones`                                                                              | `planning-intake-repair` → commit/PR                                                                                    | char          |
+| G6  | `gsd-planning-execute` cron, oldest eligible `gsd-deferred-proposal` issue exists (no security/critical/keep-open/in-progress, non-empty body) | `promote-deferred-proposal.cjs` writes `.planning/quick/deferred-issue-<n>-plan.md` → `claude-planning-pr-deferred-*` PR (trustedPlanning path) → §1 → **merged** → next executor run imports it into Phase 999; source issue labeled `in-progress` and closed by the PR's `Fixes #n` | char          |
+| G7  | deferred-proposal issue is security/critical/keep-open, already `in-progress`, or has an empty body        | not selected — stays a human-review terminal                                                                            | char          |
 
 ## §6c Release → release-notes — `release-notes.yml`
 
