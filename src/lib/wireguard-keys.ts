@@ -1,9 +1,4 @@
-import {
-  createHash,
-  createPrivateKey,
-  createPublicKey,
-  generateKeyPairSync,
-} from 'crypto';
+import { createHash, createPrivateKey, generateKeyPairSync } from 'crypto';
 
 /**
  * Valid WireGuard base64 public/private key: 44 characters ending with `=`.
@@ -67,10 +62,10 @@ export function generateDeterministicPublicKey(seed: string): string {
     format: 'der',
     type: 'pkcs8',
   });
-  const publicDer = createPublicKey(privateKey).export({
+  const privateJwk = privateKey.export({
     format: 'jwk',
   });
-  return jwkFieldToWireGuardKey(publicDer.x, 'public');
+  return jwkFieldToWireGuardKey(privateJwk.x, 'public');
 }
 
 /**
