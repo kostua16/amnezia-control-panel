@@ -396,16 +396,27 @@ function reviewSignalsPassed(pr) {
   );
 }
 
+/** Labels that signal a PR needs project-manager attention. Subset of REVIEW_BLOCKER_LABELS plus flow labels. */
+const PM_ATTENTION_LABELS = [
+  'flow/finalizer-dispatched',
+  'flow/manual-only',
+  'flow/checks-failed',
+  'flow/checks-pending',
+  'ai-review-concerns',
+  'security-review-concerns',
+  'deps-review-manual',
+  'deps-review-blocked',
+  'antigravity-review-concerns',
+];
+
+/** Labels that outright block PR review/approval. Subset of PM_ATTENTION_LABELS. */
+const REVIEW_BLOCKER_LABELS = PM_ATTENTION_LABELS.filter((l) =>
+  l.startsWith('ai-') || l.startsWith('security-') || l.startsWith('deps-') || l.startsWith('antigravity-')
+);
+
 function hasReviewBlocker(pr) {
-  const blockerLabels = [
-    'ai-review-concerns',
-    'security-review-concerns',
-    'deps-review-manual',
-    'deps-review-blocked',
-    'antigravity-review-concerns',
-  ];
   return (
-    blockerLabels.some((label) => hasLabel(pr, label)) ||
+    REVIEW_BLOCKER_LABELS.some((label) => hasLabel(pr, label)) ||
     pr.externalReview?.state === 'blocked' ||
     (pr.reviewBlockers ?? []).length > 0
   );
@@ -413,17 +424,7 @@ function hasReviewBlocker(pr) {
 
 function needsProjectManagerAttention(pr) {
   const labels = normalizeLabels(pr.labels);
-  return [
-    'flow/finalizer-dispatched',
-    'flow/manual-only',
-    'flow/checks-failed',
-    'flow/checks-pending',
-    'ai-review-concerns',
-    'security-review-concerns',
-    'deps-review-manual',
-    'deps-review-blocked',
-    'antigravity-review-concerns',
-  ].some((label) => labels.includes(label));
+  return PM_ATTENTION_LABELS.some((label) => labels.includes(label));
 }
 
 function selectPrInspectionCandidates(prs, limit) {
@@ -455,6 +456,14 @@ function hasMaintainerApproval(pr) {
   );
 }
 
+/**
+ * Returns true if `labelName` on `pr` was updated after `timestamp`.
+ *
+ * **Undated labels are treated as active** — if `gh pr view --json labels` omits
+ * `updatedAt` (or the field is absent), the function returns `true`. This
+ * behavioral contract ensures that missing timestamps never silently unblock
+ * a PR. All callers (e.g. `hasMaintainerRejection`) inherit this guarantee.
+ */
 function labelUpdatedAfter(pr, labelName, timestamp) {
   const since = parseDate(timestamp);
   if (!since) return false;

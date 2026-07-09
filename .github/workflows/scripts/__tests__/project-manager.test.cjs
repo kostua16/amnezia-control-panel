@@ -149,6 +149,49 @@ test('PM1b: PR pressure keeps older stateful PRs in the inspection set', () => {
   );
 });
 
+test('PM1b-edge: no stateful PRs yields pure truncation', () => {
+  const prs = Array.from({ length: 5 }, (_, i) =>
+    pr({ number: i + 1, updatedAt: `2026-07-01T09:${String(i).padStart(2, '0')}:00.000Z` }),
+  );
+  const candidates = selectPrInspectionCandidates(prs, 3);
+  assert.deepEqual(candidates.map((c) => c.number), [5, 4, 3]);
+});
+
+test('PM1b-edge: limit=0 returns only attention PRs', () => {
+  const prs = [
+    pr({ number: 1, updatedAt: '2026-07-01T09:00:00.000Z' }),
+    pr({ number: 2, updatedAt: '2026-07-01T09:01:00.000Z', labels: ['flow/manual-only'] }),
+  ];
+  const candidates = selectPrInspectionCandidates(prs, 0);
+  assert.deepEqual(candidates.map((c) => c.number), [2]);
+});
+
+test('PM1b-edge: limit exceeds array length returns all PRs plus attention fallback', () => {
+  const prs = Array.from({ length: 3 }, (_, i) =>
+    pr({ number: i + 1, updatedAt: `2026-07-01T09:${String(i).padStart(2, '0')}:00.000Z` }),
+  );
+  const candidates = selectPrInspectionCandidates(prs, 100);
+  assert.deepEqual(candidates.map((c) => c.number), [3, 2, 1]);
+});
+
+test('PM1b-edge: multiple attention labels on same PR produce no duplicate', () => {
+  const prs = [
+    pr({ number: 1, updatedAt: '2026-07-01T09:00:00.000Z', labels: ['flow/manual-only', 'ai-review-concerns'] }),
+    pr({ number: 2, updatedAt: '2026-07-01T09:01:00.000Z' }),
+  ];
+  const candidates = selectPrInspectionCandidates(prs, 1);
+  assert.deepEqual(candidates.map((c) => c.number), [2, 1]);
+  assert.equal(candidates.length, 2);
+});
+
+test('PM1b-edge: PR outside limit without attention label stays excluded', () => {
+  const prs = Array.from({ length: 4 }, (_, i) =>
+    pr({ number: i + 1, updatedAt: `2026-07-01T09:${String(i).padStart(2, '0')}:00.000Z` }),
+  );
+  const candidates = selectPrInspectionCandidates(prs, 2);
+  assert.deepEqual(candidates.map((c) => c.number), [4, 3]);
+});
+
 test('PM2: issue pressure selects latest 10 standalone issues', () => {
   const issues = Array.from({ length: 12 }, (_, index) =>
     issue({
