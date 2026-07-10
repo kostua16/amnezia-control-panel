@@ -7,6 +7,7 @@ import {
   SESSION_MAX_AGE,
 } from '@/lib/auth-jwt';
 import { prisma } from '@/lib/prisma';
+import { isValidOrigin, MUTATING_METHODS } from '@/lib/csrf';
 
 /**
  * Claims embedded in the auth-token JWT. The proxy is the single source
@@ -171,6 +172,13 @@ export async function proxy(request: NextRequest) {
 
   // All remaining API routes require JWT
   if (isApiRoute(pathname)) {
+    // CSRF: reject cross-origin mutating requests before JWT check.
+    if (MUTATING_METHODS.has(request.method) && !isValidOrigin(request)) {
+      return withSecurityHeaders(
+        NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+      );
+    }
+
     const token = request.cookies.get('auth-token')?.value;
 
     if (!token) {

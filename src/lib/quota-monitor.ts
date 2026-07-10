@@ -54,7 +54,9 @@ export async function checkUserQuotas(): Promise<{
 
   // Batch 1: single grouped traffic aggregate replaces N per-user queries
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  );
   const trafficByUser = await prisma.trafficLog.groupBy({
     by: ['userId'],
     _sum: { bytesIn: true, bytesOut: true },

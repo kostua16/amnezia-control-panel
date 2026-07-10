@@ -92,3 +92,58 @@ describe('proxy — claim-header overwrite on valid JWT', () => {
     );
   });
 });
+
+describe('proxy — CSRF Origin validation', () => {
+  it('rejects POST with mismatched Origin header (403)', async () => {
+    const token = await mintToken({ userId: 'admin', username: 'admin' });
+    const res = await proxy(
+      new NextRequest('http://localhost/api/users', {
+        method: 'POST',
+        headers: {
+          Cookie: `auth-token=${token}`,
+          Origin: 'https://evil.example.com',
+        },
+      }),
+    );
+    assert.strictEqual(res.status, 403);
+  });
+
+  it('allows POST with matching Origin header', async () => {
+    const token = await mintToken({ userId: 'admin', username: 'admin' });
+    const res = await proxy(
+      new NextRequest('http://localhost/api/users', {
+        method: 'POST',
+        headers: {
+          Cookie: `auth-token=${token}`,
+          Origin: 'http://localhost',
+        },
+      }),
+    );
+    assert.strictEqual(res.status, 200);
+  });
+
+  it('allows POST with no Origin header (same-origin)', async () => {
+    const token = await mintToken({ userId: 'admin', username: 'admin' });
+    const res = await proxy(
+      new NextRequest('http://localhost/api/users', {
+        method: 'POST',
+        headers: { Cookie: `auth-token=${token}` },
+      }),
+    );
+    assert.strictEqual(res.status, 200);
+  });
+
+  it('allows GET with mismatched Origin (only mutating methods checked)', async () => {
+    const token = await mintToken({ userId: 'admin', username: 'admin' });
+    const res = await proxy(
+      new NextRequest('http://localhost/api/users', {
+        method: 'GET',
+        headers: {
+          Cookie: `auth-token=${token}`,
+          Origin: 'https://evil.example.com',
+        },
+      }),
+    );
+    assert.strictEqual(res.status, 200);
+  });
+});
