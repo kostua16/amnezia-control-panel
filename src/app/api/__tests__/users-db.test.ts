@@ -13,6 +13,7 @@ type UserListBody = {
   data: Array<{
     username: string;
     assignedServices: string[];
+    hasPartialProvisioning: boolean;
   }>;
   pagination: {
     total: number;
@@ -47,7 +48,7 @@ function fakeUser(overrides: Partial<Record<string, unknown>> = {}) {
     isBlocked: false,
     trafficQuotaBytes: 0,
     speedLimitKbps: 0,
-    protocols: [{ serviceType: 'AWG' }],
+    protocols: [{ serviceType: 'AWG', isActive: true }],
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
     ...overrides,
@@ -79,8 +80,35 @@ describe('GET /api/users — list (mocked DB)', () => {
     assert.strictEqual(body.data.length, 1);
     assert.strictEqual(body.data[0].username, 'alice');
     assert.deepEqual(body.data[0].assignedServices, ['AWG']);
+    assert.strictEqual(body.data[0].hasPartialProvisioning, false);
     assert.strictEqual(body.pagination.total, 1);
     assert.strictEqual(body.pagination.totalPages, 1);
+  });
+
+  it('flags only unprovisioned inactive protocols as partial provisioning', async () => {
+    prisma.user.findMany = (async () => [
+      fakeUser({
+        protocols: [
+          { serviceType: 'AWG', isActive: true, config: { peer: 'awg' } },
+          { serviceType: 'THREE_XUI', isActive: false, config: {} },
+        ],
+      }),
+      fakeUser({
+        username: 'bob',
+        protocols: [
+          { serviceType: 'AWG', isActive: false, config: { removed: true } },
+        ],
+      }),
+    ]) as never;
+    prisma.user.count = (async () => 2) as never;
+
+    const { status, body } = await readJson<UserListBody>(
+      await GET(getRequest('/api/users', { page: 1, limit: 10 })),
+    );
+
+    assert.strictEqual(status, 200);
+    assert.strictEqual(body.data[0].hasPartialProvisioning, true);
+    assert.strictEqual(body.data[1].hasPartialProvisioning, false);
   });
 
   it('propagates a search term into the result set', async () => {

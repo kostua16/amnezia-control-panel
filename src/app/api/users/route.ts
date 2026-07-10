@@ -8,6 +8,9 @@ import { getAdapter } from '@/lib/vpn-service-adapter';
 import type { VpnServiceResult } from '@/lib/vpn-services';
 import { apiHandler } from '@/lib/api-handler';
 import { error, validationError } from '@/lib/api-response';
+import { createAlert } from '@/lib/alert-service';
+import { AlertSeverity } from '@/generated/prisma/enums';
+import { hasPartialProvisioning } from '@/lib/provisioning-state';
 
 const listUsersSchema = z.object({
   search: z.string().optional().default(''),
@@ -60,8 +63,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
       where,
       include: {
         protocols: {
-          where: { isActive: true },
-          select: { serviceType: true },
+          select: { serviceType: true, isActive: true, config: true },
         },
       },
       orderBy: { [sortBy]: sortOrder },
@@ -71,18 +73,22 @@ export const GET = apiHandler(async (request: NextRequest) => {
     prisma.user.count({ where }),
   ]);
 
-  const data = users.map((user) => ({
-    id: user.id,
-    username: user.username,
-    displayName: user.displayName,
-    isActive: user.isActive,
-    isBlocked: user.isBlocked,
-    trafficQuotaBytes: user.trafficQuotaBytes,
-    speedLimitKbps: user.speedLimitKbps,
-    assignedServices: user.protocols.map((p) => p.serviceType),
-    createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString(),
-  }));
+  const data = users.map((user) => {
+    const activeProtocols = user.protocols.filter((p) => p.isActive);
+    return {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      isActive: user.isActive,
+      isBlocked: user.isBlocked,
+      trafficQuotaBytes: user.trafficQuotaBytes,
+      speedLimitKbps: user.speedLimitKbps,
+      assignedServices: activeProtocols.map((p) => p.serviceType),
+      hasPartialProvisioning: hasPartialProvisioning(user.protocols),
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    };
+  });
 
   return NextResponse.json({
     success: true,
@@ -221,6 +227,20 @@ export const POST = apiHandler(async (request: NextRequest) => {
       });
       userIsActive = false;
     }
+  }
+
+  if (!allVpnSuccess) {
+    const failedServices = vpnResults
+      .filter((r) => !r.success)
+      .map((r) => r.serviceType);
+    const alert = await createAlert(
+      'vpn-provisioning',
+      AlertSeverity.WARNING,
+      `User "${username}" created but VPN provisioning incomplete: ${failedServices.join(', ')}`,
+    );
+    console.log(
+      `[api/users POST] Created alert ${alert.id} for partial VPN provisioning failure`,
+    );
   }
 
   await writeAuditLog({
