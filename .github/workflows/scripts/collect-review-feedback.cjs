@@ -5,7 +5,7 @@
 // commands / bot / sticky-summary comments so only real findings reach Claude.
 // Uses the shared exec helpers so there is one source for gh-shellout logic.
 const fs = require('node:fs');
-const { run, runJson } = require('./lib/sticky-comment.cjs');
+const { run } = require('./lib/sticky-comment.cjs');
 const { KILO_MARKER, isKiloUser } = require('./lib/kilo.cjs');
 
 const STICKY_MARKERS = [
@@ -79,7 +79,7 @@ function fetchReviewThreads(owner, name, pr) {
   return extractReviewThreads(threads);
 }
 
-function extractReviewThreads(threads = []) {
+function extractReviewThreads(threads = [], { authorFilter } = {}) {
   return threads
     .filter((t) => !t.isResolved && !t.isOutdated)
     .flatMap((t) =>
@@ -90,15 +90,22 @@ function extractReviewThreads(threads = []) {
         body: String(c.body ?? '').trim(),
       })),
     )
-    .filter((c) => c.body.length > 0);
+    .filter((c) => c.body.length > 0)
+    .filter((c) => !authorFilter || c.author === authorFilter);
+}
+
+function failClosedJson(command, args) {
+  const output = run(command, args);
+  return JSON.parse(output);
 }
 
 function fetchReviews(repo, pr) {
-  return runJson(
-    'gh',
-    ['api', `repos/${repo}/pulls/${pr}/reviews`, '--paginate'],
-    [],
-  )
+  // Fail-closed: missing review data can mask actionable findings.
+  return failClosedJson('gh', [
+    'api',
+    `repos/${repo}/pulls/${pr}/reviews`,
+    '--paginate',
+  ])
     .filter((r) => r.body && String(r.body).trim().length > 0)
     .map((r) => ({
       state: r.state,
@@ -108,11 +115,12 @@ function fetchReviews(repo, pr) {
 }
 
 function fetchComments(repo, pr) {
-  return runJson(
-    'gh',
-    ['api', `repos/${repo}/issues/${pr}/comments`, '--paginate'],
-    [],
-  )
+  // Fail-closed: missing comment data can mask actionable findings.
+  return failClosedJson('gh', [
+    'api',
+    `repos/${repo}/issues/${pr}/comments`,
+    '--paginate',
+  ])
     .filter((c) => !isNoiseComment(c))
     .map((c) => ({
       author: c.user?.login ?? 'unknown',
@@ -226,6 +234,7 @@ module.exports = {
   formatBundle,
   hasActionableFeedback,
   bundleHasActionableFeedback,
+  failClosedJson,
   extractReviewThreads,
   fetchReviewThreads,
   fetchReviews,
