@@ -387,6 +387,23 @@ model CachedPanelConfig {
   @@map("cached_panel_configs")
 }
 
+// ─── WhitelistEntry ──────────────────────────────────
+
+model WhitelistEntry {
+  id          Int      @id @default(autoincrement())
+  type        String
+  value       String
+  description String   @default("")
+  serverId    Int?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([type, isActive])
+  @@index([serverId])
+  @@map("whitelist_entries")
+}
+
 model AuditLog {
   id         Int      @id @default(autoincrement())
   action     String

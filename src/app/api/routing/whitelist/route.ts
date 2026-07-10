@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { prisma } from '@/lib/prisma';
 
 const whitelistTypeSchema = z.enum(['domain', 'ip', 'cidr']);
 
@@ -11,33 +12,24 @@ const createWhitelistSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-// In-memory store for whitelist entries (replace with DB model in production)
-const whitelistEntries: Array<{
-  id: number;
-  type: 'domain' | 'ip' | 'cidr';
-  value: string;
-  description?: string;
-  serverId: number | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}> = [];
-
-let nextId = 1;
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const serverIdParam = searchParams.get('serverId');
     const serverId = serverIdParam ? Number(serverIdParam) : undefined;
 
-    let entries = [...whitelistEntries];
-
+    const where: Record<string, unknown> = {};
     if (serverId !== undefined && !Number.isNaN(serverId)) {
-      entries = entries.filter(
-        (e) => e.serverId === serverId || e.serverId === null,
-      );
+      where.OR = [
+        { serverId },
+        { serverId: null },
+      ];
     }
+
+    const entries = await prisma.whitelistEntry.findMany({
+      where,
+      orderBy: { id: 'asc' },
+    });
 
     return NextResponse.json({
       success: true,
@@ -100,15 +92,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const entry = {
-      id: nextId++,
-      ...parsed.data,
-      serverId: parsed.data.serverId ?? null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    whitelistEntries.push(entry);
+    const entry = await prisma.whitelistEntry.create({
+      data: {
+        type: parsed.data.type,
+        value: parsed.data.value,
+        description: parsed.data.description ?? '',
+        serverId: parsed.data.serverId ?? null,
+        isActive: parsed.data.isActive,
+      },
+    });
 
     return NextResponse.json({ success: true, data: entry }, { status: 201 });
   } catch (err) {
