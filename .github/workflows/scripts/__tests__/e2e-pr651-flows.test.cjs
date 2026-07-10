@@ -236,16 +236,26 @@ test('PM37: project-manager plan reruns cancelled CI once before /fix', () => {
     },
   );
 
-  const rerun = plan.actions.find(
+  const reruns = plan.actions.filter(
     (action) => action.type === 'rerun-workflow-run',
   );
-  assert.equal(rerun?.runId, '555');
+  // "once": exactly one rerun is dispatched, not one-per-duplicate-run.
+  assert.equal(reruns.length, 1, 'plan must dispatch the CI rerun exactly once');
+  assert.equal(reruns[0].runId, '555');
   assert.ok(
     plan.actions.some(
       (action) =>
         action.type === 'upsert-pr-state' && action.state.ciRerunAt === NOW,
     ),
     'plan must record the same-head CI rerun cooldown',
+  );
+  // "before /fix": the rerun preempts the repair lane, so the plan must not
+  // also post a /fix comment for the same head on the same pass.
+  assert.ok(
+    !plan.actions.some(
+      (action) => action.type === 'comment' && action.body === '/fix',
+    ),
+    'plan must not escalate to /fix while the cancelled-CI rerun is pending',
   );
 });
 
