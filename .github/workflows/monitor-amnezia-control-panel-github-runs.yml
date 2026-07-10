@@ -42,27 +42,12 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 5
     outputs:
-      skip: ${{ steps.gate.outputs.pending }}
+      skip: ${{ steps.fleet_check.outputs.skip }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-
-      - uses: ./.github/actions/setup-environment
+      - uses: ./.github/actions/fleet-back-pressure
+        id: fleet_check
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          install-deps: 'false'
-
-      - name: Check fleet back-pressure
-        id: gate
-        # Only scheduled runs are throttled; a manual dispatch always runs.
-        if: github.event_name == 'schedule'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/workflows/scripts/check-pending-automation-pr.cjs \
-            --repo "${{ github.repository }}" \
-            --base-ref main \
-            --max-open-automation-prs 8 \
-            --github-output "$GITHUB_OUTPUT"
 
   monitor-runs:
     needs: [fleet-gate]
@@ -258,8 +243,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Self-heal runner disk pressure
-        # Deterministic recovery: when recent failed runs show disk-exhaustion
-        # signatures, dispatch the cleanup workflow instead of only reporting.
+        # Deterministic recovery: when recent completed runs show disk-exhaustion
+        # signatures (ENOSPC), dispatch the cleanup workflow. Checks all conclusions
+        # (failure/cancelled/timed_out) because disk exhaustion often evicts the
+        # runner before steps can report failure.
         if: always() && github.event_name == 'schedule'
         continue-on-error: true
         env:
@@ -267,8 +254,10 @@ jobs:
         run: |
           set -euo pipefail
           matches=0
-          for run_id in $(gh run list --status failure --limit 15 --json databaseId --jq '.[].databaseId'); do
-            if gh run view "$run_id" --log-failed 2>/dev/null | grep -qiE 'no space left on device|ENOSPC'; then
+          # Limit to recent 5 candidate runs and cap each log fetch at 90s to
+          # bound data transfer / avoid step timeouts when a run log is large.
+          for run_id in $(gh run list --status completed --limit 5 --json databaseId,conclusion --jq '.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | .databaseId'); do
+            if timeout 90 gh run view "$run_id" --log 2>/dev/null | grep -qiE 'no space left on device|ENOSPC'; then
               matches=$((matches + 1))
             fi
             if [ "$matches" -ge 2 ]; then
@@ -276,7 +265,7 @@ jobs:
             fi
           done
           if [ "$matches" -ge 2 ]; then
-            echo "Disk-pressure signature found in $matches recent failed runs; dispatching cleanup-runner.yml"
+            echo "Disk-pressure signature found in $matches recent completed runs; dispatching cleanup-runner.yml"
             gh workflow run cleanup-runner.yml -f clear_npm_cache=true -f clear_next_cache=true
           else
             echo "No disk-pressure pattern detected (matches=$matches)"
