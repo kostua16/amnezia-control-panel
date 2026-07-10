@@ -6,6 +6,7 @@ import type {
   XrayRoutingRule,
 } from '@/types/chain';
 import { normalizeDirectGeoipTagsInput } from './chain-routing-options';
+import { generateDeterministicPublicKey } from './wireguard-keys';
 
 /**
  * Resolved chain node: the template node plus the transport endpoint that was
@@ -15,6 +16,29 @@ import { normalizeDirectGeoipTagsInput } from './chain-routing-options';
  * output identical.
  */
 export type ResolvedChainNode = ChainNode & { hostname: string; port: number };
+
+function peerPublicKey(
+  template: ChainTemplate,
+  current: ResolvedChainNode,
+  peer: ResolvedChainNode,
+  direction: string,
+): string {
+  return generateDeterministicPublicKey(
+    JSON.stringify([
+      template.id,
+      template.topology,
+      direction,
+      current.label,
+      current.serverId,
+      current.hostname,
+      current.port,
+      peer.label,
+      peer.serverId,
+      peer.hostname,
+      peer.port,
+    ]),
+  );
+}
 
 export function normalizeChainRoutingOptions(
   template: ChainTemplate,
@@ -44,9 +68,9 @@ export function normalizeChainRoutingOptions(
 /**
  * Generate WireGuard peer configurations for a chain topology.
  *
- * Peers use placeholder public keys (`STUB_PUBKEY_*`) — real keys are injected
- * at apply time. Shared by the chain apply path and the push-wizard preview so
- * both paths emit identical peer sets.
+ * Each peer receives a stable Curve25519 public key derived from the template
+ * and endpoint data. Shared by the chain apply path and the push-wizard preview
+ * so both paths emit identical peer sets.
  */
 export function generateWireGuardPeers(
   template: ChainTemplate,
@@ -63,7 +87,12 @@ export function generateWireGuardPeers(
 
         peers.push({
           nodeId: current.label,
-          publicKey: `STUB_PUBKEY_${next.label.replace(/\s+/g, '_')}`,
+          publicKey: peerPublicKey(
+            template,
+            current,
+            next,
+            `linear:${i}:forward`,
+          ),
           allowedIPs: '0.0.0.0/0',
           endpoint: `${next.hostname}:${next.port}`,
           persistentKeepalive: 25,
@@ -71,7 +100,12 @@ export function generateWireGuardPeers(
 
         peers.push({
           nodeId: next.label,
-          publicKey: `STUB_PUBKEY_${current.label.replace(/\s+/g, '_')}`,
+          publicKey: peerPublicKey(
+            template,
+            next,
+            current,
+            `linear:${i}:reverse`,
+          ),
           allowedIPs: `10.0.0.${i + 1}/32`,
           endpoint: `${current.hostname}:${current.port}`,
           persistentKeepalive: 25,
@@ -87,7 +121,7 @@ export function generateWireGuardPeers(
       if (foreign) {
         peers.push({
           nodeId: foreign.label,
-          publicKey: `STUB_PUBKEY_${foreign.label.replace(/\s+/g, '_')}`,
+          publicKey: peerPublicKey(template, foreign, foreign, 'split:foreign'),
           allowedIPs: '0.0.0.0/0',
           endpoint: `${foreign.hostname}:${foreign.port}`,
           persistentKeepalive: 25,
@@ -105,7 +139,7 @@ export function generateWireGuardPeers(
 
           peers.push({
             nodeId: current.label,
-            publicKey: `STUB_PUBKEY_${peer.label.replace(/\s+/g, '_')}`,
+            publicKey: peerPublicKey(template, current, peer, `mesh:${i}:${j}`),
             allowedIPs: `10.0.0.${j + 1}/32`,
             endpoint: `${peer.hostname}:${peer.port}`,
             persistentKeepalive: 25,

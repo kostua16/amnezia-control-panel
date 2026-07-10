@@ -47,7 +47,7 @@ export async function generateConfig(
 
       // Merge user protocol config into generated config
       for (const [key, value] of Object.entries(protoConfig)) {
-        if (value && value !== `STUB_${key.toUpperCase()}`) {
+        if (value) {
           config[key] = value;
         }
       }

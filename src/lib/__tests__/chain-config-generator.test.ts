@@ -8,6 +8,8 @@ import type { ChainTemplate, ChainNode } from '@/types/chain';
 
 type Resolved = ChainNode & { hostname: string; port: number };
 
+const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
+
 function node(
   partial: Partial<Resolved> & Pick<Resolved, 'label' | 'role'>,
 ): Resolved {
@@ -43,6 +45,17 @@ describe('generateWireGuardPeers', () => {
     assert.deepEqual(peers.map((p) => p.nodeId).sort(), ['Entry', 'Exit']);
     // Forward peer carries the full-tunnel allowed IPs.
     assert.ok(peers.some((p) => p.allowedIPs === '0.0.0.0/0'));
+    // All peers have real WireGuard public keys (no STUB_ prefix).
+    for (const p of peers) {
+      assert.ok(
+        WG_KEY_RE.test(p.publicKey),
+        `linear peer ${p.nodeId} publicKey is not a valid WG key: ${p.publicKey}`,
+      );
+      assert.ok(
+        !('privateKey' in p),
+        `linear peer ${p.nodeId} leaked privateKey`,
+      );
+    }
   });
 
   it('split: only the foreign node gets a peer', () => {
@@ -64,6 +77,11 @@ describe('generateWireGuardPeers', () => {
 
     assert.equal(peers.length, 1);
     assert.equal(peers[0].nodeId, 'Foreign (VPN)');
+    assert.ok(
+      WG_KEY_RE.test(peers[0].publicKey),
+      'split peer publicKey is not a valid WG key',
+    );
+    assert.ok(!('privateKey' in peers[0]), 'split peer leaked privateKey');
   });
 
   it('mesh: fully meshed directed peers', () => {
@@ -86,6 +104,72 @@ describe('generateWireGuardPeers', () => {
 
     // N*(N-1) directed peers for 3 nodes.
     assert.equal(peers.length, 6);
+    // All mesh peers have real WireGuard keys.
+    for (const p of peers) {
+      assert.ok(
+        WG_KEY_RE.test(p.publicKey),
+        `mesh peer ${p.nodeId} publicKey is not a valid WG key: ${p.publicKey}`,
+      );
+      assert.ok(
+        !('privateKey' in p),
+        `mesh peer ${p.nodeId} leaked privateKey`,
+      );
+    }
+  });
+
+  it('produces stable peer keys for repeated generation', () => {
+    const template: ChainTemplate = {
+      id: 't',
+      name: 't',
+      description: '',
+      topology: 'linear',
+      requiredServers: 2,
+      nodes: [],
+      icon: '',
+    };
+    const nodes = [
+      node({ label: 'Entry', role: 'entry', serverId: 1 }),
+      node({ label: 'Exit', role: 'exit', serverId: 2 }),
+    ];
+
+    assert.deepEqual(
+      generateWireGuardPeers(template, nodes),
+      generateWireGuardPeers(template, nodes),
+    );
+  });
+
+  it('uses collision-free seed encoding for delimiter-bearing hostnames and labels', () => {
+    const template: ChainTemplate = {
+      id: 't',
+      name: 't',
+      description: '',
+      topology: 'linear',
+      requiredServers: 2,
+      nodes: [],
+      icon: '',
+    };
+    const firstPeers = generateWireGuardPeers(template, [
+      node({
+        label: 'Entry',
+        role: 'entry',
+        serverId: 1,
+        hostname: 'host|51820',
+        port: 1,
+      }),
+      node({ label: 'peer', role: 'exit', serverId: 2 }),
+    ]);
+    const secondPeers = generateWireGuardPeers(template, [
+      node({
+        label: 'Entry',
+        role: 'entry',
+        serverId: 1,
+        hostname: 'host',
+        port: 51820,
+      }),
+      node({ label: '1|peer', role: 'exit', serverId: 2 }),
+    ]);
+
+    assert.notEqual(firstPeers[0].publicKey, secondPeers[0].publicKey);
   });
 });
 
@@ -273,10 +357,14 @@ describe('chain-config-generator — preview/apply parity', () => {
       isActive: true,
     }));
 
-    assert.deepEqual(
-      generateWireGuardPeers(template, applyShape),
-      generateWireGuardPeers(template, previewShape),
-    );
+    const applyPeers = generateWireGuardPeers(template, applyShape);
+    const previewPeers = generateWireGuardPeers(template, previewShape);
+    assert.deepEqual(applyPeers, previewPeers);
+    for (let i = 0; i < applyPeers.length; i++) {
+      assert.ok(WG_KEY_RE.test(applyPeers[i].publicKey));
+      assert.ok(!('privateKey' in applyPeers[i]));
+    }
+
     assert.deepEqual(
       generateXrayRoutingRules(template, applyShape, {
         split: { directGeoipTags: ['kz'] },
