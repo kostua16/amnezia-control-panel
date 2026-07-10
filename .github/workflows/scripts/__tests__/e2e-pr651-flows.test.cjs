@@ -9,6 +9,44 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
+const NOW = '2026-07-01T10:00:00.000Z';
+const BLOCKED_96H_AGO = '2026-06-27T10:00:00.000Z';
+
+function projectManagerPr(overrides = {}) {
+  return {
+    number: 99,
+    title: 'fix: something',
+    url: 'https://example.test/pull/99',
+    labels: [],
+    state: 'OPEN',
+    isDraft: false,
+    isCrossRepository: false,
+    headRefName: 'fix-branch',
+    headRefOid: 'abc123',
+    baseRefName: 'main',
+    mergeable: 'MERGEABLE',
+    checkStatus: { status: 'pending' },
+    updatedAt: '2026-07-01T09:00:00.000Z',
+    headCommittedAt: '2026-07-01T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function projectManagerPlan(pr, options = {}) {
+  const pm = require('../project-manager.cjs');
+  return pm.buildPlan(
+    {
+      now: NOW,
+      openPrCount: 1,
+      openIssueCount: 0,
+      openPullRequests: [pr],
+      openIssues: [],
+      workflowRuns: options.workflowRuns ?? [],
+    },
+    { route: 'prs', now: NOW },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // P9b — Fleet back-pressure composite action structural contract
 // ---------------------------------------------------------------------------
@@ -33,11 +71,7 @@ test('P9b: fleet-back-pressure action.yml exists and declares required inputs', 
 test('P9b: fleet-back-pressure action declares skip output wired to pending', () => {
   const content = fs.readFileSync(ACTION_PATH, 'utf8');
 
-  assert.match(
-    content,
-    /outputs:/,
-    'must have outputs section',
-  );
+  assert.match(content, /outputs:/, 'must have outputs section');
   // The composite action's skip output is wired from the inner step's
   // "pending" field (the script uses "pending" as the skip gate key).
   assert.match(
@@ -107,7 +141,10 @@ test('P9b: fleet-gate job output maps to composite action skip output', () => {
 // ---------------------------------------------------------------------------
 test('P14: monitor workflow checks completed runs with --log (not --log-failed)', () => {
   const content = fs.readFileSync(
-    path.resolve(__dirname, '../../monitor-amnezia-control-panel-github-runs.yml'),
+    path.resolve(
+      __dirname,
+      '../../monitor-amnezia-control-panel-github-runs.yml',
+    ),
     'utf8',
   );
 
@@ -128,20 +165,16 @@ test('P14: monitor workflow checks completed runs with --log (not --log-failed)'
     !healBlock.includes('--status failure'),
     'must not limit to --status failure',
   );
-  assert.match(
-    healBlock,
-    /--log\b/,
-    'must use --log (not --log-failed)',
-  );
-  assert.ok(
-    !healBlock.includes('--log-failed'),
-    'must not use --log-failed',
-  );
+  assert.match(healBlock, /--log\b/, 'must use --log (not --log-failed)');
+  assert.ok(!healBlock.includes('--log-failed'), 'must not use --log-failed');
 });
 
 test('P14: monitor filters for failure/cancelled/timed_out conclusions', () => {
   const content = fs.readFileSync(
-    path.resolve(__dirname, '../../monitor-amnezia-control-panel-github-runs.yml'),
+    path.resolve(
+      __dirname,
+      '../../monitor-amnezia-control-panel-github-runs.yml',
+    ),
     'utf8',
   );
 
@@ -184,38 +217,67 @@ test('G8: auto-pr-branch-cleanup has restore-deferred-proposal job', () => {
 });
 
 // ---------------------------------------------------------------------------
-// PM37 — CI cancelled rerun unit coverage (existing tests verified)
+// PM37 — CI cancelled rerun behavior
 // ---------------------------------------------------------------------------
-test('PM37: project-manager.cjs exports ciCancelledRerunAction or equivalent', () => {
-  const pm = require('../project-manager.cjs');
-  // Verify the module has CI rerun-related logic
+test('PM37: project-manager plan reruns cancelled CI once before /fix', () => {
+  const plan = projectManagerPlan(
+    projectManagerPr({ checkStatus: { status: 'failed' } }),
+    {
+      workflowRuns: [
+        {
+          databaseId: 555,
+          workflowName: 'CI',
+          status: 'completed',
+          conclusion: 'cancelled',
+          headSha: 'abc123',
+          createdAt: '2026-07-01T09:30:00.000Z',
+        },
+      ],
+    },
+  );
+
+  const rerun = plan.actions.find(
+    (action) => action.type === 'rerun-workflow-run',
+  );
+  assert.equal(rerun?.runId, '555');
   assert.ok(
-    typeof pm.buildPlan === 'function',
-    'project-manager must export buildPlan for plan construction',
+    plan.actions.some(
+      (action) =>
+        action.type === 'upsert-pr-state' && action.state.ciRerunAt === NOW,
+    ),
+    'plan must record the same-head CI rerun cooldown',
   );
 });
 
 // ---------------------------------------------------------------------------
-// PM38 — flow/review-failed escalation (existing tests verified)
+// PM38 — flow/review-failed escalation behavior
 // ---------------------------------------------------------------------------
-test('PM38: project-manager.cjs handles flow/review-failed label', () => {
-  const pm = require('../project-manager.cjs');
-  const plan = pm.buildPlan(
-    {
-      number: 99,
-      title: 'fix: something',
+test('PM38: project-manager plan escalates stale flow/review-failed PRs', () => {
+  const plan = projectManagerPlan(
+    projectManagerPr({
       labels: [{ name: 'flow/review-failed' }],
-      state: 'OPEN',
-      isDraft: false,
-      headRefName: 'fix-branch',
-      headRefOid: 'abc',
-      baseRefName: 'main',
-      mergeable: 'MERGEABLE',
       checkStatus: { status: 'passed' },
-      updatedAt: new Date().toISOString(),
-      headCommittedAt: new Date().toISOString(),
-    },
-    { now: new Date().toISOString() },
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: BLOCKED_96H_AGO,
+      },
+    }),
   );
-  assert.ok(plan, 'plan must be built for flow/review-failed PR');
+
+  assert.ok(
+    plan.actions.some(
+      (action) =>
+        action.type === 'comment' &&
+        action.body.includes('blocked on flow/review-failed'),
+    ),
+    'plan must add a blocked escalation digest entry',
+  );
+  assert.ok(
+    plan.actions.some(
+      (action) =>
+        action.type === 'upsert-pr-state' &&
+        action.state.blockedEscalatedAt === NOW,
+    ),
+    'plan must record that flow/review-failed was escalated',
+  );
 });
