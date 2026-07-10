@@ -20,10 +20,7 @@ export async function GET(request: NextRequest) {
 
     const where: Record<string, unknown> = {};
     if (serverId !== undefined && !Number.isNaN(serverId)) {
-      where.OR = [
-        { serverId },
-        { serverId: null },
-      ];
+      where.OR = [{ serverId }, { serverId: null }];
     }
 
     const entries = await prisma.whitelistEntry.findMany({

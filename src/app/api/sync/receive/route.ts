@@ -182,26 +182,24 @@ export async function POST(request: NextRequest) {
     }
 
     // 7-8. Store config atomically with rollback preservation.
-    // Wraps storePreviousConfig + upsert + audit in a single transaction
-    // to prevent TOCTOU race where concurrent pushes read the same
-    // "previous" config and silently discard the first push's rollback entry.
+    // Re-read the current config INSIDE the transaction so concurrent
+    // pushes serialize: a second push sees the first push's committed
+    // config as "previous", keeping the rollback chain intact. Reading
+    // the previous-config fields from the pre-transaction snapshot would
+    // let two concurrent pushes both snapshot the same config and drop
+    // one from the rollback chain (TOCTOU).
     await prisma.$transaction(async (tx) => {
-      if (existingConfig) {
-        // Preserve current config as previous (rollback support)
-        await tx.cachedPanelConfig.update({
-          where: { id: existingConfig.id },
-          data: {
-            previousConfig: existingConfig.config as Prisma.InputJsonValue,
-            previousConfigVersion: existingConfig.configVersion,
-            previousConfigReceivedAt: existingConfig.receivedAt,
-          },
-        });
-      }
+      const current = await tx.cachedPanelConfig.findUnique({
+        where: { panelId: candidate.id },
+      });
 
-      if (existingConfig) {
+      if (current) {
         await tx.cachedPanelConfig.update({
-          where: { id: existingConfig.id },
+          where: { id: current.id },
           data: {
+            previousConfig: current.config as Prisma.InputJsonValue,
+            previousConfigVersion: current.configVersion,
+            previousConfigReceivedAt: current.receivedAt,
             configVersion: configData.configVersion,
             config: configData,
             receivedAt: new Date(),
