@@ -66,6 +66,14 @@ describe('isValidOrigin', () => {
     assert.strictEqual(isValidOrigin(req), true);
   });
 
+  it('allows same-host when a proxy strips a non-default request port', () => {
+    const req = new NextRequest('https://panel.example.com/api/users', {
+      method: 'POST',
+      headers: { Origin: 'https://panel.example.com:8443' },
+    });
+    assert.strictEqual(isValidOrigin(req), true);
+  });
+
   it('rejects malformed Origin header', () => {
     const req = new NextRequest(`${panelUrl}/api/users`, {
       method: 'POST',

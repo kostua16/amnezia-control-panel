@@ -31,7 +31,7 @@ export function isValidOrigin(request: NextRequest): boolean {
   // Unparseable Origin or missing host → treat as cross-origin (reject).
   if (!originHost || !requestHost) return false;
 
-  return normalizeHost(originHost) === normalizeHost(requestHost);
+  return hostsMatch(originHost, requestHost);
 }
 
 /** Extract the host (hostname:port) from an origin URL string, or null. */
@@ -50,8 +50,41 @@ function hostOf(origin: string): string | null {
  * default port (e.g. `Host: panel.example.com:443`). Normalizing both sides
  * prevents a false cross-origin rejection in that case.
  */
+function hostsMatch(left: string, right: string): boolean {
+  const normalizedLeft = normalizeHost(left);
+  const normalizedRight = normalizeHost(right);
+
+  if (normalizedLeft === normalizedRight) return true;
+
+  const leftParts = splitHost(normalizedLeft);
+  const rightParts = splitHost(normalizedRight);
+
+  const oneSideHasNoPort = !leftParts.port || !rightParts.port;
+
+  return leftParts.hostname === rightParts.hostname && oneSideHasNoPort;
+}
+
 function normalizeHost(host: string): string {
   return host.replace(/:(80|443)$/, '');
+}
+
+function splitHost(host: string): { hostname: string; port: string } {
+  if (host.startsWith('[')) {
+    const end = host.indexOf(']');
+    const hasPort = end !== -1 && host[end + 1] === ':';
+    return {
+      hostname: end === -1 ? host : host.slice(0, end + 1),
+      port: hasPort ? host.slice(end + 2) : '',
+    };
+  }
+
+  const separator = host.lastIndexOf(':');
+  if (separator <= 0) return { hostname: host, port: '' };
+
+  return {
+    hostname: host.slice(0, separator),
+    port: host.slice(separator + 1),
+  };
 }
 
 /** HTTP methods that mutate server state. */
