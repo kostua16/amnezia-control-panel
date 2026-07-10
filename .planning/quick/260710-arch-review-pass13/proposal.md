@@ -20,7 +20,7 @@ Source: `/gsd:explore` thirteenth-pass review (non-duplicative vs proposals #1-#
 
 **File:** `src/app/api/sync/receive/route.ts:184-208`
 
-**Problem:** The receive endpoint performs `storePreviousConfig(existingConfig)` (reads current config to save as rollback) and then `prisma.cachedPanelConfig.update(...)` (writes new config) as two separate operations. Under concurrent push requests targeting the same panel, two pushes can both read the same "previous" config, causing the second push to silently discard the first push's config from the rollback chain. This is a classic time-of-check-to-time-of-use race.
+**Problem:** The receive endpoint performs `storePreviousConfig(candidate.id)` (reads current config to save as rollback) and then `prisma.cachedPanelConfig.update(...)` (writes new config) as two separate operations. Under concurrent push requests targeting the same panel, two pushes can both read the same "previous" config, causing the second push to silently discard the first push's config from the rollback chain. This is a classic time-of-check-to-time-of-use race.
 
 **Change:** Wrap steps 7 (storePreviousConfig) and 8 (upsert new config) in `prisma.$transaction()`. Move the audit log write inside the same transaction. The transaction ensures atomic read-previous + write-new so concurrent pushes serialize correctly and the rollback chain stays complete.
 
@@ -28,23 +28,10 @@ Source: `/gsd:explore` thirteenth-pass review (non-duplicative vs proposals #1-#
 
 ---
 
-### #38: Reorder batch operations lack transaction isolation (Medium-High)
-
-**Files:**
-- `src/app/api/routing/geo/reorder/route.ts:50-58`
-- `src/app/api/routing/rules/reorder/route.ts:51-58`
-
-**Problem:** Both reorder endpoints iterate an array of `{id, priority}` pairs and execute individual `prisma.geoRoutingRule.update(...)` / `prisma.routingRule.update(...)` calls sequentially without a transaction. If the request fails mid-iteration (timeout, error on one row), half the rules have new priorities and half have old — leaving the priority order in an inconsistent state. Additionally, concurrent reorder requests can interleave, producing unpredictable final ordering.
-
-**Change:** Wrap the batch update loop in `prisma.$transaction()` so all priority assignments succeed atomically or roll back together. Consider using `prisma.$executeRaw` with a single UPDATE CASE statement for better performance on large rule sets, but `$transaction` with sequential updates is the minimal correct fix.
-
-**Benefit:** Rule priority ordering is always consistent; partial reorder states eliminated; concurrent reorders serialize correctly.
-
----
-
 ## Excluded Topics
 
 Already covered by open PRs or prior proposals:
+- Reorder batch transaction isolation (withdrawn — `src/app/api/routing/geo/reorder/route.ts` and `src/app/api/routing/rules/reorder/route.ts` already wrap updates in `prisma.$transaction()`)
 - User creation DB↔VPN consistency (#4, PR #444)
 - Typed API client / useMutation hooks (#23, PR #459)
 - VPN service adapter polymorphism (#5, PR #460)

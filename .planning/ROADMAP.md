@@ -739,8 +739,7 @@ Source: `/gsd:explore` thirteenth-pass review (non-duplicative vs proposals #1-#
 |---|----------|----------|------|--------|
 | 36 | **Whitelist entries stored in-memory** — Module-level `Array<>` with literal TODO comment; data lost on every restart. Add `WhitelistEntry` Prisma model, replace in-memory CRUD with DB queries | Critical (Data Loss) | `src/app/api/routing/whitelist/route.ts:14-24` | Proposed |
 | 37 | **TOCTOU race in sync/receive config versioning** — `storePreviousConfig` + `update` as separate ops; concurrent pushes silently discard rollback chain entries. Wrap in `prisma.$transaction()` | High (Consistency) | `src/app/api/sync/receive/route.ts:184-208` | Proposed |
-| 38 | **Reorder batch operations lack transaction isolation** — Sequential individual `update()` calls without transaction; mid-failure leaves priority order inconsistent. Wrap batch in `prisma.$transaction()` | Medium-High (Consistency) | `src/app/api/routing/geo/reorder/route.ts:50-58`, `src/app/api/routing/rules/reorder/route.ts:51-58` | Proposed |
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-10 - Added architectural review pass 13 (proposals #36-#38: in-memory whitelist data loss, sync/receive TOCTOU race, reorder transaction isolation)*
+*Last updated: 2026-07-10 - Added architectural review pass 13 (proposals #36-#37: in-memory whitelist data loss, sync/receive TOCTOU race)*
