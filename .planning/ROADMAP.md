@@ -731,6 +731,15 @@ Source: `/gsd:explore` twelfth-pass review (non-duplicative vs proposals #1-#33 
 | 34 | **No CSRF protection for state-changing API routes** — `sameSite: 'lax'` cookie does not protect POST/PUT/DELETE from cross-site form submissions. Fix: Origin header validation in middleware or double-submit cookie pattern | Medium (Security) | `src/app/api/auth/login/route.ts`, `src/middleware.ts` | Proposed |
 | 35 | **Server-timezone-dependent traffic aggregation boundary** — `quota-monitor.ts` computes the month-start boundary with local TZ, not UTC/admin TZ (the dashboard `TRAFFIC_STATS_WINDOW_HOURS` window is relative and unaffected). Fix: UTC-based boundaries or configurable `PANEL_TIMEZONE` env var | Medium (Correctness) | `src/lib/quota-monitor.ts:133`, `src/lib/traffic-log-cleanup.ts` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 13 (2026-07-10)
+
+Source: `/gsd:explore` thirteenth-pass review (non-duplicative vs proposals #1-#35 and open PRs). Artifact: `.planning/quick/260710-arch-review-pass13/proposal.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 36 | **Whitelist entries stored in-memory** — Module-level `Array<>` with literal TODO comment; data lost on every restart. Add `WhitelistEntry` Prisma model, replace in-memory CRUD with DB queries | Critical (Data Loss) | `src/app/api/routing/whitelist/route.ts:14-24` | Proposed |
+| 37 | **TOCTOU race in sync/receive config versioning** — `storePreviousConfig` + `update` as separate ops; concurrent pushes silently discard rollback chain entries. Wrap in `prisma.$transaction()` | High (Consistency) | `src/app/api/sync/receive/route.ts:184-208` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-08 - Added architectural review pass 12 (proposals #34-#35: CSRF protection for state-changing routes, server-timezone-dependent traffic/quota boundaries)*
+*Last updated: 2026-07-10 - Added architectural review pass 13 (proposals #36-#37: in-memory whitelist data loss, sync/receive TOCTOU race)*
