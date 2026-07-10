@@ -1,0 +1,63 @@
+name: 'Fleet Back-Pressure Gate'
+description: >-
+  Checks whether too many automation PRs are already open and skips the
+  current run if so.  Only scheduled triggers are throttled; manual
+  dispatch always runs.
+
+inputs:
+  github-token:
+    description: 'GitHub token for gh authentication'
+    required: true
+  repo:
+    description: 'Repository slug (default: github.repository context)'
+    required: false
+    default: ''
+  base-ref:
+    description: 'Base branch to scan open PRs against'
+    required: false
+    default: 'main'
+  max-open-automation-prs:
+    description: 'Skip when this many automation-family PRs are already open (0 = disabled)'
+    required: false
+    default: '8'
+
+outputs:
+  skip:
+    description: 'true when the run should be skipped (pending sibling or back-pressure)'
+    value: ${{ steps.gate.outputs.pending }}
+  pending-pr:
+    description: 'PR number of the pending sibling, if any'
+    value: ${{ steps.gate.outputs.pending_pr }}
+  backpressure:
+    description: 'true when fleet back-pressure triggered'
+    value: ${{ steps.gate.outputs.backpressure }}
+  open-automation-prs:
+    description: 'Count of open automation-family PRs'
+    value: ${{ steps.gate.outputs.open_automation_prs }}
+  skip-reason:
+    description: 'Human-readable reason the run was skipped'
+    value: ${{ steps.gate.outputs.skip_reason }}
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe0
+
+    - uses: ./.github/actions/setup-environment
+      with:
+        github-token: ${{ inputs.github-token }}
+        install-deps: 'false'
+
+    - name: Check fleet back-pressure
+      id: gate
+      shell: bash
+      # Only scheduled runs are throttled; a manual dispatch always runs.
+      if: github.event_name == 'schedule'
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        node .github/workflows/scripts/check-pending-automation-pr.cjs \
+          --repo "${{ inputs.repo || github.repository }}" \
+          --base-ref "${{ inputs.base-ref }}" \
+          --max-open-automation-prs "${{ inputs.max-open-automation-prs }}" \
+          --github-output "$GITHUB_OUTPUT"
