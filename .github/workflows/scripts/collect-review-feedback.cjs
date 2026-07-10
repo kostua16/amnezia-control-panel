@@ -17,6 +17,7 @@ const STICKY_MARKERS = [
 ];
 const SLASH_COMMAND = /^\s*\/[\w-]+/;
 const MAX_DIFF_CHARS = 30000;
+const REVIEW_THREAD_FETCH_FAILURE_POLICY = 'fail-closed';
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -62,16 +63,23 @@ function fetchReviewThreads(owner, name, pr) {
     `query { repository(owner: "${owner}", name: "${name}") {` +
     ` pullRequest(number: ${pr}) {` +
     ` reviewThreads(first: 100) { nodes { isResolved isOutdated path line` +
-    ` comments(first: 50) { nodes { body author { login } } } } } } }`;
-  const data = runJson('gh', ['api', 'graphql', '-f', `query=${query}`], {});
+    ` comments(first: 50) { nodes { body author { login } } } } } } } }`;
+  // Intentionally fail closed here. Missing review-thread data can make
+  // /fix-review report a false no-op while unresolved inline Kilo findings
+  // still exist, so transient gh/GraphQL failures must abort collection.
+  const output = run('gh', ['api', 'graphql', '-f', `query=${query}`]);
+  const data = JSON.parse(output);
   if (data?.errors) {
-    console.warn(
-      'review-feedback GraphQL errors:',
-      JSON.stringify(data.errors),
+    throw new Error(
+      `review-feedback GraphQL errors: ${JSON.stringify(data.errors)}`,
     );
   }
   const threads =
     data?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+  return extractReviewThreads(threads);
+}
+
+function extractReviewThreads(threads = []) {
   return threads
     .filter((t) => !t.isResolved && !t.isOutdated)
     .flatMap((t) =>
@@ -210,6 +218,7 @@ module.exports = {
   STICKY_MARKERS,
   SLASH_COMMAND,
   MAX_DIFF_CHARS,
+  REVIEW_THREAD_FETCH_FAILURE_POLICY,
   parseRepo,
   isBot,
   isTrustedKiloSummary,
@@ -217,6 +226,7 @@ module.exports = {
   formatBundle,
   hasActionableFeedback,
   bundleHasActionableFeedback,
+  extractReviewThreads,
   fetchReviewThreads,
   fetchReviews,
   fetchComments,

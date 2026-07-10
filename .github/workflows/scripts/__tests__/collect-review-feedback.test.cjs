@@ -9,6 +9,8 @@ const {
   formatBundle,
   hasActionableFeedback,
   bundleHasActionableFeedback,
+  extractReviewThreads,
+  REVIEW_THREAD_FETCH_FAILURE_POLICY,
 } = require('../collect-review-feedback.cjs');
 
 test('parseRepo splits owner/name', () => {
@@ -113,6 +115,72 @@ test('hasActionableFeedback sees trusted Kilo summaries as feedback', () => {
   });
   assert.equal(hasActionableFeedback({ comments }), true);
   assert.equal(bundleHasActionableFeedback(md), true);
+});
+
+test('extractReviewThreads keeps unresolved Kilo issue and suggestion comments', () => {
+  const threads = extractReviewThreads([
+    {
+      isResolved: false,
+      isOutdated: true,
+      path: 'src/lib/api-client.ts',
+      line: null,
+      comments: {
+        nodes: [
+          {
+            author: { login: 'kilo-code-bot' },
+            body: 'stale critical from old diff',
+          },
+        ],
+      },
+    },
+    {
+      isResolved: false,
+      isOutdated: false,
+      path: 'src/hooks/use-users.ts',
+      line: 48,
+      comments: {
+        nodes: [
+          {
+            author: { login: 'kilo-code-bot' },
+            body: '**Severity**: critical\n\n**The Fix**: preserve pagination',
+          },
+        ],
+      },
+    },
+    {
+      isResolved: false,
+      isOutdated: false,
+      path: 'src/hooks/use-alerts.ts',
+      line: 31,
+      comments: {
+        nodes: [
+          {
+            author: { login: 'kilo-code-bot' },
+            body: '**Severity**: suggestion\n\n**The Fix**: add coverage',
+          },
+        ],
+      },
+    },
+  ]);
+
+  assert.deepEqual(threads, [
+    {
+      path: 'src/hooks/use-users.ts',
+      line: 48,
+      author: 'kilo-code-bot',
+      body: '**Severity**: critical\n\n**The Fix**: preserve pagination',
+    },
+    {
+      path: 'src/hooks/use-alerts.ts',
+      line: 31,
+      author: 'kilo-code-bot',
+      body: '**Severity**: suggestion\n\n**The Fix**: add coverage',
+    },
+  ]);
+});
+
+test('review thread collection is intentionally fail-closed', () => {
+  assert.equal(REVIEW_THREAD_FETCH_FAILURE_POLICY, 'fail-closed');
 });
 
 test('hasActionableFeedback sees review submission bodies as feedback', () => {
