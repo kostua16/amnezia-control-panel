@@ -9,6 +9,7 @@ const {
   formatBundle,
   hasActionableFeedback,
   bundleHasActionableFeedback,
+  failClosedJson,
   extractReviewThreads,
   REVIEW_THREAD_FETCH_FAILURE_POLICY,
 } = require('../collect-review-feedback.cjs');
@@ -225,4 +226,76 @@ test('sticky summaries and slash commands remain noise', () => {
   });
   assert.deepEqual(actionable, []);
   assert.equal(bundleHasActionableFeedback(md), false);
+});
+
+test('extractReviewThreads without authorFilter returns all authors', () => {
+  const threads = extractReviewThreads([
+    {
+      isResolved: false,
+      isOutdated: false,
+      path: 'src/a.ts',
+      line: 10,
+      comments: {
+        nodes: [
+          { author: { login: 'kilo-code-bot' }, body: 'critical issue' },
+          { author: { login: 'human-reviewer' }, body: 'also a finding' },
+        ],
+      },
+    },
+  ]);
+  assert.equal(threads.length, 2);
+});
+
+test('extractReviewThreads with authorFilter keeps only matching author', () => {
+  const threads = extractReviewThreads(
+    [
+      {
+        isResolved: false,
+        isOutdated: false,
+        path: 'src/a.ts',
+        line: 10,
+        comments: {
+          nodes: [
+            { author: { login: 'kilo-code-bot' }, body: 'critical issue' },
+            { author: { login: 'human-reviewer' }, body: 'noise' },
+          ],
+        },
+      },
+    ],
+    { authorFilter: 'kilo-code-bot' },
+  );
+  assert.equal(threads.length, 1);
+  assert.equal(threads[0].author, 'kilo-code-bot');
+  assert.equal(threads[0].body, 'critical issue');
+});
+
+test('extractReviewThreads with authorFilter non-matching returns empty', () => {
+  const threads = extractReviewThreads(
+    [
+      {
+        isResolved: false,
+        isOutdated: false,
+        path: 'src/a.ts',
+        line: 10,
+        comments: {
+          nodes: [{ author: { login: 'kilo-code-bot' }, body: 'finding' }],
+        },
+      },
+    ],
+    { authorFilter: 'nonexistent-author' },
+  );
+  assert.equal(threads.length, 0);
+});
+
+test('failClosedJson parses valid JSON output', () => {
+  const result = failClosedJson('echo', ['[{"a":1}]']);
+  assert.deepEqual(result, [{ a: 1 }]);
+});
+
+test('failClosedJson throws on non-zero exit', () => {
+  assert.throws(() => failClosedJson('false', []));
+});
+
+test('failClosedJson throws on invalid JSON', () => {
+  assert.throws(() => failClosedJson('echo', ['not-json']), /JSON/);
 });
