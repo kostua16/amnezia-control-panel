@@ -167,79 +167,17 @@ jobs:
 
       - name: Upsert finalizer status comment
         if: steps.resolve.outputs.pr_number != '' && steps.metadata.outputs.decision_ready == 'true' && steps.decision.outputs.dry_run != 'true'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           DECISION: ${{ steps.decision.outputs.decision }}
           SUMMARY: ${{ steps.decision.outputs.summary }}
           APPLY_STATUS: ${{ steps.apply.outputs.status }}
           APPLY_DETAILS: ${{ steps.apply.outputs.details }}
-        with:
-          script: |
-            const issueNumber = Number(process.env.PR_NUMBER);
-            const decision = process.env.DECISION;
-            const summary = process.env.SUMMARY;
-            const applyStatus = process.env.APPLY_STATUS || 'not_requested';
-            const applyDetails = process.env.APPLY_DETAILS || '';
-            const marker = '<!-- pr-finalizer -->';
-            const replaceExistingComment = true;
-            const lines = [
-              marker,
-              '## PR Finalizer',
-              '',
-              `- Status: **${decision}**`,
-              `- Summary: ${summary}`
-            ];
-
-            if (decision === 'approve_and_enable_automerge') {
-              lines.push(`- Apply result: **${applyStatus}**`);
-              if (applyDetails) {
-                lines.push(`- Apply details: ${applyDetails}`);
-              }
-            }
-
-            const body = lines.join('\n');
-
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              per_page: 100
-            });
-
-            const existing = comments.find((comment) =>
-              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
-            );
-
-            if (existing?.body === body) {
-              core.info('Finalizer comment already up to date.');
-              return;
-            }
-
-            if (existing && !replaceExistingComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body
-              });
-              return;
-            }
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              body
-            });
-
-            if (existing) {
-              await github.rest.issues.deleteComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id
-              });
-            }
+        run: |
+          node .github/workflows/scripts/upsert-pr-finalizer-comment.cjs \
+            --pr "$PR_NUMBER"
 
       - name: Fail on finalizer apply error
         if: steps.apply.outputs.status == 'failed'
