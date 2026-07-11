@@ -47,9 +47,10 @@ jobs:
     runs-on: [self-hosted, big]
     # Includes checkout + setup-environment (deps, prisma, gsd, rtk) before the
     # audit agent starts; the agent needs the bulk of this budget to finish a
-    # full audit/fix/verify pass. Prior 10- and 20-minute caps each cancelled
-    # recent full passes mid-work, so allow more room for the 70-turn budget.
-    timeout-minutes: 30
+    # full audit/fix/verify pass. Prior 10-, 20-, and 30-minute caps each
+    # cancelled recent full passes mid-work, so allow more room for the
+    # 70-turn budget (setup ~40s; agent gets ~2060s ≈ 29s/turn).
+    timeout-minutes: 35
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
       claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
