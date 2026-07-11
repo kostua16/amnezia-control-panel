@@ -32,6 +32,8 @@ const orig = {
   create: prisma.cachedPanelConfig.create,
   execRawUnsafe: prisma.$executeRawUnsafe,
   execRaw: prisma.$executeRaw,
+  transaction: prisma.$transaction,
+  auditCreate: prisma.auditLog.create,
 };
 
 function validPayload(
@@ -85,6 +87,8 @@ function restore() {
   prisma.cachedPanelConfig.create = orig.create;
   prisma.$executeRawUnsafe = orig.execRawUnsafe;
   prisma.$executeRaw = orig.execRaw;
+  prisma.$transaction = orig.transaction;
+  prisma.auditLog.create = orig.auditCreate;
 }
 
 beforeEach(() => {
@@ -94,6 +98,13 @@ beforeEach(() => {
   // writeAuditLog must not touch a real DB.
   prisma.$executeRawUnsafe = (async () => 1) as never;
   prisma.$executeRaw = (async () => 1) as never;
+  // $transaction must pass through to the callback with a tx client
+  // that delegates to the stubbed prisma methods.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  prisma.$transaction = (async (fn: any) => fn(prisma)) as any;
+  // The route writes the audit log via the ORM (tx.auditLog.create) inside
+  // the transaction; stub it so no real DB write is attempted.
+  prisma.auditLog.create = (async () => ({})) as never;
 });
 afterEach(restore);
 

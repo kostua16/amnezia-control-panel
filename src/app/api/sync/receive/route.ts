@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
 import { verifyValue, fastHash } from '@/lib/password';
-import { storePreviousConfig } from '@/lib/rollback-manager';
 import { writeAuditLog } from '@/lib/audit-log';
 
 /**
@@ -181,41 +181,54 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 7. Preserve current config as previous before overwrite (rollback support)
-    if (existingConfig) {
-      await storePreviousConfig(candidate.id);
-    }
+    // 7-8. Store config atomically with rollback preservation.
+    // Re-read the current config INSIDE the transaction so concurrent
+    // pushes serialize: a second push sees the first push's committed
+    // config as "previous", keeping the rollback chain intact. Reading
+    // the previous-config fields from the pre-transaction snapshot would
+    // let two concurrent pushes both snapshot the same config and drop
+    // one from the rollback chain (TOCTOU).
+    await prisma.$transaction(async (tx) => {
+      const current = await tx.cachedPanelConfig.findUnique({
+        where: { panelId: candidate.id },
+      });
 
-    // 8. Store config via upsert
-    if (existingConfig) {
-      await prisma.cachedPanelConfig.update({
-        where: { id: existingConfig.id },
+      if (current) {
+        await tx.cachedPanelConfig.update({
+          where: { id: current.id },
+          data: {
+            previousConfig: current.config as Prisma.InputJsonValue,
+            previousConfigVersion: current.configVersion,
+            previousConfigReceivedAt: current.receivedAt,
+            configVersion: configData.configVersion,
+            config: configData,
+            receivedAt: new Date(),
+          },
+        });
+      } else {
+        await tx.cachedPanelConfig.create({
+          data: {
+            panelId: candidate.id,
+            configVersion: configData.configVersion,
+            config: configData,
+            receivedAt: new Date(),
+          },
+        });
+      }
+
+      // Audit log inside the same transaction
+      await tx.auditLog.create({
         data: {
-          configVersion: configData.configVersion,
-          config: configData,
-          receivedAt: new Date(),
+          action: 'sync.receive',
+          resource: 'cachedPanelConfig',
+          resourceId: String(candidate.id),
+          metadata: JSON.stringify({
+            panelId: candidate.id,
+            configVersion: configData.configVersion,
+            panelRole: configData.panelRole,
+          }),
         },
       });
-    } else {
-      await prisma.cachedPanelConfig.create({
-        data: {
-          panelId: candidate.id,
-          configVersion: configData.configVersion,
-          config: configData,
-          receivedAt: new Date(),
-        },
-      });
-    }
-
-    await writeAuditLog({
-      action: 'sync.receive',
-      resource: 'cachedPanelConfig',
-      resourceId: candidate.id,
-      metadata: {
-        panelId: candidate.id,
-        configVersion: configData.configVersion,
-        panelRole: configData.panelRole,
-      },
     });
 
     // 8. Return success
