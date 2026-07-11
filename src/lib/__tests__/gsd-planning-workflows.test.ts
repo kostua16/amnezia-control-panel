@@ -236,6 +236,7 @@ describe('GSD planning workflow automation', () => {
       workflow,
       /git ls-files --others --exclude-standard -- \. ':\(exclude\)\.planning\/'/,
     );
+    assert.match(workflow, /sed '\/\^\$\/d' \| sort -u/);
     assert.match(
       workflow,
       /only planning artifacts differ; persisting planning state through a PR if changes exist/,

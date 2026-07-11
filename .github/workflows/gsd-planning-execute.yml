@@ -291,8 +291,12 @@ jobs:
         if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
         run: |
           set -euo pipefail
-          base_ref=$(git rev-parse origin/main 2>/dev/null || echo "HEAD")
-          tracked_non_planning=$(git diff --name-only "$base_ref" -- . ':(exclude).planning/')
+          if base_ref=$(git rev-parse origin/main 2>/dev/null); then
+            tracked_non_planning=$(git diff --name-only "$base_ref" -- . ':(exclude).planning/')
+          else
+            echo "::warning::origin/main could not be resolved (renamed default branch, shallow/custom clone, or detached checkout). Falling back to HEAD, which may miss already-committed implementation changes."
+            tracked_non_planning=$(git diff --name-only HEAD -- . ':(exclude).planning/')
+          fi
           untracked_non_planning=$(git ls-files --others --exclude-standard -- . ':(exclude).planning/')
           non_planning=$(printf '%s\n%s\n' "$tracked_non_planning" "$untracked_non_planning" | sed '/^$/d' | sort -u)
           if [ -z "$non_planning" ]; then
