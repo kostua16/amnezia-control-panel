@@ -201,11 +201,13 @@ jobs:
 
               runSummaries.push(summary);
 
-              // Only trigger optimization for actual failures or cancellations
-              // (e.g., timeout). Slow-but-successful runs are expected for
-              // long-running workflows (audit-fix, fix-review) and must not
-              // spawn repeated optimization PRs every hour.
-              if (run.conclusion === 'failure' || run.conclusion === 'cancelled') {
+              // Trigger on failures, and on cancellations that ran long enough
+              // to be a genuine timeout. Short-lived cancellations are almost
+              // always a concurrency-group cancel (a newer push cancelling an
+              // in-progress run), a normal CI event that must not spawn
+              // optimization PRs. Slow-but-successful runs are also expected
+              // for long-running workflows (audit-fix, fix-review).
+              if (run.conclusion === 'failure' || (run.conclusion === 'cancelled' && isSlow)) {
                 hasProblems = true;
               }
             }
