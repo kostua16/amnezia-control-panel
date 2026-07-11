@@ -320,7 +320,7 @@ function collectChecksFromWorkflowRuns({
         workflowName,
       );
       if (inFlightRun) {
-        const runStatus = String(inFlightRun.status ?? '').toLowerCase();
+        const runStatus = String(inFlightRun.status ?? '').toLowerCase() || 'pending';
         reconciledWorkflows.push(
           `${workflowName}:${runStatus}`,
         );
