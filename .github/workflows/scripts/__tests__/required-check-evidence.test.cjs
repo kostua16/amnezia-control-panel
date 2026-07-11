@@ -9,6 +9,7 @@ const {
   getRequiredCheckNames,
   getRequiredWorkflowNames,
   getUnavailableCheckStatus,
+  pendingChecksForWorkflowRun,
   workflowRunMatchesRequiredChecks,
 } = require('../required-check-evidence.cjs');
 
@@ -645,4 +646,89 @@ test('getUnavailableCheckStatus returns correct shape', () => {
   assert.deepEqual(result.failing, []);
   assert.deepEqual(result.pending, []);
   assert.deepEqual(result.missing, ['Lint']);
+});
+
+// ─── pendingChecksForWorkflowRun ─────────────────────────────────────
+
+test('pendingChecksForWorkflowRun maps completed run status to pending checks', () => {
+  const group = CI_WORKFLOW;
+  const run = { status: 'completed', headSha: BASE_PR.headSha };
+  const result = pendingChecksForWorkflowRun(group, run);
+  assert.equal(result.length, 4);
+  assert.equal(result[0].bucket, 'pending');
+  assert.equal(result[0].state, 'completed');
+  assert.equal(result[0].name, 'Lint');
+});
+
+test('pendingChecksForWorkflowRun maps in_progress run status to pending checks', () => {
+  const group = CI_WORKFLOW;
+  const run = { status: 'in_progress', headSha: BASE_PR.headSha };
+  const result = pendingChecksForWorkflowRun(group, run);
+  assert.equal(result.length, 4);
+  assert.equal(result[0].bucket, 'pending');
+  assert.equal(result[0].state, 'in_progress');
+});
+
+test('pendingChecksForWorkflowRun maps queued run status to pending checks', () => {
+  const group = CI_WORKFLOW;
+  const run = { status: 'queued', headSha: BASE_PR.headSha };
+  const result = pendingChecksForWorkflowRun(group, run);
+  assert.equal(result.length, 4);
+  for (const check of result) {
+    assert.equal(check.bucket, 'pending', 'queued run should produce pending bucket');
+    assert.equal(check.state, 'queued', 'queued run should preserve queued state');
+  }
+});
+
+test('pendingChecksForWorkflowRun maps undefined status to pending fallback', () => {
+  const group = CI_WORKFLOW;
+  const run = { headSha: BASE_PR.headSha };
+  const result = pendingChecksForWorkflowRun(group, run);
+  assert.equal(result.length, 4);
+  assert.equal(result[0].state, 'pending');
+});
+
+// ─── reconciliation indicator ─────────────────────────────────────────
+
+test('collectChecksFromWorkflowRuns returns reconciled field when stale-pending fires', () => {
+  const runJson = (cmd, args) => {
+    if (args[0] === 'pr') {
+      // gh pr checks fails → triggers allowRunListFallback → collectChecksFromWorkflowRuns
+      return runJsonFail('no check contexts visible');
+    }
+    if (args[0] === 'run' && args[1] === 'list') {
+      return runJsonOk([
+        {
+          databaseId: 300,
+          status: 'in_progress',
+          conclusion: '',
+          workflowName: 'CI',
+          headSha: BASE_PR.headSha,
+          name: 'CI run',
+        },
+        {
+          databaseId: 301,
+          status: 'queued',
+          conclusion: '',
+          workflowName: 'PR Policy',
+          headSha: BASE_PR.headSha,
+          name: 'PR Policy run',
+        },
+      ]);
+    }
+    return runJsonFail('unexpected');
+  };
+
+  const result = collectCheckEvidence({
+    pr: BASE_PR,
+    config: BASE_CONFIG,
+    eventName: 'issue_comment',
+    event: {},
+    runJson,
+    allowRunListFallback: true,
+  });
+  assert.ok(result.reconciled, 'should include reconciled array');
+  assert.ok(result.reconciled.includes('CI:in_progress'));
+  assert.ok(result.reconciled.includes('PR Policy:queued'));
+  assert.match(result.reason, /Stale-pending reconciliation/);
 });
