@@ -123,6 +123,9 @@ __pycache__/
 # Graphify
 graphify-out/
 
+# GSD resolved debug sessions — reference-only, exclude from PR diffs
+.planning/debug/resolved/
+
 
 # worktrees
 .worktrees/

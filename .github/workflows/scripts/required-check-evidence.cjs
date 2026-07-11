@@ -298,6 +298,7 @@ function collectChecksFromWorkflowRuns({
   }
 
   const jobChecks = [...existingChecks];
+  let reconciledWorkflows = [];
 
   for (const group of requiredChecks) {
     const workflowName = group.workflow ?? '';
@@ -319,6 +320,10 @@ function collectChecksFromWorkflowRuns({
         workflowName,
       );
       if (inFlightRun) {
+        const runStatus = String(inFlightRun.status ?? '').toLowerCase() || 'pending';
+        reconciledWorkflows.push(
+          `${workflowName}:${runStatus}`,
+        );
         jobChecks.push(...pendingChecksForWorkflowRun(group, inFlightRun));
         continue;
       }
@@ -390,11 +395,16 @@ function collectChecksFromWorkflowRuns({
     };
   }
 
+  const baseReason = reconciledWorkflows.length > 0
+    ? `Stale-pending reconciliation fired for ${reconciledWorkflows.join(', ')}. Mapped workflow-run jobs for required checks at ${pr.headSha}.`
+    : `Mapped completed workflow-run jobs for required checks at ${pr.headSha}.`;
+
   return {
     checks: jobChecks,
     checkStatus: jobCheckStatus,
     source: 'workflow-run-jobs',
-    reason: `Mapped completed workflow-run jobs for required checks at ${pr.headSha}.`,
+    ...(reconciledWorkflows.length > 0 && { reconciled: reconciledWorkflows }),
+    reason: baseReason,
   };
 }
 
