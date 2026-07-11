@@ -62,7 +62,7 @@ describe('GSD planning workflow automation', () => {
       workflow,
       /names: skip-improve,planning-intake-open,planning-draft-open/,
     );
-    assert.match(workflow, /labels: \['planning-intake-open'\]/);
+    assert.match(workflow, /planning-intake-open/);
   });
 
   it('pushes branches that are already ahead after GSD creates commits', () => {

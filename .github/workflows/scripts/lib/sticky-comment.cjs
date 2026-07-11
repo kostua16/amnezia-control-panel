@@ -121,12 +121,21 @@ function upsertComment({
     ]);
 
     if (existing) {
-      run('gh', [
-        'api',
-        '-X',
-        'DELETE',
-        `repos/${repo}/issues/comments/${existing.id}`,
-      ]);
+      try {
+        run('gh', [
+          'api',
+          '-X',
+          'DELETE',
+          `repos/${repo}/issues/comments/${existing.id}`,
+        ]);
+      } catch (deleteError) {
+        // A failed DELETE after a successful POST leaves two comments with the
+        // same marker.  Log the orphan ID so a future sweep can clean it up
+        // instead of propagating the error — the new comment is already live.
+        console.error(
+          `sticky-comment: failed to delete orphan comment ${existing.id} on ${repo}#${prNumber}: ${deleteError.message}`,
+        );
+      }
     }
   } finally {
     fs.rmSync(payloadPath, { force: true });

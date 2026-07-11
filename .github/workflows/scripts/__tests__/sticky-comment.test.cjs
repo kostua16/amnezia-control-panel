@@ -85,6 +85,83 @@ test('upsertComment replaces an existing sticky comment by default', () => {
   }
 });
 
+test('upsertComment tolerates a failed DELETE after successful POST', () => {
+  // Simulate: find returns an existing comment, POST succeeds, but DELETE fails.
+  // The new comment must still appear and upsertComment must NOT throw.
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'sticky-comment-test-'),
+  );
+  const logPath = path.join(tempDir, 'gh.log');
+  const commentsPath = path.join(tempDir, 'comments.json');
+  const ghPath = path.join(tempDir, 'gh');
+  const previousPath = process.env.PATH;
+
+  const comments = [
+    {
+      id: 99,
+      user: { login: 'github-actions[bot]' },
+      body: `${MARKER}\nold body`,
+    },
+  ];
+  fs.writeFileSync(commentsPath, JSON.stringify(comments), 'utf8');
+
+  // The fake gh script fails DELETE (exit 1) but succeeds list and POST.
+  fs.writeFileSync(
+    ghPath,
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.STICKY_GH_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === 'api' && args.includes('--paginate')) {
+  process.stdout.write(fs.readFileSync(process.env.STICKY_GH_COMMENTS, 'utf8'));
+  process.exit(0);
+}
+if (args[0] === 'api' && args.includes('POST')) {
+  process.stdout.write('{"id":100}');
+  process.exit(0);
+}
+if (args[0] === 'api' && args.includes('DELETE')) {
+  process.stderr.write('API rate limit');
+  process.exit(1);
+}
+`,
+    'utf8',
+  );
+  fs.chmodSync(ghPath, 0o755);
+
+  process.env.PATH = `${tempDir}:${process.env.PATH}`;
+  process.env.STICKY_GH_LOG = logPath;
+  process.env.STICKY_GH_COMMENTS = commentsPath;
+
+  try {
+    // Must NOT throw even though DELETE failed
+    upsertComment({
+      repo: 'owner/repo',
+      prNumber: 9,
+      marker: MARKER,
+      body: `${MARKER}\nnew body`,
+    });
+
+    const calls = fs
+      .readFileSync(logPath, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+
+    // Should have: list, POST, DELETE (3 calls)
+    assert.strictEqual(calls.length, 3);
+    assert.strictEqual(calls[0][0], 'api'); // list
+    assert.ok(calls[1].includes('POST')); // create new
+    assert.ok(calls[2].includes('DELETE')); // attempted delete
+  } finally {
+    process.env.PATH = previousPath;
+    delete process.env.STICKY_GH_LOG;
+    delete process.env.STICKY_GH_COMMENTS;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('upsertComment keeps the legacy patch path when replaceExisting is false', () => {
   const gh = installFakeGh([
     {
