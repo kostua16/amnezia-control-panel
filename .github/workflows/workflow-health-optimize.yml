@@ -201,13 +201,18 @@ jobs:
 
               runSummaries.push(summary);
 
-              // Trigger on failures, and on cancellations that ran long enough
-              // to be a genuine timeout. Short-lived cancellations are almost
-              // always a concurrency-group cancel (a newer push cancelling an
-              // in-progress run), a normal CI event that must not spawn
-              // optimization PRs. Slow-but-successful runs are also expected
-              // for long-running workflows (audit-fix, fix-review).
-              if (run.conclusion === 'failure' || (run.conclusion === 'cancelled' && isSlow)) {
+              // Trigger on real failures and genuine timeouts. A run hitting
+              // its timeout-minutes cap concludes as `timed_out`, while a long
+              // `cancelled` run on a non-push event is treated as a likely
+              // timeout too. Exclude short and push/PR-event cancellations:
+              // those are almost always a concurrency-group supersede (a newer
+              // push cancelling an in-progress run), a normal CI event that
+              // must not spawn optimization PRs. Slow-but-successful runs are
+              // also expected for long-running workflows (audit-fix, fix-review).
+              if (run.conclusion === 'failure' ||
+                  run.conclusion === 'timed_out' ||
+                  (run.conclusion === 'cancelled' && isSlow &&
+                   run.event !== 'push' && run.event !== 'pull_request')) {
                 hasProblems = true;
               }
             }
