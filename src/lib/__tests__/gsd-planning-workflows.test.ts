@@ -230,7 +230,7 @@ describe('GSD planning workflow automation', () => {
     );
     assert.match(
       workflow,
-      /git diff --name-only HEAD -- \. ':\(exclude\)\.planning\/'/,
+      /git diff --name-only "\$base_ref" -- \. ':\(exclude\)\.planning\/'/,
     );
     assert.match(
       workflow,
