@@ -202,17 +202,23 @@ jobs:
               runSummaries.push(summary);
 
               // Trigger on real failures and genuine timeouts. A run hitting
-              // its timeout-minutes cap concludes as `timed_out`, while a long
-              // `cancelled` run on a non-push event is treated as a likely
-              // timeout too. Exclude short and push/PR-event cancellations:
-              // those are almost always a concurrency-group supersede (a newer
-              // push cancelling an in-progress run), a normal CI event that
-              // must not spawn optimization PRs. Slow-but-successful runs are
-              // also expected for long-running workflows (audit-fix, fix-review).
+              // its timeout-minutes cap concludes as `timed_out`. A long
+              // `cancelled` run is only a likely timeout when it belongs to an
+              // event that cannot be supersede-cancelled by newer push/PR
+              // activity (schedule, workflow_dispatch); every PR-triggered
+              // event in this repo — push, pull_request, pull_request_target,
+              // plus the workflow_run/issue_comment wakes — shares a
+              // concurrency group that can cancel an in-progress run mid-flight,
+              // so a long cancel there is normal CI churn, not a problem.
+              // Allowlisting the non-supersedable events avoids a denylist that
+              // must track every PR event type; a new one would otherwise
+              // reopen the false trigger. Slow-but-successful runs are expected
+              // for long-running workflows (audit-fix, fix-review) and never
+              // trigger optimization.
               if (run.conclusion === 'failure' ||
                   run.conclusion === 'timed_out' ||
                   (run.conclusion === 'cancelled' && isSlow &&
-                   run.event !== 'push' && run.event !== 'pull_request')) {
+                   (run.event === 'schedule' || run.event === 'workflow_dispatch'))) {
                 hasProblems = true;
               }
             }
