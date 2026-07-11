@@ -201,8 +201,11 @@ jobs:
 
               runSummaries.push(summary);
 
-              // Detect problems: failures or slow runs (>300s)
-              if (run.conclusion === 'failure' || isSlow) {
+              // Only trigger optimization for actual failures or cancellations
+              // (e.g., timeout). Slow-but-successful runs are expected for
+              // long-running workflows (audit-fix, fix-review) and must not
+              // spawn repeated optimization PRs every hour.
+              if (run.conclusion === 'failure' || run.conclusion === 'cancelled') {
                 hasProblems = true;
               }
             }
