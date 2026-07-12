@@ -122,30 +122,50 @@ async function importConfigurationList(
     }
   }
 
-  // Batch-create new entries (1 query)
+  // Batch-create new entries (1 query).
+  // Dedupe by name (last occurrence wins) so an intra-payload duplicate
+  // cannot violate the @unique constraint and abort the entire batch.
   if (toCreate.length > 0) {
-    await prisma.configuration.createMany({
-      data: toCreate.map((e) => ({
-        type: e.type,
-        name: e.name,
-        content: e.content as never,
-        isActive: e.isActive,
-      })),
-    });
-    report.imported += toCreate.length;
+    const uniqueByName = new Map(toCreate.map((e) => [e.name, e]));
+    const dedupedCreate = [...uniqueByName.values()];
+    try {
+      await prisma.configuration.createMany({
+        data: dedupedCreate.map((e) => ({
+          type: e.type,
+          name: e.name,
+          content: e.content as never,
+          isActive: e.isActive,
+        })),
+      });
+      report.imported += dedupedCreate.length;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      report.errors.push(
+        `Failed to import ${dedupedCreate.length} new configuration(s): ${message}`,
+      );
+    }
   }
 
-  // Update only changed entries (N queries, typically small)
+  // Update only changed entries (N queries, typically small).
+  // Per-entry try/catch preserves partial success and per-entry error
+  // messages in the report instead of throwing to the caller.
   for (const entry of toUpdate) {
-    await prisma.configuration.update({
-      where: { id: entry.id },
-      data: {
-        type: entry.type,
-        content: entry.content as never,
-        isActive: entry.isActive,
-      },
-    });
-    report.updated++;
+    try {
+      await prisma.configuration.update({
+        where: { id: entry.id },
+        data: {
+          type: entry.type,
+          content: entry.content as never,
+          isActive: entry.isActive,
+        },
+      });
+      report.updated++;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      report.errors.push(
+        `Failed to update configuration "${entry.name}": ${message}`,
+      );
+    }
   }
 }
 
@@ -236,32 +256,54 @@ async function importTemplateList(
     }
   }
 
-  // Batch-create new entries (1 query)
+  // Batch-create new entries (1 query).
+  // Dedupe by name (last occurrence wins) so an intra-payload duplicate
+  // cannot violate the @unique constraint and abort the entire batch.
   if (toCreate.length > 0) {
-    await prisma.configTemplate.createMany({
-      data: toCreate.map((e) => ({
-        name: e.name,
-        protocol: e.protocol,
-        content: e.content as never,
-        description: e.description,
-        serviceType: e.serviceType,
-        isBuiltIn: false,
-      })),
-    });
-    report.imported += toCreate.length;
+    const uniqueByName = new Map(toCreate.map((e) => [e.name, e]));
+    const dedupedCreate = [...uniqueByName.values()];
+    try {
+      await prisma.configTemplate.createMany({
+        data: dedupedCreate.map((e) => ({
+          name: e.name,
+          protocol: e.protocol,
+          content: e.content as never,
+          description: e.description,
+          serviceType: e.serviceType,
+          isBuiltIn: false,
+        })),
+      });
+      report.imported += dedupedCreate.length;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      report.errors.push(
+        `Failed to import ${dedupedCreate.length} new template(s): ${message}`,
+      );
+    }
   }
 
-  // Update only changed entries (N queries, typically small)
+  // Update only changed entries (N queries, typically small).
+  // Per-entry try/catch preserves partial success and per-entry error
+  // messages in the report instead of throwing to the caller.
   for (const entry of toUpdate) {
-    await prisma.configTemplate.update({
-      where: { id: entry.id },
-      data: {
-        protocol: entry.protocol,
-        content: entry.content as never,
-        description: entry.description,
-        serviceType: entry.serviceType,
-      },
-    });
-    report.updated++;
+    try {
+      await prisma.configTemplate.update({
+        where: { id: entry.id },
+        data: {
+          protocol: entry.protocol,
+          content: entry.content as never,
+          description: entry.description,
+          // Only overwrite serviceType when the import provides one, so a
+          // re-import that omits it preserves the stored value.
+          ...(entry.serviceType && { serviceType: entry.serviceType }),
+        },
+      });
+      report.updated++;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      report.errors.push(
+        `Failed to update template "${entry.name}": ${message}`,
+      );
+    }
   }
 }
