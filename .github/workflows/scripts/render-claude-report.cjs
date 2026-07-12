@@ -248,18 +248,22 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
     'rejectedToolsList',
   ];
 
-  let cancelledNotice = '';
+  const hasRealMetrics = () =>
+    RENDERED_METRIC_KEYS.some((key) => !isBlankMetricValue(metrics[key]));
+
+  let preCompletionNotice = '';
   if (metrics.outcome === 'cancelled') {
     const CANCELLED_MARKER =
       '_Cancelled before metrics were captured — the run was likely stopped by its `timeout-minutes` cap, so Claude turn/cost/tool metrics are unavailable._';
-    const hasRealMetrics = RENDERED_METRIC_KEYS.some(
-      (key) => !isBlankMetricValue(metrics[key]),
-    );
-    if (!hasRealMetrics) {
+    if (!hasRealMetrics()) {
       return `${['', heading, '', CANCELLED_MARKER].join('\n')}\n`;
     }
-    cancelledNotice =
+    preCompletionNotice =
       '_Cancelled before completion; metrics below were recovered from logs._';
+  } else if (metrics.outcome === 'skipped' && !hasRealMetrics()) {
+    const SKIPPED_MARKER =
+      '_Skipped before metrics were captured — Claude did not run because an upstream workflow gate failed._';
+    return `${['', heading, '', SKIPPED_MARKER].join('\n')}\n`;
   }
 
   const turns = valueOrFallback(metrics.numTurns);
@@ -287,8 +291,8 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
   ];
 
   const lines = ['', heading];
-  if (cancelledNotice) {
-    lines.push('', cancelledNotice);
+  if (preCompletionNotice) {
+    lines.push('', preCompletionNotice);
   }
   lines.push(
     '| Metric | Value |',

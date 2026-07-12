@@ -14,6 +14,15 @@ test('cancelled execution with no recovered metrics renders marker only', () => 
   assert.doesNotMatch(body, /\| Metric \| Value \|/);
 });
 
+test('skipped execution with no recovered metrics renders upstream gate marker only', () => {
+  const body = renderClaudeExecutionSection({ outcome: 'skipped' });
+
+  assert.match(body, /### Claude Execution/);
+  assert.match(body, /Skipped before metrics were captured/);
+  assert.match(body, /upstream workflow gate failed/);
+  assert.doesNotMatch(body, /\| Metric \| Value \|/);
+});
+
 test('cancelled execution with recovered changed files renders table and details', () => {
   const body = renderClaudeExecutionSection({
     outcome: 'cancelled',
