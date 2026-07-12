@@ -69,7 +69,9 @@ jobs:
       - name: Capture job start time
         id: job_start
         shell: bash
-        run: echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout main
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -169,6 +171,22 @@ jobs:
         env:
           JOB_START_EPOCH: ${{ steps.job_start.outputs.epoch }}
         run: |
+          set -euo pipefail
+
+          # Guard: JOB_START_EPOCH must be a positive integer (seconds since
+          # epoch). An empty or non-numeric value coerces to 0 in arithmetic,
+          # making STOP_BY land in 1970 (already past) — fail loudly instead.
+          case "$JOB_START_EPOCH" in
+            '' | *[!0-9]*)
+              echo "::error::JOB_START_EPOCH is not a positive integer: '$JOB_START_EPOCH'" >&2
+              exit 1
+              ;;
+          esac
+          if [ "$JOB_START_EPOCH" -le 0 ]; then
+            echo "::error::JOB_START_EPOCH must be positive: '$JOB_START_EPOCH'" >&2
+            exit 1
+          fi
+
           # 5-minute safety margin before the 25-minute job timeout.
           # Anchored to job start (captured in the first step) so the
           # 20-minute deadline holds regardless of how long setup took.
