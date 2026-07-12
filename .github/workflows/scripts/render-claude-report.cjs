@@ -210,6 +210,36 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
   const metrics = normalizeMetrics(input);
   if (!hasClaudeInfo(metrics)) return '';
 
+  const heading = options.heading || '### Claude Execution';
+
+  // A cancelled run never reaches the step that publishes claude-* outputs,
+  // so turn/cost/tool metrics are usually blank. Surface a clear marker
+  // instead of a table full of N/A; if metrics were recovered anyway (e.g.
+  // parsed from logs), still render them under the notice.
+  let cancelledNotice = '';
+  if (metrics.outcome === 'cancelled') {
+    const CANCELLED_MARKER =
+      '_Cancelled before metrics were captured — the run was likely stopped by its `timeout-minutes` cap, so Claude turn/cost/tool metrics are unavailable._';
+    const hasRealMetrics = [
+      metrics.numTurns,
+      metrics.modelUsed,
+      metrics.durationMs,
+      metrics.durationSec,
+      metrics.totalCostUsd,
+      metrics.numToolCalls,
+      metrics.failureReason,
+      metrics.actionError,
+      metrics.errorMessages,
+      metrics.lastOutput,
+      metrics.failedToolSamples,
+    ].some((value) => !isBlankMetricValue(value));
+    if (!hasRealMetrics) {
+      return `${['', heading, '', CANCELLED_MARKER].join('\n')}\n`;
+    }
+    cancelledNotice =
+      '_Cancelled before completion; metrics below were recovered from logs._';
+  }
+
   const turns = valueOrFallback(metrics.numTurns);
   const turnsPct = metrics.turnsBudgetPct
     ? ` (${metrics.turnsBudgetPct}%)`
@@ -234,13 +264,15 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
     ['Claude is_error', valueOrFallback(metrics.isError)],
   ];
 
-  const lines = [
-    '',
-    options.heading || '### Claude Execution',
+  const lines = ['', heading];
+  if (cancelledNotice) {
+    lines.push('', cancelledNotice);
+  }
+  lines.push(
     '| Metric | Value |',
     '|--------|-------|',
     ...rows.map(([metric, value]) => `| ${metric} | ${escapeTable(value)} |`),
-  ];
+  );
 
   const primaryError = metrics.actionError || metrics.failureReason;
   if (primaryError) {
