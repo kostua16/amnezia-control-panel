@@ -456,7 +456,7 @@ jobs:
 
   report-failure:
     needs: [monitor-runs]
-    if: failure() || cancelled()
+    if: ${{ always() && (needs.monitor-runs.result == 'failure' || needs.monitor-runs.result == 'cancelled') }}
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:
