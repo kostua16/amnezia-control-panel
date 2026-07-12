@@ -39,7 +39,7 @@ jobs:
     needs: [fleet-gate]
     if: needs.fleet-gate.outputs.skip != 'true'
     name: Collect Workflow Runs
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       has-runs: ${{ steps.collect.outputs.has_runs }}
@@ -47,11 +47,6 @@ jobs:
       runs-data: ${{ steps.collect.outputs.runs_data }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-
-      - uses: ./.github/actions/setup-environment
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          node-version: ${{ env.NODE_VERSION }}
 
       - name: Collect workflow runs from past hour
         id: collect
