@@ -218,6 +218,10 @@
       "color": "6e7781",
       "description": "Automation attempted the task but could not safely produce a change"
     },
+    "deferred": {
+      "color": "fbca04",
+      "description": "Fix deferred — another automation PR already addresses the same file(s)"
+    },
     "maintenance": {
       "color": "0075ca",
       "description": "Repository maintenance work item"
