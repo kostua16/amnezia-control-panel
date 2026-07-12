@@ -92,7 +92,7 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
           policy-file: .github/workflows/policy.json
-          names: auto-fix-approved,auto-fix,fixed,canceled,umbrella-sub-issue
+          names: auto-fix-approved,auto-fix,fixed,canceled,umbrella-sub-issue,high,medium,low
 
       - name: Extract fix message
         id: extract
@@ -124,12 +124,18 @@ jobs:
           SUMMARY=$(tail -1 /tmp/umbrella-spin-off.log)
           ITEMS=$(printf '%s' "$SUMMARY" | jq -r '.summary[0].items // 0')
           CREATED=$(printf '%s' "$SUMMARY" | jq -r '[.summary[0].created[]?] | length')
+          LINK_FAILS=$(printf '%s' "$SUMMARY" | jq -r '.summary[0].linkFailures // 0')
           if [ "$ITEMS" = "0" ]; then
             gh issue comment "$ISSUE_NUM" \
               --body "The auto-fix workflow does not act on tracking issues without a checklist. Nothing was changed and the issue stays open."
           else
-            gh issue comment "$ISSUE_NUM" \
-              --body "Umbrella issue — spun off $CREATED new sub-issue(s) for the top-priority unchecked items (max 3 open at a time). Automation drives them through triage → fix; checkboxes here are ticked automatically as sub-issues complete, and the next items spin off as slots free up."
+            BODY="Umbrella issue — spun off $CREATED new sub-issue(s) for the top-priority unchecked items (max 3 open at a time). Automation drives them through triage → fix; checkboxes here are ticked automatically as sub-issues complete, and the next items spin off as slots free up."
+            if [ "$LINK_FAILS" != "0" ]; then
+              BODY="$BODY
+
+⚠️ $LINK_FAILS sub-issue(s) could not be natively linked to this umbrella (the GitHub sub-issues endpoint was unavailable or rejected the link). The sub-issue(s) still flow through triage → fix, but the progress bar on this umbrella may not update until a later run re-links them."
+            fi
+            gh issue comment "$ISSUE_NUM" --body "$BODY"
           fi
 
       - name: Prepare fix branch

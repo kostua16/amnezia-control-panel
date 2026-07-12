@@ -138,6 +138,44 @@ function planSpinOff({
   };
 }
 
+// Self-heal duplicate sub-issues left by a concurrent spin-off: the hourly
+// --all sweep and an on-demand /fix can both observe the same open-slot
+// snapshot and each create a sub-issue for the same TODO id. For each TODO
+// id with more than one OPEN sub-issue, keep the lowest-numbered (first
+// created) and flag the rest to close. Inputs may list the same issue twice
+// (native sub-issue list + label search overlap), so dedup by number first.
+// A closed-as-not_planned duplicate must NOT tick the umbrella checkbox, so
+// callers close with reason `not_planned` (not `completed`).
+function duplicateSubIssuesToClose(subIssues) {
+  const byNumber = new Map();
+  for (const issue of subIssues ?? []) {
+    if (issue == null || issue.number == null) continue;
+    if (!byNumber.has(issue.number)) byNumber.set(issue.number, issue);
+  }
+  const openById = new Map();
+  for (const issue of byNumber.values()) {
+    if (!isOpenState(issue)) continue;
+    const todoId = subIssueTodoId(issue);
+    if (!todoId) continue;
+    if (!openById.has(todoId)) openById.set(todoId, []);
+    openById.get(todoId).push(issue);
+  }
+  const toClose = [];
+  for (const group of openById.values()) {
+    if (group.length <= 1) continue;
+    const sorted = group.slice().sort((a, b) => a.number - b.number);
+    const keep = sorted[0];
+    for (const issue of sorted.slice(1)) {
+      toClose.push({
+        number: issue.number,
+        todoId: subIssueTodoId(issue),
+        keepNumber: keep.number,
+      });
+    }
+  }
+  return toClose;
+}
+
 // Tick checkboxes for completed sub-issues. Returns the new body and which
 // TODO ids were ticked (only unchecked items change).
 function applyTicks(body, completedIds) {
@@ -165,6 +203,7 @@ module.exports = {
   applyTicks,
   buildSubIssueBody,
   buildSubIssueTitle,
+  duplicateSubIssuesToClose,
   extractDocExcerpt,
   extractWorkflowName,
   isCompletedState,

@@ -7,6 +7,7 @@ const {
   applyTicks,
   buildSubIssueBody,
   buildSubIssueTitle,
+  duplicateSubIssuesToClose,
   extractDocExcerpt,
   extractWorkflowName,
   isCompletedState,
@@ -112,6 +113,43 @@ test('subIssueTodoId reads the title prefix or the body marker', () => {
     'MON-E10',
   );
   assert.equal(subIssueTodoId({ title: 'plain bug' }), '');
+});
+
+// ---------------------------------------------------------------------------
+// duplicateSubIssuesToClose — self-heal concurrent spin-off races
+// ---------------------------------------------------------------------------
+test('duplicateSubIssuesToClose flags the higher-numbered open duplicate', () => {
+  const dupes = duplicateSubIssuesToClose([
+    { number: 11, title: 'AFX-I01: a', state: 'open' },
+    { number: 12, title: 'AFX-I01: a', state: 'open' },
+    { number: 13, title: 'AFX-I03: b', state: 'open' },
+  ]);
+  assert.deepEqual(dupes, [
+    { number: 12, todoId: 'AFX-I01', keepNumber: 11 },
+  ]);
+});
+
+test('duplicateSubIssuesToClose dedups native+label overlap before grouping', () => {
+  // Same issue appears in both the native sub-issue list and the label search.
+  const dupes = duplicateSubIssuesToClose([
+    { number: 11, title: 'AFX-I01: a', state: 'open' },
+    { number: 11, title: 'AFX-I01: a', state: 'open' },
+  ]);
+  assert.deepEqual(dupes, []);
+});
+
+test('duplicateSubIssuesToClose ignores closed and ID-less issues', () => {
+  const dupes = duplicateSubIssuesToClose([
+    { number: 11, title: 'AFX-I01: a', state: 'open' },
+    { number: 12, title: 'AFX-I01: a', state: 'closed', stateReason: 'completed' },
+    { number: 14, title: 'free-form', state: 'open' },
+  ]);
+  assert.deepEqual(dupes, []);
+});
+
+test('duplicateSubIssuesToClose handles empty input', () => {
+  assert.deepEqual(duplicateSubIssuesToClose([]), []);
+  assert.deepEqual(duplicateSubIssuesToClose(undefined), []);
 });
 
 // ---------------------------------------------------------------------------

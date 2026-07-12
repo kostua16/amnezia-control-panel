@@ -123,7 +123,7 @@ function createSubIssue(umbrella, item, workflowName, docContent, dryRun) {
   ];
   if (dryRun) {
     console.log(`DRY RUN: would create "${title}" [${labels.join(', ')}]`);
-    return null;
+    return { number: null, linked: true };
   }
   const created = ghJson([
     'api',
@@ -134,6 +134,7 @@ function createSubIssue(umbrella, item, workflowName, docContent, dryRun) {
     `body=${body}`,
     ...labels.flatMap((label) => ['-f', `labels[]=${label}`]),
   ]);
+  let linked = true;
   try {
     gh([
       'api',
@@ -142,12 +143,18 @@ function createSubIssue(umbrella, item, workflowName, docContent, dryRun) {
       `sub_issue_id=${created.id}`,
     ]);
   } catch (error) {
+    linked = false;
+    // Keep the warn for log readers, but also surface linkFailures in the
+    // summary JSON so the spin-off comment and future smoke tests can detect
+    // a missing umbrella progress bar instead of relying on this warn.
     console.warn(
       `warning: native sub-issue link failed for #${created.number}: ${error.message}`,
     );
   }
-  console.log(`created #${created.number} "${title}"`);
-  return created.number;
+  console.log(
+    `created #${created.number} "${title}"${linked ? '' : ' (native link failed)'}`,
+  );
+  return { number: created.number, linked };
 }
 
 function reconcileUmbrella(umbrella, subIssues, dryRun) {
@@ -207,7 +214,14 @@ function processUmbrella(umbrella, options) {
   const items = core.parseChecklist(umbrella.body);
   if (items.length === 0) {
     console.log(`#${umbrella.number}: no parseable checklist — skipping`);
-    return { umbrella: umbrella.number, items: 0, created: [], ticked: 0 };
+    return {
+      umbrella: umbrella.number,
+      items: 0,
+      created: [],
+      ticked: 0,
+      linkFailures: 0,
+      duplicatesClosed: 0,
+    };
   }
   const subIssues = listKnownSubIssues(umbrella.number);
   let closed = false;
@@ -215,6 +229,7 @@ function processUmbrella(umbrella, options) {
     closed = reconcileUmbrella(umbrella, subIssues, options.dryRun);
   }
   const created = [];
+  let linkFailures = 0;
   if (options.spinOff && !closed) {
     const plan = core.planSpinOff({
       items: core.parseChecklist(umbrella.body),
@@ -222,20 +237,56 @@ function processUmbrella(umbrella, options) {
       cap: options.cap,
     });
     for (const item of plan.toCreate) {
-      const number = createSubIssue(
+      const result = createSubIssue(
         umbrella,
         item,
         core.extractWorkflowName(umbrella.title),
         options.docContent,
         options.dryRun,
       );
-      created.push({ id: item.id, number });
+      if (result.number !== null) {
+        created.push({ id: item.id, number: result.number, linked: result.linked });
+        if (!result.linked) linkFailures += 1;
+      } else {
+        created.push({ id: item.id, number: null, linked: true });
+      }
     }
     console.log(
-      `#${umbrella.number}: open=${plan.openCount} slots=${plan.slots} created=${created.length} deferred=${plan.deferred.length}`,
+      `#${umbrella.number}: open=${plan.openCount} slots=${plan.slots} created=${created.length} deferred=${plan.deferred.length} linkFailures=${linkFailures}`,
     );
   }
-  return { umbrella: umbrella.number, items: items.length, created, closed };
+  // Post-create re-check: a concurrent run (hourly --all sweep vs this /fix)
+  // can observe the same snapshot and spin off the same TODO id. Close the
+  // duplicate, keeping the first-created sub-issue. Re-list after spin-off so
+  // duplicates created mid-run by the other process are caught this tick.
+  let duplicatesClosed = 0;
+  if (!options.dryRun) {
+    const fresh = listKnownSubIssues(umbrella.number);
+    const dupes = core.duplicateSubIssuesToClose(fresh);
+    for (const dupe of dupes) {
+      gh([
+        'issue',
+        'close',
+        String(dupe.number),
+        '--reason',
+        'not_planned',
+        '--comment',
+        `Closing as a duplicate of #${dupe.keepNumber} — both were spun off concurrently for ${dupe.todoId}. The umbrella checkbox and native sub-issue link are tracked by #${dupe.keepNumber}.`,
+      ]);
+      console.log(
+        `closed duplicate #${dupe.number} for ${dupe.todoId} (keep #${dupe.keepNumber})`,
+      );
+      duplicatesClosed += 1;
+    }
+  }
+  return {
+    umbrella: umbrella.number,
+    items: items.length,
+    created,
+    closed,
+    linkFailures,
+    duplicatesClosed,
+  };
 }
 
 function runCli() {
