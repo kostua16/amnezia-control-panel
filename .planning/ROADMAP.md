@@ -741,6 +741,16 @@ Source: `/gsd:explore` thirteenth-pass review (non-duplicative vs proposals #1-#
 | 36 | **Whitelist entries stored in-memory** — Module-level `Array<>` with literal TODO comment; data lost on every restart. Add `WhitelistEntry` Prisma model, replace in-memory CRUD with DB queries | Critical (Data Loss) | `src/app/api/routing/whitelist/route.ts:14-24` | Proposed |
 | 37 | **TOCTOU race in sync/receive config versioning** — `storePreviousConfig` + `update` as separate ops; concurrent pushes silently discard rollback chain entries. Wrap in `prisma.$transaction()` | High (Consistency) | `src/app/api/sync/receive/route.ts:184-208` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 14 (2026-07-12)
+
+Source: `/gsd:explore` fourteenth-pass review (non-duplicative vs proposals #1-#37 and open PRs). Artifact: `.planning/quick/260712-arch-review-pass14/proposal.md`
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 38 | **ConfigTemplate missing `@unique` on `name`** — `ConfigTemplate` schema has no unique constraint on `name`; `config-import.ts` uses `findFirst` (not `findUnique`), so duplicate template names are silently created and import idempotency is unreliable. Add `@unique` to `ConfigTemplate.name` and switch to `findUnique`. Distinct from #30 (Configuration.name, already fixed). | Medium (Correctness) | `prisma/schema.prisma:147`, `src/lib/config-import.ts:184` | Proposed |
+| 39 | **Config import N+1 sequential queries** — `importConfigurationList` and `importTemplateList` loop each entry doing individual `findUnique` + `create`/`update` (up to 1000 sequential DB round-trips for 500 entries). Pre-load all existing names in one query, then batch-create new entries; individual updates for changed entries only. | Medium (Perf) | `src/lib/config-import.ts:53-133`, `src/lib/config-import.ts:137-236` | Proposed |
+| 40 | **No `loading.tsx` files in App Router** — Zero `loading.tsx` files exist in `src/app/`. Next.js App Router uses these to show Suspense-based skeleton/spinner states during route transitions. Users see blank flashes on every navigation instead of structured loading feedback. Add `loading.tsx` with skeleton UI to each dashboard segment route. | Low-Medium (UX) | `src/app/(dashboard)/**/loading.tsx` (new) | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-10 - Added architectural review pass 13 (proposals #36-#37: in-memory whitelist data loss, sync/receive TOCTOU race)*
+*Last updated: 2026-07-12 - Added architectural review pass 14 (proposals #38-#40: ConfigTemplate unique constraint, config import N+1, missing loading.tsx)*
