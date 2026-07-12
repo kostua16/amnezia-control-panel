@@ -169,7 +169,7 @@ jobs:
           node .github/workflows/scripts/detect-tracking-issue.cjs >> "$GITHUB_OUTPUT"
 
       - name: Close duplicate issues
-        if: always() && steps.tracking-check.outputs.is_tracking != 'true'
+        if: always() && steps.tracking-check.outcome == 'success' && steps.tracking-check.outputs.is_tracking != 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ steps.resolve.outputs.number }}
