@@ -156,8 +156,14 @@ function collectWorkingTreeFilePatches(baseRef) {
     }));
 
     return sortedFilePatches(files);
-  } catch {
+  } catch (err) {
     // Base ref unavailable or git unusable — fall back to committed-state diffs.
+    // Surface the failure so a no-op regression (inert dedup/overlap detection
+    // across every workflow sharing this script) stays observable in workflow
+    // output instead of silently short-circuiting to "No local diff detected."
+    console.warn(
+      `collectWorkingTreeFilePatches: staged-working-tree diff against origin/${baseRef} failed (${err && err.message ? err.message : err}); falling back to committed-state diffs.`,
+    );
     return [];
   }
 }

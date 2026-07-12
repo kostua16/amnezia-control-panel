@@ -148,6 +148,14 @@ function makeBaseRepo() {
 
 test('collectLocalFilePatches sees uncommitted modifications in the working tree', () => {
   const root = makeBaseRepo();
+  // Commit the file at the base ref before overwriting it, so the working-tree
+  // edit is a tracked-file modification (origin/main holds v1, working tree
+  // holds v2) — the more common real-world Claude edit, and the distinct branch
+  // the untracked-new-file test below does not cover.
+  writeFile(root, 'src/lib/foo.ts', 'export const x = 1;\n');
+  git(root, ['add', 'src/lib/foo.ts']);
+  git(root, ['commit', '--quiet', '-m', 'foo v1']);
+  git(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
   writeFile(root, 'src/lib/foo.ts', 'export const x = 2;\n');
 
   const files = withCwd(root, () => collectLocalFilePatches('main'));
@@ -155,6 +163,7 @@ test('collectLocalFilePatches sees uncommitted modifications in the working tree
   assert.equal(files.length, 1);
   assert.equal(files[0].path, 'src/lib/foo.ts');
   assert.match(files[0].patch, /@@/);
+  assert.match(files[0].patch, /-export const x = 1/);
   assert.match(files[0].patch, /\+export const x = 2/);
 });
 
