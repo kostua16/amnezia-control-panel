@@ -29,6 +29,8 @@ permissions:
   pull-requests: write
   actions: write
   issues: write
+  checks: read
+  statuses: write
 
 concurrency:
   group: fix-branch-${{ github.event.workflow_run.head_branch }}
