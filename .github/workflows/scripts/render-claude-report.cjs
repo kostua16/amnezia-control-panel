@@ -244,6 +244,7 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
     'errorMessages',
     'lastOutput',
     'failedToolSamples',
+    'changedFilesList',
     'rejectedToolsList',
   ];
 
