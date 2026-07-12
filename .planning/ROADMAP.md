@@ -159,6 +159,7 @@ Plans:
 <!-- PR-IMPROVE:660 --> - PR #660: fix(review): collect Kilo review thread feedback -- pr660.1 x1, pr660.2 x1, pr660.3 x1. Quick artifact: `.planning/quick/260710-pr660-workflow-improve/260710-pr660-PLAN.md`.
 <!-- PR-IMPROVE:683 --> - PR #683: fix: resolve #679 - [todo-backlog] audit-auto-prs: optimize/audit review backlog (APR) -- pr683.2 x3. Quick artifact: `.planning/quick/260712-pr683-workflow-improve/260712-pr683-PLAN.md`.
 <!-- PR-IMPROVE:690 --> - PR #690: fix(workflows): never auto-close umbrella/tracking issues from automation -- pr690.1 x1, pr690.2 x1. Quick artifact: `.planning/quick/260712-pr690-workflow-improve/260712-pr690-PLAN.md`.
+<!-- PR-IMPROVE:692 --> - PR #692: fix: partial #680 - [todo-backlog] security-audit-weekly: optimize/audit review backlog (SEC) -- pr692.1 x1, pr692.2 x1. Quick artifact: `.planning/quick/260712-pr692-workflow-improve/260712-pr692-PLAN.md`.
 <!-- PR-IMPROVE:715 --> - PR #715: fix(workflows): prevent PR flow wedging at flow/checks-pending -- pr715.1 x1, pr715.2 x1, pr715.3 x1. Quick artifact: `.planning/quick/260712-pr715-workflow-improve/260712-pr715-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
