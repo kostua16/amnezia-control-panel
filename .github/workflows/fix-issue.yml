@@ -92,7 +92,7 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
           policy-file: .github/workflows/policy.json
-          names: auto-fix-approved,auto-fix,fixed,canceled,umbrella-sub-issue,high,medium,low
+          names: auto-fix-approved,auto-fix,fixed,canceled,umbrella-sub-issue,high,medium,low,deferred
 
       - name: Extract fix message
         id: extract
@@ -211,21 +211,51 @@ jobs:
         if: steps.claude_run.outputs.claude_changed_files_list != ''
         run: git checkout HEAD -- .github/actions/
 
+      - name: Detect duplicate or overlapping fix PR
+        id: duplicate
+        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/find-duplicate-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --title-prefix "fix: resolve #" \
+            --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --detect-overlap \
+            --overlap-label auto-fix \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Log duplicate/overlap result
+        if: steps.duplicate.outputs.duplicate_found == 'true' || steps.duplicate.outputs.overlap_found == 'true'
+        run: |
+          if [ "${{ steps.duplicate.outputs.duplicate_found }}" = 'true' ]; then
+            echo "Skipping duplicate fix PR."
+            echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
+            echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+          fi
+          if [ "${{ steps.duplicate.outputs.overlap_found }}" = 'true' ]; then
+            echo "Deferring fix PR; another automation PR already edits the same file(s)."
+            echo "Overlapping PR: #${{ steps.duplicate.outputs.overlap_pr_number }} ${{ steps.duplicate.outputs.overlap_pr_url }}"
+            echo "Reason: ${{ steps.duplicate.outputs.overlap_reason }}"
+          fi
+
       - name: Validate (CI-matching gate)
         id: gate
-        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
         uses: ./.github/actions/validate-pr-gate
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.gate.outputs.gate_passed == 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.gate.outputs.gate_passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix: resolve #${{ github.event.issue.number }}'
           github-token: ${{ secrets.GH_PAT }}
 
       - name: Build fix PR body
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.push.outputs.pushed == 'true'
         id: pr-body
         uses: ./.github/actions/build-automation-pr-body
         with:
@@ -246,7 +276,7 @@ jobs:
           review-notes: 'Created from a maintainer-approved fix trigger. Review the diff against the issue description and conversation before merging.'
 
       - name: Create fix PR
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.push.outputs.pushed == 'true'
         id: create_pr
         uses: ./.github/actions/upsert-pull-request
         env:
@@ -264,7 +294,7 @@ jobs:
           require-rich-body: 'true'
 
       - name: Label issue as fixed
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.push.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ github.event.issue.number }}
@@ -276,15 +306,21 @@ jobs:
       # Tracking issues never reach this step's `canceled` path — the
       # spin-off step above handles them and the agent run is skipped.
       # `canceled` on a tracking issue would let the catch-up sweep close it.
-      - name: Comment on issue if no changes
+      - name: Comment on issue if no changes or deferred
         if: steps.push.outputs.pushed != 'true' && steps.tracking.outputs.is_tracking != 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ github.event.issue.number }}
         run: |
-          gh issue edit "$ISSUE_NUM" --add-label "canceled"
-          gh issue comment "$ISSUE_NUM" \
-            --body "The auto-fix workflow ran but could not produce code changes. Manual investigation may be needed."
+          if [ "${{ steps.duplicate.outputs.duplicate_found }}" = 'true' ] || [ "${{ steps.duplicate.outputs.overlap_found }}" = 'true' ]; then
+            REASON="An existing automation PR (#${{ steps.duplicate.outputs.duplicate_pr_number || steps.duplicate.outputs.overlap_pr_number }}) already addresses the same file(s). This fix was deferred to avoid conflicting edits."
+            LABEL="deferred"
+          else
+            REASON="The auto-fix workflow ran but could not produce code changes. Manual investigation may be needed."
+            LABEL="canceled"
+          fi
+          gh issue edit "$ISSUE_NUM" --add-label "$LABEL"
+          gh issue comment "$ISSUE_NUM" --body "${REASON}"
 
   report-failure:
     needs: [fix]

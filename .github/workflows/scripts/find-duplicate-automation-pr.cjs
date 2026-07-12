@@ -122,7 +122,58 @@ function extractPatchFromGitDiff(diffText) {
   return lines.slice(firstHunk).join('\n').trim();
 }
 
+function collectWorkingTreeFilePatches(baseRef) {
+  // Automation workflows (fix-issue, audit-auto-prs, …) run this step while
+  // Claude's edits are still uncommitted in the working tree, and
+  // actions/checkout uses fetch-depth: 1, so HEAD == origin/<base-ref>. Diffing
+  // committed state only (origin/<base-ref>...HEAD, HEAD~1..HEAD) therefore sees
+  // nothing and the duplicate/overlap check silently short-circuits. Stage the
+  // working tree and diff the index against the base ref so uncommitted edits —
+  // including new untracked source files — become visible. gitignored runtime
+  // artifacts (.claude-pr/, node_modules, …) are not staged, so this stays
+  // scoped to real source changes; commit-and-push re-runs `git add -A`
+  // regardless, so staging here has no net side effect.
+  const base = `origin/${baseRef}`;
+  try {
+    git(['add', '-A']);
+    const names = git([
+      'diff',
+      '--cached',
+      '--name-only',
+      '--diff-filter=ACMR',
+      base,
+    ])
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (names.length === 0) return [];
+
+    const files = names.map((path) => ({
+      path,
+      patch: extractPatchFromGitDiff(
+        git(['diff', '--cached', '--no-color', base, '--', path]),
+      ),
+    }));
+
+    return sortedFilePatches(files);
+  } catch (err) {
+    // Base ref unavailable or git unusable — fall back to committed-state diffs.
+    // Surface the failure so a no-op regression (inert dedup/overlap detection
+    // across every workflow sharing this script) stays observable in workflow
+    // output instead of silently short-circuiting to "No local diff detected."
+    console.warn(
+      `collectWorkingTreeFilePatches: staged-working-tree diff against origin/${baseRef} failed (${err && err.message ? err.message : err}); falling back to committed-state diffs.`,
+    );
+    return [];
+  }
+}
+
 function collectLocalFilePatches(baseRef) {
+  const workingTreeFiles = collectWorkingTreeFilePatches(baseRef);
+  if (workingTreeFiles.length > 0) return workingTreeFiles;
+
+  // Fallback for contexts where the changes are already committed and the
+  // working tree is clean (e.g. a local dev run after committing).
   const diffTargets = [
     `origin/${baseRef}...HEAD`,
     `${baseRef}...HEAD`,
@@ -403,6 +454,7 @@ function run() {
 
 module.exports = {
   collectLocalFilePatches,
+  collectWorkingTreeFilePatches,
   createPullRequestFileGetter,
   extractPatchFromGitDiff,
   findDuplicatePullRequest,
