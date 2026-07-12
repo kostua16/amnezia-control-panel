@@ -270,16 +270,10 @@ jobs:
             const branch = process.env.BRANCH;
             // Umbrella/tracking issues (e.g. rolling [claude-health] trackers)
             // must be referenced without closing keywords — merging a fix PR
-            // must never auto-close them. Fallback keeps legacy behavior when
-            // the checked-out branch predates the lib.
-            let isTrackingIssue = () => false;
-            try {
-              ({ isTrackingIssue } = require(
-                `${process.env.GITHUB_WORKSPACE}/.github/workflows/scripts/lib/tracking-issue.cjs`
-              ));
-            } catch (e) {
-              core.warning(`tracking-issue lib unavailable: ${e.message}`);
-            }
+            // must never auto-close them.
+            const { isTrackingIssue } = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/workflows/scripts/lib/tracking-issue.cjs`
+            );
             const q = [
               `repo:${context.repo.owner}/${context.repo.repo}`,
               'is:issue', 'is:open',

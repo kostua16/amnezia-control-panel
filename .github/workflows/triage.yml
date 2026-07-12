@@ -155,8 +155,21 @@ jobs:
             echo "No triage summary comment found — skipping triaged label"
           fi
 
-      - name: Close duplicate issues
+      - name: Detect umbrella/tracking issue
         if: always()
+        id: tracking-check
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          ISSUE_NUM: ${{ steps.resolve.outputs.number }}
+        run: |
+          ISSUE_DATA=$(gh issue view "$ISSUE_NUM" --json title,body,labels)
+          export ISSUE_TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
+          export ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body')
+          export ISSUE_LABELS=$(echo "$ISSUE_DATA" | jq -r '[.labels[].name] | join(",")')
+          node .github/workflows/scripts/detect-tracking-issue.cjs >> "$GITHUB_OUTPUT"
+
+      - name: Close duplicate issues
+        if: always() && steps.tracking-check.outputs.is_tracking != 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ steps.resolve.outputs.number }}
