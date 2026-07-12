@@ -26,6 +26,13 @@ const TRACKING_BODY_PATTERNS = [
   /\brolling issue\b/i,
 ];
 
+// A spun-off umbrella sub-issue carries this label. It is, by definition, NOT
+// a tracking issue — even though its body references the umbrella with the
+// phrase "umbrella tracking issue". Without this exclusion, the body pattern
+// below misclassifies every sub-issue as a tracker, so the catch-up sweep and
+// the project-manager queue skip it and it never reaches /fix.
+const SUB_ISSUE_LABEL = 'umbrella-sub-issue';
+
 function normalizeLabels(labels) {
   if (!labels) return [];
   const list = Array.isArray(labels)
@@ -42,6 +49,13 @@ function normalizeLabels(labels) {
 }
 
 function isTrackingIssue(issue = {}) {
+  const labels = normalizeLabels(issue.labels);
+
+  // Short-circuit: an explicit umbrella-sub-issue label marks a spun-off
+  // sub-issue, which must never be treated as a tracker. Check this before the
+  // title/label/body rules so the body fallback cannot override it.
+  if (labels.includes(SUB_ISSUE_LABEL)) return false;
+
   const title = String(issue.title || '')
     .trim()
     .toLowerCase();
@@ -49,7 +63,6 @@ function isTrackingIssue(issue = {}) {
     return true;
   }
 
-  const labels = normalizeLabels(issue.labels);
   if (labels.some((label) => TRACKING_LABELS.has(label))) return true;
 
   const body = String(issue.body || '');

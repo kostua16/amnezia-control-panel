@@ -5,6 +5,7 @@ Review of the six scheduled optimize/tune/audit automation workflows, producing 
 ## How to use this backlog
 
 - **Rule (see CLAUDE.md):** before implementing any TODO, open (or claim) a GitHub issue for it, spun off from the workflow's umbrella tracking issue, and reference the TODO ID in the issue and PR.
+- **Automated spin-off:** the hourly issue-catch-up run (and `/fix` on an umbrella) executes `umbrella-sub-issues.cjs`, which creates dedicated sub-issues for the top-priority unchecked items (max 3 open per umbrella, native sub-issue links, `umbrella-sub-issue` label), ticks the umbrella checklist when a sub-issue closes as completed, and closes the umbrella once every item is ticked.
 - IDs are **stable** — safe to reference from issues, PRs, and commits. Do not renumber.
 - **Type:** `I` = improvement (fix/harden existing behavior), `E` = extension (new capability).
 - **Priority:** P0 = broken now, P1 = high value / real failure evidence, P2 = worthwhile hardening, P3 = polish.
