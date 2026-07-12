@@ -47,9 +47,10 @@ jobs:
     runs-on: [self-hosted, big]
     # Includes checkout + setup-environment (deps, prisma, gsd, rtk) before the
     # audit agent starts; the agent needs the bulk of this budget to finish a
-    # full audit/fix/verify pass. Prior 10- and 20-minute caps each cancelled
-    # recent full passes mid-work, so allow more room for the 70-turn budget.
-    timeout-minutes: 30
+    # full audit/fix/verify pass. Raised from 30 to 45 min — codebase growth +
+    # 9 plugins (2 LSP servers) made 30 min consistently insufficient (29/30
+    # runs cancelled at timeout since mid-June). See AFX-I01 (#678).
+    timeout-minutes: 45
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
       claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
@@ -320,7 +321,7 @@ jobs:
 
   report-failure:
     needs: [audit-fix]
-    if: failure()
+    if: always() && (needs.audit-fix.result == 'failure' || needs.audit-fix.result == 'cancelled')
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:
