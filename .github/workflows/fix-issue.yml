@@ -131,9 +131,8 @@ jobs:
           else
             BODY="Umbrella issue — spun off $CREATED new sub-issue(s) for the top-priority unchecked items (max 3 open at a time). Automation drives them through triage → fix; checkboxes here are ticked automatically as sub-issues complete, and the next items spin off as slots free up."
             if [ "$LINK_FAILS" != "0" ]; then
-              BODY="$BODY
-
-⚠️ $LINK_FAILS sub-issue(s) could not be natively linked to this umbrella (the GitHub sub-issues endpoint was unavailable or rejected the link). The sub-issue(s) still flow through triage → fix, but the progress bar on this umbrella may not update until a later run re-links them."
+              WARN="⚠️ $LINK_FAILS sub-issue(s) could not be natively linked to this umbrella (the GitHub sub-issues endpoint was unavailable or rejected the link). The sub-issue(s) still flow through triage → fix, but the progress bar on this umbrella may not update until a later run re-links them."
+              BODY=$(printf '%s\n\n%s' "$BODY" "$WARN")
             fi
             gh issue comment "$ISSUE_NUM" --body "$BODY"
           fi
