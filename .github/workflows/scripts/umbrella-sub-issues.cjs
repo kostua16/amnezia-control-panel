@@ -87,7 +87,9 @@ function listKnownSubIssues(umbrellaNumber) {
       `repos/${repoSlug()}/issues/${umbrellaNumber}/sub_issues`,
       '--paginate',
     ]);
-    results.push(...native);
+    // Tag native-list entries so duplicate reconciliation can prefer a
+    // natively-linked keeper (keeps the umbrella progress bar accurate).
+    results.push(...native.map((issue) => ({ ...issue, nativeLinked: true })));
   } catch {
     // Sub-issue API unavailable — fall through to the label listing.
   }

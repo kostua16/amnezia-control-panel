@@ -99,6 +99,33 @@ test('empty issue is not tracking', () => {
   assert.equal(isTrackingIssue({}), false);
 });
 
+// Regression: a spun-off umbrella sub-issue carries the umbrella-sub-issue
+// label. Its body references the umbrella with "umbrella tracking issue", which
+// would otherwise trip the body pattern and misclassify the sub-issue as a
+// tracker — blocking it from ever reaching /fix in the catch-up sweep and the
+// project-manager queue.
+test('umbrella sub-issue is never tracking despite the body marker', () => {
+  assert.equal(
+    isTrackingIssue({
+      title: 'AFX-I01: Fix the chronic 30-min timeout (audit-fix)',
+      labels: ['auto-fix', 'umbrella-sub-issue', 'high'],
+      body: 'Part of #678 (umbrella tracking issue — stays open; this sub-issue tracks exactly one backlog item).',
+    }),
+    false,
+  );
+});
+
+test('umbrella-sub-issue label wins over a tracking title prefix collision', () => {
+  assert.equal(
+    isTrackingIssue({
+      title: '[todo-backlog] leak',
+      labels: ['umbrella-sub-issue'],
+      body: 'Umbrella tracking issue body.',
+    }),
+    false,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // normalizeLabels
 // ---------------------------------------------------------------------------

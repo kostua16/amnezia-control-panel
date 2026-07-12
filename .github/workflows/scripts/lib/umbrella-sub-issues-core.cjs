@@ -123,7 +123,16 @@ function planSpinOff({
     const todoId = subIssueTodoId(issue);
     if (todoId && !byId.has(todoId)) byId.set(todoId, issue);
   }
-  const openCount = [...byId.values()].filter(isOpenState).length;
+  // Count distinct TODO ids that have ANY open sub-issue, independent of input
+  // ordering. byId keeps only the first issue per id, so a closed duplicate
+  // appearing before the open sub-issue would otherwise under-count open slots
+  // and briefly let the cap be exceeded by one.
+  const openIds = new Set();
+  for (const issue of existingSubIssues) {
+    const todoId = subIssueTodoId(issue);
+    if (todoId && isOpenState(issue)) openIds.add(todoId);
+  }
+  const openCount = openIds.size;
   const slots = Math.max(0, cap - openCount);
 
   const candidates = items
@@ -141,8 +150,11 @@ function planSpinOff({
 // Self-heal duplicate sub-issues left by a concurrent spin-off: the hourly
 // --all sweep and an on-demand /fix can both observe the same open-slot
 // snapshot and each create a sub-issue for the same TODO id. For each TODO
-// id with more than one OPEN sub-issue, keep the lowest-numbered (first
-// created) and flag the rest to close. Inputs may list the same issue twice
+// id with more than one OPEN sub-issue, keep one and flag the rest to close.
+// Keeper preference: a natively-linked sub-issue (issue.nativeLinked === true,
+// tagged by the CLI wrapper from the GitHub sub_issues list) wins so the
+// umbrella's native progress bar stays accurate; ties break to the
+// lowest-numbered (first created). Inputs may list the same issue twice
 // (native sub-issue list + label search overlap), so dedup by number first.
 // A closed-as-not_planned duplicate must NOT tick the umbrella checkbox, so
 // callers close with reason `not_planned` (not `completed`).
@@ -163,7 +175,14 @@ function duplicateSubIssuesToClose(subIssues) {
   const toClose = [];
   for (const group of openById.values()) {
     if (group.length <= 1) continue;
-    const sorted = group.slice().sort((a, b) => a.number - b.number);
+    const sorted = group.slice().sort((a, b) => {
+      // Prefer a natively-linked keeper so the GitHub-native umbrella progress
+      // bar keeps tracking the surviving child; otherwise lowest issue number.
+      if (!!a.nativeLinked !== !!b.nativeLinked) {
+        return a.nativeLinked ? -1 : 1;
+      }
+      return a.number - b.number;
+    });
     const keep = sorted[0];
     for (const issue of sorted.slice(1)) {
       toClose.push({

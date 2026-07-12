@@ -106,6 +106,23 @@ test('planSpinOff creates nothing when the cap is filled', () => {
   );
 });
 
+test('planSpinOff counts an open sub-issue even when a closed duplicate precedes it', () => {
+  // listKnownSubIssues returns newest-first; a closed-as-not_planned duplicate
+  // for AFX-I01 can precede the lower-numbered open sub-issue in the list.
+  // openCount must still reflect the open one so the cap is not exceeded.
+  const existing = [
+    { number: 12, title: 'AFX-I01: a', state: 'closed', stateReason: 'not_planned' },
+    { number: 11, title: 'AFX-I01: a', state: 'open' },
+  ];
+  const plan = planSpinOff({
+    items: parseChecklist(UMBRELLA_BODY),
+    existingSubIssues: existing,
+    cap: 3,
+  });
+  assert.equal(plan.openCount, 1);
+  assert.equal(plan.slots, 2);
+});
+
 test('subIssueTodoId reads the title prefix or the body marker', () => {
   assert.equal(subIssueTodoId({ title: 'AFX-I01: something' }), 'AFX-I01');
   assert.equal(
@@ -136,6 +153,19 @@ test('duplicateSubIssuesToClose dedups native+label overlap before grouping', ()
     { number: 11, title: 'AFX-I01: a', state: 'open' },
   ]);
   assert.deepEqual(dupes, []);
+});
+
+test('duplicateSubIssuesToClose keeps the natively-linked child over the lower-numbered unlinked one', () => {
+  // #11's native link failed (label-only), #12 linked natively. The lower
+  // number would normally win, but the natively-linked child must survive so
+  // the umbrella's GitHub-native progress bar keeps tracking it.
+  const dupes = duplicateSubIssuesToClose([
+    { number: 11, title: 'AFX-I01: a', state: 'open' },
+    { number: 12, title: 'AFX-I01: a', state: 'open', nativeLinked: true },
+  ]);
+  assert.deepEqual(dupes, [
+    { number: 11, todoId: 'AFX-I01', keepNumber: 12 },
+  ]);
 });
 
 test('duplicateSubIssuesToClose ignores closed and ID-less issues', () => {
