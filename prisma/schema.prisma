@@ -146,7 +146,7 @@ model Service {
 
 model ConfigTemplate {
   id          Int      @id @default(autoincrement())
-  name        String
+  name        String   @unique
   serviceType ServiceType?
   protocol    String
   content     Json
