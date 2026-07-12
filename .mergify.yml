@@ -8,7 +8,7 @@ queue_rules:
       - check-success = CI / Lint (pull_request)
       - check-success = CI / Security Audit (pull_request)
     merge_conditions:
-      - draft = false
+      - -draft
 merge_queue:
   max_parallel_checks: 1
 scopes:
