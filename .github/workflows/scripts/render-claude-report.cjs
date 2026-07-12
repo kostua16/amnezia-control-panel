@@ -216,23 +216,43 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
   // so turn/cost/tool metrics are usually blank. Surface a clear marker
   // instead of a table full of N/A; if metrics were recovered anyway (e.g.
   // parsed from logs), still render them under the notice.
+  // Raw metric fields rendered in the table below. hasRealMetrics checks this
+  // same set so a cancelled run whose per-tool tallies were recovered from
+  // logs (without the SDK summary line) is still rendered under the notice
+  // instead of being hidden by the marker-only early return. `outcome` is the
+  // cancelled trigger itself, so it is excluded.
+  const RENDERED_METRIC_KEYS = [
+    'attempt',
+    'modelUsed',
+    'numTurns',
+    'turnsBudgetPct',
+    'durationMs',
+    'durationSec',
+    'totalCostUsd',
+    'costPerTurn',
+    'numToolCalls',
+    'toolBreakdown',
+    'readFilesCount',
+    'editFilesCount',
+    'numFailedToolCalls',
+    'changedFilesCount',
+    'numRejectedToolCalls',
+    'denialRate',
+    'isError',
+    'failureReason',
+    'actionError',
+    'errorMessages',
+    'lastOutput',
+    'failedToolSamples',
+  ];
+
   let cancelledNotice = '';
   if (metrics.outcome === 'cancelled') {
     const CANCELLED_MARKER =
       '_Cancelled before metrics were captured — the run was likely stopped by its `timeout-minutes` cap, so Claude turn/cost/tool metrics are unavailable._';
-    const hasRealMetrics = [
-      metrics.numTurns,
-      metrics.modelUsed,
-      metrics.durationMs,
-      metrics.durationSec,
-      metrics.totalCostUsd,
-      metrics.numToolCalls,
-      metrics.failureReason,
-      metrics.actionError,
-      metrics.errorMessages,
-      metrics.lastOutput,
-      metrics.failedToolSamples,
-    ].some((value) => !isBlankMetricValue(value));
+    const hasRealMetrics = RENDERED_METRIC_KEYS.some(
+      (key) => !isBlankMetricValue(metrics[key]),
+    );
     if (!hasRealMetrics) {
       return `${['', heading, '', CANCELLED_MARKER].join('\n')}\n`;
     }
