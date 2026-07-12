@@ -342,21 +342,26 @@ describe('workflow trigger policy', () => {
     ]);
   });
 
-  // §5 cancellation cascade — locks the pr-flow prt/wake design (PR #434).
+  // §5 cancellation cascade — locks the pr-flow prt/wake/noise design.
   it('isolates prt and wake concurrency in pr-flow (cancellation cascade)', () => {
     const workflow = readWorkflowText('pr-flow.yml');
-    // prt (pull_request_target) and wakes run in separate groups, so a wake can
-    // never cancel an in-flight prt orchestrate (and vice versa).
+    // prt (pull_request_target), reactive wakes, and github-actions[bot]
+    // comment noise run in separate groups: a wake can never cancel an
+    // in-flight prt orchestrate, and a no-op bot comment can never cancel or
+    // displace a queued real wake (concurrency applies at run creation,
+    // before job `if:` gates evaluate).
     assert.match(
       workflow,
-      /group: pr-flow-\$\{\{ \(github\.event_name == 'pull_request_target' && 'prt'\) \|\| 'wake' \}/,
+      /group: pr-flow-\$\{\{ \(github\.event_name == 'pull_request_target' && 'prt'\) \|\| \(github\.event_name == 'issue_comment' && github\.event\.comment\.user\.login == 'github-actions\[bot\]' && 'noise'\) \|\| 'wake' \}/,
     );
-    // prt opened/synchronize/ready_for_review DO cancel an older prt (a new commit
-    // restarts orchestration); prt labeled/unlabeled do NOT (anti-thrash, since
-    // orchestrate itself adds flow/* labels); wakes always collapse to newest.
+    // Only prt opened/synchronize/ready_for_review cancel an older prt (a new
+    // commit restarts orchestration); prt labeled/unlabeled do NOT
+    // (anti-thrash, since orchestrate itself adds flow/* labels), and wakes
+    // never cancel an in-flight run — an in-progress wake always finishes
+    // while queued wakes collapse newest-wins via pending-run replacement.
     assert.match(
       workflow,
-      /cancel-in-progress: \$\{\{ github\.event_name != 'pull_request_target' \|\| \(github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\) \}\}/,
+      /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request_target' && github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled' \}\}/,
     );
   });
 

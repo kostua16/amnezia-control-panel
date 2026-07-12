@@ -205,19 +205,21 @@ flowchart TD
 
 ---
 
-## §5 Cancellation cascade — `pr-flow.yml` prt/wake concurrency
+## §5 Cancellation cascade — `pr-flow.yml` prt/wake/noise concurrency
 
-Decision basis: `pr-flow.yml:48-59` (prt vs wake **isolated** groups; `cancel-in-progress` **true** except prt `labeled`/`unlabeled`, which do not cancel — anti-thrash), `workflow-triggers.test.ts` guardrails, `documentation.md:196-260`.
+Decision basis: `pr-flow.yml` concurrency block (prt vs wake vs noise **isolated** groups; `cancel-in-progress` **true only for prt state changes** — prt `labeled`/`unlabeled` and all reactive wakes never cancel an in-flight run), `workflow-triggers.test.ts` guardrails, `documentation.md` concurrency section. GitHub applies concurrency cancellation at run creation, before job `if:` gates run, so a run that will end up all-skipped still cancels/displaces group members — that is why no-op bot comments get their own `noise` group instead of relying on the classify gate.
 
 ```mermaid
 flowchart TD
-  W[wake: workflow_run/comment/dispatch] --> WG[wake group: collapse]
+  W[wake: workflow_run / human or kilo comment / dispatch] --> WG[wake group: queue]
+  N[github-actions bot comment] --> NG[noise group: isolated, always no-op]
   PT[prt: pull_request_target] --> PG[prt group]
   PG -->|opened/sync/ready_for_review| CX[cancel older prt: restart]
   PG -->|labeled/unlabeled| NC[no cancel: anti-thrash]
   WG -.->|cannot cancel prt| PG
-  WG -->|newer wake| WL[collapse to newest]
-  CX --> ONE[exactly one orchestrate runs]
+  NG -.->|cannot cancel wake or prt| WG
+  WG -->|in-flight finishes; queued collapse to newest| WL[queue, newest pending wins]
+  CX --> ONE[exactly one orchestrate per group runs]
   NC --> ONE
   WL --> ONE
 ```
@@ -227,12 +229,14 @@ flowchart TD
 | C1  | prt `opened`/`synchronize`/`ready_for_review`/`reopened`                              | `cancel-in-progress=true` → newer prt cancels older (restart on new commit)                                                                                                                                                                                         | char                                |
 | C2  | prt vs wake                                                                           | isolated groups (`prt-<PR#>` vs `wake-<PR#>`) → a wake can never cancel an in-flight prt                                                                                                                                                                            | char                                |
 | C3  | prt `labeled`/`unlabeled`                                                             | `cancel-in-progress=false` → does NOT cancel in-flight prt (anti-thrash: orchestrate itself adds `flow/*` labels)                                                                                                                                                   | char                                |
-| C4  | wake (workflow_run / comment / dispatch)                                              | `cancel-in-progress=true` → collapses to newest wake                                                                                                                                                                                                                | char                                |
+| C4  | wake (workflow_run / human or kilo comment / dispatch)                                | `cancel-in-progress=false` → an in-flight wake (even one queued for a runner) always finishes; queued wakes collapse newest-wins via GitHub pending-run replacement                                                                                                 | char                                |
 | C5  | label loop (orchestrate adds `flow/*` → `labeled`)                                    | C3 ⇒ no cancel ⇒ no flood (the cascade fix)                                                                                                                                                                                                                         | char                                |
 | C6  | prt terminal conclusion                                                               | must never be wrongly `cancelled` (green/skipped) — consequence of C2+C3                                                                                                                                                                                            | **spec** (PR #434 regression guard) |
-| C7  | wake source parametrized (workflow_run / comment / dispatch)                          | all collapse via C4                                                                                                                                                                                                                                                 | char                                |
+| C7  | wake source parametrized (workflow_run / comment / dispatch)                          | all queue via C4                                                                                                                                                                                                                                                    | char                                |
 | C8  | worker-completion wake (e.g. Code Review `workflow_run` completed)                    | re-orchestrate → dispatch next worker                                                                                                                                                                                                                               | char                                |
 | C9  | expired `pr-flow/kilo-review` pending status                                          | `pr-flow-watchdog` dispatches PR Flow so the 30-minute Kilo skip is applied                                                                                                                                                                                         | char                                |
+| C12 | `issue_comment` authored by `github-actions[bot]` (sticky-comment upserts, PM state)  | routed to isolated `pr-flow-noise-<PR#>` group + filtered by classify `if:` → zero-runner skipped run that can never cancel or displace a real wake (the PR #695 stuck-at-`flow/checks-pending` fix)                                                                | **spec** (stuck-flow regression)    |
+| C13 | `pr-flow/ready` commit status pending for ≥30 min                                     | `pr-flow-watchdog` selects the PR (`stale-ready-pending`) and re-dispatches PR Flow — rescues a PR whose reactive wake was lost after checks completed; idempotent when checks are genuinely still running                                                          | char (`watch-pr-flow.test.cjs`)     |
 | C10 | `auto-cover-review` scan mode (schedule / unresolved `workflow_run` / empty dispatch) | all scan-mode runs share one `auto-cover-review-scan` group (`cancel-in-progress=true`) so overlapping scans never both pass the eventually-consistent active-run check and dispatch duplicate `fix-review` runs (targeted single-PR paths still get per-PR groups) | char                                |
 | C11 | per-PR fetch failure during a scan                                                    | `fetch-auto-cover-context` isolates the failed PR (skipped + recorded in manifest; not handed to the dispatch loop) so the rest of the scan completes; only the shared `fix-review` runs fetch failing or EVERY PR failing aborts the job (retry next cycle)        | char                                |
 

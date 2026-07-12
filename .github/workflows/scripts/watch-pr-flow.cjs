@@ -9,6 +9,7 @@ const STALE_DRAFT_LABEL = 'flow/draft';
 const READY_STATUS_CONTEXT = 'pr-flow/ready';
 const KILO_STATUS_CONTEXT = 'pr-flow/kilo-review';
 const DEFAULT_KILO_TIMEOUT_MINUTES = 30;
+const DEFAULT_READY_PENDING_TIMEOUT_MINUTES = 30;
 
 function parseArgs(argv) {
   const args = {};
@@ -63,6 +64,21 @@ function statusTime(status = {}) {
   return date && !Number.isNaN(date.getTime()) ? date : null;
 }
 
+function hasExpiredPendingStatus(
+  statuses,
+  context,
+  { now = new Date().toISOString(), timeoutMinutes } = {},
+) {
+  const current = new Date(now);
+  return normalizeStatuses(statuses).some((status) => {
+    if (status.context !== context) return false;
+    if (String(status.state ?? '').toLowerCase() !== 'pending') return false;
+    const created = statusTime(status);
+    if (!created || Number.isNaN(current.getTime())) return false;
+    return current - created >= Number(timeoutMinutes) * 60000;
+  });
+}
+
 function hasExpiredKiloPendingStatus(
   statuses,
   {
@@ -70,13 +86,27 @@ function hasExpiredKiloPendingStatus(
     timeoutMinutes = DEFAULT_KILO_TIMEOUT_MINUTES,
   } = {},
 ) {
-  const current = new Date(now);
-  return normalizeStatuses(statuses).some((status) => {
-    if (status.context !== KILO_STATUS_CONTEXT) return false;
-    if (String(status.state ?? '').toLowerCase() !== 'pending') return false;
-    const created = statusTime(status);
-    if (!created || Number.isNaN(current.getTime())) return false;
-    return current - created >= Number(timeoutMinutes) * 60000;
+  return hasExpiredPendingStatus(statuses, KILO_STATUS_CONTEXT, {
+    now,
+    timeoutMinutes,
+  });
+}
+
+// A `pr-flow/ready` status stuck in `pending` means the orchestrator's last run
+// decided "waiting" and every later reactive wake was lost (e.g. cancelled or
+// collapsed before it ran). Re-dispatching is idempotent: if checks are still
+// genuinely running, the orchestrator re-decides pending and refreshes the
+// status timestamp, restarting this clock.
+function hasExpiredReadyPendingStatus(
+  statuses,
+  {
+    now = new Date().toISOString(),
+    timeoutMinutes = DEFAULT_READY_PENDING_TIMEOUT_MINUTES,
+  } = {},
+) {
+  return hasExpiredPendingStatus(statuses, READY_STATUS_CONTEXT, {
+    now,
+    timeoutMinutes,
   });
 }
 
@@ -87,6 +117,7 @@ function selectStalePrs(
     getStatuses = () => [],
     now = new Date().toISOString(),
     kiloTimeoutMinutes = DEFAULT_KILO_TIMEOUT_MINUTES,
+    readyPendingTimeoutMinutes = DEFAULT_READY_PENDING_TIMEOUT_MINUTES,
   } = {},
 ) {
   return (prs ?? []).flatMap((pr) => {
@@ -113,6 +144,16 @@ function selectStalePrs(
       })
     ) {
       recoveryReasons.push('expired-kilo-review');
+    }
+
+    if (
+      pr.headRefOid &&
+      hasExpiredReadyPendingStatus(statuses, {
+        now,
+        timeoutMinutes: readyPendingTimeoutMinutes,
+      })
+    ) {
+      recoveryReasons.push('stale-ready-pending');
     }
 
     return recoveryReasons.length > 0 ? [{ ...pr, recoveryReasons }] : [];
@@ -219,6 +260,7 @@ function runWatchdog({
   ref = DEFAULT_ORCHESTRATOR_REF,
   now = new Date().toISOString(),
   kiloTimeoutMinutes = DEFAULT_KILO_TIMEOUT_MINUTES,
+  readyPendingTimeoutMinutes = DEFAULT_READY_PENDING_TIMEOUT_MINUTES,
 } = {}) {
   const pullRequests = listPullRequests({ runJsonCommand });
   const readStatuses = getStatuses ?? createStatusReader({ runJsonCommand });
@@ -226,6 +268,7 @@ function runWatchdog({
     getStatuses: readStatuses,
     now,
     kiloTimeoutMinutes,
+    readyPendingTimeoutMinutes,
   });
   const dispatched = [];
 
@@ -267,6 +310,7 @@ if (require.main === module) {
 module.exports = {
   buildDispatchArgs,
   hasExpiredKiloPendingStatus,
+  hasExpiredReadyPendingStatus,
   hasCurrentReadyStatus,
   runWatchdog,
   selectStalePrs,
