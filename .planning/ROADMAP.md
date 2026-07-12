@@ -161,6 +161,7 @@ Plans:
 <!-- PR-IMPROVE:690 --> - PR #690: fix(workflows): never auto-close umbrella/tracking issues from automation -- pr690.1 x1, pr690.2 x1. Quick artifact: `.planning/quick/260712-pr690-workflow-improve/260712-pr690-PLAN.md`.
 <!-- PR-IMPROVE:692 --> - PR #692: fix: partial #680 - [todo-backlog] security-audit-weekly: optimize/audit review backlog (SEC) -- pr692.1 x1, pr692.2 x1. Quick artifact: `.planning/quick/260712-pr692-workflow-improve/260712-pr692-PLAN.md`.
 <!-- PR-IMPROVE:715 --> - PR #715: fix(workflows): prevent PR flow wedging at flow/checks-pending -- pr715.1 x1, pr715.2 x1, pr715.3 x1. Quick artifact: `.planning/quick/260712-pr715-workflow-improve/260712-pr715-PLAN.md`.
+<!-- PR-IMPROVE:719 --> - PR #719: fix: resolve #714 - APR-E01: Weekly human-disposition digest issue (audit-auto-prs) -- pr719.1 x1, pr719.2 x1. Quick artifact: `.planning/quick/260712-pr719-workflow-improve/260712-pr719-PLAN.md`.
 <!-- PR-IMPROVE:720 --> - PR #720: fix: resolve #708 - WHO-I05: Lighten the hourly collect job (workflow-health-optimize) -- pr720.1 x1, pr720.2 x1. Quick artifact: `.planning/quick/260712-pr720-workflow-improve/260712-pr720-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
