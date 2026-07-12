@@ -63,6 +63,14 @@ jobs:
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
+      # Captured as the first step so STOP_BY can be anchored to job start
+      # rather than to the deadline step's wall-clock (which runs minutes
+      # later, after install/setup). Keeps the 5-minute safety margin honest.
+      - name: Capture job start time
+        id: job_start
+        shell: bash
+        run: echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout main
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -158,10 +166,14 @@ jobs:
       - name: Compute STOP_BY deadline
         id: deadline
         shell: bash
+        env:
+          JOB_START_EPOCH: ${{ steps.job_start.outputs.epoch }}
         run: |
           # 5-minute safety margin before the 25-minute job timeout.
+          # Anchored to job start (captured in the first step) so the
+          # 20-minute deadline holds regardless of how long setup took.
           # Agent must wrap up and report partial findings before this time.
-          stop_by=$(date -u -d '+20 minutes' '+%Y-%m-%dT%H:%M:%SZ')
+          stop_by=$(date -u -d "@$((JOB_START_EPOCH + 1200))" '+%Y-%m-%dT%H:%M:%SZ')
           echo "stop_by=${stop_by}" >> "$GITHUB_OUTPUT"
 
       - name: Monitor runs and apply narrow fixes
