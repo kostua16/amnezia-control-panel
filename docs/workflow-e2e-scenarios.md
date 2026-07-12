@@ -101,6 +101,7 @@ flowchart TD
 | A9  | maintainer `/approve` on automation PR    | approve-auto-fix → approve + auto-merge → **merged**                                                          | char        |
 | A10 | non-CI workflow failure (review/dep/etc.) | fix-\* CI-scoped → **no-op** (no auto-fix)                                                                    | char        |
 | A11 | fix push disables auto-merge              | bot commit needs re-review → manual → **merged**                                                              | char        |
+| A12 | linked CI-failure issue is an umbrella/tracking issue (e.g. rolling `[claude-health]` tracker) | `isTrackingIssue` filter → rendered as non-closing `Part of #N` instead of `Closes #N` → tracker **stays open after merge** (lib-missing fallback = legacy `Closes`) | char        |
 
 ---
 
