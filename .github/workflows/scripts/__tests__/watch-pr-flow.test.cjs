@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 
 const {
   hasCurrentReadyStatus,
+  hasExpiredReadyPendingStatus,
   selectStalePrs,
   runWatchdog,
 } = require('../watch-pr-flow.cjs');
@@ -35,6 +36,106 @@ test('selectStalePrs selects open non-draft PR missing pr-flow/ready', (t) => {
   assert.equal(selected.length, 1);
   assert.equal(selected[0].number, 1);
   assert.deepEqual(selected[0].recoveryReasons, ['missing-ready-status']);
+});
+
+test('selectStalePrs selects PR whose pr-flow/ready has been pending past the timeout', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Stuck PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'pending', created_at: BASE_TEST_TIME },
+  ];
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, ['stale-ready-pending']);
+});
+
+test('selectStalePrs skips PR whose pr-flow/ready pending is fresh', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Waiting PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'pending', created_at: BASE_TEST_TIME },
+  ];
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    now: '2025-01-01T00:10:00Z',
+  });
+
+  assert.equal(selected.length, 0);
+});
+
+test('selectStalePrs honors a custom readyPendingTimeoutMinutes', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Waiting PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'pending', created_at: BASE_TEST_TIME },
+  ];
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    now: '2025-01-01T00:10:00Z',
+    readyPendingTimeoutMinutes: 5,
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, ['stale-ready-pending']);
+});
+
+test('hasExpiredReadyPendingStatus ignores non-pending ready statuses', (t) => {
+  const statuses = [
+    { context: 'pr-flow/ready', state: 'success', created_at: BASE_TEST_TIME },
+  ];
+
+  assert.equal(
+    hasExpiredReadyPendingStatus(statuses, { now: '2025-01-01T02:00:00Z' }),
+    false,
+  );
+});
+
+test('hasExpiredReadyPendingStatus ignores pending ready without a timestamp', (t) => {
+  // createStatusReader falls back to [{ context: 'pr-flow/ready' }] when the
+  // status API is unreadable; that placeholder must never trigger a rescue.
+  const statuses = [{ context: 'pr-flow/ready' }];
+
+  assert.equal(
+    hasExpiredReadyPendingStatus(statuses, { now: '2025-01-01T02:00:00Z' }),
+    false,
+  );
 });
 
 test('selectStalePrs skips PRs that have current pr-flow/ready', (t) => {

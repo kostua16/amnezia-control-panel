@@ -184,7 +184,10 @@ when the worker was orchestrator-dispatched. The `workflow_run` trigger remains
 as a useful backup for native CI and other visible runs, but `GITHUB_TOKEN`
 dispatch chains should not rely on `workflow_run` alone for progression.
 `pr-flow-watchdog.yml` also wakes open non-draft PRs that are still labeled
-`flow/draft` or whose current head SHA has no `pr-flow/ready` status.
+`flow/draft`, whose current head SHA has no `pr-flow/ready` status, or whose
+`pr-flow/ready` status has been stuck in `pending` for 30+ minutes
+(`stale-ready-pending`) — the last case rescues a PR whose reactive wake was
+lost after its required checks completed.
 
 `fix-pr.yml` also treats automation-authored PRs as a stop point for the CI
 auto-fix lane. If the failing source PR already has the `auto-fix` label or is
@@ -225,18 +228,33 @@ AI/security concern labels, and blocked dependency labels still fail
 ## PR Orchestrator Concurrency
 
 `pr-flow.yml` keys its concurrency group per PR but **isolates
-`pull_request_target` runs from every reactive wake**, so nothing but a newer PR
-state change can cancel the prt `orchestrate` job:
+`pull_request_target` runs from every reactive wake**, and **isolates no-op bot
+comments from real wakes**:
 
-| event class         | concurrency group    | triggers                                                                                                                                              |
-| ------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| pull_request_target | `pr-flow-prt-<PR#>`  | `opened` / `synchronize` / `reopened` / `ready_for_review` / `converted_to_draft` / `labeled` / `unlabeled`                                           |
-| reactive wake       | `pr-flow-wake-<PR#>` | `workflow_run` (CI, PR Policy, Code Review, Dependency Review, PR Improve, PR Finalizer completed), `issue_comment` (`/approve`), `workflow_dispatch` |
+| event class         | concurrency group     | triggers                                                                                                                                                             |
+| ------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pull_request_target | `pr-flow-prt-<PR#>`   | `opened` / `synchronize` / `reopened` / `ready_for_review` / `converted_to_draft` / `labeled` / `unlabeled`                                                          |
+| reactive wake       | `pr-flow-wake-<PR#>`  | `workflow_run` (CI, PR Policy, Code Review, Dependency Review, PR Improve, PR Finalizer completed), human/kilo `issue_comment` (`/approve`, `/review`), `workflow_dispatch` |
+| bot-comment noise   | `pr-flow-noise-<PR#>` | `issue_comment` authored by `github-actions[bot]` (sticky-comment upserts, project-manager state comments, worker reports)                                           |
 
-prt state-change runs still cancel older prt runs via `cancel-in-progress`; wakes
-collapse among themselves. A wake can never cancel a prt run, so the prt
+Only prt state-change runs cancel older runs (`cancel-in-progress` is `true`
+solely for non-label prt events). Wakes never cancel an in-flight run: an
+in-progress wake — including one still queued for a self-hosted runner — always
+finishes, while queued wakes still collapse newest-wins through GitHub's
+pending-run replacement. A wake can never cancel a prt run, so the prt
 `orchestrate` — the only run that reports a check on the PR — always runs to
 completion (green or skipped, never `cancelled`).
+
+The `noise` group exists because GitHub applies concurrency cancellation and
+displacement **at run creation, before job `if:` gates evaluate**. Bot comments
+by `github-actions[bot]` can never pass the maintainer gate in
+`evaluate-trigger-policy.cjs` (and are additionally filtered by the
+`classify-trigger` job `if:`, so they cost no runner time), yet before the
+split their run creation cancelled or displaced queued real wakes in
+`pr-flow-wake-<PR#>`. That is how a PR could stay stuck at
+`flow/checks-pending` after CI went green: the CI-completion wake queued behind
+saturated runners, a project-manager state-comment edit cancelled it, and the
+replacement run skipped itself as non-actionable (observed on PR #695).
 
 ### Why cancellation exists at all
 
@@ -252,8 +270,11 @@ self-hosted runner pool**:
    completes → `workflow_run` → re-triggers pr-flow. This is intentional: pr-flow
    re-evaluates after each worker/check finishes.
 
-`cancel-in-progress` collapses the redundant wakes so only the newest run per
-class executes — protecting limited runner capacity.
+Redundant wakes collapse in the queue (GitHub keeps only the newest pending run
+per group) — protecting limited runner capacity — but the in-flight wake is
+never cancelled, so at least one full re-evaluation always survives a burst of
+events. No-op bot comments are kept out of the wake group entirely (see the
+`noise` row above).
 
 ### The cancellation cascade this design fixes
 

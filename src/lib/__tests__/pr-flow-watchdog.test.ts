@@ -401,7 +401,7 @@ describe('PR flow workflow invariants', () => {
     );
     assert.match(
       workflow,
-      /github\.event_name != 'issue_comment' \|\|\s*\n\s+\(\s*\n\s+github\.event\.issue\.pull_request != null &&\s*\n\s+\(\s*\n\s+contains\(github\.event\.comment\.body, '\/approve'\) \|\|\s*\n\s+contains\(github\.event\.comment\.body, '\/review'\)/,
+      /github\.event_name != 'issue_comment' \|\|\s*\n\s+\(\s*\n\s+github\.event\.issue\.pull_request != null &&\s*\n\s+github\.event\.comment\.user\.login != 'github-actions\[bot\]' &&\s*\n\s+\(\s*\n\s+contains\(github\.event\.comment\.body, '\/approve'\) \|\|\s*\n\s+contains\(github\.event\.comment\.body, '\/review'\)/,
     );
     assert.match(
       workflow,
@@ -416,9 +416,11 @@ describe('PR flow workflow invariants', () => {
   it('keeps non-relevant label events from canceling an in-flight orchestrator run', () => {
     const workflow = readWorkflow('.github/workflows/pr-flow.yml');
 
+    // Only prt state changes cancel; label churn and reactive wakes never
+    // cancel an in-flight orchestrator run.
     assert.match(
       workflow,
-      /cancel-in-progress:\s+\$\{\{\s+github\.event_name != 'pull_request_target' \|\| \(github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\)\s+\}\}/,
+      /cancel-in-progress:\s+\$\{\{\s+github\.event_name == 'pull_request_target' && github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\s+\}\}/,
     );
   });
 
