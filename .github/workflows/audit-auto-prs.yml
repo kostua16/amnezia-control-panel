@@ -30,6 +30,7 @@ jobs:
       claude_is_error: ${{ steps.claude_run.outputs.claude_is_error }}
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
+      structured_output: ${{ steps.claude_run.outputs.structured_output }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -292,3 +293,31 @@ jobs:
           claude-used-attempt: ${{ needs.audit-auto-prs.outputs.claude_used_attempt }}
           claude-failure-reason: ${{ needs.audit-auto-prs.outputs.claude_failure_reason }}
           claude-metrics-json: ${{ needs.audit-auto-prs.outputs.claude_metrics_json }}
+
+  publish-digest:
+    name: Publish human-disposition digest
+    needs: [audit-auto-prs]
+    if: needs.audit-auto-prs.result == 'success'
+    runs-on: self-hosted
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Publish digest issue
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STRUCTURED_OUTPUT: ${{ needs.audit-auto-prs.outputs.structured_output }}
+        run: |
+          node .github/workflows/scripts/upsert-human-disposition-digest.cjs \
+            --repo "${{ github.repository }}" \
+            --structured-output "$STRUCTURED_OUTPUT" \
+            --run-url "$RUN_URL"
