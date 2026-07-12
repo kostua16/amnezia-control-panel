@@ -136,6 +136,29 @@ test('P9b: fleet-gate job output maps to composite action skip output', () => {
   }
 });
 
+test('audit-fix reports fleet-gate failures and audit-fix cancellations', () => {
+  const content = fs.readFileSync(
+    path.resolve(__dirname, '../../audit-fix.yml'),
+    'utf8',
+  );
+
+  assert.match(
+    content,
+    /report-failure:\n\s+needs: \[fleet-gate, audit-fix\]/,
+    'report-failure must depend on fleet-gate directly so its failure result is visible',
+  );
+  assert.match(
+    content,
+    /needs\.audit-fix\.result == 'cancelled'/,
+    'report-failure must still run when audit-fix is cancelled',
+  );
+  assert.match(
+    content,
+    /needs\.fleet-gate\.result == 'failure'/,
+    'report-failure must run when fleet-gate fails before audit-fix starts',
+  );
+});
+
 // ---------------------------------------------------------------------------
 // P14 — Disk-pressure self-heal detects non-failure conclusions
 // ---------------------------------------------------------------------------
@@ -240,7 +263,11 @@ test('PM37: project-manager plan reruns cancelled CI once before /fix', () => {
     (action) => action.type === 'rerun-workflow-run',
   );
   // "once": exactly one rerun is dispatched, not one-per-duplicate-run.
-  assert.equal(reruns.length, 1, 'plan must dispatch the CI rerun exactly once');
+  assert.equal(
+    reruns.length,
+    1,
+    'plan must dispatch the CI rerun exactly once',
+  );
   assert.equal(reruns[0].runId, '555');
   assert.ok(
     plan.actions.some(

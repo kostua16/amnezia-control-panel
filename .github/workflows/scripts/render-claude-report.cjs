@@ -210,6 +210,62 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
   const metrics = normalizeMetrics(input);
   if (!hasClaudeInfo(metrics)) return '';
 
+  const heading = options.heading || '### Claude Execution';
+
+  // A cancelled run never reaches the step that publishes claude-* outputs,
+  // so turn/cost/tool metrics are usually blank. Surface a clear marker
+  // instead of a table full of N/A; if metrics were recovered anyway (e.g.
+  // parsed from logs), still render them under the notice.
+  // Raw metric fields rendered in the table below. hasRealMetrics checks this
+  // same set so a cancelled run whose per-tool tallies were recovered from
+  // logs (without the SDK summary line) is still rendered under the notice
+  // instead of being hidden by the marker-only early return. `outcome` is the
+  // cancelled trigger itself, so it is excluded.
+  const RENDERED_METRIC_KEYS = [
+    'attempt',
+    'modelUsed',
+    'numTurns',
+    'turnsBudgetPct',
+    'durationMs',
+    'durationSec',
+    'totalCostUsd',
+    'costPerTurn',
+    'numToolCalls',
+    'toolBreakdown',
+    'readFilesCount',
+    'editFilesCount',
+    'numFailedToolCalls',
+    'changedFilesCount',
+    'numRejectedToolCalls',
+    'denialRate',
+    'isError',
+    'failureReason',
+    'actionError',
+    'errorMessages',
+    'lastOutput',
+    'failedToolSamples',
+    'changedFilesList',
+    'rejectedToolsList',
+  ];
+
+  const hasRealMetrics = () =>
+    RENDERED_METRIC_KEYS.some((key) => !isBlankMetricValue(metrics[key]));
+
+  let preCompletionNotice = '';
+  if (metrics.outcome === 'cancelled') {
+    const CANCELLED_MARKER =
+      '_Cancelled before metrics were captured — the run was likely stopped by its `timeout-minutes` cap, so Claude turn/cost/tool metrics are unavailable._';
+    if (!hasRealMetrics()) {
+      return `${['', heading, '', CANCELLED_MARKER].join('\n')}\n`;
+    }
+    preCompletionNotice =
+      '_Cancelled before completion; metrics below were recovered from logs._';
+  } else if (metrics.outcome === 'skipped' && !hasRealMetrics()) {
+    const SKIPPED_MARKER =
+      '_Skipped before metrics were captured — Claude did not run because an upstream workflow gate failed._';
+    return `${['', heading, '', SKIPPED_MARKER].join('\n')}\n`;
+  }
+
   const turns = valueOrFallback(metrics.numTurns);
   const turnsPct = metrics.turnsBudgetPct
     ? ` (${metrics.turnsBudgetPct}%)`
@@ -234,13 +290,15 @@ function renderClaudeExecutionSection(input = {}, options = {}) {
     ['Claude is_error', valueOrFallback(metrics.isError)],
   ];
 
-  const lines = [
-    '',
-    options.heading || '### Claude Execution',
+  const lines = ['', heading];
+  if (preCompletionNotice) {
+    lines.push('', preCompletionNotice);
+  }
+  lines.push(
     '| Metric | Value |',
     '|--------|-------|',
     ...rows.map(([metric, value]) => `| ${metric} | ${escapeTable(value)} |`),
-  ];
+  );
 
   const primaryError = metrics.actionError || metrics.failureReason;
   if (primaryError) {
