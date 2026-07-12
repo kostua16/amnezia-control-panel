@@ -7,6 +7,24 @@ const DIGEST_TITLE = 'Auto PR Audit: human-disposition digest';
 const DIGEST_LABELS = ['auto-fix', 'needs-review'];
 const ISSUE_SEARCH_MARKER = 'auto-pr-audit human disposition in:title';
 
+// External PR metadata (title/author/branch/recommendation) is contributor-
+// controllable, so it cannot be emitted into a markdown table cell verbatim.
+// Collapse newlines (which would split the row) to spaces, escape pipes (which
+// would split the column), and backslash-escape '[' so a value shaped like a
+// markdown link cannot render as a misleading clickable link in the digest.
+function escapeCell(value) {
+  return String(value == null ? '' : value)
+    .replace(/\r\n|\r|\n/g, ' ')
+    .replace(/\|/g, '\\|')
+    .replace(/\[/g, '\\[');
+}
+
+// Agent-supplied bullet text can contain embedded newlines that would terminate
+// the bullet and render the remainder as loose text; collapse them to spaces.
+function escapeListItem(value) {
+  return String(value == null ? '' : value).replace(/\r\n|\r|\n/g, ' ');
+}
+
 function parseArgs(argv) {
   const args = {};
   let i = 2;
@@ -63,7 +81,7 @@ function renderDigestBody(data, runUrl, repoUrl) {
     lines.push('### Recommended Actions');
     lines.push('');
     for (const item of disposition) {
-      lines.push(`- ${item}`);
+      lines.push(`- ${escapeListItem(item)}`);
     }
     lines.push('');
   }
@@ -76,11 +94,11 @@ function renderDigestBody(data, runUrl, repoUrl) {
     for (const pr of inspected) {
       const prUrl = pr.number != null && repoUrl ? `${repoUrl}/pull/${pr.number}` : '';
       const num = pr.number != null && prUrl ? `[#${pr.number}](${prUrl})` : (pr.number != null ? `#${pr.number}` : '-');
-      const title = pr.title || '-';
-      const author = pr.author || '-';
-      const branch = pr.branch || '-';
-      const rec = pr.recommendation || '-';
-      lines.push(`| ${num} | ${title} | ${author} | \`${branch}\` | ${rec} |`);
+      const title = escapeCell(pr.title || '-');
+      const author = escapeCell(pr.author || '-');
+      const branch = escapeCell(pr.branch || '-');
+      const rec = escapeCell(pr.recommendation || '-');
+      lines.push(`| ${num} | ${title} | ${author} | ${branch} | ${rec} |`);
     }
     lines.push('');
   }
@@ -165,7 +183,17 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  process.stderr.write(`Fatal: ${err.message}\n`);
-  process.exit(1);
-});
+module.exports = {
+  escapeCell,
+  escapeListItem,
+  parseArgs,
+  parseStructuredOutput,
+  renderDigestBody,
+};
+
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`Fatal: ${err.message}\n`);
+    process.exit(1);
+  });
+}
