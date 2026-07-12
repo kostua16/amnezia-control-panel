@@ -234,14 +234,28 @@ function renderLinks(options) {
   return links.join('\n');
 }
 
-function renderClosingIssues(value) {
+function parseIssueNumbers(value) {
   const issues = String(value || '')
     .split(/[\n,]/)
     .map((item) => item.trim().replace(/^#/, ''))
     .filter(Boolean)
     .filter((item) => /^\d+$/.test(item));
+  return [...new Set(issues)];
+}
 
-  return [...new Set(issues)].map((issue) => `Closes #${issue}`).join('\n');
+function renderClosingIssues(value) {
+  return parseIssueNumbers(value)
+    .map((issue) => `Closes #${issue}`)
+    .join('\n');
+}
+
+// Non-closing reference for umbrella/tracking issues: a partial fix must
+// reference its umbrella without a closing keyword, or merging would close
+// the entire backlog.
+function renderRelatedIssues(value) {
+  return parseIssueNumbers(value)
+    .map((issue) => `Part of #${issue} (umbrella/tracking issue — stays open)`)
+    .join('\n');
 }
 
 function sectionFallback(value, fallback) {
@@ -282,7 +296,8 @@ function buildAutomationPrBody(options = {}) {
     .filter(Boolean);
 
   const closingIssues = renderClosingIssues(options.closingIssues);
-  const reviewNotes = [options.reviewNotes, closingIssues]
+  const relatedIssues = renderRelatedIssues(options.relatedIssues);
+  const reviewNotes = [options.reviewNotes, closingIssues, relatedIssues]
     .map((part) => truncateText(part))
     .filter(Boolean)
     .join('\n\n');
@@ -362,6 +377,7 @@ function optionsFromEnv(env = process.env) {
     footer: env.FOOTER,
     problem: env.PROBLEM,
     rationale: env.RATIONALE,
+    relatedIssues: env.RELATED_ISSUES,
     reviewNotes: env.REVIEW_NOTES,
     sourceIssueUrl: env.SOURCE_ISSUE_URL,
     sourcePrUrl: env.SOURCE_PR_URL,
@@ -404,6 +420,8 @@ module.exports = {
   extractFinalResultFromExecutionText,
   parseChangedFiles,
   redactSecrets,
+  renderClosingIssues,
+  renderRelatedIssues,
   truncateText,
   validateRichBody,
 };

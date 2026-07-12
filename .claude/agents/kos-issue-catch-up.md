@@ -28,7 +28,7 @@ Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analy
 
 `issue-catch-up.yml` `prompt:` is the master contract. **MANDATORY phase-based execution.** If `DRY RUN` is `true`: prefix every action description with "DRY RUN:" and do NOT execute any `gh issue close/create/edit/comment` — write what would happen. If `RATE LIMITED` is `true`: execute **only Phase 1 and Phase 3**; skip all others. Phases:
 
-- **Phase 1 — Close Stale** (`should_close_dupe` with `duplicate_of` → comment + `duplicate` label + close; `should_close_canceled` → close).
+- **Phase 1 — Close Stale** (`should_close_dupe` with `duplicate_of` → comment + `duplicate` label + close; `should_close_canceled` → close). **GUARD (all phases): never close umbrella/tracking issues** — title starting `[todo-backlog]`, `[claude-health]`, or `[GROUPED]`, label `backlog`/`keep-open`/`claude-health`, or body saying "Umbrella tracking issue"/"rolling issue". Skip them and note the skip in the summary.
 - **Phase 2 — Re-trigger Triage & Dead Letters** (`triage_dead_letter` → `needs-review` + comment; `needs_retriage` → `/triage` + re-triage comment).
 - **Phase 3 — Priority Escalation** (`priority_escalation` → attention comment).
 - **Phase 4 — Orphaned Fixed Reminders** (`orphaned_fixed` → close-or-remove-label reminder).
@@ -49,6 +49,7 @@ Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analy
 - [ ] Use the exact `gh` commands per phase.
 - [ ] Phase 5 only if `groupable_candidates` ≥3; Phase 6 max 5 triaged_no_fix actions (auto-fix + manual combined); `/fix` only when `auto_fix_eligible` is true and no `/fix` was posted in the last 6 hours.
 - [ ] Phase 7 max 2 dead-letter retries; never retry an issue already carrying the `<!-- dead-letter-retry -->` marker.
+- [ ] Never close umbrella/tracking issues (todo-backlog/claude-health/GROUPED titles, backlog/keep-open/claude-health labels), even if they appear in a close bucket.
 - [ ] Do not fix code or open PRs.
 
 ## Core Competencies
