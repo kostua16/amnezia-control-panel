@@ -151,45 +151,77 @@ test('PM1b: PR pressure keeps older stateful PRs in the inspection set', () => {
 
 test('PM1b-edge: no stateful PRs yields pure truncation', () => {
   const prs = Array.from({ length: 5 }, (_, i) =>
-    pr({ number: i + 1, updatedAt: `2026-07-01T09:${String(i).padStart(2, '0')}:00.000Z` }),
+    pr({
+      number: i + 1,
+      updatedAt: `2026-07-01T09:${String(i).padStart(2, '0')}:00.000Z`,
+    }),
   );
   const candidates = selectPrInspectionCandidates(prs, 3);
-  assert.deepEqual(candidates.map((c) => c.number), [5, 4, 3]);
+  assert.deepEqual(
+    candidates.map((c) => c.number),
+    [5, 4, 3],
+  );
 });
 
 test('PM1b-edge: limit=0 returns only attention PRs', () => {
   const prs = [
     pr({ number: 1, updatedAt: '2026-07-01T09:00:00.000Z' }),
-    pr({ number: 2, updatedAt: '2026-07-01T09:01:00.000Z', labels: ['flow/manual-only'] }),
+    pr({
+      number: 2,
+      updatedAt: '2026-07-01T09:01:00.000Z',
+      labels: ['flow/manual-only'],
+    }),
   ];
   const candidates = selectPrInspectionCandidates(prs, 0);
-  assert.deepEqual(candidates.map((c) => c.number), [2]);
+  assert.deepEqual(
+    candidates.map((c) => c.number),
+    [2],
+  );
 });
 
 test('PM1b-edge: limit exceeds array length returns all PRs plus attention fallback', () => {
   const prs = Array.from({ length: 3 }, (_, i) =>
-    pr({ number: i + 1, updatedAt: `2026-07-01T09:${String(i).padStart(2, '0')}:00.000Z` }),
+    pr({
+      number: i + 1,
+      updatedAt: `2026-07-01T09:${String(i).padStart(2, '0')}:00.000Z`,
+    }),
   );
   const candidates = selectPrInspectionCandidates(prs, 100);
-  assert.deepEqual(candidates.map((c) => c.number), [3, 2, 1]);
+  assert.deepEqual(
+    candidates.map((c) => c.number),
+    [3, 2, 1],
+  );
 });
 
 test('PM1b-edge: multiple attention labels on same PR produce no duplicate', () => {
   const prs = [
-    pr({ number: 1, updatedAt: '2026-07-01T09:00:00.000Z', labels: ['flow/manual-only', 'ai-review-concerns'] }),
+    pr({
+      number: 1,
+      updatedAt: '2026-07-01T09:00:00.000Z',
+      labels: ['flow/manual-only', 'ai-review-concerns'],
+    }),
     pr({ number: 2, updatedAt: '2026-07-01T09:01:00.000Z' }),
   ];
   const candidates = selectPrInspectionCandidates(prs, 1);
-  assert.deepEqual(candidates.map((c) => c.number), [2, 1]);
+  assert.deepEqual(
+    candidates.map((c) => c.number),
+    [2, 1],
+  );
   assert.equal(candidates.length, 2);
 });
 
 test('PM1b-edge: PR outside limit without attention label stays excluded', () => {
   const prs = Array.from({ length: 4 }, (_, i) =>
-    pr({ number: i + 1, updatedAt: `2026-07-01T09:${String(i).padStart(2, '0')}:00.000Z` }),
+    pr({
+      number: i + 1,
+      updatedAt: `2026-07-01T09:${String(i).padStart(2, '0')}:00.000Z`,
+    }),
   );
   const candidates = selectPrInspectionCandidates(prs, 2);
-  assert.deepEqual(candidates.map((c) => c.number), [4, 3]);
+  assert.deepEqual(
+    candidates.map((c) => c.number),
+    [4, 3],
+  );
 });
 
 test('PM2: issue pressure selects latest 10 standalone issues', () => {
@@ -951,6 +983,24 @@ test('PM19: issue queue skips linked PR, active fix, and terminal labels', () =>
   assert.equal(safeIssueForFix(issue({ body: 'Fixes #123' })), false);
   assert.equal(safeIssueForFix(issue({ activeFixRun: true })), false);
   assert.equal(safeIssueForFix(issue({ labels: ['fixed'] })), false);
+});
+
+test('PM19c: issue queue never targets umbrella/tracking issues', () => {
+  assert.equal(
+    safeIssueForFix(issue({ title: '[todo-backlog] audit-fix backlog (AFX)' })),
+    false,
+  );
+  assert.equal(
+    safeIssueForFix(
+      issue({ title: '[claude-health] CI Claude Issue Tracker' }),
+    ),
+    false,
+  );
+  assert.equal(safeIssueForFix(issue({ labels: ['backlog'] })), false);
+  assert.equal(
+    safeIssueForFix(issue({ body: 'Umbrella tracking issue for the items' })),
+    false,
+  );
 });
 
 test('PM19b: issue queue retries /fix after cooldown, capped at max attempts', () => {

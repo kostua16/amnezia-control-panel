@@ -103,6 +103,13 @@ jobs:
                  priority only in the summary comment.
                - For a dependency-vulnerability issue whose advisory reports
                  fixAvailable:false (no upstream fix released yet), ALSO add "backlog".
+               - If the issue is an UMBRELLA/TRACKING issue (title starts with
+                 "[todo-backlog]", "[claude-health]", or "[GROUPED]", or the body says
+                 "Umbrella tracking issue" or "rolling issue"): ALSO add "backlog",
+                 NEVER close it or mark it duplicate, do NOT recommend /fix on it,
+                 and note in the summary that automation spins off dedicated
+                 sub-issues per checklist item (max 3 open at a time) and ticks the
+                 checklist as they complete.
             4. Check for duplicates against existing issues
             5. Add the "triaged" label: ./.github/workflows/scripts/edit-issue-labels.sh --add-label "triaged"
 

@@ -42,6 +42,27 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Ensure labels exist
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          policy-file: .github/workflows/policy.json
+          names: auto-fix,umbrella-sub-issue,high,medium,low
+
+      # Hourly umbrella progress engine: tick checkboxes for completed
+      # sub-issues, close umbrellas with a fully ticked checklist, and top up
+      # sub-issues for the next unchecked items (max 3 open per umbrella).
+      # Deterministic — runs before (and independent of) the agent sweep.
+      - name: Reconcile and spin off umbrella sub-issues
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          EXTRA=""
+          if [ "$DRY_RUN" = "true" ]; then EXTRA="--dry-run"; fi
+          node .github/workflows/scripts/umbrella-sub-issues.cjs \
+            --all --reconcile --spin-off $EXTRA
+
       - name: Fetch and categorize open issues
         id: categorize
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3

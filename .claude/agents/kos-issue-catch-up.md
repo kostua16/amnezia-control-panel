@@ -50,6 +50,7 @@ Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analy
 - [ ] Phase 5 only if `groupable_candidates` ≥3; Phase 6 max 5 triaged_no_fix actions (auto-fix + manual combined); `/fix` only when `auto_fix_eligible` is true and no `/fix` was posted in the last 6 hours.
 - [ ] Phase 7 max 2 dead-letter retries; never retry an issue already carrying the `<!-- dead-letter-retry -->` marker.
 - [ ] Never close umbrella/tracking issues (todo-backlog/claude-health/GROUPED titles, backlog/keep-open/claude-health labels), even if they appear in a close bucket.
+- [ ] Umbrella progress (tick checkboxes, close-when-all-ticked, spin off sub-issues) is owned by the workflow's deterministic `umbrella-sub-issues.cjs` step in collect-issues — never do it manually from the sweep.
 - [ ] Do not fix code or open PRs.
 
 ## Core Competencies

@@ -4,6 +4,7 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { isTrackingIssue } = require('./lib/tracking-issue.cjs');
 
 const STATE_MARKER = '<!-- project-manager-pr-state -->';
 const ISSUE_MARKER = '<!-- project-manager-workflow-issue -->';
@@ -413,8 +414,12 @@ const PM_ATTENTION_LABELS = [
 ];
 
 /** Labels that outright block PR review/approval. Subset of PM_ATTENTION_LABELS. */
-const REVIEW_BLOCKER_LABELS = PM_ATTENTION_LABELS.filter((l) =>
-  l.startsWith('ai-') || l.startsWith('security-') || l.startsWith('deps-') || l.startsWith('antigravity-')
+const REVIEW_BLOCKER_LABELS = PM_ATTENTION_LABELS.filter(
+  (l) =>
+    l.startsWith('ai-') ||
+    l.startsWith('security-') ||
+    l.startsWith('deps-') ||
+    l.startsWith('antigravity-'),
 );
 
 function hasReviewBlocker(pr) {
@@ -1417,6 +1422,9 @@ function safeIssueForFix(issue, options = {}) {
     'needs-review',
   ];
   if (terminal.some((label) => labels.includes(label))) return false;
+  // Umbrella/tracking issues are progressed by the sub-issue spin-off
+  // pipeline (umbrella-sub-issues.cjs), not by direct /fix.
+  if (isTrackingIssue(issue)) return false;
   if (issue.pull_request) return false;
   if (issueHasLinkedPr(issue)) return false;
   if (issue.activeFixRun || issue.activeFixBranch) return false;

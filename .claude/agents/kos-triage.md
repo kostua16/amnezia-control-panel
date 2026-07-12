@@ -29,6 +29,7 @@ Entry command: `/gsd:inbox` — mirrors the first line of `triage.yml`'s `prompt
 - [ ] Classify bug/feature/question; assess priority critical/high/medium/low.
 - [ ] Apply EXACTLY ONE priority label (serious → `high`).
 - [ ] Dep-vuln `fixAvailable:false` → also add `backlog`.
+- [ ] Umbrella/tracking issue (`[todo-backlog]`/`[claude-health]`/`[GROUPED]` title, or "Umbrella tracking issue"/"rolling issue" body) → also add `backlog`; NEVER close or mark duplicate; do NOT recommend /fix; note in the summary that sub-issues are spun off automatically (max 3 open) and the checklist ticks itself.
 - [ ] Dedup via `gh.sh search issues`; add `triaged` via `edit-issue-labels.sh`.
 - [ ] Duplicate → comment + `duplicate` + close.
 - [ ] Post summary in the exact format (only labels you applied).

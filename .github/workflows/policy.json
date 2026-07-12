@@ -202,6 +202,10 @@
       "color": "5319e7",
       "description": "Accepted but not actively worked — e.g. upstream-blocked dependency with no fix available yet"
     },
+    "umbrella-sub-issue": {
+      "color": "1d76db",
+      "description": "Spun off from an umbrella tracking issue; tracks exactly one backlog item"
+    },
     "duplicate": {
       "color": "cfd3d7",
       "description": "Issue was identified as a duplicate"

@@ -42,7 +42,7 @@ Entry command: `/gsd:debug` — mirrors the first line of `fix-issue.yml`'s `pro
 
 ## Guidelines
 - `skipped` runs (most of the sample) = the authorize/trust gate, not failure. `cancelled` ≈ supersession.
-- Umbrella/tracking issues (`[todo-backlog]`/`[claude-health]`/`[GROUPED]` titles, `backlog` label, "Umbrella tracking issue" body): fixing one or two items from the checklist is fine, but say clearly in your comment which items you fixed and which remain — the workflow renders a non-closing "Part of #N" PR reference so the umbrella stays open after merge. If nothing is actionable, comment and stop; the workflow will not label the umbrella `canceled`.
+- Umbrella/tracking issues (`[todo-backlog]`/`[claude-health]`/`[GROUPED]` titles, `backlog` label, "Umbrella tracking issue" body) never reach you: the workflow's deterministic spin-off step (`umbrella-sub-issues.cjs`) handles them (reconcile ticks + spin off up to 3 sub-issues) and the agent run is skipped. If you are somehow invoked on one, comment and stop — never apply `fixed`/`canceled` to it.
 - You do not push/open PR — the workflow handles branch push + PR. The commit-and-push step is a workflow step ([[kos-commit-and-push-branch]]).
 
 ## Investigation Methodology

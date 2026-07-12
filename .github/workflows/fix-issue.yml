@@ -92,7 +92,7 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
           policy-file: .github/workflows/policy.json
-          names: auto-fix-approved,auto-fix,fixed,canceled
+          names: auto-fix-approved,auto-fix,fixed,canceled,umbrella-sub-issue
 
       - name: Extract fix message
         id: extract
@@ -110,6 +110,28 @@ jobs:
           ISSUE_LABELS: ${{ join(github.event.issue.labels.*.name, ',') }}
         run: node .github/workflows/scripts/detect-tracking-issue.cjs >> "$GITHUB_OUTPUT"
 
+      # Umbrella issues are progressed deterministically (no paid agent run):
+      # reconcile ticks/top-ups, then spin off the next top-priority items as
+      # dedicated sub-issues (max 3 open per umbrella).
+      - name: Spin off umbrella sub-issues
+        if: steps.tracking.outputs.is_tracking == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+        run: |
+          node .github/workflows/scripts/umbrella-sub-issues.cjs \
+            --issue "$ISSUE_NUM" --reconcile --spin-off | tee /tmp/umbrella-spin-off.log
+          SUMMARY=$(tail -1 /tmp/umbrella-spin-off.log)
+          ITEMS=$(printf '%s' "$SUMMARY" | jq -r '.summary[0].items // 0')
+          CREATED=$(printf '%s' "$SUMMARY" | jq -r '[.summary[0].created[]?] | length')
+          if [ "$ITEMS" = "0" ]; then
+            gh issue comment "$ISSUE_NUM" \
+              --body "The auto-fix workflow does not act on tracking issues without a checklist. Nothing was changed and the issue stays open."
+          else
+            gh issue comment "$ISSUE_NUM" \
+              --body "Umbrella issue — spun off $CREATED new sub-issue(s) for the top-priority unchecked items (max 3 open at a time). Automation drives them through triage → fix; checkboxes here are ticked automatically as sub-issues complete, and the next items spin off as slots free up."
+          fi
+
       - name: Prepare fix branch
         id: branch
         uses: ./.github/actions/prepare-automation-branch
@@ -118,6 +140,8 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
 
       - id: claude_run
+        # Tracking issues are handled by the deterministic spin-off step above.
+        if: steps.tracking.outputs.is_tracking != 'true'
         uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
@@ -192,10 +216,7 @@ jobs:
         if: steps.gate.outputs.gate_passed == 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          # Tracking issues must not receive commit-message closing keywords:
-          # merge/rebase merges land the message on main and GitHub would
-          # close the whole umbrella for a partial fix.
-          commit-message: "${{ steps.tracking.outputs.is_tracking == 'true' && format('fix: partial progress on #{0}', github.event.issue.number) || format('fix: resolve #{0}', github.event.issue.number) }}"
+          commit-message: 'fix: resolve #${{ github.event.issue.number }}'
           github-token: ${{ secrets.GH_PAT }}
 
       - name: Build fix PR body
@@ -216,10 +237,7 @@ jobs:
           execution-file: ${{ steps.claude_run.outputs.last_execution_file }}
           structured-output: ${{ steps.claude_run.outputs.structured_output }}
           claude-last-output: ${{ steps.claude_run.outputs.claude_last_output }}
-          # Umbrella/tracking issues get a non-closing "Part of #N" reference:
-          # a partial fix must never auto-close the whole backlog on merge.
-          closing-issues: "${{ steps.tracking.outputs.is_tracking != 'true' && github.event.issue.number || '' }}"
-          related-issues: "${{ steps.tracking.outputs.is_tracking == 'true' && github.event.issue.number || '' }}"
+          closing-issues: ${{ github.event.issue.number }}
           review-notes: 'Created from a maintainer-approved fix trigger. Review the diff against the issue description and conversation before merging.'
 
       - name: Create fix PR
@@ -233,9 +251,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           base: main
           branch-name: ${{ steps.branch.outputs.branch_name }}
-          # "resolve #N" in a PR title becomes a closing keyword in the squash
-          # commit on main — tracking issues get a non-closing "partial" title.
-          title: "${{ steps.tracking.outputs.is_tracking == 'true' && format('fix: partial #{0} - {1}', github.event.issue.number, github.event.issue.title) || format('fix: resolve #{0} - {1}', github.event.issue.number, github.event.issue.title) }}"
+          title: 'fix: resolve #${{ github.event.issue.number }} - ${{ github.event.issue.title }}'
           body: ${{ steps.pr-body.outputs.body }}
           labels: auto-fix
           draft: 'false'
@@ -248,34 +264,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ github.event.issue.number }}
           PR_URL: ${{ steps.create_pr.outputs.pr_url }}
-          IS_TRACKING: ${{ steps.tracking.outputs.is_tracking }}
         run: |
-          if [ "$IS_TRACKING" = "true" ]; then
-            # Umbrella/tracking issue: a PR covers only some of its items, so
-            # the issue is not "fixed" and must stay open after the PR merges.
-            gh issue comment "$ISSUE_NUM" --body "Partial fix PR created: ${PR_URL} — this umbrella tracking issue stays open. Check off the completed items in the checklist once the PR merges."
-          else
-            gh issue edit "$ISSUE_NUM" --add-label "fixed"
-            gh issue comment "$ISSUE_NUM" --body "Fix PR created: ${PR_URL}"
-          fi
+          gh issue edit "$ISSUE_NUM" --add-label "fixed"
+          gh issue comment "$ISSUE_NUM" --body "Fix PR created: ${PR_URL}"
 
+      # Tracking issues never reach this step's `canceled` path — the
+      # spin-off step above handles them and the agent run is skipped.
+      # `canceled` on a tracking issue would let the catch-up sweep close it.
       - name: Comment on issue if no changes
-        if: steps.push.outputs.pushed != 'true'
+        if: steps.push.outputs.pushed != 'true' && steps.tracking.outputs.is_tracking != 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ github.event.issue.number }}
-          IS_TRACKING: ${{ steps.tracking.outputs.is_tracking }}
         run: |
-          if [ "$IS_TRACKING" = "true" ]; then
-            # No `canceled` label here: the catch-up workflow auto-closes
-            # canceled issues, which must never happen to an umbrella tracker.
-            gh issue comment "$ISSUE_NUM" \
-              --body "The auto-fix workflow does not act on umbrella/tracking issues directly, so no changes were made and the issue stays open. Spin off a dedicated issue for a single backlog item (see the issue body) and run /fix there."
-          else
-            gh issue edit "$ISSUE_NUM" --add-label "canceled"
-            gh issue comment "$ISSUE_NUM" \
-              --body "The auto-fix workflow ran but could not produce code changes. Manual investigation may be needed."
-          fi
+          gh issue edit "$ISSUE_NUM" --add-label "canceled"
+          gh issue comment "$ISSUE_NUM" \
+            --body "The auto-fix workflow ran but could not produce code changes. Manual investigation may be needed."
 
   report-failure:
     needs: [fix]
