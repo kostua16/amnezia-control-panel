@@ -282,6 +282,31 @@ test('buildAutomationPrBody handles closing issues from newline-separated', () =
   assert.ok(body.includes('Closes #999'));
 });
 
+test('buildAutomationPrBody renders non-closing Part of lines for related issues', () => {
+  const body = buildAutomationPrBody({
+    workflowName: 'w',
+    problem: 'p',
+    relatedIssues: '678',
+  });
+  assert.ok(body.includes('Part of #678'));
+  assert.ok(!body.includes('Closes #678'));
+});
+
+test('buildAutomationPrBody keeps umbrella references free of closing keywords', () => {
+  const body = buildAutomationPrBody({
+    workflowName: 'fix-issue',
+    problem: 'p',
+    closingIssues: '',
+    relatedIssues: '#678, #679',
+  });
+  assert.ok(body.includes('Part of #678'));
+  assert.ok(body.includes('Part of #679'));
+  assert.ok(
+    !/(close[sd]?|fix(e[sd])?|resolve[sd]?):?\s+#\d+/i.test(body),
+    'umbrella PR body must not contain issue-closing keywords',
+  );
+});
+
 test('buildAutomationPrBody caps changed files display', () => {
   const files = Array.from({ length: 40 }, (_, i) => `file${i}.ts`);
   const body = buildAutomationPrBody({

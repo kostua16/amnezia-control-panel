@@ -101,6 +101,7 @@ flowchart TD
 | A9  | maintainer `/approve` on automation PR    | approve-auto-fix → approve + auto-merge → **merged**                                                          | char        |
 | A10 | non-CI workflow failure (review/dep/etc.) | fix-\* CI-scoped → **no-op** (no auto-fix)                                                                    | char        |
 | A11 | fix push disables auto-merge              | bot commit needs re-review → manual → **merged**                                                              | char        |
+| A12 | linked CI-failure issue is an umbrella/tracking issue (e.g. rolling `[claude-health]` tracker) | `isTrackingIssue` filter → rendered as non-closing `Part of #N` instead of `Closes #N` → tracker **stays open after merge** (lib-missing fallback = legacy `Closes`) | char        |
 
 ---
 
@@ -194,6 +195,7 @@ flowchart TD
 | P11c | issue-catch-up `triaged_no_fix` issue NOT `auto_fix_eligible` (security/critical, missing priority, or human-authored)                                           | `needs-review` + manual-fix-triage comment (human terminal, unchanged)                                                                                                               | char          |
 | P11d | dead-letter issue parked in `needs-review` for >7 days, no `<!-- dead-letter-retry -->` marker, retry-eligible (triage kind, or fix kind meeting auto-fix rules) | one fresh-context retry: `needs-review` removed, marker comment posted, `/triage` or `/fix` re-issued (max 2 per run)                                                                | char          |
 | P11e | dead-letter issue already carries the `<!-- dead-letter-retry -->` marker                                                                                        | permanently parked - excluded from every catch-up bucket (human terminal)                                                                                                            | char          |
+| P11f | umbrella/tracking issue (`isTrackingIssue` — `[todo-backlog]`/`[claude-health]`/`[GROUPED]` title, `backlog`/`keep-open`/`claude-health` label, or umbrella/rolling body marker) carries `canceled` or `duplicate`                                | fully exempt from every catch-up bucket incl. title-dedup — never auto-closed; agent prompt repeats the guard                                                                        | char          |
 | P12  | dependabot PR                                                                                                                                                    | npm→auto; `github_actions/`→manual-only branch (`policy.json dependabot`)                                                                                                            | char          |
 | P12b | dependabot github_actions bump, digest-only or patch of a SHA-pinned action                                                                                      | dependency-review dispatched via `.github/workflows/**` worker paths → `deps-review-passed` → PR becomes ready → PM manual-only 8h age-out + direct-merge review (PM14) → **merged** | char          |
 | P12c | dependabot github_actions bump that unpins, jumps minor/major, or edits beyond `uses:` lines                                                                     | `deps-review-manual` → human merge                                                                                                                                                   | char          |
@@ -327,6 +329,8 @@ Decision basis: `evaluate-trigger-policy.cjs --mode fix-issue` (`maintainerTrigg
 | F4  | fix produces no changes               | `no-changes` → **reported**                                                                                                         | char |
 | F5  | fix validation fails                  | `push-rejected`/`validation-failed` → **reported**                                                                                  | char |
 | F6  | `/fix-issue` on a **PR-linked** issue | `pull_request==null` guard → **no-op**                                                                                              | char |
+| F7  | `/fix` on an **umbrella/tracking** issue (title `[todo-backlog]`/`[claude-health]`/`[GROUPED]`, `backlog`-family label, or "Umbrella tracking issue"/"rolling issue" body — `detect-tracking-issue.cjs`), fix produces changes | PR body gets non-closing `Part of #N` (no `Closes`), title/commit use `fix: partial #N` (no closing keyword); issue is commented, NOT labeled `fixed` → umbrella **stays open after merge** | char |
+| F8  | `/fix` on an **umbrella/tracking** issue, fix produces no changes | comment only; NO `canceled` label (prevents catch-up auto-close of the umbrella) → **reported** | char |
 
 ## §6b GSD `/plan` → PR (+ execute) — `gsd-planning.yml` / `gsd-planning-execute.yml` / `planning-intake-repair.yml`
 

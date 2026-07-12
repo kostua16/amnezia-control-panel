@@ -65,6 +65,10 @@ inputs:
     description: 'Issue numbers to render as Closes lines'
     required: false
     default: ''
+  related-issues:
+    description: 'Issue numbers to render as non-closing Part of lines (umbrella/tracking issues)'
+    required: false
+    default: ''
   execution-file:
     description: 'Claude/ZAI execution JSON or JSONL file'
     required: false
@@ -107,6 +111,7 @@ runs:
         FOOTER: ${{ inputs.footer }}
         PROBLEM: ${{ inputs.problem }}
         RATIONALE: ${{ inputs.rationale }}
+        RELATED_ISSUES: ${{ inputs.related-issues }}
         REVIEW_NOTES: ${{ inputs.review-notes }}
         SOURCE_ISSUE_URL: ${{ inputs.source-issue-url }}
         SOURCE_PR_URL: ${{ inputs.source-pr-url }}

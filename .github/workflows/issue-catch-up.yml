@@ -50,6 +50,14 @@ jobs:
             const EXEMPT_LABELS = ['keep-open', 'backlog', 'in-progress', 'fixed'];
             const MAX_ACTIONS = 30;
 
+            // Umbrella/tracking issues (todo-backlog umbrellas, claude-health
+            // rolling trackers, grouped canonicals) are fully exempt from the
+            // sweep regardless of labels — a stray `canceled`/`duplicate`
+            // label must never get a 20-item backlog auto-closed.
+            const { isTrackingIssue } = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/workflows/scripts/lib/tracking-issue.cjs`
+            );
+
             // --- Fetch all open issues ---
             const allIssues = [];
             let page = 1;
@@ -140,8 +148,9 @@ jobs:
               const labels = issue.labels.map(l => l.name);
               const num = issue.number;
 
-              // Skip exempt labels
+              // Skip exempt labels and umbrella/tracking issues
               if (EXEMPT_LABELS.some(el => labels.includes(el))) continue;
+              if (isTrackingIssue(issue)) continue;
 
               // Skip if active fix/triage run
               if (activeRuns.has(num)) continue;
@@ -327,6 +336,7 @@ jobs:
             for (const issue of allIssues) {
               const labels = issue.labels.map(l => l.name);
               if (EXEMPT_LABELS.some(el => labels.includes(el))) continue;
+              if (isTrackingIssue(issue)) continue;
               if (labels.includes('canceled') || labels.includes('duplicate')) continue;
               const key = issue.title.trim().toLowerCase();
               if (!titleGroups[key]) titleGroups[key] = [];
@@ -437,6 +447,8 @@ jobs:
             **IMPORTANT:** If RATE LIMITED is "true", only execute Phase 1 (close stale issues) and Phase 3 (priority escalation). Skip all other phases.
 
             ### Phase 1: Close Stale Issues (turns 1-5)
+
+            **GUARD (all phases):** NEVER close an issue whose title starts with `[todo-backlog]`, `[claude-health]`, or `[GROUPED]`, or that carries a `backlog`, `keep-open`, or `claude-health` label, or whose body says "Umbrella tracking issue" or "rolling issue". These are umbrella/tracking issues; if one appears in a close bucket, skip it and note the skip in your summary.
 
             For each `should_close_dupe` issue:
             - If `duplicate_of` field is present (title-based dedup):
