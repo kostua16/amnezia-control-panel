@@ -1,8 +1,13 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const {
+  collectLocalFilePatches,
   createPullRequestFileGetter,
   hasFileOverlap,
   hasExactDuplicate,
@@ -94,4 +99,72 @@ test('createPullRequestFileGetter rethrows non-404 GitHub API failures', () => {
   });
 
   assert.throws(() => getFiles({ number: 12 }), /HTTP 500/);
+});
+
+// Regression: automation workflows run detection while Claude's edits are still
+// uncommitted in the working tree (fetch-depth: 1 ⇒ HEAD == origin/main). The
+// committed-state diffs saw nothing, so duplicate/overlap detection was inert.
+function makeTempDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'find-duplicate-pr-'));
+}
+
+function writeFile(root, filePath, content) {
+  const fullPath = path.join(root, filePath);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, content, 'utf8');
+}
+
+function git(root, args) {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function withCwd(cwd, fn) {
+  const previous = process.cwd();
+  process.chdir(cwd);
+  try {
+    return fn();
+  } finally {
+    process.chdir(previous);
+  }
+}
+
+function makeBaseRepo() {
+  const root = makeTempDir();
+  git(root, ['init', '--quiet']);
+  git(root, ['config', 'user.email', 'test@example.com']);
+  git(root, ['config', 'user.name', 'Test']);
+  writeFile(root, 'README.md', 'base\n');
+  git(root, ['add', 'README.md']);
+  git(root, ['commit', '--quiet', '-m', 'base']);
+  // Simulate the shallow-checkout state the workflows actually run in: HEAD is
+  // the base ref tip, with no local commits ahead of origin/main.
+  git(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+  return root;
+}
+
+test('collectLocalFilePatches sees uncommitted modifications in the working tree', () => {
+  const root = makeBaseRepo();
+  writeFile(root, 'src/lib/foo.ts', 'export const x = 2;\n');
+
+  const files = withCwd(root, () => collectLocalFilePatches('main'));
+
+  assert.equal(files.length, 1);
+  assert.equal(files[0].path, 'src/lib/foo.ts');
+  assert.match(files[0].patch, /@@/);
+  assert.match(files[0].patch, /\+export const x = 2/);
+});
+
+test('collectLocalFilePatches sees untracked new files in the working tree', () => {
+  const root = makeBaseRepo();
+  writeFile(root, 'src/lib/new.ts', 'export const y = 1;\n');
+
+  const files = withCwd(root, () => collectLocalFilePatches('main'));
+
+  assert.equal(files.length, 1);
+  assert.equal(files[0].path, 'src/lib/new.ts');
+  assert.match(files[0].patch, /\+export const y = 1/);
 });
