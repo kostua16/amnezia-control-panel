@@ -13,14 +13,14 @@ Review of the six scheduled optimize/tune/audit automation workflows, producing 
 
 ## Umbrella tracking issues
 
-| Workflow                       | Umbrella issue                  |
-| ------------------------------ | ------------------------------- |
-| workflow-health-optimize (WHO) | _created after this doc merges_ |
-| audit-fix (AFX)                | _created after this doc merges_ |
-| audit-auto-prs (APR)           | _created after this doc merges_ |
-| security-audit-weekly (SEC)    | _created after this doc merges_ |
-| maintenance (MNT)              | _created after this doc merges_ |
-| monitor-github-runs (MON)      | _created after this doc merges_ |
+| Workflow                       | Umbrella issue |
+| ------------------------------ | -------------- |
+| workflow-health-optimize (WHO) | #677           |
+| audit-fix (AFX)                | #678           |
+| audit-auto-prs (APR)           | #679           |
+| security-audit-weekly (SEC)    | #680           |
+| maintenance (MNT)              | #681           |
+| monitor-github-runs (MON)      | #682           |
 
 ## Evidence snapshot (2026-07-12)
 
