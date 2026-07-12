@@ -106,7 +106,7 @@ Add `loading.tsx` files to each dashboard segment route with skeleton UI matchin
 9. `src/app/(dashboard)/routing/loading.tsx` — rules table skeletons.
 10. `src/app/(dashboard)/templates/loading.tsx` — template grid skeletons.
 
-Each file exports a default component rendering skeleton divs with `animate-pulse`. The existing `Skeleton` component from shadcn/ui (`src/components/ui/skeleton.tsx`) can be reused.
+Each file exports a default component rendering skeleton divs with `animate-pulse`; no shared `Skeleton` component exists yet, though the local pattern (`SkeletonBar` in `src/components/users/user-table-skeleton.tsx`) can be reused or promoted into a shared `src/components/ui/skeleton.tsx`.
 
 ### Benefit
 
