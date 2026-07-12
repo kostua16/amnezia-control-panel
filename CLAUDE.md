@@ -87,6 +87,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - When documenting Servers/Panels for admins, state that API keys are operator-chosen shared secrets (e.g. `openssl rand -hex 32`), not `JWT_SECRET`, and plaintext is not recoverable from the DB after save.
 - For any change to `.js`, `.cjs`, `.ts`, or `.tsx` files, including workflow helper scripts under `.github`, verify both lint and Prettier pass before finishing. If the repo scripts do not cover the changed workflow files, run a targeted Prettier check on the changed JS/CJS/TS files.
 - When explaining dense or number/ID-heavy topics (architecture, multi-step plans, review passes, big backlogs), lead with a single annotated ASCII/diagram + a plain-language "read it like this" before granular tables; keep IDs/counts out of the main picture, and offer a richer Mermaid/HTML render as a follow-up.
+- Backlog TODOs live in `docs/TODOs-2.md` with stable IDs (e.g. `AFX-I01`); before implementing any TODO, open (or claim) its GitHub issue — spun off from the workflow's umbrella tracking issue — and reference the TODO ID in the issue, commits, and PR.
 
 ## Learned Workspace Facts
 
