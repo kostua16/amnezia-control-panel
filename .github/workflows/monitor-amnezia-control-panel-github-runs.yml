@@ -456,7 +456,7 @@ jobs:
 
   report-failure:
     needs: [monitor-runs]
-    if: failure()
+    if: failure() || cancelled()
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:
