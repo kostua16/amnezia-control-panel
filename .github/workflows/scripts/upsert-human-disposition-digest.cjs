@@ -19,10 +19,15 @@ function escapeCell(value) {
     .replace(/\[/g, '\\[');
 }
 
-// Agent-supplied bullet text can contain embedded newlines that would terminate
-// the bullet and render the remainder as loose text; collapse them to spaces.
+// Agent-supplied bullet text can incorporate contributor-influenced content, so
+// the same guards as escapeCell apply: collapse embedded newlines (which would
+// terminate the bullet and render the remainder as loose text) to spaces, and
+// backslash-escape '[' so a value shaped like a markdown link cannot render as a
+// misleading clickable link in the digest list.
 function escapeListItem(value) {
-  return String(value == null ? '' : value).replace(/\r\n|\r|\n/g, ' ');
+  return String(value == null ? '' : value)
+    .replace(/\r\n|\r|\n/g, ' ')
+    .replace(/\[/g, '\\[');
 }
 
 function parseArgs(argv) {

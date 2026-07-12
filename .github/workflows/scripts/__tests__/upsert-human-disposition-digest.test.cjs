@@ -20,10 +20,12 @@ test('escapeCell collapses newlines, escapes pipes, and neutralizes link bracket
   assert.equal(escapeCell(undefined), '');
 });
 
-test('escapeListItem collapses embedded newlines to spaces', () => {
+test('escapeListItem collapses embedded newlines to spaces and neutralizes link brackets', () => {
   assert.equal(escapeListItem('one\ntwo'), 'one two');
   assert.equal(escapeListItem('- nested\nmore'), '- nested more');
   assert.equal(escapeListItem(null), '');
+  // A markdown-link-shaped value must not survive as a clickable link.
+  assert.equal(escapeListItem('[click](https://evil.example)'), '\\[click](https://evil.example)');
 });
 
 test('parseStructuredOutput returns null for empty or invalid JSON', () => {
