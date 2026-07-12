@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 80
+  MAX_TURNS: 50
   MONITOR_WORKFLOW_FILE: monitor-amnezia-control-panel-github-runs.yml
   NODE_VERSION: '24.x'
 
@@ -155,6 +155,15 @@ jobs:
           }
           NODE
 
+      - name: Compute STOP_BY deadline
+        id: deadline
+        shell: bash
+        run: |
+          # 5-minute safety margin before the 25-minute job timeout.
+          # Agent must wrap up and report partial findings before this time.
+          stop_by=$(date -u -d '+20 minutes' '+%Y-%m-%dT%H:%M:%SZ')
+          echo "stop_by=${stop_by}" >> "$GITHUB_OUTPUT"
+
       - name: Monitor runs and apply narrow fixes
         id: claude_run
         continue-on-error: true
@@ -178,10 +187,15 @@ jobs:
             PREVIOUS_MONITOR_RUN: ${{ steps.window.outputs.previous_run_url }}
             RECENT_PROBLEM_SINCE: ${{ steps.window.outputs.recent_problem_since }}
             SLOW_THRESHOLD_SECONDS: ${{ steps.window.outputs.slow_threshold_seconds }}
+            STOP_BY: ${{ steps.deadline.outputs.stop_by }}
 
             ## Task
 
             Monitor the current amnezia-control-panel project GitHub Actions runs that completed since MONITOR_SINCE, plus any still-relevant recent failed or slow runs since RECENT_PROBLEM_SINCE. Inspect exact GitHub run data and failed logs before drawing conclusions. Analyze failures, flaky behavior, bottlenecks, run duration regressions, queue/setup time, repeated warnings, and opportunities to improve CI speed or reliability.
+
+            ## Deadline (STOP_BY)
+
+            The job has a hard 25-minute timeout. STOP_BY is 20 minutes from job start (5-minute safety margin). You MUST produce your final output (findings report or changed-files summary) BEFORE STOP_BY. If you have unfinished investigations when time is running short, stop investigating and report what you have — partial findings reported is better than all findings lost to a timeout kill.
 
             ## Required GitHub Evidence
 
