@@ -26,7 +26,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
-      pending-pr: ${{ steps.fleet_check.outputs.pending-pr }}
     steps:
       - uses: ./.github/actions/fleet-back-pressure
         id: fleet_check
@@ -258,8 +257,8 @@ jobs:
           ./.github/workflows/scripts/reconcile-audit-issues.sh
 
   report-failure:
-    needs: [audit-auto-prs]
-    if: failure()
+    needs: [fleet-gate, audit-auto-prs]
+    if: always() && (needs.audit-auto-prs.result == 'failure' || needs.audit-auto-prs.result == 'cancelled' || needs.fleet-gate.result == 'failure')
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:
