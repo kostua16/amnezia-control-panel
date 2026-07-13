@@ -163,9 +163,10 @@ jobs:
           ISSUE_NUM: ${{ steps.resolve.outputs.number }}
         run: |
           ISSUE_DATA=$(gh issue view "$ISSUE_NUM" --json title,body,labels)
-          export ISSUE_TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
-          export ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body')
-          export ISSUE_LABELS=$(echo "$ISSUE_DATA" | jq -r '[.labels[].name] | join(",")')
+          ISSUE_TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
+          ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body')
+          ISSUE_LABELS=$(echo "$ISSUE_DATA" | jq -r '[.labels[].name] | join(",")')
+          export ISSUE_TITLE ISSUE_BODY ISSUE_LABELS
           node .github/workflows/scripts/detect-tracking-issue.cjs >> "$GITHUB_OUTPUT"
 
       - name: Close duplicate issues
