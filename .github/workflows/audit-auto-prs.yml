@@ -22,7 +22,7 @@ permissions:
 jobs:
   audit-auto-prs:
     runs-on: [self-hosted, big]
-    timeout-minutes: 15
+    timeout-minutes: 25
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
       claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
@@ -79,7 +79,7 @@ jobs:
           track-progress: 'true'
           claude-full-output: 'false'
           allowed-bots: 'github-actions,github-actions[bot],claude[bot]'
-          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(rtk:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *),Bash(actionlint *),mcp__plugin_serena_serena__find_symbol,mcp__plugin_serena_serena__get_symbols_overview,mcp__plugin_serena_serena__find_referencing_symbols,mcp__plugin_serena_serena__find_implementations,mcp__plugin_serena_serena__find_declaration,mcp__plugin_serena_serena__search_for_pattern,mcp__plugin_serena_serena__find_file,mcp__plugin_serena_serena__list_dir,mcp__plugin_serena_serena__read_file,mcp__plugin_serena_serena__get_diagnostics_for_file,mcp__plugin_context7_context7__query-docs,mcp__plugin_context7_context7__resolve-library-id,mcp__plugin_typescript-lsp__*'
+          allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(rtk:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *),Bash(actionlint:*),mcp__plugin_serena_serena__find_symbol,mcp__plugin_serena_serena__get_symbols_overview,mcp__plugin_serena_serena__find_referencing_symbols,mcp__plugin_serena_serena__find_implementations,mcp__plugin_serena_serena__find_declaration,mcp__plugin_serena_serena__search_for_pattern,mcp__plugin_serena_serena__find_file,mcp__plugin_serena_serena__list_dir,mcp__plugin_serena_serena__read_file,mcp__plugin_serena_serena__get_diagnostics_for_file,mcp__plugin_context7_context7__query-docs,mcp__plugin_context7_context7__resolve-library-id,mcp__plugin_typescript-lsp__*'
           json-schema: '{"type":"object","properties":{"summary":{"type":"string"},"auto_prs_inspected":{"type":"array","items":{"type":"object","properties":{"number":{"type":"integer"},"title":{"type":"string"},"branch":{"type":"string"},"author":{"type":"string"},"evidence":{"type":"string"},"recommendation":{"type":"string"}},"required":["number","title","branch","author","evidence","recommendation"],"additionalProperties":false}},"risk_patterns":{"type":"array","items":{"type":"string"}},"systemic_fix_made":{"type":"boolean"},"verification":{"type":"array","items":{"type":"string"}},"human_disposition":{"type":"array","items":{"type":"string"}},"no_new_pr_reason":{"type":"string"}},"required":["summary","auto_prs_inspected","risk_patterns","systemic_fix_made","verification","human_disposition","no_new_pr_reason"],"additionalProperties":false}'
           plugin-marketplaces: |-
             https://github.com/anthropics/claude-plugins-official.git
