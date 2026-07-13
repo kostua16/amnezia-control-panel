@@ -321,6 +321,73 @@ jobs:
           echo "::error::ZAI failure: ${{ steps.claude_run.outputs.claude_failure_reason || 'run-zai step failed' }}"
           exit 1
 
+      # Deterministic actionlint/shellcheck enforcement for this monitor's
+      # auto-generated changes. validate-pr-gate covers lint/typecheck/format
+      # (src/** only)/test/build/script-tests/prisma-safe but does NOT run
+      # actionlint or shellcheck, so malformed workflow/action YAML or shell
+      # scripts could otherwise pass the gate and surface only at review time.
+      - name: Verify changed workflow/shell files
+        shell: bash
+        env:
+          CHANGED_FILES: ${{ steps.claude_run.outputs.claude_changed_files_list }}
+        run: |
+          set -euo pipefail
+
+          node <<'NODE' > /tmp/monitor-changed-files.txt
+          const raw = process.env.CHANGED_FILES || '';
+          let files = [];
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              files = parsed;
+            }
+          } catch {}
+
+          if (files.length === 0) {
+            files = raw.split(/\r?\n|,/);
+          }
+
+          files = [...new Set(files.map((file) => String(file).trim()).filter(Boolean))];
+          process.stdout.write(files.join('\n'));
+          NODE
+
+          if [ ! -s /tmp/monitor-changed-files.txt ]; then
+            echo "No changed files to verify."
+            exit 0
+          fi
+
+          workflow_yaml_files=()
+          shell_files=()
+
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            [ -f "$file" ] || continue
+            case "$file" in
+              .github/workflows/*.yml|.github/workflows/*.yaml|.github/actions/*.yml|.github/actions/*.yaml)
+                workflow_yaml_files+=("$file")
+                ;;
+              *.sh)
+                shell_files+=("$file")
+                ;;
+            esac
+          done < /tmp/monitor-changed-files.txt
+
+          if [ "${#workflow_yaml_files[@]}" -gt 0 ]; then
+            if ! command -v actionlint >/dev/null 2>&1; then
+              echo "::error::actionlint is required for workflow/action YAML changes"
+              exit 1
+            fi
+            actionlint -config-file .github/actionlint.yaml
+          fi
+
+          if [ "${#shell_files[@]}" -gt 0 ]; then
+            if ! command -v shellcheck >/dev/null 2>&1; then
+              echo "::error::shellcheck is required for shell script changes"
+              exit 1
+            fi
+            shellcheck "${shell_files[@]}"
+          fi
+
       - name: Detect exact duplicate monitor PR
         id: duplicate
         if: steps.claude_run.outputs.claude_changed_files_list != ''
