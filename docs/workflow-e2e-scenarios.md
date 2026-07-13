@@ -203,6 +203,7 @@ flowchart TD
 | P12b | dependabot github_actions bump, digest-only or patch of a SHA-pinned action                                                                                      | dependency-review dispatched via `.github/workflows/**` worker paths → `deps-review-passed` → PR becomes ready → PM manual-only 8h age-out + direct-merge review (PM14) → **merged** | char          |
 | P12c | dependabot github_actions bump that unpins, jumps minor/major, or edits beyond `uses:` lines                                                                     | `deps-review-manual` → human merge                                                                                                                                                   | char          |
 | P13  | agent commits generated state (`graphify-out/**`)                                                                                                                | blocked by `generatedStatePathGlobs`                                                                                                                                                 | char          |
+| P15  | `audit-auto-prs` succeeds with structured output carrying human dispositions / inspected PRs                                                                      | `publish-digest` job upserts the "Auto PR Audit: human-disposition digest" issue (create or refresh via title-search marker); external PR metadata in cells is pipe/newline/link-escaped; empty output clears the existing digest issue (no-op if none) | char          |
 
 ---
 
