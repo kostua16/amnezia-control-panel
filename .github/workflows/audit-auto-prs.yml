@@ -258,7 +258,7 @@ jobs:
 
   report-failure:
     needs: [fleet-gate, audit-auto-prs]
-    if: always() && (needs.audit-auto-prs.result == 'failure' || needs.audit-auto-prs.result == 'cancelled' || needs.fleet-gate.result == 'failure')
+    if: always() && (needs.audit-auto-prs.result == 'failure' || needs.audit-auto-prs.result == 'cancelled' || needs.fleet-gate.result == 'failure' || needs.fleet-gate.result == 'cancelled')
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:
