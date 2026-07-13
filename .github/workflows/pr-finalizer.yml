@@ -52,7 +52,8 @@ jobs:
       apply_status: ${{ steps.apply.outputs.status || 'not_attempted' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -197,7 +198,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
