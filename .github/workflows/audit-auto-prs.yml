@@ -45,6 +45,7 @@ jobs:
           generate-prisma: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
+          install-uv: 'true'
 
       - name: Check for pending audit PRs
         id: pending_audit
