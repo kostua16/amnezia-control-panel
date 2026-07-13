@@ -20,7 +20,22 @@ permissions:
   actions: write
 
 jobs:
+  fleet-gate:
+    name: Fleet back-pressure gate
+    runs-on: self-hosted
+    timeout-minutes: 5
+    outputs:
+      skip: ${{ steps.fleet_check.outputs.skip }}
+      pending-pr: ${{ steps.fleet_check.outputs.pending-pr }}
+    steps:
+      - uses: ./.github/actions/fleet-back-pressure
+        id: fleet_check
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+
   audit-auto-prs:
+    needs: [fleet-gate]
+    if: needs.fleet-gate.outputs.skip != 'true'
     runs-on: [self-hosted, big]
     timeout-minutes: 25
     outputs:
@@ -47,21 +62,7 @@ jobs:
           install-rtk: 'true'
           install-uv: 'true'
 
-      - name: Check for pending audit PRs
-        id: pending_audit
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          node .github/workflows/scripts/check-pending-automation-pr.cjs \
-            --repo "${{ github.repository }}" \
-            --base-ref main \
-            --title-prefix 'ci(workflows): audit automation-created PRs' \
-            --exclude-head 'claude-workflow-optimize-auto-pr-audit-${{ github.run_id }}' \
-            --max-open-automation-prs "${{ github.event_name == 'schedule' && '8' || '0' }}" \
-            --github-output "$GITHUB_OUTPUT"
-
       - name: Prepare auto PR audit branch
-        if: steps.pending_audit.outputs.pending != 'true'
         id: branch
         uses: ./.github/actions/prepare-automation-branch
         with:
@@ -69,7 +70,6 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
 
       - name: Audit automation-authored pull requests
-        if: steps.pending_audit.outputs.pending != 'true'
         id: claude_run
         uses: ./.github/actions/run-zai
         with:
@@ -150,7 +150,7 @@ jobs:
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.pending_audit.outputs.pending != 'true' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'ci(workflows): audit automation-created PRs'
@@ -191,8 +191,6 @@ jobs:
         if: steps.push.outputs.pushed != 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          PENDING: ${{ steps.pending_audit.outputs.pending }}
-          PENDING_PR: ${{ steps.pending_audit.outputs.pending_pr }}
           DUPLICATE_FOUND: ${{ steps.duplicate.outputs.duplicate_found }}
           DUPLICATE_PR_NUMBER: ${{ steps.duplicate.outputs.duplicate_pr_number }}
           DUPLICATE_PR_URL: ${{ steps.duplicate.outputs.duplicate_pr_url }}
@@ -208,9 +206,7 @@ jobs:
             echo "## Auto PR Audit"
             echo
             echo "- Source run: ${RUN_URL}"
-            if [ "$PENDING" = "true" ]; then
-              echo "- Result: skipped - audit PR #${PENDING_PR} already open"
-            elif [ "$DUPLICATE_FOUND" = "true" ]; then
+            if [ "$DUPLICATE_FOUND" = "true" ]; then
               echo "- Result: duplicate fix suppressed"
               echo "- Existing PR: #${DUPLICATE_PR_NUMBER} ${DUPLICATE_PR_URL}"
               echo "- Reason: ${DUPLICATE_REASON}"

@@ -95,6 +95,7 @@ test('P9b: fleet-back-pressure action uses check-pending-automation-pr.cjs', () 
 // P9b — All 5 workflows reference the composite action (not inline blocks)
 // ---------------------------------------------------------------------------
 const FLEET_GATE_WORKFLOWS = [
+  'audit-auto-prs.yml',
   'audit-fix.yml',
   'docs-drift.yml',
   'gsd-planning-execute.yml',
