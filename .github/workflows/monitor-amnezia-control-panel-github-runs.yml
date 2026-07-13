@@ -456,7 +456,7 @@ jobs:
 
   report-failure:
     needs: [monitor-runs]
-    if: failure()
+    if: ${{ always() && needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:

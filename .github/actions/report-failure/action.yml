@@ -175,12 +175,13 @@ runs:
             repo: context.repo.repo,
             run_id: context.runId
           });
-          const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure');
+          const actionableConclusions = new Set(['failure', 'timed_out', 'cancelled']);
+          const failedJobs = jobs.data.jobs.filter(j => actionableConclusions.has(j.conclusion));
           const failedSteps = [];
           const logSnippets = [];
           let detectedClaudeMetrics = null;
           for (const job of failedJobs) {
-            const steps = (job.steps || []).filter(s => s.conclusion === 'failure');
+            const steps = (job.steps || []).filter(s => actionableConclusions.has(s.conclusion));
             for (const step of steps) {
               failedSteps.push(`${job.name} / ${step.name}`);
             }
