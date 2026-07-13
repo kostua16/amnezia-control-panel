@@ -31,6 +31,12 @@ Entry command: `/gsd:health && /gsd:stats` — mirrors the first line of `mainte
 - [ ] Dedupe against open issues (no spam).
 - [ ] Clean category → no issue.
 - [ ] HIGH/CRITICAL security → issue + comment on open PRs.
+- [ ] **Umbrella/tracking issues are exempt from stale-issues sweep** — issues with
+      `[todo-backlog]`, `[claude-health]`, `[grouped]` title prefixes, or
+      `backlog`/`epic`/`umbrella`/`tracking`/`keep-open` labels, or body matching
+      "umbrella tracking issue" / "rolling issue", must never be flagged for
+      closure. Use `.github/workflows/scripts/lib/tracking-issue.cjs` heuristics
+      (same as issue-catch-up.yml).
 
 ## Core Competencies
 - Run each check and interpret findings.

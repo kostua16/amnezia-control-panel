@@ -1,12 +1,17 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const yaml = require('js-yaml');
 
 const {
   isTrackingIssue,
   normalizeLabels,
 } = require('../lib/tracking-issue.cjs');
 const { detectFromEnv } = require('../detect-tracking-issue.cjs');
+
+const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
 
 // ---------------------------------------------------------------------------
 // isTrackingIssue — title prefixes
@@ -155,4 +160,37 @@ test('detectFromEnv reads title/body/labels from env', () => {
     }),
     false,
   );
+});
+
+// ---------------------------------------------------------------------------
+// triage.yml contract
+// ---------------------------------------------------------------------------
+test('triage duplicate-close step is gated by tracking issue detection', () => {
+  const triagePath = path.join(repoRoot, '.github/workflows/triage.yml');
+  const workflow = yaml.load(fs.readFileSync(triagePath, 'utf8'));
+  const steps = workflow.jobs.triage.steps;
+  const trackingStepIndex = steps.findIndex(
+    (step) => step.name === 'Detect umbrella/tracking issue',
+  );
+  const closeStepIndex = steps.findIndex(
+    (step) => step.name === 'Close duplicate issues',
+  );
+
+  assert.ok(trackingStepIndex >= 0, 'tracking detector step is missing');
+  assert.ok(closeStepIndex >= 0, 'duplicate close step is missing');
+  assert.ok(
+    trackingStepIndex < closeStepIndex,
+    'tracking detector must run before duplicate close',
+  );
+
+  const trackingStep = steps[trackingStepIndex];
+  const closeStep = steps[closeStepIndex];
+
+  assert.match(trackingStep.run, /detect-tracking-issue\.cjs/);
+  assert.equal(trackingStep.id, 'tracking-check');
+  assert.match(
+    closeStep.if,
+    /steps\.tracking-check\.outputs\.is_tracking\s*!=\s*'true'/,
+  );
+  assert.match(closeStep.if, /steps\.tracking-check\.outcome\s*==\s*'success'/);
 });
