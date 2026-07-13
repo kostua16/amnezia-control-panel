@@ -53,7 +53,8 @@ jobs:
       key-available: ${{ steps.check-key.outputs.available }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -129,6 +130,7 @@ jobs:
       - name: Checkout PR head
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          persist-credentials: false
           ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
           fetch-depth: 0
 

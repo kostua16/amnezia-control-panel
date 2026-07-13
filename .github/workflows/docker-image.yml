@@ -33,6 +33,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
 
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space
@@ -208,6 +210,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
 
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space
@@ -244,6 +248,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
 
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space
@@ -285,6 +291,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
 
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space
@@ -348,6 +356,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
 
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space

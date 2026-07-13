@@ -26,7 +26,8 @@ jobs:
       pr_number: ${{ steps.gate.outputs.pr_number }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-
+        with:
+          persist-credentials: false
       - name: Evaluate review approval
         id: gate
         run: |
@@ -51,6 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          persist-credentials: false
           ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Ensure maintainer-approved label exists
