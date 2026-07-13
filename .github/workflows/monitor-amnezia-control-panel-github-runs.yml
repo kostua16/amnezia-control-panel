@@ -359,7 +359,10 @@ jobs:
           workflow_yaml_files=()
           shell_files=()
 
-          while IFS= read -r file; do
+          # `|| [ -n "$file" ]` catches the final line when the node heredoc
+          # emits no trailing newline, so a single changed file is still
+          # processed instead of silently skipping actionlint/shellcheck.
+          while IFS= read -r file || [ -n "$file" ]; do
             [ -n "$file" ] || continue
             [ -f "$file" ] || continue
             case "$file" in
