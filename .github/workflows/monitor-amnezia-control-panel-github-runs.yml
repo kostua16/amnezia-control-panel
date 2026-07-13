@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 80
+  MAX_TURNS: 50
   MONITOR_WORKFLOW_FILE: monitor-amnezia-control-panel-github-runs.yml
   NODE_VERSION: '24.x'
 
@@ -63,6 +63,16 @@ jobs:
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
+      # Captured as the first step so STOP_BY can be anchored to job start
+      # rather than to the deadline step's wall-clock (which runs minutes
+      # later, after install/setup). Keeps the 5-minute safety margin honest.
+      - name: Capture job start time
+        id: job_start
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout main
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -155,6 +165,35 @@ jobs:
           }
           NODE
 
+      - name: Compute STOP_BY deadline
+        id: deadline
+        shell: bash
+        env:
+          JOB_START_EPOCH: ${{ steps.job_start.outputs.epoch }}
+        run: |
+          set -euo pipefail
+
+          # Guard: JOB_START_EPOCH must be a positive integer (seconds since
+          # epoch). An empty or non-numeric value coerces to 0 in arithmetic,
+          # making STOP_BY land in 1970 (already past) — fail loudly instead.
+          case "$JOB_START_EPOCH" in
+            '' | *[!0-9]*)
+              echo "::error::JOB_START_EPOCH is not a positive integer: '$JOB_START_EPOCH'" >&2
+              exit 1
+              ;;
+          esac
+          if [ "$JOB_START_EPOCH" -le 0 ]; then
+            echo "::error::JOB_START_EPOCH must be positive: '$JOB_START_EPOCH'" >&2
+            exit 1
+          fi
+
+          # 5-minute safety margin before the 25-minute job timeout.
+          # Anchored to job start (captured in the first step) so the
+          # 20-minute deadline holds regardless of how long setup took.
+          # Agent must wrap up and report partial findings before this time.
+          stop_by=$(date -u -d "@$((JOB_START_EPOCH + 1200))" '+%Y-%m-%dT%H:%M:%SZ')
+          echo "stop_by=${stop_by}" >> "$GITHUB_OUTPUT"
+
       - name: Monitor runs and apply narrow fixes
         id: claude_run
         continue-on-error: true
@@ -178,10 +217,15 @@ jobs:
             PREVIOUS_MONITOR_RUN: ${{ steps.window.outputs.previous_run_url }}
             RECENT_PROBLEM_SINCE: ${{ steps.window.outputs.recent_problem_since }}
             SLOW_THRESHOLD_SECONDS: ${{ steps.window.outputs.slow_threshold_seconds }}
+            STOP_BY: ${{ steps.deadline.outputs.stop_by }}
 
             ## Task
 
             Monitor the current amnezia-control-panel project GitHub Actions runs that completed since MONITOR_SINCE, plus any still-relevant recent failed or slow runs since RECENT_PROBLEM_SINCE. Inspect exact GitHub run data and failed logs before drawing conclusions. Analyze failures, flaky behavior, bottlenecks, run duration regressions, queue/setup time, repeated warnings, and opportunities to improve CI speed or reliability.
+
+            ## Deadline (STOP_BY)
+
+            The job has a hard 25-minute timeout. STOP_BY is 20 minutes from job start (5-minute safety margin). You MUST produce your final output (findings report or changed-files summary) BEFORE STOP_BY. If you have unfinished investigations when time is running short, stop investigating and report what you have — partial findings reported is better than all findings lost to a timeout kill.
 
             ## Required GitHub Evidence
 
