@@ -164,6 +164,7 @@ Plans:
 <!-- PR-IMPROVE:719 --> - PR #719: fix: resolve #714 - APR-E01: Weekly human-disposition digest issue (audit-auto-prs) -- pr719.1 x1, pr719.2 x1. Quick artifact: `.planning/quick/260712-pr719-workflow-improve/260712-pr719-PLAN.md`.
 <!-- PR-IMPROVE:720 --> - PR #720: fix: resolve #708 - WHO-I05: Lighten the hourly collect job (workflow-health-optimize) -- pr720.1 x1, pr720.2 x1. Quick artifact: `.planning/quick/260712-pr720-workflow-improve/260712-pr720-PLAN.md`.
 <!-- PR-IMPROVE:721 --> - PR #721: fix: resolve #703 - MON-I01: Catch timeout-cancelled runs in 'report-failure' (monitor-github-runs) -- pr721.1 x1, pr721.2 x1. Quick artifact: `.planning/quick/260712-pr721-workflow-improve/260712-pr721-PLAN.md`.
+<!-- PR-IMPROVE:722 --> - PR #722: fix: resolve #704 - MON-I02: Align 80-turn budget with the 25-min timeout (monitor-github-runs) -- pr722.1 x1, pr722.2 x1, pr722.4 x1. Quick artifact: `.planning/quick/260712-pr722-workflow-improve/260712-pr722-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
