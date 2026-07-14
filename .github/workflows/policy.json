@@ -101,6 +101,22 @@
     "allowedEcosystems": ["npm", "npm_and_yarn"],
     "manualOnlyBranchPrefixes": ["dependabot/github_actions/"]
   },
+  "projectManager": {
+    "alignmentMention": "@kostua16",
+    "alignmentVetoWindowHours": 4,
+    "maxAlignmentFixRounds": 3,
+    "protectedMergeAuthorityPaths": [
+      ".github/workflows/project-manager.yml",
+      ".github/workflows/scripts/project-manager.cjs",
+      ".github/workflows/scripts/evaluate-pr-policy.cjs",
+      ".github/workflows/scripts/evaluate-pr-finalizer-decision.cjs",
+      ".github/workflows/scripts/orchestrate-pr-flow.cjs",
+      ".github/workflows/policy.json",
+      ".github/pr-flow.json",
+      ".claude/agents/kos-project-manager.md",
+      ".claude/skills/kos-project-manager-"
+    ]
+  },
   "labels": {
     "auto-fix": {
       "color": "e4e669",
@@ -257,6 +273,10 @@
     "maintainer-approved": {
       "color": "0e8a16",
       "description": "Maintainer approved the current PR head for finalization"
+    },
+    "pm-escalation": {
+      "color": "b60205",
+      "description": "Project-manager alignment review needs a human decision"
     },
     "antigravity-review-passed": {
       "color": "0e8a16",

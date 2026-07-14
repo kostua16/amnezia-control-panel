@@ -5,14 +5,19 @@ const path = require('node:path');
 
 const {
   PR_PRODUCER_REGISTRY,
+  alignmentActionsForDecision,
   attachRepairRunsToPullRequest,
   buildPlan,
+  classifyPrForAlignment,
+  creationTimeAutomationNeedsReview,
   decidePrAction,
   detectPrProducingWorkflows,
   duplicateAutomationPrActions,
   parseFixReviewSummaryComment,
   parseRebaseSummaryComment,
+  parseReviewJson,
   parseStateComment,
+  pickReviewAction,
   renderStateBody,
   registryCoverage,
   safeIssueForFix,
@@ -1359,4 +1364,483 @@ test('PM25: persisted directMergeReview decision is consulted without a live rev
 
   assert.equal(action.actionKey, 'direct-merge');
   assert(actionTypes(action).includes('merge-pr'));
+});
+
+const ENFORCE = { now: NOW, alignmentMode: 'enforce' };
+
+function alignmentPr(overrides = {}) {
+  return readyPr({
+    labels: ['ai-review-passed', 'security-review-passed', 'flow/manual-only'],
+    headRefName: 'claude-gsd-planning-execute-260701',
+    files: [{ path: 'src/lib/example.ts' }],
+    createdAt: '2026-07-01T06:00:00.000Z',
+    projectManagerState: { headSha: 'abc123', readySince: READY_2H },
+    ...overrides,
+  });
+}
+
+test('PM39: enforce mode reviews a fresh ready manual-only PR without age-out', () => {
+  const action = decidePrAction(alignmentPr(), ENFORCE);
+
+  assert.equal(action.type, 'direct-merge-review-required');
+  assert.equal(action.actionKey, 'alignment-review');
+  assert.equal(action.alignmentCtx.prClass, 'gsd-execution');
+  assert.equal(action.readySince, READY_2H);
+});
+
+test('PM39b: off mode keeps the approval-or-8h gate for the same PR', () => {
+  const action = decidePrAction(alignmentPr(), { now: NOW });
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
+test('PM40: enforce merge verdict on a non-workflow PR direct-merges', () => {
+  const action = decidePrAction(
+    alignmentPr({ projectManagerReview: { decision: 'merge', reason: 'ok' } }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'manual-direct-merge');
+  assert(actionTypes(action).includes('merge-pr'));
+});
+
+test('PM41: enforce merge verdict on a .github PR opens a veto window instead of merging', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      files: [{ path: '.github/workflows/audit-auto-prs.yml' }],
+      projectManagerReview: { decision: 'merge', reason: 'ok' },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'alignment-veto');
+  assert(!actionTypes(action).includes('merge-pr'));
+  const patch = action.actions.find((sub) => sub.type === 'upsert-pr-state');
+  assert.equal(patch.state.alignmentVetoExpiresAt, '2026-07-01T14:00:00.000Z');
+  const notice = action.actions.find((sub) => sub.type === 'comment');
+  assert(notice.body.includes('veto window'));
+});
+
+test('PM42: stored merge verdict merges after the veto window expires', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      files: [{ path: '.github/workflows/audit-auto-prs.yml' }],
+      projectManagerState: {
+        headSha: 'abc123',
+        readySince: READY_9H,
+        directMergeReview: 'merge',
+        alignmentVetoExpiresAt: '2026-07-01T09:00:00.000Z',
+      },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'manual-direct-merge');
+  assert(actionTypes(action).includes('merge-pr'));
+});
+
+test('PM43: stored merge verdict waits while the veto window is open', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      files: [{ path: '.github/workflows/audit-auto-prs.yml' }],
+      projectManagerState: {
+        headSha: 'abc123',
+        readySince: READY_2H,
+        directMergeReview: 'merge',
+        alignmentVetoExpiresAt: '2026-07-01T13:00:00.000Z',
+      },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
+test('PM43b: do-not-merge during the veto window blocks the merge', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+        'do-not-merge',
+      ],
+      files: [{ path: '.github/workflows/audit-auto-prs.yml' }],
+      projectManagerState: {
+        headSha: 'abc123',
+        readySince: READY_9H,
+        directMergeReview: 'merge',
+        alignmentVetoExpiresAt: '2026-07-01T09:00:00.000Z',
+      },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
+test('PM44: request_fixes posts findings and /fix-review and counts the round', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      projectManagerReview: {
+        decision: 'request_fixes',
+        reason: 'scope creep',
+        findings: [
+          {
+            title: 'Unrelated refactor',
+            detail: 'touches helpers outside the plan',
+            suggested_action: 'revert the extra hunks',
+          },
+        ],
+      },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'alignment-fix');
+  const bodies = action.actions
+    .filter((sub) => sub.type === 'comment')
+    .map((sub) => sub.body);
+  assert(bodies.some((body) => body.includes('Unrelated refactor')));
+  assert(bodies.includes('/fix-review'));
+  const patch = action.actions.find((sub) => sub.type === 'upsert-pr-state');
+  assert.equal(patch.state.alignmentFixRounds, 1);
+  assert.equal(patch.state.directMergeReview, 'request_fixes');
+});
+
+test('PM44b: fix rounds survive a head change so the cap is per PR', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      projectManagerState: {
+        headSha: 'old-head',
+        readySince: READY_2H,
+        alignmentFixRounds: 2,
+      },
+      projectManagerReview: { decision: 'request_fixes', reason: 'drift' },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'alignment-fix');
+  const patch = action.actions.find((sub) => sub.type === 'upsert-pr-state');
+  assert.equal(patch.state.alignmentFixRounds, 3);
+});
+
+test('PM45: request_fixes at the round cap escalates instead of looping', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      projectManagerState: {
+        headSha: 'abc123',
+        readySince: READY_2H,
+        alignmentFixRounds: 3,
+      },
+      projectManagerReview: { decision: 'request_fixes', reason: 'drift' },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'alignment-escalation');
+  const issue = action.actions.find(
+    (sub) => sub.type === 'create-or-reuse-issue',
+  );
+  assert.deepEqual(issue.labels, ['pm-escalation']);
+  const bodies = action.actions
+    .filter((sub) => sub.type === 'comment')
+    .map((sub) => sub.body);
+  assert(!bodies.includes('/fix-review'));
+});
+
+test('PM46: hold verdict escalates once with mention and issue, then waits', () => {
+  const held = alignmentPr({
+    projectManagerReview: {
+      decision: 'hold',
+      reason: 'conflicts with roadmap direction',
+      risks: ['duplicates planned phase work'],
+      required_human_action: 'Decide whether to keep the PR',
+    },
+  });
+  const action = decidePrAction(held, ENFORCE);
+
+  assert.equal(action.actionKey, 'alignment-escalation');
+  const mention = action.actions.find((sub) => sub.type === 'comment');
+  assert(mention.body.includes('@kostua16'));
+  assert(mention.body.includes('conflicts with roadmap direction'));
+  const patch = action.actions.find((sub) => sub.type === 'upsert-pr-state');
+  assert.equal(patch.state.alignmentEscalatedAt, NOW);
+
+  const repeat = decidePrAction(
+    alignmentPr({
+      projectManagerState: {
+        headSha: 'abc123',
+        readySince: READY_2H,
+        directMergeReview: 'hold',
+        alignmentEscalatedAt: NOW,
+      },
+    }),
+    ENFORCE,
+  );
+  assert.equal(repeat?.actionKey ?? 'none', 'none');
+});
+
+test('PM47: protected merge-authority paths never auto-merge, even on merge verdict', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      files: [{ path: '.github/workflows/scripts/project-manager.cjs' }],
+      projectManagerReview: { decision: 'merge', reason: 'looks fine' },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'alignment-escalation');
+  assert(!actionTypes(action).includes('merge-pr'));
+});
+
+test('PM48: creation-time automation needs-review does not block the alignment review', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+        'needs-review',
+      ],
+      needsReviewLabelEvents: [{ createdAt: '2026-07-01T06:05:00.000Z' }],
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action?.type, 'direct-merge-review-required');
+});
+
+test('PM49: needs-review without label-event evidence keeps blocking (safe default)', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+        'needs-review',
+      ],
+      needsReviewLabelEvents: [],
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
+test('PM50: needs-review applied after creation blocks the alignment path', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+        'needs-review',
+      ],
+      needsReviewLabelEvents: [
+        { createdAt: '2026-07-01T06:05:00.000Z' },
+        { createdAt: '2026-07-01T09:00:00.000Z' },
+      ],
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
+test('PM51: cross-repository PR escalates instead of merging on merge verdict', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      isCrossRepository: true,
+      projectManagerReview: { decision: 'merge', reason: 'ok' },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'alignment-escalation');
+  assert(!actionTypes(action).includes('merge-pr'));
+});
+
+test('PM52: dependabot deps-review-manual goes to alignment review, not /fix-review', () => {
+  const depsPr = alignmentPr({
+    headRefName: 'dependabot/npm_and_yarn/example-2.0.0',
+    labels: ['deps-review-manual', 'flow/manual-only'],
+    files: [{ path: 'package-lock.json' }],
+  });
+  const action = decidePrAction(depsPr, ENFORCE);
+
+  assert.equal(action?.type, 'direct-merge-review-required');
+  assert.equal(action.alignmentCtx.prClass, 'dependency');
+
+  const offMode = decidePrAction(depsPr, { now: NOW });
+  assert.equal(offMode?.actionKey, 'fix-review');
+});
+
+test('PM53: stored request_fixes with a no-op fix-review escalates the disagreement', () => {
+  const action = decidePrAction(
+    attachRepairRunsToPullRequest(
+      alignmentPr({
+        projectManagerState: {
+          headSha: 'abc123',
+          readySince: READY_2H,
+          directMergeReview: 'request_fixes',
+          lastActionAt: '2026-07-01T08:30:00.000Z',
+          alignmentFixRounds: 1,
+        },
+        comments: [
+          fixReviewSummary({ heading: 'No changes needed', head: 'abc123' }),
+        ],
+      }),
+      [],
+    ),
+    ENFORCE,
+  );
+
+  assert.equal(action?.actionKey, 'alignment-escalation');
+});
+
+test('PM53b: stored request_fixes waits while the fix round is in flight', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      projectManagerState: {
+        headSha: 'abc123',
+        readySince: READY_2H,
+        directMergeReview: 'request_fixes',
+        lastActionAt: '2026-07-01T09:45:00.000Z',
+        alignmentFixRounds: 1,
+      },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
+test('PM54: apply-phase alignment outcomes mirror the plan-phase decisions', () => {
+  const reviewRequired = decidePrAction(alignmentPr(), ENFORCE);
+  const merge = alignmentActionsForDecision(reviewRequired.alignmentCtx, {
+    decision: 'merge',
+    reason: 'aligned',
+  });
+  assert.equal(merge.actionKey, 'manual-direct-merge');
+  assert(merge.actions.some((sub) => sub.type === 'merge-pr'));
+
+  const fixes = alignmentActionsForDecision(reviewRequired.alignmentCtx, {
+    decision: 'request_fixes',
+    reason: 'drift',
+    findings: [{ title: 'x', detail: 'y' }],
+  });
+  assert.equal(fixes.actionKey, 'alignment-fix');
+
+  const githubCtx = decidePrAction(
+    alignmentPr({ files: [{ path: '.github/pr-flow.json' }] }),
+    ENFORCE,
+  ).alignmentCtx;
+  const protectedResult = alignmentActionsForDecision(githubCtx, {
+    decision: 'merge',
+    reason: 'ok',
+  });
+  assert.equal(protectedResult.actionKey, 'alignment-escalation');
+});
+
+test('PM55: parseReviewJson passes request_fixes through and defaults junk to hold', () => {
+  assert.equal(
+    parseReviewJson('{"decision":"request_fixes","reason":"drift"}').decision,
+    'request_fixes',
+  );
+  assert.equal(
+    parseReviewJson('{"decision":"approve","reason":"typo"}').decision,
+    'hold',
+  );
+  const findings = parseReviewJson(
+    '{"decision":"request_fixes","findings":[{"title":"a","detail":"b"}]}',
+  ).findings;
+  assert.deepEqual(findings, [
+    { title: 'a', detail: 'b', suggested_action: '' },
+  ]);
+});
+
+test('PM56: pickReviewAction selects the oldest ready PR for review', () => {
+  const picked = pickReviewAction([
+    {
+      type: 'direct-merge-review-required',
+      number: 2,
+      readySince: '2026-07-01T08:00:00.000Z',
+    },
+    {
+      type: 'direct-merge-review-required',
+      number: 1,
+      readySince: '2026-07-01T02:00:00.000Z',
+    },
+    { type: 'comment', number: 3 },
+  ]);
+
+  assert.equal(picked.number, 1);
+});
+
+test('PM57: alignment state fields round-trip through the sticky comment', () => {
+  const body = renderStateBody({
+    headSha: 'abc123',
+    alignmentFixRounds: 2,
+    alignmentVetoExpiresAt: '2026-07-01T14:00:00.000Z',
+    alignmentEscalatedAt: '2026-07-01T10:00:00.000Z',
+  });
+  const parsed = parseStateComment(body);
+
+  assert.equal(parsed.alignmentFixRounds, 2);
+  assert.equal(parsed.alignmentVetoExpiresAt, '2026-07-01T14:00:00.000Z');
+  assert.equal(parsed.alignmentEscalatedAt, '2026-07-01T10:00:00.000Z');
+});
+
+test('PM58: alignment classification maps branch prefixes and workflow paths', () => {
+  assert.equal(
+    classifyPrForAlignment({
+      headRefName: 'claude-gsd-planning-execute-1',
+    }),
+    'gsd-execution',
+  );
+  assert.equal(
+    classifyPrForAlignment({ headRefName: 'claude-audit-fix-1' }),
+    'audit-fix',
+  );
+  assert.equal(
+    classifyPrForAlignment({ headRefName: 'dependabot/npm_and_yarn/x' }),
+    'dependency',
+  );
+  assert.equal(
+    classifyPrForAlignment({ headRefName: 'claude-fix-issue-9' }),
+    'issue-fix',
+  );
+  assert.equal(
+    classifyPrForAlignment({
+      headRefName: 'claude-monitor-fix-1',
+      files: [{ path: '.github/workflows/ci.yml' }],
+    }),
+    'workflow-automation',
+  );
+  assert.equal(classifyPrForAlignment({ headRefName: 'feature' }), 'general');
+});
+
+test('PM58b: creation-time needs-review detection tolerates only creation-window events', () => {
+  const base = { createdAt: '2026-07-01T06:00:00.000Z' };
+  assert.equal(
+    creationTimeAutomationNeedsReview({
+      ...base,
+      needsReviewLabelEvents: [{ createdAt: '2026-07-01T06:10:00.000Z' }],
+    }),
+    true,
+  );
+  assert.equal(
+    creationTimeAutomationNeedsReview({
+      ...base,
+      needsReviewLabelEvents: [{ createdAt: '2026-07-01T07:00:00.000Z' }],
+    }),
+    false,
+  );
+  assert.equal(
+    creationTimeAutomationNeedsReview({ ...base, needsReviewLabelEvents: [] }),
+    false,
+  );
+  assert.equal(creationTimeAutomationNeedsReview(base), false);
 });

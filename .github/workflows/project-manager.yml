@@ -40,6 +40,11 @@ on:
           - prs
           - issues
           - low-load
+      alignment_mode:
+        description: 'Alignment review mode override (blank uses the PM_ALIGNMENT_MODE repo variable)'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: project-manager
@@ -56,15 +61,17 @@ permissions:
 env:
   NODE_VERSION: '24.x'
   MAX_TURNS: '30'
+  MAX_REVIEW_TURNS: '80'
 
 jobs:
   manage:
     runs-on: [self-hosted, big]
-    timeout-minutes: 15
+    timeout-minutes: 30
     outputs:
       route: ${{ steps.plan.outputs.route }}
       review-required: ${{ steps.plan.outputs.review_required }}
       review-pr-number: ${{ steps.plan.outputs.review_pr_number }}
+      review-pr-class: ${{ steps.plan.outputs.review_pr_class }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -76,6 +83,12 @@ jobs:
           install-gsd: 'true'
           install-rtk: 'true'
 
+      - name: Ensure escalation label exists
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          names: pm-escalation
+
       - name: Build project-manager plan
         id: plan
         env:
@@ -86,6 +99,7 @@ jobs:
           ISSUE_THRESHOLD: ${{ github.event.inputs.issue_threshold || '5' }}
           PR_LIMIT: ${{ github.event.inputs.pr_limit || '15' }}
           ISSUE_LIMIT: ${{ github.event.inputs.issue_limit || '15' }}
+          PM_ALIGNMENT_MODE: ${{ github.event.inputs.alignment_mode || vars.PM_ALIGNMENT_MODE || 'off' }}
         run: |
           node .github/workflows/scripts/project-manager.cjs \
             --dry-run "$DRY_RUN" \
@@ -94,6 +108,7 @@ jobs:
             --issue-threshold "$ISSUE_THRESHOLD" \
             --pr-limit "$PR_LIMIT" \
             --issue-limit "$ISSUE_LIMIT" \
+            --alignment-mode "$PM_ALIGNMENT_MODE" \
             --plan-file "$RUNNER_TEMP/project-manager-plan.json"
 
       - name: Run project-manager PR review
@@ -103,10 +118,10 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
-          model: sonnet
-          max-turns: ${{ env.MAX_TURNS }}
+          model: opus
+          max-turns: ${{ env.MAX_REVIEW_TURNS }}
           track-progress: 'false'
-          json-schema: '{"type":"object","required":["decision","reason","risks","required_human_action"],"properties":{"decision":{"type":"string","enum":["merge","hold"]},"reason":{"type":"string"},"risks":{"type":"array","items":{"type":"string"}},"required_human_action":{"type":"string"}},"additionalProperties":false}'
+          json-schema: '{"type":"object","required":["decision","reason","risks","findings","required_human_action"],"properties":{"decision":{"type":"string","enum":["merge","request_fixes","hold"]},"reason":{"type":"string"},"risks":{"type":"array","items":{"type":"string"}},"findings":{"type":"array","items":{"type":"object","required":["title","detail"],"properties":{"title":{"type":"string"},"detail":{"type":"string"},"suggested_action":{"type":"string"}},"additionalProperties":false}},"required_human_action":{"type":"string"}},"additionalProperties":false}'
           allowed-tools: 'Read,Glob,Grep,LS,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh api:*),Bash(rtk:*)'
           plugin-marketplaces: |-
             https://github.com/anthropics/claude-plugins-official.git
@@ -118,11 +133,27 @@ jobs:
             security-guidance@claude-plugins-official
             caveman@caveman
           prompt: |
-            Review PR #${{ steps.plan.outputs.review_pr_number }} for a project-manager direct merge fallback.
+            Run the project-manager alignment review for PR #${{ steps.plan.outputs.review_pr_number }} (class: ${{ steps.plan.outputs.review_pr_class || 'general' }}). Your verdict closes the manual-only gate: it decides whether this PR merges, goes through another fix round, or waits for a human.
 
             Read `.claude/agents/kos-project-manager.md` first and follow it as the operating contract.
+
+            Judge whether merging this PR improves, fixes, or evolves the project — or would regress it, duplicate existing behavior, or drift from the documented design. Alignment sources: `.planning/ROADMAP.md`, `.planning/PROJECT.md`, `.planning/STATE.md`, `.planning/GOAL.md`, `docs/code-standards.md`, `docs/TODOs-2.md`, `docs/workflow-e2e-scenarios.md`, plus any issue or plan the PR references.
+
+            Class-specific focus:
+            - gsd-execution: the diff matches the referenced plan/phase scope with no scope creep.
+            - issue-fix: the referenced issue is fixed at its root cause with no unrelated changes.
+            - dependency: breaking-change and compatibility analysis for the version bump; lockfile consistency.
+            - workflow-automation: `docs/workflow-e2e-scenarios.md` reflects any behavior change and the workflow change protocol in `docs/code-standards.md` was followed.
+            - planning: planning artifacts only, consistent with the roadmap.
+            - audit-fix / general: net improvement without regressing documented behavior.
+
+            Decisions:
+            - "merge": aligned and safe; required checks and review signals passed for the current head; no maintainer rejection.
+            - "request_fixes": salvageable but misaligned; list concrete findings a fixer can act on.
+            - "hold": a human must decide (uncertainty, risk, or conflict with project direction).
+
             This is read-only review. Do not edit files, post comments, merge, approve, or change labels.
-            Return JSON only with: decision, reason, risks, required_human_action.
+            Return JSON only with: decision, reason, risks, findings, required_human_action.
 
       - name: Apply project-manager plan
         env:

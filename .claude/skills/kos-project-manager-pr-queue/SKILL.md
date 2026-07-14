@@ -21,10 +21,10 @@ The PR queue route runs when open PRs are greater than the configured threshold.
 2. Resolve merge conflicts via exact `/rebase`.
 3. Rebase stale current-head Code Review when the head commit is older than 5 hours and the latest current-head rebase was not a no-op.
 4. Trigger `/fix` for failed checks.
-5. Trigger `/fix-review` for review blockers.
+5. Trigger `/fix-review` for review blockers (in alignment enforce mode, a Dependabot PR whose only blocker is `deps-review-manual` skips this and goes to the alignment review instead).
 6. Dispatch `pr-finalizer.yml` for ready PRs.
 7. If ready for more than 1 hour and still open, file a workflow issue, `/fix` it, then direct-merge only after project-manager review says `merge`.
-8. For manual-only PRs, direct-merge only after project-manager review says `merge` and either approval exists or 8 hours passed without maintainer rejection.
+8. For manual-only PRs: with `PM_ALIGNMENT_MODE=enforce`, run the alignment review on the next cycle and act on its `merge` / `request_fixes` / `hold` verdict (see `kos-project-manager-direct-merge`); otherwise direct-merge only after review says `merge` and either approval exists or 8 hours passed without maintainer rejection.
 
 ## Loop prevention
 
