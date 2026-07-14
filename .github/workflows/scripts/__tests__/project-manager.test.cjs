@@ -1595,6 +1595,25 @@ test('PM47: protected merge-authority paths never auto-merge, even on merge verd
   assert(!actionTypes(action).includes('merge-pr'));
 });
 
+test('PM47b: protected merge-authority paths never auto-merge even with maintainer approval', () => {
+  const action = decidePrAction(
+    alignmentPr({
+      labels: [
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+        'maintainer-approved',
+      ],
+      files: [{ path: '.github/workflows/policy.json' }],
+      projectManagerReview: { decision: 'merge', reason: 'approved by maintainer' },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'alignment-escalation');
+  assert(!actionTypes(action).includes('merge-pr'));
+});
+
 test('PM48: creation-time automation needs-review does not block the alignment review', () => {
   const action = decidePrAction(
     alignmentPr({

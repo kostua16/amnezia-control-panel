@@ -1248,7 +1248,7 @@ function alignmentFixActions(ctx, review) {
  * Returns null when nothing should happen yet (open veto window).
  */
 function alignmentActionsForDecision(ctx, review) {
-  if (ctx.protectedCore && !ctx.approved) {
+  if (ctx.protectedCore) {
     return {
       actionKey: 'alignment-escalation',
       actions: alignmentEscalationActions(

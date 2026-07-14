@@ -66,7 +66,7 @@ env:
 jobs:
   manage:
     runs-on: [self-hosted, big]
-    timeout-minutes: 30
+    timeout-minutes: 45
     outputs:
       route: ${{ steps.plan.outputs.route }}
       review-required: ${{ steps.plan.outputs.review_required }}
