@@ -77,6 +77,13 @@ jobs:
           fetch-depth: 1
           token: ${{ secrets.GH_PAT }}
 
+      - name: Capture job start time
+        id: job_start
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GH_PAT }}
@@ -144,6 +151,14 @@ jobs:
           branch-name: claude-fix-issue-${{ github.event.issue.number }}-${{ github.run_id }}
           github-token: ${{ secrets.GH_PAT }}
 
+      - name: Compute STOP_BY deadline
+        id: deadline
+        uses: ./.github/actions/compute-stop-by-deadline
+        with:
+          timeout-minutes: '10'
+          safety-margin-minutes: '2'
+          job-start-epoch: '${{ steps.job_start.outputs.epoch }}'
+
       - id: claude_run
         # Tracking issues are handled by the deterministic spin-off step above.
         if: steps.tracking.outputs.is_tracking != 'true'
@@ -175,6 +190,10 @@ jobs:
             ISSUE NUMBER: #${{ github.event.issue.number }}
             ISSUE TITLE: ${{ github.event.issue.title }}
             FIX INSTRUCTION: ${{ steps.extract.outputs.message || 'Analyze the issue and implement the appropriate fix based on the description and comments.' }}
+
+            STOP_BY: ${{ steps.deadline.outputs.stop_by }}
+
+            The job has a hard 10-minute timeout. STOP_BY is the deadline by which you must produce your final output. Wrap up and report before STOP_BY — partial results are better than a timeout kill.
 
             Steps:
             1. Run `gh issue view ${{ github.event.issue.number }}` to read full issue description
