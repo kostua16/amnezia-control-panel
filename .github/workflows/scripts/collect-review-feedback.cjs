@@ -67,7 +67,9 @@ function fetchReviewThreads(owner, name, pr) {
   // Intentionally fail closed here. Missing review-thread data can make
   // /fix-review report a false no-op while unresolved inline Kilo findings
   // still exist, so transient gh/GraphQL failures must abort collection.
-  const output = run('gh', ['api', 'graphql', '-f', `query=${query}`]);
+  const output = run('gh', ['api', 'graphql', '-f', `query=${query}`], {
+    retry: true,
+  });
   const data = JSON.parse(output);
   if (data?.errors) {
     throw new Error(
@@ -95,7 +97,7 @@ function extractReviewThreads(threads = [], { authorFilter } = {}) {
 }
 
 function failClosedJson(command, args) {
-  const output = run(command, args);
+  const output = run(command, args, { retry: true });
   return JSON.parse(output);
 }
 
@@ -133,6 +135,7 @@ function fetchDiff(repo, pr, maxChars = MAX_DIFF_CHARS) {
   const limit =
     Number.isFinite(maxChars) && maxChars > 0 ? maxChars : MAX_DIFF_CHARS;
   const diff = run('gh', ['pr', 'diff', String(pr), '--repo', repo], {
+    retry: true,
     allowFailure: true,
     fallback: '',
   });

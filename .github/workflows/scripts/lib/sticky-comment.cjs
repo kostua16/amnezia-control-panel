@@ -23,11 +23,27 @@ function getRepoSlug() {
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1000;
 
-function isTransientHttp(stderr) {
-  return /HTTP 5\d{2}/.test(stderr);
+// Transient failures worth retrying on idempotent (read) gh calls: gh's literal
+// "HTTP 5xx" response plus the network-level errors Go's net/http emits on a CI
+// `gh api` call (TCP reset, dial/TLS timeout, context deadline, truncated body).
+const TRANSIENT_PATTERNS = [
+  /HTTP 5\d{2}/,
+  /connection reset/,
+  /connection refused/,
+  /dial tcp/,
+  /i\/o timeout/,
+  /tls handshake timeout/,
+  /context deadline exceeded/,
+  /unexpected eof/,
+];
+
+function isTransient(stderr) {
+  const text = String(stderr).toLowerCase();
+  return TRANSIENT_PATTERNS.some((re) => re.test(text));
 }
 
 function run(command, args, options = {}) {
+  const retryEnabled = options.retry === true;
   for (let attempt = 0; ; attempt++) {
     try {
       return (
@@ -39,23 +55,29 @@ function run(command, args, options = {}) {
       ).trim();
     } catch (error) {
       const stderr = String(error.stderr ?? '').trim();
-      if (options.allowFailure) {
-        return options.fallback ?? '';
-      }
+      // Retry transient errors only when the caller opts in with `retry: true`,
+      // and do it BEFORE the allowFailure short-circuit. Read paths (listComments
+      // via runJson, fallback []) must actually retry, or a transient 504 yields
+      // [] and upsertComment posts a duplicate sticky comment. Mutating callers
+      // (POST/PATCH/DELETE) leave `retry` off: a retry issued after GitHub
+      // already applied the change would post a duplicate comment (or delete a
+      // second id) on a late 504.
       if (
+        retryEnabled &&
         attempt < MAX_RETRIES - 1 &&
-        isTransientHttp(stderr)
+        isTransient(stderr)
       ) {
         const delay = RETRY_BASE_MS * 2 ** attempt;
         console.warn(
           `sticky-comment: transient HTTP error on attempt ${attempt + 1}/${MAX_RETRIES}, retrying in ${delay}ms: ${stderr.split('\n')[0]}`,
         );
-        // eslint-disable-next-line no-restricted-syntax -- intentional sync sleep for retry
-        const end = Date.now() + delay;
-        while (Date.now() < end) {
-          /* busy-wait (no setTimeout in sync context) */
-        }
+        // Synchronous sleep without burning a CPU core. Runners are Linux, so
+        // GNU sleep accepts fractional seconds; execFileSync is already imported.
+        execFileSync('sleep', [String(delay / 1000)], { stdio: 'ignore' });
         continue;
+      }
+      if (options.allowFailure) {
+        return options.fallback ?? '';
       }
       if (stderr) {
         console.error(stderr);
@@ -66,7 +88,10 @@ function run(command, args, options = {}) {
 }
 
 function runJson(command, args, fallback = []) {
+  // Idempotent GETs (e.g. listComments): retry transient errors so a 504 does
+  // not silently collapse to the fallback and cause a duplicate sticky comment.
   const output = run(command, args, {
+    retry: true,
     allowFailure: fallback !== undefined,
     fallback: JSON.stringify(fallback),
   });
