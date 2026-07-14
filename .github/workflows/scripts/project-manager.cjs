@@ -135,6 +135,14 @@ const PR_PRODUCER_REGISTRY = [
     dedupe: { titlePrefix: 'fix(ci): monitored GitHub run finding - ' },
   },
   {
+    workflow: 'maintenance.yml',
+    category: 'proactive',
+    dispatchRef: 'main',
+    inputs: {},
+    cooldownHours: 12,
+    dedupe: { titlePrefix: 'chore: persist daily maintenance changes' },
+  },
+  {
     workflow: 'suggest-improvements.yml',
     category: 'proactive',
     dispatchRef: 'main',

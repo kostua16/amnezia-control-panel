@@ -51,6 +51,13 @@ jobs:
           policy-file: .github/workflows/policy.json
           names: maintenance,security,ci-failure
 
+      - id: branch
+        name: Prepare maintenance branch
+        uses: ./.github/actions/prepare-automation-branch
+        with:
+          branch-name: claude-maintenance-${{ github.run_id }}
+          github-token: ${{ secrets.GH_PAT }}
+
       - id: claude_run
         continue-on-error: true
         uses: ./.github/actions/run-zai
@@ -80,6 +87,7 @@ jobs:
 
             Do NOT create issues if no findings exist in that category.
             If critical security issues (HIGH/CRITICAL severity) are found, also comment on all open PRs.
+            Do NOT push or open a PR. The workflow persists any maintenance commits by validating the prepared branch, pushing it, and opening a review PR.
             Operate as the `kos-maintenance` agent: first read `.claude/agents/kos-maintenance.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail workflow on Claude failure
@@ -87,6 +95,74 @@ jobs:
         run: |
           echo "::error::Claude failure: ${{ steps.claude_run.outputs.claude_failure_reason || 'claude-code-action step failed' }}"
           exit 1
+
+      - id: detect_changes
+        name: Detect maintenance branch changes
+        shell: bash
+        run: |
+          git fetch origin main --depth=1 || true
+          {
+            git diff --name-only origin/main...HEAD
+            git diff --name-only
+            git diff --cached --name-only
+          } | sort -u > "${RUNNER_TEMP}/maintenance-changed-files.txt"
+          if [ -s "${RUNNER_TEMP}/maintenance-changed-files.txt" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "changed_files<<EOF"
+              cat "${RUNNER_TEMP}/maintenance-changed-files.txt"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "changed_files=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate maintenance changes
+        id: gate
+        if: steps.detect_changes.outputs.changed == 'true'
+        uses: ./.github/actions/validate-pr-gate
+        with:
+          run-build: 'false'
+
+      - uses: ./.github/actions/commit-and-push
+        id: push
+        if: steps.detect_changes.outputs.changed == 'true' && steps.gate.outputs.gate_passed == 'true'
+        with:
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          commit-message: 'chore: persist daily maintenance changes'
+          github-token: ${{ secrets.GH_PAT }}
+
+      - name: Build maintenance PR body
+        id: pr-body
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/build-automation-pr-body
+        with:
+          workflow-name: maintenance
+          problem: 'Daily maintenance produced repository changes that must persist through review.'
+          source-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          base-ref: main
+          changed-files: ${{ steps.detect_changes.outputs.changed_files }}
+          evidence: |
+            Maintenance report:
+            ${{ steps.claude_run.outputs.claude_last_output }}
+          execution-file: ${{ steps.claude_run.outputs.last_execution_file }}
+          structured-output: ${{ steps.claude_run.outputs.structured_output }}
+          claude-last-output: ${{ steps.claude_run.outputs.claude_last_output }}
+          review-notes: 'Created from the scheduled maintenance workflow after the shared validation gate passed.'
+
+      - name: Create maintenance PR
+        if: steps.push.outputs.pushed == 'true'
+        uses: ./.github/actions/upsert-pull-request
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          base: main
+          branch-name: ${{ steps.branch.outputs.branch_name }}
+          title: 'chore: persist daily maintenance changes'
+          body: ${{ steps.pr-body.outputs.body }}
+          labels: maintenance,needs-review
+          draft: 'false'
+          require-rich-body: 'true'
 
   report-failure:
     needs: [maintenance]
