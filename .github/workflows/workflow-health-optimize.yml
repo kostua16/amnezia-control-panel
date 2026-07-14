@@ -45,6 +45,7 @@ jobs:
       has-runs: ${{ steps.collect.outputs.has_runs }}
       has-problems: ${{ steps.collect.outputs.has_problems }}
       runs-data: ${{ steps.collect.outputs.runs_data }}
+      summary-path: ${{ steps.collect.outputs.summary_path }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
@@ -225,6 +226,23 @@ jobs:
             // Truncate to 50KB to stay within action limits
             const truncated = json.length > 51200 ? json.substring(0, 51200) + '...[truncated]' : json;
             core.setOutput('runs_data', truncated);
+
+            // Persist per-run health summaries as JSONL for trend analysis (WHO-E01)
+            const { persistHealthSummary } = require('./.github/workflows/scripts/persist-health-summary.cjs');
+            const summaryPath = persistHealthSummary(runSummaries);
+            if (summaryPath) {
+              core.info(`Health summary persisted to ${summaryPath}`);
+              core.setOutput('summary_path', summaryPath);
+            }
+
+      - name: Upload health summary artifact
+        if: steps.collect.outputs.summary_path != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: health-summary-${{ github.run_id }}
+          path: health-summary-*.jsonl
+          retention-days: 7
+          if-no-files-found: ignore
 
   optimize:
     name: Analyze & Optimize Workflows
