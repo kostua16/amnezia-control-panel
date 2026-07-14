@@ -192,14 +192,14 @@ test('upsertComment keeps the legacy patch path when replaceExisting is false', 
   }
 });
 
-// isTransient lowercases stderr before matching, so it must catch gh's
-// uppercase "HTTP 5xx" form (e.g. "gh: HTTP 504: Gateway Timeout") — the exact
-// transient the 5xx retry exists for. A case-sensitive uppercase pattern would
-// silently disable retry on every retry-enabled call site.
-test('isTransient matches gh uppercase HTTP 5xx stderr after lowercasing', () => {
+// Patterns match case-insensitively, so they catch gh's "HTTP 5xx" stderr
+// verbatim (e.g. "gh: HTTP 504: Gateway Timeout") — the exact transient the 5xx
+// retry exists for. A case-sensitive pattern would silently disable retry on
+// every retry-enabled call site.
+test('isTransient matches gh HTTP 5xx stderr case-insensitively', () => {
   assert.ok(isTransient('gh: HTTP 504: Gateway Timeout'));
   assert.ok(isTransient('gh: HTTP 503: Service Unavailable'));
   assert.ok(isTransient('gh: server error (HTTP 500)'));
-  assert.ok(isTransient('http 502')); // already-lowercased form also matches
+  assert.ok(isTransient('http 502')); // lowercase form also matches
   assert.ok(!isTransient('gh: HTTP 404: Not Found'));
 });

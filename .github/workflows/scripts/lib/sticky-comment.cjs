@@ -26,20 +26,22 @@ const RETRY_BASE_MS = 1000;
 // Transient failures worth retrying on idempotent (read) gh calls: gh's literal
 // "HTTP 5xx" response plus the network-level errors Go's net/http emits on a CI
 // `gh api` call (TCP reset, dial/TLS timeout, context deadline, truncated body).
+// Patterns use the `i` flag so they match gh's stderr verbatim regardless of how
+// `gh` capitalizes the status text (e.g. "HTTP 504") — a case-sensitive match
+// here would silently disable 5xx retry, the exact transient this PR targets.
 const TRANSIENT_PATTERNS = [
-  /http 5\d{2}/,
-  /connection reset/,
-  /connection refused/,
-  /dial tcp/,
-  /i\/o timeout/,
-  /tls handshake timeout/,
-  /context deadline exceeded/,
-  /unexpected eof/,
+  /HTTP 5\d{2}/i,
+  /connection reset/i,
+  /connection refused/i,
+  /dial tcp/i,
+  /i\/o timeout/i,
+  /tls handshake timeout/i,
+  /context deadline exceeded/i,
+  /unexpected eof/i,
 ];
 
 function isTransient(stderr) {
-  const text = String(stderr).toLowerCase();
-  return TRANSIENT_PATTERNS.some((re) => re.test(text));
+  return TRANSIENT_PATTERNS.some((re) => re.test(String(stderr)));
 }
 
 function run(command, args, options = {}) {
@@ -62,11 +64,7 @@ function run(command, args, options = {}) {
       // (POST/PATCH/DELETE) leave `retry` off: a retry issued after GitHub
       // already applied the change would post a duplicate comment (or delete a
       // second id) on a late 504.
-      if (
-        retryEnabled &&
-        attempt < MAX_RETRIES - 1 &&
-        isTransient(stderr)
-      ) {
+      if (retryEnabled && attempt < MAX_RETRIES - 1 && isTransient(stderr)) {
         const delay = RETRY_BASE_MS * 2 ** attempt;
         console.warn(
           `sticky-comment: transient HTTP error on attempt ${attempt + 1}/${MAX_RETRIES}, retrying in ${delay}ms: ${stderr.split('\n')[0]}`,
