@@ -321,7 +321,12 @@ jobs:
           echo "::error::ZAI failure: ${{ steps.claude_run.outputs.claude_failure_reason || 'run-zai step failed' }}"
           exit 1
 
-      - name: Verify changed files
+      # Deterministic actionlint/shellcheck enforcement for this monitor's
+      # auto-generated changes. validate-pr-gate covers lint/typecheck/format
+      # (src/** only)/test/build/script-tests/prisma-safe but does NOT run
+      # actionlint or shellcheck, so malformed workflow/action YAML or shell
+      # scripts could otherwise pass the gate and surface only at review time.
+      - name: Verify changed workflow/shell files
         shell: bash
         env:
           CHANGED_FILES: ${{ steps.claude_run.outputs.claude_changed_files_list }}
@@ -331,7 +336,6 @@ jobs:
           node <<'NODE' > /tmp/monitor-changed-files.txt
           const raw = process.env.CHANGED_FILES || '';
           let files = [];
-
           try {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) {
@@ -352,54 +356,26 @@ jobs:
             exit 0
           fi
 
-          js_ts_files=()
-          prettier_targets=()
+          workflow_yaml_files=()
           shell_files=()
-          workflow_or_action_yaml_changed=false
 
-          while IFS= read -r file; do
+          # `|| [ -n "$file" ]` catches the final line when the node heredoc
+          # emits no trailing newline, so a single changed file is still
+          # processed instead of silently skipping actionlint/shellcheck.
+          while IFS= read -r file || [ -n "$file" ]; do
             [ -n "$file" ] || continue
             [ -f "$file" ] || continue
-
-            # .planning/** is in .prettierignore but Prettier's explicit
-            # file-arg check bypasses ignore, so a generated/debug .md there
-            # would fail verification and discard an otherwise-valid fix.
-            case "$file" in
-              .planning/*) continue ;;
-            esac
-
-            case "$file" in
-              *.js|*.cjs|*.ts|*.tsx)
-                js_ts_files+=("$file")
-                prettier_targets+=("$file")
-                ;;
-              .github/workflows/*.yml|.github/workflows/*.yaml|.github/actions/*.yml|.github/actions/*.yaml|*.md)
-                prettier_targets+=("$file")
-                ;;
-            esac
-
             case "$file" in
               .github/workflows/*.yml|.github/workflows/*.yaml|.github/actions/*.yml|.github/actions/*.yaml)
-                workflow_or_action_yaml_changed=true
+                workflow_yaml_files+=("$file")
                 ;;
-            esac
-
-            case "$file" in
               *.sh)
                 shell_files+=("$file")
                 ;;
             esac
           done < /tmp/monitor-changed-files.txt
 
-          if [ "${#js_ts_files[@]}" -gt 0 ]; then
-            npm run lint
-          fi
-
-          if [ "${#prettier_targets[@]}" -gt 0 ]; then
-            npx prettier --check "${prettier_targets[@]}"
-          fi
-
-          if [ "$workflow_or_action_yaml_changed" = true ]; then
+          if [ "${#workflow_yaml_files[@]}" -gt 0 ]; then
             if ! command -v actionlint >/dev/null 2>&1; then
               echo "::error::actionlint is required for workflow/action YAML changes"
               exit 1
