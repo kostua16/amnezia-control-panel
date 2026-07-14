@@ -125,6 +125,18 @@ jobs:
         with:
           run-build: 'false'
 
+      # The gate action runs every check with continue-on-error and only emits
+      # gate_passed, so a failed gate never fails this job on its own. Without
+      # this step, gate_passed=false would silently skip the push and leave the
+      # maintenance job green, dropping the agent's changes with no PR, issue,
+      # or comment. Failing here surfaces it via the report-failure job below.
+      - name: Fail when maintenance changes fail the validation gate
+        if: steps.detect_changes.outputs.changed == 'true' && steps.gate.outputs.gate_passed != 'true'
+        shell: bash
+        run: |
+          echo "::error::Maintenance produced changes but the validation gate did not pass (gate_passed=${{ steps.gate.outputs.gate_passed }}). Changes will not be pushed."
+          exit 1
+
       - uses: ./.github/actions/commit-and-push
         id: push
         if: steps.detect_changes.outputs.changed == 'true' && steps.gate.outputs.gate_passed == 'true'
