@@ -103,8 +103,12 @@ jobs:
         id: diff
         env:
           BASE_REF: ${{ needs.resolve-pr.outputs.base-ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git fetch origin "$BASE_REF" --depth=1
+          # One-shot -c (not `git config`) so the rewritten URL is never written
+          # to .git/config. Persisted credentials must stay off this reused
+          # self-hosted workspace; actions/checkout uses persist-credentials: false.
+          git -c "url.https://x-access-token:${GH_TOKEN}@github.com/.insteadOf=https://github.com/" fetch origin "$BASE_REF" --depth=1
           git diff "origin/$BASE_REF" -- package.json package-lock.json .github/workflows .github/actions > /tmp/dep-diff.txt
           {
             DELIM="EOF-$(openssl rand -hex 8)"
