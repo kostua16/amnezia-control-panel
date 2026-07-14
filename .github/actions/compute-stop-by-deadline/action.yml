@@ -23,6 +23,7 @@ inputs:
 outputs:
   stop_by:
     description: ISO-8601 UTC deadline string (e.g. 2025-07-12T14:35:00Z)
+    value: ${{ steps.deadline.outputs.stop_by }}
 
 runs:
   using: composite
