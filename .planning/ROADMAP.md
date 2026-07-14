@@ -759,6 +759,18 @@ Source: `/gsd:explore` fourteenth-pass review (non-duplicative vs proposals #1-#
 | 39 | **Config import N+1 sequential queries** — `importConfigurationList` and `importTemplateList` loop each entry doing individual `findUnique` + `create`/`update` (up to 1000 sequential DB round-trips for 500 entries). Pre-load all existing names in one query, then batch-create new entries; individual updates for changed entries only. | Medium (Perf) | `src/lib/config-import.ts:53-133`, `src/lib/config-import.ts:137-236` | Proposed |
 | 40 | **No `loading.tsx` files in App Router** — Zero `loading.tsx` files exist in `src/app/`. Next.js App Router uses these to show Suspense-based skeleton/spinner states during route transitions. Users see blank flashes on every navigation instead of structured loading feedback. Add `loading.tsx` with skeleton UI to each dashboard segment route. | Low-Medium (UX) | `src/app/(dashboard)/**/loading.tsx` (new) | Proposed |
 
+## Improvement Intake: Architectural Review Pass 15 (2026-07-14)
+
+Source: `/gsd:explore` fifteenth-pass review (non-duplicative vs proposals #1-#40 and open PRs). Artifact: `.planning/quick/260714-arch-review-pass15/proposal.md`
+
+Also documents 8 previously proposed items now confirmed implemented in codebase (proposals #12, #20, #22, #26, #31, #33, #37, #40).
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 41 | **Panel health checker re-entrant interval guard** — `setInterval` async callback has no inflight guard; slow panels cause overlapping cycles, duplicate probes, and cache races. Fix: add `inflightHealthCheck` promise guard matching `resource-monitor.ts` pattern | Medium (Reliability) | `src/lib/panel-health-checker.ts:356` | Proposed |
+| 42 | **Remove dead `execCommandSync` production export** — Export only used in tests; no production consumer. Misleading API surface contradicts async-first convention | Low (Cleanup) | `src/lib/command-executor.ts:150-169` | Proposed |
+| 43 | **`generateXrayRulesFromDB` type inference for domain rules** — Non-xray protocol rules default to `type: 'ip'` regardless of destination format. Domain-based geo-site rules pass through `matchesCIDR()` which always returns false, silently bypassing all domain routing | Medium (Correctness) | `src/lib/rule-enforcement.ts:59-61` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-12 - Added architectural review pass 14 (proposals #38-#40: ConfigTemplate unique constraint, config import N+1, missing loading.tsx)*
+*Last updated: 2026-07-14 - Added architectural review pass 15 (proposals #41-#43: health checker re-entrant guard, dead execCommandSync export, domain rule type inference)*
