@@ -490,7 +490,16 @@ Decision basis: `project-manager.cjs` route selection (`prs` / `issues` /
 `<!-- project-manager-pr-state -->`, downstream repair summaries
 (`<!-- rebase-pr-summary -->`, `<!-- fix-review-summary -->`), PR-producing
 workflow registry, trusted PR `/fix` extension in `fix-pr.yml`, and
-direct-merge review contract `kos-project-manager`.
+direct-merge/alignment review contract `kos-project-manager`.
+
+Alignment review mode: the `PM_ALIGNMENT_MODE` repo variable (or the
+`alignment_mode` dispatch input) switches the manual-only path. `off`
+(default when the variable is unset) keeps the legacy approval-or-8h gate
+(PM13–PM17). `enforce` reviews every ready manual-only PR on the next cycle
+with a three-way verdict — `merge` / `request_fixes` / `hold` — and closes
+the gate autonomously (PM39+). Knobs live in `policy.json` →
+`projectManager` (mention handle, veto window hours, fix-round cap,
+protected merge-authority paths).
 
 ```mermaid
 flowchart TD
@@ -508,7 +517,13 @@ flowchart TD
   A -->|ready| PF[dispatch pr-finalizer]
   A -->|ready >1h or manual-only| PMR[kos-project-manager review]
   PMR -->|merge| MG[direct squash merge]
+  PMR -->|merge + .github diff, enforce| VW[4h veto window then merge]
+  PMR -->|request_fixes, enforce| RF[findings + /fix-review, max 3 rounds]
+  PMR -->|hold or protected core, enforce| ES[mention + pm-escalation issue]
   PMR -->|hold| H[reported and waiting]
+  VW -->((merged))
+  RF -->((reported))
+  ES -->((reported))
   IS --> IFX[/fix on safe issues]
   LL --> WD[dispatch one eligible PR-producing workflow]
   CL -->((reported))
@@ -564,6 +579,27 @@ flowchart TD
 | PM36  | two open automation PRs share a normalized title (older appears superseded by newer)                                                      | older PR flagged once in the attention digest (`duplicateFlaggedAt` state-deduped); no auto-close                                     | char |
 | PM37  | latest CI run for the current head completed `cancelled` (transient infra)                                                                | `gh run rerun --failed` once per head (`ciRerunAt` state); genuine `failure` conclusions keep the /fix lane                           | char |
 | PM38  | PR carries `flow/review-failed` (code-review retries + advisory fallback exhausted)                                                       | joins the 72h blocked-escalation clock -> reminder comment + attention digest (PM31-PM33 machinery)                                   | char |
+| PM39  | enforce mode: manual-only PR ready (checks + review signals passed), no stored verdict                                                     | alignment review dispatched on the next cycle — no approval / 8h age-out precondition                                                 | spec |
+| PM39b | off mode (variable unset): same fresh-ready manual-only PR                                                                                 | legacy gate holds: no action without approval or 8h age-out (PM13/PM14 unchanged)                                                     | char |
+| PM40  | enforce: alignment verdict `merge`, diff does not touch `.github/**`                                                                       | comment + direct squash merge on the same cycle                                                                                       | spec |
+| PM41  | enforce: alignment verdict `merge`, diff touches `.github/**`, no maintainer approval                                                      | veto-window start: @mention comment + `alignmentVetoExpiresAt = now + 4h` recorded; no merge yet                                      | spec |
+| PM42  | enforce: stored `merge` verdict, veto window expired, no maintainer rejection                                                              | direct squash merge on a later cycle                                                                                                  | spec |
+| PM43  | enforce: stored `merge` verdict, veto window still open                                                                                    | no action (reason: veto window open); `do-not-merge` / `project-manager: hold` during the window cancels the merge (PM43b)            | spec |
+| PM44  | enforce: alignment verdict `request_fixes` under the round cap                                                                             | findings comment + `/fix-review`; `alignmentFixRounds` incremented (survives head changes, PM44b)                                     | spec |
+| PM45  | enforce: alignment verdict `request_fixes` at the round cap (3)                                                                            | hold + escalation (@mention comment + `pm-escalation` issue) instead of another round                                                 | spec |
+| PM46  | enforce: alignment verdict `hold`                                                                                                          | one escalation (@mention comment + `pm-escalation` issue), deduped per head via `alignmentEscalatedAt`                                | spec |
+| PM47  | enforce: diff touches protected merge-authority paths (`policy.json` -> `projectManager.protectedMergeAuthorityPaths`)                     | never auto-merged regardless of verdict: hold + escalation with the review analysis                                                   | spec |
+| PM48  | enforce: `needs-review` label applied by automation at PR creation (all labeled events within 15 min of `createdAt`)                       | treated as manual-only classification, not rejection; alignment review proceeds                                                       | spec |
+| PM49  | enforce: `needs-review` present but label-event evidence missing/empty                                                                     | safe default: blocks like a maintainer rejection (PM17b semantics preserved)                                                          | spec |
+| PM50  | enforce: `needs-review` applied or renewed after PR creation                                                                               | blocks the alignment path (maintainer rejection semantics unchanged)                                                                  | spec |
+| PM51  | enforce: cross-repository PR with `merge` verdict                                                                                          | never auto-merged: hold + escalation                                                                                                  | spec |
+| PM52  | enforce: Dependabot PR whose only review blocker is `deps-review-manual`, checks passed                                                    | skips `/fix-review` and goes to the alignment review (class `dependency`); off mode keeps the `/fix-review` behavior                  | spec |
+| PM53  | enforce: stored `request_fixes` verdict and the dispatched fix-review finished as a no-op for the same head                                | reviewer/fixer disagreement escalated to a human; while the fix round is in flight the PR just waits (PM53b)                          | spec |
+| PM54  | apply phase receives the review verdict for a plan-emitted alignment action                                                                | `alignmentActionsForDecision` executes the same outcome actions as the plan phase (one shared decision function)                      | spec |
+| PM55  | review step returns an unknown/invalid decision value                                                                                      | normalized to `hold` (fail-safe); `request_fixes` passes through; findings normalized                                                 | spec |
+| PM56  | multiple manual-only PRs are review-eligible in one cycle                                                                                  | the oldest `readySince` PR is reviewed first (no starvation); one review per cycle                                                    | spec |
+| PM57  | alignment state fields written to the sticky comment                                                                                       | `alignmentFixRounds` / `alignmentVetoExpiresAt` / `alignmentEscalatedAt` round-trip through `<!-- project-manager-pr-state -->`       | spec |
+| PM58  | PR classified for the alignment rubric                                                                                                     | branch prefixes map to gsd-execution / audit-fix / dependency / issue-fix / planning; `.github/**` diffs map to workflow-automation   | spec |
 
 Project-manager must not be added as a required PR check; otherwise it can
 deadlock the very merge flow it is meant to recover.

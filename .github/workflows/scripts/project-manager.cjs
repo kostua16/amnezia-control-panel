@@ -27,6 +27,41 @@ const FAILURE_CONCLUSIONS = new Set([
   'startup_failure',
 ]);
 
+const ALIGNMENT_ESCALATION_MARKER =
+  '<!-- project-manager-alignment-escalation -->';
+const ALIGNMENT_VETO_MARKER = '<!-- project-manager-alignment-veto -->';
+const ALIGNMENT_FINDINGS_MARKER = '<!-- project-manager-alignment-findings -->';
+
+const WORKFLOW_POLICY = (() => {
+  try {
+    return JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '..', 'policy.json'), 'utf8'),
+    );
+  } catch {
+    return {};
+  }
+})();
+const PM_ALIGNMENT_POLICY = WORKFLOW_POLICY.projectManager ?? {};
+const ALIGNMENT_MENTION = PM_ALIGNMENT_POLICY.alignmentMention ?? '@kostua16';
+const ALIGNMENT_VETO_WINDOW_HOURS = Number(
+  PM_ALIGNMENT_POLICY.alignmentVetoWindowHours ?? 4,
+);
+const MAX_ALIGNMENT_FIX_ROUNDS = Number(
+  PM_ALIGNMENT_POLICY.maxAlignmentFixRounds ?? 3,
+);
+const PROTECTED_MERGE_AUTHORITY_PATHS =
+  PM_ALIGNMENT_POLICY.protectedMergeAuthorityPaths ?? [
+    '.github/workflows/project-manager.yml',
+    '.github/workflows/scripts/project-manager.cjs',
+    '.github/workflows/scripts/evaluate-pr-policy.cjs',
+    '.github/workflows/scripts/evaluate-pr-finalizer-decision.cjs',
+    '.github/workflows/scripts/orchestrate-pr-flow.cjs',
+    '.github/workflows/policy.json',
+    '.github/pr-flow.json',
+    '.claude/agents/kos-project-manager.md',
+    '.claude/skills/kos-project-manager-',
+  ];
+
 const REPAIR_WORKFLOWS = [
   { workflow: 'fix-pr.yml', key: 'fixPr' },
   { workflow: 'fix-issue.yml', key: 'fixIssue' },
@@ -273,6 +308,14 @@ function normalizeState(pr) {
       depsReviewRedispatchedAt: '',
       duplicateFlaggedAt: '',
       ciRerunAt: '',
+      // Fix rounds are counted per PR, not per head: each alignment-driven
+      // fix pushes a new head, so a per-head counter would never reach the cap.
+      alignmentFixRounds: toNumber(
+        raw.alignmentFixRounds ?? raw.alignment_fix_rounds,
+        0,
+      ),
+      alignmentVetoExpiresAt: '',
+      alignmentEscalatedAt: '',
     };
   }
 
@@ -296,6 +339,14 @@ function normalizeState(pr) {
     duplicateFlaggedAt:
       raw.duplicateFlaggedAt ?? raw.duplicate_flagged_at ?? '',
     ciRerunAt: raw.ciRerunAt ?? raw.ci_rerun_at ?? '',
+    alignmentFixRounds: toNumber(
+      raw.alignmentFixRounds ?? raw.alignment_fix_rounds,
+      0,
+    ),
+    alignmentVetoExpiresAt:
+      raw.alignmentVetoExpiresAt ?? raw.alignment_veto_expires_at ?? '',
+    alignmentEscalatedAt:
+      raw.alignmentEscalatedAt ?? raw.alignment_escalated_at ?? '',
   };
 }
 
@@ -741,6 +792,14 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
       duplicateFlaggedAt:
         extra.duplicateFlaggedAt ?? state.duplicateFlaggedAt ?? '',
       ciRerunAt: extra.ciRerunAt ?? state.ciRerunAt ?? '',
+      alignmentFixRounds: toNumber(
+        extra.alignmentFixRounds ?? state.alignmentFixRounds,
+        0,
+      ),
+      alignmentVetoExpiresAt:
+        extra.alignmentVetoExpiresAt ?? state.alignmentVetoExpiresAt ?? '',
+      alignmentEscalatedAt:
+        extra.alignmentEscalatedAt ?? state.alignmentEscalatedAt ?? '',
       cooldowns: {
         ...(state.cooldowns ?? {}),
         [actionKey]: now,
@@ -818,6 +877,7 @@ function stalledReadyAction(pr, state, readySince, now) {
       type: 'direct-merge-review-required',
       number: pr.number,
       actionKey: 'direct-merge-review',
+      readySince,
       prompt:
         'Run kos-project-manager read-only PR review before direct merge.',
     });
@@ -889,6 +949,432 @@ function manualOnlyAction(pr, state, readySince, now) {
         directMergeReviewAt: now,
       }),
     ],
+  };
+}
+
+function alignmentModeOf(options) {
+  return String(options?.alignmentMode ?? 'off').toLowerCase() === 'enforce'
+    ? 'enforce'
+    : 'off';
+}
+
+function changedFilePaths(pr) {
+  return (pr.files ?? pr.changedFiles ?? [])
+    .map((file) => (typeof file === 'string' ? file : file.path))
+    .filter(Boolean);
+}
+
+function touchesGithubPaths(paths) {
+  return paths.some((filePath) => filePath.startsWith('.github/'));
+}
+
+function touchesProtectedCorePaths(
+  paths,
+  protectedPaths = PROTECTED_MERGE_AUTHORITY_PATHS,
+) {
+  return paths.some((filePath) =>
+    protectedPaths.some((entry) => filePath.startsWith(entry)),
+  );
+}
+
+function isDependabotPr(pr) {
+  return (
+    pr.policy?.dependabot === true ||
+    String(pr.headRefName ?? '').startsWith('dependabot/')
+  );
+}
+
+function classifyPrForAlignment(pr) {
+  const branch = String(pr.headRefName ?? '');
+  if (branch.startsWith('claude-gsd-planning-execute-')) return 'gsd-execution';
+  if (
+    branch.startsWith('claude-planning-pr-') ||
+    branch.startsWith('claude-workflow-optimize-')
+  ) {
+    return 'planning';
+  }
+  if (branch.startsWith('claude-audit-')) return 'audit-fix';
+  if (isDependabotPr(pr)) return 'dependency';
+  if (
+    branch.startsWith('claude-fix-issue-') ||
+    branch.startsWith('claude-auto-fix-ci-')
+  ) {
+    return 'issue-fix';
+  }
+  if (touchesGithubPaths(changedFilePaths(pr))) return 'workflow-automation';
+  return 'general';
+}
+
+/**
+ * Returns true when every `needs-review` labeled event happened at PR
+ * creation time (automation self-classification), so the label is a
+ * manual-only marker rather than a maintainer rejection. Missing or empty
+ * event data returns false: an unexplained needs-review keeps blocking.
+ */
+function creationTimeAutomationNeedsReview(pr) {
+  const events = pr.needsReviewLabelEvents;
+  if (!Array.isArray(events) || events.length === 0) return false;
+  const createdAt = parseDate(pr.createdAt);
+  if (!createdAt) return false;
+  const toleranceMs = 15 * 60 * 1000;
+  return events.every((event) => {
+    const at = parseDate(event.createdAt ?? event.created_at);
+    if (!at) return false;
+    return at.getTime() - createdAt.getTime() <= toleranceMs;
+  });
+}
+
+function hasAlignmentRejection(pr, readySince) {
+  if (hasLabel(pr, 'needs-review') && creationTimeAutomationNeedsReview(pr)) {
+    const withoutNeedsReview = {
+      ...pr,
+      labels: labelObjects(pr.labels).filter(
+        (label) => label.name !== 'needs-review',
+      ),
+    };
+    return hasMaintainerRejection(withoutNeedsReview, readySince);
+  }
+  return hasMaintainerRejection(pr, readySince);
+}
+
+function alignmentReady(pr) {
+  if (isReady(pr)) return true;
+  // A dependency-review "manual" verdict is a request for exactly this
+  // judgment call, so it counts as a present review signal here.
+  return (
+    isDependabotPr(pr) && checksPassed(pr) && hasLabel(pr, 'deps-review-manual')
+  );
+}
+
+function dependabotManualOnlyBlocker(pr) {
+  if (!isDependabotPr(pr)) return false;
+  if (pr.externalReview?.state === 'blocked') return false;
+  if ((pr.reviewBlockers ?? []).length > 0) return false;
+  const blockers = REVIEW_BLOCKER_LABELS.filter((label) => hasLabel(pr, label));
+  return blockers.length === 1 && blockers[0] === 'deps-review-manual';
+}
+
+function alignmentContext(pr, state, readySince, now) {
+  const paths = changedFilePaths(pr);
+  return {
+    number: pr.number,
+    url: pr.url ?? '',
+    title: pr.title ?? '',
+    headSha: pr.headRefOid ?? pr.headSha ?? '',
+    prClass: classifyPrForAlignment(pr),
+    touchesGithub: touchesGithubPaths(paths),
+    protectedCore: touchesProtectedCorePaths(paths),
+    crossRepository: pr.isCrossRepository === true,
+    approved: hasMaintainerApproval(pr),
+    fixRounds: toNumber(state.alignmentFixRounds, 0),
+    maxFixRounds: MAX_ALIGNMENT_FIX_ROUNDS,
+    vetoExpiresAt: state.alignmentVetoExpiresAt || '',
+    vetoWindowHours: ALIGNMENT_VETO_WINDOW_HOURS,
+    mention: ALIGNMENT_MENTION,
+    readySince,
+    now,
+    state,
+  };
+}
+
+function alignmentPrRef(ctx) {
+  return { number: ctx.number, headRefOid: ctx.headSha };
+}
+
+function alignmentStatePatch(ctx, actionKey, extra = {}) {
+  return makeStatePatch(alignmentPrRef(ctx), ctx.state, actionKey, ctx.now, {
+    readySince: ctx.readySince,
+    ...extra,
+  });
+}
+
+function alignmentVetoExpired(ctx) {
+  return Boolean(
+    ctx.vetoExpiresAt && hoursBetween(ctx.vetoExpiresAt, ctx.now) >= 0,
+  );
+}
+
+function formatAlignmentFindings(review) {
+  return (review?.findings ?? [])
+    .map((finding) => {
+      const title = String(finding?.title ?? '').trim();
+      const detail = String(finding?.detail ?? '').trim();
+      const suggested = String(finding?.suggested_action ?? '').trim();
+      const parts = [title, detail].filter(Boolean).join(': ');
+      if (!parts) return '';
+      return suggested ? `- ${parts} (suggested: ${suggested})` : `- ${parts}`;
+    })
+    .filter(Boolean);
+}
+
+function alignmentEscalationActions(ctx, review, cause) {
+  const issueTitle = `[project-manager] PR #${ctx.number} needs human decision (alignment review)`;
+  const risks = (review?.risks ?? []).map((risk) => `- ${risk}`);
+  const findings = formatAlignmentFindings(review);
+  const humanAction = String(review?.required_human_action ?? '').trim();
+  const details = [
+    `Cause: ${cause}`,
+    review?.reason ? `Review reason: ${review.reason}` : '',
+    ...(risks.length > 0 ? ['', 'Risks:', ...risks] : []),
+    ...(findings.length > 0 ? ['', 'Findings:', ...findings] : []),
+    ...(humanAction ? ['', `Required human action: ${humanAction}`] : []),
+  ].filter((line) => line !== null);
+  return [
+    makeCommentAction(
+      alignmentPrRef(ctx),
+      [
+        ALIGNMENT_ESCALATION_MARKER,
+        `${ctx.mention} the project-manager alignment review needs your decision on this PR.`,
+        '',
+        ...details,
+        '',
+        'To merge: approve the PR or comment `/approve`.',
+        'To reject: add `do-not-merge` or comment `project-manager: hold`.',
+      ].join('\n'),
+      'alignment-escalation',
+    ),
+    {
+      type: 'create-or-reuse-issue',
+      title: issueTitle,
+      body: [
+        ISSUE_MARKER,
+        '',
+        `The project-manager alignment review escalated PR #${ctx.number} to a human.`,
+        '',
+        `PR: ${ctx.url}`,
+        `Head SHA: ${ctx.headSha}`,
+        `Class: ${ctx.prClass}`,
+        ...details,
+        '',
+        'Close this issue after handling the PR.',
+      ].join('\n'),
+      labels: ['pm-escalation'],
+      actionKey: 'alignment-escalation-issue',
+      pr: ctx.number,
+      headSha: ctx.headSha,
+    },
+    alignmentStatePatch(ctx, 'alignment-escalation', {
+      alignmentEscalatedAt: ctx.now,
+      directMergeReview: review?.decision ?? ctx.state.directMergeReview,
+      directMergeReviewAt: review?.decision ? ctx.now : '',
+    }),
+  ];
+}
+
+function alignmentMergeActions(ctx, review) {
+  return [
+    makeCommentAction(
+      alignmentPrRef(ctx),
+      [
+        'Project-manager alignment review passed for this manual-only PR.',
+        '',
+        `Class: ${ctx.prClass}`,
+        `Decision: ${review?.reason ?? 'merge'}`,
+      ].join('\n'),
+      'alignment-merge-comment',
+    ),
+    {
+      type: 'merge-pr',
+      number: ctx.number,
+      method: 'squash',
+      actionKey: 'direct-merge',
+    },
+    alignmentStatePatch(ctx, 'direct-merge', {
+      directMergeReview: 'merge',
+      directMergeReviewAt: ctx.now,
+    }),
+  ];
+}
+
+function alignmentVetoStartActions(ctx, review) {
+  const start = parseDate(ctx.now) ?? new Date(DEFAULT_NOW);
+  const expiresAt = new Date(
+    start.getTime() + ctx.vetoWindowHours * 60 * 60 * 1000,
+  ).toISOString();
+  return [
+    makeCommentAction(
+      alignmentPrRef(ctx),
+      [
+        ALIGNMENT_VETO_MARKER,
+        `${ctx.mention} the alignment review approved this workflow-touching PR for merge.`,
+        '',
+        `The diff touches \`.github/**\`, so merge is scheduled after a ${ctx.vetoWindowHours}h veto window (expires ${expiresAt}).`,
+        review?.reason ? `Reason: ${review.reason}` : '',
+        '',
+        'To veto: add `do-not-merge` or comment `project-manager: hold`.',
+        'To merge sooner: approve the PR or comment `/approve`.',
+      ]
+        .filter((line) => line !== null)
+        .join('\n'),
+      'alignment-veto-comment',
+    ),
+    alignmentStatePatch(ctx, 'alignment-veto', {
+      directMergeReview: 'merge',
+      directMergeReviewAt: ctx.now,
+      alignmentVetoExpiresAt: expiresAt,
+    }),
+  ];
+}
+
+function alignmentFixActions(ctx, review) {
+  const findings = formatAlignmentFindings(review);
+  return [
+    makeCommentAction(
+      alignmentPrRef(ctx),
+      [
+        ALIGNMENT_FINDINGS_MARKER,
+        `Project-manager alignment review requests fixes (round ${ctx.fixRounds + 1}/${ctx.maxFixRounds}).`,
+        '',
+        review?.reason ? `Reason: ${review.reason}` : '',
+        ...(findings.length > 0 ? ['', 'Findings:', ...findings] : []),
+      ]
+        .filter((line) => line !== null)
+        .join('\n'),
+      'alignment-findings',
+    ),
+    makeCommentAction(alignmentPrRef(ctx), '/fix-review', 'alignment-fix'),
+    alignmentStatePatch(ctx, 'alignment-fix', {
+      directMergeReview: 'request_fixes',
+      directMergeReviewAt: ctx.now,
+      alignmentFixRounds: ctx.fixRounds + 1,
+    }),
+  ];
+}
+
+/**
+ * Maps an alignment review decision to the concrete actions for a
+ * manual-only PR. Shared by the plan phase (stored/live verdicts) and the
+ * apply phase (verdict returned by the review step in the same run).
+ * Returns null when nothing should happen yet (open veto window).
+ */
+function alignmentActionsForDecision(ctx, review) {
+  if (ctx.protectedCore) {
+    return {
+      actionKey: 'alignment-escalation',
+      actions: alignmentEscalationActions(
+        ctx,
+        review,
+        'PR touches protected merge-authority paths; auto-merge is never allowed here.',
+      ),
+    };
+  }
+  if (ctx.crossRepository) {
+    return {
+      actionKey: 'alignment-escalation',
+      actions: alignmentEscalationActions(
+        ctx,
+        review,
+        'Cross-repository PR requires a human merge decision.',
+      ),
+    };
+  }
+
+  const decision = review?.decision;
+  if (decision === 'merge') {
+    if (ctx.touchesGithub && !ctx.approved) {
+      if (!ctx.vetoExpiresAt) {
+        return {
+          actionKey: 'alignment-veto',
+          actions: alignmentVetoStartActions(ctx, review),
+        };
+      }
+      if (!alignmentVetoExpired(ctx)) return null;
+    }
+    return {
+      actionKey: 'manual-direct-merge',
+      actions: alignmentMergeActions(ctx, review),
+    };
+  }
+  if (decision === 'request_fixes') {
+    if (ctx.fixRounds >= ctx.maxFixRounds) {
+      return {
+        actionKey: 'alignment-escalation',
+        actions: alignmentEscalationActions(
+          ctx,
+          review,
+          `Alignment fix-round cap reached (${ctx.fixRounds}/${ctx.maxFixRounds}).`,
+        ),
+      };
+    }
+    return {
+      actionKey: 'alignment-fix',
+      actions: alignmentFixActions(ctx, review),
+    };
+  }
+  return {
+    actionKey: 'alignment-escalation',
+    actions: alignmentEscalationActions(
+      ctx,
+      review,
+      'Alignment review returned hold.',
+    ),
+  };
+}
+
+function alignmentFixNoop(pr, state) {
+  if (activeRun(pr, 'fixReview')) return false;
+  const latest = pr.fixReview?.latest ?? pr.runs?.fixReview?.latest;
+  if (!latest || latest.noop !== true) return false;
+  const at = parseDate(latest.updatedAt ?? latest.createdAt);
+  const dispatchedAt = parseDate(state.lastActionAt);
+  return Boolean(at && dispatchedAt && at > dispatchedAt);
+}
+
+function alignmentCompound(pr, result) {
+  if (!result) return null;
+  return {
+    type: 'compound',
+    actionKey: result.actionKey,
+    number: pr.number,
+    actions: result.actions,
+  };
+}
+
+function alignmentManualOnlyAction(pr, state, readySince, now) {
+  if (!isManualOnly(pr) || !alignmentReady(pr)) return null;
+  if (hasAlignmentRejection(pr, readySince)) return null;
+  if (state.alignmentEscalatedAt) return null;
+
+  const ctx = alignmentContext(pr, state, readySince, now);
+  const review = directMergeReviewDecision(pr, state);
+  const live = Boolean(pr.projectManagerReview);
+
+  if (review.decision === 'merge') {
+    return alignmentCompound(pr, alignmentActionsForDecision(ctx, review));
+  }
+  if (review.decision === 'request_fixes') {
+    if (live) {
+      return alignmentCompound(pr, alignmentActionsForDecision(ctx, review));
+    }
+    // A fix round is already dispatched for this head; escalate only when
+    // the fixer finished as a no-op (fixer and reviewer disagree).
+    if (alignmentFixNoop(pr, state)) {
+      return alignmentCompound(pr, {
+        actionKey: 'alignment-escalation',
+        actions: alignmentEscalationActions(
+          ctx,
+          review,
+          'Alignment review requested fixes but fix-review found nothing to change.',
+        ),
+      });
+    }
+    return null;
+  }
+  if (review.decision === 'hold') {
+    return alignmentCompound(pr, alignmentActionsForDecision(ctx, review));
+  }
+
+  return {
+    type: 'direct-merge-review-required',
+    number: pr.number,
+    actionKey: 'alignment-review',
+    prompt:
+      'Run the kos-project-manager alignment review before closing the manual-only gate.',
+    readySince,
+    alignmentCtx: ctx,
+    statePatch: makeStatePatch(pr, state, 'alignment-review', now, {
+      readySince,
+    }),
   };
 }
 
@@ -1108,6 +1594,7 @@ function duplicateAutomationPrActions(prs, now) {
 
 function decidePrAction(pr, options = {}) {
   const now = options.now ?? DEFAULT_NOW;
+  const alignmentEnforced = alignmentModeOf(options) === 'enforce';
   if (!isOpenPr(pr)) return null;
   const state = normalizeState(pr);
   const readySince = readySinceFor(pr, state, now);
@@ -1233,8 +1720,11 @@ function decidePrAction(pr, options = {}) {
   const blockedEscalation = blockedEscalationAction(pr, state, now);
   if (blockedEscalation) return blockedEscalation;
 
+  // A dependency-review "manual" verdict has no code fix; in enforce mode the
+  // alignment review below judges the bump instead of a futile /fix-review.
   if (
     hasReviewBlocker(pr) &&
+    !(alignmentEnforced && dependabotManualOnlyBlocker(pr)) &&
     !checksFailed(pr) &&
     !activeRun(pr, 'fixReview') &&
     !cooldownActive(state, 'fix-review', now) &&
@@ -1294,7 +1784,9 @@ function decidePrAction(pr, options = {}) {
     if (stalled) return stalled;
   }
 
-  const manual = manualOnlyAction(pr, state, readySince, now);
+  const manual = alignmentEnforced
+    ? alignmentManualOnlyAction(pr, state, readySince, now)
+    : manualOnlyAction(pr, state, readySince, now);
   if (manual) return manual;
 
   const blockedClock = blockedClockPatch(pr, state, readySince, now);
@@ -1340,6 +1832,18 @@ function noActionReason(pr, decision, state, now) {
     return 'Stale Code Review needs rebase, but /rebase is inside cooldown.';
   }
   if (isReady(pr) && isManualOnly(pr)) {
+    if (
+      state.alignmentVetoExpiresAt &&
+      hoursBetween(now, state.alignmentVetoExpiresAt) > 0
+    ) {
+      return 'Alignment review approved the merge; the veto window is still open.';
+    }
+    if (state.alignmentEscalatedAt) {
+      return 'Alignment review escalated this PR to a human; waiting.';
+    }
+    if (state.directMergeReview === 'request_fixes') {
+      return 'Alignment fix round dispatched; waiting for fix-review.';
+    }
     return 'PR is ready but manual-only direct merge is not eligible yet.';
   }
   if (isReady(pr))
@@ -1752,6 +2256,15 @@ function parseStateComment(body) {
       '- Deps review redispatched at:',
     ),
     duplicateFlaggedAt: valueFromLine(lines, '- Duplicate flagged at:'),
+    alignmentFixRounds: toNumber(
+      valueFromLine(lines, '- Alignment fix rounds:'),
+      0,
+    ),
+    alignmentVetoExpiresAt: valueFromLine(
+      lines,
+      '- Alignment veto expires at:',
+    ),
+    alignmentEscalatedAt: valueFromLine(lines, '- Alignment escalated at:'),
     cooldowns: {
       rebase: valueFromLine(lines, '- rebase:'),
       fix: valueFromLine(lines, '- fix:'),
@@ -2176,6 +2689,7 @@ function enrichPullRequest(pr) {
         'comments',
         'reviews',
         'commits',
+        'files',
         'statusCheckRollup',
       ].join(','),
     ],
@@ -2188,6 +2702,10 @@ function enrichPullRequest(pr) {
     ...details,
     labels,
     comments,
+    files: details.files ?? pr.files ?? [],
+    needsReviewLabelEvents:
+      pr.needsReviewLabelEvents ??
+      fetchNeedsReviewLabelEvents({ ...pr, labels }),
     reviews: details.reviews ?? pr.reviews ?? [],
     headCommittedAt:
       latestCommitDate(details.commits) ??
@@ -2201,6 +2719,31 @@ function enrichPullRequest(pr) {
     projectManagerState:
       pr.projectManagerState ?? latestProjectManagerState(comments),
   };
+}
+
+function fetchNeedsReviewLabelEvents(pr) {
+  if (!normalizeLabels(pr.labels).includes('needs-review')) return [];
+  // --slurp keeps multi-page output parseable; any failure returns [] and an
+  // empty event list keeps needs-review blocking (the safe default).
+  const pages = ghJson(
+    [
+      'api',
+      `repos/{owner}/{repo}/issues/${pr.number}/events`,
+      '--paginate',
+      '--slurp',
+    ],
+    [],
+  );
+  const events = Array.isArray(pages) ? pages.flat() : [];
+  return events
+    .filter(
+      (event) =>
+        event?.event === 'labeled' && event?.label?.name === 'needs-review',
+    )
+    .map((event) => ({
+      createdAt: event.created_at,
+      actor: event.actor?.login ?? '',
+    }));
 }
 
 function enrichIssue(issue) {
@@ -2365,6 +2908,9 @@ function renderStateBody(state) {
     `- Blocked escalated at: ${state.blockedEscalatedAt ?? ''}`,
     `- Deps review redispatched at: ${state.depsReviewRedispatchedAt ?? ''}`,
     `- Duplicate flagged at: ${state.duplicateFlaggedAt ?? ''}`,
+    `- Alignment fix rounds: ${toNumber(state.alignmentFixRounds, 0)}`,
+    `- Alignment veto expires at: ${state.alignmentVetoExpiresAt ?? ''}`,
+    `- Alignment escalated at: ${state.alignmentEscalatedAt ?? ''}`,
     '- Cooldowns:',
     `  - rebase: ${cooldowns.rebase ?? ''}`,
     `  - fix: ${cooldowns.fix ?? ''}`,
@@ -2517,6 +3063,13 @@ function applyAction(action, options = {}) {
 
   if (action.type === 'direct-merge-review-required') {
     const review = options.reviewByPr?.get(action.number);
+    if (action.alignmentCtx && review) {
+      const result = alignmentActionsForDecision(action.alignmentCtx, review);
+      for (const sub of result?.actions ?? []) {
+        applyAction(sub, options);
+      }
+      return;
+    }
     if (review?.decision === 'merge') {
       gh(['pr', 'merge', String(action.number), '--squash'], {
         dryRun,
@@ -2527,17 +3080,32 @@ function applyAction(action, options = {}) {
   }
 }
 
-function writeOutputs(plan, outputPath) {
-  if (!outputPath) return;
-  const reviewAction = plan.actions.find(
+function pickReviewAction(actions) {
+  const reviews = (actions ?? []).filter(
     (action) => action.type === 'direct-merge-review-required',
   );
+  if (reviews.length === 0) return null;
+  // Oldest ready PR first so a busy queue cannot starve early arrivals.
+  return [...reviews].sort((left, right) => {
+    const leftReady = String(left.readySince ?? '');
+    const rightReady = String(right.readySince ?? '');
+    if (!leftReady && !rightReady) return 0;
+    if (!leftReady) return 1;
+    if (!rightReady) return -1;
+    return leftReady.localeCompare(rightReady);
+  })[0];
+}
+
+function writeOutputs(plan, outputPath) {
+  if (!outputPath) return;
+  const reviewAction = pickReviewAction(plan.actions);
   fs.appendFileSync(
     outputPath,
     [
       `route=${plan.route}`,
       `review_required=${reviewAction ? 'true' : 'false'}`,
       `review_pr_number=${reviewAction?.number ?? ''}`,
+      `review_pr_class=${reviewAction?.alignmentCtx?.prClass ?? ''}`,
       `plan_file=${getArg('--plan-file', '')}`,
       '',
     ].join('\n'),
@@ -2553,9 +3121,18 @@ function parseReviewJson(value) {
         : null;
   if (!parsed) return null;
   return {
-    decision: parsed.decision === 'merge' ? 'merge' : 'hold',
+    decision: ['merge', 'request_fixes'].includes(parsed.decision)
+      ? parsed.decision
+      : 'hold',
     reason: String(parsed.reason ?? ''),
     risks: Array.isArray(parsed.risks) ? parsed.risks : [],
+    findings: Array.isArray(parsed.findings)
+      ? parsed.findings.map((finding) => ({
+          title: String(finding?.title ?? ''),
+          detail: String(finding?.detail ?? ''),
+          suggested_action: String(finding?.suggested_action ?? ''),
+        }))
+      : [],
     required_human_action: String(parsed.required_human_action ?? ''),
   };
 }
@@ -2573,6 +3150,10 @@ function main() {
     issueThreshold: toNumber(getArg('--issue-threshold'), 5),
     prLimit: toNumber(getArg('--pr-limit'), 10),
     issueLimit: toNumber(getArg('--issue-limit'), 10),
+    alignmentMode: getArg(
+      '--alignment-mode',
+      process.env.PM_ALIGNMENT_MODE ?? 'off',
+    ),
     now: getArg('--now', null),
   };
 
@@ -2581,9 +3162,8 @@ function main() {
     const review = parseReviewJson(reviewJson);
     const reviewByPr = new Map();
     if (review) {
-      const reviewAction = plan.actions.find(
-        (action) => action.type === 'direct-merge-review-required',
-      );
+      // Must match writeOutputs so the verdict lands on the reviewed PR.
+      const reviewAction = pickReviewAction(plan.actions);
       if (reviewAction) reviewByPr.set(reviewAction.number, review);
     }
     const issueByTitle = new Map();
@@ -2616,8 +3196,11 @@ module.exports = {
   ISSUE_MARKER,
   PR_PRODUCER_REGISTRY,
   STATE_MARKER,
+  alignmentActionsForDecision,
   attachRepairRunsToPullRequest,
   buildPlan,
+  classifyPrForAlignment,
+  creationTimeAutomationNeedsReview,
   decidePrAction,
   detectPrProducingWorkflows,
   hasMaintainerRejection,
@@ -2629,7 +3212,9 @@ module.exports = {
   planPrRoute,
   parseFixReviewSummaryComment,
   parseRebaseSummaryComment,
+  parseReviewJson,
   parseStateComment,
+  pickReviewAction,
   renderStateBody,
   registryCoverage,
   reviewSignalsPassed,
