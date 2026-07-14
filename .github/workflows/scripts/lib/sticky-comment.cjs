@@ -20,24 +20,48 @@ function getRepoSlug() {
   return repo;
 }
 
+const MAX_RETRIES = 3;
+const RETRY_BASE_MS = 1000;
+
+function isTransientHttp(stderr) {
+  return /HTTP 5\d{2}/.test(stderr);
+}
+
 function run(command, args, options = {}) {
-  try {
-    return (
-      execFileSync(command, args, {
-        encoding: 'utf8',
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }) ?? ''
-    ).trim();
-  } catch (error) {
-    const stderr = String(error.stderr ?? '').trim();
-    if (options.allowFailure) {
-      return options.fallback ?? '';
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return (
+        execFileSync(command, args, {
+          encoding: 'utf8',
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }) ?? ''
+      ).trim();
+    } catch (error) {
+      const stderr = String(error.stderr ?? '').trim();
+      if (options.allowFailure) {
+        return options.fallback ?? '';
+      }
+      if (
+        attempt < MAX_RETRIES - 1 &&
+        isTransientHttp(stderr)
+      ) {
+        const delay = RETRY_BASE_MS * 2 ** attempt;
+        console.warn(
+          `sticky-comment: transient HTTP error on attempt ${attempt + 1}/${MAX_RETRIES}, retrying in ${delay}ms: ${stderr.split('\n')[0]}`,
+        );
+        // eslint-disable-next-line no-restricted-syntax -- intentional sync sleep for retry
+        const end = Date.now() + delay;
+        while (Date.now() < end) {
+          /* busy-wait (no setTimeout in sync context) */
+        }
+        continue;
+      }
+      if (stderr) {
+        console.error(stderr);
+      }
+      throw error;
     }
-    if (stderr) {
-      console.error(stderr);
-    }
-    throw error;
   }
 }
 
