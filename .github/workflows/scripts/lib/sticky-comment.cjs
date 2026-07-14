@@ -27,7 +27,7 @@ const RETRY_BASE_MS = 1000;
 // "HTTP 5xx" response plus the network-level errors Go's net/http emits on a CI
 // `gh api` call (TCP reset, dial/TLS timeout, context deadline, truncated body).
 const TRANSIENT_PATTERNS = [
-  /HTTP 5\d{2}/,
+  /http 5\d{2}/,
   /connection reset/,
   /connection refused/,
   /dial tcp/,
@@ -219,6 +219,7 @@ module.exports = {
   getRepoSlug,
   run,
   runJson,
+  isTransient,
   writeTempJson,
   listComments,
   findExistingComment,
