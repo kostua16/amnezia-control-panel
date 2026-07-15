@@ -83,11 +83,18 @@ function getRequiredCheckStatus(checks, requiredChecks) {
 
       if (bucket === 'fail' || bucket === 'cancel' || state === 'failure') {
         failing.push(name);
-      } else if (bucket === 'skip') {
+      } else if (
+        bucket === 'skip' ||
+        bucket === 'skipping' ||
+        state === 'skipped'
+      ) {
         // Intentionally skipped (job `if:` false) → non-blocking, UNLESS a
         // sibling job in the same workflow failed. GitHub marks a failed
         // `needs:` dependency's dependents as conclusion "skipped", which would
         // otherwise mask a real failure; fall back to blocking then. See #443.
+        // `gh pr checks` reports skipped checks as bucket "skipping" (the
+        // internal workflow-run fallback normalizes to "skip"); both spellings
+        // and state "skipped" must be treated the same.
         const siblingFailed = checks.some(
           (c) =>
             c !== match &&
