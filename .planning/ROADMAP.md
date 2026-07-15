@@ -167,6 +167,7 @@ Plans:
 <!-- PR-IMPROVE:722 --> - PR #722: fix: resolve #704 - MON-I02: Align 80-turn budget with the 25-min timeout (monitor-github-runs) -- pr722.1 x1, pr722.2 x1, pr722.4 x1. Quick artifact: `.planning/quick/260712-pr722-workflow-improve/260712-pr722-PLAN.md`.
 <!-- PR-IMPROVE:750 --> - PR #750: fix(workflows): persist maintenance pruning changes -- pr750.1 x1, pr750.2 x1. Quick artifact: `.planning/quick/260714-pr750-workflow-improve/260714-pr750-PLAN.md`.
 <!-- PR-IMPROVE:761 --> - PR #761: fix: resolve #760 - [project-manager] PR #751 fix-review.yml failed for 4b2302219fed -- pr761.2 x2. Quick artifact: `.planning/quick/260714-pr761-workflow-improve/260714-pr761-PLAN.md`.
+<!-- PR-IMPROVE:768 --> - PR #768: fix: resolve #766 - WHO-I03: Make 50KB 'runs_data' truncation JSON-safe (workflow-health-optimize) -- pr768.2 x1. Quick artifact: `.planning/quick/260715-pr768-workflow-improve/260715-pr768-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
