@@ -49,6 +49,9 @@ const ALIGNMENT_VETO_WINDOW_HOURS = Number(
 const MAX_ALIGNMENT_FIX_ROUNDS = Number(
   PM_ALIGNMENT_POLICY.maxAlignmentFixRounds ?? 3,
 );
+const MAX_FIX_REVIEW_ROUNDS = Number(
+  PM_ALIGNMENT_POLICY.maxFixReviewRounds ?? 3,
+);
 const PROTECTED_MERGE_AUTHORITY_PATHS =
   PM_ALIGNMENT_POLICY.protectedMergeAuthorityPaths ?? [
     '.github/workflows/project-manager.yml',
@@ -324,6 +327,10 @@ function normalizeState(pr) {
       ),
       alignmentVetoExpiresAt: '',
       alignmentEscalatedAt: '',
+      // Per head: a successful fix-review pushes a new head, so surviving
+      // rounds on the same head mean the loop is not making progress.
+      fixReviewRounds: 0,
+      fixReviewEscalatedAt: '',
     };
   }
 
@@ -355,6 +362,9 @@ function normalizeState(pr) {
       raw.alignmentVetoExpiresAt ?? raw.alignment_veto_expires_at ?? '',
     alignmentEscalatedAt:
       raw.alignmentEscalatedAt ?? raw.alignment_escalated_at ?? '',
+    fixReviewRounds: toNumber(raw.fixReviewRounds ?? raw.fix_review_rounds, 0),
+    fixReviewEscalatedAt:
+      raw.fixReviewEscalatedAt ?? raw.fix_review_escalated_at ?? '',
   };
 }
 
@@ -817,6 +827,12 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
         extra.alignmentVetoExpiresAt ?? state.alignmentVetoExpiresAt ?? '',
       alignmentEscalatedAt:
         extra.alignmentEscalatedAt ?? state.alignmentEscalatedAt ?? '',
+      fixReviewRounds: toNumber(
+        extra.fixReviewRounds ?? state.fixReviewRounds,
+        0,
+      ),
+      fixReviewEscalatedAt:
+        extra.fixReviewEscalatedAt ?? state.fixReviewEscalatedAt ?? '',
       cooldowns: {
         ...(state.cooldowns ?? {}),
         [actionKey]: now,
@@ -1396,6 +1412,9 @@ function alignmentManualOnlyAction(pr, state, readySince, now) {
 }
 
 const BLOCKED_ESCALATION_HOURS = 72;
+// A PR that passed checks and both reviews is waiting on nothing but a human
+// decision; surfacing that deserves hours, not days.
+const READY_BLOCKED_ESCALATION_HOURS = 4;
 const BLOCKED_ESCALATION_LABELS = [
   'needs-review',
   'deps-review-manual',
@@ -1451,7 +1470,11 @@ function blockedEscalationAction(pr, state, now) {
   const blocked = blockedEscalationLabels(pr);
   if (blocked.length === 0) return null;
   if (!state.blockedSince) return null;
-  if (hoursBetween(state.blockedSince, now) < BLOCKED_ESCALATION_HOURS) {
+  const escalationHours =
+    checksPassed(pr) && reviewSignalsPassed(pr)
+      ? READY_BLOCKED_ESCALATION_HOURS
+      : BLOCKED_ESCALATION_HOURS;
+  if (hoursBetween(state.blockedSince, now) < escalationHours) {
     return null;
   }
 
@@ -1488,18 +1511,22 @@ function blockedEscalationAction(pr, state, now) {
 
   if (state.blockedEscalatedAt) return null;
 
-  const days = Math.floor(hoursBetween(state.blockedSince, now) / 24);
+  const blockedHours = hoursBetween(state.blockedSince, now);
+  const blockedFor =
+    blockedHours >= 24
+      ? `${Math.floor(blockedHours / 24)} day(s)`
+      : `${Math.floor(blockedHours)} hour(s)`;
   return {
     type: 'compound',
     actionKey: 'blocked-escalation',
-    reason: `Blocking labels (${blocked.join(', ')}) persisted ${days} day(s) with no maintainer action; escalating once per head.`,
+    reason: `Blocking labels (${blocked.join(', ')}) persisted ${blockedFor} with no maintainer action; escalating once per head.`,
     number: pr.number,
     actions: [
       makeCommentAction(
         pr,
         [
           BLOCKED_ESCALATION_MARKER,
-          `This PR has been waiting on a maintainer for ${days} day(s) (labels: ${blocked.join(', ')}).`,
+          `This PR has been waiting on a maintainer for ${blockedFor} (labels: ${blocked.join(', ')}).`,
           '',
           'To unblock: approve the PR or remove the blocking label.',
           'Add `do-not-merge` to hold it deliberately and silence this reminder.',
@@ -1508,7 +1535,7 @@ function blockedEscalationAction(pr, state, now) {
       ),
       ...attentionDigestActions(
         pr,
-        `PR #${pr.number} blocked on ${blocked.join(', ')} for ${days} day(s): ${pr.url ?? ''}`,
+        `PR #${pr.number} blocked on ${blocked.join(', ')} for ${blockedFor}: ${pr.url ?? ''}`,
       ),
       makeStatePatch(pr, state, 'blocked-escalation', now, {
         blockedEscalatedAt: now,
@@ -1739,10 +1766,17 @@ function decidePrAction(pr, options = {}) {
 
   // A dependency-review "manual" verdict has no code fix; in enforce mode the
   // alignment review below judges the bump instead of a futile /fix-review.
+  const fixReviewSummary = pr.fixReview?.latest ?? pr.runs?.fixReview?.latest;
+  const fixReviewNoop = Boolean(fixReviewSummary?.noop);
+  const fixReviewRounds = toNumber(state.fixReviewRounds, 0);
+  const fixReviewExhausted =
+    fixReviewNoop || fixReviewRounds >= MAX_FIX_REVIEW_ROUNDS;
+
   if (
     hasReviewBlocker(pr) &&
     !(alignmentEnforced && dependabotManualOnlyBlocker(pr)) &&
     !checksFailed(pr) &&
+    !fixReviewExhausted &&
     !activeRun(pr, 'fixReview') &&
     !cooldownActive(state, 'fix-review', now) &&
     !recentCommandCommentExists(pr, '/fix-review', now)
@@ -1755,7 +1789,53 @@ function decidePrAction(pr, options = {}) {
       number: pr.number,
       actions: [
         makeCommentAction(pr, '/fix-review', 'fix-review'),
-        makeStatePatch(pr, state, 'fix-review', now, { readySince }),
+        makeStatePatch(pr, state, 'fix-review', now, {
+          readySince,
+          fixReviewRounds: fixReviewRounds + 1,
+        }),
+      ],
+    };
+  }
+
+  // The fixer already answered "No changes needed" for this head, or the
+  // round cap was hit with the blocker still present: another /fix-review is
+  // guaranteed futile. Escalate once so a human resolves the disagreement.
+  if (
+    hasReviewBlocker(pr) &&
+    !(alignmentEnforced && dependabotManualOnlyBlocker(pr)) &&
+    !checksFailed(pr) &&
+    fixReviewExhausted &&
+    !activeRun(pr, 'fixReview') &&
+    !state.fixReviewEscalatedAt
+  ) {
+    const trigger = fixReviewNoop
+      ? 'fix-review reported "No changes needed" while review blockers remain'
+      : `fix-review round cap reached (${fixReviewRounds}/${MAX_FIX_REVIEW_ROUNDS}) with review blockers still present`;
+    return {
+      type: 'compound',
+      actionKey: 'fix-review-escalation',
+      reason: `${trigger}; escalating once per head instead of looping.`,
+      number: pr.number,
+      actions: [
+        makeCommentAction(
+          pr,
+          [
+            BLOCKED_ESCALATION_MARKER,
+            `Automated review-fix loop stopped: ${trigger}.`,
+            '',
+            'A human decision is needed: either dismiss the review concerns',
+            '(re-run `/review` after fixing findings manually) or merge/close the PR.',
+          ].join('\n'),
+          'fix-review-escalation',
+        ),
+        ...attentionDigestActions(
+          pr,
+          `PR #${pr.number} stuck in the review-fix loop (${trigger}): ${pr.url ?? ''}`,
+        ),
+        makeStatePatch(pr, state, 'fix-review-escalation', now, {
+          readySince,
+          fixReviewEscalatedAt: now,
+        }),
       ],
     };
   }

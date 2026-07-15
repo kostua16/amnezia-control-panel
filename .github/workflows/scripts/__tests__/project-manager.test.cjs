@@ -1911,3 +1911,125 @@ test('PM59c: deriveCheckStatusFromRollup still reports real CI failures', () => 
   assert.equal(result.status, 'failed');
   assert.deepEqual(result.failed, ['Test']);
 });
+
+test('PM60: ready-but-needs-review PR escalates after 4h instead of 72h', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: '2026-07-01T04:00:00.000Z', // 6h before NOW
+      },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action.actionKey, 'blocked-escalation');
+});
+
+test('PM60b: ready-but-needs-review PR does not escalate before 4h', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: '2026-07-01T08:00:00.000Z', // 2h before NOW
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(action?.actionKey, 'blocked-escalation');
+});
+
+test('PM60c: non-ready blocked PR keeps the 72h escalation window', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: '2026-06-30T10:00:00.000Z', // 24h before NOW
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(action?.actionKey, 'blocked-escalation');
+});
+
+test('PM61: /fix-review increments the per-head round counter', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['ai-review-concerns'],
+      checkStatus: { status: 'passed' },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action.actionKey, 'fix-review');
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.fixReviewRounds, 1);
+});
+
+test('PM61b: fix-review round cap stops the loop and escalates once', () => {
+  const blocked = pr({
+    labels: ['ai-review-concerns'],
+    checkStatus: { status: 'passed' },
+    projectManagerState: { headSha: 'abc123', fixReviewRounds: 3 },
+  });
+  const action = decidePrAction(blocked, { now: NOW });
+  assert.equal(action.actionKey, 'fix-review-escalation');
+  const keys = action.actions.map((entry) => entry.actionKey ?? entry.type);
+  assert.deepEqual(keys, [
+    'fix-review-escalation',
+    'attention-digest',
+    'attention-digest-entry',
+    'upsert-pr-state',
+  ]);
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.fixReviewEscalatedAt, NOW);
+
+  const already = decidePrAction(
+    pr({
+      labels: ['ai-review-concerns'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        fixReviewRounds: 3,
+        fixReviewEscalatedAt: NOW,
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(already?.actionKey, 'fix-review-escalation');
+  assert.notEqual(already?.actionKey, 'fix-review');
+});
+
+test('PM61c: a current-head fix-review no-op suppresses further /fix-review and escalates', () => {
+  const blocked = pr({
+    labels: ['ai-review-concerns'],
+    checkStatus: { status: 'passed' },
+    fixReview: { latest: { noop: true, outcome: 'noop', headSha: 'abc123' } },
+  });
+  const action = decidePrAction(blocked, { now: NOW });
+  assert.equal(action.actionKey, 'fix-review-escalation');
+  assert.match(action.reason, /No changes needed/);
+});
+
+test('PM61d: head change resets the fix-review round counter', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['ai-review-concerns'],
+      checkStatus: { status: 'passed' },
+      headRefOid: 'def456',
+      projectManagerState: {
+        headSha: 'abc123',
+        fixReviewRounds: 3,
+        fixReviewEscalatedAt: '2026-06-30T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action.actionKey, 'fix-review');
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.fixReviewRounds, 1);
+});
