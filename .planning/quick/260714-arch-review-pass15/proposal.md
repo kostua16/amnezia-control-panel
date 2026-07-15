@@ -67,22 +67,12 @@ healthCheckInterval = setInterval(async () => {
 
 ---
 
-### #43: `generateXrayRulesFromDB` wrong node ID for non-user routing rules
+### #43: `generateXrayRulesFromDB` type inference for domain rules
 
 **Severity:** Medium (Correctness)
-**Area:** `src/lib/rule-enforcement.ts:59`
+**Area:** `src/lib/rule-enforcement.ts:59-61`
 
-**Problem:** `generateXrayRulesFromDB()` maps every rule's `nodeId` to `user-${rule.userId}` (line 59). Rules with `userId: null` (geo-routing imports, system rules, admin-created rules not tied to a user) get `nodeId: "user-null"`. This produces invalid Xray outbound tags that don't match any configured outbound, silently dropping traffic for non-user routing rules.
-
-```typescript
-// Current (broken for null userId):
-nodeId: rule.userId != null ? `user-${rule.userId}` : `rule-${rule.id}`,
-
-// Wait — the code actually IS:
-nodeId: rule.userId != null ? `user-${rule.userId}` : `rule-${rule.id}`,
-```
-
-Actually the ternary at line 59 handles null userId with `rule-${rule.id}` fallback. However, the `type` assignment at line 61 maps ALL non-xray protocols to `'ip'` type regardless of whether the `destination` field contains a domain name. Rules imported from geoip.dat contain domain-based destinations (e.g., `geosite:google`) which should be type `'domain'`, not `'ip'`. This mismatch causes the rule engine to pass a domain string through `matchesCIDR()` which always returns false — silently bypassing all domain-based routing rules.
+**Problem:** In `generateXrayRulesFromDB()`, the `type` assignment (line 60) maps ALL non-xray protocols to `'ip'` regardless of whether the `destination` field contains a domain name. Rules imported from geoip.dat contain domain-based destinations (e.g., `geosite:google`) which should be type `'domain'`, not `'ip'`. This mismatch causes the rule engine to pass a domain string through `matchesCIDR()` which always returns false — silently bypassing all domain-based routing rules.
 
 **Fix:** Infer rule type from the `destination` value format (CIDR pattern → `ip`, otherwise → `domain`) instead of relying solely on the `protocol` field:
 
