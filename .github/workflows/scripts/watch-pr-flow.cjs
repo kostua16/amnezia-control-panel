@@ -160,12 +160,18 @@ function selectStalePrs(
       })
     ) {
       recoveryReasons.push('stale-ready-pending');
+    }
 
-      // Each re-poke rewrites the pending aggregate with a fresh timestamp, so
-      // a PR the orchestrator can never advance loops silently forever. A long
-      // trail of pending pr-flow/ready statuses on the same head is the
-      // fingerprint of that loop — surface it for escalation instead of only
-      // poking again.
+    // Loop detection runs independently of the expiry test above: each re-poke
+    // rewrites the pending aggregate with a fresh timestamp, so for a real loop
+    // the latest pr-flow/ready is virtually always younger than the timeout
+    // when the watchdog runs and the stale-ready-pending branch is skipped. A
+    // long trail of pending pr-flow/ready statuses on the same head is the real
+    // fingerprint of a loop the orchestrator can never advance — surface it for
+    // escalation instead of only poking again. Gating only on headRefOid is
+    // safe: the pending-state filter inside guards correctness, so a healthy PR
+    // never accumulates enough pending history to misfire.
+    if (pr.headRefOid) {
       const history = getStatusHistory(pr);
       const pendingReadyCount = (history ?? []).filter(
         (status) =>

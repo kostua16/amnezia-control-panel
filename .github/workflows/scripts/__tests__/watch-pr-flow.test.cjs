@@ -426,6 +426,44 @@ test('selectStalePrs does not flag ready-pending-loop below the threshold', (t) 
   assert.deepEqual(selected[0].recoveryReasons, ['stale-ready-pending']);
 });
 
+test('selectStalePrs flags ready-pending-loop even when the latest pr-flow/ready status is fresh', (t) => {
+  // Each re-poke rewrites the pending aggregate with a fresh timestamp, so for
+  // a real loop the latest pr-flow/ready is younger than the timeout when the
+  // watchdog runs — the stale-ready-pending expiry branch is skipped. Loop
+  // detection must run independently of that expiry or the stuck PR is only
+  // re-poked, never escalated. This is the production shape (#753/#754).
+  const prs = [
+    {
+      number: 1,
+      title: 'Looping PR (fresh pending)',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const now = '2025-01-01T00:30:00Z';
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'pending', created_at: now },
+  ];
+  const getStatusHistory = () =>
+    Array.from({ length: 10 }, () => ({
+      context: 'pr-flow/ready',
+      state: 'pending',
+    }));
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now,
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, ['ready-pending-loop']);
+});
+
 test('runWatchdog escalates ready-pending-loop PRs with the pm-escalation label', (t) => {
   const escalations = [];
   const summary = runWatchdog({
