@@ -414,11 +414,19 @@ jobs:
             }
             core.setOutput('categorized', json);
 
+            // Recompute after truncation: trimming popped items from buckets,
+            // so the per-bucket counts below no longer sum to the
+            // pre-truncation totalActions used for rate-limit/has_actionable
+            // decisions. Exclude groupable_candidates to match that definition.
+            const loggedTotalActions = Object.entries(buckets)
+              .filter(([key]) => key !== 'groupable_candidates')
+              .reduce((sum, [, items]) => sum + items.length, 0);
+
             core.info('=== Issue Catch-Up Summary ===');
             for (const [bucket, items] of Object.entries(buckets)) {
               core.info(`  ${bucket}: ${items.length}`);
             }
-            core.info(`  Total actions: ${totalActions}`);
+            core.info(`  Total actions: ${loggedTotalActions}`);
             core.info(`  Rate limited: ${rateLimited}`);
             core.info(`  Has actionable: ${hasActionable}`);
 
