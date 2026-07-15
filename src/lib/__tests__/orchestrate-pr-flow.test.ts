@@ -949,7 +949,9 @@ describe('makeDecision', () => {
     assert.ok(!decision.desiredLabels.includes('flow/manual-only'));
   });
 
-  it('preserves manual-only label when needs-review advisory reviews pass', () => {
+  it('lands unapproved manual-only PR on the terminal state instead of dispatching the finalizer', () => {
+    // The finalizer decision for an unapproved manual-only PR is
+    // deterministically manual_only, so dispatching it can only loop.
     const decision = decide({
       pr: prFixture({
         headRefName: 'claude-audit-fix-26890853027',
@@ -962,8 +964,8 @@ describe('makeDecision', () => {
       }),
     });
 
-    assert.equal(decision.state, 'flow/finalizer-dispatched');
-    assert.equal(decision.dispatch?.key, 'finalizer');
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(decision.dispatch, null);
     assert.ok(decision.desiredLabels.includes('flow/manual-only'));
   });
 
