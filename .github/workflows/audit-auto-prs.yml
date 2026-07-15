@@ -170,7 +170,6 @@ jobs:
             ${{ steps.claude_run.outputs.claude_last_output }}
           execution-file: ${{ steps.claude_run.outputs.last_execution_file }}
           structured-output: ${{ steps.claude_run.outputs.structured_output }}
-          claude-last-output: ${{ steps.claude_run.outputs.claude_last_output }}
           review-notes: 'Ready-for-review PR. Existing PRs were not mutated; review any human-disposition recommendations in the audit evidence before merging.'
 
       - name: Create auto PR audit fix PR
