@@ -602,7 +602,7 @@ flowchart TD
 | PM56  | multiple manual-only PRs are review-eligible in one cycle                                                                                 | the oldest `readySince` PR is reviewed first (no starvation); one review per cycle                                                    | spec |
 | PM57  | alignment state fields written to the sticky comment                                                                                      | `alignmentFixRounds` / `alignmentVetoExpiresAt` / `alignmentEscalatedAt` round-trip through `<!-- project-manager-pr-state -->`       | spec |
 | PM58  | PR classified for the alignment rubric                                                                                                    | branch prefixes map to gsd-execution / audit-fix / dependency / issue-fix / planning; `.github/**` diffs map to workflow-automation   | spec |
-| PM59  | recent maintainer `/rebase --force` comment already triggered the rebase status path                                                       | project-manager treats it as an active rebase command and does not repost plain `/rebase`                                             | spec |
+| PM59  | recent maintainer `/rebase --force` comment already triggered the rebase status path                                                      | project-manager treats it as an active rebase command and does not repost plain `/rebase`                                             | spec |
 
 Project-manager must not be added as a required PR check; otherwise it can
 deadlock the very merge flow it is meant to recover.

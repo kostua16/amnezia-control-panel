@@ -1617,7 +1617,10 @@ test('PM47b: protected merge-authority paths never auto-merge even with maintain
         'maintainer-approved',
       ],
       files: [{ path: '.github/workflows/policy.json' }],
-      projectManagerReview: { decision: 'merge', reason: 'approved by maintainer' },
+      projectManagerReview: {
+        decision: 'merge',
+        reason: 'approved by maintainer',
+      },
     }),
     ENFORCE,
   );
