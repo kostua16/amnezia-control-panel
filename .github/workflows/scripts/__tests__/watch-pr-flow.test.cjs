@@ -358,3 +358,109 @@ test('selectStalePrs handles manual-only PRs (no pr-flow/ready status)', (t) => 
   assert.equal(selected[0].number, 1);
   assert.deepEqual(selected[0].recoveryReasons, ['missing-ready-status']);
 });
+
+test('selectStalePrs flags ready-pending-loop when status history shows repeated pending aggregates', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Looping PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'pending', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () =>
+    Array.from({ length: 8 }, () => ({
+      context: 'pr-flow/ready',
+      state: 'pending',
+    }));
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, [
+    'stale-ready-pending',
+    'ready-pending-loop',
+  ]);
+});
+
+test('selectStalePrs does not flag ready-pending-loop below the threshold', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Recovering PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'pending', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () => [
+    { context: 'pr-flow/ready', state: 'pending' },
+    { context: 'pr-flow/ready', state: 'success' },
+    { context: 'pr-flow/kilo-review', state: 'pending' },
+  ];
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, ['stale-ready-pending']);
+});
+
+test('runWatchdog escalates ready-pending-loop PRs with the pm-escalation label', (t) => {
+  const escalations = [];
+  const summary = runWatchdog({
+    listPullRequests: () => [
+      {
+        number: 7,
+        title: 'Looping PR',
+        url: 'https://github.com/test/repo/pull/7',
+        state: 'OPEN',
+        isDraft: false,
+        headRefOid: 'abc123',
+        labels: [],
+      },
+    ],
+    dispatch: () => {},
+    getStatuses: () => [
+      {
+        context: 'pr-flow/ready',
+        state: 'pending',
+        created_at: '2025-01-01T00:00:00Z',
+      },
+    ],
+    getStatusHistory: () =>
+      Array.from({ length: 10 }, () => ({
+        context: 'pr-flow/ready',
+        state: 'pending',
+      })),
+    escalate: (pr) => {
+      escalations.push(pr.number);
+      return true;
+    },
+    now: '2025-01-01T01:00:00Z',
+  });
+
+  assert.deepEqual(escalations, [7]);
+  assert.equal(summary.escalated.length, 1);
+  assert.equal(summary.escalated[0].number, 7);
+});

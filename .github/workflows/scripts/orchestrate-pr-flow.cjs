@@ -1743,6 +1743,21 @@ function makeDecision(context) {
   const manualOnlyLabels =
     manualOnly && !maintainerApproved ? ['flow/manual-only'] : [];
 
+  if (manualOnly && !maintainerApproved) {
+    // The finalizer decision for an unapproved manual-only PR is
+    // deterministic (manual_only) — dispatching it can never merge; it only
+    // keeps the aggregate pending, which makes the watchdog re-poke and
+    // re-dispatch forever. Land on the terminal manual-only state instead;
+    // /approve or a manual merge is the only way forward.
+    return finish(
+      'flow/manual-only',
+      'Manual review required; use /approve or merge manually.',
+      null,
+      [],
+      retryLabels,
+    );
+  }
+
   if (
     finalizerRuns.active ||
     (finalizerAlreadyDispatched && autoMergeEnabled) ||

@@ -10,6 +10,10 @@ const READY_STATUS_CONTEXT = 'pr-flow/ready';
 const KILO_STATUS_CONTEXT = 'pr-flow/kilo-review';
 const DEFAULT_KILO_TIMEOUT_MINUTES = 30;
 const DEFAULT_READY_PENDING_TIMEOUT_MINUTES = 30;
+// 8 pending aggregates on one head ≈ 4h of 30-minute re-pokes with no
+// progress — long past anything a lost reactive wake explains.
+const DEFAULT_READY_LOOP_THRESHOLD = 8;
+const ESCALATION_LABEL = 'pm-escalation';
 
 function parseArgs(argv) {
   const args = {};
@@ -115,9 +119,11 @@ function selectStalePrs(
   {
     labelName = STALE_DRAFT_LABEL,
     getStatuses = () => [],
+    getStatusHistory = () => [],
     now = new Date().toISOString(),
     kiloTimeoutMinutes = DEFAULT_KILO_TIMEOUT_MINUTES,
     readyPendingTimeoutMinutes = DEFAULT_READY_PENDING_TIMEOUT_MINUTES,
+    readyLoopThreshold = DEFAULT_READY_LOOP_THRESHOLD,
   } = {},
 ) {
   return (prs ?? []).flatMap((pr) => {
@@ -154,6 +160,21 @@ function selectStalePrs(
       })
     ) {
       recoveryReasons.push('stale-ready-pending');
+
+      // Each re-poke rewrites the pending aggregate with a fresh timestamp, so
+      // a PR the orchestrator can never advance loops silently forever. A long
+      // trail of pending pr-flow/ready statuses on the same head is the
+      // fingerprint of that loop — surface it for escalation instead of only
+      // poking again.
+      const history = getStatusHistory(pr);
+      const pendingReadyCount = (history ?? []).filter(
+        (status) =>
+          status.context === READY_STATUS_CONTEXT &&
+          String(status.state ?? '').toLowerCase() === 'pending',
+      ).length;
+      if (pendingReadyCount >= readyLoopThreshold) {
+        recoveryReasons.push('ready-pending-loop');
+      }
     }
 
     return recoveryReasons.length > 0 ? [{ ...pr, recoveryReasons }] : [];
@@ -228,6 +249,47 @@ function createStatusReader({ runJsonCommand = runJson } = {}) {
   };
 }
 
+// Full per-context status history for a head (the /status endpoint above
+// dedupes to the latest entry per context). Failures degrade to an empty
+// history: loop detection is best-effort and must never block recovery pokes.
+function createStatusHistoryReader({ runJsonCommand = runJson } = {}) {
+  let repository = null;
+
+  return (pr) => {
+    if (!pr.headRefOid) return [];
+
+    try {
+      repository ??= readRepository({ runJsonCommand });
+      if (!repository) return [];
+      return runJsonCommand(
+        'gh',
+        [
+          'api',
+          `repos/${repository}/commits/${pr.headRefOid}/statuses?per_page=100`,
+        ],
+        [],
+      );
+    } catch {
+      return [];
+    }
+  };
+}
+
+function addEscalationLabel(pr, { runCommand = run } = {}) {
+  try {
+    runCommand('gh', [
+      'pr',
+      'edit',
+      String(pr.number),
+      '--add-label',
+      ESCALATION_LABEL,
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function buildDispatchArgs({
   prNumber,
   workflow = DEFAULT_ORCHESTRATOR_WORKFLOW,
@@ -255,27 +317,41 @@ function runWatchdog({
   listPullRequests = listOpenPullRequests,
   dispatch = dispatchOrchestrator,
   getStatuses = null,
+  getStatusHistory = null,
+  escalate = addEscalationLabel,
   runJsonCommand = runJson,
   workflow = DEFAULT_ORCHESTRATOR_WORKFLOW,
   ref = DEFAULT_ORCHESTRATOR_REF,
   now = new Date().toISOString(),
   kiloTimeoutMinutes = DEFAULT_KILO_TIMEOUT_MINUTES,
   readyPendingTimeoutMinutes = DEFAULT_READY_PENDING_TIMEOUT_MINUTES,
+  readyLoopThreshold = DEFAULT_READY_LOOP_THRESHOLD,
 } = {}) {
   const pullRequests = listPullRequests({ runJsonCommand });
   const readStatuses = getStatuses ?? createStatusReader({ runJsonCommand });
+  const readStatusHistory =
+    getStatusHistory ?? createStatusHistoryReader({ runJsonCommand });
   const selected = selectStalePrs(pullRequests, {
     getStatuses: readStatuses,
+    getStatusHistory: readStatusHistory,
     now,
     kiloTimeoutMinutes,
     readyPendingTimeoutMinutes,
+    readyLoopThreshold,
   });
   const dispatched = [];
+  const escalated = [];
 
   if (!dryRun) {
     for (const pr of selected) {
       dispatch(pr, { workflow, ref });
       dispatched.push(summarizePr(pr));
+      if (
+        pr.recoveryReasons.includes('ready-pending-loop') &&
+        escalate(pr) !== false
+      ) {
+        escalated.push(summarizePr(pr));
+      }
     }
   }
 
@@ -285,6 +361,7 @@ function runWatchdog({
     totalOpenPrs: pullRequests.length,
     selected: selected.map(summarizePr),
     dispatched,
+    escalated,
   };
 }
 
