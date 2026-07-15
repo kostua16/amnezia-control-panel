@@ -144,6 +144,30 @@ jobs:
           draft: 'true'
           require-rich-body: 'true'
 
+      - name: Supersede older docs drift drafts
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          CURRENT_BRANCH: ${{ steps.branch.outputs.branch_name }}
+        run: |
+          # Each run re-audits the full docs surface, so any older unreviewed
+          # draft is stale by construction — close it (branch kept) instead of
+          # letting drafts accumulate with no promotion path. Best-effort: a
+          # failed close must not fail the drift run itself.
+          current_pr=$(gh pr list --state open --head "$CURRENT_BRANCH" \
+            --json number --jq '.[0].number // empty')
+          gh pr list --state open --limit 100 --json number,isDraft,headRefName \
+            --jq '.[] | select(.isDraft and (.headRefName | startswith("claude-workflow-optimize-docs-drift-"))) | .number' |
+            while read -r num; do
+              [ -n "$num" ] || continue
+              [ "$num" = "$current_pr" ] && continue
+              gh pr comment "$num" --body \
+                "Superseded by a newer docs-drift report${current_pr:+ (#$current_pr)}. Closing this stale draft; the branch is kept." ||
+                echo "::warning::Failed to comment on superseded draft #$num"
+              gh pr close "$num" ||
+                echo "::warning::Failed to close superseded draft #$num"
+            done
+
   report-failure:
     needs: [docs-drift]
     if: failure()

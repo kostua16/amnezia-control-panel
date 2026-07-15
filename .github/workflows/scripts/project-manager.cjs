@@ -331,6 +331,9 @@ function normalizeState(pr) {
       // rounds on the same head mean the loop is not making progress.
       fixReviewRounds: 0,
       fixReviewEscalatedAt: '',
+      // Per PR: draft age is measured from createdAt, which a new head does
+      // not change — resetting would re-escalate after every refresh.
+      draftEscalatedAt: raw.draftEscalatedAt ?? raw.draft_escalated_at ?? '',
     };
   }
 
@@ -365,6 +368,7 @@ function normalizeState(pr) {
     fixReviewRounds: toNumber(raw.fixReviewRounds ?? raw.fix_review_rounds, 0),
     fixReviewEscalatedAt:
       raw.fixReviewEscalatedAt ?? raw.fix_review_escalated_at ?? '',
+    draftEscalatedAt: raw.draftEscalatedAt ?? raw.draft_escalated_at ?? '',
   };
 }
 
@@ -833,6 +837,7 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
       ),
       fixReviewEscalatedAt:
         extra.fixReviewEscalatedAt ?? state.fixReviewEscalatedAt ?? '',
+      draftEscalatedAt: extra.draftEscalatedAt ?? state.draftEscalatedAt ?? '',
       cooldowns: {
         ...(state.cooldowns ?? {}),
         [actionKey]: now,
@@ -1544,6 +1549,53 @@ function blockedEscalationAction(pr, state, now) {
   };
 }
 
+const DRAFT_ESCALATION_DAYS = 3;
+const DRAFT_ESCALATION_MARKER = '<!-- project-manager-draft-escalation -->';
+
+// Automation drafts (docs-drift, workflow-health-optimize) have no promotion
+// path: nothing ever marks them ready, merges, or closes them, so without a
+// reminder they sit open indefinitely. One escalation per PR after the age
+// threshold; a human then promotes, merges the report manually, or closes it.
+function draftAgingAction(pr, state, now) {
+  if (!pr.isDraft || !isAutomationPr(pr)) return null;
+  if (hasLabel(pr, 'do-not-merge')) return null;
+  if (state.draftEscalatedAt) return null;
+  const createdAt = pr.createdAt ?? pr.created_at ?? '';
+  if (!createdAt) return null;
+  const ageHours = hoursBetween(createdAt, now);
+  if (ageHours < DRAFT_ESCALATION_DAYS * 24) return null;
+
+  const days = Math.floor(ageHours / 24);
+  return {
+    type: 'compound',
+    actionKey: 'draft-escalation',
+    reason: `Automation draft PR has been open ${days} day(s) with no promotion path; escalating once.`,
+    number: pr.number,
+    actions: [
+      makeCommentAction(
+        pr,
+        [
+          DRAFT_ESCALATION_MARKER,
+          `This automation draft has been open for ${days} day(s).`,
+          '',
+          'Drafts are never merged automatically. To resolve it:',
+          '- mark it ready for review to enter the normal merge flow, or',
+          '- apply/close it manually if the report is stale.',
+          'Add `do-not-merge` to keep it open deliberately and silence this reminder.',
+        ].join('\n'),
+        'draft-escalation',
+      ),
+      ...attentionDigestActions(
+        pr,
+        `PR #${pr.number} is an automation draft open ${days} day(s): ${pr.url ?? ''}`,
+      ),
+      makeStatePatch(pr, state, 'draft-escalation', now, {
+        draftEscalatedAt: now,
+      }),
+    ],
+  };
+}
+
 function latestCiRunForHead(pr, workflowRuns) {
   const headSha = pr.headRefOid ?? pr.headSha ?? '';
   if (!headSha) return null;
@@ -1693,6 +1745,9 @@ function decidePrAction(pr, options = {}) {
       ],
     };
   }
+
+  const draftEscalation = draftAgingAction(pr, state, now);
+  if (draftEscalation) return draftEscalation;
 
   if (
     (pr.mergeable === 'CONFLICTING' || pr.conflict === true) &&

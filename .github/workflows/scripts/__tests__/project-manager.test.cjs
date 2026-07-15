@@ -2033,3 +2033,90 @@ test('PM61d: head change resets the fix-review round counter', () => {
   const patch = action.actions.at(-1);
   assert.equal(patch.state.fixReviewRounds, 1);
 });
+
+test('PM62: automation draft older than 3 days escalates once', () => {
+  const action = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      createdAt: '2026-06-26T10:00:00.000Z', // 5 days before NOW
+    }),
+    { now: NOW },
+  );
+  assert.equal(action.actionKey, 'draft-escalation');
+  const keys = action.actions.map((entry) => entry.actionKey ?? entry.type);
+  assert.deepEqual(keys, [
+    'draft-escalation',
+    'attention-digest',
+    'attention-digest-entry',
+    'upsert-pr-state',
+  ]);
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.draftEscalatedAt, NOW);
+});
+
+test('PM62b: young or already-escalated automation drafts stay untouched', () => {
+  const young = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      createdAt: '2026-06-30T10:00:00.000Z', // 1 day before NOW
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(young?.actionKey, 'draft-escalation');
+
+  const escalated = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      createdAt: '2026-06-26T10:00:00.000Z',
+      projectManagerState: {
+        headSha: 'abc123',
+        draftEscalatedAt: '2026-06-29T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(escalated?.actionKey, 'draft-escalation');
+});
+
+test('PM62c: human drafts and do-not-merge drafts are never escalated', () => {
+  const human = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'feature/manual-work',
+      createdAt: '2026-06-01T10:00:00.000Z',
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(human?.actionKey, 'draft-escalation');
+
+  const held = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      createdAt: '2026-06-01T10:00:00.000Z',
+      labels: ['do-not-merge'],
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(held?.actionKey, 'draft-escalation');
+});
+
+test('PM62d: draft escalation survives a head change (measured from createdAt)', () => {
+  const action = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      headRefOid: 'def456',
+      createdAt: '2026-06-26T10:00:00.000Z',
+      projectManagerState: {
+        headSha: 'abc123',
+        draftEscalatedAt: '2026-06-29T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(action?.actionKey, 'draft-escalation');
+});
