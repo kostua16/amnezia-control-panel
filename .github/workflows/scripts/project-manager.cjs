@@ -696,8 +696,9 @@ function staleCodeReviewNeedsRebase(pr, now) {
 }
 
 function recentCommandCommentExists(pr, command, now, hours = 1) {
+  const commands = Array.isArray(command) ? command : [command];
   return (pr.comments ?? []).some((comment) => {
-    if (String(comment.body ?? '').trim() !== command) return false;
+    if (!commands.includes(String(comment.body ?? '').trim())) return false;
     const association = authorAssociation(comment);
     const authorType = comment.author?.type ?? comment.user?.type ?? '';
     const trusted =
@@ -718,6 +719,8 @@ function isOpenPr(pr) {
     !pr.merged_at
   );
 }
+
+const REBASE_COMMANDS = ['/rebase', '/rebase --force'];
 
 function readySinceFor(pr, state, now) {
   if (checksPassed(pr) && reviewSignalsPassed(pr)) {
@@ -1662,7 +1665,7 @@ function decidePrAction(pr, options = {}) {
     (pr.mergeable === 'CONFLICTING' || pr.conflict === true) &&
     !activeRun(pr, 'rebasePr') &&
     !cooldownActive(state, 'rebase', now) &&
-    !recentCommandCommentExists(pr, '/rebase', now)
+    !recentCommandCommentExists(pr, REBASE_COMMANDS, now)
   ) {
     return {
       type: 'compound',
@@ -1679,7 +1682,7 @@ function decidePrAction(pr, options = {}) {
   if (
     staleCodeReviewNeedsRebase(pr, now) &&
     !cooldownActive(state, 'rebase', now) &&
-    !recentCommandCommentExists(pr, '/rebase', now)
+    !recentCommandCommentExists(pr, REBASE_COMMANDS, now)
   ) {
     return {
       type: 'compound',
