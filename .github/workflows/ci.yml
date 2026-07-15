@@ -179,3 +179,26 @@ jobs:
           require-gh-auth: 'false'
       - name: npm audit (high+ advisories)
         run: npm audit --audit-level=high
+
+  # Always-run terminal signal for consumers that key on CI completion
+  # (pr-flow required checks, project-manager, branch protection). The four
+  # heavy jobs are skipped entirely for docs/planning-only diffs, which
+  # otherwise leaves no success event for path-filtered PRs.
+  ci-result:
+    name: CI Result
+    needs: [changes, lint, typecheck, test, build, security-audit]
+    if: always()
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate required job results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq .
+          failed=$(echo "$RESULTS" | jq -r '[.[] | select(.result == "failure" or .result == "cancelled")] | length')
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::One or more CI jobs failed or were cancelled."
+            exit 1
+          fi
+          echo "All CI jobs passed or were intentionally skipped."
