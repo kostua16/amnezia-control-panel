@@ -168,18 +168,28 @@ function selectStalePrs(
     // when the watchdog runs and the stale-ready-pending branch is skipped. A
     // long trail of pending pr-flow/ready statuses on the same head is the real
     // fingerprint of a loop the orchestrator can never advance — surface it for
-    // escalation instead of only poking again. Gating only on headRefOid is
-    // safe: the pending-state filter inside guards correctness, so a healthy PR
-    // never accumulates enough pending history to misfire.
+    // escalation instead of only poking again.
+    //
+    // Success escape: gate on the latest pr-flow/ready still being pending. A
+    // real loop rewrites pending on every poke, so latest is pending. A PR that
+    // already converged posts pr-flow/ready = success, yet its pending history
+    // lingers in the 100-status window — without this gate the watchdog would
+    // keep re-dispatching the orchestrator and re-adding the escalation label
+    // on a resolved PR every cycle until those statuses age out.
     if (pr.headRefOid) {
-      const history = getStatusHistory(pr);
-      const pendingReadyCount = (history ?? []).filter(
-        (status) =>
-          status.context === READY_STATUS_CONTEXT &&
-          String(status.state ?? '').toLowerCase() === 'pending',
-      ).length;
-      if (pendingReadyCount >= readyLoopThreshold) {
-        recoveryReasons.push('ready-pending-loop');
+      const latestReady = normalizeStatuses(statuses).find(
+        (status) => status.context === READY_STATUS_CONTEXT,
+      );
+      if (String(latestReady?.state ?? '').toLowerCase() === 'pending') {
+        const history = getStatusHistory(pr);
+        const pendingReadyCount = (history ?? []).filter(
+          (status) =>
+            status.context === READY_STATUS_CONTEXT &&
+            String(status.state ?? '').toLowerCase() === 'pending',
+        ).length;
+        if (pendingReadyCount >= readyLoopThreshold) {
+          recoveryReasons.push('ready-pending-loop');
+        }
       }
     }
 

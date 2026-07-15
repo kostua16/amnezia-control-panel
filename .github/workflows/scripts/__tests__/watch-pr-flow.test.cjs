@@ -464,6 +464,42 @@ test('selectStalePrs flags ready-pending-loop even when the latest pr-flow/ready
   assert.deepEqual(selected[0].recoveryReasons, ['ready-pending-loop']);
 });
 
+test('selectStalePrs stops flagging ready-pending-loop once the latest pr-flow/ready converges to success', (t) => {
+  // Success escape: a converged PR keeps ≥8 pending pr-flow/ready entries in the
+  // 100-status history window, but its latest ready status is success — the
+  // orchestrator advanced it. Without the latest-pending gate the watchdog
+  // would keep re-dispatching and re-escalating this resolved PR every cycle
+  // until the pending statuses aged out of the window.
+  const prs = [
+    {
+      number: 1,
+      title: 'Converged PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'success', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () =>
+    Array.from({ length: 10 }, () => ({
+      context: 'pr-flow/ready',
+      state: 'pending',
+    }));
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 0);
+});
+
 test('runWatchdog escalates ready-pending-loop PRs with the pm-escalation label', (t) => {
   const escalations = [];
   const summary = runWatchdog({
