@@ -20,29 +20,76 @@ function getRepoSlug() {
   return repo;
 }
 
+const MAX_RETRIES = 3;
+const RETRY_BASE_MS = 1000;
+
+// Transient failures worth retrying on idempotent (read) gh calls: gh's literal
+// "HTTP 5xx" response plus the network-level errors Go's net/http emits on a CI
+// `gh api` call (TCP reset, dial/TLS timeout, context deadline, truncated body).
+// Patterns use the `i` flag so they match gh's stderr verbatim regardless of how
+// `gh` capitalizes the status text (e.g. "HTTP 504") — a case-sensitive match
+// here would silently disable 5xx retry, the exact transient this PR targets.
+const TRANSIENT_PATTERNS = [
+  /HTTP 5\d{2}/i,
+  /connection reset/i,
+  /connection refused/i,
+  /dial tcp/i,
+  /i\/o timeout/i,
+  /tls handshake timeout/i,
+  /context deadline exceeded/i,
+  /unexpected eof/i,
+];
+
+function isTransient(stderr) {
+  return TRANSIENT_PATTERNS.some((re) => re.test(String(stderr)));
+}
+
 function run(command, args, options = {}) {
-  try {
-    return (
-      execFileSync(command, args, {
-        encoding: 'utf8',
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }) ?? ''
-    ).trim();
-  } catch (error) {
-    const stderr = String(error.stderr ?? '').trim();
-    if (options.allowFailure) {
-      return options.fallback ?? '';
+  const retryEnabled = options.retry === true;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return (
+        execFileSync(command, args, {
+          encoding: 'utf8',
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }) ?? ''
+      ).trim();
+    } catch (error) {
+      const stderr = String(error.stderr ?? '').trim();
+      // Retry transient errors only when the caller opts in with `retry: true`,
+      // and do it BEFORE the allowFailure short-circuit. Read paths (listComments
+      // via runJson, fallback []) must actually retry, or a transient 504 yields
+      // [] and upsertComment posts a duplicate sticky comment. Mutating callers
+      // (POST/PATCH/DELETE) leave `retry` off: a retry issued after GitHub
+      // already applied the change would post a duplicate comment (or delete a
+      // second id) on a late 504.
+      if (retryEnabled && attempt < MAX_RETRIES - 1 && isTransient(stderr)) {
+        const delay = RETRY_BASE_MS * 2 ** attempt;
+        console.warn(
+          `sticky-comment: transient HTTP error on attempt ${attempt + 1}/${MAX_RETRIES}, retrying in ${delay}ms: ${stderr.split('\n')[0]}`,
+        );
+        // Synchronous sleep without burning a CPU core. Runners are Linux, so
+        // GNU sleep accepts fractional seconds; execFileSync is already imported.
+        execFileSync('sleep', [String(delay / 1000)], { stdio: 'ignore' });
+        continue;
+      }
+      if (options.allowFailure) {
+        return options.fallback ?? '';
+      }
+      if (stderr) {
+        console.error(stderr);
+      }
+      throw error;
     }
-    if (stderr) {
-      console.error(stderr);
-    }
-    throw error;
   }
 }
 
 function runJson(command, args, fallback = []) {
+  // Idempotent GETs (e.g. listComments): retry transient errors so a 504 does
+  // not silently collapse to the fallback and cause a duplicate sticky comment.
   const output = run(command, args, {
+    retry: true,
     allowFailure: fallback !== undefined,
     fallback: JSON.stringify(fallback),
   });
@@ -170,6 +217,7 @@ module.exports = {
   getRepoSlug,
   run,
   runJson,
+  isTransient,
   writeTempJson,
   listComments,
   findExistingComment,
