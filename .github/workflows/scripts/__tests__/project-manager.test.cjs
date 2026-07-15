@@ -1828,6 +1828,23 @@ test('PM57: alignment state fields round-trip through the sticky comment', () =>
   assert.equal(parsed.alignmentEscalatedAt, '2026-07-01T10:00:00.000Z');
 });
 
+test('PM state comment round-trips fix-review and draft escalation fields', () => {
+  // normalizeState/makeStatePatch write these fields, but the sticky PR-state
+  // comment is the only persistence path — they must survive render → parse or
+  // the PM61 round cap and both escalation dedups read back as 0/'' every run.
+  const body = renderStateBody({
+    headSha: 'abc123',
+    fixReviewRounds: 3,
+    fixReviewEscalatedAt: '2026-07-01T10:00:00.000Z',
+    draftEscalatedAt: '2026-06-29T10:00:00.000Z',
+  });
+  const parsed = parseStateComment(body);
+
+  assert.equal(parsed.fixReviewRounds, 3);
+  assert.equal(parsed.fixReviewEscalatedAt, '2026-07-01T10:00:00.000Z');
+  assert.equal(parsed.draftEscalatedAt, '2026-06-29T10:00:00.000Z');
+});
+
 test('PM58: alignment classification maps branch prefixes and workflow paths', () => {
   assert.equal(
     classifyPrForAlignment({

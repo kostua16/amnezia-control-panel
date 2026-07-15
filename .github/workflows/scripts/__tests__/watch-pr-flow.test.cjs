@@ -464,3 +464,41 @@ test('runWatchdog escalates ready-pending-loop PRs with the pm-escalation label'
   assert.equal(summary.escalated.length, 1);
   assert.equal(summary.escalated[0].number, 7);
 });
+
+test('runWatchdog surfaces escalation failures instead of dropping the PR', (t) => {
+  // When addEscalationLabel fails (e.g. pm-escalation is missing), the PR must
+  // not vanish from the summary looking handled — it lands in escalationFailures
+  // so the silent-no-op is visible.
+  const summary = runWatchdog({
+    listPullRequests: () => [
+      {
+        number: 9,
+        title: 'Looping PR',
+        url: 'https://github.com/test/repo/pull/9',
+        state: 'OPEN',
+        isDraft: false,
+        headRefOid: 'abc123',
+        labels: [],
+      },
+    ],
+    dispatch: () => {},
+    getStatuses: () => [
+      {
+        context: 'pr-flow/ready',
+        state: 'pending',
+        created_at: '2025-01-01T00:00:00Z',
+      },
+    ],
+    getStatusHistory: () =>
+      Array.from({ length: 10 }, () => ({
+        context: 'pr-flow/ready',
+        state: 'pending',
+      })),
+    escalate: () => false,
+    now: '2025-01-01T01:00:00Z',
+  });
+
+  assert.equal(summary.escalated.length, 0);
+  assert.equal(summary.escalationFailures.length, 1);
+  assert.equal(summary.escalationFailures[0].number, 9);
+});

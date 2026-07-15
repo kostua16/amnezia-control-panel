@@ -341,16 +341,20 @@ function runWatchdog({
   });
   const dispatched = [];
   const escalated = [];
+  const escalationFailures = [];
 
   if (!dryRun) {
     for (const pr of selected) {
       dispatch(pr, { workflow, ref });
       dispatched.push(summarizePr(pr));
-      if (
-        pr.recoveryReasons.includes('ready-pending-loop') &&
-        escalate(pr) !== false
-      ) {
+      if (!pr.recoveryReasons.includes('ready-pending-loop')) continue;
+      if (escalate(pr) !== false) {
         escalated.push(summarizePr(pr));
+      } else {
+        // Adding pm-escalation failed (e.g. the label is missing). Record it
+        // so the PR is not silently dropped from the summary looking handled
+        // while nothing human-visible was actually posted.
+        escalationFailures.push(summarizePr(pr));
       }
     }
   }
@@ -362,6 +366,7 @@ function runWatchdog({
     selected: selected.map(summarizePr),
     dispatched,
     escalated,
+    escalationFailures,
   };
 }
 

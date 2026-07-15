@@ -2417,6 +2417,12 @@ function parseStateComment(body) {
       '- Alignment veto expires at:',
     ),
     alignmentEscalatedAt: valueFromLine(lines, '- Alignment escalated at:'),
+    fixReviewRounds: toNumber(
+      valueFromLine(lines, '- Fix review rounds:'),
+      0,
+    ),
+    fixReviewEscalatedAt: valueFromLine(lines, '- Fix review escalated at:'),
+    draftEscalatedAt: valueFromLine(lines, '- Draft escalated at:'),
     cooldowns: {
       rebase: valueFromLine(lines, '- rebase:'),
       fix: valueFromLine(lines, '- fix:'),
@@ -3063,6 +3069,9 @@ function renderStateBody(state) {
     `- Alignment fix rounds: ${toNumber(state.alignmentFixRounds, 0)}`,
     `- Alignment veto expires at: ${state.alignmentVetoExpiresAt ?? ''}`,
     `- Alignment escalated at: ${state.alignmentEscalatedAt ?? ''}`,
+    `- Fix review rounds: ${toNumber(state.fixReviewRounds, 0)}`,
+    `- Fix review escalated at: ${state.fixReviewEscalatedAt ?? ''}`,
+    `- Draft escalated at: ${state.draftEscalatedAt ?? ''}`,
     '- Cooldowns:',
     `  - rebase: ${cooldowns.rebase ?? ''}`,
     `  - fix: ${cooldowns.fix ?? ''}`,
