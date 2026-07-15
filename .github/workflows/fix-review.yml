@@ -295,10 +295,14 @@ jobs:
         run: |
           # Real change detection (never the agent self-report): working-tree
           # changes commit-and-push would stage (git add -A respects .gitignore)
-          # OR a moved HEAD (the agent committed despite instructions). The
-          # untracked .claude-pr/ runtime artifact is excluded explicitly so the
-          # no-op skip holds even on a branch whose .gitignore lacks the entry.
-          dirty=$(git status --porcelain | grep -vcF '.claude-pr/' || true)
+          # OR a moved HEAD (the agent committed despite instructions). Two
+          # paths are excluded because they can never reach the PR branch:
+          # .claude-pr/ is a runtime artifact (excluded even on branches whose
+          # .gitignore lacks the entry), and .github/actions/ is force-restored
+          # by the next step before anything is committed. Counting them left
+          # runs in limbo: has_changes=true but nothing pushed, so neither the
+          # push steps nor the false-positive code-review retrigger ever fired.
+          dirty=$(git status --porcelain -- . ':(exclude).claude-pr' ':(exclude).github/actions' | wc -l)
           current=$(git rev-parse HEAD)
           if [ "$dirty" -gt 0 ] || [ "$current" != "$HEAD_SHA" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
@@ -307,7 +311,7 @@ jobs:
           fi
 
       - name: Restore composite action files (Claude agent may alter working tree)
-        if: steps.pr.outputs.eligible == 'true' && steps.detect-noop.outputs.has_changes == 'true'
+        if: steps.pr.outputs.eligible == 'true'
         run: git checkout "${{ steps.safe-head.outputs.sha }}" -- .github/actions/
 
       - name: Ensure gate action exists

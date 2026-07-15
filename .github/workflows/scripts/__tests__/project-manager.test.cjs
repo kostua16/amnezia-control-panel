@@ -11,6 +11,7 @@ const {
   classifyPrForAlignment,
   creationTimeAutomationNeedsReview,
   decidePrAction,
+  deriveCheckStatusFromRollup,
   detectPrProducingWorkflows,
   duplicateAutomationPrActions,
   parseFixReviewSummaryComment,
@@ -1827,6 +1828,23 @@ test('PM57: alignment state fields round-trip through the sticky comment', () =>
   assert.equal(parsed.alignmentEscalatedAt, '2026-07-01T10:00:00.000Z');
 });
 
+test('PM state comment round-trips fix-review and draft escalation fields', () => {
+  // normalizeState/makeStatePatch write these fields, but the sticky PR-state
+  // comment is the only persistence path — they must survive render → parse or
+  // the PM61 round cap and both escalation dedups read back as 0/'' every run.
+  const body = renderStateBody({
+    headSha: 'abc123',
+    fixReviewRounds: 3,
+    fixReviewEscalatedAt: '2026-07-01T10:00:00.000Z',
+    draftEscalatedAt: '2026-06-29T10:00:00.000Z',
+  });
+  const parsed = parseStateComment(body);
+
+  assert.equal(parsed.fixReviewRounds, 3);
+  assert.equal(parsed.fixReviewEscalatedAt, '2026-07-01T10:00:00.000Z');
+  assert.equal(parsed.draftEscalatedAt, '2026-06-29T10:00:00.000Z');
+});
+
 test('PM58: alignment classification maps branch prefixes and workflow paths', () => {
   assert.equal(
     classifyPrForAlignment({
@@ -1877,4 +1895,245 @@ test('PM58b: creation-time needs-review detection tolerates only creation-window
     false,
   );
   assert.equal(creationTimeAutomationNeedsReview(base), false);
+});
+
+test('PM59: deriveCheckStatusFromRollup ignores pr-flow/* orchestration statuses', () => {
+  // The orchestrator holds pr-flow/ready at "pending" while it waits or loops;
+  // counting it as a check deadlocks PM against pr-flow.
+  assert.deepEqual(
+    deriveCheckStatusFromRollup([
+      { context: 'pr-flow/ready', state: 'PENDING' },
+      { context: 'pr-flow/finalizer', state: 'PENDING' },
+      { name: 'Lint', state: 'COMPLETED', conclusion: 'SUCCESS' },
+      { name: 'Build', state: 'COMPLETED', conclusion: 'SUCCESS' },
+    ]),
+    { status: 'passed' },
+  );
+});
+
+test('PM59b: deriveCheckStatusFromRollup is unknown when only pr-flow statuses exist', () => {
+  assert.deepEqual(
+    deriveCheckStatusFromRollup([
+      { context: 'pr-flow/ready', state: 'PENDING' },
+    ]),
+    { status: 'unknown' },
+  );
+});
+
+test('PM59c: deriveCheckStatusFromRollup still reports real CI failures', () => {
+  const result = deriveCheckStatusFromRollup([
+    { context: 'pr-flow/ready', state: 'PENDING' },
+    { name: 'Test', state: 'COMPLETED', conclusion: 'FAILURE' },
+  ]);
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(result.failed, ['Test']);
+});
+
+test('PM60: ready-but-needs-review PR escalates after 4h instead of 72h', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: '2026-07-01T04:00:00.000Z', // 6h before NOW
+      },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action.actionKey, 'blocked-escalation');
+});
+
+test('PM60b: ready-but-needs-review PR does not escalate before 4h', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: '2026-07-01T08:00:00.000Z', // 2h before NOW
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(action?.actionKey, 'blocked-escalation');
+});
+
+test('PM60c: non-ready blocked PR keeps the 72h escalation window', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['needs-review'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        blockedSince: '2026-06-30T10:00:00.000Z', // 24h before NOW
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(action?.actionKey, 'blocked-escalation');
+});
+
+test('PM61: /fix-review increments the per-head round counter', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['ai-review-concerns'],
+      checkStatus: { status: 'passed' },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action.actionKey, 'fix-review');
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.fixReviewRounds, 1);
+});
+
+test('PM61b: fix-review round cap stops the loop and escalates once', () => {
+  const blocked = pr({
+    labels: ['ai-review-concerns'],
+    checkStatus: { status: 'passed' },
+    projectManagerState: { headSha: 'abc123', fixReviewRounds: 3 },
+  });
+  const action = decidePrAction(blocked, { now: NOW });
+  assert.equal(action.actionKey, 'fix-review-escalation');
+  const keys = action.actions.map((entry) => entry.actionKey ?? entry.type);
+  assert.deepEqual(keys, [
+    'fix-review-escalation',
+    'attention-digest',
+    'attention-digest-entry',
+    'upsert-pr-state',
+  ]);
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.fixReviewEscalatedAt, NOW);
+
+  const already = decidePrAction(
+    pr({
+      labels: ['ai-review-concerns'],
+      checkStatus: { status: 'passed' },
+      projectManagerState: {
+        headSha: 'abc123',
+        fixReviewRounds: 3,
+        fixReviewEscalatedAt: NOW,
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(already?.actionKey, 'fix-review-escalation');
+  assert.notEqual(already?.actionKey, 'fix-review');
+});
+
+test('PM61c: a current-head fix-review no-op suppresses further /fix-review and escalates', () => {
+  const blocked = pr({
+    labels: ['ai-review-concerns'],
+    checkStatus: { status: 'passed' },
+    fixReview: { latest: { noop: true, outcome: 'noop', headSha: 'abc123' } },
+  });
+  const action = decidePrAction(blocked, { now: NOW });
+  assert.equal(action.actionKey, 'fix-review-escalation');
+  assert.match(action.reason, /No changes needed/);
+});
+
+test('PM61d: head change resets the fix-review round counter', () => {
+  const action = decidePrAction(
+    pr({
+      labels: ['ai-review-concerns'],
+      checkStatus: { status: 'passed' },
+      headRefOid: 'def456',
+      projectManagerState: {
+        headSha: 'abc123',
+        fixReviewRounds: 3,
+        fixReviewEscalatedAt: '2026-06-30T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.equal(action.actionKey, 'fix-review');
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.fixReviewRounds, 1);
+});
+
+test('PM62: automation draft older than 3 days escalates once', () => {
+  const action = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      createdAt: '2026-06-26T10:00:00.000Z', // 5 days before NOW
+    }),
+    { now: NOW },
+  );
+  assert.equal(action.actionKey, 'draft-escalation');
+  const keys = action.actions.map((entry) => entry.actionKey ?? entry.type);
+  assert.deepEqual(keys, [
+    'draft-escalation',
+    'attention-digest',
+    'attention-digest-entry',
+    'upsert-pr-state',
+  ]);
+  const patch = action.actions.at(-1);
+  assert.equal(patch.state.draftEscalatedAt, NOW);
+});
+
+test('PM62b: young or already-escalated automation drafts stay untouched', () => {
+  const young = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      createdAt: '2026-06-30T10:00:00.000Z', // 1 day before NOW
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(young?.actionKey, 'draft-escalation');
+
+  const escalated = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      createdAt: '2026-06-26T10:00:00.000Z',
+      projectManagerState: {
+        headSha: 'abc123',
+        draftEscalatedAt: '2026-06-29T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(escalated?.actionKey, 'draft-escalation');
+});
+
+test('PM62c: human drafts and do-not-merge drafts are never escalated', () => {
+  const human = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'feature/manual-work',
+      createdAt: '2026-06-01T10:00:00.000Z',
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(human?.actionKey, 'draft-escalation');
+
+  const held = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      createdAt: '2026-06-01T10:00:00.000Z',
+      labels: ['do-not-merge'],
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(held?.actionKey, 'draft-escalation');
+});
+
+test('PM62d: draft escalation survives a head change (measured from createdAt)', () => {
+  const action = decidePrAction(
+    pr({
+      isDraft: true,
+      headRefName: 'claude-workflow-optimize-docs-drift-123',
+      headRefOid: 'def456',
+      createdAt: '2026-06-26T10:00:00.000Z',
+      projectManagerState: {
+        headSha: 'abc123',
+        draftEscalatedAt: '2026-06-29T10:00:00.000Z',
+      },
+    }),
+    { now: NOW },
+  );
+  assert.notEqual(action?.actionKey, 'draft-escalation');
 });

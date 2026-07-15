@@ -157,6 +157,61 @@ test('getRequiredCheckStatus treats skipped job as failure when sibling failed',
   );
 });
 
+test('getRequiredCheckStatus treats gh "skipping" bucket as non-blocking skip', () => {
+  // `gh pr checks` reports skipped checks with bucket "skipping", not "skip".
+  // Planning-only PRs skip all heavy CI jobs; they must not read as pending.
+  const checks = [
+    { name: 'Lint', workflow: 'CI', bucket: 'skipping', state: 'skipped' },
+    {
+      name: 'Type Check',
+      workflow: 'CI',
+      bucket: 'skipping',
+      state: 'skipped',
+    },
+    { name: 'Test', workflow: 'CI', bucket: 'skipping', state: 'skipped' },
+    { name: 'Build', workflow: 'CI', bucket: 'skipping', state: 'skipped' },
+    {
+      name: 'label-and-validate',
+      workflow: 'PR Policy',
+      bucket: 'pass',
+      state: 'success',
+    },
+  ];
+  const result = getRequiredCheckStatus(checks, REQUIRED_CHECKS);
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.pending, []);
+});
+
+test('getRequiredCheckStatus treats "skipping" bucket as failure when sibling failed', () => {
+  const checks = [
+    { name: 'Lint', workflow: 'CI', bucket: 'fail', state: 'failure' },
+    { name: 'Build', workflow: 'CI', bucket: 'skipping', state: 'skipped' },
+  ];
+  const result = getRequiredCheckStatus(checks, REQUIRED_CHECKS);
+  assert.equal(result.status, 'failed');
+  assert.ok(
+    result.failing.includes('Build'),
+    'sibling-failure skipping should be failing',
+  );
+});
+
+test('getRequiredCheckStatus treats state "skipped" as skip even without a bucket', () => {
+  const checks = [
+    { name: 'Lint', workflow: 'CI', bucket: 'pass', state: 'success' },
+    { name: 'Type Check', workflow: 'CI', bucket: 'pass', state: 'success' },
+    { name: 'Test', workflow: 'CI', bucket: 'pass', state: 'success' },
+    { name: 'Build', workflow: 'CI', bucket: '', state: 'skipped' },
+    {
+      name: 'label-and-validate',
+      workflow: 'PR Policy',
+      bucket: 'pass',
+      state: 'success',
+    },
+  ];
+  const result = getRequiredCheckStatus(checks, REQUIRED_CHECKS);
+  assert.equal(result.status, 'passed');
+});
+
 // ─── areAllRequiredChecksMissing ──────────────────────────────────────
 
 test('areAllRequiredChecksMissing returns true when every required check is missing', () => {

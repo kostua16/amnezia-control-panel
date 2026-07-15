@@ -144,6 +144,53 @@ jobs:
           draft: 'true'
           require-rich-body: 'true'
 
+      - name: Supersede older docs drift drafts
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          CURRENT_BRANCH: ${{ steps.branch.outputs.branch_name }}
+        run: |
+          # Each run re-audits the full docs surface, so any older unreviewed
+          # draft is stale by construction — close it (branch kept) instead of
+          # letting drafts accumulate with no promotion path. Best-effort: a
+          # failed list or close must not fail the drift run itself.
+          current_pr=$(gh pr list --state open --head "$CURRENT_BRANCH" \
+            --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          # GitHub's PR-list endpoint can lag briefly after creation or fail
+          # transiently. Without a resolved current_pr the self-skip guard in
+          # the loop has no anchor and would close the draft this run just
+          # opened, so bail out of superseding entirely instead.
+          if [ -z "$current_pr" ]; then
+            echo "::warning::Could not resolve current docs-drift PR; skipping supersede."
+            exit 0
+          fi
+          # Skip drafts opened in the last day: this job runs weekly with
+          # cancel-in-progress: false, so two runs can overlap and open drafts
+          # moments apart, and a freshly-opened draft may be under active human
+          # review. Older drafts are stale by construction; the branch is kept
+          # so a dismissed review stays recoverable.
+          cutoff=$(date -u -d '1 day ago' +%s 2>/dev/null || true)
+          if [ -z "$cutoff" ]; then
+            echo "::warning::Could not compute supersede age cutoff; skipping supersede."
+            exit 0
+          fi
+          # Capture the candidate list before iterating so a transient gh
+          # failure cannot bubble through the pipe under `set -eo pipefail`
+          # and fail the whole drift job.
+          supersede_list=$(gh pr list --state open --limit 100 \
+            --json number,isDraft,headRefName,createdAt \
+            --jq ".[] | select(.isDraft and (.headRefName | startswith(\"claude-workflow-optimize-docs-drift-\"))) | select(${cutoff} >= (.createdAt | fromdateiso8601)) | .number" 2>/dev/null || true)
+          [ -n "$supersede_list" ] || exit 0
+          while read -r num; do
+            [ -n "$num" ] || continue
+            [ "$num" = "$current_pr" ] && continue
+            gh pr comment "$num" --body \
+              "Superseded by a newer docs-drift report (#$current_pr). Closing this stale draft; the branch is kept." ||
+              echo "::warning::Failed to comment on superseded draft #$num"
+            gh pr close "$num" ||
+              echo "::warning::Failed to close superseded draft #$num"
+          done <<< "$supersede_list"
+
   report-failure:
     needs: [docs-drift]
     if: failure()

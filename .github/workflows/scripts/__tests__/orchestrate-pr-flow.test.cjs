@@ -897,7 +897,10 @@ test('makeDecision dispatches code review for needs-review after CI green', () =
   assert.ok(!decision.desiredLabels.includes('flow/manual-only'));
 });
 
-test('makeDecision preserves manual-only label when reviews pass for needs-review PR', () => {
+test('makeDecision lands needs-review PR on terminal manual-only without dispatching the finalizer', () => {
+  // The finalizer decision for an unapproved manual-only PR is deterministic
+  // (manual_only), so dispatching it would loop watchdog -> orchestrator ->
+  // finalizer forever without ever merging.
   const decision = makePrFlowDecision({
     pr: {
       ...basePr,
@@ -914,14 +917,75 @@ test('makeDecision preserves manual-only label when reviews pass for needs-revie
     checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
   });
 
+  assert.equal(decision.state, 'flow/manual-only');
+  assert.equal(
+    decision.reason,
+    'Manual review required; use /approve or merge manually.',
+  );
+  assert.equal(decision.dispatch, null);
+  assert.ok(decision.desiredLabels.includes('flow/manual-only'));
+});
+
+test('makeDecision clears a stale finalizer-dispatched label on a manual-only PR', () => {
+  // PRs caught in the historical dispatch loop carry both labels; the terminal
+  // decision must strip flow/finalizer-dispatched so state converges.
+  const decision = makePrFlowDecision({
+    pr: {
+      ...basePr,
+      labels: [
+        'needs-review',
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/finalizer-dispatched',
+        'flow/manual-only',
+      ],
+      files: ['src/app/page.tsx'],
+    },
+    policy: {
+      blocking_labels_present: ['needs-review'],
+      manual_only: false,
+      maintainerAssociations: ['OWNER'],
+    },
+    workerRuns: { codeReview: [] },
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
+  assert.equal(decision.state, 'flow/manual-only');
+  assert.equal(decision.dispatch, null);
+  assert.ok(decision.labelsToRemove.includes('flow/finalizer-dispatched'));
+});
+
+test('makeDecision still dispatches the finalizer for a maintainer-approved needs-review PR', () => {
+  const decision = makePrFlowDecision({
+    pr: {
+      ...basePr,
+      labels: [
+        'needs-review',
+        'ai-review-passed',
+        'security-review-passed',
+        'maintainer-approved',
+      ],
+      files: ['src/app/page.tsx'],
+    },
+    policy: {
+      blocking_labels_present: ['needs-review'],
+      manual_only: false,
+      maintainer_approved: true,
+      maintainerAssociations: ['OWNER'],
+    },
+    workerRuns: { codeReview: [] },
+    config: testConfig,
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+  });
+
   assert.equal(decision.state, 'flow/finalizer-dispatched');
-  assert.equal(decision.reason, 'Dispatching finalizer.');
   assert.deepEqual(decision.dispatch, {
     key: 'finalizer',
     workflow: 'pr-finalizer.yml',
     inputs: undefined,
   });
-  assert.ok(decision.desiredLabels.includes('flow/manual-only'));
+  assert.ok(!decision.desiredLabels.includes('flow/manual-only'));
 });
 
 test('makeDecision keeps hard blockers as failures even with needs-review', () => {

@@ -358,3 +358,221 @@ test('selectStalePrs handles manual-only PRs (no pr-flow/ready status)', (t) => 
   assert.equal(selected[0].number, 1);
   assert.deepEqual(selected[0].recoveryReasons, ['missing-ready-status']);
 });
+
+test('selectStalePrs flags ready-pending-loop when status history shows repeated pending aggregates', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Looping PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'pending', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () =>
+    Array.from({ length: 8 }, () => ({
+      context: 'pr-flow/ready',
+      state: 'pending',
+    }));
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, [
+    'stale-ready-pending',
+    'ready-pending-loop',
+  ]);
+});
+
+test('selectStalePrs does not flag ready-pending-loop below the threshold', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Recovering PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'pending', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () => [
+    { context: 'pr-flow/ready', state: 'pending' },
+    { context: 'pr-flow/ready', state: 'success' },
+    { context: 'pr-flow/kilo-review', state: 'pending' },
+  ];
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, ['stale-ready-pending']);
+});
+
+test('selectStalePrs flags ready-pending-loop even when the latest pr-flow/ready status is fresh', (t) => {
+  // Each re-poke rewrites the pending aggregate with a fresh timestamp, so for
+  // a real loop the latest pr-flow/ready is younger than the timeout when the
+  // watchdog runs — the stale-ready-pending expiry branch is skipped. Loop
+  // detection must run independently of that expiry or the stuck PR is only
+  // re-poked, never escalated. This is the production shape (#753/#754).
+  const prs = [
+    {
+      number: 1,
+      title: 'Looping PR (fresh pending)',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const now = '2025-01-01T00:30:00Z';
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'pending', created_at: now },
+  ];
+  const getStatusHistory = () =>
+    Array.from({ length: 10 }, () => ({
+      context: 'pr-flow/ready',
+      state: 'pending',
+    }));
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now,
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, ['ready-pending-loop']);
+});
+
+test('selectStalePrs stops flagging ready-pending-loop once the latest pr-flow/ready converges to success', (t) => {
+  // Success escape: a converged PR keeps ≥8 pending pr-flow/ready entries in the
+  // 100-status history window, but its latest ready status is success — the
+  // orchestrator advanced it. Without the latest-pending gate the watchdog
+  // would keep re-dispatching and re-escalating this resolved PR every cycle
+  // until the pending statuses aged out of the window.
+  const prs = [
+    {
+      number: 1,
+      title: 'Converged PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'success', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () =>
+    Array.from({ length: 10 }, () => ({
+      context: 'pr-flow/ready',
+      state: 'pending',
+    }));
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 0);
+});
+
+test('runWatchdog escalates ready-pending-loop PRs with the pm-escalation label', (t) => {
+  const escalations = [];
+  const summary = runWatchdog({
+    listPullRequests: () => [
+      {
+        number: 7,
+        title: 'Looping PR',
+        url: 'https://github.com/test/repo/pull/7',
+        state: 'OPEN',
+        isDraft: false,
+        headRefOid: 'abc123',
+        labels: [],
+      },
+    ],
+    dispatch: () => {},
+    getStatuses: () => [
+      {
+        context: 'pr-flow/ready',
+        state: 'pending',
+        created_at: '2025-01-01T00:00:00Z',
+      },
+    ],
+    getStatusHistory: () =>
+      Array.from({ length: 10 }, () => ({
+        context: 'pr-flow/ready',
+        state: 'pending',
+      })),
+    escalate: (pr) => {
+      escalations.push(pr.number);
+      return true;
+    },
+    now: '2025-01-01T01:00:00Z',
+  });
+
+  assert.deepEqual(escalations, [7]);
+  assert.equal(summary.escalated.length, 1);
+  assert.equal(summary.escalated[0].number, 7);
+});
+
+test('runWatchdog surfaces escalation failures instead of dropping the PR', (t) => {
+  // When addEscalationLabel fails (e.g. pm-escalation is missing), the PR must
+  // not vanish from the summary looking handled — it lands in escalationFailures
+  // so the silent-no-op is visible.
+  const summary = runWatchdog({
+    listPullRequests: () => [
+      {
+        number: 9,
+        title: 'Looping PR',
+        url: 'https://github.com/test/repo/pull/9',
+        state: 'OPEN',
+        isDraft: false,
+        headRefOid: 'abc123',
+        labels: [],
+      },
+    ],
+    dispatch: () => {},
+    getStatuses: () => [
+      {
+        context: 'pr-flow/ready',
+        state: 'pending',
+        created_at: '2025-01-01T00:00:00Z',
+      },
+    ],
+    getStatusHistory: () =>
+      Array.from({ length: 10 }, () => ({
+        context: 'pr-flow/ready',
+        state: 'pending',
+      })),
+    escalate: () => false,
+    now: '2025-01-01T01:00:00Z',
+  });
+
+  assert.equal(summary.escalated.length, 0);
+  assert.equal(summary.escalationFailures.length, 1);
+  assert.equal(summary.escalationFailures[0].number, 9);
+});

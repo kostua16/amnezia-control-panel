@@ -453,7 +453,8 @@ describe('PR flow workflow invariants', () => {
 
     assert.equal(permissions.get('statuses'), 'read');
     assert.equal(permissions.get('actions'), 'write');
-    assert.equal(permissions.get('pull-requests'), 'read');
+    // write: the watchdog labels ready-pending-loop PRs with pm-escalation.
+    assert.equal(permissions.get('pull-requests'), 'write');
   });
 
   it('keeps orchestrated workers able to wake the orchestrator', () => {

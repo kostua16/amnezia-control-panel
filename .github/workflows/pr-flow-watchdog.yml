@@ -16,7 +16,9 @@ on:
 permissions:
   contents: read
   statuses: read
-  pull-requests: read
+  # write: the watchdog labels PRs caught in a ready-pending re-poke loop
+  # with pm-escalation so a human sees them instead of silent retries.
+  pull-requests: write
   issues: read
   actions: write
 
