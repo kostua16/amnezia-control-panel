@@ -195,8 +195,19 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
-          echo "$RESULTS" | jq .
-          failed=$(echo "$RESULTS" | jq -r '[.[] | select(.result == "failure" or .result == "cancelled")] | length')
+          # jq is not guaranteed on the self-hosted runner image and no other
+          # job here installs it. With bash -eo pipefail a missing binary would
+          # fail this step, producing a false CI failure for path-filtered PRs
+          # — the exact outcome this terminal-signal job exists to prevent.
+          # Fall back to a text scan of the needs JSON when jq is unavailable.
+          if command -v jq >/dev/null 2>&1; then
+            echo "$RESULTS" | jq .
+            failed=$(echo "$RESULTS" | jq -r '[.[] | select(.result == "failure" or .result == "cancelled")] | length')
+          else
+            echo "::notice::jq not found on runner; using fallback scan of needs results."
+            echo "$RESULTS"
+            failed=$(printf '%s' "$RESULTS" | tr ',' '\n' | grep -cE '"result"[[:space:]]*:[[:space:]]*"(failure|cancelled)"' || true)
+          fi
           if [ "$failed" -gt 0 ]; then
             echo "::error::One or more CI jobs failed or were cancelled."
             exit 1
