@@ -766,6 +766,18 @@ test('PM18h: recent duplicate command comments suppress command reposts', () => 
   assert.equal(action?.actionKey ?? 'none', 'none');
 });
 
+test('PM18h2: recent /rebase --force comments suppress project-manager rebase reposts', () => {
+  const action = decidePrAction(
+    pr({
+      mergeable: 'CONFLICTING',
+      comments: [comment('/rebase --force')],
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(action?.actionKey ?? 'none', 'none');
+});
+
 test('PM18i: project-manager summary reports pressure, escalations, and schedule gap', () => {
   const plan = buildPlan(
     {
@@ -1605,7 +1617,10 @@ test('PM47b: protected merge-authority paths never auto-merge even with maintain
         'maintainer-approved',
       ],
       files: [{ path: '.github/workflows/policy.json' }],
-      projectManagerReview: { decision: 'merge', reason: 'approved by maintainer' },
+      projectManagerReview: {
+        decision: 'merge',
+        reason: 'approved by maintainer',
+      },
     }),
     ENFORCE,
   );
