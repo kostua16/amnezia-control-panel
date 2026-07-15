@@ -11,6 +11,7 @@ const {
   classifyPrForAlignment,
   creationTimeAutomationNeedsReview,
   decidePrAction,
+  deriveCheckStatusFromRollup,
   detectPrProducingWorkflows,
   duplicateAutomationPrActions,
   parseFixReviewSummaryComment,
@@ -1877,4 +1878,36 @@ test('PM58b: creation-time needs-review detection tolerates only creation-window
     false,
   );
   assert.equal(creationTimeAutomationNeedsReview(base), false);
+});
+
+test('PM59: deriveCheckStatusFromRollup ignores pr-flow/* orchestration statuses', () => {
+  // The orchestrator holds pr-flow/ready at "pending" while it waits or loops;
+  // counting it as a check deadlocks PM against pr-flow.
+  assert.deepEqual(
+    deriveCheckStatusFromRollup([
+      { context: 'pr-flow/ready', state: 'PENDING' },
+      { context: 'pr-flow/finalizer', state: 'PENDING' },
+      { name: 'Lint', state: 'COMPLETED', conclusion: 'SUCCESS' },
+      { name: 'Build', state: 'COMPLETED', conclusion: 'SUCCESS' },
+    ]),
+    { status: 'passed' },
+  );
+});
+
+test('PM59b: deriveCheckStatusFromRollup is unknown when only pr-flow statuses exist', () => {
+  assert.deepEqual(
+    deriveCheckStatusFromRollup([
+      { context: 'pr-flow/ready', state: 'PENDING' },
+    ]),
+    { status: 'unknown' },
+  );
+});
+
+test('PM59c: deriveCheckStatusFromRollup still reports real CI failures', () => {
+  const result = deriveCheckStatusFromRollup([
+    { context: 'pr-flow/ready', state: 'PENDING' },
+    { name: 'Test', state: 'COMPLETED', conclusion: 'FAILURE' },
+  ]);
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(result.failed, ['Test']);
 });

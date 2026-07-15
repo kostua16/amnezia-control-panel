@@ -383,7 +383,13 @@ function statusCheckItems(rollup) {
 }
 
 function deriveCheckStatusFromRollup(rollup) {
-  const items = statusCheckItems(rollup);
+  // pr-flow/* contexts are the orchestrator's own visibility statuses, not CI
+  // checks. The aggregate pr-flow/ready stays "pending" while the orchestrator
+  // waits or loops, so counting it here deadlocks project-manager against
+  // pr-flow (each waits for the other to report done).
+  const items = statusCheckItems(rollup).filter(
+    (item) => !String(item.context ?? item.name ?? '').startsWith('pr-flow/'),
+  );
   if (items.length === 0) return { status: 'unknown' };
 
   const normalized = items.map((item) => {
@@ -3213,6 +3219,7 @@ module.exports = {
   classifyPrForAlignment,
   creationTimeAutomationNeedsReview,
   decidePrAction,
+  deriveCheckStatusFromRollup,
   detectPrProducingWorkflows,
   hasMaintainerRejection,
   hydrateSnapshot,
