@@ -2201,3 +2201,53 @@ test('PM63b: firstKnownCheckStatus prefers the first non-unknown source', () => 
     status: 'unknown',
   });
 });
+
+test('PM64: a #773-shaped manual-only automation PR reaches the alignment review', () => {
+  // fix-issue/audit PR: auto-fix branch, .github/workflows diff, creation-time
+  // needs-review, both review passes, checks known via the pr-checks source.
+  const action = decidePrAction(
+    pr({
+      labels: [
+        'auto-fix',
+        'needs-review',
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+      ],
+      headRefName: 'claude-workflow-optimize-auto-pr-audit-123',
+      files: [{ path: '.github/workflows/issue-catch-up.yml' }],
+      createdAt: '2026-07-01T06:00:00.000Z',
+      needsReviewLabelEvents: [{ createdAt: '2026-07-01T06:05:00.000Z' }],
+      checkStatus: { status: 'passed', source: 'pr-checks' },
+      projectManagerState: { headSha: 'abc123', readySince: READY_2H },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action?.type, 'direct-merge-review-required');
+});
+
+test('PM64b: merge verdict on the #773 shape opens the .github veto window', () => {
+  const action = decidePrAction(
+    pr({
+      labels: [
+        'auto-fix',
+        'needs-review',
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+      ],
+      headRefName: 'claude-workflow-optimize-auto-pr-audit-123',
+      files: [{ path: '.github/workflows/issue-catch-up.yml' }],
+      createdAt: '2026-07-01T06:00:00.000Z',
+      needsReviewLabelEvents: [{ createdAt: '2026-07-01T06:05:00.000Z' }],
+      checkStatus: { status: 'passed', source: 'pr-checks' },
+      projectManagerState: { headSha: 'abc123', readySince: READY_2H },
+      projectManagerReview: { decision: 'merge', reason: 'aligned with plan' },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'alignment-veto');
+  assert(!actionTypes(action).includes('merge-pr'));
+});
