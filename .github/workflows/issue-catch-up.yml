@@ -47,7 +47,7 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
           policy-file: .github/workflows/policy.json
-          names: auto-fix,umbrella-sub-issue,high,medium,low,triaged,triage-failed
+          names: auto-fix,umbrella-sub-issue,high,medium,low,triaged,triage-failed,claude-health
 
       # Hourly umbrella progress engine: tick checkboxes for completed
       # sub-issues, close umbrellas with a fully ticked checklist, and top up
@@ -158,7 +158,10 @@ jobs:
               groupable_candidates: [],
               triaged_no_fix: [],
               fix_dead_letter: [],
-              dead_letter_retry: []
+              dead_letter_retry: [],
+              // Pipeline invariant violations — reported to the claude-health
+              // tracker by a deterministic step, never acted on by the agent.
+              invariant_findings: []
             };
 
             const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
@@ -221,6 +224,24 @@ jobs:
                 comments = commentsResp.data;
               } catch (e) {
                 core.warning(`Failed to fetch comments for #${num}: ${e.message}`);
+              }
+
+              // Invariant: a "/fix" or "/triage" command comment authored by
+              // github-actions[bot] is inert by construction — GitHub never
+              // starts workflows from GITHUB_TOKEN events. Any such comment
+              // means some automation believes it triggered something that
+              // never ran (the exact failure that stranded issue #771).
+              const inertBotCommands = comments.filter(c =>
+                c.user?.login === 'github-actions[bot]' &&
+                /^\s*\/(fix|triage)\b/.test(c.body || '')
+              );
+              if (inertBotCommands.length > 0) {
+                buckets.invariant_findings.push({
+                  number: num,
+                  type: 'inert_bot_command',
+                  count: inertBotCommands.length,
+                  last: inertBotCommands[inertBotCommands.length - 1].created_at
+                });
               }
 
               // A dead-letter fresh-context retry resets the attempt counter:
@@ -318,6 +339,24 @@ jobs:
                 (issue.body || '') + comments.map(c => c.body).join(' ')
               );
               if (hasLinkedPR) continue;
+
+              // Invariant: a triaged, automation-fixable issue with no linked
+              // PR and no active fix run after 24h means the fix pipeline is
+              // not converging — either triggers are inert or fixes keep
+              // failing. Recorded for the health tracker; the issue still
+              // flows through the normal buckets below.
+              if (
+                createdAt < new Date(Date.now() - 24 * 60 * 60 * 1000) &&
+                labels.includes('auto-fix') &&
+                ['low', 'medium', 'high'].some(p => labels.includes(p))
+              ) {
+                buckets.invariant_findings.push({
+                  number: num,
+                  type: 'stuck_fixable',
+                  age_hours: Math.round((Date.now() - createdAt.getTime()) / 3600000),
+                  fix_attempts: fixComments.length
+                });
+              }
 
               // Check fix attempt count
               if (fixComments.length >= 2) {
@@ -443,6 +482,7 @@ jobs:
               'groupable_candidates',
               'needs_retriage',
               'triage_dead_letter',
+              'invariant_findings',
             ];
             const loggedTotalActions = Object.entries(buckets)
               .filter(([key]) => !AGENT_EXCLUDED_BUCKETS.includes(key))
@@ -564,6 +604,95 @@ jobs:
 
             core.info(`re-triage: ${dispatched} dispatched, ${deadLetters.length} parked, dryRun=${dryRun}`);
 
+      # Pipeline invariant reporting: inert bot-authored command comments and
+      # fixable issues stuck >24h with no PR go to a rolling claude-health
+      # tracker. No-spam discipline: nothing is posted when there are no
+      # findings, and an unchanged findings set is not re-posted.
+      - name: Report issue-pipeline invariant findings
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          CATEGORIZED: ${{ steps.categorize.outputs.categorized }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const crypto = require('crypto');
+            const buckets = JSON.parse(process.env.CATEGORIZED || '{}');
+            const findings = buckets.invariant_findings || [];
+            const dryRun = process.env.DRY_RUN === 'true';
+            const TITLE = '[claude-health] Issue-pipeline invariant findings';
+            if (findings.length === 0) {
+              core.info('No invariant findings — nothing to report.');
+              return;
+            }
+
+            const lines = findings.map((f) => {
+              if (f.type === 'inert_bot_command') {
+                return `- #${f.number} — **inert bot command**: ${f.count} \`/fix\`/\`/triage\` comment(s) authored by github-actions[bot] (GITHUB_TOKEN events never start workflows); last at ${f.last}`;
+              }
+              if (f.type === 'stuck_fixable') {
+                return `- #${f.number} — **stuck fixable issue**: triaged + auto-fix + priority, no linked PR after ${f.age_hours}h (${f.fix_attempts} fix attempt(s))`;
+              }
+              return `- #${f.number} — ${f.type}`;
+            });
+            const hash = crypto.createHash('sha256')
+              .update(JSON.stringify(findings.map(f => [f.type, f.number]).sort()))
+              .digest('hex').slice(0, 16);
+            const marker = `<!-- invariant-findings:${hash} -->`;
+            const body = [
+              marker,
+              `## Invariant findings (${new Date().toISOString()})`,
+              '',
+              ...lines,
+              '',
+              '_Reported by issue-catch-up. Findings repeat until the underlying issue is unstuck; an unchanged set is not re-posted._'
+            ].join('\n');
+
+            if (dryRun) {
+              core.info(`DRY RUN: would report ${findings.length} invariant finding(s)`);
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            let tracker = null;
+            const open = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'claude-health', per_page: 50
+            });
+            tracker = open.data.find(i => i.title === TITLE) || null;
+            if (!tracker) {
+              const created = await github.rest.issues.create({
+                owner, repo,
+                title: TITLE,
+                labels: ['claude-health', 'keep-open'],
+                body: [
+                  'Rolling tracker for issue-pipeline invariant violations found by the hourly catch-up sweep:',
+                  '',
+                  '- **inert bot command** — a `/fix` or `/triage` comment authored by github-actions[bot]; GITHUB_TOKEN events never start workflows, so whatever posted it believes it triggered something that never ran.',
+                  '- **stuck fixable issue** — triaged, automation-fixable, but no linked PR and no active fix run after 24h.',
+                  '',
+                  'One comment is appended per changed findings set. Close after the findings are handled; the sweep recreates it when new findings appear.'
+                ].join('\n')
+              });
+              tracker = created.data;
+            } else {
+              // Skip if the latest invariant comment already reports this set.
+              const comments = await github.rest.issues.listComments({
+                owner, repo, issue_number: tracker.number, per_page: 100
+              });
+              const invariantComments = comments.data.filter(c =>
+                (c.body || '').includes('<!-- invariant-findings:')
+              );
+              const latest = invariantComments[invariantComments.length - 1];
+              if (latest && latest.body.includes(marker)) {
+                core.info('Findings unchanged since last report — skipping.');
+                return;
+              }
+            }
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: tracker.number, body
+            });
+            core.info(`Reported ${findings.length} invariant finding(s) to #${tracker.number}`);
+
   analyze-and-act:
     name: Analyze & Act
     runs-on: [self-hosted, big]
@@ -652,10 +781,12 @@ jobs:
 
             The `needs_retriage` and `triage_dead_letter` buckets are handled
             deterministically by the collect job (workflow_dispatch of
-            triage.yml and the `triage-failed` parking label). They appear in
-            the JSON for visibility only. Do NOT post "/triage" comments and do
-            NOT add `needs-review` for triage failures — skip straight to
-            Phase 3.
+            triage.yml and the `triage-failed` parking label). The
+            `invariant_findings` bucket is observability data reported to the
+            claude-health tracker by the collect job. All three appear in the
+            JSON for visibility only. Do NOT post "/triage" comments, do NOT
+            add `needs-review` for triage failures, and take no action on
+            `invariant_findings` — skip straight to Phase 3.
 
             ### Phase 3: Priority Escalation (turns 16-20)
 

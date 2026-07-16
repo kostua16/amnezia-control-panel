@@ -138,7 +138,14 @@ function firstErrorFailureReason(findings) {
     findings.find(
       (item) =>
         item.severity === 'error' && item.category === 'non_human_actor',
-    ) || findings.find((item) => item.severity === 'error');
+    ) ||
+    // Deterministic pre-execution config failures beat generic zero-turn /
+    // step-failed findings: their detail names the concrete fix.
+    findings.find(
+      (item) =>
+        item.severity === 'error' && item.category === 'prepare_git_auth',
+    ) ||
+    findings.find((item) => item.severity === 'error');
   if (!finding) return '';
   return sanitizeLogLine(finding.detail || finding.message || '', 300)
     .replace(/[\r\n]+/g, ' ')
@@ -260,6 +267,27 @@ function buildFindings({
       'error',
       'Claude used zero turns',
       'num_turns: 0',
+    );
+  }
+
+  // claude-code-action's progress-tracking branch setup runs an authenticated
+  // `git fetch` before Claude executes a single turn. A checkout without
+  // usable credentials (persist-credentials: false and no token remote) fails
+  // there deterministically — the generic "step failed" reason hides the
+  // actionable fix, so name it explicitly.
+  const prepareGitAuthLine = firstMatchingLine(
+    logText,
+    /could not read Username for 'https:\/\/github\.com'|Error in branch setup/i,
+  );
+  if (prepareGitAuthLine) {
+    addFinding(
+      findings,
+      'prepare_git_auth',
+      'error',
+      'Branch setup failed before execution: no git credentials',
+      'prepare_failed_git_auth: track-progress branch setup could not run an ' +
+        'authenticated git fetch — restore checkout credentials or disable ' +
+        `track-progress. Evidence: ${sanitizeLogLine(prepareGitAuthLine)}`,
     );
   }
 

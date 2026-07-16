@@ -214,6 +214,24 @@ jobs:
             - For each slow run you treat as actionable, inspect job and step timing via `rtk gh run view <run-id> --json jobs,url,name,conclusion,createdAt,startedAt,updatedAt`.
             - Do not infer root cause from run names or conclusions alone.
 
+            ## Failure Streaks = Workflow Down
+
+            Group failures by (workflowName, event) before diagnosing. When the
+            SAME workflow has 3+ consecutive failures on the SAME event type in
+            the window (e.g. every `issues`-event triage run failing), treat it
+            as ONE "workflow down" incident, not N independent failures:
+            - Diagnose the shared failure signature once (compare the failed
+              step and first error line across the runs — a regression usually
+              starts at a specific commit; check what changed in that workflow
+              or its actions around the first failure).
+            - Report it prominently as "workflow down since <first failure>"
+              with the shared signature and suspected commit, and prioritize
+              its fix over any single-run finding.
+            - A workflow that fails on every event of a type is silently
+              breaking everything downstream of it (e.g. failed triage strands
+              issues before fix automation can see them) — say what downstream
+              pipeline is starved.
+
             ## Rules
 
             - Follow repository AGENTS.md/CLAUDE.md instructions.

@@ -70,6 +70,14 @@ function hasAnyResultNode(executionText) {
   return false;
 }
 
+function isPrepareGitAuthText(value) {
+  const text = String(value || '');
+  return (
+    /could not read Username for 'https:\/\/github\.com'/i.test(text) ||
+    /Error in branch setup/i.test(text)
+  );
+}
+
 function isRateLimitOrOverloadText(value) {
   const text = String(value || '');
   return (
@@ -145,6 +153,27 @@ function classifyClaudeRetry({
     };
   }
 
+  // Deterministic pre-execution config failure: claude-code-action's
+  // progress-tracking branch setup ran an unauthenticated `git fetch` and
+  // died before Claude produced any output. Retrying replays the identical
+  // failure (and each attempt posts its own tracking comment) — fail fast
+  // with the concrete fix instead.
+  if (
+    !hasAnyResultNode(executionText) &&
+    isPrepareGitAuthText(`${executionText}\n${logText}`)
+  ) {
+    return {
+      httpCode: normalizedHttpCode,
+      isRateLimited: false,
+      shouldRetry: false,
+      retryReason: 'fatal_config_git_auth',
+      softSuccess: false,
+      softSuccessReason: '',
+      annotation: 'error',
+      message: `Attempt ${normalizedAttempt} failed during claude-code-action branch setup: no usable git credentials (persist-credentials: false checkout without a token remote?). Deterministic configuration failure — skipping retries. Restore checkout credentials or disable track-progress.`,
+    };
+  }
+
   // Abortive failure: the action step failed but captured no execution result
   // (no turns, no error) while the API probe is healthy. That empty-output +
   // healthy-probe signature is a transient/abortive failure — a brief overload
@@ -216,5 +245,6 @@ module.exports = {
   classifyClaudeRetry,
   hasSuccessfulResult,
   hasAnyResultNode,
+  isPrepareGitAuthText,
   isRateLimitOrOverloadText,
 };
