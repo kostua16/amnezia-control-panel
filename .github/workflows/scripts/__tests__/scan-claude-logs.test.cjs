@@ -169,6 +169,37 @@ test('buildFindings detects zero_turns', () => {
   assert.equal(zero.severity, 'error');
 });
 
+test('buildFindings detects prepare_git_auth branch-setup failure', () => {
+  const findings = buildFindings({
+    metrics: {},
+    logText: [
+      'Creating local branch claude/issue-771-20260715-1842 for issue #771 from source branch: main...',
+      "fatal: could not read Username for 'https://github.com': No such device or address",
+      'Error in branch setup: ...',
+      'error: Command failed: git fetch origin main --depth=1',
+    ].join('\n'),
+    conclusion: 'failure',
+  });
+  const finding = findings.find((f) => f.category === 'prepare_git_auth');
+  assert.ok(finding);
+  assert.equal(finding.severity, 'error');
+  assert.match(finding.detail, /prepare_failed_git_auth/);
+  assert.match(finding.detail, /track-progress/);
+});
+
+test('buildFindings prefers prepare_git_auth over generic errors as failure reason', () => {
+  const { firstErrorFailureReason } = require('../scan-claude-logs.cjs');
+  const findings = buildFindings({
+    metrics: { numTurns: 0 },
+    logText:
+      "fatal: could not read Username for 'https://github.com': No such device or address",
+    conclusion: 'failure',
+  });
+  // zero_turns is also an error finding here; the actionable prepare reason
+  // must win so report-failure names the concrete fix.
+  assert.match(firstErrorFailureReason(findings), /prepare_failed_git_auth/);
+});
+
 test('buildFindings detects internal_error directory mismatch', () => {
   const findings = buildFindings({
     metrics: {},

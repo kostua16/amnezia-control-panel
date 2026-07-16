@@ -156,7 +156,12 @@ jobs:
           allow-post-inline: 'true'
           api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           max-turns: '${{ env.MAX_TURNS }}'
-          track-progress: 'true'
+          # Progress tracking (claude-code-action tag mode) needs an
+          # authenticated git fetch during branch setup, which the hardened
+          # persist-credentials: false checkout cannot provide — a mention-
+          # triggered (issue_comment) run would die at 0 turns. The dispatch
+          # path never had tracking, so keep it off for all events.
+          track-progress: 'false'
           json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","concerns"]},"summary":{"type":"string"},"findings_count":{"type":"integer","minimum":0}},"required":["verdict","summary","findings_count"],"additionalProperties":false}'
           allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(npm *),Bash(npx *),Bash(node *),Bash(ls *),Bash(git *),Bash(cat *),Bash(grep *),Bash(find *),Bash(mkdir *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *),Bash(echo *),Bash(date *),Bash(rtk:*)'
           prompt: |

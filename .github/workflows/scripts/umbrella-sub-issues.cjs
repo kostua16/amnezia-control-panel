@@ -259,7 +259,11 @@ function processUmbrella(umbrella, options) {
         options.dryRun,
       );
       if (result.number !== null) {
-        created.push({ id: item.id, number: result.number, linked: result.linked });
+        created.push({
+          id: item.id,
+          number: result.number,
+          linked: result.linked,
+        });
         if (!result.linked) linkFailures += 1;
       } else {
         created.push({ id: item.id, number: null, linked: true });

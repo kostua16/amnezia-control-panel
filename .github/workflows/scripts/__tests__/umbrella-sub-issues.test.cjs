@@ -113,7 +113,12 @@ test('planSpinOff counts an open sub-issue even when a closed duplicate precedes
   // for AFX-I01 can precede the lower-numbered open sub-issue in the list.
   // openCount must still reflect the open one so the cap is not exceeded.
   const existing = [
-    { number: 12, title: 'AFX-I01: a', state: 'closed', stateReason: 'not_planned' },
+    {
+      number: 12,
+      title: 'AFX-I01: a',
+      state: 'closed',
+      stateReason: 'not_planned',
+    },
     { number: 11, title: 'AFX-I01: a', state: 'open' },
   ];
   const plan = planSpinOff({
@@ -172,9 +177,7 @@ test('duplicateSubIssuesToClose flags the higher-numbered open duplicate', () =>
     { number: 12, title: 'AFX-I01: a', state: 'open' },
     { number: 13, title: 'AFX-I03: b', state: 'open' },
   ]);
-  assert.deepEqual(dupes, [
-    { number: 12, todoId: 'AFX-I01', keepNumber: 11 },
-  ]);
+  assert.deepEqual(dupes, [{ number: 12, todoId: 'AFX-I01', keepNumber: 11 }]);
 });
 
 test('duplicateSubIssuesToClose dedups native+label overlap before grouping', () => {
@@ -194,15 +197,18 @@ test('duplicateSubIssuesToClose keeps the natively-linked child over the lower-n
     { number: 11, title: 'AFX-I01: a', state: 'open' },
     { number: 12, title: 'AFX-I01: a', state: 'open', nativeLinked: true },
   ]);
-  assert.deepEqual(dupes, [
-    { number: 11, todoId: 'AFX-I01', keepNumber: 12 },
-  ]);
+  assert.deepEqual(dupes, [{ number: 11, todoId: 'AFX-I01', keepNumber: 12 }]);
 });
 
 test('duplicateSubIssuesToClose ignores closed and ID-less issues', () => {
   const dupes = duplicateSubIssuesToClose([
     { number: 11, title: 'AFX-I01: a', state: 'open' },
-    { number: 12, title: 'AFX-I01: a', state: 'closed', stateReason: 'completed' },
+    {
+      number: 12,
+      title: 'AFX-I01: a',
+      state: 'closed',
+      stateReason: 'completed',
+    },
     { number: 14, title: 'free-form', state: 'open' },
   ]);
   assert.deepEqual(dupes, []);

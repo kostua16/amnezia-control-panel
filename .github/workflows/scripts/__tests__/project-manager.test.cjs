@@ -1005,6 +1005,14 @@ test('PM19: issue queue skips linked PR, active fix, and terminal labels', () =>
   assert.equal(safeIssueForFix(issue({ labels: ['fixed'] })), false);
 });
 
+test('PM19d: triage-failed is a recovery path, not a terminal label', () => {
+  // Issues parked by catch-up after repeated triage failures must stay
+  // reachable by the PM issue /fix route (which does not require triaged) —
+  // parking with needs-review instead is what permanently stranded #771.
+  assert.equal(safeIssueForFix(issue({ labels: ['triage-failed'] })), true);
+  assert.equal(safeIssueForFix(issue({ labels: ['needs-review'] })), false);
+});
+
 test('PM19c: issue queue never targets umbrella/tracking issues', () => {
   assert.equal(
     safeIssueForFix(issue({ title: '[todo-backlog] audit-fix backlog (AFX)' })),
