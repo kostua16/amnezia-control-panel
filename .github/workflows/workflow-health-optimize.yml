@@ -222,10 +222,17 @@ jobs:
             core.setOutput('has_problems', String(hasProblems));
             core.info(`Has problems: ${hasProblems}`);
 
-            const json = JSON.stringify(runSummaries);
-            // Truncate to 50KB to stay within action limits
-            const truncated = json.length > 51200 ? json.substring(0, 51200) + '...[truncated]' : json;
-            core.setOutput('runs_data', truncated);
+            // Truncate to 50KB to stay within action limits.
+            // Drop whole trailing entries to keep valid JSON (WHO-I03).
+            let trimmed = runSummaries;
+            while (JSON.stringify(trimmed).length > 51200 && trimmed.length > 1) {
+              trimmed = trimmed.slice(0, -1);
+            }
+            const runsJson = JSON.stringify(trimmed);
+            if (trimmed.length < runSummaries.length) {
+              core.info(`Truncated runs_data from ${runSummaries.length} to ${trimmed.length} entries (${runsJson.length} bytes)`);
+            }
+            core.setOutput('runs_data', runsJson);
 
             // Persist per-run health summaries as JSONL for trend analysis (WHO-E01)
             const { persistHealthSummary } = require('./.github/workflows/scripts/persist-health-summary.cjs');
