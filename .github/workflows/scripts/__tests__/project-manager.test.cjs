@@ -11,7 +11,9 @@ const {
   classifyPrForAlignment,
   creationTimeAutomationNeedsReview,
   decidePrAction,
+  deriveCheckStatusFromPrChecks,
   deriveCheckStatusFromRollup,
+  firstKnownCheckStatus,
   detectPrProducingWorkflows,
   duplicateAutomationPrActions,
   parseFixReviewSummaryComment,
@@ -2136,4 +2138,160 @@ test('PM62d: draft escalation survives a head change (measured from createdAt)',
     { now: NOW },
   );
   assert.notEqual(action?.actionKey, 'draft-escalation');
+});
+
+test('PM63: deriveCheckStatusFromPrChecks classifies via the orchestrator required-check rules', () => {
+  const required = [
+    { workflow: 'CI', names: ['Lint', 'Build'] },
+    { workflow: 'PR Policy', names: ['label-and-validate'] },
+  ];
+  const passed = deriveCheckStatusFromPrChecks(
+    { number: 1 },
+    {
+      required,
+      fetchChecks: () => [
+        { name: 'Lint', workflow: 'CI', bucket: 'skipping', state: 'skipped' },
+        { name: 'Build', workflow: 'CI', bucket: 'skipping', state: 'skipped' },
+        {
+          name: 'label-and-validate',
+          workflow: 'PR Policy',
+          bucket: 'pass',
+          state: 'success',
+        },
+      ],
+    },
+  );
+  assert.equal(passed.status, 'passed');
+  assert.equal(passed.source, 'pr-checks');
+
+  const failed = deriveCheckStatusFromPrChecks(
+    { number: 1 },
+    {
+      required,
+      fetchChecks: () => [
+        { name: 'Lint', workflow: 'CI', bucket: 'fail', state: 'failure' },
+      ],
+    },
+  );
+  assert.equal(failed.status, 'failed');
+
+  const unreadable = deriveCheckStatusFromPrChecks(
+    { number: 1 },
+    { required, fetchChecks: () => [] },
+  );
+  assert.equal(unreadable.status, 'unknown');
+});
+
+test('PM63b: firstKnownCheckStatus prefers the first non-unknown source', () => {
+  assert.deepEqual(
+    firstKnownCheckStatus(
+      { status: 'unknown' },
+      { status: 'passed', source: 'rollup' },
+    ),
+    { status: 'passed', source: 'rollup' },
+  );
+  assert.deepEqual(
+    firstKnownCheckStatus(
+      { status: 'failed', source: 'pr-checks' },
+      { status: 'passed' },
+    ),
+    { status: 'failed', source: 'pr-checks' },
+  );
+  assert.deepEqual(firstKnownCheckStatus({ status: 'unknown' }, undefined), {
+    status: 'unknown',
+  });
+});
+
+test('PM64: a #773-shaped manual-only automation PR reaches the alignment review', () => {
+  // fix-issue/audit PR: auto-fix branch, .github/workflows diff, creation-time
+  // needs-review, both review passes, checks known via the pr-checks source.
+  const action = decidePrAction(
+    pr({
+      labels: [
+        'auto-fix',
+        'needs-review',
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+      ],
+      headRefName: 'claude-workflow-optimize-auto-pr-audit-123',
+      files: [{ path: '.github/workflows/issue-catch-up.yml' }],
+      createdAt: '2026-07-01T06:00:00.000Z',
+      needsReviewLabelEvents: [{ createdAt: '2026-07-01T06:05:00.000Z' }],
+      checkStatus: { status: 'passed', source: 'pr-checks' },
+      projectManagerState: { headSha: 'abc123', readySince: READY_2H },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action?.type, 'direct-merge-review-required');
+});
+
+test('PM64b: merge verdict on the #773 shape opens the .github veto window', () => {
+  const action = decidePrAction(
+    pr({
+      labels: [
+        'auto-fix',
+        'needs-review',
+        'ai-review-passed',
+        'security-review-passed',
+        'flow/manual-only',
+      ],
+      headRefName: 'claude-workflow-optimize-auto-pr-audit-123',
+      files: [{ path: '.github/workflows/issue-catch-up.yml' }],
+      createdAt: '2026-07-01T06:00:00.000Z',
+      needsReviewLabelEvents: [{ createdAt: '2026-07-01T06:05:00.000Z' }],
+      checkStatus: { status: 'passed', source: 'pr-checks' },
+      projectManagerState: { headSha: 'abc123', readySince: READY_2H },
+      projectManagerReview: { decision: 'merge', reason: 'aligned with plan' },
+    }),
+    ENFORCE,
+  );
+
+  assert.equal(action.actionKey, 'alignment-veto');
+  assert(!actionTypes(action).includes('merge-pr'));
+});
+
+test('PM65: failed PR Policy run is re-run once per head before /fix', () => {
+  const workflowRuns = [
+    {
+      workflowName: 'PR Policy',
+      path: '.github/workflows/pr-policy.yml',
+      headSha: 'abc123',
+      status: 'completed',
+      conclusion: 'failure',
+      databaseId: 777,
+      createdAt: '2026-07-01T09:30:00.000Z',
+    },
+  ];
+  const blocked = pr({
+    checkStatus: { status: 'failed', failing: ['label-and-validate'] },
+  });
+
+  const first = decidePrAction(blocked, { now: NOW, workflowRuns });
+  assert.equal(first.actionKey, 'policy-rerun');
+  const rerun = first.actions.find(
+    (entry) => entry.type === 'rerun-workflow-run',
+  );
+  assert.equal(rerun.runId, '777');
+  const patch = first.actions.at(-1);
+  assert.equal(patch.state.policyRerunAt, NOW);
+
+  const second = decidePrAction(
+    pr({
+      checkStatus: { status: 'failed', failing: ['label-and-validate'] },
+      projectManagerState: { headSha: 'abc123', policyRerunAt: NOW },
+    }),
+    { now: NOW, workflowRuns },
+  );
+  assert.notEqual(second?.actionKey, 'policy-rerun');
+  assert.equal(second?.actionKey, 'fix');
+});
+
+test('PM65b: CI job failures do not trigger the policy rerun lane', () => {
+  const action = decidePrAction(
+    pr({ checkStatus: { status: 'failed', failing: ['Test'] } }),
+    { now: NOW, workflowRuns: [] },
+  );
+  assert.equal(action?.actionKey, 'fix');
 });

@@ -45,6 +45,7 @@ jobs:
       has-runs: ${{ steps.collect.outputs.has_runs }}
       has-problems: ${{ steps.collect.outputs.has_problems }}
       runs-data: ${{ steps.collect.outputs.runs_data }}
+      summary-path: ${{ steps.collect.outputs.summary_path }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
@@ -221,10 +222,34 @@ jobs:
             core.setOutput('has_problems', String(hasProblems));
             core.info(`Has problems: ${hasProblems}`);
 
-            const json = JSON.stringify(runSummaries);
-            // Truncate to 50KB to stay within action limits
-            const truncated = json.length > 51200 ? json.substring(0, 51200) + '...[truncated]' : json;
-            core.setOutput('runs_data', truncated);
+            // Truncate to 50KB to stay within action limits.
+            // Drop whole trailing entries to keep valid JSON (WHO-I03).
+            let trimmed = runSummaries;
+            while (JSON.stringify(trimmed).length > 51200 && trimmed.length > 1) {
+              trimmed = trimmed.slice(0, -1);
+            }
+            const runsJson = JSON.stringify(trimmed);
+            if (trimmed.length < runSummaries.length) {
+              core.info(`Truncated runs_data from ${runSummaries.length} to ${trimmed.length} entries (${runsJson.length} bytes)`);
+            }
+            core.setOutput('runs_data', runsJson);
+
+            // Persist per-run health summaries as JSONL for trend analysis (WHO-E01)
+            const { persistHealthSummary } = require('./.github/workflows/scripts/persist-health-summary.cjs');
+            const summaryPath = persistHealthSummary(runSummaries);
+            if (summaryPath) {
+              core.info(`Health summary persisted to ${summaryPath}`);
+              core.setOutput('summary_path', summaryPath);
+            }
+
+      - name: Upload health summary artifact
+        if: steps.collect.outputs.summary_path != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: health-summary-${{ github.run_id }}
+          path: health-summary-*.jsonl
+          retention-days: 7
+          if-no-files-found: ignore
 
   optimize:
     name: Analyze & Optimize Workflows

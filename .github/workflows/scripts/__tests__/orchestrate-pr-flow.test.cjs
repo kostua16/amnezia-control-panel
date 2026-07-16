@@ -1071,3 +1071,100 @@ test('buildFlowVisibility sets all workers N/A for terminal manual-only', () => 
     );
   }
 });
+
+function finalizerRetryContext(pr, workerRuns) {
+  const config = JSON.parse(
+    require('node:fs').readFileSync(
+      path.join(__dirname, '..', '..', '..', 'pr-flow.json'),
+      'utf8',
+    ),
+  );
+  return {
+    pr,
+    config,
+    eventName: 'workflow_dispatch',
+    event: {},
+    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    workerRuns,
+    externalReview: { state: 'skipped', reason: 'not required' },
+  };
+}
+
+test('makeDecision retries the finalizer after a failed run instead of parking', () => {
+  // An apply failure (e.g. merge token rejected) is environmental, not a
+  // policy decision — it must re-enter the bounded retry lane.
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: false,
+        baseRefName: 'main',
+        headRefName: 'feature',
+        files: ['src/app/page.tsx'],
+        labels: [
+          'flow/finalizer-dispatched',
+          'ai-review-passed',
+          'security-review-passed',
+        ],
+      },
+      { finalizer: [completedWorkerRun('failure')], codeReview: [] },
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/finalizer-dispatched');
+  assert.equal(decision.dispatch?.key, 'finalizer');
+  assert.match(decision.reason, /Retrying finalizer after a failed run/);
+  assert.ok(decision.desiredLabels.includes('flow/finalizer-retry-1'));
+});
+
+test('makeDecision stops retrying a failed finalizer at the retry cap', () => {
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: false,
+        baseRefName: 'main',
+        headRefName: 'feature',
+        files: ['src/app/page.tsx'],
+        labels: [
+          'flow/finalizer-dispatched',
+          'flow/finalizer-retry-3',
+          'ai-review-passed',
+          'security-review-passed',
+        ],
+      },
+      { finalizer: [completedWorkerRun('failure')], codeReview: [] },
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/manual-only');
+  assert.equal(decision.dispatch, null);
+  assert.match(decision.reason, /retry limit/i);
+});
+
+test('makeDecision keeps a succeeded finalizer without auto-merge terminal', () => {
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: false,
+        baseRefName: 'main',
+        headRefName: 'feature',
+        files: ['src/app/page.tsx'],
+        labels: [
+          'flow/finalizer-dispatched',
+          'ai-review-passed',
+          'security-review-passed',
+        ],
+      },
+      { finalizer: [completedWorkerRun('success')], codeReview: [] },
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/finalizer-dispatched');
+  assert.equal(decision.dispatch, null);
+  assert.match(decision.reason, /completed without enabling auto-merge/);
+});
