@@ -5,6 +5,9 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { isTrackingIssue } = require('./lib/tracking-issue.cjs');
+const {
+  getRequiredCheckStatus: requiredCheckStatusOf,
+} = require('./required-check-evidence.cjs');
 
 const STATE_MARKER = '<!-- project-manager-pr-state -->';
 const ISSUE_MARKER = '<!-- project-manager-workflow-issue -->';
@@ -319,6 +322,7 @@ function normalizeState(pr) {
       depsReviewRedispatchedAt: '',
       duplicateFlaggedAt: '',
       ciRerunAt: '',
+      policyRerunAt: '',
       // Fix rounds are counted per PR, not per head: each alignment-driven
       // fix pushes a new head, so a per-head counter would never reach the cap.
       alignmentFixRounds: toNumber(
@@ -357,6 +361,7 @@ function normalizeState(pr) {
     duplicateFlaggedAt:
       raw.duplicateFlaggedAt ?? raw.duplicate_flagged_at ?? '',
     ciRerunAt: raw.ciRerunAt ?? raw.ci_rerun_at ?? '',
+    policyRerunAt: raw.policyRerunAt ?? raw.policy_rerun_at ?? '',
     alignmentFixRounds: toNumber(
       raw.alignmentFixRounds ?? raw.alignment_fix_rounds,
       0,
@@ -823,6 +828,7 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
       duplicateFlaggedAt:
         extra.duplicateFlaggedAt ?? state.duplicateFlaggedAt ?? '',
       ciRerunAt: extra.ciRerunAt ?? state.ciRerunAt ?? '',
+      policyRerunAt: extra.policyRerunAt ?? state.policyRerunAt ?? '',
       alignmentFixRounds: toNumber(
         extra.alignmentFixRounds ?? state.alignmentFixRounds,
         0,
@@ -1596,18 +1602,23 @@ function draftAgingAction(pr, state, now) {
   };
 }
 
-function latestCiRunForHead(pr, workflowRuns) {
+function latestWorkflowRunForHead(pr, workflowRuns, workflowFile) {
   const headSha = pr.headRefOid ?? pr.headSha ?? '';
   if (!headSha) return null;
   const runs = (workflowRuns ?? [])
     .filter(
       (run) =>
-        workflowMatches(run, 'ci.yml') && String(run.headSha ?? '') === headSha,
+        workflowMatches(run, workflowFile) &&
+        String(run.headSha ?? '') === headSha,
     )
     .sort((a, b) =>
       String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')),
     );
   return runs[0] ?? null;
+}
+
+function latestCiRunForHead(pr, workflowRuns) {
+  return latestWorkflowRunForHead(pr, workflowRuns, 'ci.yml');
 }
 
 function ciCancelledRerunAction(pr, state, now, workflowRuns) {
@@ -1635,6 +1646,38 @@ function ciCancelledRerunAction(pr, state, now, workflowRuns) {
         number: pr.number,
       },
       makeStatePatch(pr, state, 'ci-rerun', now, { ciRerunAt: now }),
+    ],
+  };
+}
+
+// PR Policy's label-and-validate is a required check whose job body is repo
+// housekeeping (label ensure, body validation); on automation PRs its
+// failures are typically transient GitHub API errors (observed: HTTP 500 on
+// gh label create), not code failures. Nothing re-runs the workflow for the
+// head, so one hiccup parks a green PR on flow/checks-failed forever.
+// Re-run once per head before the /fix repair lane engages.
+function failedPolicyRerunAction(pr, state, now, workflowRuns) {
+  if (state.policyRerunAt) return null;
+  const failing = checkStatus(pr).failing ?? [];
+  if (!failing.includes('label-and-validate')) return null;
+  const latest = latestWorkflowRunForHead(pr, workflowRuns, 'pr-policy.yml');
+  if (!latest) return null;
+  if (String(latest.status ?? '').toLowerCase() !== 'completed') return null;
+  if (String(latest.conclusion ?? '').toLowerCase() !== 'failure') return null;
+  return {
+    type: 'compound',
+    actionKey: 'policy-rerun',
+    reason:
+      'PR Policy failed for this head (usually a transient API error); re-running once before any fix escalation.',
+    number: pr.number,
+    actions: [
+      {
+        type: 'rerun-workflow-run',
+        runId: String(latest.databaseId ?? ''),
+        actionKey: 'policy-rerun',
+        number: pr.number,
+      },
+      makeStatePatch(pr, state, 'policy-rerun', now, { policyRerunAt: now }),
     ],
   };
 }
@@ -1793,6 +1836,13 @@ function decidePrAction(pr, options = {}) {
       options.workflowRuns,
     );
     if (ciRerun) return ciRerun;
+    const policyRerun = failedPolicyRerunAction(
+      pr,
+      state,
+      now,
+      options.workflowRuns,
+    );
+    if (policyRerun) return policyRerun;
   }
 
   if (
@@ -2369,6 +2419,10 @@ function gh(args, options = {}) {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
+    // Node's 1 MiB default silently kills `gh pr view --json comments,...`
+    // on comment-heavy automation PRs; the enrichment fallback then loses
+    // sticky state and check evidence for the whole run.
+    maxBuffer: 32 * 1024 * 1024,
   });
 }
 
@@ -2376,7 +2430,26 @@ function ghJson(args, fallback = null) {
   try {
     return JSON.parse(gh(args));
   } catch (error) {
-    if (fallback !== null) return fallback;
+    // gh exits non-zero for some data-bearing states (e.g. `gh pr checks`
+    // with failing checks) while still printing the JSON payload.
+    const stdout = String(error?.stdout ?? '').trim();
+    if (stdout) {
+      try {
+        return JSON.parse(stdout);
+      } catch {
+        // fall through to the fallback path below
+      }
+    }
+    if (fallback !== null) {
+      console.warn(
+        `ghJson fallback for "gh ${args.slice(0, 3).join(' ')} ...": ${
+          String(error?.stderr ?? error?.message ?? error)
+            .trim()
+            .split('\n')[0]
+        }`,
+      );
+      return fallback;
+    }
     throw error;
   }
 }
@@ -2417,10 +2490,7 @@ function parseStateComment(body) {
       '- Alignment veto expires at:',
     ),
     alignmentEscalatedAt: valueFromLine(lines, '- Alignment escalated at:'),
-    fixReviewRounds: toNumber(
-      valueFromLine(lines, '- Fix review rounds:'),
-      0,
-    ),
+    fixReviewRounds: toNumber(valueFromLine(lines, '- Fix review rounds:'), 0),
     fixReviewEscalatedAt: valueFromLine(lines, '- Fix review escalated at:'),
     draftEscalatedAt: valueFromLine(lines, '- Draft escalated at:'),
     cooldowns: {
@@ -2821,6 +2891,54 @@ function latestCommitDate(commits) {
   );
 }
 
+let cachedPrFlowRequiredChecks;
+function prFlowRequiredChecks() {
+  if (cachedPrFlowRequiredChecks !== undefined) {
+    return cachedPrFlowRequiredChecks;
+  }
+  try {
+    const config = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', '..', 'pr-flow.json'), 'utf8'),
+    );
+    cachedPrFlowRequiredChecks = config.checks?.required ?? null;
+  } catch {
+    cachedPrFlowRequiredChecks = null;
+  }
+  return cachedPrFlowRequiredChecks;
+}
+
+function fetchPrChecks(pr) {
+  return ghJson(
+    ['pr', 'checks', String(pr.number), '--json', 'name,state,bucket,workflow'],
+    [],
+  );
+}
+
+// Primary check-status source: the same `gh pr checks` + required-check list
+// the orchestrator gates on. The statusCheckRollup path below proved fragile
+// (an oversized or failed `gh pr view` silently degrades every PR to
+// status "unknown", which blocks readiness everywhere).
+function deriveCheckStatusFromPrChecks(
+  pr,
+  { fetchChecks = fetchPrChecks, required = prFlowRequiredChecks() } = {},
+) {
+  if (!required || required.length === 0) return { status: 'unknown' };
+  const checks = fetchChecks(pr);
+  if (!Array.isArray(checks) || checks.length === 0) {
+    return { status: 'unknown' };
+  }
+  return { ...requiredCheckStatusOf(checks, required), source: 'pr-checks' };
+}
+
+function firstKnownCheckStatus(...candidates) {
+  for (const candidate of candidates) {
+    if (candidate && candidate.status && candidate.status !== 'unknown') {
+      return candidate;
+    }
+  }
+  return { status: 'unknown' };
+}
+
 function enrichPullRequest(pr) {
   const details = ghJson(
     [
@@ -2873,7 +2991,10 @@ function enrichPullRequest(pr) {
     checkStatus:
       pr.checkStatus ??
       details.checkStatus ??
-      deriveCheckStatusFromRollup(details.statusCheckRollup),
+      firstKnownCheckStatus(
+        deriveCheckStatusFromPrChecks(pr),
+        deriveCheckStatusFromRollup(details.statusCheckRollup),
+      ),
     projectManagerState:
       pr.projectManagerState ?? latestProjectManagerState(comments),
   };
@@ -3363,8 +3484,10 @@ module.exports = {
   classifyPrForAlignment,
   creationTimeAutomationNeedsReview,
   decidePrAction,
+  deriveCheckStatusFromPrChecks,
   deriveCheckStatusFromRollup,
   detectPrProducingWorkflows,
+  firstKnownCheckStatus,
   hasMaintainerRejection,
   hydrateSnapshot,
   latestRebaseNoop,

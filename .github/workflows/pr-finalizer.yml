@@ -29,7 +29,11 @@ on:
         type: boolean
 
 permissions:
-  contents: read
+  # write: fallback merge credential. When every check (including the
+  # pr-flow/ready aggregate) is already green, `gh pr merge --auto` performs a
+  # direct merge (mergePullRequest) instead of enabling auto-merge, and a
+  # direct merge needs contents: write.
+  contents: write
   checks: read
   pull-requests: write
   issues: write
@@ -132,6 +136,15 @@ jobs:
         if: steps.decision.outputs.decision == 'approve_and_enable_automerge' && steps.decision.outputs.dry_run != 'true' && steps.metadata.outputs.same_repo == 'true' && steps.metadata.outputs.head_ref != '' && steps.metadata.outputs.decision_ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Merge uses the PAT: with all checks (incl. the pr-flow/ready
+          # aggregate) already green, `gh pr merge --auto` direct-merges via
+          # the mergePullRequest mutation, which the workflow GITHUB_TOKEN was
+          # denied ("Resource not accessible by integration"). A PAT merge
+          # also lets the resulting push trigger on-push workflows on main,
+          # which GITHUB_TOKEN-driven merges never do. Approval stays on
+          # GITHUB_TOKEN because the PAT owner authors these PRs and GitHub
+          # rejects self-approval.
+          MERGE_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
         run: |
           set +e
@@ -139,7 +152,7 @@ jobs:
           approve_output=$(gh pr review "$PR_NUMBER" --approve --body "PR finalizer: required validation and review signals passed." 2>&1)
           approve_exit=$?
 
-          merge_output=$(gh pr merge "$PR_NUMBER" --auto --squash 2>&1)
+          merge_output=$(GH_TOKEN="$MERGE_TOKEN" gh pr merge "$PR_NUMBER" --auto --squash 2>&1)
           merge_exit=$?
 
           status="success"

@@ -1734,8 +1734,8 @@ function makeDecision(context) {
     'flow/finalizer-dispatched',
   );
   const autoMergeEnabled = Boolean(pr.autoMergeRequest);
-  const finalizerCompleted =
-    workerRunSucceeded(finalizerRuns) || workerRunFailed(finalizerRuns);
+  const finalizerSucceeded = workerRunSucceeded(finalizerRuns);
+  const finalizerFailed = workerRunFailed(finalizerRuns);
   const finalizerRetries = getFinalizerRetryCount(currentLabels);
   const retryLabels = currentLabels.filter((l) =>
     /^flow\/finalizer-retry-\d+$/.test(l),
@@ -1758,12 +1758,16 @@ function makeDecision(context) {
     );
   }
 
+  // A finalizer run that FAILED (e.g. the approve/merge apply step was
+  // rejected) is deliberately NOT terminal here: it falls through to the
+  // bounded retry lane below, because the failure is usually environmental
+  // (token permissions, transient API error) rather than a policy decision.
   if (
     finalizerRuns.active ||
     (finalizerAlreadyDispatched && autoMergeEnabled) ||
-    (finalizerAlreadyDispatched && finalizerCompleted)
+    (finalizerAlreadyDispatched && finalizerSucceeded)
   ) {
-    const reason = finalizerCompleted
+    const reason = finalizerSucceeded
       ? autoMergeEnabled
         ? 'Finalizer completed and auto-merge is enabled.'
         : 'Finalizer completed without enabling auto-merge; manual merge required.'
@@ -1779,7 +1783,7 @@ function makeDecision(context) {
 
   if (
     finalizerAlreadyDispatched &&
-    !finalizerCompleted &&
+    !finalizerSucceeded &&
     finalizerRetries >= MAX_FINALIZER_RETRIES
   ) {
     return finish(
@@ -1799,7 +1803,9 @@ function makeDecision(context) {
   return finish(
     'flow/finalizer-dispatched',
     finalizerAlreadyDispatched
-      ? `Dispatching finalizer (attempt ${newRetryCount}/${MAX_FINALIZER_RETRIES}).`
+      ? finalizerFailed
+        ? `Retrying finalizer after a failed run (attempt ${newRetryCount}/${MAX_FINALIZER_RETRIES}).`
+        : `Dispatching finalizer (attempt ${newRetryCount}/${MAX_FINALIZER_RETRIES}).`
       : 'Dispatching finalizer.',
     {
       key: 'finalizer',
