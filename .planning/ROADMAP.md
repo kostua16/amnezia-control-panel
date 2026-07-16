@@ -168,6 +168,7 @@ Plans:
 <!-- PR-IMPROVE:750 --> - PR #750: fix(workflows): persist maintenance pruning changes -- pr750.1 x1, pr750.2 x1. Quick artifact: `.planning/quick/260714-pr750-workflow-improve/260714-pr750-PLAN.md`.
 <!-- PR-IMPROVE:761 --> - PR #761: fix: resolve #760 - [project-manager] PR #751 fix-review.yml failed for 4b2302219fed -- pr761.2 x2. Quick artifact: `.planning/quick/260714-pr761-workflow-improve/260714-pr761-PLAN.md`.
 <!-- PR-IMPROVE:775 --> - PR #775: fix(workflows): let pr-flow / project-manager actually push stuck PRs to merge -- pr775.1 x1, pr775.2 x1, pr775.3 x1. Quick artifact: `.planning/quick/260716-pr775-workflow-improve/260716-pr775-PLAN.md`.
+<!-- PR-IMPROVE:777 --> - PR #777: fix(workflows): wake and rescue PRs whose finalizer apply failed -- pr777.2 x1, pr777.3 x1. Quick artifact: `.planning/quick/260716-pr777-workflow-improve/260716-pr777-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening

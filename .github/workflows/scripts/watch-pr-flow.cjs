@@ -68,19 +68,24 @@ function statusTime(status = {}) {
   return date && !Number.isNaN(date.getTime()) ? date : null;
 }
 
-function hasExpiredPendingStatus(
+function hasExpiredStatusInState(
   statuses,
   context,
+  state,
   { now = new Date().toISOString(), timeoutMinutes } = {},
 ) {
   const current = new Date(now);
   return normalizeStatuses(statuses).some((status) => {
     if (status.context !== context) return false;
-    if (String(status.state ?? '').toLowerCase() !== 'pending') return false;
+    if (String(status.state ?? '').toLowerCase() !== state) return false;
     const created = statusTime(status);
     if (!created || Number.isNaN(current.getTime())) return false;
     return current - created >= Number(timeoutMinutes) * 60000;
   });
+}
+
+function hasExpiredPendingStatus(statuses, context, options = {}) {
+  return hasExpiredStatusInState(statuses, context, 'pending', options);
 }
 
 function hasExpiredKiloPendingStatus(
@@ -160,6 +165,24 @@ function selectStalePrs(
       })
     ) {
       recoveryReasons.push('stale-ready-pending');
+    }
+
+    // A failed finalizer apply leaves the aggregate in FAILURE with the
+    // flow/finalizer-dispatched label still on — a state only the
+    // orchestrator's bounded retry lane can advance, and it only runs when
+    // woken. Scoped to that label: genuine check failures carry
+    // flow/checks-failed and belong to project-manager's /fix lane. Bounded:
+    // after the retry cap the state flips to flow/manual-only, whose
+    // aggregate is a terminal success, so this rescue stops firing.
+    if (
+      pr.headRefOid &&
+      labels.includes('flow/finalizer-dispatched') &&
+      hasExpiredStatusInState(statuses, READY_STATUS_CONTEXT, 'failure', {
+        now,
+        timeoutMinutes: readyPendingTimeoutMinutes,
+      })
+    ) {
+      recoveryReasons.push('stale-finalizer-failure');
     }
 
     // Loop detection runs independently of the expiry test above: each re-poke
@@ -409,6 +432,7 @@ module.exports = {
   buildDispatchArgs,
   hasExpiredKiloPendingStatus,
   hasExpiredReadyPendingStatus,
+  hasExpiredStatusInState,
   hasCurrentReadyStatus,
   runWatchdog,
   selectStalePrs,

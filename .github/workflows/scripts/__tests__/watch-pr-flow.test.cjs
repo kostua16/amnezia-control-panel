@@ -576,3 +576,79 @@ test('runWatchdog surfaces escalation failures instead of dropping the PR', (t) 
   assert.equal(summary.escalationFailures.length, 1);
   assert.equal(summary.escalationFailures[0].number, 9);
 });
+
+test('selectStalePrs rescues a dispatched finalizer parked on a failure aggregate', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Failed finalizer apply',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: ['flow/finalizer-dispatched'],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'failure', created_at: BASE_TEST_TIME },
+  ];
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, ['stale-finalizer-failure']);
+});
+
+test('selectStalePrs leaves failure aggregates without the finalizer label alone', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Checks-failed PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: ['flow/checks-failed'],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'failure', created_at: BASE_TEST_TIME },
+  ];
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 0);
+});
+
+test('selectStalePrs does not rescue a fresh finalizer failure aggregate', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Just-failed finalizer',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: ['flow/finalizer-dispatched'],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'failure', created_at: BASE_TEST_TIME },
+  ];
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    now: '2025-01-01T00:10:00Z',
+  });
+
+  assert.equal(selected.length, 0);
+});
