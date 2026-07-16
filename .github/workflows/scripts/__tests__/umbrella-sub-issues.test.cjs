@@ -7,6 +7,7 @@ const {
   applyTicks,
   buildSubIssueBody,
   buildSubIssueTitle,
+  buildTriageResultComment,
   duplicateSubIssuesToClose,
   extractDocExcerpt,
   extractWorkflowName,
@@ -14,6 +15,7 @@ const {
   parseChecklist,
   planSpinOff,
   priorityLabel,
+  subIssueLabels,
   subIssueMarker,
   subIssueTodoId,
 } = require('../lib/umbrella-sub-issues-core.cjs');
@@ -121,6 +123,35 @@ test('planSpinOff counts an open sub-issue even when a closed duplicate precedes
   });
   assert.equal(plan.openCount, 1);
   assert.equal(plan.slots, 2);
+});
+
+// ---------------------------------------------------------------------------
+// subIssueLabels + buildTriageResultComment — deterministic triage at creation
+// ---------------------------------------------------------------------------
+test('subIssueLabels includes triaged so sub-issues skip AI triage', () => {
+  const [item] = parseChecklist('- [ ] AFX-I01 (P2) Some fix');
+  assert.deepEqual(subIssueLabels(item, 'umbrella-sub-issue'), [
+    'auto-fix',
+    'umbrella-sub-issue',
+    'medium',
+    'triaged',
+  ]);
+});
+
+test('buildTriageResultComment carries the marker and no trigger substrings', () => {
+  const [item] = parseChecklist('- [ ] AFX-I01 (P0) Some fix');
+  const comment = buildTriageResultComment({ item, umbrellaNumber: 679 });
+  assert.ok(comment.includes('Triage Result'));
+  assert.ok(comment.includes('**Priority:** high'));
+  assert.ok(comment.includes('#679'));
+  // issue-catch-up counts these substrings as triage/fix attempts or
+  // linked-PR evidence — the deterministic comment must never contain them.
+  for (const forbidden of ['/triage', '/fix', 'Fixes #', 'pull/', 'PR:']) {
+    assert.ok(
+      !comment.includes(forbidden),
+      `comment must not contain "${forbidden}"`,
+    );
+  }
 });
 
 test('subIssueTodoId reads the title prefix or the body marker', () => {

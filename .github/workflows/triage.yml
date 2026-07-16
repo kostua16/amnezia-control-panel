@@ -30,8 +30,11 @@ jobs:
     # Keep wall-clock headroom for the 40-turn budget; a tighter cap would
     # clip runs before the extra turns are usable.
     timeout-minutes: 15
+    # Issues born with the `triaged` label (umbrella sub-issues spun off from
+    # the backlog) are pre-classified and carry a deterministic Triage Result
+    # comment — an AI triage run would only duplicate it.
     if: |
-      github.event_name == 'issues' ||
+      (github.event_name == 'issues' && !contains(github.event.issue.labels.*.name, 'triaged')) ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request == null && startsWith(github.event.comment.body, '/triage')) ||
       github.event_name == 'workflow_dispatch'
     steps:
