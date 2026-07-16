@@ -5,6 +5,9 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { isTrackingIssue } = require('./lib/tracking-issue.cjs');
+const {
+  getRequiredCheckStatus: requiredCheckStatusOf,
+} = require('./required-check-evidence.cjs');
 
 const STATE_MARKER = '<!-- project-manager-pr-state -->';
 const ISSUE_MARKER = '<!-- project-manager-workflow-issue -->';
@@ -2369,6 +2372,10 @@ function gh(args, options = {}) {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
+    // Node's 1 MiB default silently kills `gh pr view --json comments,...`
+    // on comment-heavy automation PRs; the enrichment fallback then loses
+    // sticky state and check evidence for the whole run.
+    maxBuffer: 32 * 1024 * 1024,
   });
 }
 
@@ -2376,7 +2383,26 @@ function ghJson(args, fallback = null) {
   try {
     return JSON.parse(gh(args));
   } catch (error) {
-    if (fallback !== null) return fallback;
+    // gh exits non-zero for some data-bearing states (e.g. `gh pr checks`
+    // with failing checks) while still printing the JSON payload.
+    const stdout = String(error?.stdout ?? '').trim();
+    if (stdout) {
+      try {
+        return JSON.parse(stdout);
+      } catch {
+        // fall through to the fallback path below
+      }
+    }
+    if (fallback !== null) {
+      console.warn(
+        `ghJson fallback for "gh ${args.slice(0, 3).join(' ')} ...": ${
+          String(error?.stderr ?? error?.message ?? error)
+            .trim()
+            .split('\n')[0]
+        }`,
+      );
+      return fallback;
+    }
     throw error;
   }
 }
@@ -2417,10 +2443,7 @@ function parseStateComment(body) {
       '- Alignment veto expires at:',
     ),
     alignmentEscalatedAt: valueFromLine(lines, '- Alignment escalated at:'),
-    fixReviewRounds: toNumber(
-      valueFromLine(lines, '- Fix review rounds:'),
-      0,
-    ),
+    fixReviewRounds: toNumber(valueFromLine(lines, '- Fix review rounds:'), 0),
     fixReviewEscalatedAt: valueFromLine(lines, '- Fix review escalated at:'),
     draftEscalatedAt: valueFromLine(lines, '- Draft escalated at:'),
     cooldowns: {
@@ -2821,6 +2844,54 @@ function latestCommitDate(commits) {
   );
 }
 
+let cachedPrFlowRequiredChecks;
+function prFlowRequiredChecks() {
+  if (cachedPrFlowRequiredChecks !== undefined) {
+    return cachedPrFlowRequiredChecks;
+  }
+  try {
+    const config = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', '..', 'pr-flow.json'), 'utf8'),
+    );
+    cachedPrFlowRequiredChecks = config.checks?.required ?? null;
+  } catch {
+    cachedPrFlowRequiredChecks = null;
+  }
+  return cachedPrFlowRequiredChecks;
+}
+
+function fetchPrChecks(pr) {
+  return ghJson(
+    ['pr', 'checks', String(pr.number), '--json', 'name,state,bucket,workflow'],
+    [],
+  );
+}
+
+// Primary check-status source: the same `gh pr checks` + required-check list
+// the orchestrator gates on. The statusCheckRollup path below proved fragile
+// (an oversized or failed `gh pr view` silently degrades every PR to
+// status "unknown", which blocks readiness everywhere).
+function deriveCheckStatusFromPrChecks(
+  pr,
+  { fetchChecks = fetchPrChecks, required = prFlowRequiredChecks() } = {},
+) {
+  if (!required || required.length === 0) return { status: 'unknown' };
+  const checks = fetchChecks(pr);
+  if (!Array.isArray(checks) || checks.length === 0) {
+    return { status: 'unknown' };
+  }
+  return { ...requiredCheckStatusOf(checks, required), source: 'pr-checks' };
+}
+
+function firstKnownCheckStatus(...candidates) {
+  for (const candidate of candidates) {
+    if (candidate && candidate.status && candidate.status !== 'unknown') {
+      return candidate;
+    }
+  }
+  return { status: 'unknown' };
+}
+
 function enrichPullRequest(pr) {
   const details = ghJson(
     [
@@ -2873,7 +2944,10 @@ function enrichPullRequest(pr) {
     checkStatus:
       pr.checkStatus ??
       details.checkStatus ??
-      deriveCheckStatusFromRollup(details.statusCheckRollup),
+      firstKnownCheckStatus(
+        deriveCheckStatusFromPrChecks(pr),
+        deriveCheckStatusFromRollup(details.statusCheckRollup),
+      ),
     projectManagerState:
       pr.projectManagerState ?? latestProjectManagerState(comments),
   };
@@ -3363,8 +3437,10 @@ module.exports = {
   classifyPrForAlignment,
   creationTimeAutomationNeedsReview,
   decidePrAction,
+  deriveCheckStatusFromPrChecks,
   deriveCheckStatusFromRollup,
   detectPrProducingWorkflows,
+  firstKnownCheckStatus,
   hasMaintainerRejection,
   hydrateSnapshot,
   latestRebaseNoop,

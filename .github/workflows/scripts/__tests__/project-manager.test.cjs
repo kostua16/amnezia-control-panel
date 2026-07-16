@@ -11,7 +11,9 @@ const {
   classifyPrForAlignment,
   creationTimeAutomationNeedsReview,
   decidePrAction,
+  deriveCheckStatusFromPrChecks,
   deriveCheckStatusFromRollup,
+  firstKnownCheckStatus,
   detectPrProducingWorkflows,
   duplicateAutomationPrActions,
   parseFixReviewSummaryComment,
@@ -2136,4 +2138,66 @@ test('PM62d: draft escalation survives a head change (measured from createdAt)',
     { now: NOW },
   );
   assert.notEqual(action?.actionKey, 'draft-escalation');
+});
+
+test('PM63: deriveCheckStatusFromPrChecks classifies via the orchestrator required-check rules', () => {
+  const required = [
+    { workflow: 'CI', names: ['Lint', 'Build'] },
+    { workflow: 'PR Policy', names: ['label-and-validate'] },
+  ];
+  const passed = deriveCheckStatusFromPrChecks(
+    { number: 1 },
+    {
+      required,
+      fetchChecks: () => [
+        { name: 'Lint', workflow: 'CI', bucket: 'skipping', state: 'skipped' },
+        { name: 'Build', workflow: 'CI', bucket: 'skipping', state: 'skipped' },
+        {
+          name: 'label-and-validate',
+          workflow: 'PR Policy',
+          bucket: 'pass',
+          state: 'success',
+        },
+      ],
+    },
+  );
+  assert.equal(passed.status, 'passed');
+  assert.equal(passed.source, 'pr-checks');
+
+  const failed = deriveCheckStatusFromPrChecks(
+    { number: 1 },
+    {
+      required,
+      fetchChecks: () => [
+        { name: 'Lint', workflow: 'CI', bucket: 'fail', state: 'failure' },
+      ],
+    },
+  );
+  assert.equal(failed.status, 'failed');
+
+  const unreadable = deriveCheckStatusFromPrChecks(
+    { number: 1 },
+    { required, fetchChecks: () => [] },
+  );
+  assert.equal(unreadable.status, 'unknown');
+});
+
+test('PM63b: firstKnownCheckStatus prefers the first non-unknown source', () => {
+  assert.deepEqual(
+    firstKnownCheckStatus(
+      { status: 'unknown' },
+      { status: 'passed', source: 'rollup' },
+    ),
+    { status: 'passed', source: 'rollup' },
+  );
+  assert.deepEqual(
+    firstKnownCheckStatus(
+      { status: 'failed', source: 'pr-checks' },
+      { status: 'passed' },
+    ),
+    { status: 'failed', source: 'pr-checks' },
+  );
+  assert.deepEqual(firstKnownCheckStatus({ status: 'unknown' }, undefined), {
+    status: 'unknown',
+  });
 });
