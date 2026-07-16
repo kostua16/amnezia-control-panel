@@ -201,12 +201,17 @@ jobs:
 
   wake-orchestrator:
     needs: [finalize]
+    # Wake on a FAILED apply too: the orchestrator owns the bounded retry lane
+    # (flow/finalizer-retry-N, max 3) for apply failures, but it only runs when
+    # woken — without this wake a failed merge parked the PR on a failure
+    # aggregate that the watchdog's pending-only rescue never saw.
     if: >-
       always() &&
       github.event.inputs.orchestrated == 'true' &&
       github.event.inputs.pr_number != '' &&
       needs.finalize.outputs.decision == 'approve_and_enable_automerge' &&
-      needs.finalize.outputs.apply_status == 'success'
+      (needs.finalize.outputs.apply_status == 'success' ||
+       needs.finalize.outputs.apply_status == 'failed')
     runs-on: self-hosted
     timeout-minutes: 15
     steps:
