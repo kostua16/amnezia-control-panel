@@ -322,6 +322,7 @@ function normalizeState(pr) {
       depsReviewRedispatchedAt: '',
       duplicateFlaggedAt: '',
       ciRerunAt: '',
+      policyRerunAt: '',
       // Fix rounds are counted per PR, not per head: each alignment-driven
       // fix pushes a new head, so a per-head counter would never reach the cap.
       alignmentFixRounds: toNumber(
@@ -360,6 +361,7 @@ function normalizeState(pr) {
     duplicateFlaggedAt:
       raw.duplicateFlaggedAt ?? raw.duplicate_flagged_at ?? '',
     ciRerunAt: raw.ciRerunAt ?? raw.ci_rerun_at ?? '',
+    policyRerunAt: raw.policyRerunAt ?? raw.policy_rerun_at ?? '',
     alignmentFixRounds: toNumber(
       raw.alignmentFixRounds ?? raw.alignment_fix_rounds,
       0,
@@ -826,6 +828,7 @@ function makeStatePatch(pr, state, actionKey, now, extra = {}) {
       duplicateFlaggedAt:
         extra.duplicateFlaggedAt ?? state.duplicateFlaggedAt ?? '',
       ciRerunAt: extra.ciRerunAt ?? state.ciRerunAt ?? '',
+      policyRerunAt: extra.policyRerunAt ?? state.policyRerunAt ?? '',
       alignmentFixRounds: toNumber(
         extra.alignmentFixRounds ?? state.alignmentFixRounds,
         0,
@@ -1599,18 +1602,23 @@ function draftAgingAction(pr, state, now) {
   };
 }
 
-function latestCiRunForHead(pr, workflowRuns) {
+function latestWorkflowRunForHead(pr, workflowRuns, workflowFile) {
   const headSha = pr.headRefOid ?? pr.headSha ?? '';
   if (!headSha) return null;
   const runs = (workflowRuns ?? [])
     .filter(
       (run) =>
-        workflowMatches(run, 'ci.yml') && String(run.headSha ?? '') === headSha,
+        workflowMatches(run, workflowFile) &&
+        String(run.headSha ?? '') === headSha,
     )
     .sort((a, b) =>
       String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')),
     );
   return runs[0] ?? null;
+}
+
+function latestCiRunForHead(pr, workflowRuns) {
+  return latestWorkflowRunForHead(pr, workflowRuns, 'ci.yml');
 }
 
 function ciCancelledRerunAction(pr, state, now, workflowRuns) {
@@ -1638,6 +1646,38 @@ function ciCancelledRerunAction(pr, state, now, workflowRuns) {
         number: pr.number,
       },
       makeStatePatch(pr, state, 'ci-rerun', now, { ciRerunAt: now }),
+    ],
+  };
+}
+
+// PR Policy's label-and-validate is a required check whose job body is repo
+// housekeeping (label ensure, body validation); on automation PRs its
+// failures are typically transient GitHub API errors (observed: HTTP 500 on
+// gh label create), not code failures. Nothing re-runs the workflow for the
+// head, so one hiccup parks a green PR on flow/checks-failed forever.
+// Re-run once per head before the /fix repair lane engages.
+function failedPolicyRerunAction(pr, state, now, workflowRuns) {
+  if (state.policyRerunAt) return null;
+  const failing = checkStatus(pr).failing ?? [];
+  if (!failing.includes('label-and-validate')) return null;
+  const latest = latestWorkflowRunForHead(pr, workflowRuns, 'pr-policy.yml');
+  if (!latest) return null;
+  if (String(latest.status ?? '').toLowerCase() !== 'completed') return null;
+  if (String(latest.conclusion ?? '').toLowerCase() !== 'failure') return null;
+  return {
+    type: 'compound',
+    actionKey: 'policy-rerun',
+    reason:
+      'PR Policy failed for this head (usually a transient API error); re-running once before any fix escalation.',
+    number: pr.number,
+    actions: [
+      {
+        type: 'rerun-workflow-run',
+        runId: String(latest.databaseId ?? ''),
+        actionKey: 'policy-rerun',
+        number: pr.number,
+      },
+      makeStatePatch(pr, state, 'policy-rerun', now, { policyRerunAt: now }),
     ],
   };
 }
@@ -1796,6 +1836,13 @@ function decidePrAction(pr, options = {}) {
       options.workflowRuns,
     );
     if (ciRerun) return ciRerun;
+    const policyRerun = failedPolicyRerunAction(
+      pr,
+      state,
+      now,
+      options.workflowRuns,
+    );
+    if (policyRerun) return policyRerun;
   }
 
   if (

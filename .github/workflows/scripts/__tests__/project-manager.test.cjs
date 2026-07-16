@@ -2251,3 +2251,47 @@ test('PM64b: merge verdict on the #773 shape opens the .github veto window', () 
   assert.equal(action.actionKey, 'alignment-veto');
   assert(!actionTypes(action).includes('merge-pr'));
 });
+
+test('PM65: failed PR Policy run is re-run once per head before /fix', () => {
+  const workflowRuns = [
+    {
+      workflowName: 'PR Policy',
+      path: '.github/workflows/pr-policy.yml',
+      headSha: 'abc123',
+      status: 'completed',
+      conclusion: 'failure',
+      databaseId: 777,
+      createdAt: '2026-07-01T09:30:00.000Z',
+    },
+  ];
+  const blocked = pr({
+    checkStatus: { status: 'failed', failing: ['label-and-validate'] },
+  });
+
+  const first = decidePrAction(blocked, { now: NOW, workflowRuns });
+  assert.equal(first.actionKey, 'policy-rerun');
+  const rerun = first.actions.find(
+    (entry) => entry.type === 'rerun-workflow-run',
+  );
+  assert.equal(rerun.runId, '777');
+  const patch = first.actions.at(-1);
+  assert.equal(patch.state.policyRerunAt, NOW);
+
+  const second = decidePrAction(
+    pr({
+      checkStatus: { status: 'failed', failing: ['label-and-validate'] },
+      projectManagerState: { headSha: 'abc123', policyRerunAt: NOW },
+    }),
+    { now: NOW, workflowRuns },
+  );
+  assert.notEqual(second?.actionKey, 'policy-rerun');
+  assert.equal(second?.actionKey, 'fix');
+});
+
+test('PM65b: CI job failures do not trigger the policy rerun lane', () => {
+  const action = decidePrAction(
+    pr({ checkStatus: { status: 'failed', failing: ['Test'] } }),
+    { now: NOW, workflowRuns: [] },
+  );
+  assert.equal(action?.actionKey, 'fix');
+});
