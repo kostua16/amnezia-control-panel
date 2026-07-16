@@ -1674,7 +1674,10 @@ describe('finalizer retry guard', () => {
     assert.match(decision.reason, /auto-merge is enabled/);
   });
 
-  it('does not re-dispatch when finalizer failed', () => {
+  it('re-dispatches through the retry lane when the finalizer run failed', () => {
+    // A failed apply (merge token rejected, transient API error) is
+    // environmental, not a policy decision — it must retry, bounded by the
+    // flow/finalizer-retry-N cap, instead of parking on "manual merge".
     const decision = decideFinalizer({
       pr: prFixture({
         labels: [
@@ -1695,8 +1698,34 @@ describe('finalizer retry guard', () => {
       },
     });
     assert.equal(decision.state, 'flow/finalizer-dispatched');
+    assert.equal(decision.dispatch?.key, 'finalizer');
+    assert.match(decision.reason, /Retrying finalizer after a failed run/);
+    assert.ok(decision.desiredLabels.includes('flow/finalizer-retry-2'));
+  });
+
+  it('stops retrying a failed finalizer at the retry cap', () => {
+    const decision = decideFinalizer({
+      pr: prFixture({
+        labels: [
+          ...finalizerLabels,
+          'flow/finalizer-dispatched',
+          'flow/finalizer-retry-3',
+        ],
+      }),
+      workerRuns: {
+        finalizer: [
+          {
+            displayTitle: `PR #181 @ ${headSha}`,
+            status: 'completed',
+            conclusion: 'failure',
+            createdAt: '2026-06-28T10:00:00Z',
+          },
+        ],
+      },
+    });
+    assert.equal(decision.state, 'flow/manual-only');
     assert.equal(decision.dispatch, null);
-    assert.match(decision.reason, /manual merge required/);
+    assert.match(decision.reason, /retry limit/i);
   });
 
   it('cleans up retry labels when finalizer completes normally', () => {

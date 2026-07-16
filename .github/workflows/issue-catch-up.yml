@@ -398,17 +398,35 @@ jobs:
             core.setOutput('has_actionable', String(hasActionable));
             core.setOutput('rate_limited', String(rateLimited));
 
-            const json = JSON.stringify(buckets);
-            const truncated = json.length > 51200
-              ? json.substring(0, 51200) + '...[truncated]'
-              : json;
-            core.setOutput('categorized', truncated);
+            // Truncate to 50KB — drop whole items to keep valid JSON (WHO-I03 pattern).
+            const MAX_BYTES = 51200;
+            let json = JSON.stringify(buckets);
+            if (json.length > MAX_BYTES) {
+              const keys = Object.keys(buckets);
+              for (let round = 0; round < 200 && json.length > MAX_BYTES; round++) {
+                const key = keys[round % keys.length];
+                if (buckets[key].length > 0) {
+                  buckets[key].pop();
+                  json = JSON.stringify(buckets);
+                }
+              }
+              core.info(`Truncated categorized output to ${json.length} bytes`);
+            }
+            core.setOutput('categorized', json);
+
+            // Recompute after truncation: trimming popped items from buckets,
+            // so the per-bucket counts below no longer sum to the
+            // pre-truncation totalActions used for rate-limit/has_actionable
+            // decisions. Exclude groupable_candidates to match that definition.
+            const loggedTotalActions = Object.entries(buckets)
+              .filter(([key]) => key !== 'groupable_candidates')
+              .reduce((sum, [, items]) => sum + items.length, 0);
 
             core.info('=== Issue Catch-Up Summary ===');
             for (const [bucket, items] of Object.entries(buckets)) {
               core.info(`  ${bucket}: ${items.length}`);
             }
-            core.info(`  Total actions: ${totalActions}`);
+            core.info(`  Total actions: ${loggedTotalActions}`);
             core.info(`  Rate limited: ${rateLimited}`);
             core.info(`  Has actionable: ${hasActionable}`);
 
