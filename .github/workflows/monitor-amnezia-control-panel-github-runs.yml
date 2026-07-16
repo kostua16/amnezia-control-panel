@@ -167,32 +167,11 @@ jobs:
 
       - name: Compute STOP_BY deadline
         id: deadline
-        shell: bash
-        env:
-          JOB_START_EPOCH: ${{ steps.job_start.outputs.epoch }}
-        run: |
-          set -euo pipefail
-
-          # Guard: JOB_START_EPOCH must be a positive integer (seconds since
-          # epoch). An empty or non-numeric value coerces to 0 in arithmetic,
-          # making STOP_BY land in 1970 (already past) — fail loudly instead.
-          case "$JOB_START_EPOCH" in
-            '' | *[!0-9]*)
-              echo "::error::JOB_START_EPOCH is not a positive integer: '$JOB_START_EPOCH'" >&2
-              exit 1
-              ;;
-          esac
-          if [ "$JOB_START_EPOCH" -le 0 ]; then
-            echo "::error::JOB_START_EPOCH must be positive: '$JOB_START_EPOCH'" >&2
-            exit 1
-          fi
-
-          # 5-minute safety margin before the 25-minute job timeout.
-          # Anchored to job start (captured in the first step) so the
-          # 20-minute deadline holds regardless of how long setup took.
-          # Agent must wrap up and report partial findings before this time.
-          stop_by=$(date -u -d "@$((JOB_START_EPOCH + 1200))" '+%Y-%m-%dT%H:%M:%SZ')
-          echo "stop_by=${stop_by}" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/compute-stop-by-deadline
+        with:
+          timeout-minutes: '25'
+          safety-margin-minutes: '5'
+          job-start-epoch: '${{ steps.job_start.outputs.epoch }}'
 
       - name: Monitor runs and apply narrow fixes
         id: claude_run

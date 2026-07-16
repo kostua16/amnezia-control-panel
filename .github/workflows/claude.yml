@@ -83,6 +83,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Capture job start time
+        id: job_start
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -94,6 +101,14 @@ jobs:
 
       - name: Setup git identity
         uses: ./.github/actions/setup-bot-git
+
+      - name: Compute STOP_BY deadline
+        id: deadline
+        uses: ./.github/actions/compute-stop-by-deadline
+        with:
+          timeout-minutes: '10'
+          safety-margin-minutes: '2'
+          job-start-epoch: '${{ steps.job_start.outputs.epoch }}'
 
       - name: Run Claude Code
         id: claude
@@ -118,4 +133,11 @@ jobs:
             superpowers@claude-plugins-official
             caveman@caveman
             commit-commands@claude-plugins-official
-          prompt: "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files. Route tasks to the right GSD command: /gsd:quick for small fixes and ad-hoc tasks, /gsd:debug for bug investigation, /gsd:ship for PR shipping pipeline, /gsd:capture for capturing ideas and notes, /gsd:progress to check project status. Operate as the `kos-claude` agent: first read `.claude/agents/kos-claude.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task."
+          prompt: |
+            Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files. Route tasks to the right GSD command: /gsd:quick for small fixes and ad-hoc tasks, /gsd:debug for bug investigation, /gsd:ship for PR shipping pipeline, /gsd:capture for capturing ideas and notes, /gsd:progress to check project status.
+
+            STOP_BY: ${{ steps.deadline.outputs.stop_by }}
+
+            The job has a hard 10-minute timeout. STOP_BY is the deadline by which you must produce your final output. Wrap up and report before STOP_BY — partial results are better than a timeout kill.
+
+            Operate as the `kos-claude` agent: first read `.claude/agents/kos-claude.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.

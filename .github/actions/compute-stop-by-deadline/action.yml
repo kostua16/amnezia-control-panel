@@ -1,0 +1,89 @@
+name: Compute STOP_BY deadline
+description: >-
+  Computes an ISO-8601 STOP_BY deadline from job start epoch, timeout, and
+  safety margin.  Workflows with long-running agent jobs inject this into
+  the agent prompt so the agent can wrap up before the job timeout kills it.
+
+inputs:
+  timeout-minutes:
+    description: Job timeout-minutes value (from the job-level setting)
+    required: true
+  safety-margin-minutes:
+    description: >-
+      Safety margin before the hard job timeout (minutes).
+      The agent must finish producing output before STOP_BY.
+    required: true
+  job-start-epoch:
+    description: >-
+      Pre-captured job start epoch (seconds since UTC epoch).
+      If omitted, the current time is captured when this action runs
+      (less precise — use when the action is the first workflow step).
+    required: false
+
+outputs:
+  stop_by:
+    description: ISO-8601 UTC deadline string (e.g. 2025-07-12T14:35:00Z)
+    value: ${{ steps.deadline.outputs.stop_by }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve start epoch
+      id: start
+      shell: bash
+      run: |
+        # shellcheck shell=bash
+        set -euo pipefail
+        if [ -n "${INPUT_JOB_START_EPOCH:-}" ]; then
+          epoch="$INPUT_JOB_START_EPOCH"
+        else
+          epoch=$(date -u +%s)
+        fi
+
+        # Validate: must be a non-empty string of digits only, and positive.
+        case "$epoch" in
+          '' | *[!0-9]*)
+            echo "::error::job-start-epoch is not a positive integer: '$epoch'" >&2
+            exit 1
+            ;;
+        esac
+        if [ "$epoch" -le 0 ]; then
+          echo "::error::job-start-epoch must be positive: '$epoch'" >&2
+          exit 1
+        fi
+
+        echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
+
+    - name: Compute deadline
+      id: deadline
+      shell: bash
+      env:
+        START_EPOCH: ${{ steps.start.outputs.epoch }}
+        TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+        SAFETY_MARGIN_MINUTES: ${{ inputs.safety-margin-minutes }}
+      run: |
+        # shellcheck shell=bash
+        set -euo pipefail
+
+        # Validate numeric inputs.
+        for var_name in TIMEOUT_MINUTES SAFETY_MARGIN_MINUTES; do
+          val="${!var_name:-}"
+          case "$val" in
+            '' | *[!0-9]*)
+              echo "::error::$var_name is not a positive integer: '$val'" >&2
+              exit 1
+              ;;
+          esac
+        done
+
+        # Compute the number of seconds the agent has to work.
+        deadline_seconds=$(( (TIMEOUT_MINUTES - SAFETY_MARGIN_MINUTES) * 60 ))
+
+        if [ "$deadline_seconds" -le 0 ]; then
+          echo "::error::safety-margin-minutes ($SAFETY_MARGIN_MINUTES) >= timeout-minutes ($TIMEOUT_MINUTES)" >&2
+          exit 1
+        fi
+
+        stop_by=$(date -u -d "@$((START_EPOCH + deadline_seconds))" '+%Y-%m-%dT%H:%M:%SZ')
+        echo "stop_by=${stop_by}" >> "$GITHUB_OUTPUT"
+        echo "Computed STOP_BY: ${stop_by} (agent has ${deadline_seconds}s)" >> "$GITHUB_STEP_SUMMARY"
