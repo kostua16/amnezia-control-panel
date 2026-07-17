@@ -520,7 +520,15 @@ jobs:
             const buckets = JSON.parse(process.env.CATEGORIZED || '{}');
             const dryRun = process.env.DRY_RUN === 'true';
             const MAX_DISPATCHES = 10;
-            const retriage = (buckets.needs_retriage || []).slice(0, MAX_DISPATCHES);
+            const needsRetriage = buckets.needs_retriage || [];
+            // No silent caps: a backlog (e.g. after a triage outage — the exact
+            // scenario this workflow hardens against) overflowing the per-sweep
+            // dispatch budget must be visible, not silently deferred to the next
+            // sweep with nothing in the run summary or log line.
+            if (needsRetriage.length > MAX_DISPATCHES) {
+              core.warning(`needs_retriage has ${needsRetriage.length} issues; only first ${MAX_DISPATCHES} dispatched this sweep`);
+            }
+            const retriage = needsRetriage.slice(0, MAX_DISPATCHES);
             const deadLetters = buckets.triage_dead_letter || [];
             const stepStart = Date.now();
             let dispatched = 0;
@@ -553,13 +561,22 @@ jobs:
               dispatched += 1;
               // Marker records a real attempt. It must not contain the literal
               // "/triage" (a maintainer-authored comment with that prefix would
-              // start a second, comment-triggered triage run).
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: item.number,
-                body: `<!-- re-triage-dispatch -->\nRe-triage dispatched via workflow_dispatch (catch-up workflow, attempt ${item.attempt}).`
-              });
+              // start a second, comment-triggered triage run). Guarded: the
+              // dispatch already succeeded, so a transient comment failure
+              // (rate limit, locked issue, 5xx) must not abort the step and
+              // skip remaining retriage items + all dead-letter parking — that
+              // would leave the run dispatched but uncounted and re-fire it
+              // every sweep. The liveness check below is the secondary signal.
+              try {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: item.number,
+                  body: `<!-- re-triage-dispatch -->\nRe-triage dispatched via workflow_dispatch (catch-up workflow, attempt ${item.attempt}).`
+                });
+              } catch (e) {
+                core.warning(`marker post failed for #${item.number} (run dispatched but uncounted): ${e.message}`);
+              }
               core.info(`dispatched triage.yml for #${item.number} (attempt ${item.attempt})`);
             }
 
@@ -764,10 +781,12 @@ jobs:
           allowed-bots: 'github-actions[bot]'
           # Least privilege: this agent holds the PAT and reads untrusted issue
           # bodies — a prompt-injection payload must not be able to reach
-          # `gh api`/`gh repo`/`gh workflow` with PAT scope. The prompt only
-          # ever runs `gh issue view/comment/edit/close/create`, so scope both
-          # the direct and the rtk-wrapped form to the issue subcommand.
-          allowed-tools: 'Bash(gh issue:*),Bash(rtk gh issue:*),Read,Grep'
+          # `gh api`/`gh repo`/`gh workflow` with PAT scope, nor destructive
+          # `gh issue` verbs (`delete`/`transfer`/`pin`/`reopen`) the prompt
+          # never asks for. The prompt only ever runs
+          # `gh issue view/comment/edit/close/create`, so enumerate exactly those
+          # subcommands in both the direct and the rtk-wrapped form.
+          allowed-tools: 'Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh issue close:*),Bash(gh issue create:*),Bash(rtk gh issue view:*),Bash(rtk gh issue comment:*),Bash(rtk gh issue edit:*),Bash(rtk gh issue close:*),Bash(rtk gh issue create:*),Read,Grep'
           additional-permissions: 'issues: write'
           prompt: |
             ## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues
