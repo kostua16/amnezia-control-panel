@@ -6,6 +6,16 @@ import {
 import { matchesCIDR } from '@/lib/cidr-match';
 import type { XrayRoutingRule } from '@/types/chain';
 
+// ─── CIDR Detection ───────────────────────────────────────
+
+/** Basic CIDR pattern — matches IPv4/prefix notation (e.g. 10.0.0.0/8). */
+const CIDR_PATTERN = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,3}$/;
+
+/** Returns true when the string looks like a CIDR block (IPv4/prefix). */
+function isCIDR(value: string): boolean {
+  return CIDR_PATTERN.test(value);
+}
+
 // ─── Types ──────────────────────────────────────────────
 
 export interface RuleEnforcementResult {
@@ -57,7 +67,12 @@ export async function generateXrayRulesFromDB(): Promise<XrayRoutingRule[]> {
   for (const rule of rules) {
     xuiRules.push({
       nodeId: rule.userId != null ? `user-${rule.userId}` : `rule-${rule.id}`,
-      type: rule.protocol === 'xray' ? 'domain' : 'ip',
+      type:
+        rule.protocol === 'xray'
+          ? 'domain'
+          : isCIDR(rule.destination)
+            ? 'ip'
+            : 'domain',
       value: rule.destination,
       outboundTag: rule.action,
       priority: rule.priority,

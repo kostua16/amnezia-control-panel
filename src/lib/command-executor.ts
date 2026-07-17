@@ -146,6 +146,8 @@ export async function execCommand(
 /**
  * Run a command synchronously. Returns stdout (stderr is not available from the
  * sync API), or throws {@link CommandError} on failure.
+ *
+ * @internal — test-only. Production code should use `execCommand` (async).
  */
 export function execCommandSync(
   command: string,
