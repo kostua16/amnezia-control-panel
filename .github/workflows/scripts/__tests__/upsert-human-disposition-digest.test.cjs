@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
   escapeCell,
   escapeListItem,
+  parseArgs,
   parseStructuredOutput,
   renderDigestBody,
 } = require('../upsert-human-disposition-digest.cjs');
@@ -89,4 +91,49 @@ test('renderDigestBody collapses newlines in human_disposition bullet items', ()
   assert.ok(body.includes('- PR #1 needs a look review the diff carefully'));
   // The newline-terminated remainder must not leak as a non-bullet line.
   assert.ok(!/^review the diff carefully$/m.test(body));
+});
+
+test('parseArgs extracts --repo, --structured-output, and --run-url', () => {
+  const args = parseArgs(['node', 'script', '--repo', 'owner/repo', '--structured-output', '{}', '--run-url', 'https://run']);
+  assert.equal(args.repo, 'owner/repo');
+  assert.equal(args['structured-output'], '{}');
+  assert.equal(args['run-url'], 'https://run');
+});
+
+test('parseArgs returns empty object for missing flags', () => {
+  const args = parseArgs(['node', 'script']);
+  assert.deepEqual(args, {});
+});
+
+test('parseArgs ignores unknown flags without crashing', () => {
+  const args = parseArgs(['node', 'script', '--repo', 'o/r', '--unknown', 'val']);
+  assert.equal(args.repo, 'o/r');
+  assert.equal(args.unknown, undefined);
+});
+
+test('renderDigestBody includes run URL link and date header', () => {
+  const body = renderDigestBody(
+    { human_disposition: [], auto_prs_inspected: [] },
+    'https://example.com/run/123',
+    'https://github.com/owner/repo',
+  );
+  assert.ok(body.includes('[audit run](https://example.com/run/123)'));
+  assert.match(body, /> Last updated: \d{4}-\d{2}-\d{2}/);
+});
+
+test('renderDigestBody omits repo link when repoUrl is empty', () => {
+  const body = renderDigestBody(
+    {
+      human_disposition: [],
+      auto_prs_inspected: [{ number: 1, title: 'T', author: 'A', branch: 'B', recommendation: 'R' }],
+    },
+    'https://run',
+    '',
+  );
+  // PR number should be plain #N, not a link, when repoUrl is empty.
+  assert.ok(body.includes('| #1 |'));
+  // The run URL link still exists (from --run-url, independent of repo).
+  assert.ok(body.includes('[audit run](https://run)'));
+  // No PR-specific repo links should appear.
+  assert.ok(!body.includes('/pull/1'));
 });

@@ -3,32 +3,15 @@
 
 'use strict';
 
+const { escapeTableCell, escapeBulletItem } = require('./md-escape.cjs');
+
 const DIGEST_TITLE = 'Auto PR Audit: human-disposition digest';
 const DIGEST_LABELS = ['auto-fix', 'needs-review'];
 const ISSUE_SEARCH_MARKER = 'auto-pr-audit human disposition in:title';
 
-// External PR metadata (title/author/branch/recommendation) is contributor-
-// controllable, so it cannot be emitted into a markdown table cell verbatim.
-// Collapse newlines (which would split the row) to spaces, escape pipes (which
-// would split the column), and backslash-escape '[' so a value shaped like a
-// markdown link cannot render as a misleading clickable link in the digest.
-function escapeCell(value) {
-  return String(value == null ? '' : value)
-    .replace(/\r\n|\r|\n/g, ' ')
-    .replace(/\|/g, '\\|')
-    .replace(/\[/g, '\\[');
-}
-
-// Agent-supplied bullet text can incorporate contributor-influenced content, so
-// the same guards as escapeCell apply: collapse embedded newlines (which would
-// terminate the bullet and render the remainder as loose text) to spaces, and
-// backslash-escape '[' so a value shaped like a markdown link cannot render as a
-// misleading clickable link in the digest list.
-function escapeListItem(value) {
-  return String(value == null ? '' : value)
-    .replace(/\r\n|\r|\n/g, ' ')
-    .replace(/\[/g, '\\[');
-}
+// Backward-compatible aliases for tests and downstream consumers.
+const escapeCell = escapeTableCell;
+const escapeListItem = escapeBulletItem;
 
 function parseArgs(argv) {
   const args = {};

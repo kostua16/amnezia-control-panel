@@ -291,7 +291,7 @@ jobs:
   publish-digest:
     name: Publish human-disposition digest
     needs: [audit-auto-prs]
-    if: needs.audit-auto-prs.result == 'success'
+    if: needs.audit-auto-prs.result == 'success' && needs.audit-auto-prs.outputs.structured_output != ''
     runs-on: self-hosted
     timeout-minutes: 5
     permissions:
