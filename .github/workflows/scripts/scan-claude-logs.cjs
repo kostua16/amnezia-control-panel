@@ -9,7 +9,10 @@ const {
   parseClaudeExecution,
   redactSecrets,
 } = require('./parse-claude-execution.cjs');
-const { isRateLimitOrOverloadText } = require('./classify-claude-retry.cjs');
+const {
+  PREPARE_GIT_AUTH_RE,
+  isRateLimitOrOverloadText,
+} = require('./classify-claude-retry.cjs');
 
 function readOptionalFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return '';
@@ -64,6 +67,24 @@ function asArray(value) {
 
 function sanitizeLogLine(value, limit = 200) {
   return redactSecrets(String(value || '').replace(/\r/g, '')).slice(0, limit);
+}
+
+// The job log includes the agent's streamed transcript, where tool results
+// echo file contents as JSON-escaped payloads (e.g.
+// `"content": "315\t      'non_human_actor',"`). A failure signature inside
+// such a payload means the agent READ text about a failure — it does not mean
+// the run failed. Without this filter the scanner self-triggers on its own
+// pattern fixtures whenever an agent opens scan-claude-logs.{cjs,test.cjs}
+// (observed: a fully green fix-review run reported all 11 findings at once and
+// had its work discarded). Real runner-emitted error lines are plain text with
+// no JSON string escapes and always survive the filter.
+const TRANSCRIPT_ECHO_RE = /\\"|\\t|\\n|"(?:content|text|output|message)":/;
+
+function stripTranscriptEchoes(logText) {
+  return String(logText || '')
+    .split('\n')
+    .filter((line) => !TRANSCRIPT_ECHO_RE.test(line))
+    .join('\n');
 }
 
 function firstMatchingLine(logText, pattern) {
@@ -158,6 +179,9 @@ function buildFindings({
   conclusion = '',
   maxTurns,
 }) {
+  // Pattern matching must only ever see runner-emitted lines — agent
+  // transcript echoes of failure-signature text are not run failures.
+  logText = stripTranscriptEchoes(logText);
   const findings = [];
   const actionError = metrics.actionError || '';
   const errorMessages = asArray(metrics.errorMessages);
@@ -275,10 +299,7 @@ function buildFindings({
   // usable credentials (persist-credentials: false and no token remote) fails
   // there deterministically — the generic "step failed" reason hides the
   // actionable fix, so name it explicitly.
-  const prepareGitAuthLine = firstMatchingLine(
-    logText,
-    /could not read Username for 'https:\/\/github\.com'|Error in branch setup/i,
-  );
+  const prepareGitAuthLine = firstMatchingLine(logText, PREPARE_GIT_AUTH_RE);
   if (prepareGitAuthLine) {
     addFinding(
       findings,
@@ -610,5 +631,6 @@ module.exports = {
   buildClaudeLogScan,
   buildFindings,
   firstErrorFailureReason,
+  stripTranscriptEchoes,
   writeGithubOutputs,
 };

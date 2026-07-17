@@ -176,6 +176,9 @@ test('hardened checkouts never combine with track-progress on tag-mode events', 
     // Anything but a literal 'false' can enable tag mode at runtime — the
     // original regression used the expression form
     // track-progress: "${{ github.event_name != 'workflow_dispatch' }}".
+    // YAML block scalars (track-progress: | / >) are also safe here: the
+    // capture is the indicator character, which !== 'false', so the workflow
+    // is flagged — the check fails closed rather than missing the value.
     const trackProgressValues = [
       ...content.matchAll(/track-progress:\s*(.+)/g),
     ].map((m) => m[1].trim().replace(/^['"]|['"]$/g, ''));

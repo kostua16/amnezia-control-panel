@@ -44,7 +44,9 @@ test('git-auth prepare failure is fatal: no retry, actionable reason', () => {
   assert.equal(result.retryReason, 'fatal_config_git_auth');
   assert.equal(result.isRateLimited, false);
   assert.match(result.message, /branch setup/);
-  assert.match(result.message, /track-progress|credentials/);
+  // Both remediation hints must be present, not either one.
+  assert.match(result.message, /track-progress/);
+  assert.match(result.message, /credentials/);
 });
 
 test('git-auth signature does not override a real execution result', () => {
@@ -61,7 +63,10 @@ test('git-auth signature does not override a real execution result', () => {
     logText: GIT_AUTH_LOG,
     attempt: '1',
   });
-  assert.notEqual(result.retryReason, 'fatal_config_git_auth');
+  // With a result node present and an unhealthy probe, the classifier must
+  // fall through to the terminal non-retryable rule — pin the exact outcome.
+  assert.equal(result.retryReason, 'non_retryable');
+  assert.equal(result.shouldRetry, false);
 });
 
 test('rate limit evidence still wins over the git-auth rule', () => {

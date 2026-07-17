@@ -70,12 +70,15 @@ function hasAnyResultNode(executionText) {
   return false;
 }
 
+// Single source of truth for the branch-setup git-auth signature. The log
+// scanner (scan-claude-logs.cjs) imports this same regex for its
+// prepare_git_auth finding so retry classification and health findings can
+// never diverge on what counts as this failure.
+const PREPARE_GIT_AUTH_RE =
+  /could not read Username for 'https:\/\/github\.com'|Error in branch setup/i;
+
 function isPrepareGitAuthText(value) {
-  const text = String(value || '');
-  return (
-    /could not read Username for 'https:\/\/github\.com'/i.test(text) ||
-    /Error in branch setup/i.test(text)
-  );
+  return PREPARE_GIT_AUTH_RE.test(String(value || ''));
 }
 
 function isRateLimitOrOverloadText(value) {
@@ -242,6 +245,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  PREPARE_GIT_AUTH_RE,
   classifyClaudeRetry,
   hasSuccessfulResult,
   hasAnyResultNode,

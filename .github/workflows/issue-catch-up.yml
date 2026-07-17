@@ -253,7 +253,12 @@ jobs:
                 .filter(c => (c.body || '').includes(RETRY_MARKER))
                 .map(c => new Date(c.created_at).getTime())
                 .sort((a, b) => b - a)[0] || 0;
-              const afterRetry = c => new Date(c.created_at).getTime() > retryMarkerAt;
+              // Inclusive bound: comment timestamps have 1-second resolution
+              // and the retry marker + its follow-up /fix land back-to-back,
+              // often in the same second — a strict > would drop that real
+              // attempt and re-create the hourly re-post spam. The marker body
+              // contains no counted substrings, so it never counts itself.
+              const afterRetry = c => new Date(c.created_at).getTime() >= retryMarkerAt;
 
               // Re-triage attempts count both the legacy "/triage" comments and
               // the deterministic workflow_dispatch markers. A dispatch marker
@@ -537,7 +542,12 @@ jobs:
                 // A failed dispatch is NOT an attempt — no marker comment, so
                 // the attempt counter is not burned by infrastructure errors.
                 core.warning(`triage dispatch failed for #${item.number}: ${e.message}`);
-                await core.summary.addRaw(`:warning: triage dispatch failed for #${item.number}: ${e.message}`, true).write();
+                try {
+                  await core.summary.addRaw(`:warning: triage dispatch failed for #${item.number}: ${e.message}`, true).write();
+                } catch (summaryError) {
+                  // A summary-write failure must not break the continue intent.
+                  core.warning(`summary write failed: ${summaryError.message}`);
+                }
                 continue;
               }
               dispatched += 1;
@@ -570,7 +580,11 @@ jobs:
                 ).length;
                 if (observed < dispatched) {
                   core.warning(`dispatched ${dispatched} triage runs but only observed ${observed} started — inert-trigger suspicion`);
-                  await core.summary.addRaw(`:warning: dispatched ${dispatched} triage runs, observed only ${observed} started`, true).write();
+                  try {
+                    await core.summary.addRaw(`:warning: dispatched ${dispatched} triage runs, observed only ${observed} started`, true).write();
+                  } catch (summaryError) {
+                    core.warning(`summary write failed: ${summaryError.message}`);
+                  }
                 } else {
                   core.info(`liveness ok: ${observed} dispatched triage runs observed`);
                 }
@@ -580,26 +594,31 @@ jobs:
             }
 
             for (const item of deadLetters) {
-              if (dryRun) {
-                core.info(`DRY RUN: would park #${item.number} with triage-failed`);
-                continue;
+              try {
+                if (dryRun) {
+                  core.info(`DRY RUN: would park #${item.number} with triage-failed`);
+                  continue;
+                }
+                // triage-failed (NOT needs-review): needs-review is terminal for
+                // project-manager's issue /fix route, which would leave the issue
+                // with no automated recovery path at all.
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: item.number,
+                  labels: ['triage-failed']
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: item.number,
+                  body: 'Triage attempted 2x without success. Manual review needed.'
+                });
+                core.info(`parked #${item.number} as triage-failed`);
+              } catch (e) {
+                // One failed park must not skip the remaining dead letters.
+                core.warning(`dead-letter parking failed for #${item.number}: ${e.message}`);
               }
-              // triage-failed (NOT needs-review): needs-review is terminal for
-              // project-manager's issue /fix route, which would leave the issue
-              // with no automated recovery path at all.
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: item.number,
-                labels: ['triage-failed']
-              });
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: item.number,
-                body: 'Triage attempted 2x without success. Manual review needed.'
-              });
-              core.info(`parked #${item.number} as triage-failed`);
             }
 
             core.info(`re-triage: ${dispatched} dispatched, ${deadLetters.length} parked, dryRun=${dryRun}`);
@@ -626,7 +645,11 @@ jobs:
               return;
             }
 
-            const lines = findings.map((f) => {
+            // Cap the report so the comment body stays far below GitHub's
+            // 65536-char limit even if findings pile up across many issues.
+            const MAX_REPORTED = 50;
+            const reported = findings.slice(0, MAX_REPORTED);
+            const lines = reported.map((f) => {
               if (f.type === 'inert_bot_command') {
                 return `- #${f.number} — **inert bot command**: ${f.count} \`/fix\`/\`/triage\` comment(s) authored by github-actions[bot] (GITHUB_TOKEN events never start workflows); last at ${f.last}`;
               }
@@ -635,6 +658,9 @@ jobs:
               }
               return `- #${f.number} — ${f.type}`;
             });
+            if (findings.length > MAX_REPORTED) {
+              lines.push(`- …and ${findings.length - MAX_REPORTED} more finding(s) — see the run summary`);
+            }
             const hash = crypto.createHash('sha256')
               .update(JSON.stringify(findings.map(f => [f.type, f.number]).sort()))
               .digest('hex').slice(0, 16);
@@ -736,7 +762,12 @@ jobs:
           # makes those comments maintainer-authored real triggers.
           github-token: ${{ secrets.GH_PAT }}
           allowed-bots: 'github-actions[bot]'
-          allowed-tools: 'Bash(rtk:*),Bash(gh:*),Bash(git:*),Read,Grep'
+          # Least privilege: this agent holds the PAT and reads untrusted issue
+          # bodies — a prompt-injection payload must not be able to reach
+          # `gh api`/`gh repo`/`gh workflow` with PAT scope. The prompt only
+          # ever runs `gh issue view/comment/edit/close/create`, so scope both
+          # the direct and the rtk-wrapped form to the issue subcommand.
+          allowed-tools: 'Bash(gh issue:*),Bash(rtk gh issue:*),Read,Grep'
           additional-permissions: 'issues: write'
           prompt: |
             ## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues

@@ -40,15 +40,30 @@ test('triage dead letters park with triage-failed, never needs-review', () => {
 
 test('dispatch markers count as attempts and avoid the /triage trigger string', () => {
   assert.match(content, /<!-- re-triage-dispatch -->/);
+  // The workflow embeds JS source, so the YAML file contains a literal
+  // backslash-n inside the template string — the \\n here matches those two
+  // characters in the file text, not a newline.
   const markerBodies = [
     ...content.matchAll(/re-triage-dispatch -->\\n([^`]*)`/g),
   ];
+  // Guard the guard: if the marker body ever moves or is reformatted, this
+  // must fail loudly instead of silently skipping the loop below.
+  assert.ok(
+    markerBodies.length > 0,
+    'expected at least one re-triage-dispatch marker body in the workflow',
+  );
   for (const [, body] of markerBodies) {
     assert.ok(
       !body.includes('/triage'),
       'marker comment must not contain "/triage" — a maintainer-authored comment with it would start a second triage run',
     );
   }
+});
+
+test('fresh-context retry counts same-second attempts (inclusive bound)', () => {
+  // Comment timestamps have 1-second resolution; the retry marker and its
+  // follow-up /fix often share a second. The attempt filter must be >=.
+  assert.match(content, /getTime\(\)\s*>=\s*retryMarkerAt/);
 });
 
 test('dead-letter fresh-context retry resets the attempt counter', () => {
