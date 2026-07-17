@@ -160,7 +160,7 @@ describe('workflow trigger policy', () => {
       yaml,
       /contains\(github\.event\.comment\.body, '<!-- kilo-review -->'\)/,
     );
-    assert.match(yaml, /group: auto-cover-review-/);
+    assert.match(yaml, /group:\s*(?:>-\s*)?auto-cover-review-/);
     assert.match(
       yaml,
       /gh workflow run fix-review\.yml\s+\\\n\s+--ref main\s+\\\n\s+-f pr_number="\$pr_number"\s+\\\n\s+-f head_sha="\$head_sha"\s+\\\n\s+-f automation_review_loop=true/,
@@ -269,6 +269,7 @@ describe('workflow trigger policy', () => {
   it('prefilters standalone AI mention workflows before runner checkout', () => {
     expectGuard('claude.yml', [
       /authorize:[\s\S]*?if: >-/,
+      /github\.event\.comment\.user\.login != 'github-actions\[bot\]'/,
       /contains\(github\.event\.comment\.body, '@claude'\)/,
       /contains\(github\.event\.review\.body, '@claude'\)/,
       /contains\(github\.event\.issue\.title, '@claude'\)/,
@@ -362,6 +363,40 @@ describe('workflow trigger policy', () => {
     assert.match(
       workflow,
       /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request_target' && github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled' \}\}/,
+    );
+  });
+
+  // PR #695 / #715 regression — classify-trigger if: is the first defense
+  // line. GitHub applies concurrency cancellation at run creation, before job
+  // `if:` gates run, so the classify-trigger `if:` alone cannot prevent a
+  // no-op bot comment from cancelling a real wake — that requires the
+  // noise-group isolation tested above. But the classify `if:` still prevents
+  // the classify job itself from running on bot comments, saving a runner
+  // slot and ensuring no downstream orchestrate can execute.
+  it('classifies issue_comment trigger: github-actions[bot] filtered before classify job', () => {
+    const workflow = readWorkflowText('pr-flow.yml');
+    // classify-trigger if: must exclude github-actions[bot] issue_comments
+    // so the classify step never runs on bot noise.
+    assert.match(
+      workflow,
+      /classify-trigger:[\s\S]*?if: >-[\s\S]*?github\.event\.comment\.user\.login != 'github-actions\[bot\]'/,
+    );
+  });
+
+  // PR #715 regression — auto-cover-review has the same concurrency-at-creation
+  // bug class as pr-flow. Bot sticky-comment upserts must be routed to a
+  // noise group so they can never cancel a real fix-review wake.
+  it('isolates github-actions[bot] noise in auto-cover-review concurrency', () => {
+    const workflow = readWorkflowText('auto-cover-review.yml');
+    // Bot issue_comments route to a per-PR noise group.
+    assert.match(
+      workflow,
+      /github\.event_name == 'issue_comment' && github\.event\.comment\.user\.login == 'github-actions\[bot\]' && format\('noise-\{0\}', github\.event\.issue\.number\)/,
+    );
+    // Noise runs have cancel-in-progress=false so they never cancel anything.
+    assert.match(
+      workflow,
+      /cancel-in-progress: \$\{\{ github\.event_name != 'issue_comment' \|\| github\.event\.comment\.user\.login != 'github-actions\[bot\]' \}\}/,
     );
   });
 

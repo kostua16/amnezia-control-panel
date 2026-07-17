@@ -40,8 +40,20 @@ concurrency:
   # workflow_run, empty dispatch) fall through to a shared 'scan' group so two
   # overlapping scans cannot both pass the active-run check (eventually
   # consistent) and dispatch duplicate fix-review runs for the same PR.
-  group: auto-cover-review-${{ github.event.issue.number || github.event.inputs.pr_number || github.event.workflow_run.pull_requests[0].number || 'scan' }}
-  cancel-in-progress: true
+  # github-actions[bot] issue_comment runs (sticky-comment upserts, worker
+  # reports) are always no-ops but GitHub applies concurrency cancellation at
+  # run creation, before job `if:` gates run — routing them to a per-PR noise
+  # group with cancel-in-progress=false prevents them from cancelling or
+  # displacing a real fix-review wake (same bug class as PR #695 / #715).
+  group: >-
+    auto-cover-review-${{
+      (github.event_name == 'issue_comment' && github.event.comment.user.login == 'github-actions[bot]' && format('noise-{0}', github.event.issue.number)) ||
+      github.event.issue.number ||
+      github.event.inputs.pr_number ||
+      github.event.workflow_run.pull_requests[0].number ||
+      'scan'
+    }}
+  cancel-in-progress: ${{ github.event_name != 'issue_comment' || github.event.comment.user.login != 'github-actions[bot]' }}
 
 jobs:
   cover:
