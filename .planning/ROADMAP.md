@@ -172,6 +172,7 @@ Plans:
 <!-- PR-IMPROVE:768 --> - PR #768: fix: resolve #766 - WHO-I03: Make 50KB 'runs_data' truncation JSON-safe (workflow-health-optimize) -- pr768.2 x1. Quick artifact: `.planning/quick/260715-pr768-workflow-improve/260715-pr768-PLAN.md`.
 <!-- PR-IMPROVE:775 --> - PR #775: fix(workflows): let pr-flow / project-manager actually push stuck PRs to merge -- pr775.1 x1, pr775.2 x1, pr775.3 x1. Quick artifact: `.planning/quick/260716-pr775-workflow-improve/260716-pr775-PLAN.md`.
 <!-- PR-IMPROVE:777 --> - PR #777: fix(workflows): wake and rescue PRs whose finalizer apply failed -- pr777.2 x1, pr777.3 x1. Quick artifact: `.planning/quick/260716-pr777-workflow-improve/260716-pr777-PLAN.md`.
+<!-- PR-IMPROVE:780 --> - PR #780: fix(workflows): repair the triage→fix pipeline and add automations that catch stranded issues -- pr780.1 x1, pr780.2 x1. Quick artifact: `.planning/quick/260717-pr780-workflow-improve/260717-pr780-PLAN.md`.
 <!-- PR-IMPROVE:781 --> - PR #781: fix: resolve #779 - WHO-I04: Exclude self by workflow path, not display name (workflow-health-optimize) -- pr781.1 x1. Quick artifact: `.planning/quick/260717-pr781-workflow-improve/260717-pr781-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
