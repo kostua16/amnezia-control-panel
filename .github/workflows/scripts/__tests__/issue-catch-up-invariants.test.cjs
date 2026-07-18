@@ -80,6 +80,28 @@ test('the analyze agent runs with the PAT so /fix comments are real triggers', (
   );
 });
 
+test('priority escalation is decided after comments are fetched, never before recovery routing', () => {
+  // The early-continue form of this bucket captured high/critical parked
+  // dead letters on every sweep, hiding them from the dead-letter retry
+  // branch forever (issue #759). Behavioral coverage lives in
+  // issue-catch-up-collect.test.cjs; this pins the structural ordering.
+  const firstEscalationPush = content.indexOf(
+    'buckets.priority_escalation.push',
+  );
+  const commentsFetch = content.indexOf('listComments');
+  assert.ok(firstEscalationPush > 0 && commentsFetch > 0);
+  assert.ok(
+    firstEscalationPush > commentsFetch,
+    'priority_escalation must not be routed before the comments fetch — it would shadow dead-letter recovery',
+  );
+  assert.match(content, /priorityEscalationEligible/);
+});
+
+test('inert bot attempts waive the dead-letter cooldown; reminders are deduped', () => {
+  assert.match(content, /allAttemptsInert/);
+  assert.match(content, /shouldNudgePriority/);
+});
+
 test('pipeline invariants are collected and reported to the health tracker', () => {
   assert.match(content, /invariant_findings/);
   assert.match(content, /inert_bot_command/);

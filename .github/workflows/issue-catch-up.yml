@@ -168,6 +168,17 @@ jobs:
             const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
             const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+            // The Phase 3 reminder is a nudge, not a heartbeat: posting it on
+            // every hourly sweep buried issue threads under identical comments
+            // (18 copies on issue #759). At most one reminder per day.
+            const nudgeDayAgoMs = Date.now() - 24 * 60 * 60 * 1000;
+            const shouldNudgePriority = comments =>
+              !comments.some(
+                c =>
+                  (c.body || '').includes('Priority issue awaiting attention') &&
+                  new Date(c.created_at).getTime() > nudgeDayAgoMs
+              );
+
             for (const issue of allIssues) {
               const labels = issue.labels.map(l => l.name);
               const num = issue.number;
@@ -206,11 +217,16 @@ jobs:
                 continue;
               }
 
-              // Bucket: priority_escalation — critical/high, no in-progress/fixed, open >48h
-              if ((hasCritical || hasHigh) && !hasTriaged && createdAt < twoDaysAgo) {
-                buckets.priority_escalation.push({ number: num, title: issue.title, labels });
-                continue;
-              }
+              // Priority escalation is a human nudge, never a substitute for
+              // automated recovery. Deciding it here (before comments are
+              // fetched) used to capture parked dead letters with high/critical
+              // labels every sweep, which both spammed the reminder comment and
+              // permanently shadowed the dead-letter retry branch below — the
+              // issue could never reach its one-shot fresh-context retry.
+              // Record eligibility only; the bucket is pushed further down,
+              // strictly where automated recovery declines the issue.
+              const priorityEscalationEligible =
+                (hasCritical || hasHigh) && !hasTriaged && createdAt < twoDaysAgo;
 
               // Fetch comments for triage/fix attempt counting
               let comments = [];
@@ -288,11 +304,30 @@ jobs:
               // strand the issue with no automated recovery path.
               if ((hasNeedsReview || hasTriageFailed) && deadLetterComment) {
                 const DL_AUTO_GEN = [/\[auto-fix\]/, /\[workflow-health\]/];
-                const parkedLongEnough =
-                  new Date(deadLetterComment.created_at) < sevenDaysAgo;
                 const kind = /^Triage/i.test(deadLetterComment.body || '')
                   ? 'triage'
                   : 'fix';
+                // The 7-day cooldown exists because real attempts often fail
+                // transiently (turn limits, runner pressure) and immediate
+                // retries would replay the same failure. But an attempt comment
+                // authored by github-actions[bot] that is not a dispatch marker
+                // is inert by construction — GITHUB_TOKEN events never start
+                // workflows — so when every counted attempt is inert, no run
+                // ever happened and there is no failure to cool down from.
+                // Legacy pre-repair dead letters are exactly this shape; waive
+                // the park age and retry immediately.
+                const attemptComments =
+                  kind === 'triage' ? triageComments : fixComments;
+                const allAttemptsInert =
+                  attemptComments.length > 0 &&
+                  attemptComments.every(
+                    c =>
+                      c.user?.login === 'github-actions[bot]' &&
+                      !(c.body || '').includes('<!-- re-triage-dispatch -->')
+                  );
+                const parkedLongEnough =
+                  allAttemptsInert ||
+                  new Date(deadLetterComment.created_at) < sevenDaysAgo;
                 const dlAutomationAuthored =
                   ['maintenance', 'auto-fix', 'ci-failure'].some(l => labels.includes(l)) ||
                   issue.user?.type === 'Bot';
@@ -309,8 +344,30 @@ jobs:
                     title: issue.title,
                     kind
                   });
+                } else if (
+                  priorityEscalationEligible &&
+                  shouldNudgePriority(comments)
+                ) {
+                  // Automated recovery declined (retry spent, waiting out the
+                  // cooldown, or not retry-eligible) — this is the only state
+                  // where a human nudge adds anything, and at most once a day.
+                  buckets.priority_escalation.push({ number: num, title: issue.title, labels });
                 }
                 continue;
+              }
+
+              if (priorityEscalationEligible && shouldNudgePriority(comments)) {
+                // Parked without a dead-letter comment (e.g. a manual
+                // needs-review park): no recovery path below applies to a
+                // parked issue, so nudge — the recovery buckets past this
+                // point would otherwise re-triage an intentionally parked
+                // issue. Unparked untriaged issues fall through instead:
+                // needs_retriage / triage_dead_letter route them to real
+                // automated recovery, which supersedes reminders.
+                if (hasNeedsReview || hasTriageFailed) {
+                  buckets.priority_escalation.push({ number: num, title: issue.title, labels });
+                  continue;
+                }
               }
 
               if (!hasTriaged) {
