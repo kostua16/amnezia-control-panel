@@ -747,6 +747,79 @@ test('buildFlowVisibility returns success aggregate for manual-only decision', (
   assert.equal(visibility.workers.finalizer.displayState, 'N/A');
 });
 
+test('terminal manual-only keeps recorded review outcomes visible', () => {
+  // The terminal manual-only snapshot is the one a maintainer reads before
+  // the manual merge decision — achieved review signals must render, not be
+  // flattened to "N/A: PR is manual-only." (which is reserved for workers
+  // with no recorded signal).
+  const visibility = buildFlowVisibility({
+    pr: {
+      ...basePr,
+      isDraft: false,
+      state: 'OPEN',
+      mergedAt: '',
+      labels: ['needs-review', 'ai-review-passed', 'security-review-passed'],
+    },
+    config: testConfig,
+    policy: {
+      manual_only: true,
+      blocking_labels_present: [],
+      maintainerAssociations: [],
+    },
+    decision: {
+      state: 'flow/manual-only',
+      reason: 'Manual review is required by label: needs-review.',
+      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    },
+    externalReview: {
+      state: 'passed',
+      reason: 'Kilo reported no current-head issues.',
+    },
+    workerRuns: {},
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.workers.codeReview.displayState, 'success');
+  assert.equal(visibility.workers.securityReview.displayState, 'success');
+  assert.equal(visibility.workers.kiloReview.displayState, 'success');
+  // No recorded signal: the not-required dependency review keeps its more
+  // specific message, and prImprove/finalizer never run on manual-only PRs.
+  assert.equal(visibility.workers.dependencyReview.displayState, 'N/A');
+  assert.match(visibility.workers.dependencyReview.description, /not required/);
+  assert.equal(visibility.workers.prImprove.displayState, 'N/A');
+  assert.equal(visibility.workers.finalizer.displayState, 'N/A');
+});
+
+test('terminal manual-only keeps recorded review concerns visible as failure', () => {
+  const visibility = buildFlowVisibility({
+    pr: {
+      ...basePr,
+      isDraft: false,
+      state: 'OPEN',
+      mergedAt: '',
+      labels: ['needs-review', 'ai-review-concerns'],
+    },
+    config: testConfig,
+    policy: {
+      manual_only: true,
+      blocking_labels_present: [],
+      maintainerAssociations: [],
+    },
+    decision: {
+      state: 'flow/manual-only',
+      reason: 'Manual review is required by label: needs-review.',
+      checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    },
+    workerRuns: {},
+    currentRunUrl: 'https://github.com/test/repo/actions/runs/123',
+  });
+
+  assert.equal(visibility.workers.codeReview.displayState, 'failure');
+  assert.match(visibility.workers.codeReview.description, /concerns/);
+  // Security review has no recorded signal here — it stays N/A.
+  assert.equal(visibility.workers.securityReview.displayState, 'N/A');
+});
+
 test('buildFlowVisibility orderedStatuses includes aggregate and all workers', () => {
   const visibility = buildFlowVisibility({
     pr: { ...basePr, isDraft: true, state: 'OPEN', mergedAt: '' },

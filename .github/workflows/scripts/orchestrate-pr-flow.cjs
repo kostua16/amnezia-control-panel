@@ -642,8 +642,19 @@ function buildFlowVisibility({
     return waitingStatus(workerName, defaultDescription);
   }
 
+  // Terminal manual-only stops dispatching review workers, but it must not
+  // erase achieved review outcomes from the table: the terminal snapshot is
+  // the one a maintainer reads to decide the manual merge, and a recorded
+  // pass/concern (review labels, Kilo verdict) is exactly the signal that
+  // decision needs. Each review worker therefore renders "N/A: PR is
+  // manual-only." only when it has no recorded signal; with a signal, the
+  // normal branches below render it. prImprove and finalizer keep the
+  // unconditional N/A — they genuinely never run on manual-only PRs.
   const codeDispatchError = dispatchErrorFor('codeReview');
-  if (manualTerminal) {
+  if (
+    manualTerminal &&
+    !hasAny(labels, ['ai-review-concerns', 'ai-review-passed'])
+  ) {
     statuses.codeReview = skippedStatus(
       'codeReview',
       'N/A: PR is manual-only.',
@@ -694,7 +705,10 @@ function buildFlowVisibility({
   }
 
   const securityDispatchError = dispatchErrorFor('securityReview');
-  if (manualTerminal) {
+  if (
+    manualTerminal &&
+    !hasAny(labels, ['security-review-concerns', 'security-review-passed'])
+  ) {
     statuses.securityReview = skippedStatus(
       'securityReview',
       'N/A: PR is manual-only.',
@@ -745,7 +759,15 @@ function buildFlowVisibility({
   }
 
   const dependencyDispatchError = dispatchErrorFor('dependencyReview');
-  if (manualTerminal) {
+  if (
+    manualTerminal &&
+    needsDependencyReview &&
+    !hasAny(labels, [
+      'deps-review-manual',
+      'deps-review-blocked',
+      'deps-review-passed',
+    ])
+  ) {
     statuses.dependencyReview = skippedStatus(
       'dependencyReview',
       'N/A: PR is manual-only.',
@@ -795,7 +817,7 @@ function buildFlowVisibility({
     );
   }
 
-  if (manualTerminal) {
+  if (manualTerminal && externalReview.state === 'pending') {
     statuses.kiloReview = skippedStatus(
       'kiloReview',
       'N/A: PR is manual-only.',
