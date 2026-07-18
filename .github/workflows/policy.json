@@ -198,6 +198,10 @@
       "color": "1d76db",
       "description": "Issue was triaged and routed by automation or a maintainer"
     },
+    "triage-failed": {
+      "color": "d93f0b",
+      "description": "Issue triage failed and was parked as a dead letter for manual follow-up"
+    },
     "critical": {
       "color": "b60205",
       "description": "Priority: critical — blocks release or active usage; fix immediately"
