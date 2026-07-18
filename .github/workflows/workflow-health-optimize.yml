@@ -456,7 +456,7 @@ jobs:
 
   report-failure:
     needs: [collect-runs, optimize]
-    if: failure()
+    if: ${{ always() && ((needs.collect-runs.result != 'success' && needs.collect-runs.result != 'skipped') || (needs.optimize.result != 'success' && needs.optimize.result != 'skipped')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -974,7 +974,7 @@ jobs:
 
   report-failure:
     needs: [collect-issues, analyze-and-act]
-    if: failure()
+    if: ${{ always() && ((needs.collect-issues.result != 'success' && needs.collect-issues.result != 'skipped') || (needs.analyze-and-act.result != 'success' && needs.analyze-and-act.result != 'skipped')) }}
     runs-on: self-hosted
     timeout-minutes: 10
     steps:

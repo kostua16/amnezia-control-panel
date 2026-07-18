@@ -277,7 +277,7 @@ jobs:
 
   report-failure:
     needs: [collect-targets, improve]
-    if: failure()
+    if: ${{ always() && ((needs.collect-targets.result != 'success' && needs.collect-targets.result != 'skipped') || (needs.improve.result != 'success' && needs.improve.result != 'skipped')) }}
     runs-on: self-hosted
     timeout-minutes: 15
     permissions:

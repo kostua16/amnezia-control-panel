@@ -168,7 +168,7 @@ jobs:
 
   report-failure:
     needs: [manage]
-    if: failure()
+    if: ${{ always() && needs.manage.result != 'success' && needs.manage.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
