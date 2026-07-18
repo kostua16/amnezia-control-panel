@@ -256,6 +256,55 @@ test('manually parked high issue without a dead-letter comment gets the nudge, n
   assert.equal(buckets.dead_letter_retry.length, 0);
 });
 
+test('a manual park stays held even while the nudge dedupe suppresses the reminder', async () => {
+  // The suppressed-nudge sweep must not fall through into re-triage: a
+  // parking label on an untriaged issue is a human hold regardless of
+  // whether the daily reminder fires this hour.
+  const issue = makeIssue({
+    number: 806,
+    title: 'high issue parked by a maintainer, nudged an hour ago',
+    labels: ['needs-review', 'high'],
+    createdAt: daysAgo(3),
+  });
+  const buckets = await runCollect({
+    issues: [issue],
+    commentsByIssue: {
+      806: [{ user: bot, body: NUDGE_COMMENT, created_at: hoursAgo(1) }],
+    },
+  });
+  assert.equal(
+    buckets.priority_escalation.length,
+    0,
+    'nudge posted <24h ago must be suppressed',
+  );
+  assert.equal(
+    buckets.needs_retriage.length,
+    0,
+    'a manually parked issue must never be re-triaged, nudge or no nudge',
+  );
+  assert.equal(buckets.triage_dead_letter.length, 0);
+  assert.equal(buckets.dead_letter_retry.length, 0);
+});
+
+test('a medium manual park is held silently — no re-triage, no nudge', async () => {
+  // Below high/critical there is no reminder, but the human hold still
+  // applies: the sweep takes no action at all on a parked untriaged issue
+  // that has no dead-letter comment.
+  const issue = makeIssue({
+    number: 807,
+    title: 'medium issue parked by a maintainer',
+    labels: ['needs-review', 'medium'],
+    createdAt: daysAgo(3),
+  });
+  const buckets = await runCollect({
+    issues: [issue],
+    commentsByIssue: { 807: [] },
+  });
+  assert.equal(buckets.needs_retriage.length, 0);
+  assert.equal(buckets.priority_escalation.length, 0);
+  assert.equal(buckets.triage_dead_letter.length, 0);
+});
+
 test('inert-attempt waiver never bypasses the one-shot retry marker', async () => {
   // A dead letter that already consumed its fresh-context retry must stay
   // parked even when its pre-retry attempts were all inert.

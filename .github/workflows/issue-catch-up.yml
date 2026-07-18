@@ -356,18 +356,20 @@ jobs:
                 continue;
               }
 
-              if (priorityEscalationEligible && shouldNudgePriority(comments)) {
-                // Parked without a dead-letter comment (e.g. a manual
-                // needs-review park): no recovery path below applies to a
-                // parked issue, so nudge — the recovery buckets past this
-                // point would otherwise re-triage an intentionally parked
-                // issue. Unparked untriaged issues fall through instead:
-                // needs_retriage / triage_dead_letter route them to real
-                // automated recovery, which supersedes reminders.
-                if (hasNeedsReview || hasTriageFailed) {
+              // Parked without a dead-letter comment (e.g. a manual
+              // needs-review park): a parking label on an untriaged issue is
+              // a human hold, so it always exits here — the recovery buckets
+              // past this point would otherwise re-triage an intentionally
+              // parked issue (including when the daily nudge dedupe suppresses
+              // the reminder). The deduped nudge is the only action taken.
+              // Unparked untriaged issues fall through instead:
+              // needs_retriage / triage_dead_letter route them to real
+              // automated recovery, which supersedes reminders.
+              if (!hasTriaged && (hasNeedsReview || hasTriageFailed)) {
+                if (priorityEscalationEligible && shouldNudgePriority(comments)) {
                   buckets.priority_escalation.push({ number: num, title: issue.title, labels });
-                  continue;
                 }
+                continue;
               }
 
               if (!hasTriaged) {
