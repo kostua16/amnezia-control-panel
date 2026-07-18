@@ -175,6 +175,7 @@ Plans:
 <!-- PR-IMPROVE:780 --> - PR #780: fix(workflows): repair the triage→fix pipeline and add automations that catch stranded issues -- pr780.1 x1, pr780.2 x1. Quick artifact: `.planning/quick/260717-pr780-workflow-improve/260717-pr780-PLAN.md`.
 <!-- PR-IMPROVE:781 --> - PR #781: fix: resolve #779 - WHO-I04: Exclude self by workflow path, not display name (workflow-health-optimize) -- pr781.1 x1. Quick artifact: `.planning/quick/260717-pr781-workflow-improve/260717-pr781-PLAN.md`.
 <!-- PR-IMPROVE:802 --> - PR #802: fix(workflows): route parked dead letters to retry before priority escalation -- pr802.1 x1, pr802.2 x1, pr802.3 x1. Quick artifact: `.planning/quick/260718-pr802-workflow-improve/260718-pr802-PLAN.md`.
+<!-- PR-IMPROVE:810 --> - PR #810: test(workflows): pin ensured workflow labels to policy.json definitions -- pr810.1 x1, pr810.2 x1. Quick artifact: `.planning/quick/260718-pr810-workflow-improve/260718-pr810-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
