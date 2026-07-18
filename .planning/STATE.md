@@ -4,7 +4,7 @@ milestone: post-v1.1
 milestone_name: milestone
 status: executing
 stopped_at: null
-last_updated: "2026-06-25T14:52:40.328Z"
+last_updated: "2026-07-10T00:00:00.000Z"
 last_activity: 2026-06-25 -- Phase 999 execution started
 progress:
   total_phases: 28
@@ -153,8 +153,13 @@ Resume file: None
 | 2026-06-12 | 260613-1cb   | Audit-safe auto-approval allows 10 files / 400 lines        |
 | 2026-06-11 | summary-v1.1 | Milestone v1.1 summary generated for onboarding             |
 | 2026-06-24 | 260624-rebase-pr-workflow | Add /rebase branch-refresh workflow (rebase-pr.yml, force-with-lease) |
+| 2026-07-09 | 260709-651 | Quick Plan: PR #651 workflow improvement intake (#662) |
+| 2026-06-09 | 260609-y7a | VPN Service Adapter — Replace parallel function pairs with polymorphic interface (#460) |
+| 2026-06-09 | 260609-t4f | Typed API Client for frontend data hooks (#459) |
+| 2026-06-09 | 260609-p3k | User creation DB↔VPN consistency — compensating actions for partial failures (#444) |
+| 2026-06-04 | 260604-l3n | Replace STUB public keys in chain-router with real key generation (#442) |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-06-24 - Bundled VPN stack Docker image (quick 260624-stack)_
+_Last updated: 2026-07-10 - Phase 999 quick task executions (260604-l3n, 260609, 260709-651)_
