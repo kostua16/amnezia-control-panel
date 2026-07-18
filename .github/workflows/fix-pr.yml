@@ -157,10 +157,7 @@ jobs:
 
   report-failure:
     needs: [evaluate, fix]
-    if: |
-      failure() &&
-      needs.evaluate.outputs.should_run == 'true' &&
-      needs.fix.result == 'failure'
+    if: ${{ always() && needs.evaluate.outputs.should_run == 'true' && needs.fix.result != 'success' && needs.fix.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 10
     steps:

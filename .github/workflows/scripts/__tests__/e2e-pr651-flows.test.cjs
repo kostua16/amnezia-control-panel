@@ -225,10 +225,21 @@ test('PR721: no report-failure job uses if: failure() anti-pattern', () => {
     // Find report-failure job blocks (any indentation) and check their if: guard
     const rfBlocks = content.split(/\n[ \t]+report-failure:/).slice(1);
     for (const block of rfBlocks) {
-      const ifLine = block.split('\n').find((l) => /^\s+if:/.test(l));
-      // Match both bare `if: failure()` and expression `if: ${{ failure() }}`
-      if (ifLine && /if:.*\bfailure\s*\(/.test(ifLine)) {
-        violations.push(`${file}: ${ifLine.trim()}`);
+      // Capture the whole if: guard — single-line `if: <expr>`, expression
+      // `if: ${{ failure() }}`, OR YAML block-scalar `if: |` where
+      // failure() lives on a continuation line. Scan from the `if:` line
+      // until the next job-level key so block-scalar guards can't slip past.
+      const lines = block.split('\n');
+      const ifIdx = lines.findIndex((l) => /^\s+if:/.test(l));
+      if (ifIdx === -1) continue;
+      const guardEnd = lines.findIndex((l, i) => i > ifIdx && /^\S/.test(l));
+      const guard = lines
+        .slice(ifIdx, guardEnd < 0 ? undefined : guardEnd)
+        .join('\n');
+      if (/\bfailure\s*\(/.test(guard)) {
+        violations.push(
+          `${file}: report-failure uses failure() — use always() + result-check`,
+        );
       }
     }
   }
