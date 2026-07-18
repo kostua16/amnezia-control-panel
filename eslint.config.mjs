@@ -35,6 +35,8 @@ const eslintConfig = defineConfig([
     // CommonJS launch scripts use require() by design:
     'scripts/dev.cjs',
     'scripts/start.cjs',
+    // GitHub Actions workflow scripts are CommonJS and use require() by design:
+    '.github/workflows/scripts/**',
   ]),
   // Downgrade React 19 strict rules to warnings for data-fetching patterns.
   // These fire on common useEffect + setState patterns used for API fetching,

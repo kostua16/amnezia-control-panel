@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+const { escapeTableCell } = require('./md-escape.cjs');
+
 function parseJson(value, fallback) {
   if (!value) return fallback;
   if (typeof value !== 'string') return value;
@@ -144,7 +146,7 @@ function formatFailedToolSamples(value) {
 }
 
 function escapeTable(value) {
-  return valueOrFallback(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  return escapeTableCell(valueOrFallback(value));
 }
 
 function normalizeMetrics(input = {}) {
