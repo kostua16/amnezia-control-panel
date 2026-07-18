@@ -652,3 +652,171 @@ test('selectStalePrs does not rescue a fresh finalizer failure aggregate', (t) =
 
   assert.equal(selected.length, 0);
 });
+
+test('selectStalePrs flags finalizer-failure-loop when failure aggregates exceed threshold', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Stuck finalizer',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: ['flow/finalizer-dispatched'],
+    },
+  ];
+
+  const now = '2025-01-01T00:30:00Z';
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'failure', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () =>
+    Array.from({ length: 10 }, () => ({
+      context: 'pr-flow/ready',
+      state: 'failure',
+    }));
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now,
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, [
+    'stale-finalizer-failure',
+    'finalizer-failure-loop',
+  ]);
+});
+
+test('selectStalePrs does not flag finalizer-failure-loop below the threshold', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Recovering finalizer',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: ['flow/finalizer-dispatched'],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'failure', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () => [
+    { context: 'pr-flow/ready', state: 'failure' },
+    { context: 'pr-flow/ready', state: 'success' },
+  ];
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].recoveryReasons, ['stale-finalizer-failure']);
+});
+
+test('selectStalePrs stops flagging finalizer-failure-loop once the latest pr-flow/ready converges to success', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Converged finalizer',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: ['flow/finalizer-dispatched'],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'success', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () =>
+    Array.from({ length: 10 }, () => ({
+      context: 'pr-flow/ready',
+      state: 'failure',
+    }));
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 0);
+});
+
+test('selectStalePrs does not flag finalizer-failure-loop for PRs without the finalizer-dispatched label', (t) => {
+  const prs = [
+    {
+      number: 1,
+      title: 'Checks-failed PR',
+      url: 'https://github.com/test/repo/pull/1',
+      state: 'OPEN',
+      isDraft: false,
+      headRefOid: 'abc123',
+      labels: [],
+    },
+  ];
+
+  const getStatuses = () => [
+    { context: 'pr-flow/ready', state: 'failure', created_at: BASE_TEST_TIME },
+  ];
+  const getStatusHistory = () =>
+    Array.from({ length: 10 }, () => ({
+      context: 'pr-flow/ready',
+      state: 'failure',
+    }));
+
+  const selected = selectStalePrs(prs, {
+    getStatuses,
+    getStatusHistory,
+    now: '2025-01-01T00:30:00Z',
+  });
+
+  assert.equal(selected.length, 0);
+});
+
+test('runWatchdog escalates finalizer-failure-loop PRs with the pm-escalation label', (t) => {
+  const escalations = [];
+  const summary = runWatchdog({
+    listPullRequests: () => [
+      {
+        number: 8,
+        title: 'Stuck finalizer',
+        url: 'https://github.com/test/repo/pull/8',
+        state: 'OPEN',
+        isDraft: false,
+        headRefOid: 'abc123',
+        labels: ['flow/finalizer-dispatched'],
+      },
+    ],
+    dispatch: () => {},
+    getStatuses: () => [
+      {
+        context: 'pr-flow/ready',
+        state: 'failure',
+        created_at: '2025-01-01T00:00:00Z',
+      },
+    ],
+    getStatusHistory: () =>
+      Array.from({ length: 10 }, () => ({
+        context: 'pr-flow/ready',
+        state: 'failure',
+      })),
+    escalate: (pr) => {
+      escalations.push(pr.number);
+      return true;
+    },
+    now: '2025-01-01T01:00:00Z',
+  });
+
+  assert.deepEqual(escalations, [8]);
+  assert.equal(summary.escalated.length, 1);
+  assert.equal(summary.escalated[0].number, 8);
+});

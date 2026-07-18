@@ -113,7 +113,7 @@ function hasExpiredReadyPendingStatus(
     timeoutMinutes = DEFAULT_READY_PENDING_TIMEOUT_MINUTES,
   } = {},
 ) {
-  return hasExpiredPendingStatus(statuses, READY_STATUS_CONTEXT, {
+  return hasExpiredStatusInState(statuses, READY_STATUS_CONTEXT, 'pending', {
     now,
     timeoutMinutes,
   });
@@ -212,6 +212,32 @@ function selectStalePrs(
         ).length;
         if (pendingReadyCount >= readyLoopThreshold) {
           recoveryReasons.push('ready-pending-loop');
+        }
+      }
+    }
+
+    // Failure-state loop detection for finalizer-failure re-pokes: mirrors the
+    // ready-pending-loop pattern above. If the orchestrator's retry lane has a
+    // bug that prevents reaching a terminal state, the watchdog silently
+    // re-dispatches every cycle with stale-finalizer-failure. Detect via ≥N
+    // failure aggregates on the same head, gated on the latest pr-flow/ready
+    // still being failure (same success-escape as the pending loop).
+    if (
+      pr.headRefOid &&
+      labels.includes('flow/finalizer-dispatched')
+    ) {
+      const latestReady = normalizeStatuses(statuses).find(
+        (status) => status.context === READY_STATUS_CONTEXT,
+      );
+      if (String(latestReady?.state ?? '').toLowerCase() === 'failure') {
+        const history = getStatusHistory(pr);
+        const failureReadyCount = (history ?? []).filter(
+          (status) =>
+            status.context === READY_STATUS_CONTEXT &&
+            String(status.state ?? '').toLowerCase() === 'failure',
+        ).length;
+        if (failureReadyCount >= readyLoopThreshold) {
+          recoveryReasons.push('finalizer-failure-loop');
         }
       }
     }
@@ -386,7 +412,11 @@ function runWatchdog({
     for (const pr of selected) {
       dispatch(pr, { workflow, ref });
       dispatched.push(summarizePr(pr));
-      if (!pr.recoveryReasons.includes('ready-pending-loop')) continue;
+      if (
+        !pr.recoveryReasons.includes('ready-pending-loop') &&
+        !pr.recoveryReasons.includes('finalizer-failure-loop')
+      )
+        continue;
       if (escalate(pr) !== false) {
         escalated.push(summarizePr(pr));
       } else {

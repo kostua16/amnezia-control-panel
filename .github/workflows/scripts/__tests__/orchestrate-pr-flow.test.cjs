@@ -1168,3 +1168,35 @@ test('makeDecision keeps a succeeded finalizer without auto-merge terminal', () 
   assert.equal(decision.dispatch, null);
   assert.match(decision.reason, /completed without enabling auto-merge/);
 });
+
+test('makeDecision advances retry counter when re-dispatched by watchdog', () => {
+  // Simulates the watchdog-sourced wake path: watchdog selects a PR with
+  // flow/finalizer-dispatched + prior retry label + failed finalizer run,
+  // dispatches the orchestrator, which should increment the retry counter
+  // and re-dispatch the finalizer.
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: false,
+        baseRefName: 'main',
+        headRefName: 'feature',
+        files: ['src/app/page.tsx'],
+        labels: [
+          'flow/finalizer-dispatched',
+          'flow/finalizer-retry-1',
+          'ai-review-passed',
+          'security-review-passed',
+        ],
+      },
+      { finalizer: [completedWorkerRun('failure')], codeReview: [] },
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/finalizer-dispatched');
+  assert.equal(decision.dispatch?.key, 'finalizer');
+  assert.ok(decision.desiredLabels.includes('flow/finalizer-retry-2'));
+  assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-1'));
+  assert.match(decision.reason, /attempt 2\/3/);
+});
