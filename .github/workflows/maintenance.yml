@@ -40,6 +40,7 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
+          install-deps: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
 
