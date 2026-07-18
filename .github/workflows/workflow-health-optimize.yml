@@ -90,9 +90,10 @@ jobs:
               status: 'completed'
             });
 
-            // Exclude own workflow — prevents self-referential analysis loop
+            // Exclude own workflow — compare by file path, not display name (survives renames)
+            const ownPath = '.github/workflows/workflow-health-optimize.yml';
             const filteredRuns = runs.data.workflow_runs.filter(r =>
-              r.name !== 'Workflow Health Check & Optimize'
+              r.path !== ownPath
             );
 
             if (filteredRuns.length === 0) {
