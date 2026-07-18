@@ -222,11 +222,12 @@ test('PR721: no report-failure job uses if: failure() anti-pattern', () => {
   for (const file of yamlFiles) {
     const content = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
 
-    // Find report-failure job blocks and check their if: guard
-    const rfBlocks = content.split('\n  report-failure:').slice(1);
+    // Find report-failure job blocks (any indentation) and check their if: guard
+    const rfBlocks = content.split(/\n[ \t]+report-failure:/).slice(1);
     for (const block of rfBlocks) {
       const ifLine = block.split('\n').find((l) => /^\s+if:/.test(l));
-      if (ifLine && /if:\s*failure\(\)/.test(ifLine)) {
+      // Match both bare `if: failure()` and expression `if: ${{ failure() }}`
+      if (ifLine && /if:.*\bfailure\s*\(/.test(ifLine)) {
         violations.push(`${file}: ${ifLine.trim()}`);
       }
     }
