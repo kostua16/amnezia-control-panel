@@ -7,6 +7,7 @@ const {
   applyTicks,
   buildSubIssueBody,
   buildSubIssueTitle,
+  buildTriageResultComment,
   duplicateSubIssuesToClose,
   extractDocExcerpt,
   extractWorkflowName,
@@ -14,6 +15,7 @@ const {
   parseChecklist,
   planSpinOff,
   priorityLabel,
+  subIssueLabels,
   subIssueMarker,
   subIssueTodoId,
 } = require('../lib/umbrella-sub-issues-core.cjs');
@@ -111,7 +113,12 @@ test('planSpinOff counts an open sub-issue even when a closed duplicate precedes
   // for AFX-I01 can precede the lower-numbered open sub-issue in the list.
   // openCount must still reflect the open one so the cap is not exceeded.
   const existing = [
-    { number: 12, title: 'AFX-I01: a', state: 'closed', stateReason: 'not_planned' },
+    {
+      number: 12,
+      title: 'AFX-I01: a',
+      state: 'closed',
+      stateReason: 'not_planned',
+    },
     { number: 11, title: 'AFX-I01: a', state: 'open' },
   ];
   const plan = planSpinOff({
@@ -121,6 +128,35 @@ test('planSpinOff counts an open sub-issue even when a closed duplicate precedes
   });
   assert.equal(plan.openCount, 1);
   assert.equal(plan.slots, 2);
+});
+
+// ---------------------------------------------------------------------------
+// subIssueLabels + buildTriageResultComment — deterministic triage at creation
+// ---------------------------------------------------------------------------
+test('subIssueLabels includes triaged so sub-issues skip AI triage', () => {
+  const [item] = parseChecklist('- [ ] AFX-I01 (P2) Some fix');
+  assert.deepEqual(subIssueLabels(item, 'umbrella-sub-issue'), [
+    'auto-fix',
+    'umbrella-sub-issue',
+    'medium',
+    'triaged',
+  ]);
+});
+
+test('buildTriageResultComment carries the marker and no trigger substrings', () => {
+  const [item] = parseChecklist('- [ ] AFX-I01 (P0) Some fix');
+  const comment = buildTriageResultComment({ item, umbrellaNumber: 679 });
+  assert.ok(comment.includes('Triage Result'));
+  assert.ok(comment.includes('**Priority:** high'));
+  assert.ok(comment.includes('#679'));
+  // issue-catch-up counts these substrings as triage/fix attempts or
+  // linked-PR evidence — the deterministic comment must never contain them.
+  for (const forbidden of ['/triage', '/fix', 'Fixes #', 'pull/', 'PR:']) {
+    assert.ok(
+      !comment.includes(forbidden),
+      `comment must not contain "${forbidden}"`,
+    );
+  }
 });
 
 test('subIssueTodoId reads the title prefix or the body marker', () => {
@@ -141,9 +177,7 @@ test('duplicateSubIssuesToClose flags the higher-numbered open duplicate', () =>
     { number: 12, title: 'AFX-I01: a', state: 'open' },
     { number: 13, title: 'AFX-I03: b', state: 'open' },
   ]);
-  assert.deepEqual(dupes, [
-    { number: 12, todoId: 'AFX-I01', keepNumber: 11 },
-  ]);
+  assert.deepEqual(dupes, [{ number: 12, todoId: 'AFX-I01', keepNumber: 11 }]);
 });
 
 test('duplicateSubIssuesToClose dedups native+label overlap before grouping', () => {
@@ -163,15 +197,18 @@ test('duplicateSubIssuesToClose keeps the natively-linked child over the lower-n
     { number: 11, title: 'AFX-I01: a', state: 'open' },
     { number: 12, title: 'AFX-I01: a', state: 'open', nativeLinked: true },
   ]);
-  assert.deepEqual(dupes, [
-    { number: 11, todoId: 'AFX-I01', keepNumber: 12 },
-  ]);
+  assert.deepEqual(dupes, [{ number: 11, todoId: 'AFX-I01', keepNumber: 12 }]);
 });
 
 test('duplicateSubIssuesToClose ignores closed and ID-less issues', () => {
   const dupes = duplicateSubIssuesToClose([
     { number: 11, title: 'AFX-I01: a', state: 'open' },
-    { number: 12, title: 'AFX-I01: a', state: 'closed', stateReason: 'completed' },
+    {
+      number: 12,
+      title: 'AFX-I01: a',
+      state: 'closed',
+      stateReason: 'completed',
+    },
     { number: 14, title: 'free-form', state: 'open' },
   ]);
   assert.deepEqual(dupes, []);

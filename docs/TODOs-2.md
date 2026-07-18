@@ -259,6 +259,14 @@ Other mined signals:
 
 ---
 
+## 7. triage.yml + issue-catch-up.yml (TRI) — issue triage & hourly catch-up
+
+### Improvements
+
+| ID      | Title                                            | Category | Prio | Effort | Risk | Rationale / evidence                                                                                                                                                                                                                                                                       |
+| ------- | ------------------------------------------------ | -------- | ---- | ------ | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| TRI-I01 | Drop the `issue_comment` trigger from triage.yml | noise    | P3   | S      | low  | Every comment on any issue or PR starts a triage run that ends `skipped` (dozens per day — pure runner noise). `/triage` comments are no longer the re-triage mechanism: issue-catch-up dispatches `triage.yml` via the workflow_dispatch API. Keep `issues: opened` + `workflow_dispatch`. |
+
 ## Cross-cutting rollup
 
 These patterns repeat across workflows; fix once at the shared layer, then adopt per workflow.

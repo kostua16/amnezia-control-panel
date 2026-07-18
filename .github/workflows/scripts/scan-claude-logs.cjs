@@ -9,7 +9,10 @@ const {
   parseClaudeExecution,
   redactSecrets,
 } = require('./parse-claude-execution.cjs');
-const { isRateLimitOrOverloadText } = require('./classify-claude-retry.cjs');
+const {
+  PREPARE_GIT_AUTH_RE,
+  isRateLimitOrOverloadText,
+} = require('./classify-claude-retry.cjs');
 
 function readOptionalFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return '';
@@ -64,6 +67,24 @@ function asArray(value) {
 
 function sanitizeLogLine(value, limit = 200) {
   return redactSecrets(String(value || '').replace(/\r/g, '')).slice(0, limit);
+}
+
+// The job log includes the agent's streamed transcript, where tool results
+// echo file contents as JSON-escaped payloads (e.g.
+// `"content": "315\t      'non_human_actor',"`). A failure signature inside
+// such a payload means the agent READ text about a failure — it does not mean
+// the run failed. Without this filter the scanner self-triggers on its own
+// pattern fixtures whenever an agent opens scan-claude-logs.{cjs,test.cjs}
+// (observed: a fully green fix-review run reported all 11 findings at once and
+// had its work discarded). Real runner-emitted error lines are plain text with
+// no JSON string escapes and always survive the filter.
+const TRANSCRIPT_ECHO_RE = /\\"|\\t|\\n|"(?:content|text|output|message)":/;
+
+function stripTranscriptEchoes(logText) {
+  return String(logText || '')
+    .split('\n')
+    .filter((line) => !TRANSCRIPT_ECHO_RE.test(line))
+    .join('\n');
 }
 
 function firstMatchingLine(logText, pattern) {
@@ -138,7 +159,14 @@ function firstErrorFailureReason(findings) {
     findings.find(
       (item) =>
         item.severity === 'error' && item.category === 'non_human_actor',
-    ) || findings.find((item) => item.severity === 'error');
+    ) ||
+    // Deterministic pre-execution config failures beat generic zero-turn /
+    // step-failed findings: their detail names the concrete fix.
+    findings.find(
+      (item) =>
+        item.severity === 'error' && item.category === 'prepare_git_auth',
+    ) ||
+    findings.find((item) => item.severity === 'error');
   if (!finding) return '';
   return sanitizeLogLine(finding.detail || finding.message || '', 300)
     .replace(/[\r\n]+/g, ' ')
@@ -151,6 +179,9 @@ function buildFindings({
   conclusion = '',
   maxTurns,
 }) {
+  // Pattern matching must only ever see runner-emitted lines — agent
+  // transcript echoes of failure-signature text are not run failures.
+  logText = stripTranscriptEchoes(logText);
   const findings = [];
   const actionError = metrics.actionError || '';
   const errorMessages = asArray(metrics.errorMessages);
@@ -260,6 +291,24 @@ function buildFindings({
       'error',
       'Claude used zero turns',
       'num_turns: 0',
+    );
+  }
+
+  // claude-code-action's progress-tracking branch setup runs an authenticated
+  // `git fetch` before Claude executes a single turn. A checkout without
+  // usable credentials (persist-credentials: false and no token remote) fails
+  // there deterministically — the generic "step failed" reason hides the
+  // actionable fix, so name it explicitly.
+  const prepareGitAuthLine = firstMatchingLine(logText, PREPARE_GIT_AUTH_RE);
+  if (prepareGitAuthLine) {
+    addFinding(
+      findings,
+      'prepare_git_auth',
+      'error',
+      'Branch setup failed before execution: no git credentials',
+      'prepare_failed_git_auth: track-progress branch setup could not run an ' +
+        'authenticated git fetch — restore checkout credentials or disable ' +
+        `track-progress. Evidence: ${sanitizeLogLine(prepareGitAuthLine)}`,
     );
   }
 
@@ -582,5 +631,6 @@ module.exports = {
   buildClaudeLogScan,
   buildFindings,
   firstErrorFailureReason,
+  stripTranscriptEchoes,
   writeGithubOutputs,
 };

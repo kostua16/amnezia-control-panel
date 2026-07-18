@@ -70,6 +70,17 @@ function hasAnyResultNode(executionText) {
   return false;
 }
 
+// Single source of truth for the branch-setup git-auth signature. The log
+// scanner (scan-claude-logs.cjs) imports this same regex for its
+// prepare_git_auth finding so retry classification and health findings can
+// never diverge on what counts as this failure.
+const PREPARE_GIT_AUTH_RE =
+  /could not read Username for 'https:\/\/github\.com'|Error in branch setup/i;
+
+function isPrepareGitAuthText(value) {
+  return PREPARE_GIT_AUTH_RE.test(String(value || ''));
+}
+
 function isRateLimitOrOverloadText(value) {
   const text = String(value || '');
   return (
@@ -145,6 +156,27 @@ function classifyClaudeRetry({
     };
   }
 
+  // Deterministic pre-execution config failure: claude-code-action's
+  // progress-tracking branch setup ran an unauthenticated `git fetch` and
+  // died before Claude produced any output. Retrying replays the identical
+  // failure (and each attempt posts its own tracking comment) — fail fast
+  // with the concrete fix instead.
+  if (
+    !hasAnyResultNode(executionText) &&
+    isPrepareGitAuthText(`${executionText}\n${logText}`)
+  ) {
+    return {
+      httpCode: normalizedHttpCode,
+      isRateLimited: false,
+      shouldRetry: false,
+      retryReason: 'fatal_config_git_auth',
+      softSuccess: false,
+      softSuccessReason: '',
+      annotation: 'error',
+      message: `Attempt ${normalizedAttempt} failed during claude-code-action branch setup: no usable git credentials (persist-credentials: false checkout without a token remote?). Deterministic configuration failure — skipping retries. Restore checkout credentials or disable track-progress.`,
+    };
+  }
+
   // Abortive failure: the action step failed but captured no execution result
   // (no turns, no error) while the API probe is healthy. That empty-output +
   // healthy-probe signature is a transient/abortive failure — a brief overload
@@ -213,8 +245,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  PREPARE_GIT_AUTH_RE,
   classifyClaudeRetry,
   hasSuccessfulResult,
   hasAnyResultNode,
+  isPrepareGitAuthText,
   isRateLimitOrOverloadText,
 };

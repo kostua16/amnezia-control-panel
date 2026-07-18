@@ -10,6 +10,7 @@ const path = require('node:path');
 const {
   buildFindings,
   buildClaudeLogScan,
+  stripTranscriptEchoes,
   writeGithubOutputs,
 } = require('../scan-claude-logs.cjs');
 
@@ -167,6 +168,86 @@ test('buildFindings detects zero_turns', () => {
   const zero = findings.find((f) => f.category === 'zero_turns');
   assert.ok(zero);
   assert.equal(zero.severity, 'error');
+});
+
+// ---------------------------------------------------------------------------
+// stripTranscriptEchoes — the scanner must never self-trigger on its own
+// fixtures (or any failure-signature text) echoed into the log by an agent
+// reading files. Observed live: a green fix-review run reported all known
+// findings at once because the agent had opened this very test file.
+// ---------------------------------------------------------------------------
+
+// Real failure signatures as they appear when a tool result echoes file
+// content into the job log: JSON-escaped payload on a timestamped line.
+const ECHOED_FIXTURES = [
+  '2026-07-17T22:05:01.0000000Z         "content": "116\\t  logText: \'fatal: unable to access returned error: 403\'\\n117\\t",',
+  '2026-07-17T22:05:02.0000000Z         "content": "217\\t      \'##[error]Action failed with error: Workflow initiated by non-human actor: github-actions (type: Bot). Add bot to allowed_bots list\'",',
+  '2026-07-17T22:05:03.0000000Z         "text": "pull request create failed: GraphQL: something\\nAPI Error: 529 overloaded\\nInternal error: directory mismatch",',
+  '2026-07-17T22:05:04.0000000Z         "content": "177\\t      \\"fatal: could not read Username for \'https://github.com\': No such device or address\\",",',
+].join('\n');
+
+test('echoed fixture payloads produce zero findings', () => {
+  const findings = buildFindings({
+    metrics: {},
+    logText: ECHOED_FIXTURES,
+    conclusion: 'success',
+  });
+  assert.deepStrictEqual(findings, []);
+});
+
+test('a real error line survives alongside echoed payloads', () => {
+  const findings = buildFindings({
+    metrics: {},
+    logText: [
+      ECHOED_FIXTURES,
+      '2026-07-17T22:06:00.0000000Z fatal: unable to access returned error: 403',
+    ].join('\n'),
+    conclusion: 'failure',
+  });
+  assert.deepStrictEqual(
+    findings.map((f) => f.category),
+    ['git_push_403'],
+  );
+});
+
+test('stripTranscriptEchoes keeps plain runner lines untouched', () => {
+  const plain = [
+    'Scanned Claude logs - no issues found.',
+    '##[error]Process completed with exit code 1.',
+    "fatal: could not read Username for 'https://github.com': No such device or address",
+  ].join('\n');
+  assert.equal(stripTranscriptEchoes(plain), plain);
+});
+
+test('buildFindings detects prepare_git_auth branch-setup failure', () => {
+  const findings = buildFindings({
+    metrics: {},
+    logText: [
+      'Creating local branch claude/issue-771-20260715-1842 for issue #771 from source branch: main...',
+      "fatal: could not read Username for 'https://github.com': No such device or address",
+      'Error in branch setup: ...',
+      'error: Command failed: git fetch origin main --depth=1',
+    ].join('\n'),
+    conclusion: 'failure',
+  });
+  const finding = findings.find((f) => f.category === 'prepare_git_auth');
+  assert.ok(finding);
+  assert.equal(finding.severity, 'error');
+  assert.match(finding.detail, /prepare_failed_git_auth/);
+  assert.match(finding.detail, /track-progress/);
+});
+
+test('buildFindings prefers prepare_git_auth over generic errors as failure reason', () => {
+  const { firstErrorFailureReason } = require('../scan-claude-logs.cjs');
+  const findings = buildFindings({
+    metrics: { numTurns: 0 },
+    logText:
+      "fatal: could not read Username for 'https://github.com': No such device or address",
+    conclusion: 'failure',
+  });
+  // zero_turns is also an error finding here; the actionable prepare reason
+  // must win so report-failure names the concrete fix.
+  assert.match(firstErrorFailureReason(findings), /prepare_failed_git_auth/);
 });
 
 test('buildFindings detects internal_error directory mismatch', () => {

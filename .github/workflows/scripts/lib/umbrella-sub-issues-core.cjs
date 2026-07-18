@@ -46,6 +46,30 @@ function priorityLabel(priority) {
   return 'low';
 }
 
+// Sub-issues are born fully classified: the backlog table already fixes the
+// priority, and spin-off is automation-authored. Applying `triaged` at
+// creation keeps the fix pipeline independent of the AI triage workflow
+// (a triage outage must not strand pre-classified sub-issues).
+function subIssueLabels(item, subIssueLabel) {
+  return ['auto-fix', subIssueLabel, priorityLabel(item.priority), 'triaged'];
+}
+
+// Deterministic stand-in for the AI triage summary. Must contain the literal
+// "Triage Result" marker (issue-catch-up keys its triaged_no_fix bucket and
+// triage timestamps on it) and must NOT contain the substrings "/triage",
+// "/fix", "Fixes #", "pull/", or "PR:" — catch-up counts those as
+// triage/fix attempts or linked-PR evidence.
+function buildTriageResultComment({ item, umbrellaNumber }) {
+  return [
+    '## Triage Result',
+    '- **Classification:** backlog item (pre-classified)',
+    `- **Priority:** ${priorityLabel(item.priority)}`,
+    `- **Labels applied:** auto-fix, umbrella-sub-issue, ${priorityLabel(item.priority)}, triaged`,
+    '- **Duplicates found:** none (spin-off dedupes by TODO id)',
+    `- **Notes:** Deterministic triage — spun off from the docs/TODOs-2.md backlog via umbrella #${umbrellaNumber}; classification and priority come from the ${item.id} table row, so AI triage is skipped.`,
+  ].join('\n');
+}
+
 function buildSubIssueTitle(item, workflowName) {
   // Drop trailing cross-reference suffixes ("— XC-1") from the title; the
   // verbatim checklist line is preserved in the body.
@@ -222,6 +246,7 @@ module.exports = {
   applyTicks,
   buildSubIssueBody,
   buildSubIssueTitle,
+  buildTriageResultComment,
   duplicateSubIssuesToClose,
   extractDocExcerpt,
   extractWorkflowName,
@@ -230,6 +255,7 @@ module.exports = {
   parseChecklist,
   planSpinOff,
   priorityLabel,
+  subIssueLabels,
   subIssueMarker,
   subIssueTodoId,
 };

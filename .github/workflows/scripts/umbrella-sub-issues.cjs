@@ -118,11 +118,7 @@ function createSubIssue(umbrella, item, workflowName, docContent, dryRun) {
     umbrellaNumber: umbrella.number,
     docExcerpt: core.extractDocExcerpt(docContent, item.id),
   });
-  const labels = [
-    'auto-fix',
-    SUB_ISSUE_LABEL,
-    core.priorityLabel(item.priority),
-  ];
+  const labels = core.subIssueLabels(item, SUB_ISSUE_LABEL);
   if (dryRun) {
     console.log(`DRY RUN: would create "${title}" [${labels.join(', ')}]`);
     return { number: null, linked: true };
@@ -151,6 +147,22 @@ function createSubIssue(umbrella, item, workflowName, docContent, dryRun) {
     // a missing umbrella progress bar instead of relying on this warn.
     console.warn(
       `warning: native sub-issue link failed for #${created.number}: ${error.message}`,
+    );
+  }
+  // Deterministic triage summary: sub-issues are pre-classified by the
+  // backlog table, so the AI triage step is skipped for them. issue-catch-up
+  // needs a "Triage Result" comment to consider the issue for auto-fix.
+  try {
+    gh([
+      'issue',
+      'comment',
+      String(created.number),
+      '--body',
+      core.buildTriageResultComment({ item, umbrellaNumber: umbrella.number }),
+    ]);
+  } catch (error) {
+    console.warn(
+      `warning: triage-result comment failed for #${created.number}: ${error.message}`,
     );
   }
   console.log(
@@ -247,7 +259,11 @@ function processUmbrella(umbrella, options) {
         options.dryRun,
       );
       if (result.number !== null) {
-        created.push({ id: item.id, number: result.number, linked: result.linked });
+        created.push({
+          id: item.id,
+          number: result.number,
+          linked: result.linked,
+        });
         if (!result.linked) linkFailures += 1;
       } else {
         created.push({ id: item.id, number: null, linked: true });

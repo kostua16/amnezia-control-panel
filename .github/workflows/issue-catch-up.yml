@@ -47,7 +47,7 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
           policy-file: .github/workflows/policy.json
-          names: auto-fix,umbrella-sub-issue,high,medium,low
+          names: auto-fix,umbrella-sub-issue,high,medium,low,triaged,triage-failed,claude-health
 
       # Hourly umbrella progress engine: tick checkboxes for completed
       # sub-issues, close umbrellas with a fully ticked checklist, and top up
@@ -158,7 +158,10 @@ jobs:
               groupable_candidates: [],
               triaged_no_fix: [],
               fix_dead_letter: [],
-              dead_letter_retry: []
+              dead_letter_retry: [],
+              // Pipeline invariant violations — reported to the claude-health
+              // tracker by a deterministic step, never acted on by the agent.
+              invariant_findings: []
             };
 
             const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
@@ -182,6 +185,7 @@ jobs:
               const hasCritical = labels.includes('critical');
               const hasHigh = labels.includes('high');
               const hasNeedsReview = labels.includes('needs-review');
+              const hasTriageFailed = labels.includes('triage-failed');
               const createdAt = new Date(issue.created_at);
 
               // Bucket: should_close_dupe — close any issue with duplicate label
@@ -222,25 +226,67 @@ jobs:
                 core.warning(`Failed to fetch comments for #${num}: ${e.message}`);
               }
 
+              // Invariant: a "/fix" or "/triage" command comment authored by
+              // github-actions[bot] is inert by construction — GitHub never
+              // starts workflows from GITHUB_TOKEN events. Any such comment
+              // means some automation believes it triggered something that
+              // never ran (the exact failure that stranded issue #771).
+              const inertBotCommands = comments.filter(c =>
+                c.user?.login === 'github-actions[bot]' &&
+                /^\s*\/(fix|triage)\b/.test(c.body || '')
+              );
+              if (inertBotCommands.length > 0) {
+                buckets.invariant_findings.push({
+                  number: num,
+                  type: 'inert_bot_command',
+                  count: inertBotCommands.length,
+                  last: inertBotCommands[inertBotCommands.length - 1].created_at
+                });
+              }
+
+              // A dead-letter fresh-context retry resets the attempt counter:
+              // attempts made before the latest retry marker are history, not
+              // budget. Without this, an un-parked issue would count its old
+              // attempts and be re-parked on the next sweep with zero new runs.
+              const RETRY_MARKER = '<!-- dead-letter-retry -->';
+              const retryMarkerAt = comments
+                .filter(c => (c.body || '').includes(RETRY_MARKER))
+                .map(c => new Date(c.created_at).getTime())
+                .sort((a, b) => b - a)[0] || 0;
+              // Inclusive bound: comment timestamps have 1-second resolution
+              // and the retry marker + its follow-up /fix land back-to-back,
+              // often in the same second — a strict > would drop that real
+              // attempt and re-create the hourly re-post spam. The marker body
+              // contains no counted substrings, so it never counts itself.
+              const afterRetry = c => new Date(c.created_at).getTime() >= retryMarkerAt;
+
+              // Re-triage attempts count both the legacy "/triage" comments and
+              // the deterministic workflow_dispatch markers. A dispatch marker
+              // is only posted after the dispatch API call succeeded, so every
+              // counted attempt actually started (or could start) a triage run.
               const triageComments = comments.filter(c =>
-                c.body.includes('/triage')
+                (c.body.includes('/triage') ||
+                  c.body.includes('<!-- re-triage-dispatch -->')) &&
+                afterRetry(c)
               );
               const fixComments = comments.filter(c =>
-                c.body.includes('/fix')
+                c.body.includes('/fix') && afterRetry(c)
               );
 
               // Parked dead letters: issues needs-review'd after repeated
               // automation failures get exactly ONE fresh-context retry after
               // 7 days (failures are often transient: turn limits, runner
               // pressure). The retry marker makes a second cycle impossible.
-              const RETRY_MARKER = '<!-- dead-letter-retry -->';
-              const hasRetryMarker = comments.some(c =>
-                (c.body || '').includes(RETRY_MARKER)
-              );
+              const hasRetryMarker = retryMarkerAt > 0;
               const deadLetterComment = comments.find(c =>
                 /attempted 2x without success/i.test(c.body || '')
               );
-              if (hasNeedsReview && deadLetterComment) {
+              // triage-failed parks failed-triage dead letters; needs-review is
+              // the legacy parking label (and still parks fix dead letters).
+              // needs-review must never be applied for triage failures — it is
+              // terminal for project-manager's issue /fix route, which would
+              // strand the issue with no automated recovery path.
+              if ((hasNeedsReview || hasTriageFailed) && deadLetterComment) {
                 const DL_AUTO_GEN = [/\[auto-fix\]/, /\[workflow-health\]/];
                 const parkedLongEnough =
                   new Date(deadLetterComment.created_at) < sevenDaysAgo;
@@ -276,7 +322,7 @@ jobs:
 
                 // Bucket: triage_dead_letter — >=2 triage attempts without success
                 if (triageComments.length >= 2) {
-                  if (!hasNeedsReview) {
+                  if (!hasNeedsReview && !hasTriageFailed) {
                     buckets.triage_dead_letter.push({ number: num, title: issue.title });
                   }
                   continue;
@@ -298,6 +344,24 @@ jobs:
                 (issue.body || '') + comments.map(c => c.body).join(' ')
               );
               if (hasLinkedPR) continue;
+
+              // Invariant: a triaged, automation-fixable issue with no linked
+              // PR and no active fix run after 24h means the fix pipeline is
+              // not converging — either triggers are inert or fixes keep
+              // failing. Recorded for the health tracker; the issue still
+              // flows through the normal buckets below.
+              if (
+                createdAt < new Date(Date.now() - 24 * 60 * 60 * 1000) &&
+                labels.includes('auto-fix') &&
+                ['low', 'medium', 'high'].some(p => labels.includes(p))
+              ) {
+                buckets.invariant_findings.push({
+                  number: num,
+                  type: 'stuck_fixable',
+                  age_hours: Math.round((Date.now() - createdAt.getTime()) / 3600000),
+                  fix_attempts: fixComments.length
+                });
+              }
 
               // Check fix attempt count
               if (fixComments.length >= 2) {
@@ -377,14 +441,15 @@ jobs:
             }
 
             // --- Rate limit check ---
+            // needs_retriage and triage_dead_letter are executed by the
+            // deterministic re-triage step in this job (never by the agent),
+            // so they don't count toward the agent's workload.
             const totalActions =
-              buckets.needs_retriage.length +
               buckets.should_close_dupe.length +
               buckets.should_close_canceled.length +
               buckets.orphaned_fixed.length +
               buckets.priority_escalation.length +
               buckets.triaged_no_fix.length +
-              buckets.triage_dead_letter.length +
               buckets.fix_dead_letter.length +
               buckets.dead_letter_retry.length;
 
@@ -418,8 +483,14 @@ jobs:
             // so the per-bucket counts below no longer sum to the
             // pre-truncation totalActions used for rate-limit/has_actionable
             // decisions. Exclude groupable_candidates to match that definition.
+            const AGENT_EXCLUDED_BUCKETS = [
+              'groupable_candidates',
+              'needs_retriage',
+              'triage_dead_letter',
+              'invariant_findings',
+            ];
             const loggedTotalActions = Object.entries(buckets)
-              .filter(([key]) => key !== 'groupable_candidates')
+              .filter(([key]) => !AGENT_EXCLUDED_BUCKETS.includes(key))
               .reduce((sum, [, items]) => sum + items.length, 0);
 
             core.info('=== Issue Catch-Up Summary ===');
@@ -429,6 +500,241 @@ jobs:
             core.info(`  Total actions: ${loggedTotalActions}`);
             core.info(`  Rate limited: ${rateLimited}`);
             core.info(`  Has actionable: ${hasActionable}`);
+
+      # Deterministic re-triage. The agent used to post "/triage" comments for
+      # these buckets, but those were authored by github-actions[bot] via
+      # GITHUB_TOKEN — GitHub never starts workflows from such events, so every
+      # "attempt" was a guaranteed no-op that still burned the attempt counter
+      # and eventually dead-lettered the issue. An explicit workflow_dispatch
+      # API call is a real trigger, and running it here (not in the agent job)
+      # keeps re-triage working even when the agent itself is down — the exact
+      # scenario that produces untriaged issues in the first place.
+      - name: Dispatch re-triage and park triage dead letters
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          CATEGORIZED: ${{ steps.categorize.outputs.categorized }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const buckets = JSON.parse(process.env.CATEGORIZED || '{}');
+            const dryRun = process.env.DRY_RUN === 'true';
+            const MAX_DISPATCHES = 10;
+            const needsRetriage = buckets.needs_retriage || [];
+            // No silent caps: a backlog (e.g. after a triage outage — the exact
+            // scenario this workflow hardens against) overflowing the per-sweep
+            // dispatch budget must be visible, not silently deferred to the next
+            // sweep with nothing in the run summary or log line.
+            if (needsRetriage.length > MAX_DISPATCHES) {
+              core.warning(`needs_retriage has ${needsRetriage.length} issues; only first ${MAX_DISPATCHES} dispatched this sweep`);
+            }
+            const retriage = needsRetriage.slice(0, MAX_DISPATCHES);
+            const deadLetters = buckets.triage_dead_letter || [];
+            const stepStart = Date.now();
+            let dispatched = 0;
+
+            for (const item of retriage) {
+              if (dryRun) {
+                core.info(`DRY RUN: would dispatch triage.yml for #${item.number} (attempt ${item.attempt})`);
+                continue;
+              }
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: 'triage.yml',
+                  ref: context.payload.repository?.default_branch || 'main',
+                  inputs: { issue_number: String(item.number) }
+                });
+              } catch (e) {
+                // A failed dispatch is NOT an attempt — no marker comment, so
+                // the attempt counter is not burned by infrastructure errors.
+                core.warning(`triage dispatch failed for #${item.number}: ${e.message}`);
+                try {
+                  await core.summary.addRaw(`:warning: triage dispatch failed for #${item.number}: ${e.message}`, true).write();
+                } catch (summaryError) {
+                  // A summary-write failure must not break the continue intent.
+                  core.warning(`summary write failed: ${summaryError.message}`);
+                }
+                continue;
+              }
+              dispatched += 1;
+              // Marker records a real attempt. It must not contain the literal
+              // "/triage" (a maintainer-authored comment with that prefix would
+              // start a second, comment-triggered triage run). Guarded: the
+              // dispatch already succeeded, so a transient comment failure
+              // (rate limit, locked issue, 5xx) must not abort the step and
+              // skip remaining retriage items + all dead-letter parking — that
+              // would leave the run dispatched but uncounted and re-fire it
+              // every sweep. The liveness check below is the secondary signal.
+              try {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: item.number,
+                  body: `<!-- re-triage-dispatch -->\nRe-triage dispatched via workflow_dispatch (catch-up workflow, attempt ${item.attempt}).`
+                });
+              } catch (e) {
+                core.warning(`marker post failed for #${item.number} (run dispatched but uncounted): ${e.message}`);
+              }
+              core.info(`dispatched triage.yml for #${item.number} (attempt ${item.attempt})`);
+            }
+
+            // Liveness check: confirm the dispatches actually became runs.
+            // Warning-only — the marker already gates on a successful API call.
+            if (dispatched > 0) {
+              await new Promise((resolve) => setTimeout(resolve, 10000));
+              try {
+                const runs = await github.rest.actions.listWorkflowRuns({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: 'triage.yml',
+                  event: 'workflow_dispatch',
+                  per_page: 30
+                });
+                const observed = runs.data.workflow_runs.filter(
+                  (r) => new Date(r.created_at).getTime() >= stepStart - 60000
+                ).length;
+                if (observed < dispatched) {
+                  core.warning(`dispatched ${dispatched} triage runs but only observed ${observed} started — inert-trigger suspicion`);
+                  try {
+                    await core.summary.addRaw(`:warning: dispatched ${dispatched} triage runs, observed only ${observed} started`, true).write();
+                  } catch (summaryError) {
+                    core.warning(`summary write failed: ${summaryError.message}`);
+                  }
+                } else {
+                  core.info(`liveness ok: ${observed} dispatched triage runs observed`);
+                }
+              } catch (e) {
+                core.warning(`liveness check failed: ${e.message}`);
+              }
+            }
+
+            for (const item of deadLetters) {
+              try {
+                if (dryRun) {
+                  core.info(`DRY RUN: would park #${item.number} with triage-failed`);
+                  continue;
+                }
+                // triage-failed (NOT needs-review): needs-review is terminal for
+                // project-manager's issue /fix route, which would leave the issue
+                // with no automated recovery path at all.
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: item.number,
+                  labels: ['triage-failed']
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: item.number,
+                  body: 'Triage attempted 2x without success. Manual review needed.'
+                });
+                core.info(`parked #${item.number} as triage-failed`);
+              } catch (e) {
+                // One failed park must not skip the remaining dead letters.
+                core.warning(`dead-letter parking failed for #${item.number}: ${e.message}`);
+              }
+            }
+
+            core.info(`re-triage: ${dispatched} dispatched, ${deadLetters.length} parked, dryRun=${dryRun}`);
+
+      # Pipeline invariant reporting: inert bot-authored command comments and
+      # fixable issues stuck >24h with no PR go to a rolling claude-health
+      # tracker. No-spam discipline: nothing is posted when there are no
+      # findings, and an unchanged findings set is not re-posted.
+      - name: Report issue-pipeline invariant findings
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          CATEGORIZED: ${{ steps.categorize.outputs.categorized }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const crypto = require('crypto');
+            const buckets = JSON.parse(process.env.CATEGORIZED || '{}');
+            const findings = buckets.invariant_findings || [];
+            const dryRun = process.env.DRY_RUN === 'true';
+            const TITLE = '[claude-health] Issue-pipeline invariant findings';
+            if (findings.length === 0) {
+              core.info('No invariant findings — nothing to report.');
+              return;
+            }
+
+            // Cap the report so the comment body stays far below GitHub's
+            // 65536-char limit even if findings pile up across many issues.
+            const MAX_REPORTED = 50;
+            const reported = findings.slice(0, MAX_REPORTED);
+            const lines = reported.map((f) => {
+              if (f.type === 'inert_bot_command') {
+                return `- #${f.number} — **inert bot command**: ${f.count} \`/fix\`/\`/triage\` comment(s) authored by github-actions[bot] (GITHUB_TOKEN events never start workflows); last at ${f.last}`;
+              }
+              if (f.type === 'stuck_fixable') {
+                return `- #${f.number} — **stuck fixable issue**: triaged + auto-fix + priority, no linked PR after ${f.age_hours}h (${f.fix_attempts} fix attempt(s))`;
+              }
+              return `- #${f.number} — ${f.type}`;
+            });
+            if (findings.length > MAX_REPORTED) {
+              lines.push(`- …and ${findings.length - MAX_REPORTED} more finding(s) — see the run summary`);
+            }
+            const hash = crypto.createHash('sha256')
+              .update(JSON.stringify(findings.map(f => [f.type, f.number]).sort()))
+              .digest('hex').slice(0, 16);
+            const marker = `<!-- invariant-findings:${hash} -->`;
+            const body = [
+              marker,
+              `## Invariant findings (${new Date().toISOString()})`,
+              '',
+              ...lines,
+              '',
+              '_Reported by issue-catch-up. Findings repeat until the underlying issue is unstuck; an unchanged set is not re-posted._'
+            ].join('\n');
+
+            if (dryRun) {
+              core.info(`DRY RUN: would report ${findings.length} invariant finding(s)`);
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            let tracker = null;
+            const open = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'claude-health', per_page: 50
+            });
+            tracker = open.data.find(i => i.title === TITLE) || null;
+            if (!tracker) {
+              const created = await github.rest.issues.create({
+                owner, repo,
+                title: TITLE,
+                labels: ['claude-health', 'keep-open'],
+                body: [
+                  'Rolling tracker for issue-pipeline invariant violations found by the hourly catch-up sweep:',
+                  '',
+                  '- **inert bot command** — a `/fix` or `/triage` comment authored by github-actions[bot]; GITHUB_TOKEN events never start workflows, so whatever posted it believes it triggered something that never ran.',
+                  '- **stuck fixable issue** — triaged, automation-fixable, but no linked PR and no active fix run after 24h.',
+                  '',
+                  'One comment is appended per changed findings set. Close after the findings are handled; the sweep recreates it when new findings appear.'
+                ].join('\n')
+              });
+              tracker = created.data;
+            } else {
+              // Skip if the latest invariant comment already reports this set.
+              const comments = await github.rest.issues.listComments({
+                owner, repo, issue_number: tracker.number, per_page: 100
+              });
+              const invariantComments = comments.data.filter(c =>
+                (c.body || '').includes('<!-- invariant-findings:')
+              );
+              const latest = invariantComments[invariantComments.length - 1];
+              if (latest && latest.body.includes(marker)) {
+                core.info('Findings unchanged since last report — skipping.');
+                return;
+              }
+            }
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: tracker.number, body
+            });
+            core.info(`Reported ${findings.length} invariant finding(s) to #${tracker.number}`);
 
   analyze-and-act:
     name: Analyze & Act
@@ -464,8 +770,23 @@ jobs:
           model: 'sonnet'
           max-turns: '30'
           track-progress: 'false'
+          # The agent's gh runs inside claude-code-action, which exports ITS
+          # github-token as GH_TOKEN — the job-level GH_PAT env never reaches
+          # it. With the default GITHUB_TOKEN the Phase 6 "/fix" comments are
+          # authored by github-actions[bot]: GitHub does not start workflows
+          # from GITHUB_TOKEN events and fix-issue's policy gate requires a
+          # maintainer author, so authorization was silently inert. The PAT
+          # makes those comments maintainer-authored real triggers.
+          github-token: ${{ secrets.GH_PAT }}
           allowed-bots: 'github-actions[bot]'
-          allowed-tools: 'Bash(rtk:*),Bash(gh:*),Bash(git:*),Read,Grep'
+          # Least privilege: this agent holds the PAT and reads untrusted issue
+          # bodies — a prompt-injection payload must not be able to reach
+          # `gh api`/`gh repo`/`gh workflow` with PAT scope, nor destructive
+          # `gh issue` verbs (`delete`/`transfer`/`pin`/`reopen`) the prompt
+          # never asks for. The prompt only ever runs
+          # `gh issue view/comment/edit/close/create`, so enumerate exactly those
+          # subcommands in both the direct and the rtk-wrapped form.
+          allowed-tools: 'Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh issue close:*),Bash(gh issue create:*),Bash(rtk gh issue view:*),Bash(rtk gh issue comment:*),Bash(rtk gh issue edit:*),Bash(rtk gh issue close:*),Bash(rtk gh issue create:*),Read,Grep'
           additional-permissions: 'issues: write'
           prompt: |
             ## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues
@@ -506,20 +827,16 @@ jobs:
             gh issue close NUM --reason "not planned" --comment "Auto-closed by catch-up workflow — canceled label confirmed."
             ```
 
-            ### Phase 2: Re-trigger Triage & Handle Dead Letters (turns 6-15)
+            ### Phase 2: Re-trigger Triage & Handle Dead Letters — NO AGENT ACTION
 
-            For each `triage_dead_letter` issue:
-            ```
-            gh issue edit NUM --add-label "needs-review"
-            gh issue comment NUM --body "Triage attempted 2x without success. Manual review needed."
-            ```
-
-            For each `needs_retriage` issue:
-            ```
-            gh issue comment NUM --body "/triage"
-            gh issue comment NUM --body "Re-triaging issue (catch-up workflow, attempt N)"
-            ```
-            Where N is the attempt number from the JSON data.
+            The `needs_retriage` and `triage_dead_letter` buckets are handled
+            deterministically by the collect job (workflow_dispatch of
+            triage.yml and the `triage-failed` parking label). The
+            `invariant_findings` bucket is observability data reported to the
+            claude-health tracker by the collect job. All three appear in the
+            JSON for visibility only. Do NOT post "/triage" comments, do NOT
+            add `needs-review` for triage failures, and take no action on
+            `invariant_findings` — skip straight to Phase 3.
 
             ### Phase 3: Priority Escalation (turns 16-20)
 
@@ -586,10 +903,12 @@ jobs:
             - First check: `gh issue view NUM --json body,comments` — skip if any comment contains `<!-- dead-letter-retry -->`, or body/comments contain a PR URL or "Fixes #"
             - If safe to proceed:
             ```
-            gh issue edit NUM --remove-label "needs-review"
+            gh issue edit NUM --remove-label "needs-review" --remove-label "triage-failed"
             gh issue comment NUM --body "<!-- dead-letter-retry --> One-time fresh-context retry: this issue was parked after repeated automation failures, which are often transient (turn limits, runner pressure). Retrying once; it will park permanently if this attempt also fails."
             ```
-            - Then, if `kind` is "triage": `gh issue comment NUM --body "/triage"`
+            - If `kind` is "triage": nothing more to do — with the parking label
+              removed, the next hourly sweep re-enters the issue into
+              `needs_retriage` and the collect job dispatches a real triage run.
             - If `kind` is "fix": `gh issue comment NUM --body "/fix"`
             Stop after 2 dead-letter retries, even if more candidates remain.
             Operate as the `kos-issue-catch-up` agent: first read `.claude/agents/kos-issue-catch-up.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.

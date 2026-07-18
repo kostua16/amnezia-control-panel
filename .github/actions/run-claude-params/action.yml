@@ -390,6 +390,8 @@ runs:
         API_URL: ${{ inputs.api-url }}
         API_KEY: ${{ inputs.api-key }}
         JSON_SCHEMA_ENABLED: ${{ inputs.json-schema != '' && 'true' || 'false' }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_JOB_NAME: ${{ github.job }}
       run: |
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
@@ -399,12 +401,25 @@ runs:
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30)
 
+        # Job log lets the classifier see pre-execution failures (e.g. branch
+        # setup dying on an unauthenticated git fetch) that never reach the
+        # execution output file. Best-effort — an empty log keeps old behavior.
+        LOG_FILE=$(mktemp "${RUNNER_TEMP:-/tmp}/claude-retry-log-XXXXXX.log")
+        JOB_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" \
+          --jq '.jobs[] | select(.name == env.GITHUB_JOB_NAME or (.name | startswith(env.GITHUB_JOB_NAME + " ("))) | .id' \
+          2>/dev/null | head -1 || true)
+        if [[ -n "$JOB_ID" ]]; then
+          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${JOB_ID}/logs" > "$LOG_FILE" 2>/dev/null || true
+        fi
+
         node .github/workflows/scripts/classify-claude-retry.cjs \
           --http-code "$http_code" \
           --execution-file "${RUNNER_TEMP}/claude-execution-output.json" \
+          --log-file "$LOG_FILE" \
           --json-schema-enabled "$JSON_SCHEMA_ENABLED" \
           --attempt "1" \
           --github-output "$GITHUB_OUTPUT"
+        rm -f "$LOG_FILE"
 
     - name: Rate limit wait (attempt 1 → 2)
       if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' }}
@@ -480,6 +495,8 @@ runs:
         API_URL: ${{ inputs.api-url }}
         API_KEY: ${{ inputs.api-key }}
         JSON_SCHEMA_ENABLED: ${{ inputs.json-schema != '' && 'true' || 'false' }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_JOB_NAME: ${{ github.job }}
       run: |
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
@@ -489,12 +506,23 @@ runs:
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30)
 
+        # Same pre-execution-failure visibility as check-429-1.
+        LOG_FILE=$(mktemp "${RUNNER_TEMP:-/tmp}/claude-retry-log-XXXXXX.log")
+        JOB_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" \
+          --jq '.jobs[] | select(.name == env.GITHUB_JOB_NAME or (.name | startswith(env.GITHUB_JOB_NAME + " ("))) | .id' \
+          2>/dev/null | head -1 || true)
+        if [[ -n "$JOB_ID" ]]; then
+          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${JOB_ID}/logs" > "$LOG_FILE" 2>/dev/null || true
+        fi
+
         node .github/workflows/scripts/classify-claude-retry.cjs \
           --http-code "$http_code" \
           --execution-file "${RUNNER_TEMP}/claude-execution-output.json" \
+          --log-file "$LOG_FILE" \
           --json-schema-enabled "$JSON_SCHEMA_ENABLED" \
           --attempt "2" \
           --github-output "$GITHUB_OUTPUT"
+        rm -f "$LOG_FILE"
 
     - name: Rate limit wait (attempt 2 → 3)
       if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' }}
@@ -652,6 +680,34 @@ runs:
             emit_multiline "last_structured_output" ""
           fi
         } >> "$GITHUB_OUTPUT"
+
+    # Every attempt with progress tracking posts its own "Claude Code is
+    # working…" comment; failed attempts never edit theirs into a result, so
+    # a 3-attempt failure leaves three identical in-progress banners pointing
+    # at one dead run. Delete any comment for THIS run still showing the
+    # working banner (a successful attempt has already edited its comment
+    # into the final report, so it never matches).
+    - name: Clean stale tracking comments
+      if: >-
+        always() &&
+        steps.resolve-track-progress.outputs.value == 'true' &&
+        (github.event.issue.number || github.event.pull_request.number)
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        TARGET_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+      run: |
+        run_url_suffix="actions/runs/${GITHUB_RUN_ID}"
+        gh api "repos/${GITHUB_REPOSITORY}/issues/${TARGET_NUMBER}/comments" --paginate \
+          --jq '.[] | select((.body | contains("Claude Code is working")) and (.body | contains("'"$run_url_suffix"'"))) | .id' \
+          2>/dev/null |
+        while read -r comment_id; do
+          if gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" >/dev/null 2>&1; then
+            echo "deleted stale tracking comment ${comment_id}"
+          else
+            echo "warning: failed to delete tracking comment ${comment_id}"
+          fi
+        done
 
     - name: collect-file-stats
       id: collect-file-stats
