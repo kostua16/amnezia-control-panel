@@ -71,6 +71,8 @@ export function getPanelHealthSnapshot(): Map<number, PanelHealthSnapshot> {
 // ─── Health Check Interval ──────────────────────────────
 
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+/** Inflight guard — prevents re-entrant health check cycles when the previous tick is still running. */
+let inflightHealthCheck: Promise<void> | null = null;
 
 // ─── Fallback Status Queries ────────────────────────────
 
@@ -342,6 +344,96 @@ export async function testAllPanels(): Promise<PanelTestResult[]> {
 // ─── Periodic Health Checks ─────────────────────────────
 
 /**
+ * Run a single health-check cycle over all active panels.
+ * Extracted from setInterval so the inflight guard can reference it.
+ */
+async function runHealthCheckCycle(): Promise<void> {
+  try {
+    // Evict API key cache entries that have exceeded their 1-hour max-age.
+    cleanupExpiredApiKeys();
+
+    // Use cached panel list when fresh, otherwise fetch from DB.
+    const now = Date.now();
+    if (!panelListCache || panelListCache.expiry <= now) {
+      const dbPanels = await prisma.remotePanel.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true },
+      });
+      panelListCache = {
+        panels: dbPanels,
+        expiry: now + PANEL_LIST_TTL_MS,
+      };
+    }
+
+    for (const panel of panelListCache.panels) {
+      try {
+        const result = await testPanel(panel.id);
+
+        // Update the snapshot cache so the status API can read it
+        // without re-probing.
+        healthSnapshotCache.set(panel.id, {
+          panelId: panel.id,
+          status: result.success ? 'connected' : 'offline',
+          latencyMs: result.latency,
+          checkedAt: new Date().toISOString(),
+          isFallback: fallbackPanels.has(panel.id),
+        });
+
+        // Fallback detection and auto-resync logic
+        if (result.success) {
+          consecutiveFailures.set(panel.id, 0);
+
+          // Auto-resync: if panel was in fallback and is now reachable
+          if (fallbackPanels.has(panel.id)) {
+            console.log(
+              `[panel-health] Panel ${panel.id} (${panel.name}) reconnected -- triggering auto-resync`,
+            );
+            fallbackPanels.delete(panel.id);
+            broadcastFallbackStatusChange(panel.id, panel.name, false);
+            triggerAutoResync(panel.id, panel.name);
+            // Sync the snapshot with the fallback-EXIT transition so the
+            // status API does not serve a stale isFallback flag for up to
+            // one interval after the reconnect broadcast.
+            healthSnapshotCache.set(panel.id, {
+              panelId: panel.id,
+              status: 'connected',
+              latencyMs: result.latency,
+              checkedAt: new Date().toISOString(),
+              isFallback: false,
+            });
+          }
+        } else {
+          const failures = (consecutiveFailures.get(panel.id) ?? 0) + 1;
+          consecutiveFailures.set(panel.id, failures);
+
+          // Fallback detection: 3 consecutive failures per CONTEXT.md decision
+          if (failures >= 3 && !fallbackPanels.has(panel.id)) {
+            console.warn(
+              `[panel-health] Panel ${panel.id} (${panel.name}) unreachable x${failures} -- entering fallback mode`,
+            );
+            fallbackPanels.add(panel.id);
+            broadcastFallbackStatusChange(panel.id, panel.name, true);
+            // Update snapshot to reflect fallback state
+            const existing = healthSnapshotCache.get(panel.id);
+            if (existing) {
+              healthSnapshotCache.set(panel.id, {
+                ...existing,
+                isFallback: true,
+                status: 'degraded',
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[panel-health] Check failed for panel', panel.id, err);
+      }
+    }
+  } catch (err) {
+    console.error('[panel-health] Failed to query active panels:', err);
+  }
+}
+
+/**
  * Start periodic health checks for all active panels.
  * Checks every 30 seconds.
  */
@@ -354,89 +446,10 @@ export function startPanelHealthChecks(): void {
   console.log('[panel-health] Starting periodic health checks (30s interval)');
 
   healthCheckInterval = setInterval(async () => {
-    try {
-      // Evict API key cache entries that have exceeded their 1-hour max-age.
-      cleanupExpiredApiKeys();
-
-      // Use cached panel list when fresh, otherwise fetch from DB.
-      const now = Date.now();
-      if (!panelListCache || panelListCache.expiry <= now) {
-        const dbPanels = await prisma.remotePanel.findMany({
-          where: { isActive: true },
-          select: { id: true, name: true },
-        });
-        panelListCache = {
-          panels: dbPanels,
-          expiry: now + PANEL_LIST_TTL_MS,
-        };
-      }
-
-      for (const panel of panelListCache.panels) {
-        try {
-          const result = await testPanel(panel.id);
-
-          // Update the snapshot cache so the status API can read it
-          // without re-probing.
-          healthSnapshotCache.set(panel.id, {
-            panelId: panel.id,
-            status: result.success ? 'connected' : 'offline',
-            latencyMs: result.latency,
-            checkedAt: new Date().toISOString(),
-            isFallback: fallbackPanels.has(panel.id),
-          });
-
-          // Fallback detection and auto-resync logic
-          if (result.success) {
-            consecutiveFailures.set(panel.id, 0);
-
-            // Auto-resync: if panel was in fallback and is now reachable
-            if (fallbackPanels.has(panel.id)) {
-              console.log(
-                `[panel-health] Panel ${panel.id} (${panel.name}) reconnected -- triggering auto-resync`,
-              );
-              fallbackPanels.delete(panel.id);
-              broadcastFallbackStatusChange(panel.id, panel.name, false);
-              triggerAutoResync(panel.id, panel.name);
-              // Sync the snapshot with the fallback-EXIT transition so the
-              // status API does not serve a stale isFallback flag for up to
-              // one interval after the reconnect broadcast.
-              healthSnapshotCache.set(panel.id, {
-                panelId: panel.id,
-                status: 'connected',
-                latencyMs: result.latency,
-                checkedAt: new Date().toISOString(),
-                isFallback: false,
-              });
-            }
-          } else {
-            const failures = (consecutiveFailures.get(panel.id) ?? 0) + 1;
-            consecutiveFailures.set(panel.id, failures);
-
-            // Fallback detection: 3 consecutive failures per CONTEXT.md decision
-            if (failures >= 3 && !fallbackPanels.has(panel.id)) {
-              console.warn(
-                `[panel-health] Panel ${panel.id} (${panel.name}) unreachable x${failures} -- entering fallback mode`,
-              );
-              fallbackPanels.add(panel.id);
-              broadcastFallbackStatusChange(panel.id, panel.name, true);
-              // Update snapshot to reflect fallback state
-              const existing = healthSnapshotCache.get(panel.id);
-              if (existing) {
-                healthSnapshotCache.set(panel.id, {
-                  ...existing,
-                  isFallback: true,
-                  status: 'degraded',
-                });
-              }
-            }
-          }
-        } catch (err) {
-          console.error('[panel-health] Check failed for panel', panel.id, err);
-        }
-      }
-    } catch (err) {
-      console.error('[panel-health] Failed to query active panels:', err);
-    }
+    if (inflightHealthCheck) return; // previous cycle still running
+    inflightHealthCheck = runHealthCheckCycle().finally(() => {
+      inflightHealthCheck = null;
+    });
   }, 30_000);
 }
 
