@@ -179,6 +179,7 @@ Plans:
 <!-- PR-IMPROVE:824 --> - PR #824: fix: resolve #748 - MON-I05: Anchor the monitor window to scheduled runs only (monitor-github-runs) -- pr824.1 x1, pr824.2 x1. Quick artifact: `.planning/quick/260719-pr824-workflow-improve/260719-pr824-PLAN.md`.
 <!-- PR-IMPROVE:826 --> - PR #826: fix: resolve #813 - APR-E02: File-overlap conflict matrix artifact (audit-auto-prs) -- pr826.1 x1, pr826.2 x1, pr826.3 x1. Quick artifact: `.planning/quick/260719-pr826-workflow-improve/260719-pr826-PLAN.md`.
 <!-- PR-IMPROVE:837 --> - PR #837: fix: resolve #834 - AFX-I04: Trim the plugin list to the audit mission (audit-fix) -- pr837.1 x1, pr837.2 x2. Quick artifact: `.planning/quick/260719-pr837-workflow-improve/260719-pr837-PLAN.md`.
+<!-- PR-IMPROVE:839 --> - PR #839: fix(workflows): report restore-protected fix-review edits instead of claiming no-op -- pr839.1 x1, pr839.2 x1. Quick artifact: `.planning/quick/260719-pr839-workflow-improve/260719-pr839-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
