@@ -1025,6 +1025,14 @@ runs:
           exit 0
         fi
 
+        # Rule 2c: Runner cancelled the step mid-execution (transient infra).
+        # No output file was written, so Rule 3 would false-positive.
+        if [[ "$OUTCOME" == "cancelled" ]]; then
+          echo "failed=false" >> "$GITHUB_OUTPUT"
+          echo "reason=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
         # Rule 3: Execution output missing or unreadable after success
         if [[ "$SCAN_NUM_TURNS" == "null" && "$SCAN_IS_ERROR" == "null" ]]; then
           echo "failed=true" >> "$GITHUB_OUTPUT"
