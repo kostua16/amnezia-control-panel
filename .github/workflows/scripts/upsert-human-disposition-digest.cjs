@@ -66,12 +66,40 @@ function renderDigestBody(data, runUrl, repoUrl) {
   ];
 
   if (disposition.length > 0) {
-    lines.push('### Recommended Actions');
-    lines.push('');
-    for (const item of disposition) {
-      lines.push(`- ${escapeListItem(item)}`);
+    // Normalise legacy string items into structured objects.
+    const rows = disposition.map((item) => {
+      if (typeof item === 'object' && item !== null) {
+        return {
+          number: item.number,
+          action: item.action || '-',
+          reason: item.reason || '-',
+        };
+      }
+      return { number: null, action: '-', reason: String(item) };
+    });
+
+    const hasStructure = rows.some((r) => r.number != null);
+
+    if (hasStructure) {
+      lines.push('### Recommended Actions');
+      lines.push('');
+      lines.push('| # | Action | Reason |');
+      lines.push('|---|--------|--------|');
+      for (const row of rows) {
+        const num = row.number != null && repoUrl
+          ? `[#${row.number}](${repoUrl}/pull/${row.number})`
+          : (row.number != null ? `#${row.number}` : '-');
+        lines.push(`| ${num} | ${escapeCell(row.action)} | ${escapeCell(row.reason)} |`);
+      }
+      lines.push('');
+    } else {
+      lines.push('### Recommended Actions');
+      lines.push('');
+      for (const row of rows) {
+        lines.push(`- ${escapeListItem(row.reason)}`);
+      }
+      lines.push('');
     }
-    lines.push('');
   }
 
   if (inspected.length > 0) {
