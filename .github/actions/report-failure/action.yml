@@ -354,7 +354,6 @@ runs:
           // Transient runner cancellation — no Claude failure to report.
           // The next scheduled run will retry automatically.
           const stepOutcome = process.env.CLAUDE_STEP_OUTCOME || '';
-          const failureReason = process.env.CLAUDE_FAILURE_REASON || '';
           if (stepOutcome === 'cancelled' && !failureReason) {
             core.info('Skipping failure report: step cancelled with no failure reason (transient infra)');
             return;
