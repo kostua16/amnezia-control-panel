@@ -8,6 +8,7 @@
   "cleanupBranchPrefixes": ["codex/", "claude/", "dependabot/"],
   "planningBranchPrefix": "claude-planning-pr-",
   "trustedPlanning": {
+    "_comment": "Branches matching these prefixes are classified as 'trusted-planning' PRs. Auto-merge is gated on allowedPathGlobs — only .planning/** files are eligible. Branches that touch other paths (e.g. monitor-github-runs editing .github/workflows/**) correctly fall through to manual-only regardless of prefix match. The claude-workflow-optimize- prefix is shared by audit-auto-prs (.planning/**), suggest-improvements (.planning/**), and monitor-github-runs (.github/workflows/**); the allowedPathGlobs layer enforces the trust boundary.",
     "branchPrefixes": ["claude-workflow-optimize-", "claude-planning-pr-"],
     "allowedPathGlobs": [".planning/**"],
     "requiredPassLabels": ["ai-review-passed", "security-review-passed"]
