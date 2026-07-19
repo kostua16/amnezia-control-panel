@@ -231,6 +231,16 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Build file-overlap conflict matrix
+        if: always() && steps.claude_run.outputs.claude_failed != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/find-duplicate-automation-pr.cjs \
+            --overlap-matrix \
+            --repo "${{ github.repository }}" \
+            --overlap-label auto-fix
+
   reconcile:
     name: Reconcile resolved audit issues
     needs: [audit-auto-prs]

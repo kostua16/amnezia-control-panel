@@ -318,6 +318,136 @@ function createPullRequestFileGetter(
   };
 }
 
+function buildOverlapMatrix(options = {}) {
+  const {
+    repo,
+    titlePrefix,
+    label,
+    excludeHead,
+    ghCommand = gh,
+    warn = console.warn,
+  } = options;
+
+  const openPulls =
+    parseJson(
+      ghCommand([
+        'pr',
+        'list',
+        '--repo',
+        repo,
+        '--state',
+        'open',
+        '--base',
+        'main',
+        '--limit',
+        '100',
+        '--json',
+        'number,title,url,headRefName,labels',
+      ]),
+    ) || [];
+
+  const candidates = openPulls.filter((pr) => {
+    if (!pr || typeof pr !== 'object') return false;
+    if (excludeHead && pr.headRefName === excludeHead) return false;
+    if (titlePrefix && !String(pr.title || '').startsWith(titlePrefix))
+      return false;
+    if (label) {
+      const labels = Array.isArray(pr.labels)
+        ? pr.labels.map((l) => String(l?.name ?? l ?? ''))
+        : [];
+      if (!labels.includes(label)) return false;
+    }
+    return true;
+  });
+
+  if (candidates.length < 2) {
+    return { prs: [], contestedFiles: [], markdown: '' };
+  }
+
+  const getFiles = createPullRequestFileGetter(repo, ghCommand, warn);
+
+  const prEntries = candidates.map((pr) => {
+    const files = getFiles(pr) || [];
+    const paths = new Set(
+      files
+        .map((f) => String(f?.path ?? f?.filename ?? '').trim())
+        .filter(Boolean),
+    );
+    return { number: pr.number, title: pr.title, url: pr.url, paths };
+  });
+
+  const fileToPRs = new Map();
+  for (const entry of prEntries) {
+    for (const p of entry.paths) {
+      if (!fileToPRs.has(p)) fileToPRs.set(p, []);
+      fileToPRs.get(p).push(entry.number);
+    }
+  }
+
+  const contestedFiles = [];
+  for (const [file, prNumbers] of fileToPRs) {
+    if (prNumbers.length >= 2) {
+      contestedFiles.push({ file, prNumbers });
+    }
+  }
+  contestedFiles.sort((a, b) => a.file.localeCompare(b.file));
+
+  if (contestedFiles.length === 0) {
+    return {
+      prs: prEntries.map((e) => ({ number: e.number, title: e.title, url: e.url })),
+      contestedFiles: [],
+      markdown: '### File-Overlap Conflict Matrix\n\nNo contested files found across open automation PRs.\n',
+    };
+  }
+
+  const tableRows = contestedFiles
+    .map(
+      (c) =>
+        `| ${c.file} | ${c.prNumbers.map((n) => `#${n}`).join(', ')} |`,
+    )
+    .join('\n');
+
+  const markdown =
+    '### File-Overlap Conflict Matrix\n\n' +
+    `**${prEntries.length} automation PRs inspected, ${contestedFiles.length} contested file(s) found.**\n\n` +
+    `#### PRs\n| # | Title |\n|---|-------|\n` +
+    prEntries.map((e) => `| #${e.number} | ${e.title} |`).join('\n') +
+    '\n\n' +
+    `#### Contested Files\n| File | PRs |\n|------|-----|\n` +
+    `${tableRows}\n`;
+
+  return {
+    prs: prEntries.map((e) => ({ number: e.number, title: e.title, url: e.url })),
+    contestedFiles,
+    markdown,
+  };
+}
+
+function runOverlapMatrix(options = {}) {
+  const {
+    ghCommand = gh,
+    summaryPath = process.env.GITHUB_STEP_SUMMARY,
+  } = options;
+  const repo = getArg('--repo') || process.env.GITHUB_REPOSITORY;
+  const titlePrefix = getArg('--title-prefix') || '';
+  const label = getArg('--overlap-label') || '';
+  const excludeHead = getArg('--exclude-head') || '';
+
+  const matrix = buildOverlapMatrix({
+    repo,
+    titlePrefix,
+    label,
+    excludeHead,
+    ghCommand,
+  });
+
+  if (summaryPath) {
+    fs.appendFileSync(summaryPath, matrix.markdown);
+  } else {
+    process.stdout.write(matrix.markdown);
+  }
+}
+
 function run() {
   const repo = getArg('--repo') || process.env.GITHUB_REPOSITORY;
   const baseRef = getArg('--base-ref') || 'main';
@@ -453,6 +583,7 @@ function run() {
 }
 
 module.exports = {
+  buildOverlapMatrix,
   collectLocalFilePatches,
   collectWorkingTreeFilePatches,
   createPullRequestFileGetter,
@@ -464,9 +595,14 @@ module.exports = {
   isGhNotFoundError,
   normalizePatch,
   normalizeSubstantivePatch,
+  runOverlapMatrix,
   sortedFilePatches,
 };
 
 if (require.main === module) {
-  run();
+  if (getFlag('--overlap-matrix')) {
+    runOverlapMatrix();
+  } else {
+    run();
+  }
 }
