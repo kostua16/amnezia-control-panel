@@ -50,7 +50,9 @@ jobs:
     # full audit/fix/verify pass. Raised from 30 to 45 min — codebase growth +
     # plugin bloat made 30 min consistently insufficient (29/30
     # runs cancelled at timeout since mid-June). See AFX-I01 (#678).
-    # AFX-I04 (#834): trimmed to 4 audit-mission plugins (was 9).
+    # AFX-I04 (#834): trimmed to audit-mission plugins (was 9). security-guidance
+    # is kept in pattern-rules-only mode (regex on Edit/Write, no LLM calls) —
+    # see the env block on the claude_run step.
     timeout-minutes: 45
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
@@ -84,6 +86,16 @@ jobs:
       - name: Audit repository and apply targeted fixes
         id: claude_run
         uses: ./.github/actions/run-zai
+        # security-guidance runs in pattern-rules-only mode: the regex layer on
+        # Edit/Write is free (stdlib python, no API calls) and catches hardcoded
+        # secrets / injection / unsafe patterns in the agent's own edits. The
+        # LLM diff/Stop/commit review layers are disabled — they add a model
+        # call per turn to a timeout-sensitive job, and the commit layer can
+        # never fire here because the agent is forbidden from running git.
+        env:
+          ENABLE_CODE_SECURITY_REVIEW: '0'
+          ENABLE_STOP_REVIEW: '0'
+          ENABLE_COMMIT_REVIEW: '0'
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
@@ -164,6 +176,7 @@ jobs:
             serena@claude-plugins-official
             context7@claude-plugins-official
             code-review@claude-plugins-official
+            security-guidance@claude-plugins-official
           prompt: |
             /gsd:audit-fix
             Run a full repository audit for technical debt, code smells, and missing tests.
