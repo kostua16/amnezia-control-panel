@@ -85,10 +85,42 @@ test('renderProtectedPathsOnly explains the revert and asks for a manual commit'
   assert.match(body, /FIX-REVIEW Report: ⚠️ Fix limited to protected paths/);
   assert.match(body, /force-restores before committing/);
   assert.match(body, /review findings are NOT resolved/);
-  assert.match(body, /Apply the fix manually/);
   assert.match(body, /> removed duplicate declaration/);
   assert.match(body, /- \.github\/actions\/report-failure\/action\.yml/);
   assert.doesNotMatch(body, /No changes needed/);
+});
+
+test('renderProtectedPathsOnly without opt-in offers the label and --allow remedies', () => {
+  const body = renderProtectedPathsOnly({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    structured: {
+      changed_files: ['.github/actions/report-failure/action.yml'],
+    },
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /`\/fix-review --allow` \(one-shot/);
+  assert.match(body, /`allow-protected-edits` label/);
+  assert.match(body, /CI gate and re-review/);
+});
+
+test('renderProtectedPathsOnly with opt-in active explains the always-protected core', () => {
+  const body = renderProtectedPathsOnly({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review --allow',
+    structured: {
+      changed_files: ['.github/actions/validate-pr-gate/action.yml'],
+    },
+    allowProtected: 'true',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /FIX-REVIEW Report: ⚠️ Fix limited to protected paths/);
+  assert.match(body, /`validate-pr-gate` or `commit-and-push`/);
+  assert.match(body, /Apply the fix manually/);
+  assert.doesNotMatch(body, /--allow` \(one-shot/);
+  assert.doesNotMatch(body, /add the `allow-protected-edits` label/);
 });
 
 test('renderPushRejected lists attempted changes and forbids force-push', () => {

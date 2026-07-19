@@ -56,9 +56,21 @@ function evaluateFixReviewEligibility({
   files = null,
   expectedHeadSha = '',
   automationReviewLoop = false,
+  allowProtectedEdits = false,
 } = {}) {
   const evaluated = evaluatePrPolicy(pr, policy, files);
   const labels = labelNames(evaluated.labels ?? pr.labels);
+  // Protected-path edits (.github/actions/) are committable when the
+  // maintainer opted in — either persistently via the policy-defined PR label
+  // (works for every trigger source, including the automation review loop) or
+  // one-shot via the trigger's --allow flag / dispatch input. The gate/push
+  // actions the workflow executes stay force-restored regardless.
+  const protectedEditsLabel = String(
+    policy.protectedEditsLabel || 'allow-protected-edits',
+  );
+  const allowProtected =
+    normalizeBoolean(allowProtectedEdits) ||
+    labels.includes(protectedEditsLabel);
   const hardBlockers = labels.filter((label) =>
     HARD_REPAIR_BLOCKERS.includes(label),
   );
@@ -91,6 +103,7 @@ function evaluateFixReviewEligibility({
     head_sha: pr.headRefOid ?? '',
     auto_merge_enabled: Boolean(pr.autoMergeRequest?.enabledAt),
     automation_review_loop: automationLoop,
+    allow_protected_edits: allowProtected,
     pr_class: evaluated.pr_class,
     manual_only: evaluated.manual_only,
     merge_blocked_reason: evaluated.blocked_reason,
@@ -109,6 +122,7 @@ function main() {
     files: readJson(getArg('--files-file'), null),
     expectedHeadSha: getArg('--head-sha', ''),
     automationReviewLoop: getArg('--automation-review-loop', 'false'),
+    allowProtectedEdits: getArg('--allow-protected-edits', 'false'),
   });
   process.stdout.write(JSON.stringify(result, null, 2));
 }

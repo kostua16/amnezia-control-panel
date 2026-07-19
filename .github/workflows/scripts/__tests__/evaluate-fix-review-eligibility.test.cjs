@@ -145,3 +145,51 @@ test('automation review loop can repair automation classes selected by auto-cove
   assert.equal(result.pr_class, 'automation-fix');
   assert.equal(result.automation_review_loop, true);
 });
+
+test('allow_protected_edits defaults off without label or flag', () => {
+  const result = evaluateFixReviewEligibility({
+    pr: pr(),
+    policy,
+    expectedHeadSha: 'b6205dce2cbb3bfe528b6b3839d7e0edbc2594aa',
+  });
+  assert.equal(result.allow_protected_edits, false);
+});
+
+test('allow_protected_edits set by the policy-defined PR label', () => {
+  const result = evaluateFixReviewEligibility({
+    pr: pr({
+      labels: [
+        'auto-fix',
+        'gsd-plan-execution',
+        policy.protectedEditsLabel || 'allow-protected-edits',
+      ],
+    }),
+    policy,
+    expectedHeadSha: 'b6205dce2cbb3bfe528b6b3839d7e0edbc2594aa',
+  });
+  assert.equal(result.allow_protected_edits, true);
+});
+
+test('allow_protected_edits set by the trigger flag without the label', () => {
+  const result = evaluateFixReviewEligibility({
+    pr: pr(),
+    policy,
+    expectedHeadSha: 'b6205dce2cbb3bfe528b6b3839d7e0edbc2594aa',
+    allowProtectedEdits: 'true',
+  });
+  assert.equal(result.allow_protected_edits, true);
+});
+
+test('policy.protectedEditsLabel names the recognized label', () => {
+  assert.equal(typeof policy.protectedEditsLabel, 'string');
+  assert.ok(
+    policy.labels[policy.protectedEditsLabel],
+    'protected-edits label must be defined in policy.labels so ensure-workflow-labels can create it',
+  );
+  const result = evaluateFixReviewEligibility({
+    pr: pr({ labels: ['custom-allow'] }),
+    policy: { ...policy, protectedEditsLabel: 'custom-allow' },
+    expectedHeadSha: 'b6205dce2cbb3bfe528b6b3839d7e0edbc2594aa',
+  });
+  assert.equal(result.allow_protected_edits, true);
+});

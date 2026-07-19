@@ -542,11 +542,22 @@ if (mode === 'fix-branch') {
 if (mode === 'fix-review') {
   const isPrComment = Boolean(event.issue?.pull_request);
   const body = String(commentBody ?? '');
-  const command = body.includes('/address-review')
+  const baseCommand = body.includes('/address-review')
     ? '/address-review'
     : body.includes('/fix-review')
       ? '/fix-review'
       : null;
+  // "--allow" opts this one run into committing agent edits under the
+  // otherwise force-restored .github/actions/ path (the gate/push actions the
+  // workflow executes stay protected regardless). Same effect as the
+  // policy-defined protected-edits label, but one-shot and phone-typable.
+  const allowFlagged =
+    baseCommand !== null &&
+    /\/(?:fix-review|address-review)\s+--allow(?:\s|$)/.test(body);
+  const command =
+    baseCommand !== null && allowFlagged
+      ? `${baseCommand} --allow`
+      : baseCommand;
   const wantsFix = command !== null;
   const commenterIsBot = isBotAccount(event.comment?.user);
   const commentTriggered =
@@ -556,6 +567,9 @@ if (mode === 'fix-review') {
     !commenterIsBot &&
     isMaintainer;
   const dispatchTriggered = eventName === 'workflow_dispatch';
+  const dispatchAllow =
+    dispatchTriggered &&
+    String(event.inputs?.allow_protected_edits ?? '').toLowerCase() === 'true';
   const prNumber = event.inputs?.pr_number ?? event.issue?.number ?? null;
   const active = commentTriggered || dispatchTriggered;
 
@@ -573,6 +587,8 @@ if (mode === 'fix-review') {
             : null,
         pr_number: active ? prNumber : null,
         command,
+        allow_protected_edits:
+          (commentTriggered && allowFlagged) || dispatchAllow,
       },
       null,
       2,

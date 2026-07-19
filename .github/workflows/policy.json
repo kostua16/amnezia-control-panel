@@ -33,6 +33,7 @@
     "maxChangedLines": 300
   },
   "fixApprovalLabel": "auto-fix-approved",
+  "protectedEditsLabel": "allow-protected-edits",
   "maxAutoFixAttempts": 3,
   "maxAutoReviewFixAttempts": 3,
   "blockingLabels": [
@@ -273,6 +274,10 @@
     "auto-fix-approved": {
       "color": "5319e7",
       "description": "Maintainer explicitly approved issue auto-fix execution"
+    },
+    "allow-protected-edits": {
+      "color": "5319e7",
+      "description": "Maintainer allows fix workflows to commit .github/actions edits (gate/push actions stay protected)"
     },
     "maintainer-approved": {
       "color": "0e8a16",

@@ -109,11 +109,27 @@ function renderProtectedPathsOnly({
   runUrl,
   command,
   structured,
+  allowProtected,
   updatedAt,
 }) {
   const changed = Array.isArray(structured.changed_files)
     ? structured.changed_files
     : [];
+  // With the opt-in active, only the gate/push actions the workflow executes
+  // remain protected — and those can never be auto-committed from this flow,
+  // so there is no label/flag remedy to offer, only a manual commit.
+  const explanation = isTrue(allowProtected)
+    ? 'The agent produced a fix, but every edit was to `validate-pr-gate` or ' +
+      '`commit-and-push` under `.github/actions/` — the two actions this ' +
+      'workflow executes with credentials after the agent runs. Those stay ' +
+      'force-restored even with protected edits allowed, so the edits were ' +
+      'discarded, nothing was pushed, and the review findings are NOT ' +
+      'resolved. Apply the fix manually with a normal commit to the PR branch.'
+    : 'The agent produced a fix, but every edit was under `.github/actions/**`, ' +
+      'which this workflow force-restores before committing (the agent may not ' +
+      'modify the composite actions the workflow itself executes). The edits ' +
+      'were discarded, nothing was pushed, and the review findings are NOT ' +
+      'resolved.';
   const lines = [
     COMMENT_MARKER,
     reportHeading('⚠️ Fix limited to protected paths — not pushed'),
@@ -122,14 +138,21 @@ function renderProtectedPathsOnly({
     `- Head SHA: \`${shortSha(headSha)}\``,
     `- Run: ${runUrl || '_n/a_'}`,
     '',
-    quoteBlock(
-      'The agent produced a fix, but every edit was under `.github/actions/**`, ' +
-        'which this workflow force-restores before committing (the agent may not ' +
-        'modify the composite actions the workflow itself executes). The edits ' +
-        'were discarded, nothing was pushed, and the review findings are NOT ' +
-        'resolved. Apply the fix manually with a normal commit to the PR branch.',
-    ),
+    quoteBlock(explanation),
   ];
+  if (!isTrue(allowProtected)) {
+    lines.push(
+      '',
+      'To let the workflow deliver this fix without manual edits, either:',
+      '- comment `/fix-review --allow` (one-shot, re-runs immediately), or',
+      '- add the `allow-protected-edits` label to this PR (persists until ' +
+        'removed, also covers automation re-runs), then comment `/fix-review`.',
+      '',
+      'Either way `.github/actions/` becomes committable except the gate and ' +
+        'push actions the workflow itself executes, and the result still goes ' +
+        'through the CI gate and re-review.',
+    );
+  }
   if (structured.summary) {
     lines.push('', quoteBlock(structured.summary));
   }
@@ -369,6 +392,7 @@ function resolveFinishedBody({
   outcome,
   hasChanges,
   restoredOnly,
+  allowProtected,
   gatePassed,
   gateOutcomes = {},
   pushed,
@@ -391,6 +415,7 @@ function resolveFinishedBody({
       runUrl,
       command,
       structured,
+      allowProtected,
       updatedAt,
     });
   }
@@ -492,6 +517,7 @@ function main() {
         outcome: getArg('--outcome'),
         hasChanges: getArg('--has-changes'),
         restoredOnly: getArg('--restored-only'),
+        allowProtected: getArg('--allow-protected'),
         gatePassed: getArg('--gate-passed'),
         gateOutcomes: {
           lint: getArg('--lint-outcome'),
