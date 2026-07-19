@@ -582,7 +582,7 @@ jobs:
 
   report-failure:
     needs: [execute]
-    if: failure()
+    if: ${{ always() && needs.execute.result != 'success' && needs.execute.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:

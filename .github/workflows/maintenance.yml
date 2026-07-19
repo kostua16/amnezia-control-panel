@@ -179,7 +179,7 @@ jobs:
 
   report-failure:
     needs: [maintenance]
-    if: failure()
+    if: ${{ always() && needs.maintenance.result != 'success' && needs.maintenance.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:

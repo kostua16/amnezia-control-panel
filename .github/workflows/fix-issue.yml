@@ -343,7 +343,7 @@ jobs:
 
   report-failure:
     needs: [fix]
-    if: failure()
+    if: ${{ always() && needs.fix.result != 'success' && needs.fix.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 10
     steps:

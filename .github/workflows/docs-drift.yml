@@ -222,7 +222,7 @@ jobs:
 
   report-failure:
     needs: [docs-drift]
-    if: failure()
+    if: ${{ always() && needs.docs-drift.result != 'success' && needs.docs-drift.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:

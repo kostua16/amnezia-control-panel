@@ -184,7 +184,7 @@ jobs:
 
   report-failure:
     needs: [suggest-improvements]
-    if: failure()
+    if: ${{ always() && needs.suggest-improvements.result != 'success' && needs.suggest-improvements.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:

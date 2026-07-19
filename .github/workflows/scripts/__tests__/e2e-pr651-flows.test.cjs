@@ -210,6 +210,48 @@ test('P14: monitor filters for failure/cancelled/timed_out conclusions', () => {
 });
 
 // ---------------------------------------------------------------------------
+// PR721 — All report-failure jobs use always() guard (no if: failure())
+// ---------------------------------------------------------------------------
+test('PR721: no report-failure job uses if: failure() anti-pattern', () => {
+  const workflowsDir = path.resolve(__dirname, '../..');
+  const yamlFiles = fs
+    .readdirSync(workflowsDir)
+    .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
+
+  const violations = [];
+  for (const file of yamlFiles) {
+    const content = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
+
+    // Find report-failure job blocks (any indentation) and check their if: guard
+    const rfBlocks = content.split(/\n[ \t]+report-failure:/).slice(1);
+    for (const block of rfBlocks) {
+      // Capture the whole if: guard — single-line `if: <expr>`, expression
+      // `if: ${{ failure() }}`, OR YAML block-scalar `if: |` where
+      // failure() lives on a continuation line. Scan from the `if:` line
+      // until the next job-level key so block-scalar guards can't slip past.
+      const lines = block.split('\n');
+      const ifIdx = lines.findIndex((l) => /^\s+if:/.test(l));
+      if (ifIdx === -1) continue;
+      const guardEnd = lines.findIndex((l, i) => i > ifIdx && /^\S/.test(l));
+      const guard = lines
+        .slice(ifIdx, guardEnd < 0 ? undefined : guardEnd)
+        .join('\n');
+      if (/\bfailure\s*\(/.test(guard)) {
+        violations.push(
+          `${file}: report-failure uses failure() — use always() + result-check`,
+        );
+      }
+    }
+  }
+
+  assert.deepStrictEqual(
+    violations,
+    [],
+    'report-failure jobs must use always() + result-check, not if: failure()',
+  );
+});
+
+// ---------------------------------------------------------------------------
 // G8 — Restore-deferred-proposal structural verification
 // ---------------------------------------------------------------------------
 test('G8: auto-pr-branch-cleanup has restore-deferred-proposal job', () => {
