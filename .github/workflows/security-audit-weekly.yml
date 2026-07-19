@@ -29,12 +29,18 @@ jobs:
       - name: npm audit (high+ advisories)
         id: audit
         run: |
-          set -o pipefail
+          set +e
           npm audit --audit-level=high 2>&1 | tee "${RUNNER_TEMP}/npm-audit-high-output.txt"
+          AUDIT_EXIT=$?
+          set -e
+          echo "exit-code=${AUDIT_EXIT}" >> "$GITHUB_OUTPUT"
+          exit "${AUDIT_EXIT}"
         continue-on-error: true
 
-      - name: Open issue on failure
-        if: steps.audit.outcome == 'failure'
+      - name: Open issue on vulnerabilities
+        id: issue-vulns
+        if: steps.audit.outcome == 'failure' && steps.audit.outputs.exit-code == '1'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
@@ -93,3 +99,72 @@ jobs:
                 --body-file "${AUDIT_ISSUE_BODY}"
             fi
           fi
+
+      - name: Report audit infrastructure failure
+        if: steps.audit.outcome == 'failure' && steps.audit.outputs.exit-code != '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          AUDIT_OUTPUT_FILE="${RUNNER_TEMP}/npm-audit-high-output.txt"
+          RUN_URL="https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}"
+          INFRA_ISSUE_TITLE="Security: weekly npm audit infrastructure error"
+          INFRA_ISSUE_BODY="${RUNNER_TEMP}/audit-infra-issue-body.md"
+          AUDIT_EXIT="${{ steps.audit.outputs.exit-code }}"
+          {
+            echo "## Weekly npm audit infrastructure error"
+            echo ""
+            echo "Scheduled security audit could not complete. This is not a vulnerability finding — the audit tool itself failed."
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Run** | ${RUN_URL} |"
+            echo "| **Exit code** | \`${AUDIT_EXIT}\` |"
+            echo ""
+            echo '<details><summary>npm audit output</summary>'
+            echo ""
+            echo '```'
+            if [ -f "${AUDIT_OUTPUT_FILE}" ]; then
+              head -c 30000 "${AUDIT_OUTPUT_FILE}"
+            else
+              echo "(no output captured)"
+            fi
+            echo '```'
+            echo '</details>'
+          } > "${INFRA_ISSUE_BODY}"
+          EXISTING_ISSUE=""
+          if ! EXISTING_ISSUE=$(
+            gh issue list --repo "${REPOSITORY}" --state open \
+              --search 'weekly npm audit infrastructure error in:title' \
+              --json number \
+              --jq '.[0].number // empty' \
+            2>/dev/null
+          ); then
+            EXISTING_ISSUE=""
+          fi
+          if [ -z "${EXISTING_ISSUE}" ]; then
+            gh issue create \
+              --repo "${REPOSITORY}" \
+              --title "${INFRA_ISSUE_TITLE}" \
+              --body-file "${INFRA_ISSUE_BODY}" \
+              --label 'ci-failure'
+          else
+            gh issue edit "${EXISTING_ISSUE}" \
+              --repo "${REPOSITORY}" \
+              --body-file "${INFRA_ISSUE_BODY}"
+          fi
+          echo "::error::npm audit infrastructure error (exit ${AUDIT_EXIT}) — see opened issue"
+          exit 1
+
+      - name: Verify issue creation succeeded
+        if: steps.audit.outcome == 'failure' && steps.audit.outputs.exit-code == '1' && steps.issue-vulns.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          echo "::error::npm audit found vulnerabilities but issue creation failed"
+          echo "::error::Manual review required — see https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}"
+          exit 1
