@@ -341,18 +341,29 @@ jobs:
             excludes=(':(exclude).github/actions')
             protected_paths=('.github/actions')
           fi
+          # protected_reverted covers the mixed-edit case: pushable changes
+          # exist AND protected-path edits are about to be reverted. The push
+          # proceeds, but the summary must say part of the fix was dropped —
+          # otherwise a "✅ applied" comment hides a discarded real finding.
           dirty=$(git status --porcelain -- . ':(exclude).claude-pr' "${excludes[@]}" | wc -l)
           protected_dirty=$(git status --porcelain -- "${protected_paths[@]}" | wc -l)
           current=$(git rev-parse HEAD)
           if [ "$dirty" -gt 0 ] || [ "$current" != "$HEAD_SHA" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
             echo "restored_only=false" >> "$GITHUB_OUTPUT"
+            if [ "$protected_dirty" -gt 0 ]; then
+              echo "protected_reverted=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "protected_reverted=false" >> "$GITHUB_OUTPUT"
+            fi
           elif [ "$protected_dirty" -gt 0 ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "restored_only=true" >> "$GITHUB_OUTPUT"
+            echo "protected_reverted=false" >> "$GITHUB_OUTPUT"
           else
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "restored_only=false" >> "$GITHUB_OUTPUT"
+            echo "protected_reverted=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Restore composite action files (Claude agent may alter working tree)
@@ -436,6 +447,7 @@ jobs:
           OUTCOME: ${{ steps.claude.outcome }}
           HAS_CHANGES: ${{ steps.detect-noop.outputs.has_changes }}
           RESTORED_ONLY: ${{ steps.detect-noop.outputs.restored_only }}
+          PROTECTED_REVERTED: ${{ steps.detect-noop.outputs.protected_reverted }}
           ALLOW_PROTECTED: ${{ steps.pr.outputs.allow_protected_edits }}
           GATE_PASSED: ${{ steps.gate.outputs.gate_passed }}
           LINT_OUTCOME: ${{ steps.gate.outputs.lint_outcome }}
@@ -454,6 +466,7 @@ jobs:
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" \
             --num-turns "$NUM_TURNS" --failed "$CLAUDE_FAILED" --fail-reason "$CLAUDE_FAILURE_REASON" \
             --outcome "$OUTCOME" --has-changes "$HAS_CHANGES" --restored-only "$RESTORED_ONLY" \
+            --protected-reverted "$PROTECTED_REVERTED" \
             --allow-protected "$ALLOW_PROTECTED" --gate-passed "$GATE_PASSED" \
             --lint-outcome "$LINT_OUTCOME" --typecheck-outcome "$TYPECHECK_OUTCOME" \
             --format-outcome "$FORMAT_OUTCOME" --test-outcome "$TEST_OUTCOME" \

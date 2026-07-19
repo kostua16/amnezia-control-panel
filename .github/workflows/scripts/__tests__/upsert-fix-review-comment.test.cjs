@@ -447,3 +447,61 @@ test('isTrue matches boolean and string true', () => {
   assert.equal(isTrue('false'), false);
   assert.equal(isTrue(undefined), false);
 });
+
+test('renderComplete warns when protected-path edits were reverted (no opt-in)', () => {
+  const body = renderComplete({
+    structured: { changed_files: ['src/a.ts'] },
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    protectedReverted: 'true',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /FIX-REVIEW Report: ✅ Review fixes applied/);
+  assert.match(body, /Part of the fix was reverted before commit/);
+  assert.match(body, /`\/fix-review\s+--allow` \(one-shot\)/);
+  assert.match(body, /`allow-protected-edits` label/);
+});
+
+test('renderComplete warns about the always-protected core when opt-in is active', () => {
+  const body = renderComplete({
+    structured: { changed_files: ['src/a.ts'] },
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review --allow',
+    protectedReverted: 'true',
+    allowProtected: 'true',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /Part of the fix was reverted before commit/);
+  assert.match(body, /`validate-pr-gate` or `commit-and-push`/);
+  assert.match(body, /Apply\s+that part manually/);
+  assert.doesNotMatch(body, /--allow` \(one-shot\)/);
+});
+
+test('renderComplete stays clean when nothing protected was reverted', () => {
+  const body = renderComplete({
+    structured: { changed_files: ['src/a.ts'] },
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    protectedReverted: 'false',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.doesNotMatch(body, /Part of the fix was reverted/);
+});
+
+test('resolveFinishedBody threads protected-reverted into the complete body', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    hasChanges: 'true',
+    restoredOnly: 'false',
+    protectedReverted: 'true',
+    gatePassed: 'true',
+    pushed: 'true',
+    structured: { changed_files: ['src/a.ts'] },
+  });
+  assert.match(body, /FIX-REVIEW Report: ✅ Review fixes applied/);
+  assert.match(body, /Part of the fix was reverted before commit/);
+});

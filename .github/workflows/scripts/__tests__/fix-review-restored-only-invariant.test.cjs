@@ -31,6 +31,15 @@ test('detect-noop emits a restored_only output alongside has_changes', () => {
   );
 });
 
+test('detect-noop flags mixed edits that drop protected-path changes', () => {
+  assert.match(
+    content,
+    /protected_reverted=true/,
+    'pushable changes alongside protected-path edits must be flagged so the summary can say part of the fix was dropped',
+  );
+  assert.match(content, /protected_reverted=false/);
+});
+
 test('detect-noop protected set depends on the maintainer opt-in', () => {
   const step = content.slice(
     content.indexOf('Detect no-op'),
@@ -106,6 +115,11 @@ test('finished summary forwards restored_only and allow_protected to the sticky 
     /ALLOW_PROTECTED: \$\{\{ steps\.pr\.outputs\.allow_protected_edits \}\}/,
   );
   assert.match(content, /--allow-protected "\$ALLOW_PROTECTED"/);
+  assert.match(
+    content,
+    /PROTECTED_REVERTED: \$\{\{ steps\.detect-noop\.outputs\.protected_reverted \}\}/,
+  );
+  assert.match(content, /--protected-reverted "\$PROTECTED_REVERTED"/);
 });
 
 test('the protected-edits label is ensured so the maintainer can set it from mobile', () => {

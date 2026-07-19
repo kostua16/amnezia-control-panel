@@ -314,6 +314,8 @@ function renderComplete({
   commitSha,
   commitUrl,
   automergeDisabled,
+  protectedReverted,
+  allowProtected,
   updatedAt,
 }) {
   const changed = Array.isArray(structured.changed_files)
@@ -358,6 +360,25 @@ function renderComplete({
       lines.push(`- \`${f.file}\` — ${f.reason || '(no reason)'}`),
     );
   }
+  // Mixed-edit case: the pushed commit is real, but edits under the
+  // force-restored protected paths were reverted before it — say so, or a
+  // "✅ applied" summary silently hides a discarded part of the fix.
+  if (isTrue(protectedReverted)) {
+    lines.push(
+      '',
+      isTrue(allowProtected)
+        ? '> ⚠️ **Part of the fix was reverted before commit:** edits to ' +
+            '`validate-pr-gate` or `commit-and-push` under `.github/actions/` ' +
+            'were discarded — the workflow executes those with credentials ' +
+            'after the agent runs, so they are never auto-committable. Apply ' +
+            'that part manually.'
+        : '> ⚠️ **Part of the fix was reverted before commit:** edits under ' +
+            '`.github/actions/**` were discarded (force-restored protected ' +
+            'path). To let a re-run deliver them, comment `/fix-review ' +
+            '--allow` (one-shot) or add the `allow-protected-edits` label and ' +
+            'comment `/fix-review`.',
+    );
+  }
   const turns =
     numTurns && Number.isFinite(Number(numTurns)) ? String(numTurns) : null;
   const footer = turns
@@ -392,6 +413,7 @@ function resolveFinishedBody({
   outcome,
   hasChanges,
   restoredOnly,
+  protectedReverted,
   allowProtected,
   gatePassed,
   gateOutcomes = {},
@@ -462,6 +484,8 @@ function resolveFinishedBody({
     commitSha,
     commitUrl,
     automergeDisabled,
+    protectedReverted,
+    allowProtected,
     updatedAt,
   });
 }
@@ -517,6 +541,7 @@ function main() {
         outcome: getArg('--outcome'),
         hasChanges: getArg('--has-changes'),
         restoredOnly: getArg('--restored-only'),
+        protectedReverted: getArg('--protected-reverted'),
         allowProtected: getArg('--allow-protected'),
         gatePassed: getArg('--gate-passed'),
         gateOutcomes: {
