@@ -317,7 +317,7 @@ test('resolveFinishedBody: restored-only is ignored when real changes exist', ()
     outcome: 'success',
     failed: 'false',
     hasChanges: 'true',
-    restoredOnly: 'false',
+    restoredOnly: 'true',
     gatePassed: 'true',
     pushed: 'true',
     structured: { changed_files: ['src/a.ts'] },
