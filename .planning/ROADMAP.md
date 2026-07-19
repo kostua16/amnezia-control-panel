@@ -182,6 +182,7 @@ Plans:
 <!-- PR-IMPROVE:837 --> - PR #837: fix: resolve #834 - AFX-I04: Trim the plugin list to the audit mission (audit-fix) -- pr837.1 x1, pr837.2 x2. Quick artifact: `.planning/quick/260719-pr837-workflow-improve/260719-pr837-PLAN.md`.
 <!-- PR-IMPROVE:839 --> - PR #839: fix(workflows): honest restored-only fix-review reports + maintainer opt-in for protected .github/actions edits -- pr839.1 x1, pr839.2 x1, pr839.3 x1. Quick artifact: `.planning/quick/260719-pr839-workflow-improve/260719-pr839-PLAN.md`.
 <!-- PR-IMPROVE:843 --> - PR #843: fix: resolve #699 - MNT-I03: Align 50-turn budget with the 10-min timeout (maintenance) -- pr843.1 x1, pr843.2 x1. Quick artifact: `.planning/quick/260719-pr843-workflow-improve/260719-pr843-PLAN.md`.
+<!-- PR-IMPROVE:846 --> - PR #846: fix: resolve #840 - MON-I06: Review the 'claude-workflow-optimize-' trust-prefix interplay (monitor-github-runs) -- pr846.1 x1, pr846.2 x1. Quick artifact: `.planning/quick/260719-pr846-workflow-improve/260719-pr846-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
