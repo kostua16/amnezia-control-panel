@@ -177,6 +177,7 @@ Plans:
 <!-- PR-IMPROVE:802 --> - PR #802: fix(workflows): route parked dead letters to retry before priority escalation -- pr802.1 x1, pr802.2 x1, pr802.3 x1. Quick artifact: `.planning/quick/260718-pr802-workflow-improve/260718-pr802-PLAN.md`.
 <!-- PR-IMPROVE:810 --> - PR #810: test(workflows): pin ensured workflow labels to policy.json definitions -- pr810.1 x1, pr810.2 x1. Quick artifact: `.planning/quick/260718-pr810-workflow-improve/260718-pr810-PLAN.md`.
 <!-- PR-IMPROVE:824 --> - PR #824: fix: resolve #748 - MON-I05: Anchor the monitor window to scheduled runs only (monitor-github-runs) -- pr824.1 x1, pr824.2 x1. Quick artifact: `.planning/quick/260719-pr824-workflow-improve/260719-pr824-PLAN.md`.
+<!-- PR-IMPROVE:826 --> - PR #826: fix: resolve #813 - APR-E02: File-overlap conflict matrix artifact (audit-auto-prs) -- pr826.1 x1, pr826.2 x1, pr826.3 x1. Quick artifact: `.planning/quick/260719-pr826-workflow-improve/260719-pr826-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
