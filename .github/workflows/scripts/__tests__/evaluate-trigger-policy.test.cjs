@@ -832,3 +832,103 @@ for (const sender of BOT_SENDERS) {
     assert.match(out.reason, /bot/i);
   });
 }
+
+// fix-review mode: the --allow suffix (and the allow_protected_edits dispatch
+// input) opt a run into committing agent edits under the otherwise
+// force-restored .github/actions/ path. The flag must only register on a real
+// command from a maintainer, never from prose or a bot.
+function runFixReview({ event, eventName = 'issue_comment' }) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fix-review-gate-'));
+  const eventPath = path.join(tempDir, 'event.json');
+  fs.writeFileSync(eventPath, JSON.stringify(event), 'utf8');
+  const output = execFileSync(
+    process.execPath,
+    [
+      scriptPath,
+      '--mode',
+      'fix-review',
+      '--policy-file',
+      policyPath,
+      '--event-path',
+      eventPath,
+      '--event-name',
+      eventName,
+    ],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  return JSON.parse(output);
+}
+
+function fixReviewComment(body, overrides = {}) {
+  return {
+    issue: { number: 825, pull_request: { url: 'x' } },
+    comment: {
+      body,
+      author_association: 'OWNER',
+      user: { login: 'kostua16', type: 'User' },
+    },
+    ...overrides,
+  };
+}
+
+test('fix-review: plain /fix-review does not set allow_protected_edits', () => {
+  const out = runFixReview({ event: fixReviewComment('/fix-review') });
+  assert.equal(out.should_run, true);
+  assert.equal(out.command, '/fix-review');
+  assert.equal(out.allow_protected_edits, false);
+});
+
+test('fix-review: /fix-review --allow sets allow_protected_edits and command suffix', () => {
+  const out = runFixReview({ event: fixReviewComment('/fix-review --allow') });
+  assert.equal(out.should_run, true);
+  assert.equal(out.command, '/fix-review --allow');
+  assert.equal(out.allow_protected_edits, true);
+});
+
+test('fix-review: /address-review --allow also sets the flag', () => {
+  const out = runFixReview({
+    event: fixReviewComment('please /address-review --allow now'),
+  });
+  assert.equal(out.command, '/address-review --allow');
+  assert.equal(out.allow_protected_edits, true);
+});
+
+test('fix-review: "--allow" elsewhere in the comment does not count', () => {
+  const out = runFixReview({
+    event: fixReviewComment('/fix-review\nunrelated --allow mention'),
+  });
+  assert.equal(out.command, '/fix-review');
+  assert.equal(out.allow_protected_edits, false);
+});
+
+test('fix-review: bot commenter with --allow stays untriggered', () => {
+  const out = runFixReview({
+    event: fixReviewComment('/fix-review --allow', {
+      comment: {
+        body: '/fix-review --allow',
+        author_association: 'NONE',
+        user: { login: 'github-actions[bot]', type: 'Bot' },
+      },
+    }),
+  });
+  assert.equal(out.should_run, false);
+  assert.equal(out.allow_protected_edits, false);
+});
+
+test('fix-review: workflow_dispatch input allow_protected_edits=true sets the flag', () => {
+  const out = runFixReview({
+    eventName: 'workflow_dispatch',
+    event: { inputs: { pr_number: '825', allow_protected_edits: 'true' } },
+  });
+  assert.equal(out.should_run, true);
+  assert.equal(out.allow_protected_edits, true);
+});
+
+test('fix-review: workflow_dispatch without the input leaves the flag off', () => {
+  const out = runFixReview({
+    eventName: 'workflow_dispatch',
+    event: { inputs: { pr_number: '825' } },
+  });
+  assert.equal(out.should_run, true);
+  assert.equal(out.allow_protected_edits, false);
+});

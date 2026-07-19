@@ -104,6 +104,69 @@ function renderNoChanges({ headSha, runUrl, command, structured, updatedAt }) {
   return lines.join('\n');
 }
 
+function renderProtectedPathsOnly({
+  headSha,
+  runUrl,
+  command,
+  structured,
+  allowProtected,
+  updatedAt,
+}) {
+  const changed = Array.isArray(structured.changed_files)
+    ? structured.changed_files
+    : [];
+  // With the opt-in active, only the gate/push actions the workflow executes
+  // remain protected — and those can never be auto-committed from this flow,
+  // so there is no label/flag remedy to offer, only a manual commit.
+  const explanation = isTrue(allowProtected)
+    ? 'The agent produced a fix, but every edit was to `validate-pr-gate` or ' +
+      '`commit-and-push` under `.github/actions/` — the two actions this ' +
+      'workflow executes with credentials after the agent runs. Those stay ' +
+      'force-restored even with protected edits allowed, so the edits were ' +
+      'discarded, nothing was pushed, and the review findings are NOT ' +
+      'resolved. Apply the fix manually with a normal commit to the PR branch.'
+    : 'The agent produced a fix, but every edit was under `.github/actions/**`, ' +
+      'which this workflow force-restores before committing (the agent may not ' +
+      'modify the composite actions the workflow itself executes). The edits ' +
+      'were discarded, nothing was pushed, and the review findings are NOT ' +
+      'resolved.';
+  const lines = [
+    COMMENT_MARKER,
+    reportHeading('⚠️ Fix limited to protected paths — not pushed'),
+    '',
+    `- Command: \`${command || '/fix-review'}\``,
+    `- Head SHA: \`${shortSha(headSha)}\``,
+    `- Run: ${runUrl || '_n/a_'}`,
+    '',
+    quoteBlock(explanation),
+  ];
+  if (!isTrue(allowProtected)) {
+    lines.push(
+      '',
+      'To let the workflow deliver this fix without manual edits, either:',
+      '- comment `/fix-review --allow` (one-shot, re-runs immediately), or',
+      '- add the `allow-protected-edits` label to this PR (persists until ' +
+        'removed, also covers automation re-runs), then comment `/fix-review`.',
+      '',
+      'Either way `.github/actions/` becomes committable except the gate and ' +
+        'push actions the workflow itself executes, and the result still goes ' +
+        'through the CI gate and re-review.',
+    );
+  }
+  if (structured.summary) {
+    lines.push('', quoteBlock(structured.summary));
+  }
+  if (changed.length > 0) {
+    lines.push(
+      '',
+      `Attempted changes (${changed.length}):`,
+      ...changed.map((f) => `- ${f}`),
+    );
+  }
+  lines.push('', '<!-- updated: ' + updatedAt + ' -->');
+  return lines.join('\n');
+}
+
 function renderPushRejected({
   headSha,
   runUrl,
@@ -251,6 +314,8 @@ function renderComplete({
   commitSha,
   commitUrl,
   automergeDisabled,
+  protectedReverted,
+  allowProtected,
   updatedAt,
 }) {
   const changed = Array.isArray(structured.changed_files)
@@ -295,6 +360,25 @@ function renderComplete({
       lines.push(`- \`${f.file}\` — ${f.reason || '(no reason)'}`),
     );
   }
+  // Mixed-edit case: the pushed commit is real, but edits under the
+  // force-restored protected paths were reverted before it — say so, or a
+  // "✅ applied" summary silently hides a discarded part of the fix.
+  if (isTrue(protectedReverted)) {
+    lines.push(
+      '',
+      isTrue(allowProtected)
+        ? '> ⚠️ **Part of the fix was reverted before commit:** edits to ' +
+            '`validate-pr-gate` or `commit-and-push` under `.github/actions/` ' +
+            'were discarded — the workflow executes those with credentials ' +
+            'after the agent runs, so they are never auto-committable. Apply ' +
+            'that part manually.'
+        : '> ⚠️ **Part of the fix was reverted before commit:** edits under ' +
+            '`.github/actions/**` were discarded (force-restored protected ' +
+            'path). To let a re-run deliver them, comment `/fix-review ' +
+            '--allow` (one-shot) or add the `allow-protected-edits` label and ' +
+            'comment `/fix-review`.',
+    );
+  }
   const turns =
     numTurns && Number.isFinite(Number(numTurns)) ? String(numTurns) : null;
   const footer = turns
@@ -328,6 +412,9 @@ function resolveFinishedBody({
   failReason,
   outcome,
   hasChanges,
+  restoredOnly,
+  protectedReverted,
+  allowProtected,
   gatePassed,
   gateOutcomes = {},
   pushed,
@@ -339,6 +426,20 @@ function resolveFinishedBody({
   }
   if (isTrue(failed)) {
     return renderFailed({ headSha, runUrl, failReason, updatedAt });
+  }
+  // The agent's only edits were inside restore-protected paths, so they were
+  // reverted and never pushed. This is NOT a clean no-op: the findings were
+  // actionable, the workflow just cannot deliver the fix — say so instead of
+  // claiming there was nothing to do.
+  if (!isTrue(hasChanges) && isTrue(restoredOnly)) {
+    return renderProtectedPathsOnly({
+      headSha,
+      runUrl,
+      command,
+      structured,
+      allowProtected,
+      updatedAt,
+    });
   }
   // Clean no-op: the agent changed nothing, so the gate was skipped and there
   // is nothing to push (fix-review.yml detect-noop sets has_changes=false).
@@ -383,6 +484,8 @@ function resolveFinishedBody({
     commitSha,
     commitUrl,
     automergeDisabled,
+    protectedReverted,
+    allowProtected,
     updatedAt,
   });
 }
@@ -437,6 +540,9 @@ function main() {
         failReason: getArg('--fail-reason'),
         outcome: getArg('--outcome'),
         hasChanges: getArg('--has-changes'),
+        restoredOnly: getArg('--restored-only'),
+        protectedReverted: getArg('--protected-reverted'),
+        allowProtected: getArg('--allow-protected'),
         gatePassed: getArg('--gate-passed'),
         gateOutcomes: {
           lint: getArg('--lint-outcome'),
@@ -473,6 +579,7 @@ module.exports = {
   renderWorking,
   renderSkipped,
   renderNoChanges,
+  renderProtectedPathsOnly,
   renderPushRejected,
   renderValidationFailed,
   renderFailed,

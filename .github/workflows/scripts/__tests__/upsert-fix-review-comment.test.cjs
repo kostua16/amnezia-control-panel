@@ -10,6 +10,7 @@ const {
   renderWorking,
   renderSkipped,
   renderNoChanges,
+  renderProtectedPathsOnly,
   renderPushRejected,
   renderValidationFailed,
   renderFailed,
@@ -68,6 +69,58 @@ test('renderNoChanges states no actionable findings', () => {
   });
   assert.match(body, /FIX-REVIEW Report: ℹ️ No changes needed/);
   assert.match(body, /> all good/);
+});
+
+test('renderProtectedPathsOnly explains the revert and asks for a manual commit', () => {
+  const body = renderProtectedPathsOnly({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    structured: {
+      summary: 'removed duplicate declaration',
+      changed_files: ['.github/actions/report-failure/action.yml'],
+    },
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /FIX-REVIEW Report: ⚠️ Fix limited to protected paths/);
+  assert.match(body, /force-restores before committing/);
+  assert.match(body, /review findings are NOT resolved/);
+  assert.match(body, /> removed duplicate declaration/);
+  assert.match(body, /- \.github\/actions\/report-failure\/action\.yml/);
+  assert.doesNotMatch(body, /No changes needed/);
+});
+
+test('renderProtectedPathsOnly without opt-in offers the label and --allow remedies', () => {
+  const body = renderProtectedPathsOnly({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    structured: {
+      changed_files: ['.github/actions/report-failure/action.yml'],
+    },
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /`\/fix-review --allow` \(one-shot/);
+  assert.match(body, /`allow-protected-edits` label/);
+  assert.match(body, /CI gate and re-review/);
+});
+
+test('renderProtectedPathsOnly with opt-in active explains the always-protected core', () => {
+  const body = renderProtectedPathsOnly({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review --allow',
+    structured: {
+      changed_files: ['.github/actions/validate-pr-gate/action.yml'],
+    },
+    allowProtected: 'true',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /FIX-REVIEW Report: ⚠️ Fix limited to protected paths/);
+  assert.match(body, /`validate-pr-gate` or `commit-and-push`/);
+  assert.match(body, /Apply the fix manually/);
+  assert.doesNotMatch(body, /--allow` \(one-shot/);
+  assert.doesNotMatch(body, /add the `allow-protected-edits` label/);
 });
 
 test('renderPushRejected lists attempted changes and forbids force-push', () => {
@@ -273,6 +326,37 @@ test('resolveFinishedBody: clean no-op (has_changes=false) -> no-changes, gate s
   assert.match(body, /FIX-REVIEW Report: ℹ️ No changes needed/);
 });
 
+test('resolveFinishedBody: restored-only no-op -> protected-paths, never no-changes', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    hasChanges: 'false',
+    restoredOnly: 'true',
+    gatePassed: 'false',
+    pushed: 'false',
+    structured: {
+      summary: 'fixed a composite action',
+      changed_files: ['.github/actions/report-failure/action.yml'],
+    },
+  });
+  assert.match(body, /FIX-REVIEW Report: ⚠️ Fix limited to protected paths/);
+  assert.doesNotMatch(body, /No changes needed/);
+  assert.doesNotMatch(body, /no actionable findings/);
+});
+
+test('resolveFinishedBody: restored-only is ignored when real changes exist', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    hasChanges: 'true',
+    restoredOnly: 'true',
+    gatePassed: 'true',
+    pushed: 'true',
+    structured: { changed_files: ['src/a.ts'] },
+  });
+  assert.match(body, /FIX-REVIEW Report: ✅ Review fixes applied/);
+});
+
 test('resolveFinishedBody: gate failure -> validation-failed, not pushed', () => {
   const body = resolveFinishedBody({
     outcome: 'success',
@@ -362,4 +446,62 @@ test('isTrue matches boolean and string true', () => {
   assert.equal(isTrue(false), false);
   assert.equal(isTrue('false'), false);
   assert.equal(isTrue(undefined), false);
+});
+
+test('renderComplete warns when protected-path edits were reverted (no opt-in)', () => {
+  const body = renderComplete({
+    structured: { changed_files: ['src/a.ts'] },
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    protectedReverted: 'true',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /FIX-REVIEW Report: ✅ Review fixes applied/);
+  assert.match(body, /Part of the fix was reverted before commit/);
+  assert.match(body, /`\/fix-review\s+--allow` \(one-shot\)/);
+  assert.match(body, /`allow-protected-edits` label/);
+});
+
+test('renderComplete warns about the always-protected core when opt-in is active', () => {
+  const body = renderComplete({
+    structured: { changed_files: ['src/a.ts'] },
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review --allow',
+    protectedReverted: 'true',
+    allowProtected: 'true',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /Part of the fix was reverted before commit/);
+  assert.match(body, /`validate-pr-gate` or `commit-and-push`/);
+  assert.match(body, /Apply\s+that part manually/);
+  assert.doesNotMatch(body, /--allow` \(one-shot\)/);
+});
+
+test('renderComplete stays clean when nothing protected was reverted', () => {
+  const body = renderComplete({
+    structured: { changed_files: ['src/a.ts'] },
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    protectedReverted: 'false',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.doesNotMatch(body, /Part of the fix was reverted/);
+});
+
+test('resolveFinishedBody threads protected-reverted into the complete body', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    hasChanges: 'true',
+    restoredOnly: 'false',
+    protectedReverted: 'true',
+    gatePassed: 'true',
+    pushed: 'true',
+    structured: { changed_files: ['src/a.ts'] },
+  });
+  assert.match(body, /FIX-REVIEW Report: ✅ Review fixes applied/);
+  assert.match(body, /Part of the fix was reverted before commit/);
 });

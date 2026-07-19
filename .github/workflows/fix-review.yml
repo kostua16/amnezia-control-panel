@@ -34,6 +34,11 @@ on:
         required: false
         default: false
         type: boolean
+      allow_protected_edits:
+        description: 'Commit agent edits under .github/actions/ this run (gate/push actions stay protected)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -73,6 +78,7 @@ jobs:
       trusted: ${{ steps.gate.outputs.trusted }}
       pr-number: ${{ steps.gate.outputs.pr_number }}
       command: ${{ steps.gate.outputs.command }}
+      allow-protected-edits: ${{ steps.gate.outputs.allow_protected_edits }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - uses: ./.github/actions/setup-environment
@@ -93,6 +99,7 @@ jobs:
             echo "trusted=$(jq -r '.trusted' /tmp/fix-review-gate.json)"
             echo "pr_number=$(jq -r '.pr_number // empty' /tmp/fix-review-gate.json)"
             echo "command=$(jq -r '.command // empty' /tmp/fix-review-gate.json)"
+            echo "allow_protected_edits=$(jq -r '.allow_protected_edits // false' /tmp/fix-review-gate.json)"
           } >> "$GITHUB_OUTPUT"
 
   fix:
@@ -104,6 +111,13 @@ jobs:
       - name: Checkout (default branch — scripts and policy)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
+      - name: Ensure protected-edits label exists
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          policy-file: .github/workflows/policy.json
+          names: allow-protected-edits
+
       - name: Resolve PR head and eligibility
         id: pr
         env:
@@ -111,6 +125,7 @@ jobs:
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
           EXPECTED_HEAD_SHA: ${{ github.event.inputs.head_sha }}
           AUTOMATION_REVIEW_LOOP: ${{ github.event.inputs.automation_review_loop || 'false' }}
+          ALLOW_PROTECTED_EDITS: ${{ needs.authorize.outputs.allow-protected-edits || 'false' }}
         run: |
           gh pr view "$PR_NUMBER" \
             --json number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository,autoMergeRequest > /tmp/fix-review-pr.json
@@ -118,7 +133,8 @@ jobs:
             --policy-file .github/workflows/policy.json \
             --pr-file /tmp/fix-review-pr.json \
             --head-sha "$EXPECTED_HEAD_SHA" \
-            --automation-review-loop "$AUTOMATION_REVIEW_LOOP" > /tmp/fix-review-eval.json
+            --automation-review-loop "$AUTOMATION_REVIEW_LOOP" \
+            --allow-protected-edits "$ALLOW_PROTECTED_EDITS" > /tmp/fix-review-eval.json
           node -e '
             const fs = require("fs");
             const ev = JSON.parse(fs.readFileSync("/tmp/fix-review-eval.json", "utf8"));
@@ -127,6 +143,7 @@ jobs:
               "head_sha=" + (ev.head_sha || "") + "\n" +
               "auto_merge_enabled=" + Boolean(ev.auto_merge_enabled) + "\n" +
               "automation_review_loop=" + Boolean(ev.automation_review_loop) + "\n" +
+              "allow_protected_edits=" + Boolean(ev.allow_protected_edits) + "\n" +
               "eligible=" + Boolean(ev.eligible) + "\n" +
               "skip_reason=" + (ev.reason || "") + "\n"
             );
@@ -280,6 +297,7 @@ jobs:
               sticky summary.
             - If more than 8 files need changes, fix the highest-severity findings
               and report the rest as skipped.
+            - ${{ steps.pr.outputs.allow_protected_edits == 'true' && 'Protected paths: the maintainer allowed committing edits under .github/actions/ this run, EXCEPT .github/actions/validate-pr-gate/ and .github/actions/commit-and-push/ which are always force-restored — report findings there as skipped.' || 'Protected paths: edits under .github/actions/ are force-restored before commit and cannot reach the PR branch this run. Still make them when a finding requires it — the summary will tell the maintainer how to approve them — but note it in your summary.' }}
             - Follow ./docs/code-standards.md and existing conventions.
 
             Return JSON only with: summary, changed_files[], findings_addressed[]
@@ -292,27 +310,82 @@ jobs:
         if: steps.pr.outputs.eligible == 'true'
         env:
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          ALLOW_PROTECTED: ${{ steps.pr.outputs.allow_protected_edits }}
         run: |
           # Real change detection (never the agent self-report): working-tree
           # changes commit-and-push would stage (git add -A respects .gitignore)
-          # OR a moved HEAD (the agent committed despite instructions). Two
-          # paths are excluded because they can never reach the PR branch:
-          # .claude-pr/ is a runtime artifact (excluded even on branches whose
-          # .gitignore lacks the entry), and .github/actions/ is force-restored
-          # by the next step before anything is committed. Counting them left
-          # runs in limbo: has_changes=true but nothing pushed, so neither the
-          # push steps nor the false-positive code-review retrigger ever fired.
-          dirty=$(git status --porcelain -- . ':(exclude).claude-pr' ':(exclude).github/actions' | wc -l)
+          # OR a moved HEAD (the agent committed despite instructions). Paths
+          # the next step force-restores are excluded because they can never
+          # reach the PR branch (counting them left runs in limbo:
+          # has_changes=true but nothing pushed), as is .claude-pr/ (runtime
+          # artifact, excluded even on branches whose .gitignore lacks it).
+          #
+          # The protected set depends on the maintainer opt-in
+          # (allow-protected-edits label or `/fix-review --allow`):
+          # normally all of .github/actions/ is protected; with the opt-in only
+          # validate-pr-gate and commit-and-push stay protected, because the
+          # workflow executes those two with credentials after the agent ran —
+          # an agent-edited definition there could subvert the gate or the
+          # push, so they are never committable from this flow.
+          #
+          # restored_only distinguishes "the agent had nothing to fix" from
+          # "the agent's fix lives entirely under the force-restored path". The
+          # latter must NOT read as no-actionable-findings: the findings are
+          # real, the workflow just cannot deliver the fix, so the summary says
+          # how to unblock and code-review is not retriggered as
+          # false-positives-confirmed.
+          if [ "$ALLOW_PROTECTED" = "true" ]; then
+            excludes=(':(exclude).github/actions/validate-pr-gate' ':(exclude).github/actions/commit-and-push')
+            protected_paths=('.github/actions/validate-pr-gate' '.github/actions/commit-and-push')
+          else
+            excludes=(':(exclude).github/actions')
+            protected_paths=('.github/actions')
+          fi
+          # protected_reverted covers the mixed-edit case: pushable changes
+          # exist AND protected-path edits are about to be reverted. The push
+          # proceeds, but the summary must say part of the fix was dropped —
+          # otherwise a "✅ applied" comment hides a discarded real finding.
+          dirty=$(git status --porcelain -- . ':(exclude).claude-pr' "${excludes[@]}" | wc -l)
+          protected_dirty=$(git status --porcelain -- "${protected_paths[@]}" | wc -l)
           current=$(git rev-parse HEAD)
           if [ "$dirty" -gt 0 ] || [ "$current" != "$HEAD_SHA" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "restored_only=false" >> "$GITHUB_OUTPUT"
+            if [ "$protected_dirty" -gt 0 ]; then
+              echo "protected_reverted=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "protected_reverted=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$protected_dirty" -gt 0 ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "restored_only=true" >> "$GITHUB_OUTPUT"
+            echo "protected_reverted=false" >> "$GITHUB_OUTPUT"
           else
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "restored_only=false" >> "$GITHUB_OUTPUT"
+            echo "protected_reverted=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Restore composite action files (Claude agent may alter working tree)
         if: steps.pr.outputs.eligible == 'true'
-        run: git checkout "${{ steps.safe-head.outputs.sha }}" -- .github/actions/
+        env:
+          SAFE_SHA: ${{ steps.safe-head.outputs.sha }}
+          ALLOW_PROTECTED: ${{ steps.pr.outputs.allow_protected_edits }}
+        run: |
+          # git checkout restores tracked files but leaves agent-created
+          # untracked files behind, and commit-and-push stages with git add -A
+          # — git clean removes them so nothing under a protected path can ride
+          # along into the commit. With the maintainer opt-in only the two
+          # actions this workflow executes post-agent are restored; everything
+          # else under .github/actions/ stays editable and goes through the
+          # same gate + push + re-review as any other change.
+          if [ "$ALLOW_PROTECTED" = "true" ]; then
+            git clean -fd -- .github/actions/validate-pr-gate/ .github/actions/commit-and-push/
+            git checkout "$SAFE_SHA" -- .github/actions/validate-pr-gate/ .github/actions/commit-and-push/
+          else
+            git clean -fd -- .github/actions/
+            git checkout "$SAFE_SHA" -- .github/actions/
+          fi
 
       - name: Ensure gate action exists
         if: steps.pr.outputs.eligible == 'true'
@@ -373,6 +446,9 @@ jobs:
           CLAUDE_FAILURE_REASON: ${{ steps.claude.outputs.claude_failure_reason }}
           OUTCOME: ${{ steps.claude.outcome }}
           HAS_CHANGES: ${{ steps.detect-noop.outputs.has_changes }}
+          RESTORED_ONLY: ${{ steps.detect-noop.outputs.restored_only }}
+          PROTECTED_REVERTED: ${{ steps.detect-noop.outputs.protected_reverted }}
+          ALLOW_PROTECTED: ${{ steps.pr.outputs.allow_protected_edits }}
           GATE_PASSED: ${{ steps.gate.outputs.gate_passed }}
           LINT_OUTCOME: ${{ steps.gate.outputs.lint_outcome }}
           TYPECHECK_OUTCOME: ${{ steps.gate.outputs.typecheck_outcome }}
@@ -389,7 +465,9 @@ jobs:
           node .github/workflows/scripts/upsert-fix-review-comment.cjs \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" \
             --num-turns "$NUM_TURNS" --failed "$CLAUDE_FAILED" --fail-reason "$CLAUDE_FAILURE_REASON" \
-            --outcome "$OUTCOME" --has-changes "$HAS_CHANGES" --gate-passed "$GATE_PASSED" \
+            --outcome "$OUTCOME" --has-changes "$HAS_CHANGES" --restored-only "$RESTORED_ONLY" \
+            --protected-reverted "$PROTECTED_REVERTED" \
+            --allow-protected "$ALLOW_PROTECTED" --gate-passed "$GATE_PASSED" \
             --lint-outcome "$LINT_OUTCOME" --typecheck-outcome "$TYPECHECK_OUTCOME" \
             --format-outcome "$FORMAT_OUTCOME" --test-outcome "$TEST_OUTCOME" \
             --build-outcome "$BUILD_OUTCOME" --script-tests-outcome "$SCRIPT_TESTS_OUTCOME" \
@@ -402,6 +480,7 @@ jobs:
           always() &&
           steps.pr.outputs.eligible == 'true' &&
           steps.detect-noop.outputs.has_changes == 'false' &&
+          steps.detect-noop.outputs.restored_only != 'true' &&
           steps.claude.outputs.claude_failed != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
