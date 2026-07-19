@@ -75,7 +75,7 @@ jobs:
           EXISTING_ISSUE=""
           if ! EXISTING_ISSUE=$(
             gh issue list --repo "${REPOSITORY}" --state open \
-              --search 'weekly npm audit in:title' \
+              --search 'weekly npm audit found HIGH+ advisories in:title' \
               --json number \
               --jq '.[0].number // empty' \
               2>/dev/null
