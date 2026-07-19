@@ -30,6 +30,7 @@ jobs:
         id: audit
         run: |
           set +e
+          set -o pipefail
           npm audit --audit-level=high 2>&1 | tee "${RUNNER_TEMP}/npm-audit-high-output.txt"
           AUDIT_EXIT=$?
           set -e
@@ -153,7 +154,8 @@ jobs:
           else
             gh issue edit "${EXISTING_ISSUE}" \
               --repo "${REPOSITORY}" \
-              --body-file "${INFRA_ISSUE_BODY}"
+              --body-file "${INFRA_ISSUE_BODY}" \
+              --add-label 'ci-failure'
           fi
           echo "::error::npm audit infrastructure error (exit ${AUDIT_EXIT}) — see opened issue"
           exit 1
