@@ -14,6 +14,7 @@ const {
   hasExactDuplicate,
   hasEquivalentDuplicate,
   isGhNotFoundError,
+  runOverlapMatrix,
 } = require('../find-duplicate-automation-pr.cjs');
 
 test('hasFileOverlap returns true when local and remote share a file path', () => {
@@ -217,17 +218,28 @@ test('buildOverlapMatrix detects contested files across multiple PRs', () => {
   assert.match(result.markdown, /contested file/);
 });
 
-test('buildOverlapMatrix writes markdown to GITHUB_STEP_SUMMARY path', () => {
-  const tmpFile = path.join(os.tmpdir(), `overlap-matrix-test-${Date.now()}.md`);
+test('runOverlapMatrix appends markdown to GITHUB_STEP_SUMMARY when set', () => {
+  const tmpFile = path.join(os.tmpdir(), `overlap-summary-${Date.now()}.md`);
+  const filesPayload = new Map([
+    [10, [{ path: 'a.ts', patch: '@@' }]],
+    [11, [{ path: 'b.ts', patch: '@@' }]],
+  ]);
+  const ghCommand = (args) => {
+    const str = Array.isArray(args) ? args.join(' ') : String(args);
+    if (str.includes('pr list'))
+      return JSON.stringify([
+        { number: 10, title: 'fix: a', url: 'u/10', headRefName: 'b10', labels: [{ name: 'auto-fix' }] },
+        { number: 11, title: 'fix: b', url: 'u/11', headRefName: 'b11', labels: [{ name: 'auto-fix' }] },
+      ]);
+    const match = str.match(/\/pulls\/(\d+)\//);
+    if (match) return JSON.stringify(filesPayload.get(Number(match[1])) || []);
+    return '[]';
+  };
   try {
-    const ghCommand = () => '[]';
-    // Directly test markdown output by writing via fs (matrix has <2 PRs so empty)
-    const result = buildOverlapMatrix({ repo: 'o/r', label: 'auto-fix', ghCommand });
-    fs.writeFileSync(tmpFile, result.markdown);
+    runOverlapMatrix({ ghCommand, summaryPath: tmpFile });
     const written = fs.readFileSync(tmpFile, 'utf8');
-    assert.ok(written.length > 0 || written === '');
-    // With 2+ PRs and no contested files, markdown contains the no-conflict message
-    assert.ok(true);
+    assert.match(written, /File-Overlap Conflict Matrix/);
+    assert.match(written, /No contested files/);
   } finally {
     fs.unlinkSync(tmpFile);
   }

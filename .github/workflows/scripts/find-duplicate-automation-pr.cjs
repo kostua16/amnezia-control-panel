@@ -400,9 +400,6 @@ function buildOverlapMatrix(options = {}) {
     };
   }
 
-  const prList = prEntries
-    .map((e) => `[#${e.number}](${e.url}) — ${e.title}`)
-    .join('\n');
   const tableRows = contestedFiles
     .map(
       (c) =>
@@ -426,18 +423,26 @@ function buildOverlapMatrix(options = {}) {
   };
 }
 
-function runOverlapMatrix() {
+function runOverlapMatrix(options = {}) {
+  const {
+    ghCommand = gh,
+    summaryPath = process.env.GITHUB_STEP_SUMMARY,
+  } = options;
   const repo = getArg('--repo') || process.env.GITHUB_REPOSITORY;
   const titlePrefix = getArg('--title-prefix') || '';
   const label = getArg('--overlap-label') || '';
   const excludeHead = getArg('--exclude-head') || '';
-  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
 
-  const matrix = buildOverlapMatrix({ repo, titlePrefix, label, excludeHead });
+  const matrix = buildOverlapMatrix({
+    repo,
+    titlePrefix,
+    label,
+    excludeHead,
+    ghCommand,
+  });
 
-  const output = summaryPath || '';
-  if (output) {
-    fs.appendFileSync(output, matrix.markdown);
+  if (summaryPath) {
+    fs.appendFileSync(summaryPath, matrix.markdown);
   } else {
     process.stdout.write(matrix.markdown);
   }
@@ -590,6 +595,7 @@ module.exports = {
   isGhNotFoundError,
   normalizePatch,
   normalizeSubstantivePatch,
+  runOverlapMatrix,
   sortedFilePatches,
 };
 
