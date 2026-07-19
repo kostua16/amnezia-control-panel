@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MAX_TURNS: 50
+  MAX_TURNS: 30
   NODE_VERSION: '24.x'
 
 permissions:
@@ -89,6 +89,7 @@ jobs:
             Do NOT create issues if no findings exist in that category.
             If critical security issues (HIGH/CRITICAL severity) are found, also comment on all open PRs.
             Do NOT push or open a PR. The workflow persists any maintenance commits by validating the prepared branch, pushing it, and opening a review PR.
+            BUDGET: 30 turns, 10-minute timeout. Skip categories with zero findings immediately — do not burn turns on clean sections.
             Operate as the `kos-maintenance` agent: first read `.claude/agents/kos-maintenance.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail workflow on Claude failure
