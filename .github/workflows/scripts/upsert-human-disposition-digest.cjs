@@ -96,7 +96,12 @@ function renderDigestBody(data, runUrl, repoUrl) {
       lines.push('### Recommended Actions');
       lines.push('');
       for (const row of rows) {
-        lines.push(`- ${escapeListItem(row.reason)}`);
+        // Preserve the action when present so structured items without a
+        // PR number do not silently lose their disposition verb. Legacy
+        // string items carry a '-' placeholder and render as plain bullets.
+        const action = row.action && row.action !== '-' ? escapeListItem(row.action) : '';
+        const reason = escapeListItem(row.reason);
+        lines.push(action ? `- [${action}] ${reason}` : `- ${reason}`);
       }
       lines.push('');
     }

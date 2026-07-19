@@ -127,7 +127,9 @@ test('renderDigestBody falls back to bullets when structured items lack number',
     'https://example/run',
     'https://github.com/owner/repo',
   );
-  assert.ok(body.includes('- check the CI'));
+  // Action verb is preserved in the bullet fallback so structured items
+  // without a PR number do not silently lose their disposition.
+  assert.ok(body.includes('- [review] check the CI'));
   assert.ok(!body.includes('| Action |'));
 });
 
