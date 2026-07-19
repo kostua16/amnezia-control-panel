@@ -110,7 +110,7 @@ jobs:
           if runs_json="$(gh run list \
             --workflow "$MONITOR_WORKFLOW_FILE" \
             --limit 30 \
-            --json databaseId,status,conclusion,createdAt,startedAt,updatedAt,url)"; then
+            --json databaseId,status,conclusion,event,createdAt,startedAt,updatedAt,url)"; then
             :
           else
             echo "::warning::Could not list previous monitor workflow runs; using fallback lookback."
@@ -134,6 +134,7 @@ jobs:
 
           const completed = runs
             .filter((run) => run.status === 'completed')
+            .filter((run) => run.event === 'schedule')
             .filter((run) => Number(run.databaseId) !== currentRunId)
             .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
 
@@ -144,7 +145,7 @@ jobs:
           const recentProblemSince = new Date(
             now.getTime() - recentProblemHours * 60 * 60 * 1000,
           ).toISOString();
-          const source = previous ? 'previous-completed-run' : 'fallback-lookback';
+          const source = previous ? 'previous-scheduled-run' : 'fallback-lookback';
           const summary = [
             `monitor since ${monitorSince} (${source})`,
             `recent problem since ${recentProblemSince}`,
