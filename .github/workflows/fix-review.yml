@@ -302,12 +302,25 @@ jobs:
           # by the next step before anything is committed. Counting them left
           # runs in limbo: has_changes=true but nothing pushed, so neither the
           # push steps nor the false-positive code-review retrigger ever fired.
+          #
+          # restored_only distinguishes "the agent had nothing to fix" from
+          # "the agent's fix lives entirely under the force-restored path". The
+          # latter must NOT read as no-actionable-findings: the findings are
+          # real, the workflow just cannot deliver the fix, so the summary says
+          # a manual commit is needed and code-review is not retriggered as
+          # false-positives-confirmed.
           dirty=$(git status --porcelain -- . ':(exclude).claude-pr' ':(exclude).github/actions' | wc -l)
+          protected_dirty=$(git status --porcelain -- .github/actions | wc -l)
           current=$(git rev-parse HEAD)
           if [ "$dirty" -gt 0 ] || [ "$current" != "$HEAD_SHA" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "restored_only=false" >> "$GITHUB_OUTPUT"
+          elif [ "$protected_dirty" -gt 0 ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "restored_only=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "restored_only=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Restore composite action files (Claude agent may alter working tree)
@@ -373,6 +386,7 @@ jobs:
           CLAUDE_FAILURE_REASON: ${{ steps.claude.outputs.claude_failure_reason }}
           OUTCOME: ${{ steps.claude.outcome }}
           HAS_CHANGES: ${{ steps.detect-noop.outputs.has_changes }}
+          RESTORED_ONLY: ${{ steps.detect-noop.outputs.restored_only }}
           GATE_PASSED: ${{ steps.gate.outputs.gate_passed }}
           LINT_OUTCOME: ${{ steps.gate.outputs.lint_outcome }}
           TYPECHECK_OUTCOME: ${{ steps.gate.outputs.typecheck_outcome }}
@@ -389,7 +403,8 @@ jobs:
           node .github/workflows/scripts/upsert-fix-review-comment.cjs \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" \
             --num-turns "$NUM_TURNS" --failed "$CLAUDE_FAILED" --fail-reason "$CLAUDE_FAILURE_REASON" \
-            --outcome "$OUTCOME" --has-changes "$HAS_CHANGES" --gate-passed "$GATE_PASSED" \
+            --outcome "$OUTCOME" --has-changes "$HAS_CHANGES" --restored-only "$RESTORED_ONLY" \
+            --gate-passed "$GATE_PASSED" \
             --lint-outcome "$LINT_OUTCOME" --typecheck-outcome "$TYPECHECK_OUTCOME" \
             --format-outcome "$FORMAT_OUTCOME" --test-outcome "$TEST_OUTCOME" \
             --build-outcome "$BUILD_OUTCOME" --script-tests-outcome "$SCRIPT_TESTS_OUTCOME" \
@@ -402,6 +417,7 @@ jobs:
           always() &&
           steps.pr.outputs.eligible == 'true' &&
           steps.detect-noop.outputs.has_changes == 'false' &&
+          steps.detect-noop.outputs.restored_only != 'true' &&
           steps.claude.outputs.claude_failed != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -104,6 +104,46 @@ function renderNoChanges({ headSha, runUrl, command, structured, updatedAt }) {
   return lines.join('\n');
 }
 
+function renderProtectedPathsOnly({
+  headSha,
+  runUrl,
+  command,
+  structured,
+  updatedAt,
+}) {
+  const changed = Array.isArray(structured.changed_files)
+    ? structured.changed_files
+    : [];
+  const lines = [
+    COMMENT_MARKER,
+    reportHeading('⚠️ Fix limited to protected paths — not pushed'),
+    '',
+    `- Command: \`${command || '/fix-review'}\``,
+    `- Head SHA: \`${shortSha(headSha)}\``,
+    `- Run: ${runUrl || '_n/a_'}`,
+    '',
+    quoteBlock(
+      'The agent produced a fix, but every edit was under `.github/actions/**`, ' +
+        'which this workflow force-restores before committing (the agent may not ' +
+        'modify the composite actions the workflow itself executes). The edits ' +
+        'were discarded, nothing was pushed, and the review findings are NOT ' +
+        'resolved. Apply the fix manually with a normal commit to the PR branch.',
+    ),
+  ];
+  if (structured.summary) {
+    lines.push('', quoteBlock(structured.summary));
+  }
+  if (changed.length > 0) {
+    lines.push(
+      '',
+      `Attempted changes (${changed.length}):`,
+      ...changed.map((f) => `- ${f}`),
+    );
+  }
+  lines.push('', '<!-- updated: ' + updatedAt + ' -->');
+  return lines.join('\n');
+}
+
 function renderPushRejected({
   headSha,
   runUrl,
@@ -328,6 +368,7 @@ function resolveFinishedBody({
   failReason,
   outcome,
   hasChanges,
+  restoredOnly,
   gatePassed,
   gateOutcomes = {},
   pushed,
@@ -339,6 +380,19 @@ function resolveFinishedBody({
   }
   if (isTrue(failed)) {
     return renderFailed({ headSha, runUrl, failReason, updatedAt });
+  }
+  // The agent's only edits were inside restore-protected paths, so they were
+  // reverted and never pushed. This is NOT a clean no-op: the findings were
+  // actionable, the workflow just cannot deliver the fix — say so instead of
+  // claiming there was nothing to do.
+  if (!isTrue(hasChanges) && isTrue(restoredOnly)) {
+    return renderProtectedPathsOnly({
+      headSha,
+      runUrl,
+      command,
+      structured,
+      updatedAt,
+    });
   }
   // Clean no-op: the agent changed nothing, so the gate was skipped and there
   // is nothing to push (fix-review.yml detect-noop sets has_changes=false).
@@ -437,6 +491,7 @@ function main() {
         failReason: getArg('--fail-reason'),
         outcome: getArg('--outcome'),
         hasChanges: getArg('--has-changes'),
+        restoredOnly: getArg('--restored-only'),
         gatePassed: getArg('--gate-passed'),
         gateOutcomes: {
           lint: getArg('--lint-outcome'),
@@ -473,6 +528,7 @@ module.exports = {
   renderWorking,
   renderSkipped,
   renderNoChanges,
+  renderProtectedPathsOnly,
   renderPushRejected,
   renderValidationFailed,
   renderFailed,

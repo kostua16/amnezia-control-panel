@@ -10,6 +10,7 @@ const {
   renderWorking,
   renderSkipped,
   renderNoChanges,
+  renderProtectedPathsOnly,
   renderPushRejected,
   renderValidationFailed,
   renderFailed,
@@ -68,6 +69,26 @@ test('renderNoChanges states no actionable findings', () => {
   });
   assert.match(body, /FIX-REVIEW Report: ℹ️ No changes needed/);
   assert.match(body, /> all good/);
+});
+
+test('renderProtectedPathsOnly explains the revert and asks for a manual commit', () => {
+  const body = renderProtectedPathsOnly({
+    headSha: SHA,
+    runUrl: RUN,
+    command: '/fix-review',
+    structured: {
+      summary: 'removed duplicate declaration',
+      changed_files: ['.github/actions/report-failure/action.yml'],
+    },
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  assert.match(body, /FIX-REVIEW Report: ⚠️ Fix limited to protected paths/);
+  assert.match(body, /force-restores before committing/);
+  assert.match(body, /review findings are NOT resolved/);
+  assert.match(body, /Apply the fix manually/);
+  assert.match(body, /> removed duplicate declaration/);
+  assert.match(body, /- \.github\/actions\/report-failure\/action\.yml/);
+  assert.doesNotMatch(body, /No changes needed/);
 });
 
 test('renderPushRejected lists attempted changes and forbids force-push', () => {
@@ -271,6 +292,37 @@ test('resolveFinishedBody: clean no-op (has_changes=false) -> no-changes, gate s
     structured: {},
   });
   assert.match(body, /FIX-REVIEW Report: ℹ️ No changes needed/);
+});
+
+test('resolveFinishedBody: restored-only no-op -> protected-paths, never no-changes', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    hasChanges: 'false',
+    restoredOnly: 'true',
+    gatePassed: 'false',
+    pushed: 'false',
+    structured: {
+      summary: 'fixed a composite action',
+      changed_files: ['.github/actions/report-failure/action.yml'],
+    },
+  });
+  assert.match(body, /FIX-REVIEW Report: ⚠️ Fix limited to protected paths/);
+  assert.doesNotMatch(body, /No changes needed/);
+  assert.doesNotMatch(body, /no actionable findings/);
+});
+
+test('resolveFinishedBody: restored-only is ignored when real changes exist', () => {
+  const body = resolveFinishedBody({
+    outcome: 'success',
+    failed: 'false',
+    hasChanges: 'true',
+    restoredOnly: 'false',
+    gatePassed: 'true',
+    pushed: 'true',
+    structured: { changed_files: ['src/a.ts'] },
+  });
+  assert.match(body, /FIX-REVIEW Report: ✅ Review fixes applied/);
 });
 
 test('resolveFinishedBody: gate failure -> validation-failed, not pushed', () => {
