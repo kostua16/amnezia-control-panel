@@ -663,11 +663,11 @@ report containing numeric `metadata.vulnerabilities.total`. Exit code `1` is
 treated as a vulnerability finding only when that report shape is present;
 registry errors and malformed payloads are infrastructure failures.
 
-| ID  | Trigger / precondition                                      | Resolution → terminal                                                          | Type |
-| --- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ | ---- |
-| SA1 | scheduled/manual audit returns a valid report with HIGH+     | open or refresh the HIGH+ advisory issue → `reported`                          | spec |
-| SA2 | audit registry/endpoint fails with exit code `1`             | open or refresh the `ci-failure` infrastructure issue; no advisory issue       | spec |
-| SA3 | audit exits `0` but its JSON report is missing or malformed  | force the audit step to fail and report an infrastructure issue                | spec |
+| ID  | Trigger / precondition                                      | Resolution → terminal                                                    | Type |
+| --- | ----------------------------------------------------------- | ------------------------------------------------------------------------ | ---- |
+| SA1 | scheduled/manual audit returns a valid report with HIGH+    | open or refresh the HIGH+ advisory issue → `reported`                    | spec |
+| SA2 | audit registry/endpoint fails with exit code `1`            | open or refresh the `ci-failure` infrastructure issue; no advisory issue | spec |
+| SA3 | audit exits `0` but its JSON report is missing or malformed | force the audit step to fail and report an infrastructure issue          | spec |
 
 ---
 
