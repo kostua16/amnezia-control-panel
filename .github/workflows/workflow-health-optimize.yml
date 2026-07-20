@@ -96,10 +96,20 @@ jobs:
               r.path !== ownPath
             );
 
+            // WHO-I02: cap detailed failure-log API calls to avoid timeout.
+            // All runs still evaluated for hasProblems (uses run.conclusion only).
+            // Empty and non-empty paths share the same runs_data envelope shape.
+            const MAX_DETAILED_FAILURES = 10;
+
             if (filteredRuns.length === 0) {
               core.setOutput('has_runs', 'false');
               core.setOutput('has_problems', 'false');
-              core.setOutput('runs_data', '[]');
+              core.setOutput('runs_data', JSON.stringify({
+                failureLogCapApplied: false,
+                failureLogCapMax: MAX_DETAILED_FAILURES,
+                failureLogCapTotal: 0,
+                runs: [],
+              }));
               core.info('No completed workflow runs in the past hour');
               return;
             }
@@ -109,8 +119,16 @@ jobs:
 
             let hasProblems = false;
 
+            // Identify problem runs (failure or slow) for detailed processing.
+            // newest-first so the cap keeps the most recent failures.
+            const problemRuns = filteredRuns
+              .map((r, idx) => ({ run: r, idx, durationSec: Math.round((new Date(r.updated_at) - new Date(r.run_started_at || r.created_at)) / 1000) }))
+              .filter(({ run, durationSec }) => run.conclusion === 'failure' || durationSec > 300);
+            const detailedSet = new Set(problemRuns.slice(0, MAX_DETAILED_FAILURES).map(({ idx }) => idx));
+
             const runSummaries = [];
-            for (const run of filteredRuns) {
+            for (let i = 0; i < filteredRuns.length; i++) {
+              const run = filteredRuns[i];
               const runStartedAt = run.run_started_at || run.created_at;
               const durationSec = Math.round((new Date(run.updated_at) - new Date(runStartedAt)) / 1000);
               const isSlow = durationSec > 300;
@@ -133,9 +151,10 @@ jobs:
                 summary.duplicateSameSha = duplicate;
               }
 
+              const isDetailed = detailedSet.has(i);
               let jobs = null;
               let jobsError = '';
-              if (run.conclusion === 'failure' || isSlow) {
+              if (isDetailed && (run.conclusion === 'failure' || isSlow)) {
                 try {
                   jobs = await github.rest.actions.listJobsForWorkflowRun({
                     owner: context.repo.owner,
@@ -155,9 +174,11 @@ jobs:
                 });
               }
 
-              // Collect failure logs for failed runs
+              // Collect failure logs for failed runs (only detailed ones)
               if (run.conclusion === 'failure') {
-                if (!jobs) {
+                if (!isDetailed) {
+                  summary.failureLogs = [{ job: 'skipped', reason: `failure-log cap applied (max ${MAX_DETAILED_FAILURES} detailed failures)` }];
+                } else if (!jobs) {
                   summary.failureLogs = [{ job: 'unknown', failedSteps: [], logTail: `Could not fetch jobs: ${jobsError || 'unknown error'}` }];
                 } else {
                   const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure');
@@ -229,9 +250,21 @@ jobs:
             while (JSON.stringify(trimmed).length > 51200 && trimmed.length > 1) {
               trimmed = trimmed.slice(0, -1);
             }
-            const runsJson = JSON.stringify(trimmed);
+
+            // WHO-I02: wrap in envelope so downstream consumers know about the cap.
+            const capApplied = problemRuns.length > MAX_DETAILED_FAILURES;
+            const envelope = {
+              failureLogCapApplied: capApplied,
+              failureLogCapMax: MAX_DETAILED_FAILURES,
+              failureLogCapTotal: problemRuns.length,
+              runs: trimmed,
+            };
+            const runsJson = JSON.stringify(envelope);
             if (trimmed.length < runSummaries.length) {
               core.info(`Truncated runs_data from ${runSummaries.length} to ${trimmed.length} entries (${runsJson.length} bytes)`);
+            }
+            if (capApplied) {
+              core.info(`Failure-log cap applied: ${MAX_DETAILED_FAILURES} of ${problemRuns.length} problem runs fetched in detail`);
             }
             core.setOutput('runs_data', runsJson);
 
