@@ -96,20 +96,26 @@ jobs:
               r.path !== ownPath
             );
 
+            // WHO-I02: cap detailed failure-log API calls to avoid timeout.
+            // All runs still evaluated for hasProblems (uses run.conclusion only).
+            // Empty and non-empty paths share the same runs_data envelope shape.
+            const MAX_DETAILED_FAILURES = 10;
+
             if (filteredRuns.length === 0) {
               core.setOutput('has_runs', 'false');
               core.setOutput('has_problems', 'false');
-              core.setOutput('runs_data', '[]');
+              core.setOutput('runs_data', JSON.stringify({
+                failureLogCapApplied: false,
+                failureLogCapMax: MAX_DETAILED_FAILURES,
+                failureLogCapTotal: 0,
+                runs: [],
+              }));
               core.info('No completed workflow runs in the past hour');
               return;
             }
 
             core.setOutput('has_runs', 'true');
             core.info(`Found ${filteredRuns.length} completed runs`);
-
-            // WHO-I02: cap detailed failure-log API calls to avoid timeout.
-            // All runs still evaluated for hasProblems (uses run.conclusion only).
-            const MAX_DETAILED_FAILURES = 10;
 
             let hasProblems = false;
 
