@@ -36,6 +36,8 @@ const eslintConfig = defineConfig([
     'scripts/dev.cjs',
     'scripts/start.cjs',
     'scripts/ensure-prisma-migrated.cjs',
+    'scripts/ensure-runtime-env.cjs',
+    'scripts/__tests__/**',
     // GitHub Actions workflow scripts are CommonJS and use require() by design:
     '.github/workflows/scripts/**',
   ]),

@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const { ensurePrismaMigrated } = require('./ensure-prisma-migrated.cjs');
+const { ensureRuntimeEnv } = require('./ensure-runtime-env.cjs');
 
 const serverScript = path.join(__dirname, '..', 'server.mjs');
 const userArgs = process.argv.slice(2);
@@ -46,6 +47,7 @@ const hasNpmPort = resolvedNpm.port !== undefined;
 
 // Set NODE_ENV=production and resolve port
 process.env.NODE_ENV = 'production';
+ensureRuntimeEnv({ mode: 'production' });
 
 if (!hasPortInArgs(argsWithoutNpmPortValue) && !hasPortEnv && hasNpmPort) {
   process.env.PORT = resolvedNpm.port;
