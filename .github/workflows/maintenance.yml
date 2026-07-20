@@ -139,9 +139,29 @@ jobs:
           echo "::error::Maintenance produced changes but the validation gate did not pass (gate_passed=${{ steps.gate.outputs.gate_passed }}). Changes will not be pushed."
           exit 1
 
+      - name: Detect duplicate maintenance PR
+        id: duplicate
+        if: steps.detect_changes.outputs.changed == 'true' && steps.gate.outputs.gate_passed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/find-duplicate-automation-pr.cjs \
+            --repo "${{ github.repository }}" \
+            --base-ref main \
+            --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --title-prefix "chore: persist daily maintenance" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Log duplicate maintenance result
+        if: steps.duplicate.outputs.duplicate_found == 'true'
+        run: |
+          echo "Skipping duplicate maintenance PR."
+          echo "Existing PR: #${{ steps.duplicate.outputs.duplicate_pr_number }} ${{ steps.duplicate.outputs.duplicate_pr_url }}"
+          echo "Reason: ${{ steps.duplicate.outputs.duplicate_reason }}"
+
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.detect_changes.outputs.changed == 'true' && steps.gate.outputs.gate_passed == 'true'
+        if: steps.detect_changes.outputs.changed == 'true' && steps.gate.outputs.gate_passed == 'true' && steps.duplicate.outputs.duplicate_found != 'true'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'chore: persist daily maintenance changes'
