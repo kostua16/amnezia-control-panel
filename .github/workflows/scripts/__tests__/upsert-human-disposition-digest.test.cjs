@@ -79,7 +79,7 @@ test('renderDigestBody escapes external PR metadata in the inspected table', () 
   assert.equal(structuralPipes, 6);
 });
 
-test('renderDigestBody collapses newlines in human_disposition bullet items', () => {
+test('renderDigestBody renders legacy string disposition items as bullet list', () => {
   const body = renderDigestBody(
     {
       human_disposition: ['PR #1 needs a look\nreview the diff carefully'],
@@ -91,6 +91,64 @@ test('renderDigestBody collapses newlines in human_disposition bullet items', ()
   assert.ok(body.includes('- PR #1 needs a look review the diff carefully'));
   // The newline-terminated remainder must not leak as a non-bullet line.
   assert.ok(!/^review the diff carefully$/m.test(body));
+});
+
+test('renderDigestBody renders structured disposition as a table', () => {
+  const body = renderDigestBody(
+    {
+      human_disposition: [
+        { number: 10, action: 'close', reason: 'duplicate of #8' },
+        { number: 22, action: 'rebase', reason: 'conflicts with main' },
+      ],
+      auto_prs_inspected: [],
+    },
+    'https://example/run',
+    'https://github.com/owner/repo',
+  );
+  assert.ok(body.includes('### Recommended Actions'));
+  assert.ok(body.includes('[#10](https://github.com/owner/repo/pull/10)'));
+  assert.ok(body.includes('| close |'));
+  assert.ok(body.includes('| duplicate of #8 |'));
+  assert.ok(body.includes('[#22](https://github.com/owner/repo/pull/22)'));
+  assert.ok(body.includes('| rebase |'));
+  assert.ok(body.includes('| conflicts with main |'));
+  // No bullet list — structured items render as a table.
+  assert.ok(!body.match(/^- /m));
+});
+
+test('renderDigestBody falls back to bullets when structured items lack number', () => {
+  const body = renderDigestBody(
+    {
+      human_disposition: [
+        { action: 'review', reason: 'check the CI' },
+      ],
+      auto_prs_inspected: [],
+    },
+    'https://example/run',
+    'https://github.com/owner/repo',
+  );
+  // Action verb is preserved in the bullet fallback so structured items
+  // without a PR number do not silently lose their disposition.
+  assert.ok(body.includes('- [review] check the CI'));
+  assert.ok(!body.includes('| Action |'));
+});
+
+test('renderDigestBody escapes pipes in structured disposition cells', () => {
+  const body = renderDigestBody(
+    {
+      human_disposition: [
+        { number: 5, action: 'close|merge', reason: 'stale | superseded' },
+      ],
+      auto_prs_inspected: [],
+    },
+    'https://example/run',
+    'https://github.com/owner/repo',
+  );
+  // Pipe chars in action/reason must be escaped so the table stays 3 columns.
+  const row = body.split('\n').find((l) => l.startsWith('| [#5]'));
+  assert.ok(row, 'expected a disposition table row');
+  const structuralPipes = (row.replace(/\\\|/g, '').match(/\|/g) || []).length;
+  assert.equal(structuralPipes, 4, '3-cell row must have exactly 4 structural pipes');
 });
 
 test('parseArgs extracts --repo, --structured-output, and --run-url', () => {
