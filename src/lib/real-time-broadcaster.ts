@@ -4,7 +4,7 @@ import { getSystemResources } from '@/lib/resource-monitor';
 import { broadcastEvent, hasConnectedClients } from '@/lib/websocket';
 import { cleanupOldTrafficLogs } from '@/lib/traffic-log-cleanup';
 import { cleanupOldAlerts } from '@/lib/alert-service';
-import { isAuditTableWritable } from '@/lib/audit-log';
+import { isAuditTableReachable } from '@/lib/audit-log';
 
 let statsInterval: ReturnType<typeof setInterval> | null = null;
 let resourcesInterval: ReturnType<typeof setInterval> | null = null;
@@ -88,7 +88,7 @@ export function startBroadcaster(): void {
         console.error('[broadcaster] Alert cleanup failed:', err);
       }
       try {
-        if (!(await isAuditTableWritable())) {
+        if (!(await isAuditTableReachable())) {
           console.error(
             '[broadcaster] Audit table health check failed — audit log may be unreachable',
           );

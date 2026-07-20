@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { hashValue } from '@/lib/password';
+import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
 import { writeAuditLog } from '@/lib/audit-log';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -216,6 +217,17 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
   } catch (err) {
     console.error('[api/servers/:id/config PUT] Error:', err);
+
+    // The transaction still surfaces Prisma's P2002 unique-constraint
+    // violation (e.g. duplicate hostname) — map it to a 409 before the
+    // generic 500 fallback so callers keep the specific error class.
+    if (isPrismaUniqueViolation(err)) {
+      return NextResponse.json(
+        { success: false, error: 'Server hostname already exists' },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: 'Failed to update server configuration' },
       { status: 500 },

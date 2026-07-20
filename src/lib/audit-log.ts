@@ -21,10 +21,13 @@ let consecutiveFailures = 0;
 const AUDIT_FAILURE_ALERT_THRESHOLD = 3;
 
 /**
- * Check whether the audit log table is writable by attempting an
- * idempotent read. Returns `true` when the table is reachable.
+ * Check whether the audit log table is reachable by attempting an
+ * idempotent read. This is a reachability probe only — it does not
+ * verify writes. Sustained write failures are surfaced separately by
+ * the consecutive-failure counter in `writeAuditLog`, which emits a
+ * CRITICAL alert once the threshold is crossed.
  */
-export async function isAuditTableWritable(): Promise<boolean> {
+export async function isAuditTableReachable(): Promise<boolean> {
   try {
     await prisma.auditLog.findFirst({ take: 1 });
     return true;
