@@ -78,3 +78,17 @@ test('weekly workflow routes issues by validated audit result', () => {
   assert.match(workflow, /steps\.audit\.outputs\.result == 'infrastructure'/);
   assert.doesNotMatch(workflow, /steps\.audit\.outputs\.exit-code == '1'/);
 });
+
+test('weekly workflow treats an empty classifier result as an infrastructure failure', () => {
+  const workflow = fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/security-audit-weekly.yml'),
+    'utf8',
+  );
+
+  // If classify-npm-audit-result.cjs crashes, AUDIT_RESULT is empty. The workflow
+  // must not silently route to the vulnerabilities path; it defaults to
+  // infrastructure and exits 2 so the job fails red.
+  assert.match(workflow, /\[ -z "\$\{AUDIT_RESULT\}" \]/);
+  assert.match(workflow, /classify-npm-audit-result\.cjs produced no result/);
+  assert.match(workflow, /echo "result=infrastructure" >> "\$GITHUB_OUTPUT"/);
+});

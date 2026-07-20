@@ -45,8 +45,13 @@ jobs:
             fi
           } | tee "${AUDIT_OUTPUT}"
           AUDIT_RESULT=$(node .github/workflows/scripts/classify-npm-audit-result.cjs \
-            "${AUDIT_JSON}" "${AUDIT_EXIT}")
+            "${AUDIT_JSON}" "${AUDIT_EXIT}") || true
           echo "exit-code=${AUDIT_EXIT}" >> "$GITHUB_OUTPUT"
+          if [ -z "${AUDIT_RESULT}" ]; then
+            echo "::error::classify-npm-audit-result.cjs produced no result; treating as infrastructure failure"
+            echo "result=infrastructure" >> "$GITHUB_OUTPUT"
+            exit 2
+          fi
           echo "result=${AUDIT_RESULT}" >> "$GITHUB_OUTPUT"
           if [ "${AUDIT_RESULT}" = "infrastructure" ] && [ "${AUDIT_EXIT}" -eq 0 ]; then
             exit 2
