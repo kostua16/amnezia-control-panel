@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node scripts/dev.cjs",
     "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
     "build:next": "next build",
     "build": "npm run prisma:generate && npm run build:next",
     "start": "node scripts/start.cjs",

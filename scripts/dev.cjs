@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const path = require('path');
+const { ensurePrismaMigrated } = require('./ensure-prisma-migrated.cjs');
 
 const serverScript = path.join(__dirname, '..', 'server.mjs');
 const userArgs = process.argv.slice(2);
@@ -88,16 +89,14 @@ function envForDevChild() {
   return env;
 }
 
+ensurePrismaMigrated();
+
 // Pass remaining args as environment or ignore (custom server doesn't support all next CLI flags)
-const child = spawn(
-  process.execPath,
-  [serverScript, ...finalArgs],
-  {
-    stdio: 'inherit',
-    windowsHide: true,
-    env: envForDevChild(),
-  },
-);
+const child = spawn(process.execPath, [serverScript, ...finalArgs], {
+  stdio: 'inherit',
+  windowsHide: true,
+  env: envForDevChild(),
+});
 
 child.on('exit', (code, signal) => {
   if (signal) process.exit(1);

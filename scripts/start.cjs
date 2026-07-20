@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const path = require('path');
+const { ensurePrismaMigrated } = require('./ensure-prisma-migrated.cjs');
 
 const serverScript = path.join(__dirname, '..', 'server.mjs');
 const userArgs = process.argv.slice(2);
@@ -49,6 +50,8 @@ process.env.NODE_ENV = 'production';
 if (!hasPortInArgs(argsWithoutNpmPortValue) && !hasPortEnv && hasNpmPort) {
   process.env.PORT = resolvedNpm.port;
 }
+
+ensurePrismaMigrated();
 
 // Pass remaining args as environment or ignore (custom server doesn't support all next CLI flags)
 const child = spawn(
