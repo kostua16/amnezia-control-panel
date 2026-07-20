@@ -36,7 +36,7 @@ jobs:
       should-run: ${{ steps.gate.outputs.should_run }}
       planning-pr-number: ${{ steps.gate.outputs.planning_pr_number }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -65,7 +65,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout trusted repair script
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
@@ -100,7 +100,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout planning branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ steps.resolve.outputs.head_branch }}
           fetch-depth: 0

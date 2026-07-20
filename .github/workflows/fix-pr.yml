@@ -64,7 +64,7 @@ jobs:
       triggering_run_id: ${{ steps.source-pr.outputs.triggering-run-id }}
       triggering_run_url: ${{ steps.source-pr.outputs.triggering-run-url }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Read source PR metadata
         id: source-pr
@@ -161,7 +161,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - uses: ./.github/actions/setup-environment
         with:
