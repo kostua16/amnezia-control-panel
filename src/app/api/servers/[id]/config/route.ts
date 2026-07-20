@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { hashValue } from '@/lib/password';
-import { isPrismaUniqueViolation } from '@/lib/prisma-errors';
 import { writeAuditLog } from '@/lib/audit-log';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -132,51 +131,56 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       serverUpdateData.apiKeyHash = await hashValue(apiKey);
     }
 
-    // Apply service-level overrides
-    if (serviceOverrides && serviceOverrides.length > 0) {
-      for (const override of serviceOverrides) {
-        const belongsToServer = existing.services.some(
-          (s) => s.id === override.serviceId,
-        );
-        if (!belongsToServer) continue;
+    // Apply all updates atomically — server fields, service overrides,
+    // and the re-fetch run inside a single transaction so a mid-loop
+    // failure rolls back everything.
+    const updated = await prisma.$transaction(async (tx) => {
+      // Apply service-level overrides
+      if (serviceOverrides && serviceOverrides.length > 0) {
+        for (const override of serviceOverrides) {
+          const belongsToServer = existing.services.some(
+            (s) => s.id === override.serviceId,
+          );
+          if (!belongsToServer) continue;
 
-        const serviceUpdate: Record<string, unknown> = {};
-        if (override.port !== undefined) serviceUpdate.port = override.port;
-        if (override.enabled !== undefined) {
-          serviceUpdate.status = override.enabled ? 'RUNNING' : 'STOPPED';
-        }
+          const serviceUpdate: Record<string, unknown> = {};
+          if (override.port !== undefined) serviceUpdate.port = override.port;
+          if (override.enabled !== undefined) {
+            serviceUpdate.status = override.enabled ? 'RUNNING' : 'STOPPED';
+          }
 
-        if (Object.keys(serviceUpdate).length > 0) {
-          await prisma.service.update({
-            where: { id: override.serviceId },
-            data: serviceUpdate,
-          });
+          if (Object.keys(serviceUpdate).length > 0) {
+            await tx.service.update({
+              where: { id: override.serviceId },
+              data: serviceUpdate,
+            });
+          }
         }
       }
-    }
 
-    // Apply server updates
-    if (Object.keys(serverUpdateData).length > 0) {
-      await prisma.server.update({
+      // Apply server updates
+      if (Object.keys(serverUpdateData).length > 0) {
+        await tx.server.update({
+          where: { id: serverId },
+          data: serverUpdateData,
+        });
+      }
+
+      // Fetch the updated server with services
+      return tx.server.findUnique({
         where: { id: serverId },
-        data: serverUpdateData,
-      });
-    }
-
-    // Fetch the updated server with services
-    const updated = await prisma.server.findUnique({
-      where: { id: serverId },
-      include: {
-        services: {
-          select: {
-            id: true,
-            type: true,
-            status: true,
-            port: true,
-            config: true,
+        include: {
+          services: {
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              port: true,
+              config: true,
+            },
           },
         },
-      },
+      });
     });
 
     await writeAuditLog({
@@ -212,14 +216,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
   } catch (err) {
     console.error('[api/servers/:id/config PUT] Error:', err);
-
-    if (isPrismaUniqueViolation(err)) {
-      return NextResponse.json(
-        { success: false, error: 'Server hostname already exists' },
-        { status: 409 },
-      );
-    }
-
     return NextResponse.json(
       { success: false, error: 'Failed to update server configuration' },
       { status: 500 },
