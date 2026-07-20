@@ -76,7 +76,7 @@ jobs:
       command: ${{ steps.gate.outputs.command }}
       force: ${{ steps.gate.outputs.force }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -113,7 +113,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout trusted workflow revision
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.workflow_sha }}
           fetch-depth: 1
@@ -187,7 +187,7 @@ jobs:
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --base-ref "$BASE_REF" \
             --run-url "$RUN_URL" --mode started
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         if: steps.pr.outputs.eligible == 'true'
         with:
           ref: ${{ steps.pr.outputs.head_ref }}

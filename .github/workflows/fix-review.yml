@@ -80,7 +80,7 @@ jobs:
       command: ${{ steps.gate.outputs.command }}
       allow-protected-edits: ${{ steps.gate.outputs.allow_protected_edits }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -109,7 +109,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout (default branch — scripts and policy)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Ensure protected-edits label exists
         uses: ./.github/actions/ensure-workflow-labels
@@ -189,7 +189,7 @@ jobs:
           node .github/workflows/scripts/upsert-fix-review-comment.cjs \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" --mode started
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         if: steps.pr.outputs.eligible == 'true'
         with:
           ref: ${{ steps.pr.outputs.head_ref }}

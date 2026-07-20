@@ -47,7 +47,7 @@ jobs:
       runs-data: ${{ steps.collect.outputs.runs_data }}
       summary-path: ${{ steps.collect.outputs.summary_path }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Collect workflow runs from past hour
         id: collect
@@ -268,7 +268,7 @@ jobs:
       validate_blocked: ${{ steps.gate.outputs.gate_passed == 'false' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
@@ -430,7 +430,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Track blocked optimization gate
         env:
@@ -460,7 +460,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Report workflow health check failure
         uses: ./.github/actions/report-failure
