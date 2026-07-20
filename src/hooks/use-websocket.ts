@@ -68,6 +68,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     if (!autoConnect) return;
 
     const socket = io({
+      path: '/api/ws',
       reconnection: true,
       reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
       reconnectionDelay: 1000,
