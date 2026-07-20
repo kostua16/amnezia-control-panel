@@ -30,17 +30,33 @@ jobs:
         id: audit
         run: |
           set +e
-          set -o pipefail
-          npm audit --audit-level=high 2>&1 | tee "${RUNNER_TEMP}/npm-audit-high-output.txt"
+          AUDIT_JSON="${RUNNER_TEMP}/npm-audit-high.json"
+          AUDIT_STDERR="${RUNNER_TEMP}/npm-audit-high-stderr.txt"
+          AUDIT_OUTPUT="${RUNNER_TEMP}/npm-audit-high-output.txt"
+          npm audit --audit-level=high --json > "${AUDIT_JSON}" 2> "${AUDIT_STDERR}"
           AUDIT_EXIT=$?
           set -e
+          {
+            if [ -s "${AUDIT_STDERR}" ]; then
+              cat "${AUDIT_STDERR}"
+            fi
+            if [ -s "${AUDIT_JSON}" ]; then
+              cat "${AUDIT_JSON}"
+            fi
+          } | tee "${AUDIT_OUTPUT}"
+          AUDIT_RESULT=$(node .github/workflows/scripts/classify-npm-audit-result.cjs \
+            "${AUDIT_JSON}" "${AUDIT_EXIT}")
           echo "exit-code=${AUDIT_EXIT}" >> "$GITHUB_OUTPUT"
+          echo "result=${AUDIT_RESULT}" >> "$GITHUB_OUTPUT"
+          if [ "${AUDIT_RESULT}" = "infrastructure" ] && [ "${AUDIT_EXIT}" -eq 0 ]; then
+            exit 2
+          fi
           exit "${AUDIT_EXIT}"
         continue-on-error: true
 
       - name: Open issue on vulnerabilities
         id: issue-vulns
-        if: steps.audit.outcome == 'failure' && steps.audit.outputs.exit-code == '1'
+        if: steps.audit.outcome == 'failure' && steps.audit.outputs.result == 'vulnerabilities'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -102,7 +118,7 @@ jobs:
           fi
 
       - name: Report audit infrastructure failure
-        if: steps.audit.outcome == 'failure' && steps.audit.outputs.exit-code != '1'
+        if: steps.audit.outcome == 'failure' && steps.audit.outputs.result == 'infrastructure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
@@ -167,7 +183,7 @@ jobs:
           exit 1
 
       - name: Verify issue creation succeeded
-        if: steps.audit.outcome == 'failure' && steps.audit.outputs.exit-code == '1' && steps.issue-vulns.outcome == 'failure'
+        if: steps.audit.outcome == 'failure' && steps.audit.outputs.result == 'vulnerabilities' && steps.issue-vulns.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
