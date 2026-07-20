@@ -656,6 +656,21 @@ that status path instead of creating a duplicate plain `/rebase` command.
 
 ---
 
+## §9 Weekly dependency audit — `security-audit-weekly.yml`
+
+Decision basis: `npm audit --audit-level=high --json` exit status plus a parsed
+report containing numeric `metadata.vulnerabilities.total`. Exit code `1` is
+treated as a vulnerability finding only when that report shape is present;
+registry errors and malformed payloads are infrastructure failures.
+
+| ID  | Trigger / precondition                                      | Resolution → terminal                                                    | Type |
+| --- | ----------------------------------------------------------- | ------------------------------------------------------------------------ | ---- |
+| SA1 | scheduled/manual audit returns a valid report with HIGH+    | open or refresh the HIGH+ advisory issue → `reported`                    | spec |
+| SA2 | audit registry/endpoint fails with exit code `1`            | open or refresh the `ci-failure` infrastructure issue; no advisory issue | spec |
+| SA3 | audit exits `0` but its JSON report is missing or malformed | force the audit step to fail and report an infrastructure issue          | spec |
+
+---
+
 ## Cross-cutting
 
 | ID   | Scenario                                                                                             | Current behavior                                                                                                                                                           | Intended                                          | Type                        |
@@ -678,7 +693,7 @@ When a scenario's characterized behavior changes, update the corresponding `kos-
 
 ## Mapping → tests + gate
 
-- **Test files (existing):** `scripts/__tests__/e2e-merge-gate.test.cjs` (§1), `e2e-ai-review.test.cjs` (§3), `e2e-autonomous-pr.test.cjs` (§4), `e2e-pr651-flows.test.cjs`, `issue-catch-up-invariants.test.cjs` (P11j/P11k/P11l), `issue-catch-up-collect.test.cjs` (P11d/P11m/P11n — executes the embedded collect script against fixture issues), `classify-claude-retry.test.cjs` + `scan-claude-logs.test.cjs` (P19), `persist-credentials-hygiene.test.cjs` (P19c + hardened-checkout invariant), `umbrella-sub-issues.test.cjs` (P11g/P11h), `checkout-before-node-script.test.cjs` (structural invariant — PR #596 regression), `project-manager.test.cjs` (§8), plus §7 pure-logic suites `merge-pr-logic.test.cjs`, `merge-pr-close-guard.test.cjs`, `collect-stale-pr-feedback.test.cjs`, `upsert-merge-pr-report.test.cjs`. YAML/trigger invariants extend `src/lib/__tests__/workflow-triggers.test.ts`.
+- **Test files (existing):** `scripts/__tests__/e2e-merge-gate.test.cjs` (§1), `e2e-ai-review.test.cjs` (§3), `e2e-autonomous-pr.test.cjs` (§4), `e2e-pr651-flows.test.cjs`, `issue-catch-up-invariants.test.cjs` (P11j/P11k/P11l), `issue-catch-up-collect.test.cjs` (P11d/P11m/P11n — executes the embedded collect script against fixture issues), `classify-claude-retry.test.cjs` + `scan-claude-logs.test.cjs` (P19), `classify-npm-audit-result.test.cjs` (§9), `persist-credentials-hygiene.test.cjs` (P19c + hardened-checkout invariant), `umbrella-sub-issues.test.cjs` (P11g/P11h), `checkout-before-node-script.test.cjs` (structural invariant — PR #596 regression), `project-manager.test.cjs` (§8), plus §7 pure-logic suites `merge-pr-logic.test.cjs`, `merge-pr-close-guard.test.cjs`, `collect-stale-pr-feedback.test.cjs`, `upsert-merge-pr-report.test.cjs`. YAML/trigger invariants extend `src/lib/__tests__/workflow-triggers.test.ts`.
 - **Test files (planned, not yet written):** `e2e-autofix-loop.test.cjs` (§2), `e2e-cancellation.test.cjs` (§5), `e2e-entry-flows.test.cjs` (§6a/b/c/d) — those sections are currently covered piecemeal by the suites above.
 - **Flow-simulator:** `scripts/__tests__/e2e/_simulator.cjs` — replays an event sequence through the decision scripts, asserts the terminal decision.
 - **CI gate:** `ci.yml:61` (`node --test .github/workflows/scripts/__tests__/*.test.cjs`) auto-runs the suite; a flow-breaking change fails CI. Local check needs **both** `npm run test-only` **and** that scripts glob.
