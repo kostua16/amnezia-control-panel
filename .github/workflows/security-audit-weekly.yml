@@ -152,10 +152,16 @@ jobs:
               --body-file "${INFRA_ISSUE_BODY}" \
               --label 'ci-failure'
           else
-            gh issue edit "${EXISTING_ISSUE}" \
+            if ! gh issue edit "${EXISTING_ISSUE}" \
               --repo "${REPOSITORY}" \
               --body-file "${INFRA_ISSUE_BODY}" \
-              --add-label 'ci-failure'
+              --add-label 'ci-failure'; then
+              gh issue create \
+                --repo "${REPOSITORY}" \
+                --title "${INFRA_ISSUE_TITLE}" \
+                --body-file "${INFRA_ISSUE_BODY}" \
+                --label 'ci-failure'
+            fi
           fi
           echo "::error::npm audit infrastructure error (exit ${AUDIT_EXIT}) — see opened issue"
           exit 1
