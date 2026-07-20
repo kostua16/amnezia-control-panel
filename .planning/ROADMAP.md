@@ -790,6 +790,18 @@ Also documents 8 previously proposed items now confirmed implemented in codebase
 | 42 | **Remove dead `execCommandSync` production export** — Export only used in tests; no production consumer. Misleading API surface contradicts async-first convention | Low (Cleanup) | `src/lib/command-executor.ts:150-169` | Proposed |
 | 43 | **`generateXrayRulesFromDB` type inference for domain rules** — Non-xray protocol rules default to `type: 'ip'` regardless of destination format. Domain-based geo-site rules pass through `matchesCIDR()` which always returns false, silently bypassing all domain routing | Medium (Correctness) | `src/lib/rule-enforcement.ts:59-61` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 16 (2026-07-20)
+
+Source: `/gsd:explore` sixteenth-pass review (non-duplicative vs proposals #1-#43 and open PRs). Artifact: `.planning/quick/260720-arch-review-pass16/proposal.md`
+
+Deduped vs open PRs: #854 (auto-PR audit), #852 (stale automation-PR close-list), #850/#815/#795 (maintenance persists), #827 (report-failure path for infra errors) — all workflow/automation, no source overlap.
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 44 | **`servers/[id]/config` PUT non-atomic multi-table update** — Server fields updated via `prisma.server.update()` then service overrides iterated in a for-loop with individual `prisma.service.update()` calls. No `prisma.$transaction()`. Failure mid-loop leaves server partially updated (e.g., port changed but service N's override skipped). Distinct from #4 which targets `users/[id]/route.ts`; this route (`servers/[id]/config/route.ts:87-228`) has the same class of bug in a different endpoint family. Fix: wrap the entire server+service update block in a single transaction | Medium (Consistency) | `src/app/api/servers/[id]/config/route.ts:131-164` | Proposed |
+| 45 | **Audit log fire-and-forget loses compliance trail** — `writeAuditLog()` (`src/lib/audit-log.ts:14-29`) catches every `prisma.auditLog.create()` error and only logs to `console.error`. If the `audit_logs` table is corrupted, the WAL checkpoint stalls, or disk is full, ALL audit events (login, user changes, config pushes, sync receives) silently vanish with no admin-visible signal. For a panel managing VPN users and security configs this is a compliance gap. Fix: (1) surface consecutive audit-write failures as Alert records visible in the dashboard; (2) add an audit-health check to the broadcaster cycle that flags >N consecutive failures | Medium (Security/Compliance) | `src/lib/audit-log.ts:26-28` | Proposed |
+| 46 | **~20 API routes bypass `apiHandler` — missing Prisma error classification** — Routes like `servers/[id]/config`, `users/[id]`, `routing/rules`, `sync/receive`, `whitelist`, `tailscale/*`, `sync/apply`, `sync/status` use manual try/catch. These don't get `apiHandler`'s Prisma P2025→404 or P2002→409 auto-mapping. Example: `servers/[id]/config` line 213-226 handles P2002 manually but returns 409 with `success: false` shape while `apiHandler`-wrapped routes use `error()` from `api-response.ts` — shapes match but the classification is duplicated and fragile (add a new Prisma code to `apiHandler` and 20 routes don't benefit). Fix: migrate remaining routes to `apiHandler`; extract any route-specific P2002 handling into `apiHandler`'s `toErrorResponse` via a per-label override map | Medium (Maintainability) | `src/app/api/servers/[id]/config/route.ts`, `src/app/api/users/[id]/route.ts`, `src/app/api/routing/rules/route.ts` + ~17 others | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-07-14 - Added architectural review pass 15 (proposals #41-#43: health checker re-entrant guard, dead execCommandSync export, domain rule type inference)*
+*Last updated: 2026-07-20 - Added architectural review pass 16 (proposals #44-#46: servers/config non-atomic update, audit log fire-and-forget, apiHandler migration completeness)*
