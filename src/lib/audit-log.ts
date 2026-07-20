@@ -11,6 +11,31 @@ export interface AuditLogInput {
   metadata?: Record<string, unknown> | null;
 }
 
+/** Consecutive audit-write failure counter (module-scoped). */
+let consecutiveFailures = 0;
+
+/**
+ * Threshold before emitting a CRITICAL alert about audit write failures.
+ * After 3 consecutive failures the audit trail is likely broken.
+ */
+const AUDIT_FAILURE_ALERT_THRESHOLD = 3;
+
+/**
+ * Check whether the audit log table is reachable by attempting an
+ * idempotent read. This is a reachability probe only — it does not
+ * verify writes. Sustained write failures are surfaced separately by
+ * the consecutive-failure counter in `writeAuditLog`, which emits a
+ * CRITICAL alert once the threshold is crossed.
+ */
+export async function isAuditTableReachable(): Promise<boolean> {
+  try {
+    await prisma.auditLog.findFirst({ take: 1 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function writeAuditLog(input: AuditLogInput): Promise<void> {
   try {
     await prisma.auditLog.create({
@@ -23,7 +48,31 @@ export async function writeAuditLog(input: AuditLogInput): Promise<void> {
         metadata: input.metadata ? JSON.stringify(input.metadata) : null,
       },
     });
+
+    // Reset counter on success
+    consecutiveFailures = 0;
   } catch (error) {
-    console.error('[audit-log] Failed to write audit event:', error);
+    consecutiveFailures++;
+    console.error(
+      `[audit-log] Failed to write audit event (${consecutiveFailures} consecutive):`,
+      error,
+    );
+
+    if (consecutiveFailures === AUDIT_FAILURE_ALERT_THRESHOLD) {
+      try {
+        // Dynamic import avoids circular dependency at module load time
+        const { createAlert } = await import('@/lib/alert-service');
+        await createAlert(
+          'audit-log-health',
+          'CRITICAL',
+          'Audit log write failures detected — compliance trail may be incomplete',
+        );
+      } catch (alertErr) {
+        console.error(
+          '[audit-log] Failed to emit audit-health alert:',
+          alertErr,
+        );
+      }
+    }
   }
 }

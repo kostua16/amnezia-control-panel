@@ -132,51 +132,56 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       serverUpdateData.apiKeyHash = await hashValue(apiKey);
     }
 
-    // Apply service-level overrides
-    if (serviceOverrides && serviceOverrides.length > 0) {
-      for (const override of serviceOverrides) {
-        const belongsToServer = existing.services.some(
-          (s) => s.id === override.serviceId,
-        );
-        if (!belongsToServer) continue;
+    // Apply all updates atomically — server fields, service overrides,
+    // and the re-fetch run inside a single transaction so a mid-loop
+    // failure rolls back everything.
+    const updated = await prisma.$transaction(async (tx) => {
+      // Apply service-level overrides
+      if (serviceOverrides && serviceOverrides.length > 0) {
+        for (const override of serviceOverrides) {
+          const belongsToServer = existing.services.some(
+            (s) => s.id === override.serviceId,
+          );
+          if (!belongsToServer) continue;
 
-        const serviceUpdate: Record<string, unknown> = {};
-        if (override.port !== undefined) serviceUpdate.port = override.port;
-        if (override.enabled !== undefined) {
-          serviceUpdate.status = override.enabled ? 'RUNNING' : 'STOPPED';
-        }
+          const serviceUpdate: Record<string, unknown> = {};
+          if (override.port !== undefined) serviceUpdate.port = override.port;
+          if (override.enabled !== undefined) {
+            serviceUpdate.status = override.enabled ? 'RUNNING' : 'STOPPED';
+          }
 
-        if (Object.keys(serviceUpdate).length > 0) {
-          await prisma.service.update({
-            where: { id: override.serviceId },
-            data: serviceUpdate,
-          });
+          if (Object.keys(serviceUpdate).length > 0) {
+            await tx.service.update({
+              where: { id: override.serviceId },
+              data: serviceUpdate,
+            });
+          }
         }
       }
-    }
 
-    // Apply server updates
-    if (Object.keys(serverUpdateData).length > 0) {
-      await prisma.server.update({
+      // Apply server updates
+      if (Object.keys(serverUpdateData).length > 0) {
+        await tx.server.update({
+          where: { id: serverId },
+          data: serverUpdateData,
+        });
+      }
+
+      // Fetch the updated server with services
+      return tx.server.findUnique({
         where: { id: serverId },
-        data: serverUpdateData,
-      });
-    }
-
-    // Fetch the updated server with services
-    const updated = await prisma.server.findUnique({
-      where: { id: serverId },
-      include: {
-        services: {
-          select: {
-            id: true,
-            type: true,
-            status: true,
-            port: true,
-            config: true,
+        include: {
+          services: {
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              port: true,
+              config: true,
+            },
           },
         },
-      },
+      });
     });
 
     await writeAuditLog({
@@ -213,6 +218,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   } catch (err) {
     console.error('[api/servers/:id/config PUT] Error:', err);
 
+    // The transaction still surfaces Prisma's P2002 unique-constraint
+    // violation (e.g. duplicate hostname) — map it to a 409 before the
+    // generic 500 fallback so callers keep the specific error class.
     if (isPrismaUniqueViolation(err)) {
       return NextResponse.json(
         { success: false, error: 'Server hostname already exists' },
