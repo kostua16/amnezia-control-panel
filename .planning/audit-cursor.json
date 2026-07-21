@@ -24,7 +24,8 @@
     {
       "name": "app-pages",
       "path": "src/app",
-      "description": "App pages, layouts, and non-API routes — data fetching, loading states"
+      "exclude": ["src/app/api"],
+      "description": "App pages, layouts, and non-API routes — data fetching, loading states. Excludes src/app/api, which is covered by the api-routes focus area to avoid double-auditing API handlers."
     },
     {
       "name": "types",
