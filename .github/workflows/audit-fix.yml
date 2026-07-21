@@ -83,6 +83,32 @@ jobs:
           branch-name: claude-audit-work-${{ github.run_id }}
           github-token: ${{ secrets.GH_PAT }}
 
+      # AFX-E01 (#872): pick this run's focus area from the persisted cursor so
+      # each run audits one rotation slot (fits the budget; coverage accumulates).
+      # `total` is empty/0 when the cursor is absent or unreadable — the prompt
+      # then falls back to a full-repository audit and the advance step is skipped.
+      - name: Select audit focus area
+        id: focus
+        run: |
+          set +e
+          node .github/workflows/scripts/audit-cursor.cjs select \
+            --cursor .planning/audit-cursor.json > /tmp/audit-focus.json 2>/tmp/audit-focus.err
+          if [ $? -ne 0 ] || [ ! -s /tmp/audit-focus.json ]; then
+            echo "Cursor select failed; falling back to full-repo audit."
+            cat /tmp/audit-focus.err >&2 || true
+            {
+              echo "name="
+              echo "clause="
+              echo "total=0"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "name=$(jq -r '.name' /tmp/audit-focus.json)"
+              echo "clause=$(jq -r '.focus_clause' /tmp/audit-focus.json)"
+              echo "total=$(jq -r '.total' /tmp/audit-focus.json)"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Audit repository and apply targeted fixes
         id: claude_run
         uses: ./.github/actions/run-zai
@@ -179,7 +205,8 @@ jobs:
             security-guidance@claude-plugins-official
           prompt: |
             /gsd:audit-fix
-            Run a full repository audit for technical debt, code smells, and missing tests.
+            Audit focus area for this run (AFX-E01 per-run rotation): ${{ steps.focus.outputs.name }} under ${{ steps.focus.outputs.clause }}.
+            Confine your audit and fixes to files within that focus area, honoring any exclusions in the clause; other areas are covered by future runs. If no focus area is named above (empty name/clause), fall back to a full-repository audit.
             Implement targeted fixes, run the most relevant verification you can, and stop once the audit findings are addressed.
 
             When running tests or lint, always use `npm run <script>` or `npx <tool>` — never invoke binaries directly via node_modules paths (e.g. avoid `node node_modules/.bin/...` or `./node_modules/...`).
@@ -255,6 +282,17 @@ jobs:
         id: gate
         if: steps.claude_run.outputs.claude_changed_files_list != ''
         uses: ./.github/actions/validate-pr-gate
+
+      # AFX-E01 (#872): rotate the cursor so the next run audits the next area.
+      # Runs whenever the agent completed without a soft failure and a cursor
+      # was selected; the rotated file lands in the working tree and is included
+      # by the commit-and-push step below (it runs git add -A).
+      - name: Advance audit focus cursor
+        if: always() && steps.claude_run.outputs.claude_failed != 'true' && steps.focus.outputs.total != '0' && steps.focus.outputs.total != ''
+        run: |
+          node .github/workflows/scripts/audit-cursor.cjs advance \
+            --cursor .planning/audit-cursor.json \
+            --run-id "${{ github.run_id }}"
 
       - uses: ./.github/actions/commit-and-push
         id: push
