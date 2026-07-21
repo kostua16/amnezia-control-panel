@@ -298,7 +298,11 @@ jobs:
           matches=0
           # Only scan runs from the last 3 hours to avoid re-processing old ENOSPC
           # runs every cycle. Cap at 5 candidate runs and 90s per log fetch.
-          for run_id in $(gh run list --status completed --limit 5 --created ">=3 hours ago" --json databaseId,conclusion --jq '.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | .databaseId'); do
+          # gh run list --created needs an ISO-8601 timestamp; relative syntax
+          # like ">=3 hours ago" is silently rejected and yields an empty list,
+          # which would disable this self-heal entirely.
+          CUTOFF="$(date -u -d '3 hours ago' '+%Y-%m-%dT%H:%M:%SZ')"
+          for run_id in $(gh run list --status completed --limit 5 --created ">=$CUTOFF" --json databaseId,conclusion --jq '.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | .databaseId'); do
             if timeout 90 gh run view "$run_id" --log 2>/dev/null | grep -qiE 'no space left on device|ENOSPC'; then
               matches=$((matches + 1))
             fi
