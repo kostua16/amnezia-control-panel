@@ -287,7 +287,14 @@ jobs:
       # Runs whenever the agent completed without a soft failure and a cursor
       # was selected; the rotated file lands in the working tree and is included
       # by the commit-and-push step below (it runs git add -A).
+      #
+      # continue-on-error: the audit agent may edit planning files; if the cursor
+      # is missing/unparseable mid-run, readCursor throws (non-zero). A failed
+      # rotation must not mark a successful audit run red — the cursor simply
+      # stays put and the next run re-selects the same area.
       - name: Advance audit focus cursor
+        id: advance
+        continue-on-error: true
         if: always() && steps.claude_run.outputs.claude_failed != 'true' && steps.focus.outputs.total != '0' && steps.focus.outputs.total != ''
         run: |
           node .github/workflows/scripts/audit-cursor.cjs advance \
