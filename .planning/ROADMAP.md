@@ -185,6 +185,7 @@ Plans:
 <!-- PR-IMPROVE:846 --> - PR #846: fix: resolve #840 - MON-I06: Review the 'claude-workflow-optimize-' trust-prefix interplay (monitor-github-runs) -- pr846.1 x1, pr846.2 x1. Quick artifact: `.planning/quick/260719-pr846-workflow-improve/260719-pr846-PLAN.md`.
 <!-- PR-IMPROVE:849 --> - PR #849: fix(workflows): AFX-I04 plugin trim + security-guidance in pattern-rules-only mode (audit-fix) -- pr849.1 x1, pr849.2 x2. Quick artifact: `.planning/quick/260719-pr849-workflow-improve/260719-pr849-PLAN.md`.
 <!-- PR-IMPROVE:863 --> - PR #863: fix: resolve #707 - WHO-I02: Bound failure-log collection in 'collect-runs' (workflow-health-optimize) -- pr863.2 x2. Quick artifact: `.planning/quick/260720-pr863-workflow-improve/260720-pr863-PLAN.md`.
+<!-- PR-IMPROVE:876 --> - PR #876: fix: resolve #875 - SEC-I04: Preserve history when refreshing the tracking issue (security-audit-weekly) -- pr876.1 x1, pr876.2 x1. Quick artifact: `.planning/quick/260721-pr876-workflow-improve/260721-pr876-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
