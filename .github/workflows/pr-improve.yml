@@ -143,7 +143,6 @@ jobs:
           BASE_REF: ${{ steps.metadata.outputs.base_ref }}
         run: |
           git config "url.https://x-access-token:${GH_TOKEN}@github.com/.insteadOf" "https://github.com/"
-          git fetch origin "$BASE_REF" --depth=1
           git checkout -B "$BASE_REF" "origin/$BASE_REF"
           gh pr diff "$PR_NUMBER" > /tmp/pr.diff
 
