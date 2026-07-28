@@ -2427,8 +2427,23 @@ function gh(args, options = {}) {
 }
 
 const GH_MAX_RETRIES = 3;
-const GH_RETRY_BASE_MS = 1500;
-const GH_TRANSIENT_RE = /HTTP 5\d{2}/i;
+const GH_RETRY_BASE_MS = 1000;
+
+// Transient failures worth retrying on gh calls: gh's literal "HTTP 5xx"
+// response plus the network-level errors Go's net/http emits on a CI `gh api`
+// call (TCP reset, dial/TLS timeout, context deadline, truncated body). Must
+// mirror lib/sticky-comment.cjs TRANSIENT_PATTERNS so both retry paths survive
+// the same runner-to-GitHub connectivity blips, not just 5xx responses.
+const GH_TRANSIENT_PATTERNS = [
+  /HTTP 5\d{2}/i,
+  /connection reset/i,
+  /connection refused/i,
+  /dial tcp/i,
+  /i\/o timeout/i,
+  /tls handshake timeout/i,
+  /context deadline exceeded/i,
+  /unexpected eof/i,
+];
 
 function ghJson(args, fallback = null) {
   for (let attempt = 0; ; attempt++) {
@@ -2436,10 +2451,10 @@ function ghJson(args, fallback = null) {
       return JSON.parse(gh(args));
     } catch (error) {
       const stderr = String(error?.stderr ?? '').trim();
-      // Retry transient GitHub API errors (5xx) so a single 502 does not
-      // crash the entire project-manager plan step.
+      // Retry transient GitHub API errors (5xx + network blips) so a single
+      // transient failure does not crash the entire project-manager plan step.
       if (
-        GH_TRANSIENT_RE.test(stderr) &&
+        GH_TRANSIENT_PATTERNS.some((re) => re.test(stderr)) &&
         attempt < GH_MAX_RETRIES - 1
       ) {
         const delay = GH_RETRY_BASE_MS * 2 ** attempt;
