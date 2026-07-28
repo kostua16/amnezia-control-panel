@@ -189,6 +189,7 @@ Plans:
 <!-- PR-IMPROVE:878 --> - PR #878: fix: resolve #730 - MON-I04: Cache disk-heal log scans between runs (monitor-github-runs) -- pr878.2 x2. Quick artifact: `.planning/quick/260721-pr878-workflow-improve/260721-pr878-PLAN.md`.
 <!-- PR-IMPROVE:883 --> - PR #883: fix: resolve #742 - [pr-improve] PR improvement workflow failed -- pr883.1 x1, pr883.2 x1. Quick artifact: `.planning/quick/260721-pr883-workflow-improve/260721-pr883-PLAN.md`.
 <!-- PR-IMPROVE:885 --> - PR #885: fix: resolve #882 - WHO-I08: Harden post-agent steps against wasted agent spend (workflow-health-optimize) -- pr885.1 x1, pr885.2 x1. Quick artifact: `.planning/quick/260721-pr885-workflow-improve/260721-pr885-PLAN.md`.
+<!-- PR-IMPROVE:942 --> - PR #942: fix: resolve #941 - [project-manager] Queue manager workflow failed -- pr942.1 x1, pr942.2 x1. Quick artifact: `.planning/quick/260728-pr942-workflow-improve/260728-pr942-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
