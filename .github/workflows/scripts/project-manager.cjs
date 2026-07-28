@@ -2426,31 +2426,51 @@ function gh(args, options = {}) {
   });
 }
 
+const GH_MAX_RETRIES = 3;
+const GH_RETRY_BASE_MS = 1500;
+const GH_TRANSIENT_RE = /HTTP 5\d{2}/i;
+
 function ghJson(args, fallback = null) {
-  try {
-    return JSON.parse(gh(args));
-  } catch (error) {
-    // gh exits non-zero for some data-bearing states (e.g. `gh pr checks`
-    // with failing checks) while still printing the JSON payload.
-    const stdout = String(error?.stdout ?? '').trim();
-    if (stdout) {
-      try {
-        return JSON.parse(stdout);
-      } catch {
-        // fall through to the fallback path below
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return JSON.parse(gh(args));
+    } catch (error) {
+      const stderr = String(error?.stderr ?? '').trim();
+      // Retry transient GitHub API errors (5xx) so a single 502 does not
+      // crash the entire project-manager plan step.
+      if (
+        GH_TRANSIENT_RE.test(stderr) &&
+        attempt < GH_MAX_RETRIES - 1
+      ) {
+        const delay = GH_RETRY_BASE_MS * 2 ** attempt;
+        console.warn(
+          `project-manager: transient HTTP error on attempt ${attempt + 1}/${GH_MAX_RETRIES}, retrying in ${delay}ms: ${stderr.split('\n')[0]}`,
+        );
+        execFileSync('sleep', [String(delay / 1000)], { stdio: 'ignore' });
+        continue;
       }
+      // gh exits non-zero for some data-bearing states (e.g. `gh pr checks`
+      // with failing checks) while still printing the JSON payload.
+      const stdout = String(error?.stdout ?? '').trim();
+      if (stdout) {
+        try {
+          return JSON.parse(stdout);
+        } catch {
+          // fall through to the fallback path below
+        }
+      }
+      if (fallback !== null) {
+        console.warn(
+          `ghJson fallback for "gh ${args.slice(0, 3).join(' ')} ...": ${
+            String(error?.stderr ?? error?.message ?? error)
+              .trim()
+              .split('\n')[0]
+          }`,
+        );
+        return fallback;
+      }
+      throw error;
     }
-    if (fallback !== null) {
-      console.warn(
-        `ghJson fallback for "gh ${args.slice(0, 3).join(' ')} ...": ${
-          String(error?.stderr ?? error?.message ?? error)
-            .trim()
-            .split('\n')[0]
-        }`,
-      );
-      return fallback;
-    }
-    throw error;
   }
 }
 
