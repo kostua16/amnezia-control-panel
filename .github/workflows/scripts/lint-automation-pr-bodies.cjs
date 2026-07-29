@@ -18,10 +18,7 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 
-const {
-  REQUIRED_HEADINGS,
-  validateRichBody,
-} = require('./build-automation-pr-body.cjs');
+const { REQUIRED_HEADINGS } = require('./build-automation-pr-body.cjs');
 
 const AUTOMATION_BRANCH_PREFIXES = ['claude-', 'claude/', 'codex/'];
 
@@ -86,8 +83,12 @@ function lintPrBody(body) {
  * Collect open automation PRs and lint their bodies.
  * Pure data-path separated from I/O for testability.
  *
+ * The PR body is read from `pr.body`, which `gh pr list` already returns.
+ * `getBodyFn` is an optional fallback invoked only when the list body is
+ * missing or empty, avoiding redundant per-PR `gh pr view` API calls.
+ *
  * @param {Array} pullRequests - Array of PR objects from gh pr list
- * @param {Function} getBodyFn - (prNumber) => string (PR body)
+ * @param {Function} [getBodyFn] - Optional (prNumber) => string body fallback
  * @returns {{ inspected: number, offenders: Array, byWorkflow: Object }}
  */
 function lintAutomationPrs(pullRequests, getBodyFn) {
@@ -101,7 +102,12 @@ function lintAutomationPrs(pullRequests, getBodyFn) {
     if (!AUTOMATION_BRANCH_PREFIXES.some((p) => head.startsWith(p))) continue;
 
     inspected++;
-    const body = getBodyFn(pr.number);
+    // Prefer the body already fetched by `gh pr list`; fall back to a per-PR
+    // fetch only when the list body is missing or empty.
+    let body = String(pr.body ?? '');
+    if (!body.trim() && getBodyFn) {
+      body = getBodyFn(pr.number);
+    }
     const { missing, hasFooter } = lintPrBody(body);
 
     if (missing.length > 0 || !hasFooter) {
