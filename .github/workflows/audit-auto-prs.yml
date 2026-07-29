@@ -241,6 +241,26 @@ jobs:
             --repo "${{ github.repository }}" \
             --overlap-label auto-fix
 
+      # APR-E05: run the automation PR body-quality linter so the check is
+      # live in CI rather than inert. Report-only (continue-on-error + the
+      # script's own `|| true`): a failing step here would abort the scheduled
+      # audit and still not gate any PR merge (a scheduled job cannot gate a
+      # PR). Merge-time enforcement belongs in a required pr-policy/* status,
+      # which is a follow-up once the linter is on the default branch.
+      - name: Lint automation PR bodies (APR-E05)
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          {
+            echo "### Automation PR body quality (APR-E05)"
+            echo
+            node .github/workflows/scripts/lint-automation-pr-bodies.cjs \
+              --repo "${{ github.repository }}" \
+              --base-ref main 2>&1 || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
   reconcile:
     name: Reconcile resolved audit issues
     needs: [audit-auto-prs]
