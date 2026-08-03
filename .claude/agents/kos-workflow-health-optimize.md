@@ -86,7 +86,7 @@ Part of every ASSESS phase. Proactive - detects runner-load collisions before th
 | `stale.yml` | `23 1 * * 0` | Weekly Sun `01:23` |
 | `security-audit-weekly.yml` | `17 6 * * 1` | Weekly Mon `06:17` |
 
-**Known collisions (HIGH):** `:07` - `workflow-health-optimize` + `pr-flow-watchdog`; `:37` - `issue-catch-up` + `pr-flow-watchdog`.
+**Known collisions (HIGH):** `:07` - `workflow-health-optimize` + `pr-flow-watchdog`; `:22` - `pr-flow-watchdog` + `project-manager` (`*/10` at `:20`, window 20-24); `:37` - `issue-catch-up` + `pr-flow-watchdog`; `:52` - `pr-flow-watchdog` + `project-manager` (`*/10` at `:50`, window 50-54).
 
 ## Investigation Methodology
 1. ASSESS provided data + cron collision scan → top bottleneck (or exit).
