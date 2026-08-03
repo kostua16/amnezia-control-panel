@@ -191,6 +191,7 @@ Plans:
 <!-- PR-IMPROVE:885 --> - PR #885: fix: resolve #882 - WHO-I08: Harden post-agent steps against wasted agent spend (workflow-health-optimize) -- pr885.1 x1, pr885.2 x1. Quick artifact: `.planning/quick/260721-pr885-workflow-improve/260721-pr885-PLAN.md`.
 <!-- PR-IMPROVE:942 --> - PR #942: fix: resolve #941 - [project-manager] Queue manager workflow failed -- pr942.1 x1, pr942.2 x1. Quick artifact: `.planning/quick/260728-pr942-workflow-improve/260728-pr942-PLAN.md`.
 <!-- PR-IMPROVE:971 --> - PR #971: fix: resolve #925 - WHO-E02: Cron-collision detector + stagger proposals (workflow-health-optimize) -- pr971.1 x1, pr971.2 x1, pr971.4 x1. Quick artifact: `.planning/quick/260803-pr971-workflow-improve/260803-pr971-PLAN.md`.
+<!-- PR-IMPROVE:974 --> - PR #974: fix: resolve #973 - Security: weekly npm audit found HIGH+ advisories -- pr974.2 x1, pr974.3 x1. Quick artifact: `.planning/quick/260803-pr974-workflow-improve/260803-pr974-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
 ### Phase 13.1: Workflow governance hardening
