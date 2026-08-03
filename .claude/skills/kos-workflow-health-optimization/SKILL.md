@@ -34,12 +34,29 @@ Per-workflow health from the provided data → the one bottleneck → the one YA
 ## Core Principles
 YAGNI / KISS / DRY. Provided-data only — never fetch. One bottleneck, one minimal YAML fix. A reporting-step non-zero exit ≠ a failed optimization.
 
+## Cron Collision Detection (WHO-E02)
+
+Part of Phase 1 ASSESS. Proactive - detects runner-load collisions before they manifest as slow/failed runs.
+
+### Method
+1. `Grep` for `cron:` in `.github/workflows/*.yml` to collect all scheduled workflows.
+2. Parse each cron into minute/hour/dayOfMonth/month/dayOfWeek.
+3. **Collision window:** same 5-minute window on same hour/day pattern. Severity: HIGH (both hourly), MEDIUM (hourly + less frequent), LOW (both infrequent).
+4. Known safe offsets: `issue-catch-up` at `:37` offset from `workflow-health-optimize` at `:07`.
+5. Report under `CRON COLLISIONS:` in output.
+
+### Stagger Proposal Rules (PLAN phase)
+- Shift the less critical workflow minute by +/-5-10 minutes.
+- Preserve semantic offsets (`:07`, `:37`, `:56`).
+- Never propose minute `0`. Never propose a minute that collides with another schedule.
+- Max one cron offset change per cycle.
+
 ## Phase loop (enforce)
 
 **GLOBAL CONSTRAINT (all phases):** do NOT run `git`/`gh`/`curl`/network. Use ONLY the provided Completed Runs Data. Do NOT fetch logs, run statuses, or issue details.
 
-- **Phase 1 — ASSESS (turns 1–3):** read the runs data. Any failures? Slow runs? Use `timingSummary` for queue/runner/job/step bottlenecks (missing timing → mark slow run ambiguous). If a slow successful run is explained by `duplicateSameSha` and CI no longer subscribes to `ready_for_review`, treat that class as already addressed — don't edit. If **ALL runs successful AND none exceeded 5 min → EXIT NOW, no changes.** Do not read files yet.
-- **Phase 2 — PLAN (turns 4–6):** read ONLY the relevant workflow file(s) per problem. Fixable via YAML? If not → skip. If the provided data lacks enough detail for a concrete YAML fix → mark ambiguous, skip. If total edits > 3 files → STOP, exit with notes, don't edit.
+- **Phase 1 — ASSESS (turns 1–3):** read the runs data. Also `Grep` for `cron:` in `.github/workflows/*.yml` and detect collisions (see Cron Collision Detection above). Any failures? Slow runs? Use `timingSummary` for queue/runner/job/step bottlenecks (missing timing → mark slow run ambiguous). If a slow successful run is explained by `duplicateSameSha` and CI no longer subscribes to `ready_for_review`, treat that class as already addressed — don't edit. If **ALL runs successful AND none exceeded 5 min → EXIT NOW, no changes.** Do not read files yet.
+- **Phase 2 — PLAN (turns 4–6):** read ONLY the relevant workflow file(s) per problem. Fixable via YAML? If not → skip. For cron collisions, propose stagger offsets per Stagger Proposal Rules. If the provided data lacks enough detail for a concrete YAML fix → mark ambiguous, skip. If total edits > 3 files → STOP, exit with notes, don't edit.
 - **Phase 3 — EXECUTE (remaining turns):** apply planned changes; validate YAML after each edit using only local tools (`node`, `npx`, file reads). Do NOT commit or push.
 
 ## Scope (enforce)
@@ -53,14 +70,15 @@ YAGNI / KISS / DRY. Provided-data only — never fetch. One bottleneck, one mini
 - **Misreading a reporting non-zero exit** — report-blocked-gate/report steps may tolerate non-zero (pre-auth); confirm a real error before declaring failure.
 
 ## Process Flow (Authoritative)
-1. ASSESS provided data → bottleneck (or all-success/<5min → exit).
-2. PLAN → YAML fix per problem (skip ambiguous; stop if >3 files).
+1. ASSESS provided data + cron collision scan → bottleneck (or all-success/<5min → exit).
+2. PLAN → YAML fix per problem incl. cron offset if collision (skip ambiguous; stop if >3 files).
 3. EXECUTE → minimal YAML edits; validate each.
 4. report-blocked-gate (accurate); report-failure only on a real optimization failure.
 
 ## Output Format
 ```text
 HEALTH (from provided data): <wf>: s/f/c/dur … => BOTTLENECK: <wf> (<reason, cited to timingSummary/claudeSummary>)
+CRON COLLISIONS: <none|collision list with severity>
 OPTIMIZE: <one minimal YAML change> (file: <wf.yml>)
 BLOCKED: <none|list>
 NETWORK/GH/GIT: not used (per GLOBAL CONSTRAINT)
