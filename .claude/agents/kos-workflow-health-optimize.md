@@ -55,7 +55,7 @@ Part of every ASSESS phase. Proactive - detects runner-load collisions before th
    - **HIGH:** both hourly (collides every hour).
    - **MEDIUM:** one hourly + one less frequent (collides on overlapping hours).
    - **LOW:** both infrequent (daily/weekly overlap).
-4. Known safe offsets (already staggered, skip): `issue-catch-up` at `:37` is offset from `workflow-health-optimize` at `:07`.
+4. Pair-specific safe offset: `issue-catch-up` at `:37` is staggered relative to `workflow-health-optimize` at `:07` — so do NOT propose shifting `:37` to fix that pair. Note `:37` still collides with `pr-flow-watchdog` (see HIGH list below); that collision is real and not covered by this skip note.
 5. Report collisions in ASSESS output under `CRON COLLISIONS:` header.
 
 ### Stagger Proposal Rules (PLAN phase)

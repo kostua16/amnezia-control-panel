@@ -42,7 +42,7 @@ Part of Phase 1 ASSESS. Proactive - detects runner-load collisions before they m
 1. `Grep` for `cron:` in `.github/workflows/*.yml` to collect all scheduled workflows.
 2. Parse each cron into minute/hour/dayOfMonth/month/dayOfWeek.
 3. **Collision window:** same 5-minute window on same hour/day pattern. Severity: HIGH (both hourly), MEDIUM (hourly + less frequent), LOW (both infrequent).
-4. Known safe offsets: `issue-catch-up` at `:37` offset from `workflow-health-optimize` at `:07`.
+4. Pair-specific safe offset: `issue-catch-up` `:37` is staggered relative to `workflow-health-optimize` `:07` (do NOT shift `:37` for that pair); `:37` still collides with `pr-flow-watchdog` — see the HIGH collisions list.
 5. Report under `CRON COLLISIONS:` in output.
 
 ### Stagger Proposal Rules (PLAN phase)
