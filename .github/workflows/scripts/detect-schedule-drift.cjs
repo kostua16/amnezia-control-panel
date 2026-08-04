@@ -167,8 +167,11 @@ function parseWorkflowCrons(workflowsDir) {
 
     const crons = [];
     const triggers = doc.on;
-    if (triggers && Array.isArray(triggers.schedule)) {
-      for (const sched of triggers.schedule) {
+    // Normalize to array: a workflow may declare a single schedule trigger
+    // without wrapping it in a YAML list (schedule: { cron: ... }).
+    if (triggers && triggers.schedule) {
+      const entries = [].concat(triggers.schedule).filter(Boolean);
+      for (const sched of entries) {
         if (sched.cron) crons.push(sched.cron);
       }
     }
@@ -196,7 +199,7 @@ function fetchRecentRuns(repo, workflowFile, since) {
     '--event',
     'schedule',
     '--json',
-    'run_started_at,status,conclusion,run_number,databaseId',
+    'run_started_at,created_at,status,conclusion,run_number,databaseId',
   );
   if (!Array.isArray(data)) return [];
 
@@ -237,7 +240,7 @@ function analyzeDrift(repo, workflowsDir, since, thresholdHours) {
     const drifts = [];
     for (const run of runs) {
       const startedAt = new Date(
-        run.run_started_at || run.run_created_at,
+        run.run_started_at || run.created_at,
       );
       if (Number.isNaN(startedAt.getTime())) continue;
 
