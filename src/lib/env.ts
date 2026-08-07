@@ -176,8 +176,8 @@ const ENV_VARS: EnvVarSpec[] = [
 
 /**
  * Validate all required environment variables at startup.
- * Throws if any required var is missing. Logs warnings for optional vars
- * that are unset but may be needed in production.
+ * Throws if any required var is missing. In production, warns specifically
+ * when ADMIN_PASSWORD is unset (the only optional var the seed step needs).
  */
 export function validateEnvironment(): void {
   const missing: string[] = [];
