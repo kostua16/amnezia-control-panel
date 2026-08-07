@@ -260,10 +260,21 @@ function findEscalationIssue(repo, fp) {
 /**
  * Check whether a merged PR exists whose title or body mentions the
  * recommendation fingerprint. This is a best-effort heuristic.
+ *
+ * Uses `--jq length` so an empty result list is distinguishable from a hit:
+ * with `--json number` gh emits the literal `[]` (a 2-char string) when
+ * nothing matches, so the previous `out.length > 0` check was true for both
+ * "no merged PR" and "found one" — every fingerprint was treated as already
+ * fixed and escalation never fired. `length` yields `0` on no match and the
+ * match count otherwise, so `parseInt(out, 10) > 0` is correct in both cases.
+ *
+ * The gh runner is injectable purely so the empty-result path can be
+ * exercised by unit tests without shelling out.
  */
-function hasMergedFixPr(repo, fp) {
+function hasMergedFixPr(repo, fp, runGhFn) {
+  const runner = runGhFn || runGh;
   try {
-    const out = runGh([
+    const out = runner([
       'pr',
       'list',
       '--repo',
@@ -272,12 +283,10 @@ function hasMergedFixPr(repo, fp) {
       'merged',
       '--search',
       `"APR-E10" ${fp}`,
-      '--json',
-      'number',
-      '--limit',
-      '1',
+      '--jq',
+      'length',
     ]);
-    return out.length > 0;
+    return parseInt(out, 10) > 0;
   } catch {
     return false;
   }
@@ -451,6 +460,7 @@ module.exports = {
   trimEntries,
   escalationTitle,
   escalationSearchQuery,
+  hasMergedFixPr,
 };
 
 if (require.main === module) {

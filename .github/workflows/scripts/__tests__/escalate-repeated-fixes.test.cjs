@@ -12,6 +12,7 @@ const {
   trimEntries,
   escalationTitle,
   escalationSearchQuery,
+  hasMergedFixPr,
 } = require('../escalate-repeated-fixes.cjs');
 
 // --- fingerprint ---
@@ -175,4 +176,32 @@ test('escalationSearchQuery references the same fingerprint the title embeds', (
   assert.ok(title.includes(fp), `title must embed fp; got: ${title}`);
   assert.ok(query.includes(fp), `query must reference fp; got: ${query}`);
   assert.ok(query.includes('in:title'));
+});
+
+// --- hasMergedFixPr (regression guard) ---
+// The gh runner is injected so the empty-result path can be exercised without
+// shelling out. `--jq length` yields "0" on no match; previously the raw "[]"
+// made the truthiness check always true and skipped every escalation.
+
+test('hasMergedFixPr returns false when no merged PR matches', () => {
+  assert.equal(
+    hasMergedFixPr('o/r', 'abc123', () => '0'),
+    false,
+  );
+});
+
+test('hasMergedFixPr returns true when at least one merged PR matches', () => {
+  assert.equal(
+    hasMergedFixPr('o/r', 'abc123', () => '2'),
+    true,
+  );
+});
+
+test('hasMergedFixPr returns false when gh throws', () => {
+  assert.equal(
+    hasMergedFixPr('o/r', 'abc123', () => {
+      throw new Error('gh not installed');
+    }),
+    false,
+  );
 });
