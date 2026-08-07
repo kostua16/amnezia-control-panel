@@ -67,19 +67,38 @@ function runGh(args, options = {}) {
   }
 }
 
+// `gh api`/`gh search` invoked with a streaming `--jq` (`.[] | {...}` or
+// `.workflow_runs[] | {...}`) emit newline-delimited JSON objects — one per
+// match, concatenated across `--paginate` pages — NOT a single JSON document.
+// A single bulk JSON.parse therefore throws on the second object, which is why
+// every multi-result query silently collapsed to its empty fallback. Parse each
+// non-empty line instead so multi-result responses survive.
+function parseGhJsonLines(output, fallback = []) {
+  if (!output) return fallback;
+  const items = [];
+  const failures = [];
+  for (const line of output.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      items.push(JSON.parse(trimmed));
+    } catch (error) {
+      failures.push(error.message);
+    }
+  }
+  if (failures.length > 0) {
+    // Surface parse failures instead of silently reporting empty results;
+    // unparseable output usually means gh returned an error page.
+    process.stderr.write(
+      `Warning: ${failures.length} unparseable JSON line(s) from gh (first: ${failures[0]})\n`,
+    );
+  }
+  return items.length > 0 ? items : fallback;
+}
+
 function runGhJson(args, fallback = []) {
   const output = runGh(args, { allowFailure: true });
-  if (!output) return fallback;
-  try {
-    return JSON.parse(output);
-  } catch (error) {
-    // Surface parse failures instead of silently reporting empty results;
-    // a non-JSON response usually means the gh API returned an error page.
-    process.stderr.write(
-      `Warning: failed to parse JSON from \`gh ${args.join(' ')}\`: ${error.message}\n`,
-    );
-    return fallback;
-  }
+  return parseGhJsonLines(output, fallback);
 }
 
 function formatIsoLocal(date) {
@@ -129,25 +148,43 @@ function queryFleetPrs(repo, since, until) {
 function queryFleetIssues(repo, since) {
   // Search issues (non-PR) created or closed in the window.
   // No `until` bound: `created:>=`/`closed:>=` are naturally bounded by now.
+  // `gh search issues --json` returns a top-level array and only accepts
+  // camelCase field names (createdAt/author) — snake_case names make gh exit
+  // non-zero, and `.items[]` errors because the response is an array, not an
+  // object. Stream with `.[]` so the NDJSON parser in runGhJson collects rows.
+  // Pass repo/state via gh flags and keep `is:issue` + the date window as
+  // separate positional qualifiers: a single positional containing
+  // `repo:X is:issue ...` is parsed as one quoted repo value and rejected, so
+  // the issue section would otherwise always come back empty.
   const created = runGhJson([
     'search',
     'issues',
-    `repo:${repo} is:issue is:open created:>=${since}`,
+    '--repo',
+    repo,
+    '--state',
+    'open',
+    'is:issue',
+    `created:>=${since}`,
     '--json',
-    'number,title,state,created_at,user:author',
+    'number,title,state,createdAt,author',
     '--jq',
-    '.items[]',
+    '.[]',
     '--limit',
     '50',
   ]);
   const closed = runGhJson([
     'search',
     'issues',
-    `repo:${repo} is:issue is:closed closed:>=${since}`,
+    '--repo',
+    repo,
+    '--state',
+    'closed',
+    'is:issue',
+    `closed:>=${since}`,
     '--json',
-    'number,title,state,created_at,closed_at,user:author',
+    'number,title,state,createdAt,closedAt,author',
     '--jq',
-    '.items[]',
+    '.[]',
     '--limit',
     '50',
   ]);
@@ -203,12 +240,8 @@ function renderDigestBody(data, windowLabel) {
   }
   lines.push('### Pull Requests (fleet)');
   lines.push('');
-  lines.push(
-    `| Metric | Count |`,
-  );
-  lines.push(
-    `|--------|-------|`,
-  );
+  lines.push(`| Metric | Count |`);
+  lines.push(`|--------|-------|`);
   lines.push(`| Opened | ${prByCategory.opened.length} |`);
   lines.push(`| Merged | ${prByCategory.merged.length} |`);
   lines.push(`| Closed (not merged) | ${prByCategory.closed.length} |`);
@@ -244,9 +277,7 @@ function renderDigestBody(data, windowLabel) {
     const sorted = [...data.issues].sort((a, b) => a.number - b.number);
     for (const issue of sorted) {
       const title = escapeTableCell(issue.title || '-');
-      lines.push(
-        `| #${issue.number} | ${title} | ${issue.event} |`,
-      );
+      lines.push(`| #${issue.number} | ${title} | ${issue.event} |`);
     }
     lines.push('');
   }
@@ -264,7 +295,9 @@ function renderDigestBody(data, windowLabel) {
       );
     }
     lines.push('');
-    lines.push(`**${data.gateSkips.length} workflow run(s) skipped in this window.**`);
+    lines.push(
+      `**${data.gateSkips.length} workflow run(s) skipped in this window.**`,
+    );
   } else {
     lines.push('_No gate skips in this window._');
   }
@@ -340,17 +373,20 @@ async function main() {
   const existing = findExistingIssue(repo);
 
   if (existing != null) {
-    runGh([
-      'issue',
-      'edit',
-      String(existing),
-      '--repo',
-      repo,
-      '--title',
-      title,
-      '--body-file',
-      '-',
-    ], { input: body });
+    runGh(
+      [
+        'issue',
+        'edit',
+        String(existing),
+        '--repo',
+        repo,
+        '--title',
+        title,
+        '--body-file',
+        '-',
+      ],
+      { input: body },
+    );
     process.stdout.write(
       `Refreshed digest issue #${existing} (${prs.length} PRs, ${issues.length} issues, ${gateSkips.length} gate skips).\n`,
     );
@@ -393,6 +429,7 @@ module.exports = {
   classifyPr,
   windowBounds,
   renderDigestBody,
+  parseGhJsonLines,
   FLEET_ACTORS,
   DIGEST_TITLE_PREFIX,
   DIGEST_LABELS,

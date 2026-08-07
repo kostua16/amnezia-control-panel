@@ -8,6 +8,7 @@ const {
   classifyPr,
   windowBounds,
   renderDigestBody,
+  parseGhJsonLines,
   FLEET_ACTORS,
   DIGEST_TITLE_PREFIX,
   DIGEST_LABELS,
@@ -127,7 +128,12 @@ test('renderDigestBody counts PRs by category', () => {
           merged_at: '2026-01-01',
           user: 'claude[bot]',
         },
-        { number: 3, title: 'Closed PR', state: 'closed', user: 'dependabot[bot]' },
+        {
+          number: 3,
+          title: 'Closed PR',
+          state: 'closed',
+          user: 'dependabot[bot]',
+        },
       ],
       issues: [],
       gateSkips: [],
@@ -246,4 +252,52 @@ test('renderDigestBody does not leak gate skip table when no skips', () => {
     'window',
   );
   assert.ok(!body.includes('| Run ID | Workflow | Time |'));
+});
+
+test('parseGhJsonLines parses multi-line newline-delimited JSON stream', () => {
+  // gh with a streaming `--jq` (and --paginate) emits one JSON object per
+  // line; a single bulk JSON.parse throws on the second line. This is the
+  // regression guard for that bug.
+  const ndjson = [
+    '{"number":1009,"user":"claude[bot]"}',
+    '{"number":1008,"user":"claude[bot]"}',
+    '{"number":1007,"user":"claude[bot]"}',
+  ].join('\n');
+  const items = parseGhJsonLines(ndjson);
+  assert.equal(items.length, 3);
+  assert.deepEqual(items[0], { number: 1009, user: 'claude[bot]' });
+  assert.deepEqual(items[2], { number: 1007, user: 'claude[bot]' });
+});
+
+test('parseGhJsonLines returns single-element array for one object', () => {
+  // The old code JSON.parsed one object to a bare object, then `for...of`
+  // threw "results is not iterable". Must always return an array.
+  const items = parseGhJsonLines('{"number":1,"title":"only"}');
+  assert.ok(Array.isArray(items));
+  assert.equal(items.length, 1);
+  assert.equal(items[0].number, 1);
+});
+
+test('parseGhJsonLines returns fallback for empty output', () => {
+  assert.deepEqual(parseGhJsonLines(''), []);
+  assert.deepEqual(parseGhJsonLines('   \n  \n'), []);
+  assert.deepEqual(parseGhJsonLines('', [{ number: 9 }]), [{ number: 9 }]);
+});
+
+test('parseGhJsonLines skips blank lines and keeps parseable ones', () => {
+  const ndjson = '{"number":1}\n\n   \n{"number":2}\n{"number":3}\n';
+  const items = parseGhJsonLines(ndjson);
+  assert.deepEqual(
+    items.map((i) => i.number),
+    [1, 2, 3],
+  );
+});
+
+test('parseGhJsonLines keeps good lines when some lines fail to parse', () => {
+  const ndjson = '{"number":1}\nnot-json\n{"number":2}';
+  const items = parseGhJsonLines(ndjson);
+  assert.deepEqual(
+    items.map((i) => i.number),
+    [1, 2],
+  );
 });
