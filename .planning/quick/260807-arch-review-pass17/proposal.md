@@ -17,12 +17,12 @@ Deduped vs open PRs: #992 (js-yaml), #936 (better-sqlite3), #935 (eslint), #934 
 ### #47: Remove shell metacharacter guard from HTTP-bound config-applier values
 
 **Problem:**
-`config-applier.ts` defines `DANGEROUS_CHARS = /[;|&$\`\\]/` and `validateNoInjection()` which rejects values containing these characters. It is called on WireGuard peer values (`publicKey`, `allowedIPs`, `endpoint`) before pushing them to a remote panel.
+`config-applier.ts` defines ``DANGEROUS_CHARS = /[;|&$`\\]/`` and `validateNoInjection()` which rejects values containing these characters. It is called on WireGuard peer values (`publicKey`, `allowedIPs`, `endpoint`) before pushing them to a remote panel.
 
 However, the push path is entirely HTTP-based: `pushToRemotePanel()` → `pushToPanel()` → `httpClient()` (fetch). The values are serialized as JSON in the request body. No shell is ever involved in this code path. The actual shell-executing code (`vpn-services.ts`) already uses `execFile()` with array-form arguments, which is inherently injection-safe.
 
 The guard rejects **legitimate values**:
-- WireGuard endpoints containing `$` (e.g., IPv6 zone IDs like `fe80::1%eth0`)
+- WireGuard endpoints containing `$` (e.g., hostnames interpolating shell variables, such as `$WIREGUARD_HOST`)
 - URLs with `&` (query parameters in panel URLs)
 - Paths with `\` (Windows-style paths in endpoint hostnames)
 
