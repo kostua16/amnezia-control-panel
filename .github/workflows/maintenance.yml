@@ -87,7 +87,7 @@ jobs:
             - TODO/FIXME findings: `gh issue create --title "Maintenance: unresolved TODOs" --label "maintenance" --body "[list of TODOs with commit references]"`
 
             Do NOT create issues if no findings exist in that category.
-            If critical security issues (HIGH/CRITICAL severity) are found, also comment on all open PRs.
+            If critical security issues (HIGH/CRITICAL severity) are found, comment only on open PRs that modify dependency manifests (package.json, package-lock.json, yarn.lock). Skip workflow-only, doc-only, and src-only PRs — security advisories on non-dependency PRs trigger fix-review loops with no actionable fix.
             Do NOT push or open a PR. The workflow persists any maintenance commits by validating the prepared branch, pushing it, and opening a review PR.
             BUDGET: 30 turns, 10-minute timeout. Skip categories with zero findings immediately — do not burn turns on clean sections.
             Operate as the `kos-maintenance` agent: first read `.claude/agents/kos-maintenance.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
