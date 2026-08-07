@@ -110,11 +110,11 @@ jobs:
               --title "${AUDIT_ISSUE_TITLE}" \
               --body-file "${AUDIT_ISSUE_BODY}"
           else
-            echo "Refreshing existing weekly npm audit tracking issue #${EXISTING_ISSUE}."
-            if ! gh issue edit "${EXISTING_ISSUE}" \
+            echo "Appending run findings as comment on existing issue #${EXISTING_ISSUE}."
+            if ! gh issue comment "${EXISTING_ISSUE}" \
               --repo "${REPOSITORY}" \
               --body-file "${AUDIT_ISSUE_BODY}"; then
-              echo "Unable to refresh issue #${EXISTING_ISSUE}; creating a new issue."
+              echo "Unable to comment on issue #${EXISTING_ISSUE}; creating a new issue."
               gh issue create \
                 --repo "${REPOSITORY}" \
                 --title "${AUDIT_ISSUE_TITLE}" \
@@ -173,10 +173,9 @@ jobs:
               --body-file "${INFRA_ISSUE_BODY}" \
               --label 'ci-failure'
           else
-            if ! gh issue edit "${EXISTING_ISSUE}" \
+            if ! gh issue comment "${EXISTING_ISSUE}" \
               --repo "${REPOSITORY}" \
-              --body-file "${INFRA_ISSUE_BODY}" \
-              --add-label 'ci-failure'; then
+              --body-file "${INFRA_ISSUE_BODY}"; then
               gh issue create \
                 --repo "${REPOSITORY}" \
                 --title "${INFRA_ISSUE_TITLE}" \
