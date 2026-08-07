@@ -302,10 +302,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          RUNS_DATA: ${{ needs.collect-runs.outputs.runs-data }}
         run: |
           node .github/workflows/scripts/detect-flaky-workflows.cjs \
             --repo "${{ github.repository }}" \
-            --runs-data '${{ needs.collect-runs.outputs.runs-data }}' \
+            --runs-data "$RUNS_DATA" \
             --lookback-hours 6
 
   optimize:

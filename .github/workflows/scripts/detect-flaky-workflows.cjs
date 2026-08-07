@@ -89,7 +89,7 @@ function ensureFlakyIssue(repo, workflowName, evidence, dryRun) {
     const existing = JSON.parse(
       gh([
         'issue', 'list', '--repo', repo, '--state', 'open',
-        '--search', `in:title "${searchTitle}"`,
+        '--search', `in:title "${searchTitle.replace(/"/g, '\\"')}"`,
         '--json', 'number,url', '--limit', '1',
       ]).trim(),
     );
@@ -105,8 +105,9 @@ function ensureFlakyIssue(repo, workflowName, evidence, dryRun) {
       }
       return { action: 'commented', issue: existing[0] };
     }
-  } catch {
-    // Fall through to create
+  } catch (err) {
+    console.error(`Search for existing flaky issue failed: ${err.message}`);
+    // Fall through to create — search failure shouldn't block detection
   }
 
   if (dryRun) {
@@ -145,7 +146,7 @@ function buildEvidence(workflowName, lookbackHours, runs) {
   return [
     `**Workflow:** ${workflowName}`,
     `**Lookback:** ${lookbackHours} hours`,
-    `**Pattern:** ${runs.length} runs, ${fails} failures`,
+    `**Pattern:** ${runs.length} run${runs.length === 1 ? '' : 's'}, ${fails} failure${fails === 1 ? '' : 's'}`,
     '**Recent runs:**',
     ...runs.slice(0, 8).map(
       r => `- ${r.conclusion} (run #${r.run_number}, ${r.created_at})`,

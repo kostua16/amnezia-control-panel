@@ -98,7 +98,7 @@ test('buildEvidence produces markdown with run details', () => {
   const evidence = buildEvidence('Test WF', 6, runs);
   assert.ok(evidence.includes('**Workflow:** Test WF'));
   assert.ok(evidence.includes('**Lookback:** 6 hours'));
-  assert.ok(evidence.includes('1 failures'));
+  assert.ok(evidence.includes('1 failure'));
   assert.ok(evidence.includes('- failure (run #100'));
 });
 
