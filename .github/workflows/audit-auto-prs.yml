@@ -277,6 +277,7 @@ jobs:
             echo "### Orphan branch count (APR-E08)"
             echo
             node .github/workflows/scripts/cleanup-orphan-branches.cjs \
+              --github-output "$GITHUB_OUTPUT" \
               --repo "${{ github.repository }}" \
               --policy-path .github/workflows/policy.json \
               --max-age-days 7 \
