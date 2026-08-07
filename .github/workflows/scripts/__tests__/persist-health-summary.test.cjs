@@ -12,34 +12,35 @@ const { persistHealthSummary } = require('../persist-health-summary.cjs');
 // ---------------------------------------------------------------------------
 // Empty / null input → returns null, no file written
 // ---------------------------------------------------------------------------
-test('returns null for empty array', () => {
+test('returns null for empty array', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phs-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const result = persistHealthSummary([], { outputDir: dir });
   assert.equal(result, null);
   const files = fs.readdirSync(dir);
   assert.deepEqual(files, []);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('returns null for null input', () => {
+test('returns null for null input', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phs-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const result = persistHealthSummary(null, { outputDir: dir });
   assert.equal(result, null);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('returns null for undefined input', () => {
+test('returns null for undefined input', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phs-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const result = persistHealthSummary(undefined, { outputDir: dir });
   assert.equal(result, null);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------
 // Normal array → writes JSONL with newline trailer
 // ---------------------------------------------------------------------------
-test('writes valid JSONL with newline trailer for single entry', () => {
+test('writes valid JSONL with newline trailer for single entry', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phs-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const data = [{ workflow: 'ci.yml', status: 'success', duration: 120 }];
   const result = persistHealthSummary(data, { outputDir: dir });
   assert.ok(result);
@@ -53,12 +54,11 @@ test('writes valid JSONL with newline trailer for single entry', () => {
   assert.equal(lines.length, 2); // one data line + trailing newline
   assert.doesNotThrow(() => JSON.parse(lines[0]));
   assert.deepEqual(JSON.parse(lines[0]), data[0]);
-
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('writes multiple entries as separate JSON lines', () => {
+test('writes multiple entries as separate JSON lines', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phs-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const data = [
     { workflow: 'ci.yml', status: 'success', duration: 120 },
     { workflow: 'audit.yml', status: 'failure', duration: 300 },
@@ -72,37 +72,37 @@ test('writes multiple entries as separate JSON lines', () => {
   assert.equal(lines.length, 3); // two data lines + trailing newline
   assert.deepEqual(JSON.parse(lines[0]), data[0]);
   assert.deepEqual(JSON.parse(lines[1]), data[1]);
-
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------
 // Custom opts: outputDir, prefix
 // ---------------------------------------------------------------------------
-test('uses custom outputDir', () => {
+test('uses custom outputDir', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phs-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const result = persistHealthSummary([{ x: 1 }], { outputDir: dir });
   assert.ok(result.startsWith(dir));
   assert.ok(fs.existsSync(result));
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('uses custom prefix in filename', () => {
+test('uses custom prefix in filename', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phs-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const result = persistHealthSummary([{ x: 1 }], { outputDir: dir, prefix: 'custom-prefix' });
   const filename = path.basename(result);
   assert.ok(filename.startsWith('custom-prefix-'), `Expected filename to start with "custom-prefix-", got "${filename}"`);
   assert.ok(filename.endsWith('.jsonl'));
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------
 // Timestamp formatting: replaces : and . with -
 // ---------------------------------------------------------------------------
-test('filename contains ISO timestamp with colons/dots replaced by dashes', () => {
+test('filename contains ISO timestamp with colons/dots replaced by dashes', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phs-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const before = new Date();
   const result = persistHealthSummary([{ x: 1 }], { outputDir: dir, prefix: 'ts' });
+  const after = new Date();
   const filename = path.basename(result, '.jsonl');
   // filename = ts-<timestamp>.jsonl, strip prefix
   const tsPart = filename.slice(3); // after "ts-"
@@ -111,12 +111,15 @@ test('filename contains ISO timestamp with colons/dots replaced by dashes', () =
   assert.ok(!tsPart.includes(':'), `Timestamp should not contain ":", got "${tsPart}"`);
   assert.ok(!tsPart.includes('.'), `Timestamp should not contain ".", got "${tsPart}"`);
 
-  // Verify the timestamp is close to "now" (same date at minimum)
+  // The impl stamps its own new Date() internally, which falls within [before, after].
+  // Accept either adjacent date so a UTC-midnight boundary cannot flip the assertion.
   const datePart = tsPart.slice(0, 10); // YYYY-MM-DD portion
-  const expectedDate = before.toISOString().slice(0, 10);
-  assert.equal(datePart, expectedDate);
-
-  fs.rmSync(dir, { recursive: true, force: true });
+  const beforeDate = before.toISOString().slice(0, 10);
+  const afterDate = after.toISOString().slice(0, 10);
+  assert.ok(
+    datePart === beforeDate || datePart === afterDate,
+    `Expected date "${datePart}" to be ${beforeDate} or ${afterDate} (UTC midnight boundary tolerated)`,
+  );
 });
 
 // ---------------------------------------------------------------------------
