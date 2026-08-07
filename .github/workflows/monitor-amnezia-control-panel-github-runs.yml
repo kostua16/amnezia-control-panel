@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: '300'
+      runner_capacity_queue_threshold_seconds:
+        description: 'Queue latency (s) at which waits across multiple runs signal a runner-capacity incident'
+        required: false
+        type: string
+        default: '300'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -104,6 +109,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           RECENT_PROBLEM_HOURS: ${{ github.event.inputs.recent_problem_hours || '24' }}
           SLOW_THRESHOLD_SECONDS: ${{ github.event.inputs.slow_threshold_seconds || '300' }}
+          RUNNER_CAPACITY_QUEUE_THRESHOLD_SECONDS: ${{ github.event.inputs.runner_capacity_queue_threshold_seconds || '300' }}
         run: |
           set -euo pipefail
 
@@ -130,6 +136,7 @@ jobs:
           const fallbackHours = positiveNumber('FALLBACK_LOOKBACK_HOURS', 2);
           const recentProblemHours = positiveNumber('RECENT_PROBLEM_HOURS', 24);
           const slowThresholdSeconds = positiveNumber('SLOW_THRESHOLD_SECONDS', 300);
+          const runnerCapacityQueueSeconds = positiveNumber('RUNNER_CAPACITY_QUEUE_THRESHOLD_SECONDS', 300);
           const now = new Date();
 
           const completed = runs
@@ -149,21 +156,24 @@ jobs:
 
           // Queue-latency: startedAt - createdAt per completed monitor run.
           // Starvation shows up here first (queue waits of ~1000s observed).
+          // null (not 0) when no run has latency data, so downstream displays
+          // render "N/A" instead of a synthetic "0s" that reads as a real
+          // measurement of zero queue wait.
           const queueLatencies = completed
             .filter((r) => r.startedAt && r.createdAt)
             .map((r) => Math.round((new Date(r.startedAt) - new Date(r.createdAt)) / 1000));
-          const maxQueueLatency = queueLatencies.length
-            ? Math.max(...queueLatencies)
-            : 0;
-          const avgQueueLatency = queueLatencies.length
+          const hasQueueData = queueLatencies.length > 0;
+          const maxQueueLatency = hasQueueData ? Math.max(...queueLatencies) : null;
+          const avgQueueLatency = hasQueueData
             ? Math.round(queueLatencies.reduce((a, b) => a + b, 0) / queueLatencies.length)
-            : 0;
+            : null;
+          const queueLabel = (value) => (value === null ? 'N/A' : `${value}s`);
 
           const summary = [
             `monitor since ${monitorSince} (${source})`,
             `recent problem since ${recentProblemSince}`,
             `slow threshold ${slowThresholdSeconds}s`,
-            `queue latency avg ${avgQueueLatency}s max ${maxQueueLatency}s (${queueLatencies.length} runs)`,
+            `queue latency avg ${queueLabel(avgQueueLatency)} max ${queueLabel(maxQueueLatency)} (${queueLatencies.length} runs)`,
           ].join('; ');
 
           const outputs = {
@@ -172,8 +182,9 @@ jobs:
             previous_run_url: previous?.url || '',
             recent_problem_since: recentProblemSince,
             slow_threshold_seconds: String(slowThresholdSeconds),
-            max_queue_latency_seconds: String(maxQueueLatency),
-            avg_queue_latency_seconds: String(avgQueueLatency),
+            runner_capacity_queue_threshold_seconds: String(runnerCapacityQueueSeconds),
+            max_queue_latency_seconds: maxQueueLatency === null ? '' : String(maxQueueLatency),
+            avg_queue_latency_seconds: avgQueueLatency === null ? '' : String(avgQueueLatency),
             window_summary: summary,
           };
 
@@ -213,6 +224,7 @@ jobs:
             PREVIOUS_MONITOR_RUN: ${{ steps.window.outputs.previous_run_url }}
             RECENT_PROBLEM_SINCE: ${{ steps.window.outputs.recent_problem_since }}
             SLOW_THRESHOLD_SECONDS: ${{ steps.window.outputs.slow_threshold_seconds }}
+            RUNNER_CAPACITY_QUEUE_THRESHOLD_SECONDS: ${{ steps.window.outputs.runner_capacity_queue_threshold_seconds }}
             MAX_QUEUE_LATENCY_SECONDS: ${{ steps.window.outputs.max_queue_latency_seconds }}
             AVG_QUEUE_LATENCY_SECONDS: ${{ steps.window.outputs.avg_queue_latency_seconds }}
             STOP_BY: ${{ steps.deadline.outputs.stop_by }}
@@ -240,11 +252,14 @@ jobs:
             a runner picked it up. Runner starvation shows up here first — queue waits of
             ~1000s have been observed.
 
-            - Previous monitor window stats: avg=${AVG_QUEUE_LATENCY_SECONDS}s, max=${MAX_QUEUE_LATENCY_SECONDS}s.
+            - Previous monitor window stats: avg=${AVG_QUEUE_LATENCY_SECONDS}s, max=${MAX_QUEUE_LATENCY_SECONDS}s
+              (blank = no latency data captured in the prior window).
             - In your survey output, include `queue_latency=<N>s` for each run.
             - Flag any run where queue_latency > ${SLOW_THRESHOLD_SECONDS}s as `QUEUE STARVATION`.
-            - If multiple runs across workflows show queue_latency > 300s, report it as a
-              runner-capacity incident (not per-workflow).
+            - If multiple runs across workflows show queue_latency > ${RUNNER_CAPACITY_QUEUE_THRESHOLD_SECONDS}s,
+              report it as a runner-capacity incident (not per-workflow). This bar is separate from the
+              per-run QUEUE STARVATION threshold: STARVATION flags one slow run, while the runner-capacity
+              bar catches systemic starvation across many runs.
 
             ## Failure Streaks = Workflow Down
 
