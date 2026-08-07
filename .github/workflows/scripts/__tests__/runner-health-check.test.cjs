@@ -7,6 +7,8 @@ const {
   computeQueueLatency,
   parseSince,
   formatText,
+  getRecentRuns,
+  ghErrors,
 } = require('../runner-health-check.cjs');
 
 // ── getRunnerPools ───────────────────────────────────────────
@@ -168,4 +170,28 @@ test('getRunners parser handles multi-runner NDJSON stream', () => {
   assert.equal(parsed.length, 2);
   assert.equal(parsed[0].name, 'r1');
   assert.equal(parsed[1].status, 'offline');
+});
+
+// ── getRecentRuns malformed-JSON regression ──────────────────
+// `gh run list --json` can exit 0 with a non-JSON body (proxy injection,
+// truncated/partial response). getRecentRuns must record that to ghErrors so
+// the report's "gh call failures" banner surfaces it — otherwise a malformed
+// response renders as empty-but-healthy queue data, the silent masking this
+// tool exists to eliminate. runGh is injected so the branch is exercised
+// without a live gh invocation.
+test('getRecentRuns records malformed JSON to ghErrors', () => {
+  ghErrors.length = 0;
+  const runs = getRecentRuns('owner/repo', '6h', () => 'not-json{');
+  assert.equal(runs.length, 0);
+  assert.ok(ghErrors.length > 0, 'parse failure should be recorded');
+  assert.match(ghErrors[0], /malformed JSON/);
+});
+
+test('getRecentRuns returns empty without recording when gh call fails', () => {
+  ghErrors.length = 0;
+  // runGh returns null on invocation failure (handled before the parse branch);
+  // that path returns [] without pushing a parse error.
+  const runs = getRecentRuns('owner/repo', '6h', () => null);
+  assert.equal(runs.length, 0);
+  assert.equal(ghErrors.length, 0);
 });

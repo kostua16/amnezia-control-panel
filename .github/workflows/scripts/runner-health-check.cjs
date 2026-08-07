@@ -127,13 +127,15 @@ function getRunnerPools(runners) {
 
 // ── Queue latency ───────────────────────────────────────────
 
-function getRecentRuns(repo, since) {
+function getRecentRuns(repo, since, runGhFn = runGh) {
   // Bound the query server-side via --created so high-latency runs in a busy
   // window are not truncated by a client-side cap, then narrow to the precise
   // --since moment (the API filter is date-granular, not to the second).
+  // runGhFn is injectable so the malformed-JSON branch can be tested without
+  // a live gh invocation.
   const cutoff = parseSince(since);
   const cutoffDay = cutoff.toISOString().slice(0, 10);
-  const out = runGh([
+  const out = runGhFn([
     'run',
     'list',
     '--repo',
@@ -357,4 +359,6 @@ module.exports = {
   computeQueueLatency,
   parseSince,
   formatText,
+  getRecentRuns,
+  ghErrors,
 };
