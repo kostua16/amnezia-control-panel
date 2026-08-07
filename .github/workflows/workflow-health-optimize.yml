@@ -46,6 +46,8 @@ jobs:
       has-problems: ${{ steps.collect.outputs.has_problems }}
       runs-data: ${{ steps.collect.outputs.runs_data }}
       summary-path: ${{ steps.collect.outputs.summary_path }}
+      queue-telemetry: ${{ steps.collect.outputs.queue_telemetry }}
+      starvation-alert: ${{ steps.collect.outputs.starvation_alert }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
@@ -276,6 +278,15 @@ jobs:
               core.setOutput('summary_path', summaryPath);
             }
 
+            # WHO-E03: compute queue-latency telemetry for starvation alerts
+            const { computeQueueLatencyTelemetry } = require('./.github/workflows/scripts/compute-queue-latency-telemetry.cjs');
+            const telemetry = computeQueueLatencyTelemetry(runSummaries);
+            core.setOutput('queue_telemetry', JSON.stringify(telemetry));
+            core.setOutput('starvation_alert', String(telemetry.exceedsThreshold));
+            if (telemetry.percentiles) {
+              core.info(`Queue telemetry: p50=${telemetry.percentiles.p50}s p95=${telemetry.percentiles.p95}s max=${telemetry.percentiles.max}s (samples=${telemetry.sampleCount})`);
+            }
+
       - name: Upload health summary artifact
         if: steps.collect.outputs.summary_path != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -308,6 +319,27 @@ jobs:
             --repo "${{ github.repository }}" \
             --runs-data "$RUNS_DATA" \
             --lookback-hours 6
+
+  report-queue-starvation:
+    name: Report Queue Starvation Alert
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [collect-runs]
+    if: needs.collect-runs.outputs.starvation-alert == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: File queue starvation alert (WHO-E03)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          QUEUE_TELEMETRY: ${{ needs.collect-runs.outputs.queue-telemetry }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node .github/workflows/scripts/file-queue-starvation-alert.cjs \
+            --repo "${{ github.repository }}" \
+            --telemetry "$QUEUE_TELEMETRY" \
+            --run-url "$RUN_URL"
 
   optimize:
     name: Analyze & Optimize Workflows
