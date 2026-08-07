@@ -72,7 +72,12 @@ function runGhJson(args, fallback = []) {
   if (!output) return fallback;
   try {
     return JSON.parse(output);
-  } catch {
+  } catch (error) {
+    // Surface parse failures instead of silently reporting empty results;
+    // a non-JSON response usually means the gh API returned an error page.
+    process.stderr.write(
+      `Warning: failed to parse JSON from \`gh ${args.join(' ')}\`: ${error.message}\n`,
+    );
     return fallback;
   }
 }
@@ -105,11 +110,11 @@ function queryFleetPrs(repo, since, until) {
       `direction=desc`,
       `-f`,
       `per_page=50`,
-      `-f`,
-      `head=${actor}`,
       '--paginate',
       '--jq',
-      '.[] | {number, title, state, merged_at, created_at, updated_at, user: .user.login, head_ref: .head.ref}',
+      // `head` filters by source branch ref, not author — fleet bots author
+      // PRs from this repo, so filter by .user.login client-side instead.
+      `.[] | select(.user.login == "${actor}") | {number, title, state, merged_at, created_at, updated_at, user: .user.login, head_ref: .head.ref}`,
     ]);
     for (const pr of results) {
       const updated = pr.updated_at || pr.created_at || '';
@@ -121,8 +126,9 @@ function queryFleetPrs(repo, since, until) {
   return items;
 }
 
-function queryFleetIssues(repo, since, until) {
+function queryFleetIssues(repo, since) {
   // Search issues (non-PR) created or closed in the window.
+  // No `until` bound: `created:>=`/`closed:>=` are naturally bounded by now.
   const created = runGhJson([
     'search',
     'issues',
@@ -316,7 +322,7 @@ async function main() {
 
   // Collect data
   const prs = queryFleetPrs(repo, since, until);
-  const issues = queryFleetIssues(repo, since, until);
+  const issues = queryFleetIssues(repo, since);
   const gateSkips = queryGateSkips(repo, since);
 
   const data = { prs, issues, gateSkips };
