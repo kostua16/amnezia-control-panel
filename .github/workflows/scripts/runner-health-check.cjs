@@ -113,7 +113,8 @@ function getRunnerPools(runners) {
   for (const r of runners) {
     // Skip "self-hosted" label — pool identity is the other labels
     const poolLabels = (r.labels || []).filter((l) => l !== 'self-hosted');
-    const poolKey = poolLabels.length > 0 ? poolLabels.sort().join(',') : 'default';
+    const poolKey =
+      poolLabels.length > 0 ? poolLabels.sort().join(',') : 'default';
     if (!pools[poolKey]) {
       pools[poolKey] = { labels: poolLabels, online: 0, offline: 0, total: 0 };
     }
@@ -148,7 +149,12 @@ function getRecentRuns(repo, since) {
   let data;
   try {
     data = JSON.parse(out);
-  } catch {
+  } catch (error) {
+    // A malformed `gh run list` body (proxy injection, truncated response)
+    // would otherwise render as empty queue data with no banner — the same
+    // healthy-looking masking runGh already guards against. Record it so the
+    // parse failure surfaces alongside gh invocation errors.
+    ghErrors.push(`run list --repo ${repo} (malformed JSON: ${error.message})`);
     return [];
   }
   if (!Array.isArray(data)) return [];
@@ -157,29 +163,39 @@ function getRecentRuns(repo, since) {
 
 function computeQueueLatency(runs) {
   const now = Date.now();
-  return runs
-    // Keep runs that have a created_at; a run still waiting for a runner
-    // has run_started_at: null — that is exactly the acute capacity signal
-    // to surface, so measure its wait as now - created_at instead of
-    // dropping it.
-    .filter((r) => r.created_at)
-    .map((r) => {
-      const startMs = r.run_started_at
-        ? new Date(r.run_started_at).getTime()
-        : now;
-      return {
-        name: r.name,
-        runId: r.databaseId,
-        queueSeconds: Math.round((startMs - new Date(r.created_at).getTime()) / 1000),
-        stillQueued: !r.run_started_at,
-      };
-    })
-    .sort((a, b) => b.queueSeconds - a.queueSeconds);
+  return (
+    runs
+      // Keep runs that have a created_at; a run still waiting for a runner
+      // has run_started_at: null — that is exactly the acute capacity signal
+      // to surface, so measure its wait as now - created_at instead of
+      // dropping it.
+      .filter((r) => r.created_at)
+      .map((r) => {
+        const startMs = r.run_started_at
+          ? new Date(r.run_started_at).getTime()
+          : now;
+        return {
+          name: r.name,
+          runId: r.databaseId,
+          queueSeconds: Math.round(
+            (startMs - new Date(r.created_at).getTime()) / 1000,
+          ),
+          stillQueued: !r.run_started_at,
+        };
+      })
+      .sort((a, b) => b.queueSeconds - a.queueSeconds)
+  );
 }
 
 // ── Formatting ───────────────────────────────────────────────
 
-function formatText(pools, queueLatencies, queueThreshold, sinceLabel, errors = []) {
+function formatText(
+  pools,
+  queueLatencies,
+  queueThreshold,
+  sinceLabel,
+  errors = [],
+) {
   const lines = [
     `## Runner health self-check (MNT-E08)`,
     '',
@@ -198,7 +214,7 @@ function formatText(pools, queueLatencies, queueThreshold, sinceLabel, errors = 
     lines.push('');
     lines.push(
       '> Runner/queue data below may be missing because a `gh` invocation ' +
-      'failed. Do not treat empty sections as healthy until gh succeeds.',
+        'failed. Do not treat empty sections as healthy until gh succeeds.',
     );
     lines.push('');
   }
@@ -213,9 +229,13 @@ function formatText(pools, queueLatencies, queueThreshold, sinceLabel, errors = 
   lines.push('|------|--------|---------|-------|');
   for (const [key, pool] of Object.entries(pools)) {
     const label = pool.labels.length > 0 ? pool.labels.join(', ') : 'default';
-    lines.push(`| ${label} | ${pool.online} | ${pool.offline} | ${pool.total} |`);
+    lines.push(
+      `| ${label} | ${pool.online} | ${pool.offline} | ${pool.total} |`,
+    );
   }
-  lines.push(`| **Total** | **${totalOnline}** | **${totalOffline}** | **${totalOnline + totalOffline}** |`);
+  lines.push(
+    `| **Total** | **${totalOnline}** | **${totalOffline}** | **${totalOnline + totalOffline}** |`,
+  );
   lines.push('');
 
   // Saturation check — all runners offline in any pool
@@ -232,7 +252,7 @@ function formatText(pools, queueLatencies, queueThreshold, sinceLabel, errors = 
     lines.push('');
     lines.push(
       '> Saturated pools block all workflow execution. ' +
-      'Investigate runner host health immediately.',
+        'Investigate runner host health immediately.',
     );
     lines.push('');
   }
@@ -246,9 +266,12 @@ function formatText(pools, queueLatencies, queueThreshold, sinceLabel, errors = 
   } else {
     const maxLatency = queueLatencies[0].queueSeconds;
     const avgLatency = Math.round(
-      queueLatencies.reduce((s, r) => s + r.queueSeconds, 0) / queueLatencies.length,
+      queueLatencies.reduce((s, r) => s + r.queueSeconds, 0) /
+        queueLatencies.length,
     );
-    const alerting = queueLatencies.filter((r) => r.queueSeconds >= queueThreshold);
+    const alerting = queueLatencies.filter(
+      (r) => r.queueSeconds >= queueThreshold,
+    );
     const stillQueued = queueLatencies.filter((r) => r.stillQueued).length;
 
     const queuedNote =
@@ -273,7 +296,7 @@ function formatText(pools, queueLatencies, queueThreshold, sinceLabel, errors = 
       lines.push('');
       lines.push(
         '> High queue latency signals runner-capacity pressure. ' +
-        'Consider scaling the pool or rescheduling non-critical workflows.',
+          'Consider scaling the pool or rescheduling non-critical workflows.',
       );
       lines.push('');
     }
@@ -319,7 +342,9 @@ function main() {
       ),
     );
   } else {
-    console.log(formatText(pools, queueLatencies, queueThreshold, since, ghErrors));
+    console.log(
+      formatText(pools, queueLatencies, queueThreshold, since, ghErrors),
+    );
   }
 }
 
