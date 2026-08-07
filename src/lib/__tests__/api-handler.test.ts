@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { z } from 'zod';
 import { Prisma } from '@/generated/prisma/client';
 import { apiHandler, toErrorResponse } from '../api-handler';
+import { BodySizeLimitError } from '../parse-body';
 import { NextRequest } from 'next/server';
 
 function makePrismaError(code: string, message = 'constraint failure') {
@@ -103,5 +104,16 @@ describe('apiHandler', () => {
     const res = await handler(req);
     assert.strictEqual(res.status, 200);
     assert.deepEqual(await res.json(), { url: 'https://example.com/api/test' });
+  });
+
+  it('converts a BodySizeLimitError into a 413 response', async () => {
+    const handler = apiHandler(async () => {
+      throw new BodySizeLimitError(1024, 2048);
+    }, 'api/test');
+    const res = await handler();
+    const body = await res.json();
+    assert.strictEqual(res.status, 413);
+    assert.strictEqual(body.success, false);
+    assert.ok(body.error.includes('exceeds limit'));
   });
 });

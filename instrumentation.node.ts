@@ -36,6 +36,9 @@ function registerGracefulShutdown(
 }
 
 export async function registerNode(): Promise<void> {
+  const { validateEnvironment } = await import('@/lib/env');
+  validateEnvironment();
+
   const { startPanelHealthChecks, cleanup: cleanupPanelHealth } =
     await import('@/lib/panel-health-checker');
   startPanelHealthChecks();
