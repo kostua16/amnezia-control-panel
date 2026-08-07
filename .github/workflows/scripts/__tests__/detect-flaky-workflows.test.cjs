@@ -92,8 +92,8 @@ test('isFlaky handles cancelled as success', () => {
 
 test('buildEvidence produces markdown with run details', () => {
   const runs = [
-    { conclusion: 'failure', run_number: 100, created_at: '2026-01-01T10:00:00Z' },
-    { conclusion: 'success', run_number: 99, created_at: '2026-01-01T09:00:00Z' },
+    { conclusion: 'failure', number: 100, createdAt: '2026-01-01T10:00:00Z' },
+    { conclusion: 'success', number: 99, createdAt: '2026-01-01T09:00:00Z' },
   ];
   const evidence = buildEvidence('Test WF', 6, runs);
   assert.ok(evidence.includes('**Workflow:** Test WF'));
@@ -105,8 +105,8 @@ test('buildEvidence produces markdown with run details', () => {
 test('buildEvidence limits to 8 runs', () => {
   const runs = Array.from({ length: 10 }, (_, i) => ({
     conclusion: 'success',
-    run_number: 100 - i,
-    created_at: '2026-01-01T10:00:00Z',
+    number: 100 - i,
+    createdAt: '2026-01-01T10:00:00Z',
   }));
   const evidence = buildEvidence('Test', 6, runs);
   const runLines = evidence.split('\n').filter(l => l.startsWith('- '));

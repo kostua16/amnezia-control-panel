@@ -31,7 +31,8 @@ function appendOutput(outputPath, key, value) {
 
 /**
  * Query recent completed runs for a workflow by display name.
- * Returns array of { conclusion, run_number, created_at } newest-first.
+ * Returns array of { conclusion, number, createdAt } newest-first,
+ * matching the real `gh run list --json` field names.
  */
 function queryWorkflowRuns(repo, workflowName, lookbackHours) {
   const since = new Date(
@@ -41,7 +42,7 @@ function queryWorkflowRuns(repo, workflowName, lookbackHours) {
     const output = gh([
       'run', 'list', '--repo', repo, '--workflow', workflowName,
       '--status', 'completed', '--created', `${since}..`,
-      '--limit', '50', '--json', 'conclusion,run_number,created_at',
+      '--limit', '50', '--json', 'conclusion,number,createdAt',
     ]);
     return JSON.parse(output.trim());
   } catch {
@@ -149,7 +150,7 @@ function buildEvidence(workflowName, lookbackHours, runs) {
     `**Pattern:** ${runs.length} run${runs.length === 1 ? '' : 's'}, ${fails} failure${fails === 1 ? '' : 's'}`,
     '**Recent runs:**',
     ...runs.slice(0, 8).map(
-      r => `- ${r.conclusion} (run #${r.run_number}, ${r.created_at})`,
+      r => `- ${r.conclusion} (run #${r.number}, ${r.createdAt})`,
     ),
   ].join('\n');
 }
