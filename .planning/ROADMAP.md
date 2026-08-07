@@ -147,8 +147,9 @@ Plans:
 
 **Improvement intake from PR automation**
 <!-- AUTO-PR-IMPROVE-INTAKE-START -->
-<!-- PR-IMPROVE:1003 --> - PR #1003: fix: resolve #997 - APR-E08: Recurring orphan-branch check (audit-auto-prs) -- pr1003.1 x1, pr1003.2 x1. Quick artifact: `.planning/quick/260807-pr1003-workflow-improve/260807-pr1003-PLAN.md`.
 <!-- PR-IMPROVE:1001 --> - PR #1001: fix: resolve #1000 - MON-E03: Queue-latency tracking per run (monitor-github-runs) -- pr1001.1 x1, pr1001.2 x1. Quick artifact: `.planning/quick/260807-pr1001-workflow-improve/260807-pr1001-PLAN.md`.
+<!-- PR-IMPROVE:1002 --> - PR #1002: fix: resolve #999 - WHO-E04: Flaky-workflow detection across hours (workflow-health-optimize) -- pr1002.1 x1, pr1002.2 x1. Quick artifact: `.planning/quick/260807-pr1002-workflow-improve/260807-pr1002-PLAN.md`.
+<!-- PR-IMPROVE:1003 --> - PR #1003: fix: resolve #997 - APR-E08: Recurring orphan-branch check (audit-auto-prs) -- pr1003.1 x1, pr1003.2 x1. Quick artifact: `.planning/quick/260807-pr1003-workflow-improve/260807-pr1003-PLAN.md`.
 <!-- PR-IMPROVE:182 --> - PR #182: fix(audit): address autonomous audit findings -- 13.2 x2, 13.3 x1, 13.4 x1. Quick artifact: `.planning/quick/260603-pr182-workflow-improve/260603-pr182-PLAN.md`.
 <!-- PR-IMPROVE:237 --> - PR #237: [codex] fix PR finalizer auto-merge stall -- pr237.1 x1, pr237.2 x1, pr237.3 x1, pr237.4 x1. Quick artifact: `.planning/quick/260605-pr237-workflow-improve/260605-pr237-PLAN.md`.
 <!-- PR-IMPROVE:352 --> - PR #352: fix: resolve #347 - Security: esbuild RCE + arbitrary file read (HIGH) and postcss XSS (moderate) -- pr352.1 x1, pr352.2 x1, pr352.3 x1, pr352.4 x1. Quick artifact: `.planning/quick/260612-pr352-workflow-improve/260612-pr352-PLAN.md`.
