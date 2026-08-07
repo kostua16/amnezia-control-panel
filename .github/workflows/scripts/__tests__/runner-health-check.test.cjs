@@ -56,12 +56,26 @@ test('computeQueueLatency calculates queue seconds', () => {
   assert.equal(result[0].name, 'test-workflow');
 });
 
-test('computeQueueLatency skips runs without timestamps', () => {
+test('computeQueueLatency skips runs without created_at', () => {
   const runs = [
-    { databaseId: 101, name: 'no-timestamps', created_at: null, run_started_at: null },
-    { databaseId: 102, name: 'partial', created_at: '2025-01-01T00:00:00Z', run_started_at: null },
+    { databaseId: 101, name: 'no-created', created_at: null, run_started_at: null },
   ];
   assert.equal(computeQueueLatency(runs).length, 0);
+});
+
+test('computeQueueLatency counts queued-not-started runs via created_at', () => {
+  // A run stuck waiting for a runner has run_started_at: null — the acute
+  // capacity signal — so its wait is measured as now - created_at instead
+  // of being dropped.
+  const created = new Date(Date.now() - 300000).toISOString(); // 5m ago
+  const runs = [
+    { databaseId: 102, name: 'queued', created_at: created, run_started_at: null },
+  ];
+  const result = computeQueueLatency(runs);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].name, 'queued');
+  assert.equal(result[0].stillQueued, true);
+  assert.ok(result[0].queueSeconds >= 299);
 });
 
 test('computeQueueLatency sorts by descending latency', () => {
@@ -126,4 +140,32 @@ test('formatText shows queue latency with alerting', () => {
   assert.ok(output.includes('High-latency runs'));
   assert.ok(output.includes('slow-workflow'));
   assert.ok(!output.includes('fast-workflow'));
+});
+
+test('formatText surfaces gh call failures instead of looking clean', () => {
+  const pools = {};
+  const output = formatText(pools, [], 300, '6h', [
+    'api repos/o/r/actions/runners -> HTTP 403',
+  ]);
+  assert.ok(output.includes('gh call failures'));
+  assert.ok(output.includes('report may be incomplete'));
+  assert.ok(output.includes('HTTP 403'));
+});
+
+// ── getRunners NDJSON regression ──────────────────────────────
+// gh api ... --jq '.runners[]' emits one JSON object per runner, not a
+// single array. getRunners parses via the shared parseGhJsonLines helper,
+// which must collect every line instead of throwing on the second object
+// (the bug that silently collapsed multi-runner repos to an empty report).
+const { parseGhJsonLines } = require('../fleet-kpi-digest.cjs');
+
+test('getRunners parser handles multi-runner NDJSON stream', () => {
+  const stream = [
+    '{"id":1,"name":"r1","status":"online","labels":[{"name":"self-hosted"},{"name":"big"}]}',
+    '{"id":2,"name":"r2","status":"offline","labels":[{"name":"self-hosted"},{"name":"big"}]}',
+  ].join('\n');
+  const parsed = parseGhJsonLines(stream);
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed[0].name, 'r1');
+  assert.equal(parsed[1].status, 'offline');
 });

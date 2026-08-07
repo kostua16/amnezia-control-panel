@@ -25,9 +25,20 @@
 'use strict';
 
 const { execFileSync } = require('child_process');
+// Reuse the repo's shared NDJSON parser: `gh api ... --jq '.runners[]'`
+// (with --paginate) emits one JSON object per runner across pages, not a
+// single array, so a bulk JSON.parse throws on the second object and
+// silently collapsed every multi-runner repo to an empty pool report.
+const { parseGhJsonLines } = require('./fleet-kpi-digest.cjs');
 
 const DEFAULT_SINCE = '6h';
 const DEFAULT_QUEUE_THRESHOLD = 300;
+
+// Records gh invocation failures so the report can surface them. Without
+// this, a failed gh call (403 on actions/runners, rate limit, missing CLI)
+// returns [] and is indistinguishable from a genuinely clean, healthy pool
+// — masking the exact outage this tool exists to catch.
+const ghErrors = [];
 
 // ── CLI helpers ──────────────────────────────────────────────
 
@@ -46,17 +57,11 @@ function runGh(args, options = {}) {
         ...options,
       }) ?? ''
     ).trim();
-  } catch {
-    return null;
-  }
-}
-
-function ghJson(...args) {
-  const out = runGh(args);
-  if (!out) return null;
-  try {
-    return JSON.parse(out);
-  } catch {
+  } catch (error) {
+    const stderr = error.stderr ? error.stderr.toString().trim() : '';
+    ghErrors.push(
+      `${args.join(' ')}${stderr ? ` -> ${stderr.split('\n')[0]}` : ''}`,
+    );
     return null;
   }
 }
@@ -65,7 +70,14 @@ function ghJson(...args) {
 
 function parseSince(duration) {
   const match = duration.match(/^(\d+)([dhm])$/);
-  if (!match) return new Date(Date.now() - 6 * 3600000);
+  if (!match) {
+    // Surface bad input rather than silently substituting the default,
+    // which would otherwise hide a typo from the operator.
+    process.stderr.write(
+      `Warning: invalid --since "${duration}", using default ${DEFAULT_SINCE}\n`,
+    );
+    return new Date(Date.now() - 6 * 3600000);
+  }
   const n = parseInt(match[1], 10);
   const multipliers = { h: 3600000, d: 86400000, m: 60000 };
   return new Date(Date.now() - n * (multipliers[match[2]] || 3600000));
@@ -74,16 +86,19 @@ function parseSince(duration) {
 // ── Runner status ────────────────────────────────────────────
 
 function getRunners(repo) {
-  const data = ghJson(
-    'api',
-    `repos/${repo}/actions/runners`,
-    '-f',
-    'per_page=100',
-    '--paginate',
-    '--jq',
-    '.runners[] | {id, name, status, labels: [.labels[].name]}',
+  // parseGhJsonLines always returns an array, collecting one parsed object
+  // per NDJSON line and warning to stderr on unparseable output.
+  const data = parseGhJsonLines(
+    runGh([
+      'api',
+      `repos/${repo}/actions/runners`,
+      '-f',
+      'per_page=100',
+      '--paginate',
+      '--jq',
+      '.runners[] | {id, name, status, labels: [.labels[].name]}',
+    ]),
   );
-  if (!Array.isArray(data)) return [];
 
   return data.map((r) => ({
     id: r.id,
@@ -112,47 +127,81 @@ function getRunnerPools(runners) {
 // ── Queue latency ───────────────────────────────────────────
 
 function getRecentRuns(repo, since) {
-  const data = ghJson(
+  // Bound the query server-side via --created so high-latency runs in a busy
+  // window are not truncated by a client-side cap, then narrow to the precise
+  // --since moment (the API filter is date-granular, not to the second).
+  const cutoff = parseSince(since);
+  const cutoffDay = cutoff.toISOString().slice(0, 10);
+  const out = runGh([
     'run',
     'list',
     '--repo',
     repo,
+    '--created',
+    `>=${cutoffDay}`,
     '--limit',
-    '50',
+    '100',
     '--json',
     'run_started_at,created_at,status,conclusion,name,databaseId',
-  );
+  ]);
+  if (out === null) return [];
+  let data;
+  try {
+    data = JSON.parse(out);
+  } catch {
+    return [];
+  }
   if (!Array.isArray(data)) return [];
-
-  const cutoff = parseSince(since);
-  return data.filter((run) => {
-    const created = new Date(run.created_at);
-    return created >= cutoff;
-  });
+  return data.filter((run) => new Date(run.created_at) >= cutoff);
 }
 
 function computeQueueLatency(runs) {
+  const now = Date.now();
   return runs
-    .filter((r) => r.created_at && r.run_started_at)
-    .map((r) => ({
-      name: r.name,
-      runId: r.databaseId,
-      queueSeconds: Math.round(
-        (new Date(r.run_started_at) - new Date(r.created_at)) / 1000,
-      ),
-    }))
+    // Keep runs that have a created_at; a run still waiting for a runner
+    // has run_started_at: null — that is exactly the acute capacity signal
+    // to surface, so measure its wait as now - created_at instead of
+    // dropping it.
+    .filter((r) => r.created_at)
+    .map((r) => {
+      const startMs = r.run_started_at
+        ? new Date(r.run_started_at).getTime()
+        : now;
+      return {
+        name: r.name,
+        runId: r.databaseId,
+        queueSeconds: Math.round((startMs - new Date(r.created_at).getTime()) / 1000),
+        stillQueued: !r.run_started_at,
+      };
+    })
     .sort((a, b) => b.queueSeconds - a.queueSeconds);
 }
 
 // ── Formatting ───────────────────────────────────────────────
 
-function formatText(pools, queueLatencies, queueThreshold, sinceLabel) {
+function formatText(pools, queueLatencies, queueThreshold, sinceLabel, errors = []) {
   const lines = [
     `## Runner health self-check (MNT-E08)`,
     '',
     `> Look-back: ${sinceLabel} | Queue alert threshold: ${queueThreshold}s`,
     '',
   ];
+
+  // A failed gh call looks like empty data; lead with the failure banner so
+  // the operator never reads empty pools as a clean bill of health.
+  if (errors.length > 0) {
+    lines.push('### ⚠️ gh call failures — report may be incomplete');
+    lines.push('');
+    for (const e of errors) {
+      lines.push(`- \`${e}\``);
+    }
+    lines.push('');
+    lines.push(
+      '> Runner/queue data below may be missing because a `gh` invocation ' +
+      'failed. Do not treat empty sections as healthy until gh succeeds.',
+    );
+    lines.push('');
+  }
 
   // Runner pools
   const totalOnline = Object.values(pools).reduce((s, p) => s + p.online, 0);
@@ -200,9 +249,12 @@ function formatText(pools, queueLatencies, queueThreshold, sinceLabel) {
       queueLatencies.reduce((s, r) => s + r.queueSeconds, 0) / queueLatencies.length,
     );
     const alerting = queueLatencies.filter((r) => r.queueSeconds >= queueThreshold);
+    const stillQueued = queueLatencies.filter((r) => r.stillQueued).length;
 
+    const queuedNote =
+      stillQueued > 0 ? ` (${stillQueued} still waiting for a runner)` : '';
     lines.push(
-      `- Avg queue wait: **${avgLatency}s** | Max: **${maxLatency}s** (${queueLatencies.length} runs)`,
+      `- Avg queue wait: **${avgLatency}s** | Max: **${maxLatency}s** (${queueLatencies.length} runs${queuedNote})`,
     );
     lines.push('');
 
@@ -212,7 +264,8 @@ function formatText(pools, queueLatencies, queueThreshold, sinceLabel) {
       lines.push('| Workflow | Run ID | Queue wait |');
       lines.push('|----------|--------|------------|');
       for (const r of alerting.slice(0, 10)) {
-        lines.push(`| ${r.name} | ${r.runId} | ${r.queueSeconds}s |`);
+        const marker = r.stillQueued ? ' (queued)' : '';
+        lines.push(`| ${r.name} | ${r.runId} | ${r.queueSeconds}s${marker} |`);
       }
       if (alerting.length > 10) {
         lines.push(`| ... and ${alerting.length - 10} more | | |`);
@@ -259,10 +312,14 @@ function main() {
 
   if (jsonMode) {
     console.log(
-      JSON.stringify({ runners, pools, queueLatencies, queueThreshold }, null, 2),
+      JSON.stringify(
+        { runners, pools, queueLatencies, queueThreshold, ghErrors },
+        null,
+        2,
+      ),
     );
   } else {
-    console.log(formatText(pools, queueLatencies, queueThreshold, since));
+    console.log(formatText(pools, queueLatencies, queueThreshold, since, ghErrors));
   }
 }
 

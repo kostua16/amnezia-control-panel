@@ -137,6 +137,10 @@
       "color": "d73a4a",
       "description": "CI or automation workflow failure requiring attention"
     },
+    "observability": {
+      "color": "fbca04",
+      "description": "Observability or runner-health finding (MNT-E08)"
+    },
     "auto-fix-failed": {
       "color": "d93f0b",
       "description": "An auto-fix automation failed before producing a valid PR"
