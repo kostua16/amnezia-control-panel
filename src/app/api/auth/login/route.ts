@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { readBody } from '@/lib/parse-body';
+import {
+  readBody,
+  BodySizeLimitError,
+  bodySizeLimitResponse,
+} from '@/lib/parse-body';
 import { prisma } from '@/lib/prisma';
 import { seedAdmin } from '@/lib/seed';
 import { verifyValue } from '@/lib/password';
@@ -92,6 +96,9 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
+    if (error instanceof BodySizeLimitError) {
+      return bodySizeLimitResponse(error);
+    }
     console.error('[auth/login] Error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
