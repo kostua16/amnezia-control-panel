@@ -344,7 +344,7 @@ jobs:
 
             ## GLOBAL CONSTRAINT (all phases)
             Do NOT run `git`, `gh`, `curl`, or any live network/API commands in ANY phase.
-            Use ONLY the provided Completed Runs Data for evidence. Do NOT fetch logs, run statuses, or issue details from the API.
+            Use ONLY the provided Completed Runs Data for run/log evidence. The ONLY local file read allowed before Phase 2 is a `Grep cron:` scan of `.github/workflows/*.yml` to detect scheduled-run collisions (WHO-E02); cron schedules count as collision evidence. Do NOT fetch logs, run statuses, or issue details from the API.
 
             ## PHASE-BASED EXECUTION (MANDATORY)
 
@@ -354,7 +354,7 @@ jobs:
             - Use ONLY the provided Completed Runs Data for run/log evidence.
             - Use `timingSummary` to identify concrete queue, runner, job, or step bottlenecks. If timing evidence is missing, mark the slow run ambiguous.
             - If a slow successful run is explained by `duplicateSameSha`, and CI no longer subscribes to `ready_for_review`, treat that duplicate-run class as already addressed and do not edit workflows for it.
-            - Do NOT read any files yet.
+            - Cron collision scan (WHO-E02): `Grep` for `cron:` in `.github/workflows/*.yml` and detect schedules firing in the same 5-minute window (report under `CRON COLLISIONS:`). This surface scan is allowed; do NOT read full workflow YAML bodies yet — that is Phase 2.
 
             ### Phase 2: PLAN (turns 4-6)
             - Read ONLY the relevant workflow file(s) for each problem.
