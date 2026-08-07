@@ -10,6 +10,8 @@ const {
   parseLogBody,
   buildLogBody,
   trimEntries,
+  escalationTitle,
+  escalationSearchQuery,
 } = require('../escalate-repeated-fixes.cjs');
 
 // --- fingerprint ---
@@ -148,4 +150,29 @@ test('trimEntries trims to MAX_LOG_ENTRIES', () => {
   // Should keep the last 20 (most recent)
   assert.equal(trimmed[0].run_id, '5');
   assert.equal(trimmed[trimmed.length - 1].run_id, '24');
+});
+
+// --- escalation dedup (APR-E10) ---
+// findEscalationIssue searches the title for the fingerprint, so the title
+// built by createEscalationIssue must contain it. The two builders below share
+// a single source of truth so the create/find round-trip cannot desynchronize.
+
+test('escalationTitle embeds the fingerprint so the in:title dedup search round-trips', () => {
+  const fp = fingerprint('Add input validation to all API routes');
+  const title = escalationTitle(fp, 'Add input validation to all API routes');
+  assert.ok(
+    title.includes(fp),
+    `title must contain the fp so findEscalationIssue matches it; got: ${title}`,
+  );
+  // Regression guard: the prior title omitted the fp, silently breaking dedup.
+  assert.ok(!title.startsWith('APR-E10 escalate:'));
+});
+
+test('escalationSearchQuery references the same fingerprint the title embeds', () => {
+  const fp = 'deadbeef0123';
+  const title = escalationTitle(fp, 'some systemic fix');
+  const query = escalationSearchQuery(fp);
+  assert.ok(title.includes(fp), `title must embed fp; got: ${title}`);
+  assert.ok(query.includes(fp), `query must reference fp; got: ${query}`);
+  assert.ok(query.includes('in:title'));
 });

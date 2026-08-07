@@ -212,6 +212,26 @@ function upsertLogIssue(repo, entries, runUrl) {
 }
 
 /**
+ * Escalation issue title. The fingerprint is embedded in the title so the
+ * dedup search (escalationSearchQuery) can find this issue again on later
+ * runs. Without it the search never matched and a duplicate escalation was
+ * opened on every audit run.
+ */
+function escalationTitle(fp, shortDesc) {
+  return `APR-E10 escalate [${fp}]: ${shortDesc}`;
+}
+
+/**
+ * Search query used to locate an existing escalation issue. The quoted
+ * fingerprint is an exact phrase that matches the `[${fp}]` token written
+ * into the title by escalationTitle(). Deriving both from the same source
+ * keeps the create/find round-trip from silently desynchronizing.
+ */
+function escalationSearchQuery(fp) {
+  return `APR-E10 escalate "${fp}" in:title`;
+}
+
+/**
  * Check whether an open escalation issue already exists for a fingerprint.
  */
 function findEscalationIssue(repo, fp) {
@@ -224,7 +244,7 @@ function findEscalationIssue(repo, fp) {
       '--state',
       'open',
       '--search',
-      `APR-E10 escalate "${fp}" in:title`,
+      escalationSearchQuery(fp),
       '--json',
       'number',
       '--jq',
@@ -293,7 +313,7 @@ function createEscalationIssue(repo, fp, description, count, runUrl) {
   // Short title: first 72 chars of the recommendation
   const shortDesc =
     description.length > 72 ? `${description.slice(0, 69)}...` : description;
-  const title = `APR-E10 escalate: ${shortDesc}`;
+  const title = escalationTitle(fp, shortDesc);
 
   runGh([
     'issue',
@@ -429,6 +449,8 @@ module.exports = {
   parseLogBody,
   buildLogBody,
   trimEntries,
+  escalationTitle,
+  escalationSearchQuery,
 };
 
 if (require.main === module) {
