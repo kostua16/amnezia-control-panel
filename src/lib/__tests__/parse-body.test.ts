@@ -89,4 +89,22 @@ describe('parseBody', () => {
       },
     );
   });
+
+  it('rejects an empty body with a validation error (not a 500)', async () => {
+    const req = new NextRequest('https://example.com/api/test', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '',
+    });
+    await assert.rejects(
+      () => parseBody(req, schema),
+      (err: unknown) => {
+        assert.ok(
+          err instanceof z.ZodError,
+          'expected ZodError for empty body',
+        );
+        return true;
+      },
+    );
+  });
 });

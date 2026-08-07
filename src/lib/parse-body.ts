@@ -61,7 +61,10 @@ export async function parseBody<T>(
   maxSizeBytes = DEFAULT_MAX_SIZE_BYTES,
 ): Promise<T> {
   const raw = await readBody(request, maxSizeBytes);
-  const json: unknown = JSON.parse(raw);
+  // Treat an empty or whitespace-only body as invalid input: hand it to the
+  // schema as `undefined` so callers get a validation failure (mapped to 422
+  // by apiHandler) rather than a generic 500 from JSON.parse('').
+  const json: unknown = raw.trim().length === 0 ? undefined : JSON.parse(raw);
   return schema.parse(json);
 }
 
