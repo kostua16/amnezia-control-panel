@@ -146,10 +146,24 @@ jobs:
             now.getTime() - recentProblemHours * 60 * 60 * 1000,
           ).toISOString();
           const source = previous ? 'previous-scheduled-run' : 'fallback-lookback';
+
+          // Queue-latency: startedAt - createdAt per completed monitor run.
+          // Starvation shows up here first (queue waits of ~1000s observed).
+          const queueLatencies = completed
+            .filter((r) => r.startedAt && r.createdAt)
+            .map((r) => Math.round((new Date(r.startedAt) - new Date(r.createdAt)) / 1000));
+          const maxQueueLatency = queueLatencies.length
+            ? Math.max(...queueLatencies)
+            : 0;
+          const avgQueueLatency = queueLatencies.length
+            ? Math.round(queueLatencies.reduce((a, b) => a + b, 0) / queueLatencies.length)
+            : 0;
+
           const summary = [
             `monitor since ${monitorSince} (${source})`,
             `recent problem since ${recentProblemSince}`,
             `slow threshold ${slowThresholdSeconds}s`,
+            `queue latency avg ${avgQueueLatency}s max ${maxQueueLatency}s (${queueLatencies.length} runs)`,
           ].join('; ');
 
           const outputs = {
@@ -158,6 +172,8 @@ jobs:
             previous_run_url: previous?.url || '',
             recent_problem_since: recentProblemSince,
             slow_threshold_seconds: String(slowThresholdSeconds),
+            max_queue_latency_seconds: String(maxQueueLatency),
+            avg_queue_latency_seconds: String(avgQueueLatency),
             window_summary: summary,
           };
 
@@ -197,6 +213,8 @@ jobs:
             PREVIOUS_MONITOR_RUN: ${{ steps.window.outputs.previous_run_url }}
             RECENT_PROBLEM_SINCE: ${{ steps.window.outputs.recent_problem_since }}
             SLOW_THRESHOLD_SECONDS: ${{ steps.window.outputs.slow_threshold_seconds }}
+            MAX_QUEUE_LATENCY_SECONDS: ${{ steps.window.outputs.max_queue_latency_seconds }}
+            AVG_QUEUE_LATENCY_SECONDS: ${{ steps.window.outputs.avg_queue_latency_seconds }}
             STOP_BY: ${{ steps.deadline.outputs.stop_by }}
 
             ## Task
@@ -214,6 +232,19 @@ jobs:
             - For each failed run you treat as actionable, inspect `rtk gh run view <run-id> --json ... --verbose` and exact failed logs with `rtk proxy gh run view <run-id> --log-failed`. If failed-step logs are incomplete, use `rtk proxy gh run view <run-id> --log`.
             - For each slow run you treat as actionable, inspect job and step timing via `rtk gh run view <run-id> --json jobs,url,name,conclusion,createdAt,startedAt,updatedAt`.
             - Do not infer root cause from run names or conclusions alone.
+
+            ## Queue-Latency Tracking (MON-E03)
+
+            For EVERY run you list, compute `queue_latency = startedAt - createdAt` (seconds).
+            Queue latency measures how long a run waited in the GitHub Actions queue before
+            a runner picked it up. Runner starvation shows up here first — queue waits of
+            ~1000s have been observed.
+
+            - Previous monitor window stats: avg=${AVG_QUEUE_LATENCY_SECONDS}s, max=${MAX_QUEUE_LATENCY_SECONDS}s.
+            - In your survey output, include `queue_latency=<N>s` for each run.
+            - Flag any run where queue_latency > ${SLOW_THRESHOLD_SECONDS}s as `QUEUE STARVATION`.
+            - If multiple runs across workflows show queue_latency > 300s, report it as a
+              runner-capacity incident (not per-workflow).
 
             ## Failure Streaks = Workflow Down
 
