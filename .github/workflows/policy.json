@@ -2,7 +2,8 @@
   "maintainerAssociations": ["OWNER", "MEMBER", "COLLABORATOR"],
   "trustedAutomationBranchPrefixes": [
     "claude-auto-fix-ci-",
-    "claude-fix-issue-"
+    "claude-fix-issue-",
+    "claude-maintenance-"
   ],
   "manualOnlyBranchPrefixes": ["claude-audit-fix-"],
   "cleanupBranchPrefixes": ["codex/", "claude/", "dependabot/"],

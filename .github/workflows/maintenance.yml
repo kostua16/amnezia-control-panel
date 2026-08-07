@@ -102,7 +102,6 @@ jobs:
         name: Detect maintenance branch changes
         shell: bash
         run: |
-          git fetch origin main --depth=1 || true
           {
             git diff --name-only origin/main...HEAD
             git diff --name-only
