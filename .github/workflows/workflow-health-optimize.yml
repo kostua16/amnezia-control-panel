@@ -285,12 +285,36 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  detect-flaky:
+    name: Detect Flaky Workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [collect-runs]
+    if: needs.collect-runs.outputs.has-problems == 'true'
+    outputs:
+      flaky_detected: ${{ steps.flaky.outputs.flaky_detected }}
+      flaky_workflows: ${{ steps.flaky.outputs.flaky_workflows }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Detect flaky workflows across hours (WHO-E04)
+        id: flaky
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          RUNS_DATA: ${{ needs.collect-runs.outputs.runs-data }}
+        run: |
+          node .github/workflows/scripts/detect-flaky-workflows.cjs \
+            --repo "${{ github.repository }}" \
+            --runs-data "$RUNS_DATA" \
+            --lookback-hours 6
+
   optimize:
     name: Analyze & Optimize Workflows
     runs-on: [self-hosted, big]
     timeout-minutes: 15
-    needs: [collect-runs]
-    if: needs.collect-runs.outputs.has-problems == 'true'
+    needs: [collect-runs, detect-flaky]
+    if: needs.collect-runs.outputs.has-problems == 'true' && needs.detect-flaky.outputs.flaky_detected != 'true'
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
       claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
@@ -461,10 +485,10 @@ jobs:
 
   report-blocked-gate:
     name: Report blocked optimization gate
-    needs: [collect-runs, optimize]
+    needs: [collect-runs, detect-flaky, optimize]
     # Runs only when optimize succeeded AND the gate actually blocked. When
-    # optimize is skipped (no problems) or the validate step is skipped (no
-    # changes / duplicate), validate_blocked is empty and this job is skipped.
+    # optimize is skipped (no problems or flaky) or the validate step is
+    # skipped (no changes / duplicate), validate_blocked is empty and skipped.
     if: needs.optimize.result == 'success' && needs.optimize.outputs.validate_blocked == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -494,8 +518,8 @@ jobs:
           fi
 
   report-failure:
-    needs: [collect-runs, optimize]
-    if: ${{ always() && ((needs.collect-runs.result != 'success' && needs.collect-runs.result != 'skipped') || (needs.optimize.result != 'success' && needs.optimize.result != 'skipped')) }}
+    needs: [collect-runs, detect-flaky, optimize]
+    if: ${{ always() && ((needs.collect-runs.result != 'success' && needs.collect-runs.result != 'skipped') || (needs.detect-flaky.result != 'success' && needs.detect-flaky.result != 'skipped') || (needs.optimize.result != 'success' && needs.optimize.result != 'skipped')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
