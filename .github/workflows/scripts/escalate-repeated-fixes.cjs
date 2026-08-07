@@ -24,7 +24,14 @@ const crypto = require('crypto');
 
 const LOG_TITLE = 'Auto PR Audit: systemic-fix recommendation log (APR-E10)';
 const LOG_LABELS = ['auto-fix'];
-const LOG_SEARCH_MARKER = 'auto-pr-audit recommendation log APR-E10 in:title';
+// Every search term here appears literally in LOG_TITLE. The prior marker used
+// the hyphenated token `auto-pr-audit`, but the title spells it `Auto PR Audit`
+// space-separated; if GitHub's search indexer does not split hyphens into
+// tokens, that term never matched and findLogIssue returned null every run
+// (duplicate log issues, streaks never accumulated past 1, APR-E10 never
+// escalated). `recommendation`, `log`, and `APR-E10` are present verbatim in
+// the title, so matching no longer depends on hyphen tokenization.
+const LOG_SEARCH_MARKER = 'recommendation log APR-E10 in:title';
 
 const ESCALATION_LABELS = ['auto-fix', 'needs-review', 'umbrella-sub-issue'];
 const MAX_LOG_ENTRIES = 20;
@@ -183,10 +190,14 @@ function buildLogBody(entries, repoUrl, runUrl) {
   return lines.join('\n');
 }
 
-function upsertLogIssue(repo, entries, runUrl) {
+function upsertLogIssue(repo, existingNum, entries, runUrl) {
   const repoUrl = `https://github.com/${repo}`;
   const body = buildLogBody(entries, repoUrl, runUrl);
-  const existing = findLogIssue(repo);
+  // Reuse the issue number main() already resolved. Only fall back to a fresh
+  // search when no number was supplied, so the normal path makes one `gh issue
+  // list` call per run instead of two (the second call also opened a TOCTOU
+  // window where a concurrent edit could change which issue was found).
+  const existing = existingNum != null ? existingNum : findLogIssue(repo);
 
   if (existing != null) {
     runGh(
@@ -346,6 +357,32 @@ function trimEntries(entries) {
   return entries.slice(entries.length - MAX_LOG_ENTRIES);
 }
 
+/**
+ * Count consecutive trailing log entries that contain a fingerprint.
+ *
+ * Walks entries backward from the most recent and stops at the first entry
+ * lacking the fingerprint, so a gap resets the streak to the run before it.
+ * Returns 0 when the latest entry lacks the fingerprint (no active streak).
+ *
+ * This is the heart of the ≥2-consecutive-runs escalation gate, extracted as a
+ * pure function so its semantics can be pinned by unit tests — the same surface
+ * class as the two silent-failure regressions already guarded by tests
+ * (escalation title round-trip and merged-PR length check).
+ */
+function countConsecutive(entries, fp) {
+  let streak = 0;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    const recs = (entry && entry.recommendations) || [];
+    if (recs.some((r) => r.fingerprint === fp)) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
 async function main() {
   const repo = getArg('--repo');
   const runUrl = getArg('--run-url') || '';
@@ -392,7 +429,7 @@ async function main() {
   entries = trimEntries(entries);
 
   // Persist log
-  upsertLogIssue(repo, entries, runUrl);
+  upsertLogIssue(repo, existingNum, entries, runUrl);
   process.stdout.write(
     `Recommendation log updated (${entries.length} entries).\n`,
   );
@@ -404,18 +441,7 @@ async function main() {
   for (const rec of recommendations) {
     const fp = rec.fingerprint;
     fpTexts[fp] = rec.text;
-    let streak = 0;
-    // Walk entries backward counting consecutive runs with this fingerprint
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const entry = entries[i];
-      const hasFp = entry.recommendations.some((r) => r.fingerprint === fp);
-      if (hasFp) {
-        streak++;
-      } else {
-        break;
-      }
-    }
-    fpCounts[fp] = streak;
+    fpCounts[fp] = countConsecutive(entries, fp);
   }
 
   // Escalate fingerprints that hit the threshold (≥2 consecutive runs)
@@ -452,6 +478,8 @@ async function main() {
 }
 
 module.exports = {
+  LOG_TITLE,
+  LOG_SEARCH_MARKER,
   fingerprint,
   extractRecommendations,
   parseStructuredOutput,
@@ -461,6 +489,7 @@ module.exports = {
   escalationTitle,
   escalationSearchQuery,
   hasMergedFixPr,
+  countConsecutive,
 };
 
 if (require.main === module) {

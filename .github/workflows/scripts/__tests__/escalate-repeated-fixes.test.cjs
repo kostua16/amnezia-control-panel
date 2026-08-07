@@ -4,6 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  LOG_TITLE,
+  LOG_SEARCH_MARKER,
   fingerprint,
   extractRecommendations,
   parseStructuredOutput,
@@ -13,6 +15,7 @@ const {
   escalationTitle,
   escalationSearchQuery,
   hasMergedFixPr,
+  countConsecutive,
 } = require('../escalate-repeated-fixes.cjs');
 
 // --- fingerprint ---
@@ -204,4 +207,68 @@ test('hasMergedFixPr returns false when gh throws', () => {
     }),
     false,
   );
+});
+
+// --- log-issue marker round-trip (regression guard) ---
+// findLogIssue searches issue titles with LOG_SEARCH_MARKER. The title written
+// by upsertLogIssue (LOG_TITLE) must contain each search term verbatim, or
+// matching depends on how GitHub tokenizes hyphens — the prior marker used the
+// hyphenated token `auto-pr-audit` while the title spells it space-separated,
+// so the search never matched and a fresh log issue was created every run.
+
+test('every LOG_SEARCH_MARKER term appears literally in LOG_TITLE', () => {
+  const titleLower = LOG_TITLE.toLowerCase();
+  const markerTerms = LOG_SEARCH_MARKER.replace(/\bin:title\b/, '').trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  for (const term of markerTerms) {
+    assert.ok(
+      titleLower.includes(term.toLowerCase()),
+      `search term "${term}" must appear in the title so the in:title search round-trips; title: "${LOG_TITLE}"`,
+    );
+  }
+});
+
+test('LOG_SEARCH_MARKER scopes the search to issue titles', () => {
+  assert.ok(LOG_SEARCH_MARKER.includes('in:title'));
+});
+
+// --- countConsecutive (streak threshold regression guard) ---
+// The ≥2-consecutive-runs escalation gate (main: count >= 2) depends on this
+// walk. A future refactor could silently change "consecutive" semantics; these
+// pin first run, trailing run, gap reset, and interleaved fingerprints.
+
+const fpEntry = (...fps) => ({
+  run_id: 'r',
+  recommendations: fps.map((f) => ({ fingerprint: f })),
+});
+
+test('countConsecutive returns 0 for empty entries', () => {
+  assert.equal(countConsecutive([], 'abc'), 0);
+});
+
+test('countConsecutive counts a full trailing run', () => {
+  const entries = [fpEntry('abc'), fpEntry('abc'), fpEntry('abc')];
+  assert.equal(countConsecutive(entries, 'abc'), 3);
+});
+
+test('countConsecutive resets to 0 when the latest entry lacks the fp', () => {
+  const entries = [fpEntry('abc'), fpEntry('abc'), fpEntry('zzz')];
+  assert.equal(countConsecutive(entries, 'abc'), 0);
+});
+
+test('countConsecutive stops at the first gap', () => {
+  const entries = [fpEntry('abc'), fpEntry('zzz'), fpEntry('abc')];
+  assert.equal(countConsecutive(entries, 'abc'), 1);
+});
+
+test('countConsecutive does not cross-count interleaved fingerprints', () => {
+  const entries = [fpEntry('abc', 'def'), fpEntry('abc'), fpEntry('def', 'abc')];
+  assert.equal(countConsecutive(entries, 'abc'), 3);
+  assert.equal(countConsecutive(entries, 'def'), 1);
+});
+
+test('countConsecutive tolerates a malformed entry', () => {
+  const entries = [{ run_id: 'r' }, fpEntry('abc')];
+  assert.equal(countConsecutive(entries, 'abc'), 1);
 });
