@@ -261,6 +261,41 @@ jobs:
               --base-ref main 2>&1 || true
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # APR-E08: recurring orphan-branch check. Runs the existing
+      # cleanup-orphan-branches script in dry-run mode to count stale
+      # automation branches and include the count in every audit summary.
+      # When the count exceeds the threshold, dispatches the branch-cleanup
+      # workflow to delete them.
+      - name: Count orphan automation branches (APR-E08)
+        if: always()
+        id: orphan_check
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          {
+            echo "### Orphan branch count (APR-E08)"
+            echo
+            node .github/workflows/scripts/cleanup-orphan-branches.cjs \
+              --repo "${{ github.repository }}" \
+              --policy-path .github/workflows/policy.json \
+              --max-age-days 7 \
+              --dry-run true 2>&1 || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch branch cleanup if above threshold (APR-E08)
+        if: >-
+          always() &&
+          steps.orphan_check.outputs.orphan_count != '' &&
+          fromJSON(steps.orphan_check.outputs.orphan_count) > 5
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          echo "::notice::Orphan branch count (${{ steps.orphan_check.outputs.orphan_count }}) exceeds threshold (5); dispatching cleanup."
+          gh workflow run auto-pr-branch-cleanup.yml \
+            --ref main \
+            -f dry-run=false
+
   reconcile:
     name: Reconcile resolved audit issues
     needs: [audit-auto-prs]
