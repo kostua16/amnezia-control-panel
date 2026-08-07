@@ -2426,31 +2426,66 @@ function gh(args, options = {}) {
   });
 }
 
+const GH_MAX_RETRIES = 3;
+const GH_RETRY_BASE_MS = 1000;
+
+// Transient failures worth retrying on gh calls: gh's literal "HTTP 5xx"
+// response plus the network-level errors Go's net/http emits on a CI `gh api`
+// call (TCP reset, dial/TLS timeout, context deadline, truncated body). Must
+// mirror lib/sticky-comment.cjs TRANSIENT_PATTERNS so both retry paths survive
+// the same runner-to-GitHub connectivity blips, not just 5xx responses.
+const GH_TRANSIENT_PATTERNS = [
+  /HTTP 5\d{2}/i,
+  /connection reset/i,
+  /connection refused/i,
+  /dial tcp/i,
+  /i\/o timeout/i,
+  /tls handshake timeout/i,
+  /context deadline exceeded/i,
+  /unexpected eof/i,
+];
+
 function ghJson(args, fallback = null) {
-  try {
-    return JSON.parse(gh(args));
-  } catch (error) {
-    // gh exits non-zero for some data-bearing states (e.g. `gh pr checks`
-    // with failing checks) while still printing the JSON payload.
-    const stdout = String(error?.stdout ?? '').trim();
-    if (stdout) {
-      try {
-        return JSON.parse(stdout);
-      } catch {
-        // fall through to the fallback path below
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return JSON.parse(gh(args));
+    } catch (error) {
+      const stderr = String(error?.stderr ?? '').trim();
+      // Retry transient GitHub API errors (5xx + network blips) so a single
+      // transient failure does not crash the entire project-manager plan step.
+      if (
+        GH_TRANSIENT_PATTERNS.some((re) => re.test(stderr)) &&
+        attempt < GH_MAX_RETRIES - 1
+      ) {
+        const delay = GH_RETRY_BASE_MS * 2 ** attempt;
+        console.warn(
+          `project-manager: transient HTTP error on attempt ${attempt + 1}/${GH_MAX_RETRIES}, retrying in ${delay}ms: ${stderr.split('\n')[0]}`,
+        );
+        execFileSync('sleep', [String(delay / 1000)], { stdio: 'ignore' });
+        continue;
       }
+      // gh exits non-zero for some data-bearing states (e.g. `gh pr checks`
+      // with failing checks) while still printing the JSON payload.
+      const stdout = String(error?.stdout ?? '').trim();
+      if (stdout) {
+        try {
+          return JSON.parse(stdout);
+        } catch {
+          // fall through to the fallback path below
+        }
+      }
+      if (fallback !== null) {
+        console.warn(
+          `ghJson fallback for "gh ${args.slice(0, 3).join(' ')} ...": ${
+            String(error?.stderr ?? error?.message ?? error)
+              .trim()
+              .split('\n')[0]
+          }`,
+        );
+        return fallback;
+      }
+      throw error;
     }
-    if (fallback !== null) {
-      console.warn(
-        `ghJson fallback for "gh ${args.slice(0, 3).join(' ')} ...": ${
-          String(error?.stderr ?? error?.message ?? error)
-            .trim()
-            .split('\n')[0]
-        }`,
-      );
-      return fallback;
-    }
-    throw error;
   }
 }
 
