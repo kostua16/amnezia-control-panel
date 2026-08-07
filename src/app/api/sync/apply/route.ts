@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import {
+  readBody,
+  BodySizeLimitError,
+  bodySizeLimitResponse,
+} from '@/lib/parse-body';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
 import { verifyValue } from '@/lib/password';
@@ -210,7 +215,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Parse request body
-    const body = await request.json();
+    const body = JSON.parse(await readBody(request));
 
     // 4. Zod validation
     const parsed = syncApplyPayloadSchema.safeParse(body);
@@ -337,6 +342,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err) {
+    if (err instanceof BodySizeLimitError) {
+      return bodySizeLimitResponse(err);
+    }
     console.error('[api/sync/apply] Error:', err);
     return NextResponse.json(
       { success: false, error: 'Failed to apply config' },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { readBody } from '@/lib/parse-body';
 import { pushConfigToAllPanels } from '@/lib/panel-sync-client';
 import { cachePanelApiKey } from '@/lib/panel-health-checker';
 import { writeAuditLog } from '@/lib/audit-log';
@@ -62,7 +63,7 @@ const pushRequestSchema = z.object({
  * and calls pushConfigToAllPanels.
  */
 export const POST = apiHandler(async (request: NextRequest) => {
-  const body = await request.json();
+  const body = JSON.parse(await readBody(request));
   const parsed = pushRequestSchema.safeParse(body);
 
   if (!parsed.success) {

@@ -3,6 +3,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { ZodError } from 'zod';
 import { error, firstZodError } from '@/lib/api-response';
 import { isPrismaNotFound, isPrismaUniqueViolation } from '@/lib/prisma-errors';
+import { BodySizeLimitError } from '@/lib/parse-body';
 
 /**
  * Dynamic-route context: the second argument Next.js passes to handlers under
@@ -25,6 +26,11 @@ export type RouteHandler<P = Record<string, string | string[]>> = (
  * manual try/catch blocks. `label` is the request path, logged for tracing.
  */
 export function toErrorResponse(err: unknown, label: string): Response {
+  if (err instanceof BodySizeLimitError) {
+    console.error(`[${label}] Body size limit exceeded:`, err.message);
+    return error(err.message, 413);
+  }
+
   if (isPrismaUniqueViolation(err)) {
     console.error(`[${label}] Prisma error P2002:`, err);
     return error('Resource already exists', 409);

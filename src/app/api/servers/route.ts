@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { readBody } from '@/lib/parse-body';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/audit-log';
 import { hashValue } from '@/lib/password';
@@ -53,7 +54,7 @@ export const GET = apiHandler(async () => {
 }, 'api/servers');
 
 export const POST = apiHandler(async (request: NextRequest) => {
-  const body = await request.json();
+  const body = JSON.parse(await readBody(request));
   const parsed = createServerSchema.safeParse(body);
 
   if (!parsed.success) {

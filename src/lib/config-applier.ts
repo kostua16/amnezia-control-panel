@@ -3,16 +3,6 @@ import type { ConfigApplierResult } from '@/types/config-push';
 import { enrichError } from './error-reporter';
 import { pushToPanel } from './panel-push';
 
-// ─── Shell Metacharacter Guard ────────────────────────────
-
-const DANGEROUS_CHARS = /[;|&$`\\]/;
-
-function validateNoInjection(value: string): void {
-  if (DANGEROUS_CHARS.test(value)) {
-    throw new Error(`Rejected value containing shell metacharacters: ${value}`);
-  }
-}
-
 /** Human-readable label for each push target, used in 404 error messages. */
 const SERVICE_LABELS: Record<ConfigApplierResult['service'], string> = {
   awg: 'AWG',
@@ -128,13 +118,6 @@ export async function applyAwgConfig(
   apiKey: string,
   wireguardPeers: PanelSyncPayload['wireguardPeers'],
 ): Promise<ConfigApplierResult> {
-  // Validate peer values against shell injection
-  for (const peer of wireguardPeers) {
-    validateNoInjection(peer.publicKey);
-    validateNoInjection(peer.allowedIPs);
-    validateNoInjection(peer.endpoint);
-  }
-
   // Construct WireGuard config format: [Peer] sections
   const wgConfig = wireguardPeers
     .map((peer) => {

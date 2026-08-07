@@ -24,6 +24,15 @@ describe('applyAwgConfig', () => {
     },
   ];
 
+  const peersWithSpecialChars: PanelSyncPayload['wireguardPeers'] = [
+    {
+      publicKey: 'pubkey=with$special&chars',
+      allowedIPs: '::1/128',
+      endpoint: 'http://host:port?foo=bar&baz=1',
+      persistentKeepalive: 0,
+    },
+  ];
+
   it('sends X-API-Key and X-Signature headers to /api/sync/apply', async () => {
     let capturedInit: RequestInit | undefined;
     globalThis.fetch = mock.fn(
@@ -131,6 +140,33 @@ describe('applyAwgConfig', () => {
     );
     assert.equal(result.success, false);
     assert.ok(result.error);
+  });
+
+  it('accepts peer values containing $, &, and other previously-rejected chars', async () => {
+    globalThis.fetch = mock.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            applied: true,
+            configVersion: 1,
+            service: 'awg',
+            message: 'OK',
+          },
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await applyAwgConfig(
+      'https://panel.example.com',
+      'TestPanel',
+      testApiKey,
+      peersWithSpecialChars,
+    );
+    assert.equal(result.success, true);
+    assert.equal(result.service, 'awg');
+    assert.equal(result.error, null);
   });
 
   it('HMAC signature is verifiable with the same API key', async () => {
