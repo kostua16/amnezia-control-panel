@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { readBody } from '@/lib/parse-body';
 import { prisma } from '@/lib/prisma';
 import { generateChainConfig, applyChainConfig } from '@/lib/chain-router';
 import { getTemplateById } from '@/lib/chain-templates';
@@ -33,7 +34,7 @@ const applyChainSchema = z.object({
 });
 
 export const POST = apiHandler(async (request: NextRequest) => {
-  const body = await request.json();
+  const body = JSON.parse(await readBody(request));
   const parsed = applyChainSchema.safeParse(body);
 
   if (!parsed.success) {

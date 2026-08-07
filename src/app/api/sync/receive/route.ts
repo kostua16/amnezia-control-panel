@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { readBody } from '@/lib/parse-body';
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifySignature } from '@/lib/hmac';
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Parse request body
-    const body = await request.json();
+    const body = JSON.parse(await readBody(request));
 
     // 4. Zod validation
     const parsed = panelSyncPayloadSchema.safeParse(body);

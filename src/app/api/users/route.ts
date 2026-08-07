@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { readBody } from '@/lib/parse-body';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import { hashValue } from '@/lib/password';
@@ -103,7 +104,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
 }, 'api/users');
 
 export const POST = apiHandler(async (request: NextRequest) => {
-  const body = await request.json();
+  const body = JSON.parse(await readBody(request));
   const parsed = createUserSchema.safeParse(body);
 
   if (!parsed.success) {
