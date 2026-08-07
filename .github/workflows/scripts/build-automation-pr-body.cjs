@@ -271,13 +271,21 @@ function buildAutomationPrBody(options = {}) {
   const structuredRationale = hasStructuredOutput
     ? extractResultText(structured.rationale || structured.why || structured)
     : '';
-  const rationale = sectionFallback(
+  const DEFAULT_RATIONALE =
+    'Automation produced changes, but no model rationale was captured.';
+  const hasRationaleSource =
     options.rationale ||
-      structuredRationale ||
-      executionResult ||
-      options.claudeLastOutput,
-    'Automation produced changes, but no model rationale was captured.',
-  );
+    structuredRationale ||
+    executionResult ||
+    options.claudeLastOutput;
+  const rationale = hasRationaleSource
+    ? sectionFallback(
+        hasRationaleSource,
+        DEFAULT_RATIONALE,
+      )
+    : options.evidence
+      ? 'No structured rationale captured — see Evidence section for audit details.'
+      : DEFAULT_RATIONALE;
 
   const changedFiles =
     parseChangedFiles(options.changedFiles).length > 0
