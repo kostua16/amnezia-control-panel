@@ -1,0 +1,439 @@
+#!/usr/bin/env node
+/* eslint-disable @typescript-eslint/no-require-imports */
+
+'use strict';
+
+/**
+ * APR-E10: Escalate twice-recommended systemic fixes to tracking issues.
+ *
+ * Persists audit recommendations to a GitHub issue (recommendation log).
+ * If the same systemic fix is recommended in ≥2 consecutive audits without
+ * a merged PR, opens a dedicated tracking issue so the pattern stops relying
+ * on PR luck.
+ *
+ * Usage (CI):
+ *   node escalate-repeated-fixes.cjs \
+ *     --repo owner/repo \
+ *     --structured-output "$STRUCTURED_OUTPUT" \
+ *     --run-url "$RUN_URL" \
+ *     [--github-output "$GITHUB_OUTPUT"]
+ */
+
+const { execFileSync } = require('child_process');
+const crypto = require('crypto');
+
+const LOG_TITLE = 'Auto PR Audit: systemic-fix recommendation log (APR-E10)';
+const LOG_LABELS = ['auto-fix'];
+const LOG_SEARCH_MARKER = 'auto-pr-audit recommendation log APR-E10 in:title';
+
+const ESCALATION_LABELS = ['auto-fix', 'needs-review', 'umbrella-sub-issue'];
+const MAX_LOG_ENTRIES = 20;
+
+function getArg(name) {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return null;
+  return process.argv[index + 1] ?? '';
+}
+
+function runGh(args, input) {
+  const stdio = ['pipe', 'pipe', 'pipe'];
+  return execFileSync('gh', args, {
+    input: input || '',
+    stdio,
+    encoding: 'utf8',
+  }).trim();
+}
+
+function setOutput(name, value) {
+  const ghaFile = process.env.GITHUB_OUTPUT;
+  if (!ghaFile) return;
+  const { appendFileSync } = require('fs');
+  appendFileSync(ghaFile, `${name}=${value}\n`);
+}
+
+function parseStructuredOutput(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Deterministic fingerprint for a recommendation string.
+ * Normalizes whitespace and lowercases so minor wording diffs don't split.
+ */
+function fingerprint(text) {
+  const normalized = String(text || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  return crypto
+    .createHash('sha256')
+    .update(normalized)
+    .digest('hex')
+    .slice(0, 12);
+}
+
+/**
+ * Extract unique recommendation fingerprints from structured output.
+ * Sources: `auto_prs_inspected[].recommendation` + `risk_patterns[]`.
+ */
+function extractRecommendations(data) {
+  const seen = new Set();
+  const recs = [];
+
+  const inspected = Array.isArray(data.auto_prs_inspected)
+    ? data.auto_prs_inspected
+    : [];
+  for (const pr of inspected) {
+    const rec = pr && pr.recommendation;
+    if (!rec || rec === '-' || rec === 'none') continue;
+    const fp = fingerprint(rec);
+    if (!seen.has(fp)) {
+      seen.add(fp);
+      recs.push({ fingerprint: fp, text: String(rec).trim() });
+    }
+  }
+
+  const risks = Array.isArray(data.risk_patterns) ? data.risk_patterns : [];
+  for (const r of risks) {
+    if (!r) continue;
+    const fp = fingerprint(r);
+    if (!seen.has(fp)) {
+      seen.add(fp);
+      recs.push({ fingerprint: fp, text: String(r).trim() });
+    }
+  }
+
+  return recs;
+}
+
+function findLogIssue(repo) {
+  try {
+    const out = runGh([
+      'issue',
+      'list',
+      '--repo',
+      repo,
+      '--state',
+      'open',
+      '--search',
+      LOG_SEARCH_MARKER,
+      '--json',
+      'number,body',
+      '--jq',
+      '.[0].number // empty',
+    ]);
+    const num = parseInt(out, 10);
+    return Number.isNaN(num) ? null : num;
+  } catch {
+    return null;
+  }
+}
+
+function readLogBody(repo, issueNum) {
+  try {
+    return runGh([
+      'issue',
+      'view',
+      String(issueNum),
+      '--repo',
+      repo,
+      '--json',
+      'body',
+      '--jq',
+      '.body',
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+function parseLogBody(body) {
+  if (!body) return [];
+  // Extract JSON from between <!-- log-start --> and <!-- log-end --> markers
+  const startMarker = '<!-- log-start -->';
+  const endMarker = '<!-- log-end -->';
+  const startIdx = body.indexOf(startMarker);
+  const endIdx = body.indexOf(endMarker);
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return [];
+  const jsonStr = body.slice(startIdx + startMarker.length, endIdx).trim();
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    return [];
+  }
+}
+
+function buildLogBody(entries, repoUrl, runUrl) {
+  const lines = [
+    '## Systemic Fix Recommendation Log (APR-E10)',
+    '',
+    `> Last updated: ${new Date().toISOString().split('T')[0]} — [audit run](${runUrl})`,
+    '',
+    'Tracks systemic-fix recommendations across audit runs. When the same fix is recommended in ≥2 runs without a merged PR, an escalation issue is opened automatically.',
+    '',
+    '<!-- log-start -->',
+    JSON.stringify(entries),
+    '<!-- log-end -->',
+  ];
+  return lines.join('\n');
+}
+
+function upsertLogIssue(repo, entries, runUrl) {
+  const repoUrl = `https://github.com/${repo}`;
+  const body = buildLogBody(entries, repoUrl, runUrl);
+  const existing = findLogIssue(repo);
+
+  if (existing != null) {
+    runGh(
+      ['issue', 'edit', String(existing), '--repo', repo, '--body-file', '-'],
+      body,
+    );
+    return existing;
+  }
+
+  runGh([
+    'issue',
+    'create',
+    '--repo',
+    repo,
+    '--title',
+    LOG_TITLE,
+    '--body',
+    body,
+    '--label',
+    LOG_LABELS.join(','),
+  ]);
+  return null; // newly created, number unknown from stdout
+}
+
+/**
+ * Check whether an open escalation issue already exists for a fingerprint.
+ */
+function findEscalationIssue(repo, fp) {
+  try {
+    const out = runGh([
+      'issue',
+      'list',
+      '--repo',
+      repo,
+      '--state',
+      'open',
+      '--search',
+      `APR-E10 escalate "${fp}" in:title`,
+      '--json',
+      'number',
+      '--jq',
+      '.[0].number // empty',
+    ]);
+    const num = parseInt(out, 10);
+    return Number.isNaN(num) ? null : num;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check whether a merged PR exists whose title or body mentions the
+ * recommendation fingerprint. This is a best-effort heuristic.
+ */
+function hasMergedFixPr(repo, fp) {
+  try {
+    const out = runGh([
+      'pr',
+      'list',
+      '--repo',
+      repo,
+      '--state',
+      'merged',
+      '--search',
+      `"APR-E10" ${fp}`,
+      '--json',
+      'number',
+      '--limit',
+      '1',
+    ]);
+    return out.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function createEscalationIssue(repo, fp, description, count, runUrl) {
+  const repoUrl = `https://github.com/${repo}`;
+  const body = [
+    '## Escalated Systemic Fix (APR-E10)',
+    '',
+    `The same systemic fix has been recommended in **${count} consecutive audit runs** without a merged PR addressing it.`,
+    '',
+    '### Recommendation',
+    '',
+    `> ${description}`,
+    '',
+    '### Evidence',
+    '',
+    `- Fingerprint: \`${fp}\``,
+    `- Consecutive runs: ${count}`,
+    `- Latest run: [audit](${runUrl})`,
+    '',
+    '### Next Steps',
+    '',
+    '1. Implement the systemic fix in a dedicated PR.',
+    '2. Reference this issue and the fingerprint in the PR body.',
+    '3. Once merged, the recommendation log will stop escalating this fix.',
+    '',
+    '---',
+    `Escalated automatically by the audit-auto-prs workflow ([run](${runUrl})).`,
+  ].join('\n');
+
+  // Short title: first 72 chars of the recommendation
+  const shortDesc =
+    description.length > 72 ? `${description.slice(0, 69)}...` : description;
+  const title = `APR-E10 escalate: ${shortDesc}`;
+
+  runGh([
+    'issue',
+    'create',
+    '--repo',
+    repo,
+    '--title',
+    title,
+    '--body',
+    body,
+    '--label',
+    ESCALATION_LABELS.join(','),
+  ]);
+}
+
+/**
+ * Trim the log to the most recent MAX_LOG_ENTRIES entries.
+ */
+function trimEntries(entries) {
+  if (entries.length <= MAX_LOG_ENTRIES) return entries;
+  return entries.slice(entries.length - MAX_LOG_ENTRIES);
+}
+
+async function main() {
+  const repo = getArg('--repo');
+  const runUrl = getArg('--run-url') || '';
+  const rawOutput = getArg('--structured-output') || '';
+
+  if (!repo) {
+    process.stderr.write('Error: --repo is required\n');
+    process.exit(1);
+  }
+
+  const data = parseStructuredOutput(rawOutput);
+  if (!data) {
+    process.stdout.write('No structured output — skipping APR-E10.\n');
+    process.exit(0);
+  }
+
+  const recommendations = extractRecommendations(data);
+  if (recommendations.length === 0) {
+    process.stdout.write('No actionable recommendations — skipping APR-E10.\n');
+    process.exit(0);
+  }
+
+  // Build a new log entry for this run
+  const runId = runUrl.split('/').pop() || String(Date.now());
+  const newEntry = {
+    run_id: runId,
+    timestamp: new Date().toISOString(),
+    recommendations: recommendations.map((r) => ({
+      fingerprint: r.fingerprint,
+      text: r.text,
+    })),
+  };
+
+  // Read prior log
+  const existingNum = findLogIssue(repo);
+  let entries = [];
+  if (existingNum != null) {
+    const body = readLogBody(repo, existingNum);
+    entries = parseLogBody(body);
+  }
+
+  // Append new entry and trim
+  entries.push(newEntry);
+  entries = trimEntries(entries);
+
+  // Persist log
+  upsertLogIssue(repo, entries, runUrl);
+  process.stdout.write(
+    `Recommendation log updated (${entries.length} entries).\n`,
+  );
+
+  // Count consecutive occurrences of each fingerprint.
+  // "Consecutive" = appears in the last N entries where N ≥ 2, in a row.
+  const fpCounts = {};
+  const fpTexts = {};
+  for (const rec of recommendations) {
+    const fp = rec.fingerprint;
+    fpTexts[fp] = rec.text;
+    let streak = 0;
+    // Walk entries backward counting consecutive runs with this fingerprint
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      const hasFp = entry.recommendations.some((r) => r.fingerprint === fp);
+      if (hasFp) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    fpCounts[fp] = streak;
+  }
+
+  // Escalate fingerprints that hit the threshold (≥2 consecutive runs)
+  let escalated = 0;
+  for (const [fp, count] of Object.entries(fpCounts)) {
+    if (count < 2) continue;
+
+    // Check if already escalated
+    const existingEscalation = findEscalationIssue(repo, fp);
+    if (existingEscalation != null) {
+      process.stdout.write(
+        `Fingerprint ${fp} already has escalation issue #${existingEscalation} — skipping.\n`,
+      );
+      continue;
+    }
+
+    // Best-effort check for merged fix PR
+    if (hasMergedFixPr(repo, fp)) {
+      process.stdout.write(
+        `Fingerprint ${fp} has a merged fix PR — skipping escalation.\n`,
+      );
+      continue;
+    }
+
+    createEscalationIssue(repo, fp, fpTexts[fp], count, runUrl);
+    process.stdout.write(
+      `Escalated fingerprint ${fp} (appeared in ${count} consecutive runs).\n`,
+    );
+    escalated++;
+  }
+
+  setOutput('escalated_count', String(escalated));
+  process.stdout.write(`APR-E10 complete: ${escalated} new escalation(s).\n`);
+}
+
+module.exports = {
+  fingerprint,
+  extractRecommendations,
+  parseStructuredOutput,
+  parseLogBody,
+  buildLogBody,
+  trimEntries,
+};
+
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`Fatal: ${err.message}\n`);
+    process.exit(1);
+  });
+}
