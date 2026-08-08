@@ -176,7 +176,9 @@ function buildLogBody(entries, repoUrl, runUrl) {
     'Tracks systemic-fix recommendations across audit runs. When the same fix is recommended in ≥2 runs without a merged PR, an escalation issue is opened automatically.',
     '',
     '<!-- log-start -->',
-    JSON.stringify(entries),
+    // Keep free-form text from introducing HTML-comment delimiters. JSON.parse
+    // decodes the Unicode escape back to the original recommendation text.
+    JSON.stringify(entries).replaceAll('<', '\\u003c'),
     '<!-- log-end -->',
   ];
   return lines.join('\n');

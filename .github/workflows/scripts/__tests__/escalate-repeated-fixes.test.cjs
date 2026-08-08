@@ -145,6 +145,23 @@ test('buildLogBody includes markers and JSON', () => {
   assert.ok(body.includes('APR-E10'));
 });
 
+test('buildLogBody escapes marker-like recommendation text and round-trips it', () => {
+  const markerText = 'Preserve <!-- log-end --> as literal recommendation text';
+  const entries = [
+    {
+      run_id: 'r1',
+      recommendations: [
+        { fingerprint: fingerprint(markerText), text: markerText },
+      ],
+    },
+  ];
+
+  const body = buildLogBody(entries, 'https://github.com/o/r', 'https://run');
+
+  assert.equal((body.match(/<!-- log-end -->/g) || []).length, 1);
+  assert.deepEqual(parseLogBody(body), entries);
+});
+
 // --- trimEntries ---
 
 test('trimEntries keeps entries within limit', () => {
