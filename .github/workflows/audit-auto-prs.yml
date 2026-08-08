@@ -129,6 +129,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --base-ref main \
             --exclude-head "${{ steps.branch.outputs.branch_name }}" \
+            --title-prefix "ci(workflows): audit automation-created PRs" \
             --detect-overlap \
             --overlap-label auto-fix \
             --github-output "$GITHUB_OUTPUT"
