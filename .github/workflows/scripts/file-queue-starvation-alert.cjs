@@ -133,7 +133,24 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const telemetry = JSON.parse(telemetryArg);
+  let telemetry;
+  try {
+    telemetry = JSON.parse(telemetryArg);
+  } catch (err) {
+    console.error('Invalid --telemetry JSON: ' + err.message);
+    process.exit(1);
+  }
+
+  // Starvation alerts require computed percentiles; empty/no-data telemetry
+  // would otherwise throw a deep TypeError inside buildAlertBody.
+  if (!telemetry || !telemetry.percentiles) {
+    console.error('Telemetry has no percentile data (no queue samples); nothing to alert.');
+    process.exit(1);
+  }
+
   const result = fileQueueStarvationAlert({ repo, telemetry, runUrl, dryRun });
   console.log(JSON.stringify(result, null, 2));
+  if (result.action === 'error') {
+    process.exit(1);
+  }
 }

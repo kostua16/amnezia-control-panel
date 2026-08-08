@@ -278,7 +278,7 @@ jobs:
               core.setOutput('summary_path', summaryPath);
             }
 
-            # WHO-E03: compute queue-latency telemetry for starvation alerts
+            // WHO-E03: compute queue-latency telemetry for starvation alerts
             const { computeQueueLatencyTelemetry } = require('./.github/workflows/scripts/compute-queue-latency-telemetry.cjs');
             const telemetry = computeQueueLatencyTelemetry(runSummaries);
             core.setOutput('queue_telemetry', JSON.stringify(telemetry));
