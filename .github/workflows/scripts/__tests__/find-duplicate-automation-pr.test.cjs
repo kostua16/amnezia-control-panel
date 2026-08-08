@@ -366,3 +366,33 @@ test('buildOverlapMatrix returns supersededPairs empty array when none exist', (
   assert.ok(Array.isArray(result.supersededPairs));
   assert.equal(result.supersededPairs.length, 0);
 });
+
+test('findSupersededPairs does not flag a PR with empty paths as superseded', () => {
+  // A PR whose files failed to load yields an empty path set (gh 404 → [],
+  // parse failure → []). It must not be reported as a subset of every non-empty
+  // PR even though [].every() is vacuously true.
+  const entries = [
+    { number: 1, title: 'no files loaded', url: 'u/1', paths: new Set([]) },
+    { number: 2, title: 'has files', url: 'u/2', paths: new Set(['a.ts', 'b.ts']) },
+    { number: 3, title: 'more files', url: 'u/3', paths: new Set(['a.ts', 'b.ts', 'c.ts']) },
+  ];
+  const pairs = findSupersededPairs(entries);
+  // #1 is not flagged; #2 ⊂ #3 is the only real supersession.
+  assert.equal(pairs.filter((p) => p.superseded === 1).length, 0);
+  assert.deepEqual(pairs, [{ superseded: 2, supersededBy: 3 }]);
+});
+
+test('findSupersededPairs resolves nested subset chains to the maximal keeper', () => {
+  // Chain A(#10) ⊂ B(#20) ⊂ C(#30): both A and B should point at C (the keeper),
+  // never at a PR that is itself superseded.
+  const entries = [
+    { number: 10, title: 'A', url: 'u/10', paths: new Set(['a.ts']) },
+    { number: 20, title: 'B', url: 'u/20', paths: new Set(['a.ts', 'b.ts']) },
+    { number: 30, title: 'C', url: 'u/30', paths: new Set(['a.ts', 'b.ts', 'c.ts']) },
+  ];
+  const pairs = findSupersededPairs(entries);
+  const bySuperseded = new Map(pairs.map((p) => [p.superseded, p.supersededBy]));
+  assert.equal(bySuperseded.get(10), 30, 'A should point at the maximal keeper C, not B');
+  assert.equal(bySuperseded.get(20), 30, 'B should point at keeper C');
+  assert.equal(bySuperseded.get(30), undefined, 'C is the keeper and is not superseded');
+});

@@ -322,35 +322,51 @@ function createPullRequestFileGetter(
  * Detect subset/supersession relationships among PR entries.
  * When PR smaller's file set is a strict subset of PR larger's file set,
  * PR larger supersedes PR smaller (the smaller PR is a zombie).
+ *
+ * Each superseded PR is reported once and points at its maximal strict
+ * superset, so a `supersededBy` pointer always references a keeper PR
+ * (one that is not itself superseded). In a chain A⊂B⊂C this reports
+ * A→C and B→C rather than A→B and B→C.
+ *
+ * A PR whose files failed to load has an empty path set; it is anomalous
+ * rather than a subset of anything, so it is never flagged here.
+ *
  * Returns an array of { superseded: number, supersededBy: number } pairs.
  */
 function findSupersededPairs(prEntries) {
   const pairs = [];
   for (let i = 0; i < prEntries.length; i++) {
+    const smaller = prEntries[i];
+    // An empty path set (gh 404 → [], or parse failure → []) must never be
+    // reported as a strict subset: [...smaller.paths].every(...) is vacuously
+    // true on an empty array.
+    if (smaller.paths.size === 0) continue;
+    // Pick the largest strict superset of smaller's files. The largest strict
+    // superset is always a keeper: any PR that strictly supersedes it would be
+    // an even larger strict superset of `smaller`, and would have been chosen.
+    let bestLarger = null;
     for (let j = 0; j < prEntries.length; j++) {
       if (i === j) continue;
-      const smaller = prEntries[i];
       const larger = prEntries[j];
-      // smaller must have fewer files (strict subset, not equal)
+      // Strict subset requires more files; skip empties and equal-or-smaller sets.
+      if (larger.paths.size === 0) continue;
       if (smaller.paths.size >= larger.paths.size) continue;
-      // Every file in smaller must exist in larger
       const isSubset = [...smaller.paths].every((p) => larger.paths.has(p));
-      if (isSubset) {
-        pairs.push({ superseded: smaller.number, supersededBy: larger.number });
+      if (!isSubset) continue;
+      if (
+        !bestLarger ||
+        larger.paths.size > bestLarger.paths.size ||
+        (larger.paths.size === bestLarger.paths.size &&
+          larger.number < bestLarger.number)
+      ) {
+        bestLarger = larger;
       }
     }
-  }
-  // Deduplicate: only keep each superseded PR once (earliest supersededBy wins)
-  const seen = new Map();
-  for (const pair of pairs) {
-    if (!seen.has(pair.superseded)) {
-      seen.set(pair.superseded, pair.supersededBy);
+    if (bestLarger) {
+      pairs.push({ superseded: smaller.number, supersededBy: bestLarger.number });
     }
   }
-  return [...seen.entries()].map(([superseded, supersededBy]) => ({
-    superseded,
-    supersededBy,
-  }));
+  return pairs;
 }
 
 function buildOverlapMatrix(options = {}) {
