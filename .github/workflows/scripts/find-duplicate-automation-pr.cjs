@@ -318,6 +318,41 @@ function createPullRequestFileGetter(
   };
 }
 
+/**
+ * Detect subset/supersession relationships among PR entries.
+ * When PR smaller's file set is a strict subset of PR larger's file set,
+ * PR larger supersedes PR smaller (the smaller PR is a zombie).
+ * Returns an array of { superseded: number, supersededBy: number } pairs.
+ */
+function findSupersededPairs(prEntries) {
+  const pairs = [];
+  for (let i = 0; i < prEntries.length; i++) {
+    for (let j = 0; j < prEntries.length; j++) {
+      if (i === j) continue;
+      const smaller = prEntries[i];
+      const larger = prEntries[j];
+      // smaller must have fewer files (strict subset, not equal)
+      if (smaller.paths.size >= larger.paths.size) continue;
+      // Every file in smaller must exist in larger
+      const isSubset = [...smaller.paths].every((p) => larger.paths.has(p));
+      if (isSubset) {
+        pairs.push({ superseded: smaller.number, supersededBy: larger.number });
+      }
+    }
+  }
+  // Deduplicate: only keep each superseded PR once (earliest supersededBy wins)
+  const seen = new Map();
+  for (const pair of pairs) {
+    if (!seen.has(pair.superseded)) {
+      seen.set(pair.superseded, pair.supersededBy);
+    }
+  }
+  return [...seen.entries()].map(([superseded, supersededBy]) => ({
+    superseded,
+    supersededBy,
+  }));
+}
+
 function buildOverlapMatrix(options = {}) {
   const {
     repo,
@@ -392,33 +427,54 @@ function buildOverlapMatrix(options = {}) {
   }
   contestedFiles.sort((a, b) => a.file.localeCompare(b.file));
 
-  if (contestedFiles.length === 0) {
+  // Detect supersession: PR B supersedes PR A when A's files ⊂ B's files
+  const supersededPairs = findSupersededPairs(prEntries);
+
+  if (contestedFiles.length === 0 && supersededPairs.length === 0) {
     return {
       prs: prEntries.map((e) => ({ number: e.number, title: e.title, url: e.url })),
       contestedFiles: [],
-      markdown: '### File-Overlap Conflict Matrix\n\nNo contested files found across open automation PRs.\n',
+      supersededPairs: [],
+      markdown: '### File-Overlap Conflict Matrix\n\nNo contested files or superseded PRs found across open automation PRs.\n',
     };
   }
 
-  const tableRows = contestedFiles
-    .map(
-      (c) =>
-        `| ${c.file} | ${c.prNumbers.map((n) => `#${n}`).join(', ')} |`,
-    )
-    .join('\n');
-
-  const markdown =
+  let markdown =
     '### File-Overlap Conflict Matrix\n\n' +
-    `**${prEntries.length} automation PRs inspected, ${contestedFiles.length} contested file(s) found.**\n\n` +
+    `**${prEntries.length} automation PRs inspected, ${contestedFiles.length} contested file(s), ${supersededPairs.length} superseded PR(s).**\n\n` +
     `#### PRs\n| # | Title |\n|---|-------|\n` +
-    prEntries.map((e) => `| #${e.number} | ${e.title} |`).join('\n') +
-    '\n\n' +
-    `#### Contested Files\n| File | PRs |\n|------|-----|\n` +
-    `${tableRows}\n`;
+    prEntries.map((e) => `| #${e.number} | ${e.title} |`).join('\n');
+
+  if (supersededPairs.length > 0) {
+    const supersededRows = supersededPairs
+      .map(
+        (s) =>
+          `| #${s.superseded} | #${s.supersededBy} | supersedes (files ⊂) |`,
+      )
+      .join('\n');
+    markdown +=
+      '\n\n' +
+      `#### Superseded PRs\n| Superseded PR | Superseded By | Reason |\n|---|---|---|\n` +
+      `${supersededRows}\n`;
+  }
+
+  if (contestedFiles.length > 0) {
+    const tableRows = contestedFiles
+      .map(
+        (c) =>
+          `| ${c.file} | ${c.prNumbers.map((n) => `#${n}`).join(', ')} |`,
+      )
+      .join('\n');
+    markdown +=
+      '\n\n' +
+      `#### Contested Files\n| File | PRs |\n|------|-----|\n` +
+      `${tableRows}\n`;
+  }
 
   return {
     prs: prEntries.map((e) => ({ number: e.number, title: e.title, url: e.url })),
     contestedFiles,
+    supersededPairs,
     markdown,
   };
 }
@@ -589,6 +645,7 @@ module.exports = {
   createPullRequestFileGetter,
   extractPatchFromGitDiff,
   findDuplicatePullRequest,
+  findSupersededPairs,
   hasExactDuplicate,
   hasEquivalentDuplicate,
   hasFileOverlap,
