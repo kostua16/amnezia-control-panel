@@ -54,6 +54,7 @@ jobs:
 
       - id: schedule_drift
         name: Detect schedule drift
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         shell: bash
