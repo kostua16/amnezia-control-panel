@@ -94,13 +94,24 @@ function expandField(field, min, max) {
     const stepMatch = token.match(/^\*\/(\d+)$/);
     if (stepMatch) {
       const step = parseInt(stepMatch[1], 10);
+      if (step <= 0) continue;
       for (let v = min; v <= max; v += step) values.add(v);
+      continue;
+    }
+    const rangeStepMatch = token.match(/^(\d+)-(\d+)\/(\d+)$/);
+    if (rangeStepMatch) {
+      const lo = parseInt(rangeStepMatch[1], 10);
+      const hi = parseInt(rangeStepMatch[2], 10);
+      const step = parseInt(rangeStepMatch[3], 10);
+      if (lo < min || hi > max || lo > hi || step <= 0) continue;
+      for (let v = lo; v <= hi; v += step) values.add(v);
       continue;
     }
     const rangeMatch = token.match(/^(\d+)-(\d+)$/);
     if (rangeMatch) {
       const lo = parseInt(rangeMatch[1], 10);
       const hi = parseInt(rangeMatch[2], 10);
+      if (lo < min || hi > max || lo > hi) continue;
       for (let v = lo; v <= hi; v++) values.add(v);
       continue;
     }
@@ -108,6 +119,7 @@ function expandField(field, min, max) {
       for (let v = min; v <= max; v++) values.add(v);
       continue;
     }
+    if (!/^\d+$/.test(token)) continue;
     const num = parseInt(token, 10);
     if (!Number.isNaN(num) && num >= min && num <= max) values.add(num);
   }

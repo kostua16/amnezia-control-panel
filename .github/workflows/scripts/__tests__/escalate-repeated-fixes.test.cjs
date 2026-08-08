@@ -19,6 +19,8 @@ const {
   hasMergedFixPr,
   countConsecutive,
   hasRunEntry,
+  runAudit,
+  main,
 } = require('../escalate-repeated-fixes.cjs');
 
 // --- fingerprint ---
@@ -208,6 +210,21 @@ test('hasMergedFixPr returns true when at least one merged PR matches', () => {
   );
 });
 
+test('hasMergedFixPr suppresses a merged PR that closes the escalation issue', () => {
+  const calls = [];
+  assert.equal(
+    hasMergedFixPr('o/r', 'abc123', 417, (args) => {
+      calls.push(args);
+      if (calls.length === 1) return '0';
+      return JSON.stringify([
+        { number: 99, body: 'Fixes #417 by adding the shared gate.' },
+      ]);
+    }),
+    true,
+  );
+  assert.match(calls[1][calls[1].indexOf('--search') + 1], /#417/);
+});
+
 test('hasMergedFixPr propagates gh failures so issue creation stops safely', () => {
   assert.throws(
     () =>
@@ -292,6 +309,144 @@ test('hasRunEntry prevents one workflow retry from counting as another audit', (
   assert.equal(hasRunEntry(entries, '456'), true);
   assert.equal(hasRunEntry(entries, 456), true);
   assert.equal(hasRunEntry(entries, '789'), false);
+});
+
+function createAuditHarness() {
+  let entries = [];
+  let failNextCreate = false;
+  const created = [];
+  const outputs = {};
+  return {
+    api: {
+      findLogIssue: () => (entries.length > 0 ? 10 : null),
+      readLogBody: () => buildLogBody(entries, 'https://github.com/o/r', ''),
+      upsertLogIssue: (_repo, _number, nextEntries) => {
+        entries = structuredClone(nextEntries);
+      },
+      findEscalationIssue: () => null,
+      hasMergedFixPr: () => false,
+      createEscalationIssue: (_repo, fp) => {
+        if (failNextCreate) {
+          failNextCreate = false;
+          throw new Error('issue create failed');
+        }
+        created.push(fp);
+      },
+      setOutput: (name, value) => {
+        outputs[name] = value;
+      },
+      now: () => new Date('2026-08-08T00:00:00Z'),
+      write: () => {},
+    },
+    created,
+    entries: () => entries,
+    failCreateOnce: () => {
+      failNextCreate = true;
+    },
+    outputs,
+  };
+}
+
+const auditOutput = (recommendation) =>
+  JSON.stringify({
+    auto_prs_inspected: recommendation ? [{ number: 1, recommendation }] : [],
+    risk_patterns: [],
+  });
+
+test('runAudit records clean audits so they reset recommendation streaks', () => {
+  const harness = createAuditHarness();
+  runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/1',
+      rawOutput: auditOutput('Add a shared retry helper'),
+    },
+    harness.api,
+  );
+  runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/2',
+      rawOutput: auditOutput(null),
+    },
+    harness.api,
+  );
+  runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/3',
+      rawOutput: auditOutput('Add a shared retry helper'),
+    },
+    harness.api,
+  );
+
+  assert.equal(harness.entries().length, 3);
+  assert.deepEqual(harness.entries()[1].recommendations, []);
+  assert.deepEqual(harness.created, []);
+});
+
+test('runAudit resumes escalation when a retry finds its persisted run entry', () => {
+  const harness = createAuditHarness();
+  const recommendation = 'Add a shared retry helper';
+  runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/1',
+      rawOutput: auditOutput(recommendation),
+    },
+    harness.api,
+  );
+  harness.failCreateOnce();
+  assert.throws(
+    () =>
+      runAudit(
+        {
+          repo: 'o/r',
+          runUrl: 'https://github.com/o/r/actions/runs/2',
+          rawOutput: auditOutput(recommendation),
+        },
+        harness.api,
+      ),
+    /issue create failed/,
+  );
+
+  runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/2',
+      rawOutput: auditOutput(recommendation),
+    },
+    harness.api,
+  );
+
+  assert.equal(harness.entries().length, 2);
+  assert.deepEqual(harness.created, [fingerprint(recommendation)]);
+  assert.equal(harness.outputs.escalated_count, '1');
+});
+
+test('main binds CLI arguments and escalates the second consecutive audit', () => {
+  const harness = createAuditHarness();
+  const recommendation = 'Centralize workflow retry policy';
+  const invoke = (runId) =>
+    main({
+      argv: [
+        'node',
+        'escalate-repeated-fixes.cjs',
+        '--repo',
+        'o/r',
+        '--run-url',
+        `https://github.com/o/r/actions/runs/${runId}`,
+        '--structured-output',
+        auditOutput(recommendation),
+        '--github-output',
+        '/tmp/github-output',
+      ],
+      apiOverrides: harness.api,
+    });
+
+  assert.equal(invoke(1).escalated, 0);
+  assert.equal(invoke(2).escalated, 1);
+  assert.deepEqual(harness.created, [fingerprint(recommendation)]);
 });
 
 test('audit workflow runs APR-E10 with its structured output', () => {

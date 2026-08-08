@@ -24,6 +24,17 @@ const TRANSIENT_PATTERNS = [
   /service\s+(?:temporarily\s+)?overload/i,
 ];
 
+const PERMANENT_FAILURE_PATTERNS = [
+  /error TS\d+/i,
+  /AssertionError/i,
+  /(?:^|\s)not ok \d+/im,
+  /\b(?:SyntaxError|ReferenceError|TypeError)\b/i,
+  /Cannot find (?:module|name)/i,
+  /\bpermission denied\b/i,
+  /\bauthentication failed\b/i,
+  /\b(?:lint|prettier|formatting) (?:error|failed)\b/i,
+];
+
 function isTransientLog(logText) {
   return TRANSIENT_PATTERNS.some((re) => re.test(logText));
 }
@@ -76,6 +87,9 @@ function fetchFailedLogs(runId, repo, ghRunner = runGh) {
 function classifyRun(runId, repo, ghRunner = runGh) {
   const logs = fetchFailedLogs(runId, repo, ghRunner);
   if (!logs) return { transient: false, reason: 'log-unavailable' };
+  if (PERMANENT_FAILURE_PATTERNS.some((re) => re.test(logs))) {
+    return { transient: false, reason: 'permanent-signature' };
+  }
   if (isTransientLog(logs)) {
     return { transient: true, reason: 'transient-signature' };
   }
@@ -196,6 +210,7 @@ function main() {
 
 module.exports = {
   TRANSIENT_PATTERNS,
+  PERMANENT_FAILURE_PATTERNS,
   isTransientLog,
   classifyRun,
   rerunTransientFailedRuns,

@@ -94,7 +94,28 @@ test('classifyRun returns non-transient for TypeScript errors', () => {
     stdout: '##[error] src/app.ts(42,5): error TS2304: Cannot find name',
   }));
   assert.equal(result.transient, false);
-  assert.equal(result.reason, 'non-transient');
+  assert.equal(result.reason, 'permanent-signature');
+});
+
+test('classifyRun does not let an incidental transient warning hide a permanent failure', () => {
+  const result = classifyRun(457, '', () => ({
+    ok: true,
+    stdout: [
+      'warning: registry request returned HTTP 503 and was retried',
+      '##[error] src/app.ts(42,5): error TS2304: Cannot find name',
+    ].join('\n'),
+  }));
+  assert.equal(result.transient, false);
+  assert.equal(result.reason, 'permanent-signature');
+});
+
+test('classifyRun accepts a failed line whose dominant error is transient', () => {
+  const result = classifyRun(458, '', () => ({
+    ok: true,
+    stdout: '##[error] npm ERR! request failed: HTTP 503',
+  }));
+  assert.equal(result.transient, true);
+  assert.equal(result.reason, 'transient-signature');
 });
 
 test('rerun scan uses the supported attempt field and accepts empty rerun stdout', () => {

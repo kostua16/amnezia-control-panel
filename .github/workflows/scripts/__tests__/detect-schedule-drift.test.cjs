@@ -42,6 +42,15 @@ test('expandField handles step with non-zero base', () => {
   assert.deepEqual(expandField('*/6', 0, 23), [0, 6, 12, 18]);
 });
 
+test('expandField handles a stepped range', () => {
+  assert.deepEqual(expandField('3-20/5', 0, 23), [3, 8, 13, 18]);
+});
+
+test('expandField rejects zero steps and malformed numeric prefixes', () => {
+  assert.deepEqual(expandField('8-17/0', 0, 23), []);
+  assert.deepEqual(expandField('8oops', 0, 23), []);
+});
+
 test('expandField ignores out-of-range values', () => {
   assert.deepEqual(expandField('25', 0, 23), []);
 });
@@ -227,6 +236,11 @@ test('maintenance workflow runs the schedule-drift detector', () => {
     workflow,
     />> "\$GITHUB_STEP_SUMMARY"/,
     'schedule drift output must be surfaced in the maintenance step summary',
+  );
+  assert.match(
+    workflow,
+    /name: Detect schedule drift\n\s+continue-on-error: true/,
+    'schedule drift observability must remain off the maintenance critical path',
   );
 });
 

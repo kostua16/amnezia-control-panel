@@ -36,10 +36,10 @@ const LOG_SEARCH_MARKER = 'recommendation log APR-E10 in:title';
 const ESCALATION_LABELS = ['auto-fix', 'needs-review', 'umbrella-sub-issue'];
 const MAX_LOG_ENTRIES = 20;
 
-function getArg(name) {
-  const index = process.argv.indexOf(name);
+function getArg(name, argv = process.argv) {
+  const index = argv.indexOf(name);
   if (index === -1) return null;
-  return process.argv[index + 1] ?? '';
+  return argv[index + 1] ?? '';
 }
 
 function runGh(args, input) {
@@ -51,8 +51,8 @@ function runGh(args, input) {
   }).trim();
 }
 
-function setOutput(name, value) {
-  const ghaFile = process.env.GITHUB_OUTPUT;
+function setOutput(name, value, outputPath) {
+  const ghaFile = outputPath || process.env.GITHUB_OUTPUT;
   if (!ghaFile) return;
   const { appendFileSync } = require('fs');
   appendFileSync(ghaFile, `${name}=${value}\n`);
@@ -237,14 +237,14 @@ function escalationSearchQuery(fp) {
 /**
  * Check whether an open escalation issue already exists for a fingerprint.
  */
-function findEscalationIssue(repo, fp) {
+function findEscalationIssue(repo, fp, state = 'open') {
   const out = runGh([
     'issue',
     'list',
     '--repo',
     repo,
     '--state',
-    'open',
+    state,
     '--search',
     escalationSearchQuery(fp),
     '--json',
@@ -257,8 +257,8 @@ function findEscalationIssue(repo, fp) {
 }
 
 /**
- * Check whether a merged PR exists whose title or body mentions the
- * recommendation fingerprint. This is a best-effort heuristic.
+ * Check whether a merged PR mentions the recommendation fingerprint or closes
+ * the prior escalation issue. This is a best-effort heuristic.
  *
  * Uses `--jq length` so an empty result list is distinguishable from a hit:
  * with `--json number` gh emits the literal `[]` (a 2-char string) when
@@ -270,8 +270,13 @@ function findEscalationIssue(repo, fp) {
  * The gh runner is injectable purely so the empty-result path can be
  * exercised by unit tests without shelling out.
  */
-function hasMergedFixPr(repo, fp, runGhFn) {
-  const runner = runGhFn || runGh;
+function hasMergedFixPr(repo, fp, issueNumOrRunner, runGhFn) {
+  const issueNum =
+    typeof issueNumOrRunner === 'function' ? null : issueNumOrRunner;
+  const runner =
+    typeof issueNumOrRunner === 'function'
+      ? issueNumOrRunner
+      : runGhFn || runGh;
   const out = runner([
     'pr',
     'list',
@@ -286,7 +291,31 @@ function hasMergedFixPr(repo, fp, runGhFn) {
     '--jq',
     'length',
   ]);
-  return parseInt(out, 10) > 0;
+  if (parseInt(out, 10) > 0) return true;
+  if (issueNum == null) return false;
+
+  const issueReference = `#${issueNum}`;
+  const candidates = runner([
+    'pr',
+    'list',
+    '--repo',
+    repo,
+    '--state',
+    'merged',
+    '--search',
+    `${issueReference} in:body`,
+    '--limit',
+    '100',
+    '--json',
+    'number,body',
+  ]);
+  const prs = JSON.parse(candidates);
+  const escapedIssue = issueReference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const closesIssue = new RegExp(
+    `\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s+${escapedIssue}\\b`,
+    'i',
+  );
+  return prs.some((pr) => closesIssue.test(String(pr.body || '')));
 }
 
 function createEscalationIssue(repo, fp, description, count, runUrl) {
@@ -373,33 +402,33 @@ function hasRunEntry(entries, runId) {
   return entries.some((entry) => String(entry?.run_id) === String(runId));
 }
 
-async function main() {
-  const repo = getArg('--repo');
-  const runUrl = getArg('--run-url') || '';
-  const rawOutput = getArg('--structured-output') || '';
-
-  if (!repo) {
-    process.stderr.write('Error: --repo is required\n');
-    process.exit(1);
-  }
-
+function runAudit(
+  { repo, runUrl = '', rawOutput = '', outputPath = '' },
+  apiOverrides = {},
+) {
+  const api = {
+    findLogIssue,
+    readLogBody,
+    upsertLogIssue,
+    findEscalationIssue,
+    hasMergedFixPr,
+    createEscalationIssue,
+    setOutput,
+    now: () => new Date(),
+    write: (message) => process.stdout.write(message),
+    ...apiOverrides,
+  };
   const data = parseStructuredOutput(rawOutput);
   if (!data) {
-    process.stdout.write('No structured output — skipping APR-E10.\n');
-    process.exit(0);
+    api.write('No structured output — skipping APR-E10.\n');
+    return { status: 'invalid-output', escalated: 0, entries: [] };
   }
 
-  const recommendations = extractRecommendations(data);
-  if (recommendations.length === 0) {
-    process.stdout.write('No actionable recommendations — skipping APR-E10.\n');
-    process.exit(0);
-  }
-
-  // Build a new log entry for this run
-  const runId = runUrl.split('/').pop() || String(Date.now());
+  let recommendations = extractRecommendations(data);
+  const runId = runUrl.split('/').pop() || String(api.now().getTime());
   const newEntry = {
     run_id: runId,
-    timestamp: new Date().toISOString(),
+    timestamp: api.now().toISOString(),
     recommendations: recommendations.map((r) => ({
       fingerprint: r.fingerprint,
       text: r.text,
@@ -407,30 +436,37 @@ async function main() {
   };
 
   // Read prior log
-  const existingNum = findLogIssue(repo);
+  const existingNum = api.findLogIssue(repo);
   let entries = [];
   if (existingNum != null) {
-    const body = readLogBody(repo, existingNum);
+    const body = api.readLogBody(repo, existingNum);
     entries = parseLogBody(body);
   }
 
-  // A workflow retry keeps the same run id. Do not let re-executing one audit
-  // manufacture the two "consecutive runs" required for escalation.
-  if (hasRunEntry(entries, runId)) {
-    setOutput('escalated_count', '0');
-    process.stdout.write(`Audit run ${runId} is already logged — skipping.\n`);
-    return;
+  const persistedEntry = entries.find(
+    (entry) => String(entry?.run_id) === String(runId),
+  );
+  if (persistedEntry) {
+    // A retry must not append another audit, but it must resume work that may
+    // have failed after the log write (for example, escalation issue creation).
+    recommendations = Array.isArray(persistedEntry.recommendations)
+      ? persistedEntry.recommendations
+      : [];
+    api.write(`Audit run ${runId} is already logged — resuming.\n`);
+  } else {
+    // Clean audits are deliberately persisted: an empty recommendation list is
+    // the gap that resets every active consecutive-run streak.
+    entries.push(newEntry);
+    entries = trimEntries(entries);
+    api.upsertLogIssue(repo, existingNum, entries, runUrl);
+    api.write(`Recommendation log updated (${entries.length} entries).\n`);
   }
 
-  // Append new entry and trim
-  entries.push(newEntry);
-  entries = trimEntries(entries);
-
-  // Persist log
-  upsertLogIssue(repo, existingNum, entries, runUrl);
-  process.stdout.write(
-    `Recommendation log updated (${entries.length} entries).\n`,
-  );
+  if (recommendations.length === 0) {
+    api.setOutput('escalated_count', '0', outputPath);
+    api.write('No actionable recommendations — APR-E10 log updated.\n');
+    return { status: 'no-recommendations', escalated: 0, entries };
+  }
 
   // Count consecutive occurrences of each fingerprint.
   // "Consecutive" = appears in the last N entries where N ≥ 2, in a row.
@@ -448,40 +484,60 @@ async function main() {
     if (count < 2) continue;
 
     // Check if already escalated
-    const existingEscalation = findEscalationIssue(repo, fp);
+    const existingEscalation = api.findEscalationIssue(repo, fp, 'open');
     if (existingEscalation != null) {
-      process.stdout.write(
+      api.write(
         `Fingerprint ${fp} already has escalation issue #${existingEscalation} — skipping.\n`,
       );
       continue;
     }
 
     // Best-effort check for merged fix PR
-    if (hasMergedFixPr(repo, fp)) {
-      process.stdout.write(
+    const historicalEscalation = api.findEscalationIssue(repo, fp, 'all');
+    if (api.hasMergedFixPr(repo, fp, historicalEscalation)) {
+      api.write(
         `Fingerprint ${fp} has a merged fix PR — skipping escalation.\n`,
       );
       continue;
     }
 
     // Narrow the search/create race when two audit runs finish together.
-    const racedEscalation = findEscalationIssue(repo, fp);
+    const racedEscalation = api.findEscalationIssue(repo, fp, 'open');
     if (racedEscalation != null) {
-      process.stdout.write(
+      api.write(
         `Fingerprint ${fp} was concurrently escalated as #${racedEscalation} — skipping.\n`,
       );
       continue;
     }
 
-    createEscalationIssue(repo, fp, fpTexts[fp], count, runUrl);
-    process.stdout.write(
+    api.createEscalationIssue(repo, fp, fpTexts[fp], count, runUrl);
+    api.write(
       `Escalated fingerprint ${fp} (appeared in ${count} consecutive runs).\n`,
     );
     escalated++;
   }
 
-  setOutput('escalated_count', String(escalated));
-  process.stdout.write(`APR-E10 complete: ${escalated} new escalation(s).\n`);
+  api.setOutput('escalated_count', String(escalated), outputPath);
+  api.write(`APR-E10 complete: ${escalated} new escalation(s).\n`);
+  return { status: 'complete', escalated, entries };
+}
+
+function main({ argv = process.argv, apiOverrides = {} } = {}) {
+  const repo = getArg('--repo', argv);
+  if (!repo) {
+    process.stderr.write('Error: --repo is required\n');
+    process.exit(1);
+  }
+
+  return runAudit(
+    {
+      repo,
+      runUrl: getArg('--run-url', argv) || '',
+      rawOutput: getArg('--structured-output', argv) || '',
+      outputPath: getArg('--github-output', argv) || '',
+    },
+    apiOverrides,
+  );
 }
 
 module.exports = {
@@ -498,11 +554,15 @@ module.exports = {
   hasMergedFixPr,
   countConsecutive,
   hasRunEntry,
+  runAudit,
+  main,
 };
 
 if (require.main === module) {
-  main().catch((err) => {
+  try {
+    main();
+  } catch (err) {
     process.stderr.write(`Fatal: ${err.message}\n`);
     process.exit(1);
-  });
+  }
 }
