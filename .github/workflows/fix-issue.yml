@@ -200,8 +200,9 @@ jobs:
             2. Run `gh issue view ${{ github.event.issue.number }} --comments` to read the conversation
             3. Identify the SINGLE root cause that explains the failure — ignore symptoms and downstream errors
             4. Implement a minimal, targeted fix for that ONE root cause only
-            5. Run: npm run lint && npx tsc --noEmit
-            6. If lint/types fail, fix ONLY the errors you introduced — do not expand scope
+            5. If your fix adds a new script under `.github/workflows/scripts/`, you MUST also wire it into the relevant workflow YAML file (add a step that calls `node .github/workflows/scripts/<script>.cjs` with appropriate inputs/outputs). An unwired script is an incomplete fix.
+            6. Run: npm run lint && npx tsc --noEmit
+            7. If lint/types fail, fix ONLY the errors you introduced — do not expand scope
 
             BASH CONSTRAINTS:
             - Avoid bash brace expansion (e.g., `{a,b,c}`) and glob patterns in for loops — the sandbox blocks them.
