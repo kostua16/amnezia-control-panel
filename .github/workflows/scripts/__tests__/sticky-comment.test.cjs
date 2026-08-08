@@ -203,3 +203,20 @@ test('isTransient matches gh HTTP 5xx stderr case-insensitively', () => {
   assert.ok(isTransient('http 502')); // lowercase form also matches
   assert.ok(!isTransient('gh: HTTP 404: Not Found'));
 });
+
+test('isTransient matches network-level error patterns', () => {
+  assert.ok(isTransient('read tcp 10.0.0.1:443: connection reset by peer'));
+  assert.ok(isTransient('dial tcp 10.0.0.1:443: connect: connection refused'));
+  assert.ok(isTransient('dial tcp 10.0.0.1:443: i/o timeout'));
+  assert.ok(isTransient('net/http: TLS handshake timeout'));
+  assert.ok(isTransient('context deadline exceeded'));
+  assert.ok(isTransient('unexpected eof'));
+});
+
+test('isTransient rejects non-transient errors', () => {
+  assert.ok(!isTransient('gh: HTTP 404: Not Found'));
+  assert.ok(!isTransient('gh: HTTP 422: Validation Failed'));
+  assert.ok(!isTransient('permission denied'));
+  assert.ok(!isTransient('resource not found'));
+  assert.ok(!isTransient(''));
+});

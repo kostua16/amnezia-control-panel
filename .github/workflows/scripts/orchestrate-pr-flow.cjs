@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { performance } = require('perf_hooks');
+const { MAX_RETRIES, RETRY_BASE_MS, isTransient } = require('./lib/retry.cjs');
 const {
   collectCheckEvidence,
   getRequiredCheckStatus,
@@ -108,36 +109,50 @@ function run(command, args, options = {}) {
   const stdio = options.input
     ? ['pipe', 'pipe', 'pipe']
     : ['ignore', 'pipe', 'pipe'];
+  const retryEnabled = options.retry === true;
 
-  try {
-    return (
-      execFileSync(command, args, {
-        encoding: 'utf8',
-        env: process.env,
-        input: options.input,
-        stdio,
-      }) ?? ''
-    ).trim();
-  } catch (error) {
-    const stderr = String(error.stderr ?? '').trim();
-    const allowed =
-      options.allowFailure &&
-      (!options.allowedFailurePattern ||
-        options.allowedFailurePattern.test(stderr));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return (
+        execFileSync(command, args, {
+          encoding: 'utf8',
+          env: process.env,
+          input: options.input,
+          stdio,
+        }) ?? ''
+      ).trim();
+    } catch (error) {
+      const stderr = String(error.stderr ?? '').trim();
 
-    if (allowed) {
-      return options.fallback ?? '';
+      if (retryEnabled && attempt < MAX_RETRIES - 1 && isTransient(stderr)) {
+        const delay = RETRY_BASE_MS * 2 ** attempt;
+        console.warn(
+          `orchestrate-pr-flow: transient HTTP error on attempt ${attempt + 1}/${MAX_RETRIES}, retrying in ${delay}ms: ${stderr.split('\n')[0]}`,
+        );
+        execFileSync('sleep', [String(delay / 1000)], { stdio: 'ignore' });
+        continue;
+      }
+
+      const allowed =
+        options.allowFailure &&
+        (!options.allowedFailurePattern ||
+          options.allowedFailurePattern.test(stderr));
+
+      if (allowed) {
+        return options.fallback ?? '';
+      }
+
+      if (stderr) {
+        console.error(stderr);
+      }
+      throw error;
     }
-
-    if (stderr) {
-      console.error(stderr);
-    }
-    throw error;
   }
 }
 
 function runJson(command, args, fallback, options = {}) {
   const output = run(command, args, {
+    retry: true,
     allowFailure: fallback !== undefined,
     allowedFailurePattern: options.allowedFailurePattern,
     fallback: fallback === undefined ? undefined : JSON.stringify(fallback),
