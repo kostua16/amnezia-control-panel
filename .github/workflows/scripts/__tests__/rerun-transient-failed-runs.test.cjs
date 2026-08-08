@@ -216,6 +216,10 @@ test('monitor workflow runs transient recovery before the ZAI diagnosis step', (
   );
   assert.match(workflow, /TRANSIENT_RERUN_SUMMARY/);
   assert.match(workflow, /rerunRequested\[\]\.runId/);
+  assert.match(
+    workflow,
+    /MON-E04 is the deterministic transient-recovery preflight/,
+  );
   assert.match(workflow, /recovery-pending/);
   assert.match(workflow, /recovered-transient/);
   assert.match(workflow, /structural code-fix candidate/);
@@ -237,9 +241,14 @@ test('static monitor agent mirrors the runtime MON-E04 recovery contract', () =>
   );
 
   assert.match(agent, /rerunRequested\[\]\.runId/);
+  assert.match(
+    agent,
+    /MON-E04 is the deterministic transient-recovery preflight/,
+  );
   assert.match(agent, /recovery-pending/);
   assert.match(agent, /recovered-transient/);
   assert.match(agent, /structural code-fix candidate/);
   assert.match(agent, /repeated-transient reliability incident/);
   assert.match(agent, /absent, invalid, or reports an error/);
+  assert.doesNotMatch(agent, /every MON-E04 run/);
 });
