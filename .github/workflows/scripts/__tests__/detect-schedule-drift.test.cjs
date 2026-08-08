@@ -7,6 +7,7 @@ const path = require('node:path');
 const {
   cronToMinuteSlots,
   expandField,
+  fetchRecentRuns,
   minDriftMinutes,
   parseSince,
 } = require('../detect-schedule-drift.cjs');
@@ -227,4 +228,31 @@ test('maintenance workflow runs the schedule-drift detector', () => {
     />> "\$GITHUB_STEP_SUMMARY"/,
     'schedule drift output must be surfaced in the maintenance step summary',
   );
+});
+
+test('fetchRecentRuns requests fields supported by gh run list', () => {
+  let args;
+  const runs = fetchRecentRuns(
+    'owner/repo',
+    'maintenance.yml',
+    '7d',
+    (...received) => {
+      args = received;
+      return [
+        {
+          databaseId: 123,
+          number: 5,
+          startedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    },
+  );
+
+  assert.equal(runs.length, 1);
+  const fields = args[args.indexOf('--json') + 1];
+  assert.match(fields, /startedAt/);
+  assert.match(fields, /createdAt/);
+  assert.match(fields, /number/);
+  assert.doesNotMatch(fields, /run_started_at|created_at|run_number/);
 });

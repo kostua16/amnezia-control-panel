@@ -29,6 +29,7 @@ Entry command: `/gsd:debug` — mirrors the first line of `monitor-amnezia-contr
 - [ ] `rtk gh run list` (window) + again for failed/slow candidates.
 - [ ] Per actionable failed run: `rtk gh run view <id> --json … --verbose` + `rtk proxy gh run view <id> --log-failed`.
 - [ ] Per slow run: `rtk gh run view <id> --json jobs,url,name,conclusion,…`.
+- [ ] Read `TRANSIENT_RERUN_SUMMARY`; do not propose a code fix solely for a run already re-run by MON-E04.
 - [ ] Never infer root cause from run names/conclusions alone.
 - [ ] Narrow + shared + evidence-backed fix only; ambiguous → no changes + report.
 - [ ] Verify per file type (lint/prettier/actionlint/shellcheck).
@@ -44,9 +45,10 @@ Entry command: `/gsd:debug` — mirrors the first line of `monitor-amnezia-contr
 
 ## Investigation Methodology
 1. Survey runs (rollup).
-2. Gather exact evidence per actionable run.
-3. Diagnose (dominant mode + evidence).
-4. Narrow fix only if unambiguous; else no changes + report.
+2. Exclude MON-E04 reruns from code-fix candidates unless separate structural evidence exists.
+3. Gather exact evidence per actionable run.
+4. Diagnose (dominant mode + evidence).
+5. Narrow fix only if unambiguous; else no changes + report.
 
 ## Tools and Techniques
 - `rtk gh run list/view`, `rtk proxy gh run view --log-failed/--log`, `analyze-claude-runs.sh`, `scan-claude-logs.cjs`.

@@ -1,21 +1,10 @@
 #!/usr/bin/env node
 /* eslint-disable @typescript-eslint/no-require-imports */
 // MON-E04: Auto re-run for classified transient failures.
-//
-// Scans recent failed workflow runs, inspects their logs for deterministic
-// transient signatures (ECONNRESET, registry 5xx, ETIMEDOUT, rate-limit,
-// OOM, runner cancellation), and re-runs matching runs via the Actions API.
-// Each run is re-run at most once (guarded by runAttempt).
-//
-// Designed to be called by the monitor-github-runs ZAI agent or as a
-// standalone self-heal step.
 
 const { execFileSync } = require('node:child_process');
+const { appendFileSync } = require('node:fs');
 
-// Deterministic transient signatures drawn from collect-workflow-failure-context
-// and lib/sticky-comment.cjs. Covers network resets, DNS failures, HTTP 5xx,
-// rate-limit/throttle, runner eviction, and OOM — all failures that resolve
-// on retry without a code change.
 const TRANSIENT_PATTERNS = [
   /ETIMEDOUT/i,
   /ECONNRESET/i,
@@ -33,12 +22,6 @@ const TRANSIENT_PATTERNS = [
   /rate limit/i,
   /throttle/i,
   /service\s+(?:temporarily\s+)?overload/i,
-  /Runner cancelled/i,
-  /shutdown signal/i,
-  /out of memory/i,
-  /\bOOM\b/i,
-  /no space left on device/i,
-  /ENOSPC/i,
 ];
 
 function isTransientLog(logText) {
@@ -52,111 +35,132 @@ function parseArgs(argv) {
     if (!arg.startsWith('--')) continue;
     const key = arg
       .slice(2)
-      .replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      .replace(/-([a-z])/g, (_, character) => character.toUpperCase());
     args[key] =
       argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : 'true';
   }
   return args;
 }
 
-function gh(args) {
+function runGh(args) {
   try {
-    return execFileSync('gh', args, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 30_000,
-    });
-  } catch (err) {
-    return '';
+    return {
+      ok: true,
+      stdout: execFileSync('gh', args, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 30_000,
+      }),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: '',
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
-/**
- * Fetch failed-step logs for a run. Returns concatenated log text
- * from all failed jobs, or empty string on error.
- */
-function fetchFailedLogs(runId) {
-  const output = gh(['run', 'view', String(runId), '--log-failed']);
-  return output || '';
+function setOutput(name, value, outputPath) {
+  if (!outputPath) return;
+  appendFileSync(outputPath, `${name}=${value}\n`);
 }
 
-/**
- * Classify a single failed run as transient or non-transient.
- * Checks failed-step logs against TRANSIENT_PATTERNS.
- */
-function classifyRun(runId) {
-  const logs = fetchFailedLogs(runId);
-  if (!logs) {
-    return { transient: false, reason: 'log-unavailable' };
-  }
+function fetchFailedLogs(runId, repo, ghRunner = runGh) {
+  const args = ['run', 'view', String(runId), '--log-failed'];
+  if (repo) args.push('--repo', repo);
+  const result = ghRunner(args);
+  return result.ok ? result.stdout : '';
+}
+
+function classifyRun(runId, repo, ghRunner = runGh) {
+  const logs = fetchFailedLogs(runId, repo, ghRunner);
+  if (!logs) return { transient: false, reason: 'log-unavailable' };
   if (isTransientLog(logs)) {
     return { transient: true, reason: 'transient-signature' };
   }
   return { transient: false, reason: 'non-transient' };
 }
 
-/**
- * Main entry point. Scans failed runs and re-runs transient ones.
- *
- * @param {object} opts
- * @param {string} opts.since - ISO timestamp; only consider runs created after this
- * @param {number} opts.limit - max runs to inspect (default 10)
- * @param {boolean} opts.dryRun - log what would be re-run without executing
- * @returns {{ scanned: number, rerun: Array<{runId: number, workflowName: string, reason: string}>, skipped: Array<{runId: number, workflowName: string, reason: string}> }}
- */
-function rerunTransientFailedRuns({ since, limit = 10, dryRun = false } = {}) {
-  const filterFlags = ['run', 'list', '--status', 'failed', '--limit', String(limit)];
-  if (since) {
-    filterFlags.push('--created', `>=${since}`);
-  }
-  filterFlags.push(
+function rerunTransientFailedRuns(
+  { repo, since, limit = 10, dryRun = false } = {},
+  ghRunner = runGh,
+) {
+  const listArgs = [
+    'run',
+    'list',
+    '--status',
+    'failure',
+    '--limit',
+    String(limit),
+  ];
+  if (repo) listArgs.push('--repo', repo);
+  if (since) listArgs.push('--created', `>=${since}`);
+  listArgs.push(
     '--json',
-    'databaseId,name,workflowName,status,conclusion,runAttempt,createdAt,headBranch,event',
+    'databaseId,name,workflowName,status,conclusion,attempt,createdAt,headBranch,event',
   );
 
-  const json = gh(filterFlags);
-  if (!json) {
-    return { scanned: 0, rerun: [], skipped: [] };
+  const listResult = ghRunner(listArgs);
+  if (!listResult.ok) {
+    return { scanned: 0, rerun: [], skipped: [], error: 'run-list-failed' };
   }
 
   let runs;
   try {
-    runs = JSON.parse(json);
+    runs = JSON.parse(listResult.stdout);
   } catch {
-    return { scanned: 0, rerun: [], skipped: [] };
+    return {
+      scanned: 0,
+      rerun: [],
+      skipped: [],
+      error: 'run-list-invalid-json',
+    };
   }
 
   const results = { scanned: runs.length, rerun: [], skipped: [] };
-
   for (const run of runs) {
     const runId = run.databaseId;
-    const name = run.workflowName || run.name || 'unknown';
+    const workflowName = run.workflowName || run.name || 'unknown';
 
-    // Guard: only re-run first-attempt runs. runAttempt > 1 means the run
-    // was already re-run (by human, by project-manager, or by a previous
-    // monitor cycle). Avoids infinite re-run loops.
-    if (Number(run.runAttempt) > 1) {
-      results.skipped.push({ runId, workflowName: name, reason: 'already-rerun' });
+    // GitHub exposes the latest run attempt as `attempt`. Once a run has been
+    // retried, skip it on later monitor cycles to prevent retry loops.
+    if (Number(run.attempt) > 1) {
+      results.skipped.push({ runId, workflowName, reason: 'already-rerun' });
       continue;
     }
 
-    const classification = classifyRun(runId);
+    const classification = classifyRun(runId, repo, ghRunner);
+    if (!classification.transient) {
+      results.skipped.push({
+        runId,
+        workflowName,
+        reason: classification.reason,
+      });
+      continue;
+    }
 
-    if (classification.transient) {
-      if (dryRun) {
-        results.rerun.push({ runId, workflowName: name, reason: classification.reason });
-      } else {
-        const rerunOutput = gh(['run', 'rerun', String(runId), '--failed']);
-        // gh run rerun exits 0 on success but prints the new run URL
-        if (rerunOutput || !process.env.GH_TOKEN) {
-          // If we got here, gh succeeded (no exception thrown)
-          results.rerun.push({ runId, workflowName: name, reason: classification.reason });
-        } else {
-          results.skipped.push({ runId, workflowName: name, reason: 'rerun-failed' });
-        }
-      }
+    if (dryRun) {
+      results.rerun.push({
+        runId,
+        workflowName,
+        reason: classification.reason,
+      });
+      continue;
+    }
+
+    const rerunArgs = ['run', 'rerun', String(runId), '--failed'];
+    if (repo) rerunArgs.push('--repo', repo);
+    const rerunResult = ghRunner(rerunArgs);
+    // `gh run rerun` succeeds with empty stdout, so use its exit status.
+    if (rerunResult.ok) {
+      results.rerun.push({
+        runId,
+        workflowName,
+        reason: classification.reason,
+      });
     } else {
-      results.skipped.push({ runId, workflowName: name, reason: classification.reason });
+      results.skipped.push({ runId, workflowName, reason: 'rerun-failed' });
     }
   }
 
@@ -165,24 +169,29 @@ function rerunTransientFailedRuns({ since, limit = 10, dryRun = false } = {}) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  const repo = args.repo || process.env.GITHUB_REPOSITORY || '';
   const since = args.since || '';
   const limit = Number(args.limit) || 10;
   const dryRun = args.dryRun === 'true' || args.dryRun === true;
+  const outputPath = args.githubOutput || process.env.GITHUB_OUTPUT || '';
 
   if (!since) {
     process.stderr.write(
-      'Usage: rerun-transient-failed-runs.cjs --since <ISO> [--limit N] [--dry-run]\n',
+      'Usage: rerun-transient-failed-runs.cjs --since <ISO> [--repo owner/repo] [--limit N] [--dry-run] [--github-output PATH]\n',
     );
     process.exit(1);
   }
 
-  const results = rerunTransientFailedRuns({ since, limit, dryRun });
-
-  process.stdout.write(JSON.stringify(results, null, 2));
-  process.stdout.write('\n');
-
-  // Exit non-zero if nothing was re-run (useful for workflow step gating)
-  process.exit(results.rerun.length > 0 ? 0 : 0);
+  const results = rerunTransientFailedRuns({ repo, since, limit, dryRun });
+  process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
+  setOutput('rerun_count', String(results.rerun.length), outputPath);
+  setOutput(
+    'rerun_ids',
+    results.rerun.map((run) => run.runId).join(','),
+    outputPath,
+  );
+  setOutput('summary', JSON.stringify(results), outputPath);
+  if (results.error) process.exitCode = 1;
 }
 
 module.exports = {
@@ -190,8 +199,7 @@ module.exports = {
   isTransientLog,
   classifyRun,
   rerunTransientFailedRuns,
+  runGh,
 };
 
-if (require.main === module) {
-  main();
-}
+if (require.main === module) main();

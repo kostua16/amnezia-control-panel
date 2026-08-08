@@ -2,6 +2,8 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
   LOG_TITLE,
@@ -16,6 +18,7 @@ const {
   escalationSearchQuery,
   hasMergedFixPr,
   countConsecutive,
+  hasRunEntry,
 } = require('../escalate-repeated-fixes.cjs');
 
 // --- fingerprint ---
@@ -187,10 +190,15 @@ test('escalationSearchQuery references the same fingerprint the title embeds', (
 // made the truthiness check always true and skipped every escalation.
 
 test('hasMergedFixPr returns false when no merged PR matches', () => {
+  let args;
   assert.equal(
-    hasMergedFixPr('o/r', 'abc123', () => '0'),
+    hasMergedFixPr('o/r', 'abc123', (received) => {
+      args = received;
+      return '0';
+    }),
     false,
   );
+  assert.deepEqual(args.slice(-4), ['--json', 'number', '--jq', 'length']);
 });
 
 test('hasMergedFixPr returns true when at least one merged PR matches', () => {
@@ -200,12 +208,13 @@ test('hasMergedFixPr returns true when at least one merged PR matches', () => {
   );
 });
 
-test('hasMergedFixPr returns false when gh throws', () => {
-  assert.equal(
-    hasMergedFixPr('o/r', 'abc123', () => {
-      throw new Error('gh not installed');
-    }),
-    false,
+test('hasMergedFixPr propagates gh failures so issue creation stops safely', () => {
+  assert.throws(
+    () =>
+      hasMergedFixPr('o/r', 'abc123', () => {
+        throw new Error('gh not installed');
+      }),
+    /gh not installed/,
   );
 });
 
@@ -218,7 +227,8 @@ test('hasMergedFixPr returns false when gh throws', () => {
 
 test('every LOG_SEARCH_MARKER term appears literally in LOG_TITLE', () => {
   const titleLower = LOG_TITLE.toLowerCase();
-  const markerTerms = LOG_SEARCH_MARKER.replace(/\bin:title\b/, '').trim()
+  const markerTerms = LOG_SEARCH_MARKER.replace(/\bin:title\b/, '')
+    .trim()
     .split(/\s+/)
     .filter(Boolean);
   for (const term of markerTerms) {
@@ -263,7 +273,11 @@ test('countConsecutive stops at the first gap', () => {
 });
 
 test('countConsecutive does not cross-count interleaved fingerprints', () => {
-  const entries = [fpEntry('abc', 'def'), fpEntry('abc'), fpEntry('def', 'abc')];
+  const entries = [
+    fpEntry('abc', 'def'),
+    fpEntry('abc'),
+    fpEntry('def', 'abc'),
+  ];
   assert.equal(countConsecutive(entries, 'abc'), 3);
   assert.equal(countConsecutive(entries, 'def'), 1);
 });
@@ -271,4 +285,26 @@ test('countConsecutive does not cross-count interleaved fingerprints', () => {
 test('countConsecutive tolerates a malformed entry', () => {
   const entries = [{ run_id: 'r' }, fpEntry('abc')];
   assert.equal(countConsecutive(entries, 'abc'), 1);
+});
+
+test('hasRunEntry prevents one workflow retry from counting as another audit', () => {
+  const entries = [{ run_id: '123' }, { run_id: '456' }];
+  assert.equal(hasRunEntry(entries, '456'), true);
+  assert.equal(hasRunEntry(entries, 456), true);
+  assert.equal(hasRunEntry(entries, '789'), false);
+});
+
+test('audit workflow runs APR-E10 with its structured output', () => {
+  const workflow = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'audit-auto-prs.yml'),
+    'utf8',
+  );
+  assert.match(
+    workflow,
+    /node \.github\/workflows\/scripts\/escalate-repeated-fixes\.cjs/,
+  );
+  assert.match(
+    workflow,
+    /STRUCTURED_OUTPUT: \$\{\{ needs\.audit-auto-prs\.outputs\.structured_output \}\}/,
+  );
 });

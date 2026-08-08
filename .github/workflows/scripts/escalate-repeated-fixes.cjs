@@ -119,44 +119,36 @@ function extractRecommendations(data) {
 }
 
 function findLogIssue(repo) {
-  try {
-    const out = runGh([
-      'issue',
-      'list',
-      '--repo',
-      repo,
-      '--state',
-      'open',
-      '--search',
-      LOG_SEARCH_MARKER,
-      '--json',
-      'number,body',
-      '--jq',
-      '.[0].number // empty',
-    ]);
-    const num = parseInt(out, 10);
-    return Number.isNaN(num) ? null : num;
-  } catch {
-    return null;
-  }
+  const out = runGh([
+    'issue',
+    'list',
+    '--repo',
+    repo,
+    '--state',
+    'open',
+    '--search',
+    LOG_SEARCH_MARKER,
+    '--json',
+    'number,body',
+    '--jq',
+    '.[0].number // empty',
+  ]);
+  const num = parseInt(out, 10);
+  return Number.isNaN(num) ? null : num;
 }
 
 function readLogBody(repo, issueNum) {
-  try {
-    return runGh([
-      'issue',
-      'view',
-      String(issueNum),
-      '--repo',
-      repo,
-      '--json',
-      'body',
-      '--jq',
-      '.body',
-    ]);
-  } catch {
-    return null;
-  }
+  return runGh([
+    'issue',
+    'view',
+    String(issueNum),
+    '--repo',
+    repo,
+    '--json',
+    'body',
+    '--jq',
+    '.body',
+  ]);
 }
 
 function parseLogBody(body) {
@@ -246,26 +238,22 @@ function escalationSearchQuery(fp) {
  * Check whether an open escalation issue already exists for a fingerprint.
  */
 function findEscalationIssue(repo, fp) {
-  try {
-    const out = runGh([
-      'issue',
-      'list',
-      '--repo',
-      repo,
-      '--state',
-      'open',
-      '--search',
-      escalationSearchQuery(fp),
-      '--json',
-      'number',
-      '--jq',
-      '.[0].number // empty',
-    ]);
-    const num = parseInt(out, 10);
-    return Number.isNaN(num) ? null : num;
-  } catch {
-    return null;
-  }
+  const out = runGh([
+    'issue',
+    'list',
+    '--repo',
+    repo,
+    '--state',
+    'open',
+    '--search',
+    escalationSearchQuery(fp),
+    '--json',
+    'number',
+    '--jq',
+    '.[0].number // empty',
+  ]);
+  const num = parseInt(out, 10);
+  return Number.isNaN(num) ? null : num;
 }
 
 /**
@@ -284,23 +272,21 @@ function findEscalationIssue(repo, fp) {
  */
 function hasMergedFixPr(repo, fp, runGhFn) {
   const runner = runGhFn || runGh;
-  try {
-    const out = runner([
-      'pr',
-      'list',
-      '--repo',
-      repo,
-      '--state',
-      'merged',
-      '--search',
-      `"APR-E10" ${fp}`,
-      '--jq',
-      'length',
-    ]);
-    return parseInt(out, 10) > 0;
-  } catch {
-    return false;
-  }
+  const out = runner([
+    'pr',
+    'list',
+    '--repo',
+    repo,
+    '--state',
+    'merged',
+    '--search',
+    `"APR-E10" ${fp}`,
+    '--json',
+    'number',
+    '--jq',
+    'length',
+  ]);
+  return parseInt(out, 10) > 0;
 }
 
 function createEscalationIssue(repo, fp, description, count, runUrl) {
@@ -383,6 +369,10 @@ function countConsecutive(entries, fp) {
   return streak;
 }
 
+function hasRunEntry(entries, runId) {
+  return entries.some((entry) => String(entry?.run_id) === String(runId));
+}
+
 async function main() {
   const repo = getArg('--repo');
   const runUrl = getArg('--run-url') || '';
@@ -422,6 +412,14 @@ async function main() {
   if (existingNum != null) {
     const body = readLogBody(repo, existingNum);
     entries = parseLogBody(body);
+  }
+
+  // A workflow retry keeps the same run id. Do not let re-executing one audit
+  // manufacture the two "consecutive runs" required for escalation.
+  if (hasRunEntry(entries, runId)) {
+    setOutput('escalated_count', '0');
+    process.stdout.write(`Audit run ${runId} is already logged — skipping.\n`);
+    return;
   }
 
   // Append new entry and trim
@@ -466,6 +464,15 @@ async function main() {
       continue;
     }
 
+    // Narrow the search/create race when two audit runs finish together.
+    const racedEscalation = findEscalationIssue(repo, fp);
+    if (racedEscalation != null) {
+      process.stdout.write(
+        `Fingerprint ${fp} was concurrently escalated as #${racedEscalation} — skipping.\n`,
+      );
+      continue;
+    }
+
     createEscalationIssue(repo, fp, fpTexts[fp], count, runUrl);
     process.stdout.write(
       `Escalated fingerprint ${fp} (appeared in ${count} consecutive runs).\n`,
@@ -490,6 +497,7 @@ module.exports = {
   escalationSearchQuery,
   hasMergedFixPr,
   countConsecutive,
+  hasRunEntry,
 };
 
 if (require.main === module) {

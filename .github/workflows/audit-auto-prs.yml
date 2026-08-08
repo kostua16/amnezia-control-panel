@@ -381,3 +381,15 @@ jobs:
             --repo "${{ github.repository }}" \
             --structured-output "$STRUCTURED_OUTPUT" \
             --run-url "$RUN_URL"
+
+      - name: Escalate repeated systemic fixes (APR-E10)
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STRUCTURED_OUTPUT: ${{ needs.audit-auto-prs.outputs.structured_output }}
+        run: |
+          node .github/workflows/scripts/escalate-repeated-fixes.cjs \
+            --repo "${{ github.repository }}" \
+            --structured-output "$STRUCTURED_OUTPUT" \
+            --run-url "$RUN_URL" \
+            --github-output "$GITHUB_OUTPUT"

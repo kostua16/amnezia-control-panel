@@ -193,6 +193,31 @@ jobs:
           }
           NODE
 
+      - name: Auto re-run classified transient failures (MON-E04)
+        id: transient_rerun
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          result_file="$RUNNER_TEMP/transient-rerun-results.json"
+          set +e
+          node .github/workflows/scripts/rerun-transient-failed-runs.cjs \
+            --repo "${{ github.repository }}" \
+            --since "${{ steps.window.outputs.monitor_since }}" \
+            --limit 10 \
+            --github-output "$GITHUB_OUTPUT" > "$result_file"
+          rerun_status=$?
+          set -e
+          cat "$result_file"
+          {
+            echo "### Transient failure recovery (MON-E04)"
+            echo
+            echo '```json'
+            cat "$result_file"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rerun_status"
+
       - name: Compute STOP_BY deadline
         id: deadline
         uses: ./.github/actions/compute-stop-by-deadline
@@ -227,11 +252,16 @@ jobs:
             RUNNER_CAPACITY_QUEUE_THRESHOLD_SECONDS: ${{ steps.window.outputs.runner_capacity_queue_threshold_seconds }}
             MAX_QUEUE_LATENCY_SECONDS: ${{ steps.window.outputs.max_queue_latency_seconds }}
             AVG_QUEUE_LATENCY_SECONDS: ${{ steps.window.outputs.avg_queue_latency_seconds }}
+            TRANSIENT_RERUN_SUMMARY: ${{ steps.transient_rerun.outputs.summary }}
             STOP_BY: ${{ steps.deadline.outputs.stop_by }}
 
             ## Task
 
             Monitor the current amnezia-control-panel project GitHub Actions runs that completed since MONITOR_SINCE, plus any still-relevant recent failed or slow runs since RECENT_PROBLEM_SINCE. Inspect exact GitHub run data and failed logs before drawing conclusions. Analyze failures, flaky behavior, bottlenecks, run duration regressions, queue/setup time, repeated warnings, and opportunities to improve CI speed or reliability.
+
+            ## Deterministic Transient Recovery (MON-E04)
+
+            TRANSIENT_RERUN_SUMMARY records failed runs already classified and re-run by the deterministic preflight step. Do not propose a code fix solely for a run listed in its `rerun` array. You may still report it as transient evidence or investigate a separate structural failure in the same workflow.
 
             ## Deadline (STOP_BY)
 
@@ -314,12 +344,14 @@ jobs:
         env:
           CHANGED_FILES: ${{ steps.claude_run.outputs.claude_changed_files_list }}
           CLAUDE_LAST_OUTPUT: ${{ steps.claude_run.outputs.claude_last_output }}
+          TRANSIENT_RERUN_SUMMARY: ${{ steps.transient_rerun.outputs.summary }}
           WINDOW_SUMMARY: ${{ steps.window.outputs.window_summary }}
         run: |
           {
             echo "## GitHub Runs Monitor"
             echo
             echo "- Window: ${WINDOW_SUMMARY:-unknown}"
+            echo "- Transient recovery: ${TRANSIENT_RERUN_SUMMARY:-not available}"
             echo "- Changed files: ${CHANGED_FILES:-none}"
             echo
             echo "### ZAI Output"

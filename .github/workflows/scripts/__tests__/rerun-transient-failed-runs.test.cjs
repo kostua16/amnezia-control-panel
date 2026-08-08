@@ -1,8 +1,15 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
-const { TRANSIENT_PATTERNS, isTransientLog, classifyRun } = require('../rerun-transient-failed-runs.cjs');
+const {
+  TRANSIENT_PATTERNS,
+  isTransientLog,
+  classifyRun,
+  rerunTransientFailedRuns,
+} = require('../rerun-transient-failed-runs.cjs');
 
 // ── TRANSIENT_PATTERNS ─────────────────────────────────────────────
 
@@ -23,15 +30,18 @@ test('TRANSIENT_PATTERNS covers HTTP 5xx', () => {
 test('TRANSIENT_PATTERNS covers rate-limit and throttle', () => {
   assert.ok(TRANSIENT_PATTERNS.some((re) => re.test('rate limit')));
   assert.ok(TRANSIENT_PATTERNS.some((re) => re.test('throttle')));
-  assert.ok(TRANSIENT_PATTERNS.some((re) => re.test('service temporarily overloaded')));
+  assert.ok(
+    TRANSIENT_PATTERNS.some((re) => re.test('service temporarily overloaded')),
+  );
 });
 
-test('TRANSIENT_PATTERNS covers runner eviction and OOM', () => {
-  assert.ok(TRANSIENT_PATTERNS.some((re) => re.test('Runner cancelled')));
-  assert.ok(TRANSIENT_PATTERNS.some((re) => re.test('shutdown signal')));
-  assert.ok(TRANSIENT_PATTERNS.some((re) => re.test('out of memory')));
-  assert.ok(TRANSIENT_PATTERNS.some((re) => re.test('OOM killed')));
-  assert.ok(TRANSIENT_PATTERNS.some((re) => re.test('ENOSPC')));
+test('TRANSIENT_PATTERNS leaves resource exhaustion to dedicated recovery', () => {
+  assert.ok(!isTransientLog('Runner cancelled'));
+  assert.ok(!isTransientLog('shutdown signal'));
+  assert.ok(!isTransientLog('out of memory'));
+  assert.ok(!isTransientLog('OOM killed'));
+  assert.ok(!isTransientLog('no space left on device'));
+  assert.ok(!isTransientLog('ENOSPC'));
 });
 
 // ── isTransientLog ───────────────────────────────────────────────
@@ -52,12 +62,6 @@ test('isTransientLog returns true for rate-limit in logs', () => {
   assert.ok(isTransientLog('secondary rate limit'));
 });
 
-test('isTransientLog returns true for OOM and disk pressure', () => {
-  assert.ok(isTransientLog('FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed - JavaScript heap out of memory'));
-  assert.ok(isTransientLog('no space left on device'));
-  assert.ok(isTransientLog('ENOSPC'));
-});
-
 test('isTransientLog returns false for permanent errors', () => {
   assert.ok(!isTransientLog('error TS2304: Cannot find name'));
   assert.ok(!isTransientLog('HTTP 404: Not Found'));
@@ -69,18 +73,105 @@ test('isTransientLog returns false for permanent errors', () => {
 // ── classifyRun ───────────────────────────────────────────────────
 
 test('classifyRun returns transient for ECONNRESET', () => {
-  // classifyRun calls gh to fetch logs — we can't mock that easily,
-  // so we test isTransientLog directly which is the core classification logic.
-  // classifyRun delegates to isTransientLog on the fetched log text.
-  const logText = '##[error] Error: read ECONNRESET';
-  const result = { transient: isTransientLog(logText), reason: isTransientLog(logText) ? 'transient-signature' : 'non-transient' };
+  const result = classifyRun(123, 'owner/repo', (args) => {
+    assert.deepEqual(args, [
+      'run',
+      'view',
+      '123',
+      '--log-failed',
+      '--repo',
+      'owner/repo',
+    ]);
+    return { ok: true, stdout: '##[error] Error: read ECONNRESET' };
+  });
   assert.equal(result.transient, true);
   assert.equal(result.reason, 'transient-signature');
 });
 
 test('classifyRun returns non-transient for TypeScript errors', () => {
-  const logText = '##[error] src/app.ts(42,5): error TS2304: Cannot find name';
-  const result = { transient: isTransientLog(logText), reason: isTransientLog(logText) ? 'transient-signature' : 'non-transient' };
+  const result = classifyRun(456, '', () => ({
+    ok: true,
+    stdout: '##[error] src/app.ts(42,5): error TS2304: Cannot find name',
+  }));
   assert.equal(result.transient, false);
   assert.equal(result.reason, 'non-transient');
+});
+
+test('rerun scan uses the supported attempt field and accepts empty rerun stdout', () => {
+  const calls = [];
+  const result = rerunTransientFailedRuns(
+    {
+      repo: 'owner/repo',
+      since: '2026-08-08T00:00:00Z',
+    },
+    (args) => {
+      calls.push(args);
+      if (args[1] === 'list') {
+        return {
+          ok: true,
+          stdout: JSON.stringify([
+            {
+              databaseId: 789,
+              workflowName: 'CI',
+              attempt: 1,
+            },
+          ]),
+        };
+      }
+      if (args.includes('--log-failed')) {
+        return { ok: true, stdout: 'npm ERR! HTTP 503' };
+      }
+      return { ok: true, stdout: '' };
+    },
+  );
+
+  assert.equal(result.rerun.length, 1);
+  const listCall = calls.find((args) => args[1] === 'list');
+  assert.ok(listCall.includes('--repo'));
+  assert.equal(listCall[listCall.indexOf('--status') + 1], 'failure');
+  assert.match(listCall[listCall.indexOf('--json') + 1], /\battempt\b/);
+  assert.doesNotMatch(listCall[listCall.indexOf('--json') + 1], /runAttempt/);
+  assert.deepEqual(calls.at(-1), [
+    'run',
+    'rerun',
+    '789',
+    '--failed',
+    '--repo',
+    'owner/repo',
+  ]);
+});
+
+test('rerun scan reports a failed gh run list instead of silently returning empty', () => {
+  const result = rerunTransientFailedRuns(
+    { since: '2026-08-08T00:00:00Z' },
+    () => ({ ok: false, stdout: '', error: 'unsupported field' }),
+  );
+  assert.equal(result.error, 'run-list-failed');
+});
+
+test('monitor workflow runs transient recovery before the ZAI diagnosis step', () => {
+  const workflow = fs.readFileSync(
+    path.join(
+      __dirname,
+      '..',
+      '..',
+      'monitor-amnezia-control-panel-github-runs.yml',
+    ),
+    'utf8',
+  );
+  const rerunIndex = workflow.indexOf('rerun-transient-failed-runs.cjs');
+  const agentIndex = workflow.indexOf(
+    'name: Monitor runs and apply narrow fixes',
+  );
+
+  assert.ok(rerunIndex >= 0, 'monitor workflow must invoke the MON-E04 script');
+  assert.ok(
+    rerunIndex < agentIndex,
+    'transient recovery must run before AI diagnosis',
+  );
+  assert.match(
+    workflow,
+    /--since "\$\{\{ steps\.window\.outputs\.monitor_since \}\}"/,
+  );
+  assert.match(workflow, /TRANSIENT_RERUN_SUMMARY/);
 });
