@@ -305,6 +305,58 @@ test('a medium manual park is held silently — no re-triage, no nudge', async (
   assert.equal(buckets.triage_dead_letter.length, 0);
 });
 
+test('a stale issue that is also duplicate is closed promptly, not deferred to stale.yml', async () => {
+  // Boundary contract (MNT-I08): stale.yml owns inactivity close, but a
+  // duplicate/canceled decision is orthogonal to inactivity — catch-up must
+  // still close it this sweep instead of waiting up to ~30 extra days for
+  // stale.yml's days-before-close timer.
+  const dupe = makeIssue({
+    number: 901,
+    title: 'stale issue that is also a duplicate',
+    labels: ['stale', 'duplicate'],
+    createdAt: daysAgo(70),
+  });
+  const canceled = makeIssue({
+    number: 902,
+    title: 'stale issue that is also canceled',
+    labels: ['stale', 'canceled'],
+    createdAt: daysAgo(70),
+  });
+  const buckets = await runCollect({
+    issues: [dupe, canceled],
+    commentsByIssue: { 901: [], 902: [] },
+  });
+  assert.equal(buckets.should_close_dupe.length, 1);
+  assert.equal(buckets.should_close_dupe[0].number, 901);
+  assert.equal(buckets.should_close_canceled.length, 1);
+  assert.equal(buckets.should_close_canceled[0].number, 902);
+});
+
+test('a stale issue with no close label is left to stale.yml, not re-engaged', async () => {
+  // The flip side of the boundary: an untriaged stale issue that catch-up
+  // would otherwise push into needs_retriage must be skipped so stale.yml's
+  // inactivity lifecycle stays the sole handler.
+  const issue = makeIssue({
+    number: 903,
+    title: 'plain stale issue, no duplicate or canceled label',
+    labels: ['stale'],
+    createdAt: daysAgo(70),
+  });
+  const buckets = await runCollect({
+    issues: [issue],
+    commentsByIssue: { 903: [] },
+  });
+  assert.equal(
+    buckets.needs_retriage.length,
+    0,
+    'stale issues must not be re-triaged by catch-up',
+  );
+  assert.equal(buckets.triaged_no_fix.length, 0);
+  assert.equal(buckets.dead_letter_retry.length, 0);
+  assert.equal(buckets.should_close_dupe.length, 0);
+  assert.equal(buckets.should_close_canceled.length, 0);
+});
+
 test('inert-attempt waiver never bypasses the one-shot retry marker', async () => {
   // A dead letter that already consumed its fresh-context retry must stay
   // parked even when its pre-retry attempts were all inert.

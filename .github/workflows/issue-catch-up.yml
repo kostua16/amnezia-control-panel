@@ -69,10 +69,13 @@ jobs:
         with:
           script: |
             // Labels that remove an issue from catch-up processing entirely.
-            // 'stale' is owned by stale.yml (60d-inactive lifecycle); including
-            // it here prevents catch-up from closing or commenting on an issue
-            // that stale.yml is already managing — see MNT-I08 boundary contract.
-            const EXEMPT_LABELS = ['keep-open', 'backlog', 'in-progress', 'fixed', 'stale'];
+            // 'stale' is intentionally NOT exempt here: stale.yml owns the
+            // inactivity close, but a stale issue that is also duplicate or
+            // canceled must still be closed promptly by the close buckets
+            // below. Stale issues are skipped from inactivity re-engagement
+            // only (see the hasStale guard after the close buckets).
+            // See MNT-I08 boundary contract.
+            const EXEMPT_LABELS = ['keep-open', 'backlog', 'in-progress', 'fixed'];
             const MAX_ACTIONS = 30;
 
             // Umbrella/tracking issues (todo-backlog umbrellas, claude-health
@@ -197,6 +200,7 @@ jobs:
               const hasTriaged = labels.includes('triaged');
               const hasDuplicate = labels.includes('duplicate');
               const hasCanceled = labels.includes('canceled');
+              const hasStale = labels.includes('stale');
               const hasCritical = labels.includes('critical');
               const hasHigh = labels.includes('high');
               const hasNeedsReview = labels.includes('needs-review');
@@ -214,6 +218,14 @@ jobs:
                 buckets.should_close_canceled.push({ number: num, title: issue.title });
                 continue;
               }
+
+              // stale.yml owns the 60d-inactivity close lifecycle. A stale
+              // issue that is neither duplicate nor canceled is left to that
+              // timer — catch-up must not re-engage (re-triage, /fix,
+              // reminders) an issue the stale workflow is already managing.
+              // Stale duplicates/cancellations are still closed promptly via
+              // the buckets above. See MNT-I08 boundary contract.
+              if (hasStale) continue;
 
               // Bucket: orphaned_fixed — has 'fixed' label but still open >7d
               if (labels.includes('fixed') && createdAt < sevenDaysAgo) {
