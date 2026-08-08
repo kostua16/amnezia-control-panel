@@ -29,6 +29,7 @@ Entry command: `/gsd:debug` — mirrors the first line of `monitor-amnezia-contr
 - [ ] `rtk gh run list` (window) + again for failed/slow candidates.
 - [ ] Per actionable failed run: `rtk gh run view <id> --json … --verbose` + `rtk proxy gh run view <id> --log-failed`.
 - [ ] Per slow run: `rtk gh run view <id> --json jobs,url,name,conclusion,…`.
+- [ ] Read valid `TRANSIENT_RERUN_SUMMARY` entries by `rerunRequested[].runId`; keep each run in the survey and classify its current rerun outcome before deciding whether it is a code-fix candidate.
 - [ ] Never infer root cause from run names/conclusions alone.
 - [ ] Narrow + shared + evidence-backed fix only; ambiguous → no changes + report.
 - [ ] Verify per file type (lint/prettier/actionlint/shellcheck).
@@ -44,9 +45,13 @@ Entry command: `/gsd:debug` — mirrors the first line of `monitor-amnezia-contr
 
 ## Investigation Methodology
 1. Survey runs (rollup).
-2. Gather exact evidence per actionable run.
-3. Diagnose (dominant mode + evidence).
-4. Narrow fix only if unambiguous; else no changes + report.
+2. MON-E04 is the deterministic transient-recovery preflight step that inspects first-attempt failed-run logs before the agent starts and requests one failed-job rerun only for a transient signature without a permanent failure signature.
+3. Parse TRANSIENT_RERUN_SUMMARY, the preflight's recovery ledger, only when it is valid JSON with `schemaVersion: 1` and no `error`; match recovery records by `rerunRequested[].runId`.
+4. Keep every run with a preflight-requested rerun in the survey and inspect its current attempt, status, conclusion, jobs, and failed logs.
+5. Classify queued/in_progress reruns as `recovery-pending` and completed/success reruns as `recovered-transient`; neither state is a code-fix candidate for the original transient failure.
+6. For completed/failure reruns, compare original and rerun evidence. Deterministic compiler, lint, test, or configuration evidence is a `structural code-fix candidate`; the same transient-only signature is a `repeated-transient reliability incident`, not a code-fix candidate.
+7. If TRANSIENT_RERUN_SUMMARY is absent, invalid, or reports an error, apply normal evidence-first diagnosis and suppress nothing.
+8. Narrow fix only if unambiguous; else no changes + report.
 
 ## Tools and Techniques
 - `rtk gh run list/view`, `rtk proxy gh run view --log-failed/--log`, `analyze-claude-runs.sh`, `scan-claude-logs.cjs`.

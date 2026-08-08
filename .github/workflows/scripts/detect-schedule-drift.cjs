@@ -4,7 +4,7 @@
  * Schedule-drift detector — MNT-E02
  *
  * Compares each scheduled workflow's cron schedule against actual
- * `run_started_at` timestamps from recent runs.  Workflows whose
+ * `startedAt` timestamps from recent runs. Workflows whose
  * median drift exceeds DRIFT_THRESHOLD_HOURS are reported as
  * chronic-drift signals (runner-capacity pressure).
  *
@@ -94,13 +94,24 @@ function expandField(field, min, max) {
     const stepMatch = token.match(/^\*\/(\d+)$/);
     if (stepMatch) {
       const step = parseInt(stepMatch[1], 10);
+      if (step <= 0) continue;
       for (let v = min; v <= max; v += step) values.add(v);
+      continue;
+    }
+    const rangeStepMatch = token.match(/^(\d+)-(\d+)\/(\d+)$/);
+    if (rangeStepMatch) {
+      const lo = parseInt(rangeStepMatch[1], 10);
+      const hi = parseInt(rangeStepMatch[2], 10);
+      const step = parseInt(rangeStepMatch[3], 10);
+      if (lo < min || hi > max || lo > hi || step <= 0) continue;
+      for (let v = lo; v <= hi; v += step) values.add(v);
       continue;
     }
     const rangeMatch = token.match(/^(\d+)-(\d+)$/);
     if (rangeMatch) {
       const lo = parseInt(rangeMatch[1], 10);
       const hi = parseInt(rangeMatch[2], 10);
+      if (lo < min || hi > max || lo > hi) continue;
       for (let v = lo; v <= hi; v++) values.add(v);
       continue;
     }
@@ -108,6 +119,7 @@ function expandField(field, min, max) {
       for (let v = min; v <= max; v++) values.add(v);
       continue;
     }
+    if (!/^\d+$/.test(token)) continue;
     const num = parseInt(token, 10);
     if (!Number.isNaN(num) && num >= min && num <= max) values.add(num);
   }
@@ -140,9 +152,7 @@ function parseWorkflowCrons(workflowsDir) {
   try {
     yaml = require('js-yaml');
   } catch {
-    console.error(
-      'js-yaml is required. Install with: npm install js-yaml',
-    );
+    console.error('js-yaml is required. Install with: npm install js-yaml');
     process.exit(1);
   }
 
@@ -186,8 +196,8 @@ function parseWorkflowCrons(workflowsDir) {
 
 // ── Fetch recent runs for a workflow ─────────────────────────
 
-function fetchRecentRuns(repo, workflowFile, since) {
-  const data = ghJson(
+function fetchRecentRuns(repo, workflowFile, since, ghJsonFn = ghJson) {
+  const data = ghJsonFn(
     'run',
     'list',
     '--workflow',
@@ -199,13 +209,13 @@ function fetchRecentRuns(repo, workflowFile, since) {
     '--event',
     'schedule',
     '--json',
-    'run_started_at,created_at,status,conclusion,run_number,databaseId',
+    'startedAt,createdAt,status,conclusion,number,databaseId',
   );
   if (!Array.isArray(data)) return [];
 
   const cutoff = parseSince(since);
   return data.filter((run) => {
-    const started = new Date(run.run_started_at || run.created_at);
+    const started = new Date(run.startedAt || run.createdAt);
     return started >= cutoff;
   });
 }
@@ -239,9 +249,7 @@ function analyzeDrift(repo, workflowsDir, since, thresholdHours) {
 
     const drifts = [];
     for (const run of runs) {
-      const startedAt = new Date(
-        run.run_started_at || run.created_at,
-      );
+      const startedAt = new Date(run.startedAt || run.createdAt);
       if (Number.isNaN(startedAt.getTime())) continue;
 
       // Minute-of-day in UTC
@@ -252,7 +260,7 @@ function analyzeDrift(repo, workflowsDir, since, thresholdHours) {
       const driftMin = minDriftMinutes(uniqueSlots, actualMod);
       if (driftMin !== null) {
         drifts.push({
-          runNumber: run.run_number,
+          runNumber: run.number,
           startedAt: startedAt.toISOString(),
           driftMinutes: driftMin,
         });
@@ -262,9 +270,7 @@ function analyzeDrift(repo, workflowsDir, since, thresholdHours) {
     if (drifts.length === 0) continue;
 
     // Median drift
-    const sorted = drifts
-      .map((d) => d.driftMinutes)
-      .sort((a, b) => a - b);
+    const sorted = drifts.map((d) => d.driftMinutes).sort((a, b) => a - b);
     const median =
       sorted.length % 2 === 0
         ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
@@ -305,7 +311,9 @@ function formatText(findings, thresholdHours) {
   const ok = findings.filter((f) => !f.chronic);
 
   if (chronic.length > 0) {
-    lines.push(`### ⚠️ Chronic drift (${chronic.length} workflow${chronic.length > 1 ? 's' : ''})`);
+    lines.push(
+      `### ⚠️ Chronic drift (${chronic.length} workflow${chronic.length > 1 ? 's' : ''})`,
+    );
     lines.push('');
     for (const f of chronic) {
       const h = Math.floor(f.medianDriftMinutes / 60);
@@ -319,13 +327,15 @@ function formatText(findings, thresholdHours) {
     lines.push('');
     lines.push(
       '> Chronic drift signals runner-capacity pressure. ' +
-      'Consider rescheduling affected workflows to idle slots or scaling runner pool.',
+        'Consider rescheduling affected workflows to idle slots or scaling runner pool.',
     );
     lines.push('');
   }
 
   if (ok.length > 0) {
-    lines.push(`### ✅ Within tolerance (${ok.length} workflow${ok.length > 1 ? 's' : ''})`);
+    lines.push(
+      `### ✅ Within tolerance (${ok.length} workflow${ok.length > 1 ? 's' : ''})`,
+    );
     lines.push('');
     for (const f of ok) {
       const m = f.medianDriftMinutes;
@@ -381,6 +391,7 @@ module.exports = {
   analyzeDrift,
   cronToMinuteSlots,
   expandField,
+  fetchRecentRuns,
   minDriftMinutes,
   parseWorkflowCrons,
   parseSince,

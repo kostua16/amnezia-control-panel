@@ -1,10 +1,13 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
   cronToMinuteSlots,
   expandField,
+  fetchRecentRuns,
   minDriftMinutes,
   parseSince,
 } = require('../detect-schedule-drift.cjs');
@@ -13,7 +16,10 @@ const {
 
 test('expandField handles wildcard', () => {
   const result = expandField('*', 0, 59);
-  assert.deepEqual(result, Array.from({ length: 60 }, (_, i) => i));
+  assert.deepEqual(
+    result,
+    Array.from({ length: 60 }, (_, i) => i),
+  );
 });
 
 test('expandField handles single value', () => {
@@ -34,6 +40,15 @@ test('expandField handles step', () => {
 
 test('expandField handles step with non-zero base', () => {
   assert.deepEqual(expandField('*/6', 0, 23), [0, 6, 12, 18]);
+});
+
+test('expandField handles a stepped range', () => {
+  assert.deepEqual(expandField('3-20/5', 0, 23), [3, 8, 13, 18]);
+});
+
+test('expandField rejects zero steps and malformed numeric prefixes', () => {
+  assert.deepEqual(expandField('8-17/0', 0, 23), []);
+  assert.deepEqual(expandField('8oops', 0, 23), []);
 });
 
 test('expandField ignores out-of-range values', () => {
@@ -57,8 +72,8 @@ test('cronToMinuteSlots: twice daily', () => {
 test('cronToMinuteSlots: every hour at :07', () => {
   const slots = cronToMinuteSlots('7 * * * *');
   assert.equal(slots.length, 24);
-  assert.equal(slots[0], 7);    // 00:07
-  assert.equal(slots[1], 67);   // 01:07
+  assert.equal(slots[0], 7); // 00:07
+  assert.equal(slots[1], 67); // 01:07
   assert.equal(slots[23], 1387); // 23:07
 });
 
@@ -175,19 +190,83 @@ test('security-audit-weekly cron detects 5h drift', () => {
   assert.deepEqual(slots, [377]);
 
   // Evidence from TODOs-2.md: actual starts were 11:01, 11:23, 12:25
-  const drift11_01 = minDriftMinutes(slots, 11 * 60 + 1);   // 661
-  const drift11_23 = minDriftMinutes(slots, 11 * 60 + 23);  // 683
-  const drift12_25 = minDriftMinutes(slots, 12 * 60 + 25);  // 745
+  const drift11_01 = minDriftMinutes(slots, 11 * 60 + 1); // 661
+  const drift11_23 = minDriftMinutes(slots, 11 * 60 + 23); // 683
+  const drift12_25 = minDriftMinutes(slots, 12 * 60 + 25); // 745
 
   // All should be > 4.5 hours (270 min)
-  assert.ok(drift11_01 > 270, `11:01 drift ${drift11_01}min should exceed 270min`);
-  assert.ok(drift11_23 > 270, `11:23 drift ${drift11_23}min should exceed 270min`);
-  assert.ok(drift12_25 > 270, `12:25 drift ${drift12_25}min should exceed 270min`);
+  assert.ok(
+    drift11_01 > 270,
+    `11:01 drift ${drift11_01}min should exceed 270min`,
+  );
+  assert.ok(
+    drift11_23 > 270,
+    `11:23 drift ${drift11_23}min should exceed 270min`,
+  );
+  assert.ok(
+    drift12_25 > 270,
+    `12:25 drift ${drift12_25}min should exceed 270min`,
+  );
 
   // Median of those three: (683+745)/2 = 714 min ≈ 11.9h
   const sorted = [drift11_01, drift11_23, drift12_25].sort((a, b) => a - b);
-  const median = sorted.length % 2 === 0
-    ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-    : sorted[Math.floor(sorted.length / 2)];
-  assert.ok(median / 60 >= 2, `median drift ${median / 60}h should be >= 2h threshold`);
+  const median =
+    sorted.length % 2 === 0
+      ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+      : sorted[Math.floor(sorted.length / 2)];
+  assert.ok(
+    median / 60 >= 2,
+    `median drift ${median / 60}h should be >= 2h threshold`,
+  );
+});
+
+test('maintenance workflow runs the schedule-drift detector', () => {
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  const workflow = fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/maintenance.yml'),
+    'utf8',
+  );
+
+  assert.match(
+    workflow,
+    /node \.github\/workflows\/scripts\/detect-schedule-drift\.cjs\s+\\\n\s+--repo/,
+    'maintenance.yml must invoke detect-schedule-drift.cjs with repository context',
+  );
+  assert.match(
+    workflow,
+    />> "\$GITHUB_STEP_SUMMARY"/,
+    'schedule drift output must be surfaced in the maintenance step summary',
+  );
+  assert.match(
+    workflow,
+    /name: Detect schedule drift\n\s+continue-on-error: true/,
+    'schedule drift observability must remain off the maintenance critical path',
+  );
+});
+
+test('fetchRecentRuns requests fields supported by gh run list', () => {
+  let args;
+  const runs = fetchRecentRuns(
+    'owner/repo',
+    'maintenance.yml',
+    '7d',
+    (...received) => {
+      args = received;
+      return [
+        {
+          databaseId: 123,
+          number: 5,
+          startedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    },
+  );
+
+  assert.equal(runs.length, 1);
+  const fields = args[args.indexOf('--json') + 1];
+  assert.match(fields, /startedAt/);
+  assert.match(fields, /createdAt/);
+  assert.match(fields, /number/);
+  assert.doesNotMatch(fields, /run_started_at|created_at|run_number/);
 });
