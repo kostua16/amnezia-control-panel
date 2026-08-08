@@ -23,9 +23,16 @@ function gh(args) {
  * @returns {string} Markdown issue body
  */
 function buildAlertBody(telemetry, runUrl) {
+  if (!telemetry || !telemetry.percentiles) {
+    throw new Error(
+      'buildAlertBody requires telemetry with computed percentiles',
+    );
+  }
   const p = telemetry.percentiles;
-  const thresholdLine = 'p95 > ' + telemetry.threshold + 's (actual: **' + p.p95 + 's**)';
-  const sampleLine = 'Sample count: ' + telemetry.sampleCount + ' jobs in the window';
+  const thresholdLine =
+    'p95 > ' + telemetry.threshold + 's (actual: **' + p.p95 + 's**)';
+  const sampleLine =
+    'Sample count: ' + telemetry.sampleCount + ' jobs in the window';
 
   const lines = [
     '## Queue Starvation Alert',
@@ -75,9 +82,18 @@ function fileQueueStarvationAlert({ repo, telemetry, runUrl, dryRun }) {
   try {
     const existing = JSON.parse(
       gh([
-        'issue', 'list', '--repo', repo, '--state', 'open',
-        '--search', 'in:title "Queue starvation"',
-        '--json', 'number,url', '--limit', '1',
+        'issue',
+        'list',
+        '--repo',
+        repo,
+        '--state',
+        'open',
+        '--search',
+        'in:title "Queue starvation"',
+        '--json',
+        'number,url',
+        '--limit',
+        '1',
       ]).trim(),
     );
 
@@ -85,7 +101,11 @@ function fileQueueStarvationAlert({ repo, telemetry, runUrl, dryRun }) {
       if (!dryRun) {
         const ts = new Date().toISOString();
         gh([
-          'issue', 'comment', String(existing[0].number), '--repo', repo,
+          'issue',
+          'comment',
+          String(existing[0].number),
+          '--repo',
+          repo,
           '--body',
           '## Recurrence at ' + ts + '\n\n' + body,
         ]);
@@ -102,10 +122,16 @@ function fileQueueStarvationAlert({ repo, telemetry, runUrl, dryRun }) {
 
   try {
     const output = gh([
-      'issue', 'create', '--repo', repo,
-      '--title', title,
-      '--body', body,
-      '--label', 'auto-fix,needs-review',
+      'issue',
+      'create',
+      '--repo',
+      repo,
+      '--title',
+      title,
+      '--body',
+      body,
+      '--label',
+      'auto-fix,needs-review',
     ]);
     const match = output.match(/\/issues\/(\d+)/);
     return {
@@ -129,7 +155,9 @@ if (require.main === module) {
   const dryRun = process.argv.includes('--dry-run');
 
   if (!telemetryArg) {
-    console.error('Usage: file-queue-starvation-alert.cjs --repo <repo> --telemetry <json> --run-url <url>');
+    console.error(
+      'Usage: file-queue-starvation-alert.cjs --repo <repo> --telemetry <json> --run-url <url>',
+    );
     process.exit(1);
   }
 
@@ -144,7 +172,9 @@ if (require.main === module) {
   // Starvation alerts require computed percentiles; empty/no-data telemetry
   // would otherwise throw a deep TypeError inside buildAlertBody.
   if (!telemetry || !telemetry.percentiles) {
-    console.error('Telemetry has no percentile data (no queue samples); nothing to alert.');
+    console.error(
+      'Telemetry has no percentile data (no queue samples); nothing to alert.',
+    );
     process.exit(1);
   }
 
