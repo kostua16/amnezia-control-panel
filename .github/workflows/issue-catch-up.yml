@@ -68,7 +68,11 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const EXEMPT_LABELS = ['keep-open', 'backlog', 'in-progress', 'fixed'];
+            // Labels that remove an issue from catch-up processing entirely.
+            // 'stale' is owned by stale.yml (60d-inactive lifecycle); including
+            // it here prevents catch-up from closing or commenting on an issue
+            // that stale.yml is already managing — see MNT-I08 boundary contract.
+            const EXEMPT_LABELS = ['keep-open', 'backlog', 'in-progress', 'fixed', 'stale'];
             const MAX_ACTIONS = 30;
 
             // Umbrella/tracking issues (todo-backlog umbrellas, claude-health
