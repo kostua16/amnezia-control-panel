@@ -52,6 +52,45 @@ jobs:
           policy-file: .github/workflows/policy.json
           names: maintenance,security,ci-failure,observability
 
+      - id: schedule_drift
+        name: Detect schedule drift
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        shell: bash
+        run: |
+          drift_json="${RUNNER_TEMP}/schedule-drift.json"
+          drift_summary="${RUNNER_TEMP}/schedule-drift-summary.md"
+          node .github/workflows/scripts/detect-schedule-drift.cjs \
+            --repo "${{ github.repository }}" \
+            --since 7d \
+            --threshold-hours 2 \
+            --json > "$drift_json"
+
+          node - "$drift_json" "$drift_summary" <<'NODE'
+          const fs = require('fs');
+          const findings = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const summaryPath = process.argv[3];
+          const chronic = findings.filter((finding) => finding.chronic);
+          const summary = [];
+
+          summary.push('## Schedule-drift report', '');
+          if (findings.length === 0) {
+            summary.push('No scheduled workflows had schedule-triggered runs in the look-back window.');
+          } else if (chronic.length === 0) {
+            summary.push(`All ${findings.length} scheduled workflow(s) are within the 2h median drift threshold.`);
+          } else {
+            summary.push(`Chronic drift detected in ${chronic.length} scheduled workflow(s):`, '');
+            for (const finding of chronic) {
+              const medianHours = (finding.medianDriftMinutes / 60).toFixed(1);
+              const maxHours = (finding.maxDriftMinutes / 60).toFixed(1);
+              summary.push(`- ${finding.workflow} (${finding.file}): median ${medianHours}h, max ${maxHours}h across ${finding.runsAnalyzed} run(s)`);
+              console.log(`::warning title=Schedule drift detected::${finding.workflow} median drift is ${medianHours}h over ${finding.runsAnalyzed} scheduled run(s).`);
+            }
+          }
+          fs.writeFileSync(summaryPath, `${summary.join('\n')}\n`);
+          NODE
+          cat "$drift_summary" >> "$GITHUB_STEP_SUMMARY"
+
       - id: branch
         name: Prepare maintenance branch
         uses: ./.github/actions/prepare-automation-branch

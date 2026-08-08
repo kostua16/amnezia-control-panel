@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
   cronToMinuteSlots,
@@ -13,7 +15,10 @@ const {
 
 test('expandField handles wildcard', () => {
   const result = expandField('*', 0, 59);
-  assert.deepEqual(result, Array.from({ length: 60 }, (_, i) => i));
+  assert.deepEqual(
+    result,
+    Array.from({ length: 60 }, (_, i) => i),
+  );
 });
 
 test('expandField handles single value', () => {
@@ -57,8 +62,8 @@ test('cronToMinuteSlots: twice daily', () => {
 test('cronToMinuteSlots: every hour at :07', () => {
   const slots = cronToMinuteSlots('7 * * * *');
   assert.equal(slots.length, 24);
-  assert.equal(slots[0], 7);    // 00:07
-  assert.equal(slots[1], 67);   // 01:07
+  assert.equal(slots[0], 7); // 00:07
+  assert.equal(slots[1], 67); // 01:07
   assert.equal(slots[23], 1387); // 23:07
 });
 
@@ -175,19 +180,51 @@ test('security-audit-weekly cron detects 5h drift', () => {
   assert.deepEqual(slots, [377]);
 
   // Evidence from TODOs-2.md: actual starts were 11:01, 11:23, 12:25
-  const drift11_01 = minDriftMinutes(slots, 11 * 60 + 1);   // 661
-  const drift11_23 = minDriftMinutes(slots, 11 * 60 + 23);  // 683
-  const drift12_25 = minDriftMinutes(slots, 12 * 60 + 25);  // 745
+  const drift11_01 = minDriftMinutes(slots, 11 * 60 + 1); // 661
+  const drift11_23 = minDriftMinutes(slots, 11 * 60 + 23); // 683
+  const drift12_25 = minDriftMinutes(slots, 12 * 60 + 25); // 745
 
   // All should be > 4.5 hours (270 min)
-  assert.ok(drift11_01 > 270, `11:01 drift ${drift11_01}min should exceed 270min`);
-  assert.ok(drift11_23 > 270, `11:23 drift ${drift11_23}min should exceed 270min`);
-  assert.ok(drift12_25 > 270, `12:25 drift ${drift12_25}min should exceed 270min`);
+  assert.ok(
+    drift11_01 > 270,
+    `11:01 drift ${drift11_01}min should exceed 270min`,
+  );
+  assert.ok(
+    drift11_23 > 270,
+    `11:23 drift ${drift11_23}min should exceed 270min`,
+  );
+  assert.ok(
+    drift12_25 > 270,
+    `12:25 drift ${drift12_25}min should exceed 270min`,
+  );
 
   // Median of those three: (683+745)/2 = 714 min ≈ 11.9h
   const sorted = [drift11_01, drift11_23, drift12_25].sort((a, b) => a - b);
-  const median = sorted.length % 2 === 0
-    ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-    : sorted[Math.floor(sorted.length / 2)];
-  assert.ok(median / 60 >= 2, `median drift ${median / 60}h should be >= 2h threshold`);
+  const median =
+    sorted.length % 2 === 0
+      ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+      : sorted[Math.floor(sorted.length / 2)];
+  assert.ok(
+    median / 60 >= 2,
+    `median drift ${median / 60}h should be >= 2h threshold`,
+  );
+});
+
+test('maintenance workflow runs the schedule-drift detector', () => {
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  const workflow = fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/maintenance.yml'),
+    'utf8',
+  );
+
+  assert.match(
+    workflow,
+    /node \.github\/workflows\/scripts\/detect-schedule-drift\.cjs\s+\\\n\s+--repo/,
+    'maintenance.yml must invoke detect-schedule-drift.cjs with repository context',
+  );
+  assert.match(
+    workflow,
+    />> "\$GITHUB_STEP_SUMMARY"/,
+    'schedule drift output must be surfaced in the maintenance step summary',
+  );
 });
