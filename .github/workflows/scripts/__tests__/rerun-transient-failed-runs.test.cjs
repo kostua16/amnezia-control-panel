@@ -8,6 +8,7 @@ const {
   TRANSIENT_PATTERNS,
   isTransientLog,
   classifyRun,
+  buildRecoveryLedger,
   rerunTransientFailedRuns,
 } = require('../rerun-transient-failed-runs.cjs');
 
@@ -170,6 +171,25 @@ test('rerun scan reports a failed gh run list instead of silently returning empt
   assert.equal(result.error, 'run-list-failed');
 });
 
+test('buildRecoveryLedger distinguishes accepted rerun requests from outcomes', () => {
+  const ledger = buildRecoveryLedger({
+    scanned: 2,
+    rerun: [{ runId: 789, workflowName: 'CI', reason: 'transient-signature' }],
+    skipped: [{ runId: 456, workflowName: 'Lint', reason: 'non-transient' }],
+  });
+
+  assert.deepEqual(ledger, {
+    schemaVersion: 1,
+    scanned: 2,
+    rerunRequested: [
+      { runId: 789, workflowName: 'CI', reason: 'transient-signature' },
+    ],
+    skipped: [{ runId: 456, workflowName: 'Lint', reason: 'non-transient' }],
+    error: null,
+  });
+  assert.equal('rerun' in ledger, false);
+});
+
 test('monitor workflow runs transient recovery before the ZAI diagnosis step', () => {
   const workflow = fs.readFileSync(
     path.join(
@@ -195,4 +215,31 @@ test('monitor workflow runs transient recovery before the ZAI diagnosis step', (
     /--since "\$\{\{ steps\.window\.outputs\.monitor_since \}\}"/,
   );
   assert.match(workflow, /TRANSIENT_RERUN_SUMMARY/);
+  assert.match(workflow, /rerunRequested\[\]\.runId/);
+  assert.match(workflow, /recovery-pending/);
+  assert.match(workflow, /recovered-transient/);
+  assert.match(workflow, /structural code-fix candidate/);
+  assert.match(workflow, /repeated-transient reliability incident/);
+  assert.match(workflow, /absent, invalid, or reports an error/);
+});
+
+test('static monitor agent mirrors the runtime MON-E04 recovery contract', () => {
+  const agent = fs.readFileSync(
+    path.join(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      '..',
+      '.claude/agents/kos-monitor-amnezia-control-panel-github-runs.md',
+    ),
+    'utf8',
+  );
+
+  assert.match(agent, /rerunRequested\[\]\.runId/);
+  assert.match(agent, /recovery-pending/);
+  assert.match(agent, /recovered-transient/);
+  assert.match(agent, /structural code-fix candidate/);
+  assert.match(agent, /repeated-transient reliability incident/);
+  assert.match(agent, /absent, invalid, or reports an error/);
 });

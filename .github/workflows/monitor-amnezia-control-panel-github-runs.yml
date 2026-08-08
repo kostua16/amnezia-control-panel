@@ -261,7 +261,14 @@ jobs:
 
             ## Deterministic Transient Recovery (MON-E04)
 
-            TRANSIENT_RERUN_SUMMARY records failed runs already classified and re-run by the deterministic preflight step. Do not propose a code fix solely for a run listed in its `rerun` array. You may still report it as transient evidence or investigate a separate structural failure in the same workflow.
+            TRANSIENT_RERUN_SUMMARY is a versioned JSON recovery ledger. `rerunRequested` means GitHub accepted a rerun request; it is not proof that recovery succeeded.
+
+            - Parse the ledger only when it is valid JSON with `schemaVersion: 1` and no `error`. Match runs by `rerunRequested[].runId`.
+            - Keep every listed run in the survey. For each requested rerun, inspect its current attempt, status, conclusion, jobs, and failed logs.
+            - queued/in_progress => classify `recovery-pending`; report it, but do not propose a code fix yet.
+            - completed/success => classify `recovered-transient`; do not propose a code fix for the original transient failure.
+            - completed/failure => compare original and rerun evidence. A deterministic compiler, lint, test, or configuration failure is a `structural code-fix candidate`; the same transient-only signature is a `repeated-transient reliability incident`, not a code-fix candidate.
+            - If TRANSIENT_RERUN_SUMMARY is absent, invalid, or reports an error, apply normal evidence-first diagnosis and suppress nothing.
 
             ## Deadline (STOP_BY)
 

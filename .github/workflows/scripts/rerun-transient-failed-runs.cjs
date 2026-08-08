@@ -181,6 +181,16 @@ function rerunTransientFailedRuns(
   return results;
 }
 
+function buildRecoveryLedger(results = {}) {
+  return {
+    schemaVersion: 1,
+    scanned: Number(results.scanned) || 0,
+    rerunRequested: Array.isArray(results.rerun) ? results.rerun : [],
+    skipped: Array.isArray(results.skipped) ? results.skipped : [],
+    error: results.error || null,
+  };
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const repo = args.repo || process.env.GITHUB_REPOSITORY || '';
@@ -197,15 +207,16 @@ function main() {
   }
 
   const results = rerunTransientFailedRuns({ repo, since, limit, dryRun });
-  process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
-  setOutput('rerun_count', String(results.rerun.length), outputPath);
+  const ledger = buildRecoveryLedger(results);
+  process.stdout.write(`${JSON.stringify(ledger, null, 2)}\n`);
+  setOutput('rerun_count', String(ledger.rerunRequested.length), outputPath);
   setOutput(
     'rerun_ids',
-    results.rerun.map((run) => run.runId).join(','),
+    ledger.rerunRequested.map((run) => run.runId).join(','),
     outputPath,
   );
-  setOutput('summary', JSON.stringify(results), outputPath);
-  if (results.error) process.exitCode = 1;
+  setOutput('summary', JSON.stringify(ledger), outputPath);
+  if (ledger.error) process.exitCode = 1;
 }
 
 module.exports = {
@@ -214,6 +225,7 @@ module.exports = {
   isTransientLog,
   classifyRun,
   rerunTransientFailedRuns,
+  buildRecoveryLedger,
   runGh,
 };
 
