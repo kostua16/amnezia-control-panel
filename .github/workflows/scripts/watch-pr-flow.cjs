@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 
 const { execFileSync } = require('child_process');
+const { MAX_RETRIES, RETRY_BASE_MS, isTransient } = require('./lib/retry.cjs');
 
 const DEFAULT_ORCHESTRATOR_REF = 'main';
 const DEFAULT_ORCHESTRATOR_WORKFLOW = 'pr-flow.yml';
@@ -222,10 +223,7 @@ function selectStalePrs(
     // re-dispatches every cycle with stale-finalizer-failure. Detect via ≥N
     // failure aggregates on the same head, gated on the latest pr-flow/ready
     // still being failure (same success-escape as the pending loop).
-    if (
-      pr.headRefOid &&
-      labels.includes('flow/finalizer-dispatched')
-    ) {
+    if (pr.headRefOid && labels.includes('flow/finalizer-dispatched')) {
       const latestReady = normalizeStatuses(statuses).find(
         (status) => status.context === READY_STATUS_CONTEXT,
       );
@@ -250,18 +248,37 @@ function selectStaleDraftPrs(prs, labelName = STALE_DRAFT_LABEL) {
   return selectStalePrs(prs, { labelName, getStatuses: () => [] });
 }
 
-function run(command, args) {
-  return (
-    execFileSync(command, args, {
-      encoding: 'utf8',
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }) ?? ''
-  ).trim();
+function run(command, args, options = {}) {
+  const retryEnabled = options.retry === true;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return (
+        execFileSync(command, args, {
+          encoding: 'utf8',
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }) ?? ''
+      ).trim();
+    } catch (error) {
+      const stderr = String(error.stderr ?? '').trim();
+      if (retryEnabled && attempt < MAX_RETRIES - 1 && isTransient(stderr)) {
+        const delay = RETRY_BASE_MS * 2 ** attempt;
+        console.warn(
+          `watch-pr-flow: transient HTTP error on attempt ${attempt + 1}/${MAX_RETRIES}, retrying in ${delay}ms: ${stderr.split('\n')[0]}`,
+        );
+        execFileSync('sleep', [String(delay / 1000)], { stdio: 'ignore' });
+        continue;
+      }
+      if (stderr) {
+        console.error(stderr);
+      }
+      throw error;
+    }
+  }
 }
 
 function runJson(command, args, fallback = []) {
-  const output = run(command, args);
+  const output = run(command, args, { retry: true });
   return output ? JSON.parse(output) : fallback;
 }
 
