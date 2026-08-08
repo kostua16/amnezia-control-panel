@@ -318,6 +318,57 @@ function createPullRequestFileGetter(
   };
 }
 
+/**
+ * Detect subset/supersession relationships among PR entries.
+ * When PR smaller's file set is a strict subset of PR larger's file set,
+ * PR larger supersedes PR smaller (the smaller PR is a zombie).
+ *
+ * Each superseded PR is reported once and points at its maximal strict
+ * superset, so a `supersededBy` pointer always references a keeper PR
+ * (one that is not itself superseded). In a chain A⊂B⊂C this reports
+ * A→C and B→C rather than A→B and B→C.
+ *
+ * A PR whose files failed to load has an empty path set; it is anomalous
+ * rather than a subset of anything, so it is never flagged here.
+ *
+ * Returns an array of { superseded: number, supersededBy: number } pairs.
+ */
+function findSupersededPairs(prEntries) {
+  const pairs = [];
+  for (let i = 0; i < prEntries.length; i++) {
+    const smaller = prEntries[i];
+    // An empty path set (gh 404 → [], or parse failure → []) must never be
+    // reported as a strict subset: [...smaller.paths].every(...) is vacuously
+    // true on an empty array.
+    if (smaller.paths.size === 0) continue;
+    // Pick the largest strict superset of smaller's files. The largest strict
+    // superset is always a keeper: any PR that strictly supersedes it would be
+    // an even larger strict superset of `smaller`, and would have been chosen.
+    let bestLarger = null;
+    for (let j = 0; j < prEntries.length; j++) {
+      if (i === j) continue;
+      const larger = prEntries[j];
+      // Strict subset requires more files; skip empties and equal-or-smaller sets.
+      if (larger.paths.size === 0) continue;
+      if (smaller.paths.size >= larger.paths.size) continue;
+      const isSubset = [...smaller.paths].every((p) => larger.paths.has(p));
+      if (!isSubset) continue;
+      if (
+        !bestLarger ||
+        larger.paths.size > bestLarger.paths.size ||
+        (larger.paths.size === bestLarger.paths.size &&
+          larger.number < bestLarger.number)
+      ) {
+        bestLarger = larger;
+      }
+    }
+    if (bestLarger) {
+      pairs.push({ superseded: smaller.number, supersededBy: bestLarger.number });
+    }
+  }
+  return pairs;
+}
+
 function buildOverlapMatrix(options = {}) {
   const {
     repo,
@@ -392,33 +443,54 @@ function buildOverlapMatrix(options = {}) {
   }
   contestedFiles.sort((a, b) => a.file.localeCompare(b.file));
 
-  if (contestedFiles.length === 0) {
+  // Detect supersession: PR B supersedes PR A when A's files ⊂ B's files
+  const supersededPairs = findSupersededPairs(prEntries);
+
+  if (contestedFiles.length === 0 && supersededPairs.length === 0) {
     return {
       prs: prEntries.map((e) => ({ number: e.number, title: e.title, url: e.url })),
       contestedFiles: [],
-      markdown: '### File-Overlap Conflict Matrix\n\nNo contested files found across open automation PRs.\n',
+      supersededPairs: [],
+      markdown: '### File-Overlap Conflict Matrix\n\nNo contested files or superseded PRs found across open automation PRs.\n',
     };
   }
 
-  const tableRows = contestedFiles
-    .map(
-      (c) =>
-        `| ${c.file} | ${c.prNumbers.map((n) => `#${n}`).join(', ')} |`,
-    )
-    .join('\n');
-
-  const markdown =
+  let markdown =
     '### File-Overlap Conflict Matrix\n\n' +
-    `**${prEntries.length} automation PRs inspected, ${contestedFiles.length} contested file(s) found.**\n\n` +
+    `**${prEntries.length} automation PRs inspected, ${contestedFiles.length} contested file(s), ${supersededPairs.length} superseded PR(s).**\n\n` +
     `#### PRs\n| # | Title |\n|---|-------|\n` +
-    prEntries.map((e) => `| #${e.number} | ${e.title} |`).join('\n') +
-    '\n\n' +
-    `#### Contested Files\n| File | PRs |\n|------|-----|\n` +
-    `${tableRows}\n`;
+    prEntries.map((e) => `| #${e.number} | ${e.title} |`).join('\n');
+
+  if (supersededPairs.length > 0) {
+    const supersededRows = supersededPairs
+      .map(
+        (s) =>
+          `| #${s.superseded} | #${s.supersededBy} | supersedes (files ⊂) |`,
+      )
+      .join('\n');
+    markdown +=
+      '\n\n' +
+      `#### Superseded PRs\n| Superseded PR | Superseded By | Reason |\n|---|---|---|\n` +
+      `${supersededRows}\n`;
+  }
+
+  if (contestedFiles.length > 0) {
+    const tableRows = contestedFiles
+      .map(
+        (c) =>
+          `| ${c.file} | ${c.prNumbers.map((n) => `#${n}`).join(', ')} |`,
+      )
+      .join('\n');
+    markdown +=
+      '\n\n' +
+      `#### Contested Files\n| File | PRs |\n|------|-----|\n` +
+      `${tableRows}\n`;
+  }
 
   return {
     prs: prEntries.map((e) => ({ number: e.number, title: e.title, url: e.url })),
     contestedFiles,
+    supersededPairs,
     markdown,
   };
 }
@@ -589,6 +661,7 @@ module.exports = {
   createPullRequestFileGetter,
   extractPatchFromGitDiff,
   findDuplicatePullRequest,
+  findSupersededPairs,
   hasExactDuplicate,
   hasEquivalentDuplicate,
   hasFileOverlap,

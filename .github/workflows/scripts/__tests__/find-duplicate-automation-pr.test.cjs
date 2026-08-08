@@ -10,6 +10,7 @@ const {
   buildOverlapMatrix,
   collectLocalFilePatches,
   createPullRequestFileGetter,
+  findSupersededPairs,
   hasFileOverlap,
   hasExactDuplicate,
   hasEquivalentDuplicate,
@@ -264,4 +265,134 @@ test('buildOverlapMatrix reports no contested files when all PRs touch unique fi
   const result = buildOverlapMatrix({ repo: 'o/r', label: 'auto-fix', ghCommand });
   assert.equal(result.contestedFiles.length, 0);
   assert.match(result.markdown, /No contested files/);
+});
+
+// --- Supersession (subset) detection tests ---
+
+test('findSupersededPairs detects when smaller PR files are strict subset of larger', () => {
+  const entries = [
+    { number: 1019, title: 'APR-E10 scripts only', url: 'u/1019', paths: new Set(['scripts/escalate-repeated-fixes.cjs', 'scripts/__tests__/escalate-repeated-fixes.test.cjs']) },
+    { number: 1040, title: 'Wire orphaned scripts', url: 'u/1040', paths: new Set(['scripts/escalate-repeated-fixes.cjs', 'scripts/__tests__/escalate-repeated-fixes.test.cjs', 'audit-auto-prs.yml', 'maintenance.yml', 'monitor-amnezia-control-panel-github-runs.yml']) },
+    { number: 1033, title: 'Stale boundaries', url: 'u/1033', paths: new Set(['stale.yml', 'issue-catch-up.yml', 'maintenance.yml']) },
+  ];
+  const pairs = findSupersededPairs(entries);
+  // #1019's files ⊂ #1040's files → superseded
+  const superseded = pairs.filter((p) => p.superseded === 1019);
+  assert.equal(superseded.length, 1);
+  assert.equal(superseded[0].supersededBy, 1040);
+  // #1033 is not a subset of anyone
+  assert.equal(pairs.filter((p) => p.superseded === 1033).length, 0);
+});
+
+test('findSupersededPairs does not flag equal-size PRs as superseded', () => {
+  const entries = [
+    { number: 1, title: 'a', url: 'u/1', paths: new Set(['x.ts']) },
+    { number: 2, title: 'b', url: 'u/2', paths: new Set(['x.ts']) },
+  ];
+  const pairs = findSupersededPairs(entries);
+  assert.equal(pairs.length, 0, 'Equal-size PRs should not be flagged as superseded');
+});
+
+test('findSupersededPairs deduplicates: each superseded PR appears once', () => {
+  const entries = [
+    { number: 10, title: 'small', url: 'u/10', paths: new Set(['a.ts']) },
+    { number: 20, title: 'medium', url: 'u/20', paths: new Set(['a.ts', 'b.ts']) },
+    { number: 30, title: 'large', url: 'u/30', paths: new Set(['a.ts', 'b.ts', 'c.ts']) },
+  ];
+  const pairs = findSupersededPairs(entries);
+  // #10 is subset of both #20 and #30, but should appear only once
+  const for10 = pairs.filter((p) => p.superseded === 10);
+  assert.equal(for10.length, 1);
+  // #20 is subset of #30
+  const for20 = pairs.filter((p) => p.superseded === 20);
+  assert.equal(for20.length, 1);
+  assert.equal(for20[0].supersededBy, 30);
+});
+
+test('findSupersededPairs returns empty for disjoint file sets', () => {
+  const entries = [
+    { number: 1, title: 'a', url: 'u/1', paths: new Set(['x.ts']) },
+    { number: 2, title: 'b', url: 'u/2', paths: new Set(['y.ts']) },
+  ];
+  assert.deepEqual(findSupersededPairs(entries), []);
+});
+
+test('buildOverlapMatrix includes superseded PRs section in markdown', () => {
+  const filesPayload = new Map([
+    [1019, [{ path: 'scripts/escalate.cjs', patch: '@@' }]],
+    [1040, [
+      { path: 'scripts/escalate.cjs', patch: '@@' },
+      { path: 'audit-auto-prs.yml', patch: '@@' },
+    ]],
+  ]);
+  const ghCommand = (args) => {
+    const str = Array.isArray(args) ? args.join(' ') : String(args);
+    if (str.includes('pr list'))
+      return JSON.stringify([
+        { number: 1019, title: 'fix: scripts only', url: 'u/1019', headRefName: 'b1', labels: [{ name: 'auto-fix' }] },
+        { number: 1040, title: 'fix: wire orphaned scripts', url: 'u/1040', headRefName: 'b2', labels: [{ name: 'auto-fix' }] },
+      ]);
+    const match = str.match(/\/pulls\/(\d+)\//);
+    if (match) return JSON.stringify(filesPayload.get(Number(match[1])) || []);
+    return '[]';
+  };
+  const result = buildOverlapMatrix({ repo: 'o/r', label: 'auto-fix', ghCommand });
+  assert.ok(result.supersededPairs);
+  assert.equal(result.supersededPairs.length, 1);
+  assert.equal(result.supersededPairs[0].superseded, 1019);
+  assert.equal(result.supersededPairs[0].supersededBy, 1040);
+  assert.match(result.markdown, /Superseded PRs/);
+  assert.match(result.markdown, /#1019.*#1040/);
+  assert.match(result.markdown, /supersedes \(files ⊂\)/);
+});
+
+test('buildOverlapMatrix returns supersededPairs empty array when none exist', () => {
+  const filesPayload = new Map([
+    [10, [{ path: 'a.ts', patch: '@@' }]],
+    [11, [{ path: 'b.ts', patch: '@@' }]],
+  ]);
+  const ghCommand = (args) => {
+    const str = Array.isArray(args) ? args.join(' ') : String(args);
+    if (str.includes('pr list'))
+      return JSON.stringify([
+        { number: 10, title: 'fix: a', url: 'u/10', headRefName: 'b10', labels: [{ name: 'auto-fix' }] },
+        { number: 11, title: 'fix: b', url: 'u/11', headRefName: 'b11', labels: [{ name: 'auto-fix' }] },
+      ]);
+    const match = str.match(/\/pulls\/(\d+)\//);
+    if (match) return JSON.stringify(filesPayload.get(Number(match[1])) || []);
+    return '[]';
+  };
+  const result = buildOverlapMatrix({ repo: 'o/r', label: 'auto-fix', ghCommand });
+  assert.ok(Array.isArray(result.supersededPairs));
+  assert.equal(result.supersededPairs.length, 0);
+});
+
+test('findSupersededPairs does not flag a PR with empty paths as superseded', () => {
+  // A PR whose files failed to load yields an empty path set (gh 404 → [],
+  // parse failure → []). It must not be reported as a subset of every non-empty
+  // PR even though [].every() is vacuously true.
+  const entries = [
+    { number: 1, title: 'no files loaded', url: 'u/1', paths: new Set([]) },
+    { number: 2, title: 'has files', url: 'u/2', paths: new Set(['a.ts', 'b.ts']) },
+    { number: 3, title: 'more files', url: 'u/3', paths: new Set(['a.ts', 'b.ts', 'c.ts']) },
+  ];
+  const pairs = findSupersededPairs(entries);
+  // #1 is not flagged; #2 ⊂ #3 is the only real supersession.
+  assert.equal(pairs.filter((p) => p.superseded === 1).length, 0);
+  assert.deepEqual(pairs, [{ superseded: 2, supersededBy: 3 }]);
+});
+
+test('findSupersededPairs resolves nested subset chains to the maximal keeper', () => {
+  // Chain A(#10) ⊂ B(#20) ⊂ C(#30): both A and B should point at C (the keeper),
+  // never at a PR that is itself superseded.
+  const entries = [
+    { number: 10, title: 'A', url: 'u/10', paths: new Set(['a.ts']) },
+    { number: 20, title: 'B', url: 'u/20', paths: new Set(['a.ts', 'b.ts']) },
+    { number: 30, title: 'C', url: 'u/30', paths: new Set(['a.ts', 'b.ts', 'c.ts']) },
+  ];
+  const pairs = findSupersededPairs(entries);
+  const bySuperseded = new Map(pairs.map((p) => [p.superseded, p.supersededBy]));
+  assert.equal(bySuperseded.get(10), 30, 'A should point at the maximal keeper C, not B');
+  assert.equal(bySuperseded.get(20), 30, 'B should point at keeper C');
+  assert.equal(bySuperseded.get(30), undefined, 'C is the keeper and is not superseded');
 });
