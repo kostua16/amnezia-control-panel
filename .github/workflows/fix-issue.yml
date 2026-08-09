@@ -261,14 +261,38 @@ jobs:
             echo "Reason: ${{ steps.duplicate.outputs.overlap_reason }}"
           fi
 
+      # Structural completeness gate: new workflow scripts must be wired into
+      # at least one workflow YAML.  Without this check the agent sometimes
+      # creates orphaned helper scripts that are never called (see #1020).
+      - name: Validate new scripts are wired into workflows
+        id: wiring
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
+        run: |
+          CHANGED="${{ steps.claude_run.outputs.claude_changed_files_list }}"
+          # New non-test scripts added under .github/workflows/scripts/
+          # Match all executable script extensions, not just .cjs — .sh
+          # helpers already live under scripts/ and .js/.mjs are equally
+          # capable of being orphaned.
+          NEW_SCRIPTS=$(printf '%s\n' $CHANGED \
+            | grep -cE '^\.github/workflows/scripts/[^_].*\.(cjs|mjs|js|sh)$' || true)
+          # Any workflow YAML files changed
+          YML_CHANGED=$(printf '%s\n' $CHANGED \
+            | grep -c '^\.github/workflows/[^/]*\.yml$' || true)
+          if [ "$NEW_SCRIPTS" -gt 0 ] && [ "$YML_CHANGED" -eq 0 ]; then
+            echo "::error::New workflow script(s) added ($NEW_SCRIPTS) but no workflow YAML modified. Scripts must be wired into the calling workflow."
+            echo "wired=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "wired=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Validate (CI-matching gate)
         id: gate
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != '' && steps.wiring.outputs.wired != 'false'
         uses: ./.github/actions/validate-pr-gate
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.gate.outputs.gate_passed == 'true'
+        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.gate.outputs.gate_passed == 'true' && steps.wiring.outputs.wired != 'false'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix: resolve #${{ github.event.issue.number }}'
@@ -335,6 +359,9 @@ jobs:
           if [ "${{ steps.duplicate.outputs.duplicate_found }}" = 'true' ] || [ "${{ steps.duplicate.outputs.overlap_found }}" = 'true' ]; then
             REASON="An existing automation PR (#${{ steps.duplicate.outputs.duplicate_pr_number || steps.duplicate.outputs.overlap_pr_number }}) already addresses the same file(s). This fix was deferred to avoid conflicting edits."
             LABEL="deferred"
+          elif [ "${{ steps.wiring.outputs.wired }}" = 'false' ]; then
+            REASON="The fix added workflow script(s) that are not wired into any workflow YAML (orphaned-script gate), so no PR was created. Wire the script(s) into the calling workflow and re-trigger. See run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            LABEL="needs-review"
           else
             REASON="The auto-fix workflow ran but could not produce code changes. Manual investigation may be needed."
             LABEL="canceled"
