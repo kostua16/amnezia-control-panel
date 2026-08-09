@@ -1,0 +1,38 @@
+{
+  "description": "Persisted rotation cursor for audit-fix workflow (AFX-E01). The agent reads this at the start of each run, audits the focus_area, then advances current_index (mod length). Changes are committed with the audit PR so the next run picks up the new position.",
+  "focus_areas": [
+    {
+      "name": "components",
+      "path": "src/components",
+      "description": "React UI components — props validation, accessibility, performance"
+    },
+    {
+      "name": "hooks",
+      "path": "src/hooks",
+      "description": "Custom React hooks — dependency arrays, cleanup, error handling"
+    },
+    {
+      "name": "lib",
+      "path": "src/lib",
+      "description": "Library/utility code — pure functions, edge cases, types"
+    },
+    {
+      "name": "api-routes",
+      "path": "src/app/api",
+      "description": "API route handlers — input validation, error responses, auth checks"
+    },
+    {
+      "name": "app-pages",
+      "path": "src/app",
+      "exclude": ["src/app/api"],
+      "description": "App pages, layouts, and non-API routes — data fetching, loading states. Excludes src/app/api, which is covered by the api-routes focus area to avoid double-auditing API handlers."
+    },
+    {
+      "name": "types",
+      "path": "src/types",
+      "description": "TypeScript type definitions — completeness, correctness, exports"
+    }
+  ],
+  "current_index": 0,
+  "last_audited_run": null
+}
