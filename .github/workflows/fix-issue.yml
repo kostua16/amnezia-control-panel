@@ -270,8 +270,11 @@ jobs:
         run: |
           CHANGED="${{ steps.claude_run.outputs.claude_changed_files_list }}"
           # New non-test scripts added under .github/workflows/scripts/
+          # Match all executable script extensions, not just .cjs — .sh
+          # helpers already live under scripts/ and .js/.mjs are equally
+          # capable of being orphaned.
           NEW_SCRIPTS=$(printf '%s\n' $CHANGED \
-            | grep -c '^\.github/workflows/scripts/[^_].*\.cjs$' || true)
+            | grep -cE '^\.github/workflows/scripts/[^_].*\.(cjs|mjs|js|sh)$' || true)
           # Any workflow YAML files changed
           YML_CHANGED=$(printf '%s\n' $CHANGED \
             | grep -c '^\.github/workflows/[^/]*\.yml$' || true)
@@ -356,6 +359,9 @@ jobs:
           if [ "${{ steps.duplicate.outputs.duplicate_found }}" = 'true' ] || [ "${{ steps.duplicate.outputs.overlap_found }}" = 'true' ]; then
             REASON="An existing automation PR (#${{ steps.duplicate.outputs.duplicate_pr_number || steps.duplicate.outputs.overlap_pr_number }}) already addresses the same file(s). This fix was deferred to avoid conflicting edits."
             LABEL="deferred"
+          elif [ "${{ steps.wiring.outputs.wired }}" = 'false' ]; then
+            REASON="The fix added workflow script(s) that are not wired into any workflow YAML (orphaned-script gate), so no PR was created. Wire the script(s) into the calling workflow and re-trigger. See run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            LABEL="needs-review"
           else
             REASON="The auto-fix workflow ran but could not produce code changes. Manual investigation may be needed."
             LABEL="canceled"
