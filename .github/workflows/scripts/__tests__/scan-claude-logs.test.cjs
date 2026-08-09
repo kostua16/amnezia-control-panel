@@ -348,6 +348,27 @@ test('buildFindings detects uncategorized errors filtering out benign messages',
   assert.ok(uncategorized.detail.includes('real error from Claude'));
 });
 
+test('buildFindings filters echoed tool-result payloads out of errorMessages', () => {
+  // Regression: errorMessages is sourced from parse-claude-execution.cjs
+  // walking every nested "result"-shaped node, independent of logText, so it
+  // was never covered by stripTranscriptEchoes(). A message that still
+  // carries JSON string escapes (e.g. Claude reading a review-feedback
+  // bundle back via a tool result) is quoted file content, not a real error.
+  const findings = buildFindings({
+    metrics: {
+      errorMessages: [
+        '"content": "63\\tCommands are recognized only with an exact `/` / `gh:` / `Error:` prefix"',
+        'real error from Claude',
+      ],
+    },
+    logText: '',
+  });
+  const uncategorized = findings.find((f) => f.category === 'uncategorized');
+  assert.ok(uncategorized);
+  assert.ok(!uncategorized.detail.includes('63\\t'));
+  assert.ok(uncategorized.detail.includes('real error from Claude'));
+});
+
 test('buildFindings handles multiple findings simultaneously', () => {
   const findings = buildFindings({
     metrics: {

@@ -114,6 +114,16 @@ function isBenignErrorMessage(message) {
   // TAP diagnostic lines ("# ...") are test-runner output captured into tool
   // results (e.g. "# [api/users] Prisma error P2002"), not Claude errors.
   if (/^\s*#/.test(text)) return true;
+  // Same class of false positive stripTranscriptEchoes() guards against for
+  // logText: errorMessages is sourced independently (parse-claude-execution.cjs
+  // walks every nested "result"-shaped node, including ones embedded in an
+  // echoed tool_result payload) and was never run through that filter. A
+  // message that still carries JSON string escapes is a quoted transcript
+  // echo (e.g. Claude reading a review-feedback bundle that itself contains
+  // "Error:"-labeled text), not a genuine Claude error (observed: a rebase
+  // run reported failed despite is_error=false and a completed conflict
+  // resolution, because the echoed bundle tripped this check).
+  if (TRANSCRIPT_ECHO_RE.test(text)) return true;
   return false;
 }
 
