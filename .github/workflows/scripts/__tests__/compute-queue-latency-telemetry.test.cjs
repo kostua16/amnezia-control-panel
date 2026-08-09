@@ -152,5 +152,5 @@ test('handles 1000+ samples with many duplicate queueSec values', () => {
   assert.equal(result.sampleCount, N);
   assert.equal(result.percentiles.max, 1000);
   assert.ok(result.percentiles.p50 >= 200 && result.percentiles.p50 <= 300);
-  assert.ok(result.exceedsThreshold, true);
+  assert.ok(result.exceedsThreshold);
 });
