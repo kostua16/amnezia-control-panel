@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
-const { buildAlertBody } = require('../file-queue-starvation-alert.cjs');
+const { buildAlertBody, getManualLabels } = require('../file-queue-starvation-alert.cjs');
 
 // ── buildAlertBody ─────────────────────────────────────────────────
 
@@ -58,4 +60,52 @@ test('buildAlertBody includes WHO-E03 signature', () => {
   };
   const body = buildAlertBody(telemetry, 'https://example.com/run/1');
   assert.ok(body.includes('WHO-E03'));
+});
+
+// ── getManualLabels ──────────────────────────────────────────────
+
+test('getManualLabels reads from policy.json auditSafe.manualLabels', () => {
+  const policyFile = path.join(
+    __dirname,
+    '__mocks__',
+    'policy-starvation.json',
+  );
+  const originalArgv = process.argv;
+  const originalCwd = process.cwd;
+  // Ensure mock dir exists
+  fs.mkdirSync(path.join(__dirname, '__mocks__'), { recursive: true });
+  fs.writeFileSync(
+    policyFile,
+    JSON.stringify({
+      auditSafe: {
+        manualLabels: ['auto-fix', 'custom-label', 'needs-review'],
+      },
+    }),
+    'utf8',
+  );
+  process.argv = ['node', 'script.cjs', '--policy-file', policyFile];
+  process.cwd = () => '/tmp';
+  try {
+    const labels = getManualLabels();
+    assert.equal(labels, 'auto-fix,custom-label,needs-review');
+  } finally {
+    process.argv = originalArgv;
+    process.cwd = originalCwd;
+    fs.unlinkSync(policyFile);
+    fs.rmdirSync(path.join(__dirname, '__mocks__'));
+  }
+});
+
+test('getManualLabels falls back to defaults when policy file missing', () => {
+  const originalArgv = process.argv;
+  const originalCwd = process.cwd;
+  process.argv = ['node', 'script.cjs', '--policy-file', '/nonexistent/path/policy.json'];
+  process.cwd = () => '/tmp';
+  try {
+    const labels = getManualLabels();
+    assert.equal(labels, 'auto-fix,needs-review');
+  } finally {
+    process.argv = originalArgv;
+    process.cwd = originalCwd;
+  }
 });

@@ -3,6 +3,8 @@
 'use strict';
 
 const { execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 function getArg(name) {
   const idx = process.argv.indexOf(name);
@@ -14,6 +16,20 @@ function gh(args) {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+}
+
+function getManualLabels() {
+  const policyFile =
+    getArg('--policy-file') ||
+    path.join(process.cwd(), '.github', 'workflows', 'policy.json');
+  try {
+    const policy = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
+    const labels = policy?.auditSafe?.manualLabels;
+    if (Array.isArray(labels) && labels.length > 0) return labels.join(',');
+  } catch {
+    // fall through to default
+  }
+  return 'auto-fix,needs-review';
 }
 
 /**
@@ -131,7 +147,7 @@ function fileQueueStarvationAlert({ repo, telemetry, runUrl, dryRun }) {
       '--body',
       body,
       '--label',
-      'auto-fix,needs-review',
+      getManualLabels(),
     ]);
     const match = output.match(/\/issues\/(\d+)/);
     return {
@@ -146,7 +162,7 @@ function fileQueueStarvationAlert({ repo, telemetry, runUrl, dryRun }) {
   }
 }
 
-module.exports = { buildAlertBody, fileQueueStarvationAlert };
+module.exports = { buildAlertBody, fileQueueStarvationAlert, getManualLabels };
 
 if (require.main === module) {
   const repo = getArg('--repo') || process.env.GITHUB_REPOSITORY;
