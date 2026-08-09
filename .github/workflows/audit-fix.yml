@@ -83,29 +83,30 @@ jobs:
           branch-name: claude-audit-work-${{ github.run_id }}
           github-token: ${{ secrets.GH_PAT }}
 
-      # AFX-E01 (#872): pick this run's focus area from the persisted cursor so
-      # each run audits one rotation slot (fits the budget; coverage accumulates).
-      # `total` is empty/0 when the cursor is absent or unreadable — the prompt
-      # then falls back to a full-repository audit and the advance step is skipped.
+      # AFX-E01 (#872): deterministically pick this run's focus area from the
+      # workflow run number. This keeps each run budget-sized without committing
+      # mutable cursor state into parallel automation PR branches.
       - name: Select audit focus area
         id: focus
         run: |
-          set +e
-          node .github/workflows/scripts/audit-cursor.cjs select \
-            --cursor .planning/audit-cursor.json > /tmp/audit-focus.json 2>/tmp/audit-focus.err
-          if [ $? -ne 0 ] || [ ! -s /tmp/audit-focus.json ]; then
-            echo "Cursor select failed; falling back to full-repo audit."
+          set -euo pipefail
+          if node .github/workflows/scripts/audit-focus.cjs select \
+            --run-number "${{ github.run_number }}" > /tmp/audit-focus.json 2>/tmp/audit-focus.err && \
+            [ -s /tmp/audit-focus.json ]; then
+            {
+              echo "name=$(jq -r '.name' /tmp/audit-focus.json)"
+              echo "clause=$(jq -r '.focus_clause' /tmp/audit-focus.json)"
+              echo "total=$(jq -r '.total' /tmp/audit-focus.json)"
+              echo "run_number=$(jq -r '.run_number' /tmp/audit-focus.json)"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "Audit focus selection failed; falling back to full-repo audit."
             cat /tmp/audit-focus.err >&2 || true
             {
               echo "name="
               echo "clause="
               echo "total=0"
-            } >> "$GITHUB_OUTPUT"
-          else
-            {
-              echo "name=$(jq -r '.name' /tmp/audit-focus.json)"
-              echo "clause=$(jq -r '.focus_clause' /tmp/audit-focus.json)"
-              echo "total=$(jq -r '.total' /tmp/audit-focus.json)"
+              echo "run_number=${{ github.run_number }}"
             } >> "$GITHUB_OUTPUT"
           fi
 
@@ -206,7 +207,7 @@ jobs:
           prompt: |
             /gsd:audit-fix
             Audit focus area for this run (AFX-E01 per-run rotation): ${{ steps.focus.outputs.name }} under ${{ steps.focus.outputs.clause }}.
-            Confine your audit and fixes to files within that focus area, honoring any exclusions in the clause; other areas are covered by future runs. If no focus area is named above (empty name/clause), fall back to a full-repository audit.
+            Confine your audit and fixes to files within that focus area, honoring any exclusions in the clause; other areas are covered by future runs selected deterministically from the GitHub run number. If no focus area is named above (empty name/clause), fall back to a full-repository audit.
             Implement targeted fixes, run the most relevant verification you can, and stop once the audit findings are addressed.
 
             When running tests or lint, always use `npm run <script>` or `npx <tool>` — never invoke binaries directly via node_modules paths (e.g. avoid `node node_modules/.bin/...` or `./node_modules/...`).
@@ -216,7 +217,7 @@ jobs:
             - Do NOT commit, push, merge, or open a PR. The workflow handles that.
             - Keep changes reviewable; avoid broad refactors unless they are directly required by the audit finding.
             - Prefer narrow, low-risk fixes in components, hooks, formatting helpers, API response helpers, resource monitoring, and monitoring types.
-            - Broad, security-sensitive, schema, package, API route, workflow, or planning changes are allowed when needed, but they will become manual-only PRs.
+            - If the selected focus area exposes a broad, security-sensitive, schema, package, workflow, planning, or out-of-focus finding, report it as a manual finding instead of editing outside the focus area.
             - If no worthwhile fixes are identified, make no file changes.
             - Use project-level commands for verification: `npm test`, `npm run lint`, and targeted `npx prettier --check ...`.
             - Do NOT execute binaries through `node_modules` paths; use package scripts or `npx` instead.
@@ -278,28 +279,26 @@ jobs:
         if: steps.claude_run.outputs.claude_changed_files_list != ''
         run: git checkout HEAD -- .github/actions/
 
+      - name: Validate audit focus changes
+        if: steps.claude_run.outputs.claude_changed_files_list != '' && steps.focus.outputs.total != '0' && steps.focus.outputs.total != ''
+        run: |
+          set -euo pipefail
+          {
+            git diff --name-only HEAD 2>/dev/null || true
+            git ls-files --others --exclude-standard 2>/dev/null || true
+          } | sed '/^$/d' | sort -u > /tmp/audit-changed-files.txt
+          if [ ! -s /tmp/audit-changed-files.txt ]; then
+            echo "No post-restore changes to validate against audit focus."
+            exit 0
+          fi
+          node .github/workflows/scripts/audit-focus.cjs validate-changed-files \
+            --focus /tmp/audit-focus.json \
+            --changed-files /tmp/audit-changed-files.txt
+
       - name: Validate (CI-matching gate)
         id: gate
         if: steps.claude_run.outputs.claude_changed_files_list != ''
         uses: ./.github/actions/validate-pr-gate
-
-      # AFX-E01 (#872): rotate the cursor so the next run audits the next area.
-      # Runs whenever the agent completed without a soft failure and a cursor
-      # was selected; the rotated file lands in the working tree and is included
-      # by the commit-and-push step below (it runs git add -A).
-      #
-      # continue-on-error: the audit agent may edit planning files; if the cursor
-      # is missing/unparseable mid-run, readCursor throws (non-zero). A failed
-      # rotation must not mark a successful audit run red — the cursor simply
-      # stays put and the next run re-selects the same area.
-      - name: Advance audit focus cursor
-        id: advance
-        continue-on-error: true
-        if: always() && steps.claude_run.outputs.claude_failed != 'true' && steps.focus.outputs.total != '0' && steps.focus.outputs.total != ''
-        run: |
-          node .github/workflows/scripts/audit-cursor.cjs advance \
-            --cursor .planning/audit-cursor.json \
-            --run-id "${{ github.run_id }}"
 
       - uses: ./.github/actions/commit-and-push
         id: push
