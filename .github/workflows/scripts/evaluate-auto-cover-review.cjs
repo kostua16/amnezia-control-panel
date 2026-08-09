@@ -60,28 +60,24 @@ const FIX_REVIEW_SKIP_TEXT = 'Review fix skipped';
 // so a no-op or skip verdict is only authoritative for the commit it was posted for.
 const HEAD_SHA_SLICE = 12;
 
-function hasFixReviewNoOp(comments = [], headSha = '') {
+function hasFixReviewVerdict(comments = [], headSha = '', verdictText = '') {
   const headToken = headSha ? String(headSha).slice(0, HEAD_SHA_SLICE) : '';
   return comments.some((c) => {
     const body = String(c.body ?? '');
     return (
       body.includes(FIX_REVIEW_NOOP_MARKER) &&
-      body.includes(FIX_REVIEW_NOOP_TEXT) &&
+      body.includes(verdictText) &&
       (!headToken || body.includes(headToken))
     );
   });
 }
 
+function hasFixReviewNoOp(comments = [], headSha = '') {
+  return hasFixReviewVerdict(comments, headSha, FIX_REVIEW_NOOP_TEXT);
+}
+
 function hasFixReviewSkipped(comments = [], headSha = '') {
-  const headToken = headSha ? String(headSha).slice(0, HEAD_SHA_SLICE) : '';
-  return comments.some((c) => {
-    const body = String(c.body ?? '');
-    return (
-      body.includes(FIX_REVIEW_NOOP_MARKER) &&
-      body.includes(FIX_REVIEW_SKIP_TEXT) &&
-      (!headToken || body.includes(headToken))
-    );
-  });
+  return hasFixReviewVerdict(comments, headSha, FIX_REVIEW_SKIP_TEXT);
 }
 
 function hasActiveFixReviewRun(runs = [], prNumber, headSha) {

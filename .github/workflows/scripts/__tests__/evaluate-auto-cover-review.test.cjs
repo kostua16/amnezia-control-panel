@@ -8,6 +8,7 @@ const {
   evaluateAutoCoverReview,
   hasActiveFixReviewRun,
   hasFixReviewNoOp,
+  hasFixReviewSkipped,
 } = require('../evaluate-auto-cover-review.cjs');
 
 const policy = JSON.parse(
@@ -182,6 +183,31 @@ test('hasFixReviewNoOp detects no-changes fix-review comment', () => {
   );
   assert.equal(hasFixReviewNoOp([]), false);
   assert.equal(hasFixReviewNoOp([{ body: 'unrelated comment' }]), false);
+});
+
+test('hasFixReviewSkipped detects skipped fix-review comment', () => {
+  const skippedBody = (headSha) =>
+    `<!-- fix-review-summary -->\n## FIX-REVIEW Report: ⏭️ Review fix skipped\n\n- Head SHA: \`${headSha}\``;
+  assert.equal(hasFixReviewSkipped([{ body: skippedBody('abc123') }]), true);
+  assert.equal(
+    hasFixReviewSkipped([{ body: skippedBody('abc123') }], 'abc123'),
+    true,
+  );
+  // Stale skip from a prior commit must not match the current head.
+  assert.equal(
+    hasFixReviewSkipped([{ body: skippedBody('oldheadsha12') }], 'abc123'),
+    false,
+  );
+  assert.equal(
+    hasFixReviewSkipped([
+      {
+        body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ✅ Review fixes applied',
+      },
+    ]),
+    false,
+  );
+  assert.equal(hasFixReviewSkipped([]), false);
+  assert.equal(hasFixReviewSkipped([{ body: 'unrelated comment' }]), false);
 });
 
 test('skips dispatch when latest fix-review confirmed false positives', () => {
