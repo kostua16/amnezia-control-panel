@@ -349,21 +349,27 @@ jobs:
           protected_dirty=$(git status --porcelain -- "${protected_paths[@]}" | wc -l)
           current=$(git rev-parse HEAD)
           if [ "$dirty" -gt 0 ] || [ "$current" != "$HEAD_SHA" ]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            echo "restored_only=false" >> "$GITHUB_OUTPUT"
-            if [ "$protected_dirty" -gt 0 ]; then
-              echo "protected_reverted=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "protected_reverted=false" >> "$GITHUB_OUTPUT"
-            fi
+            {
+              echo "has_changes=true"
+              echo "restored_only=false"
+              if [ "$protected_dirty" -gt 0 ]; then
+                echo "protected_reverted=true"
+              else
+                echo "protected_reverted=false"
+              fi
+            } >> "$GITHUB_OUTPUT"
           elif [ "$protected_dirty" -gt 0 ]; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo "restored_only=true" >> "$GITHUB_OUTPUT"
-            echo "protected_reverted=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "has_changes=false"
+              echo "restored_only=true"
+              echo "protected_reverted=false"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo "restored_only=false" >> "$GITHUB_OUTPUT"
-            echo "protected_reverted=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "has_changes=false"
+              echo "restored_only=false"
+              echo "protected_reverted=false"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Restore composite action files (Claude agent may alter working tree)
