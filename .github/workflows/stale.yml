@@ -1,5 +1,5 @@
 # Stale Issues — owns the 60d-inactivity lifecycle for issues and PRs.
-# Boundary contract (MNT-I08): this workflow is the sole handler for
+# Boundary contract: this workflow is the sole handler for
 # inactivity-based stale/close.  maintenance.yml's 90d review skips
 # `stale`-labeled issues; issue-catch-up.yml skips `stale`-labeled issues
 # only from inactivity re-engagement buckets (duplicate/canceled close

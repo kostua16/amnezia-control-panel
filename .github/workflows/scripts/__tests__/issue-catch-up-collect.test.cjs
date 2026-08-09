@@ -306,7 +306,7 @@ test('a medium manual park is held silently — no re-triage, no nudge', async (
 });
 
 test('a stale issue that is also duplicate is closed promptly, not deferred to stale.yml', async () => {
-  // Boundary contract (MNT-I08): stale.yml owns inactivity close, but a
+  // Boundary contract: stale.yml owns inactivity close, but a
   // duplicate/canceled decision is orthogonal to inactivity — catch-up must
   // still close it this sweep instead of waiting up to ~30 extra days for
   // stale.yml's days-before-close timer.

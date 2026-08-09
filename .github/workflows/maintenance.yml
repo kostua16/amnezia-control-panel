@@ -78,7 +78,7 @@ jobs:
             2. Run /ck:security-scan for dependency vulnerabilities (npm audit)
             3. Run /gsd:progress to summarize phase completion status
             4. Check for TODO/FIXME comments in recent commits (last 12h): `git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`
-            5. Review open issues older than 90 days with /gsd:inbox — skip issues labeled `stale` (owned by stale.yml's 60d-inactivity lifecycle; see MNT-I08 boundary contract) and issues with exempt labels (`keep-open`, `backlog`, `in-progress`). Only report issues that are old AND still actively worked or recently triaged but unresolved.
+            5. Review open issues older than 90 days with /gsd:inbox — skip issues labeled `stale` (owned by stale.yml's 60d-inactivity lifecycle) and issues with exempt labels (`keep-open`, `backlog`, `in-progress`). Only report issues that are old AND still actively worked or recently triaged but unresolved.
             6. Clean up stale resolved debug docs: find .planning/debug/*.md files with frontmatter `status: resolved`. Delete only files whose `updated` frontmatter field is present and parseable as a date older than 30 days; skip files where `updated` is missing or malformed. If any were deleted, commit with message "chore: prune stale resolved debug docs (maintenance)"
             7. Runner health self-check (MNT-E08): run `node .github/workflows/scripts/runner-health-check.cjs --repo ${{ github.repository }} --since 6h`. If the output shows saturated pools or high queue latency, create an issue: `gh issue create --title "Runner health: [summary]" --label "maintenance,observability" --body "[full output]"`. Skip if all pools healthy.
 
