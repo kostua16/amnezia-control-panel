@@ -830,6 +830,17 @@ Source: `/gsd:explore` seventeenth-pass review (non-duplicative vs proposals #1-
 | 48 | **Add request body size limits to all API route handlers** — 30+ POST/PUT routes call `await request.json()` with no size constraint. App Router has no built-in limit (unlike Pages Router `bodyParser.sizeLimit`). Oversized payloads can OOM the server. Fix: add `parseBody()` utility with byte counting (default 1 MiB), wire into `apiHandler()` wrapper | Medium (Security/Ops) | `src/app/api/**/*.ts` (30+ routes) | Proposed |
 | 49 | **Centralized startup environment variable validation** — 15+ env vars read lazily across 10+ files. `JWT_SECRET` missing surfaces only on first login; `DATABASE_URL` wrong fails on first query. Fix: create `src/lib/env.ts` declaring all vars with types/defaults, export typed getters, validate required vars at startup in `instrumentation.node.ts` | Low-Medium (Ops/UX) | `src/lib/env.ts` (new), `instrumentation.node.ts`, 10+ consumer files | Proposed |
 
+## Improvement Intake: Architectural Review Pass 18 (2026-08-09)
+
+Source: `/gsd:explore` eighteenth-pass review (non-duplicative vs proposals #1-#49 and open PRs). Artifact: `.planning/quick/260809-arch-review-pass18/proposal.md`
+
+Deduped vs open PRs: #1055 (GSD planning intake), #1033 (stale-issue boundaries), #1020 (auto re-run transient failures), #877 (audit-area rotation) — all workflow/automation, zero source overlap.
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 50 | **DRY: `dashboard-stats.ts` duplicates env var parsing from `env.ts`** — `TRAFFIC_STATS_WINDOW_HOURS` parsed via module-level IIFE duplicating `env.ts:getTrafficStatsWindowHours()`. Defaults or parsing diverge silently. Fix: import canonical getter from env.ts | Low-Medium (DRY) | `src/lib/dashboard-stats.ts:4-10`, `src/lib/env.ts:85-91` | Proposed |
+| 51 | **Vestigial `/api/routing/apply` endpoint falsely claims rules are applied** — `generateXrayRulesFromDB` builds `nodeId` from `rule.userId` (not chain node label). `applyRoutingRules`/`applyAllRules` return `appliedCount: N` but `awgConfig`/`threeXuiConfig` always null — nothing actually pushed. Real apply path uses chain-config-generator → panel-sync-client → config-applier. Fix: remove or rename to `generate-only` with honest response shape | Medium (Correctness) | `src/lib/rule-enforcement.ts:59-80,152-180`, `src/app/api/routing/apply/route.ts` | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-08-07 - Added architectural review pass 17 (proposals #47-#49: shell guard on HTTP-bound values, request body size limits, centralized env validation)*
+*Last updated: 2026-08-09 - Added architectural review pass 18 (proposals #50-#51: dashboard-stats DRY violation, vestigial routing/apply false-apply reporting)*
