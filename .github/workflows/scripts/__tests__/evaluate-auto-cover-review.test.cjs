@@ -218,3 +218,32 @@ test('stale no-op comment does not suppress dispatch for a newer commit', () => 
 
   assert.equal(result.should_run, true);
 });
+
+test('skips dispatch when latest fix-review was skipped (ineligible)', () => {
+  const skippedBody =
+    '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ⏭️ Review fix skipped\n\n- Head SHA: `abc123`\n\n> PR class "automation-fix" requires automation review loop.';
+  const result = evaluateAutoCoverReview({
+    pr: pr(),
+    policy,
+    comments: [{ body: skippedBody }],
+    attempts: [],
+    fixReviewRuns: [],
+  });
+
+  assert.equal(result.should_run, false);
+  assert.match(result.reason, /skipped/);
+});
+
+test('stale skipped comment does not suppress dispatch for a newer commit', () => {
+  const skippedBody =
+    '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ⏭️ Review fix skipped\n\n- Head SHA: `oldheadsha1`';
+  const result = evaluateAutoCoverReview({
+    pr: pr(),
+    policy,
+    comments: [{ body: skippedBody }],
+    attempts: [],
+    fixReviewRuns: [],
+  });
+
+  assert.equal(result.should_run, true);
+});

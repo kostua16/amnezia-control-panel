@@ -55,8 +55,9 @@ function countRecordedAttempts(attempts = []) {
 
 const FIX_REVIEW_NOOP_MARKER = '<!-- fix-review-summary -->';
 const FIX_REVIEW_NOOP_TEXT = 'No changes needed';
+const FIX_REVIEW_SKIP_TEXT = 'Review fix skipped';
 // The fix-review summary embeds the head SHA via shortSha() (first 12 chars),
-// so a no-op verdict is only authoritative for the commit it was posted for.
+// so a no-op or skip verdict is only authoritative for the commit it was posted for.
 const HEAD_SHA_SLICE = 12;
 
 function hasFixReviewNoOp(comments = [], headSha = '') {
@@ -66,6 +67,18 @@ function hasFixReviewNoOp(comments = [], headSha = '') {
     return (
       body.includes(FIX_REVIEW_NOOP_MARKER) &&
       body.includes(FIX_REVIEW_NOOP_TEXT) &&
+      (!headToken || body.includes(headToken))
+    );
+  });
+}
+
+function hasFixReviewSkipped(comments = [], headSha = '') {
+  const headToken = headSha ? String(headSha).slice(0, HEAD_SHA_SLICE) : '';
+  return comments.some((c) => {
+    const body = String(c.body ?? '');
+    return (
+      body.includes(FIX_REVIEW_NOOP_MARKER) &&
+      body.includes(FIX_REVIEW_SKIP_TEXT) &&
       (!headToken || body.includes(headToken))
     );
   });
@@ -158,6 +171,14 @@ function evaluateAutoCoverReview({
     };
   }
 
+  if (hasFixReviewSkipped(comments, headSha)) {
+    return {
+      should_run: false,
+      reason:
+        'Latest fix-review was skipped — PR is ineligible for fix-review repair.',
+    };
+  }
+
   if (hasActiveFixReviewRun(fixReviewRuns, pr.number, headSha)) {
     return {
       should_run: false,
@@ -216,4 +237,5 @@ module.exports = {
   evaluateAutoCoverReview,
   hasActiveFixReviewRun,
   hasFixReviewNoOp,
+  hasFixReviewSkipped,
 };
