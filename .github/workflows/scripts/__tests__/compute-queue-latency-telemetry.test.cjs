@@ -109,3 +109,48 @@ test('threshold is included in result', () => {
   const result = computeQueueLatencyTelemetry([]);
   assert.equal(result.threshold, 300);
 });
+
+// ── Scale boundary: pathological burst (1000+ runs) ─────────────
+
+test('handles 1000+ sample burst without overflow or sort errors', () => {
+  const N = 1500;
+  const queueSecs = Array.from({ length: N }, (_, i) => i + 1);
+  const runs = queueSecs.map(q => ({
+    timingSummary: { jobs: [{ queueSec: q }] },
+  }));
+  const result = computeQueueLatencyTelemetry(runs);
+  assert.equal(result.sampleCount, N);
+  assert.equal(result.percentiles.min, undefined);
+  assert.equal(result.percentiles.max, N);
+  // sorted: [1, 2, ..., 1500]
+  // p50 = index 750 → 751
+  assert.equal(result.percentiles.p50, 751);
+  // p99 should be near the top
+  assert.ok(result.percentiles.p99 > N * 0.98);
+  // p95 should be near the top
+  assert.ok(result.percentiles.p95 > N * 0.94);
+  // With these values, p95 will be > 300
+  assert.equal(result.exceedsThreshold, true);
+  // Verify queueTimes array is populated and sorted
+  assert.equal(result.queueTimes.length, N);
+  assert.equal(result.queueTimes[0], 1);
+  assert.equal(result.queueTimes[N - 1], N);
+});
+
+test('handles 1000+ samples with many duplicate queueSec values', () => {
+  const N = 1200;
+  // Only 10 distinct values, repeated 120 times each
+  const distinct = [10, 20, 50, 100, 200, 300, 400, 500, 800, 1000];
+  const queueSecs = [];
+  for (const v of distinct) {
+    for (let i = 0; i < N / distinct.length; i++) queueSecs.push(v);
+  }
+  const runs = queueSecs.map(q => ({
+    timingSummary: { jobs: [{ queueSec: q }] },
+  }));
+  const result = computeQueueLatencyTelemetry(runs);
+  assert.equal(result.sampleCount, N);
+  assert.equal(result.percentiles.max, 1000);
+  assert.ok(result.percentiles.p50 >= 200 && result.percentiles.p50 <= 300);
+  assert.ok(result.exceedsThreshold);
+});

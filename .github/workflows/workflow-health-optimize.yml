@@ -550,8 +550,8 @@ jobs:
           fi
 
   report-failure:
-    needs: [collect-runs, detect-flaky, optimize]
-    if: ${{ always() && ((needs.collect-runs.result != 'success' && needs.collect-runs.result != 'skipped') || (needs.detect-flaky.result != 'success' && needs.detect-flaky.result != 'skipped') || (needs.optimize.result != 'success' && needs.optimize.result != 'skipped')) }}
+    needs: [collect-runs, detect-flaky, optimize, report-queue-starvation]
+    if: ${{ always() && ((needs.collect-runs.result != 'success' && needs.collect-runs.result != 'skipped') || (needs.detect-flaky.result != 'success' && needs.detect-flaky.result != 'skipped') || (needs.optimize.result != 'success' && needs.optimize.result != 'skipped') || (needs.report-queue-starvation.result != 'success' && needs.report-queue-starvation.result != 'skipped')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
