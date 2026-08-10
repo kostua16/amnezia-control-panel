@@ -145,7 +145,8 @@ jobs:
               "automation_review_loop=" + Boolean(ev.automation_review_loop) + "\n" +
               "allow_protected_edits=" + Boolean(ev.allow_protected_edits) + "\n" +
               "eligible=" + Boolean(ev.eligible) + "\n" +
-              "skip_reason=" + (ev.reason || "") + "\n"
+              "skip_reason=" + (ev.reason || "") + "\n" +
+              "skip_reason_code=" + (ev.skip_reason_code || "") + "\n"
             );
           ' >> "$GITHUB_OUTPUT"
 
@@ -157,15 +158,26 @@ jobs:
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
           COMMENT_ID: ${{ github.event.comment.id }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          EXPECTED_HEAD_SHA: ${{ github.event.inputs.head_sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SKIP_REASON: ${{ steps.pr.outputs.skip_reason }}
+          SKIP_REASON_CODE: ${{ steps.pr.outputs.skip_reason_code }}
         run: |
           if [ -n "$COMMENT_ID" ]; then
             gh api -X POST "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" -f content=eyes || true
           fi
+          # A stale skip is a verdict about the abandoned dispatch (it
+          # targeted EXPECTED_HEAD_SHA, which had moved), not about the
+          # live head. Stamp the expected SHA so auto-cover-review never
+          # matches a stale skip against the current head and permanently
+          # suppresses repair.
+          STAMP_SHA="$HEAD_SHA"
+          if [ "$SKIP_REASON_CODE" = "stale" ] && [ -n "$EXPECTED_HEAD_SHA" ]; then
+            STAMP_SHA="$EXPECTED_HEAD_SHA"
+          fi
           node .github/workflows/scripts/upsert-fix-review-comment.cjs \
-            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" \
-            --reason "$SKIP_REASON" --mode skipped
+            --pr "$PR_NUMBER" --head-sha "$STAMP_SHA" --run-url "$RUN_URL" \
+            --reason "$SKIP_REASON" --skip-reason-code "$SKIP_REASON_CODE" --mode skipped
           exit 0
 
       - name: React eyes

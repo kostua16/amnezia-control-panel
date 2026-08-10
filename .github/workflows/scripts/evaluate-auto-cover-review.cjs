@@ -59,12 +59,45 @@ const FIX_REVIEW_SKIP_TEXT = 'Review fix skipped';
 // The fix-review summary embeds the head SHA via shortSha() (first 12 chars),
 // so a no-op or skip verdict is only authoritative for the commit it was posted for.
 const HEAD_SHA_SLICE = 12;
+// Only the workflow-owned sticky comment (posted by github-actions[bot] via the
+// GITHUB_TOKEN) is a trustworthy skip/no-op signal. fetch-auto-cover-context
+// supplies every issue comment, so without this author check any commenter
+// could forge a summary and suppress automated repair.
+const TRUSTED_FIX_REVIEW_LOGIN = 'github-actions[bot]';
+// Machine-readable skip reason embedded by renderSkipped as
+// <!-- fix-review-skip-reason: <code> -->, sourced from
+// evaluate-fix-review-eligibility.cjs's skip_reason_code.
+const FIX_REVIEW_SKIP_REASON_RE = /<!-- fix-review-skip-reason: (\S+?) -->/;
+// Skip reasons that stay ineligible when fix-review runs in automation mode
+// (automationReviewLoop=true, expected SHA = live head). "stale" and
+// "requires-automation-loop" are transient/manual-only — automation mode
+// re-allows the class and dispatches against the live head — so a skip for
+// those reasons must NOT permanently block auto-cover. An unrecognized or
+// missing code is treated as non-terminal so a legacy/foreign skip can never
+// suppress repair; the live eligibility checks re-run every cycle regardless.
+const TERMINAL_FIX_REVIEW_SKIP_CODES = new Set([
+  'not-open',
+  'merged',
+  'cross-repo',
+  'draft',
+  'hard-blocker',
+]);
 
-function hasFixReviewVerdict(comments = [], headSha = '', verdictText = '') {
+function commentAuthor(comment) {
+  return comment?.user?.login ?? comment?.actor?.login ?? '';
+}
+
+function hasFixReviewVerdict(
+  comments = [],
+  headSha = '',
+  verdictText = '',
+  trustedLogin = TRUSTED_FIX_REVIEW_LOGIN,
+) {
   const headToken = headSha ? String(headSha).slice(0, HEAD_SHA_SLICE) : '';
   return comments.some((c) => {
     const body = String(c.body ?? '');
     return (
+      (!trustedLogin || commentAuthor(c) === trustedLogin) &&
       body.includes(FIX_REVIEW_NOOP_MARKER) &&
       body.includes(verdictText) &&
       (!headToken || body.includes(headToken))
@@ -78,6 +111,27 @@ function hasFixReviewNoOp(comments = [], headSha = '') {
 
 function hasFixReviewSkipped(comments = [], headSha = '') {
   return hasFixReviewVerdict(comments, headSha, FIX_REVIEW_SKIP_TEXT);
+}
+
+// A same-head, workflow-owned skip suppresses auto-cover only when its
+// machine-readable reason stays ineligible under automation mode. Transient
+// reasons (stale dispatch, manual-only class) and unrecognized/legacy skips do
+// not suppress — automation re-evaluates eligibility fresh each cycle.
+function hasTerminalFixReviewSkip(comments = [], headSha = '') {
+  const headToken = headSha ? String(headSha).slice(0, HEAD_SHA_SLICE) : '';
+  return comments.some((c) => {
+    const body = String(c.body ?? '');
+    if (
+      commentAuthor(c) !== TRUSTED_FIX_REVIEW_LOGIN ||
+      !body.includes(FIX_REVIEW_NOOP_MARKER) ||
+      !body.includes(FIX_REVIEW_SKIP_TEXT) ||
+      (headToken && !body.includes(headToken))
+    ) {
+      return false;
+    }
+    const match = body.match(FIX_REVIEW_SKIP_REASON_RE);
+    return Boolean(match && TERMINAL_FIX_REVIEW_SKIP_CODES.has(match[1]));
+  });
 }
 
 function hasActiveFixReviewRun(runs = [], prNumber, headSha) {
@@ -167,11 +221,11 @@ function evaluateAutoCoverReview({
     };
   }
 
-  if (hasFixReviewSkipped(comments, headSha)) {
+  if (hasTerminalFixReviewSkip(comments, headSha)) {
     return {
       should_run: false,
       reason:
-        'Latest fix-review was skipped — PR is ineligible for fix-review repair.',
+        'Latest fix-review was skipped for a reason that stays ineligible under automation mode.',
     };
   }
 
@@ -229,9 +283,12 @@ module.exports = {
   FIX_REVIEW_COMMIT,
   FIX_REVIEW_NOOP_MARKER,
   FIX_REVIEW_NOOP_TEXT,
+  TERMINAL_FIX_REVIEW_SKIP_CODES,
+  TRUSTED_FIX_REVIEW_LOGIN,
   countFixReviewCommits,
   evaluateAutoCoverReview,
   hasActiveFixReviewRun,
   hasFixReviewNoOp,
   hasFixReviewSkipped,
+  hasTerminalFixReviewSkip,
 };
