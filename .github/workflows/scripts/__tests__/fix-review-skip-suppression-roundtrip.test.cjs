@@ -116,9 +116,10 @@ test('stale-dispatch skip does not permanently suppress repair', () => {
   assert.equal(result.should_run, true);
 });
 
-// Control: a genuinely terminal skip (hard repair blocker) still suppresses,
-// preserving the feature for conditions that stay ineligible under automation.
-test('terminal hard-blocker skip still suppresses automation repair', () => {
+// Mutable state — blocker removal: fix-review skipped because of a
+// do-not-merge label that a maintainer then removed without a new commit. The
+// same-head hard-blocker sticky must NOT suppress the now-eligible repair.
+test('hard-blocker skip does not suppress after the blocker label is removed', () => {
   const eligibility = evaluateFixReviewEligibility({
     pr: automationPr({
       labels: ['needs-review', 'ai-review-concerns', 'do-not-merge'],
@@ -129,15 +130,41 @@ test('terminal hard-blocker skip still suppresses automation repair', () => {
   assert.equal(eligibility.eligible, false);
   assert.equal(eligibility.skip_reason_code, 'hard-blocker');
 
-  // Note: the consumer's own do-not-merge check (run before the skip check)
-  // already blocks this PR; this case confirms the pipe renders and parses the
-  // terminal code without error. Use a PR whose hard-blocker was since removed
-  // to isolate the skip-summary suppression path:
-  const result = roundtrip({
-    // Consumer sees a PR with the blocker already removed, so only the
-    // same-head terminal skip summary can suppress it.
-    pr: automationPr(),
-    eligibility,
+  // Consumer sees the same head with the blocker removed -> dispatch.
+  const result = roundtrip({ pr: automationPr(), eligibility });
+  assert.equal(result.should_run, true);
+});
+
+// Mutable state — reopen: fix-review skipped because the PR was closed, then it
+// was reopened without a new commit. The same-head not-open sticky must NOT
+// suppress the now-open repair.
+test('not-open skip does not suppress after the PR is reopened', () => {
+  const eligibility = evaluateFixReviewEligibility({
+    pr: automationPr({ state: 'CLOSED' }),
+    policy,
   });
-  assert.equal(result.should_run, false);
+
+  assert.equal(eligibility.eligible, false);
+  assert.equal(eligibility.skip_reason_code, 'not-open');
+
+  // Consumer sees the same head, now reopened -> dispatch.
+  const result = roundtrip({ pr: automationPr(), eligibility });
+  assert.equal(result.should_run, true);
+});
+
+// Mutable state — ready-for-review: fix-review skipped because the PR was a
+// draft, then it was marked ready without a new commit. The same-head draft
+// sticky must NOT suppress the now-ready repair.
+test('draft skip does not suppress after the PR is marked ready-for-review', () => {
+  const eligibility = evaluateFixReviewEligibility({
+    pr: automationPr({ isDraft: true }),
+    policy,
+  });
+
+  assert.equal(eligibility.eligible, false);
+  assert.equal(eligibility.skip_reason_code, 'draft');
+
+  // Consumer sees the same head, no longer a draft -> dispatch.
+  const result = roundtrip({ pr: automationPr(), eligibility });
+  assert.equal(result.should_run, true);
 });

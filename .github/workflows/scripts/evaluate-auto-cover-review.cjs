@@ -68,20 +68,17 @@ const TRUSTED_FIX_REVIEW_LOGIN = 'github-actions[bot]';
 // <!-- fix-review-skip-reason: <code> -->, sourced from
 // evaluate-fix-review-eligibility.cjs's skip_reason_code.
 const FIX_REVIEW_SKIP_REASON_RE = /<!-- fix-review-skip-reason: (\S+?) -->/;
-// Skip reasons that stay ineligible when fix-review runs in automation mode
-// (automationReviewLoop=true, expected SHA = live head). "stale" and
-// "requires-automation-loop" are transient/manual-only — automation mode
-// re-allows the class and dispatches against the live head — so a skip for
-// those reasons must NOT permanently block auto-cover. An unrecognized or
-// missing code is treated as non-terminal so a legacy/foreign skip can never
-// suppress repair; the live eligibility checks re-run every cycle regardless.
-const TERMINAL_FIX_REVIEW_SKIP_CODES = new Set([
-  'not-open',
-  'merged',
-  'cross-repo',
-  'draft',
-  'hard-blocker',
-]);
+// Only IMMUTABLE skip reasons suppress: "merged" (a PR cannot be un-merged)
+// and "cross-repo" (fork/same-repo origin is fixed at creation) can never flip
+// eligible without a new commit, so a same-head sticky for them stays
+// authoritative. Every other code names a MUTABLE condition — not-open
+// (reopen), draft (ready-for-review), hard-blocker (label removal), stale
+// (re-dispatch against the live head), requires-automation-loop (automation
+// mode re-allows the class) — that can become eligible without a new head, so
+// a stale same-head sticky for them must NOT suppress. auto-cover re-validates
+// each mutable condition live every cycle regardless. An unrecognized or
+// missing code is non-terminal so a legacy/foreign skip can never suppress.
+const TERMINAL_FIX_REVIEW_SKIP_CODES = new Set(['merged', 'cross-repo']);
 
 function commentAuthor(comment) {
   return comment?.user?.login ?? comment?.actor?.login ?? '';

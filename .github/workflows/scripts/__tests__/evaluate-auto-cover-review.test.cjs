@@ -259,32 +259,36 @@ test('stale no-op comment does not suppress dispatch for a newer commit', () => 
   assert.equal(result.should_run, true);
 });
 
-test('hasTerminalFixReviewSkip suppresses only on automation-terminal codes', () => {
-  // Terminal reasons stay ineligible under automation mode -> suppress.
+test('hasTerminalFixReviewSkip suppresses only on immutable codes', () => {
+  // Immutable reasons (merged, cross-repo) can never flip eligible without a
+  // new commit, so a same-head sticky stays authoritative -> suppress.
+  assert.equal(
+    hasTerminalFixReviewSkip([bot(skippedBody('abc123', 'merged'))], 'abc123'),
+    true,
+  );
   assert.equal(
     hasTerminalFixReviewSkip(
-      [bot(skippedBody('abc123', 'hard-blocker'))],
+      [bot(skippedBody('abc123', 'cross-repo'))],
       'abc123',
     ),
     true,
   );
-  assert.equal(
-    hasTerminalFixReviewSkip([bot(skippedBody('abc123', 'draft'))], 'abc123'),
-    true,
-  );
-  // Transient / manual-only reasons do NOT suppress: automation re-allows the
-  // class and dispatches against the live head.
-  assert.equal(
-    hasTerminalFixReviewSkip(
-      [bot(skippedBody('abc123', 'requires-automation-loop'))],
-      'abc123',
-    ),
-    false,
-  );
-  assert.equal(
-    hasTerminalFixReviewSkip([bot(skippedBody('abc123', 'stale'))], 'abc123'),
-    false,
-  );
+  // Mutable reasons can flip eligible without a new head (reopen,
+  // ready-for-review, label removal, stale re-dispatch, automation-mode
+  // re-allow) and are re-validated live each cycle -> never suppress.
+  for (const code of [
+    'not-open',
+    'draft',
+    'hard-blocker',
+    'stale',
+    'requires-automation-loop',
+  ]) {
+    assert.equal(
+      hasTerminalFixReviewSkip([bot(skippedBody('abc123', code))], 'abc123'),
+      false,
+      code,
+    );
+  }
   // A legacy skip with no machine-readable code never suppresses.
   assert.equal(
     hasTerminalFixReviewSkip([bot(skippedBody('abc123'))], 'abc123'),
@@ -293,7 +297,7 @@ test('hasTerminalFixReviewSkip suppresses only on automation-terminal codes', ()
   // A skip for a different head never suppresses (head-token guard).
   assert.equal(
     hasTerminalFixReviewSkip(
-      [bot(skippedBody('oldheadsha12', 'hard-blocker'))],
+      [bot(skippedBody('oldheadsha12', 'merged'))],
       'abc123',
     ),
     false,
@@ -340,7 +344,10 @@ test('stale skip (live head) does not permanently suppress repair', () => {
   assert.equal(result.should_run, true);
 });
 
-test('terminal skip suppresses automation dispatch', () => {
+// Mutable state: a hard-blocker skip (e.g. do-not-merge) on the same head must
+// NOT suppress once the blocker label is removed — the label can change without
+// a new commit, and auto-cover re-validates it live each cycle.
+test('hard-blocker skip does not suppress after the blocker is removed', () => {
   const result = evaluateAutoCoverReview({
     pr: pr(),
     policy,
@@ -357,8 +364,7 @@ test('terminal skip suppresses automation dispatch', () => {
     fixReviewRuns: [],
   });
 
-  assert.equal(result.should_run, false);
-  assert.match(result.reason, /ineligible under automation/);
+  assert.equal(result.should_run, true);
 });
 
 // SUGGESTION: only the workflow-owned sticky comment is trusted. A forged
