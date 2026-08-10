@@ -73,8 +73,12 @@ function renderSkipped({ headSha, runUrl, reason, skipReasonCode, updatedAt }) {
     // Machine-readable skip reason so auto-cover-review can tell skips that
     // stay ineligible under automation mode apart from transient ones (a stale
     // dispatch, or a manual-only class that automation mode re-allows) without
-    // pattern-matching the quoted prose below.
-    lines.push(`<!-- fix-review-skip-reason: ${skipReasonCode} -->`);
+    // pattern-matching the quoted prose below. Strip any comment-closing
+    // sequence so a future code containing `-->` (or `--!>`) cannot break the
+    // HTML comment boundary and corrupt the rendered markdown. Codes are
+    // hardcoded today; this enforces that contract at the renderer.
+    const safeCode = String(skipReasonCode).replace(/--!?>/g, '');
+    lines.push(`<!-- fix-review-skip-reason: ${safeCode} -->`);
   }
   lines.push(
     '',

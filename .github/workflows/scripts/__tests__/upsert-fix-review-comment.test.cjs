@@ -75,6 +75,24 @@ test('renderSkipped embeds the machine-readable skip reason code', () => {
   assert.match(body, /PR head SHA is stale\./);
 });
 
+test('renderSkipped strips a comment-closing sequence from the skip reason code', () => {
+  // A future code containing `-->` (or `--!>`) must not break out of the
+  // machine-readable HTML comment and corrupt the rendered markdown. The
+  // closing pair stays intact and the body still ends on a single tag.
+  const body = renderSkipped({
+    headSha: SHA,
+    runUrl: RUN,
+    reason: 'PR head SHA is stale.',
+    skipReasonCode: 'evil-->code',
+    updatedAt: '2026-06-17T00:00:00.000Z',
+  });
+  const tagMatches = body.match(
+    /<!-- fix-review-skip-reason:[^]*?-->/g,
+  );
+  assert.equal(tagMatches.length, 1);
+  assert.match(body, /<!-- fix-review-skip-reason: evilcode -->/);
+});
+
 test('renderNoChanges states no actionable findings', () => {
   const body = renderNoChanges({
     headSha: SHA,
