@@ -842,6 +842,18 @@ Deduped vs open PRs: #1055 (GSD planning intake), #1033 (stale-issue boundaries)
 | 50 | **DRY: `dashboard-stats.ts` duplicates env var parsing from `env.ts`** — `TRAFFIC_STATS_WINDOW_HOURS` parsed via module-level IIFE duplicating `env.ts:getTrafficStatsWindowHours()`. Defaults or parsing diverge silently. Fix: import canonical getter from env.ts | Low-Medium (DRY) | `src/lib/dashboard-stats.ts:4-10`, `src/lib/env.ts:85-91` | Proposed |
 | 51 | **Vestigial `/api/routing/apply` endpoint falsely claims rules are applied** — `generateXrayRulesFromDB` builds `nodeId` from `rule.userId` (not chain node label). `applyRoutingRules`/`applyAllRules` return `appliedCount: N` but `awgConfig`/`threeXuiConfig` always null — nothing actually pushed. Real apply path uses chain-config-generator → panel-sync-client → config-applier. Fix: remove or rename to `generate-only` with honest response shape | Medium (Correctness) | `src/lib/rule-enforcement.ts:59-80,152-180`, `src/app/api/routing/apply/route.ts` | Proposed |
 
+## Improvement Intake: Architectural Review Pass 19 (2026-08-10)
+
+Source: `/gsd:explore` nineteenth-pass review (non-duplicative vs proposals #1-#51 and open PRs). Artifact: `.planning/quick/260810-arch-review-pass19/proposal.md`
+
+Deduped vs open PRs: #1078 (auto-PR audit), #1076 (allowed-tools trim), #1075 (transient failure re-runs), #877 (audit-area rotation) — all workflow/automation, zero source overlap.
+
+| # | Proposal | Severity | Area | Status |
+|---|----------|----------|------|--------|
+| 52 | **`panel-sync-client.ts` reimplements `pushToPanel()` retry/enrichment** — Same duplication class as #11 (config-applier) but in sync-client module, which was never refactored to use the extracted `pushToPanel()` helper. Own retry loop, sleep, RETRY_DELAYS, enrichError calls all parallel to `panel-push.ts`. Fix: delegate to `pushToPanel()` from panel-push.ts | Medium (DRY) | `src/lib/panel-sync-client.ts`, `src/lib/panel-push.ts` | Proposed |
+| 53 | **`seed.ts` non-atomic guard causes 500 on concurrent first-requests** — Module-level `seeded` boolean check-then-write is not atomic. Two concurrent startup requests both pass the guard, both find `existing = null`, second hits P2002 unique violation re-thrown as 500. Fix: catch P2002 specifically and treat as "already seeded" | Low-Medium (Reliability) | `src/lib/seed.ts:3-14,30-31` | Proposed |
+| 54 | **`parseBody()` utility is dead code — zero route adoption** — `parse-body.ts` was created (proposal #48 partial fix) with `readBody()`/`parseBody()`/`BodySizeLimitError`; `apiHandler` maps 413. But zero of 30 POST/PUT routes import it — all still use raw `request.json()` with no size limit. Fix: adopt `parseBody()` across all routes | Medium (Security/Ops) | `src/lib/parse-body.ts`, 30 `src/app/api/**/*.ts` route files | Proposed |
+
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-08-09 - Added architectural review pass 18 (proposals #50-#51: dashboard-stats DRY violation, vestigial routing/apply false-apply reporting)*
+*Last updated: 2026-08-10 - Added architectural review pass 19 (proposals #52-#54: sync-client retry duplication, seed race condition, parseBody dead code)*
