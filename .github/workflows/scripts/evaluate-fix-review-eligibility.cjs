@@ -38,10 +38,6 @@ function normalizeBoolean(value) {
   return value === true || String(value ?? '').toLowerCase() === 'true';
 }
 
-function firstReason(reasons) {
-  return reasons.find(Boolean) ?? null;
-}
-
 function allowsManualRepairClass(prClass) {
   const normalized = String(prClass ?? 'other').toLowerCase();
   return (
@@ -80,24 +76,48 @@ function evaluateFixReviewEligibility({
   const manualClassBlocked =
     !automationLoop && !allowsManualRepairClass(evaluated.pr_class);
 
-  const reason = firstReason([
-    state !== 'open' ? 'PR is not open.' : null,
-    pr.mergedAt ? 'PR is already merged.' : null,
-    evaluated.same_repo === false ? 'PR is cross-repository.' : null,
-    evaluated.is_draft === true ? 'PR is draft.' : null,
-    stale ? 'PR head SHA is stale.' : null,
-    hardBlockers.length > 0
-      ? `Hard repair blocker present: ${hardBlockers.join(', ')}.`
-      : null,
-    manualClassBlocked
-      ? `PR class "${evaluated.pr_class}" requires automation review loop.`
-      : null,
-  ]);
+  // Each skip rule pairs a stable machine code (skip_reason_code, consumed by
+  // auto-cover-review to decide whether a skip is terminal under automation
+  // mode) with the human reason text shown in the PR summary. Order matters:
+  // the first matching rule wins, mirroring the previous firstReason chain.
+  const skipReasonRules = [
+    { code: 'not-open', when: state !== 'open', message: 'PR is not open.' },
+    {
+      code: 'merged',
+      when: Boolean(pr.mergedAt),
+      message: 'PR is already merged.',
+    },
+    {
+      code: 'cross-repo',
+      when: evaluated.same_repo === false,
+      message: 'PR is cross-repository.',
+    },
+    {
+      code: 'draft',
+      when: evaluated.is_draft === true,
+      message: 'PR is draft.',
+    },
+    { code: 'stale', when: stale, message: 'PR head SHA is stale.' },
+    {
+      code: 'hard-blocker',
+      when: hardBlockers.length > 0,
+      message: `Hard repair blocker present: ${hardBlockers.join(', ')}.`,
+    },
+    {
+      code: 'requires-automation-loop',
+      when: manualClassBlocked,
+      message: `PR class "${evaluated.pr_class}" requires automation review loop.`,
+    },
+  ];
+  const matchedRule = skipReasonRules.find((rule) => rule.when);
+  const reason = matchedRule ? matchedRule.message : null;
+  const skipReasonCode = matchedRule ? matchedRule.code : null;
   const eligible = reason === null;
 
   return {
     eligible,
     reason,
+    skip_reason_code: skipReasonCode,
     pr_number: pr.number,
     head_ref: pr.headRefName ?? '',
     head_sha: pr.headRefOid ?? '',

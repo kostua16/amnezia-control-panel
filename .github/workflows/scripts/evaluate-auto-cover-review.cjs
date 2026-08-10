@@ -55,19 +55,79 @@ function countRecordedAttempts(attempts = []) {
 
 const FIX_REVIEW_NOOP_MARKER = '<!-- fix-review-summary -->';
 const FIX_REVIEW_NOOP_TEXT = 'No changes needed';
+const FIX_REVIEW_SKIP_TEXT = 'Review fix skipped';
 // The fix-review summary embeds the head SHA via shortSha() (first 12 chars),
-// so a no-op verdict is only authoritative for the commit it was posted for.
+// so a no-op or skip verdict is only authoritative for the commit it was posted for.
 const HEAD_SHA_SLICE = 12;
+// Only the workflow-owned sticky comment (posted by github-actions[bot] via the
+// GITHUB_TOKEN) is a trustworthy skip/no-op signal. fetch-auto-cover-context
+// supplies every issue comment, so without this author check any commenter
+// could forge a summary and suppress automated repair.
+const TRUSTED_FIX_REVIEW_LOGIN = 'github-actions[bot]';
+// Machine-readable skip reason embedded by renderSkipped as
+// <!-- fix-review-skip-reason: <code> -->, sourced from
+// evaluate-fix-review-eligibility.cjs's skip_reason_code.
+const FIX_REVIEW_SKIP_REASON_RE = /<!-- fix-review-skip-reason: (\S+?) -->/;
+// Only IMMUTABLE skip reasons suppress: "merged" (a PR cannot be un-merged)
+// and "cross-repo" (fork/same-repo origin is fixed at creation) can never flip
+// eligible without a new commit, so a same-head sticky for them stays
+// authoritative. Every other code names a MUTABLE condition — not-open
+// (reopen), draft (ready-for-review), hard-blocker (label removal), stale
+// (re-dispatch against the live head), requires-automation-loop (automation
+// mode re-allows the class) — that can become eligible without a new head, so
+// a stale same-head sticky for them must NOT suppress. auto-cover re-validates
+// each mutable condition live every cycle regardless. An unrecognized or
+// missing code is non-terminal so a legacy/foreign skip can never suppress.
+const TERMINAL_FIX_REVIEW_SKIP_CODES = new Set(['merged', 'cross-repo']);
 
-function hasFixReviewNoOp(comments = [], headSha = '') {
+function commentAuthor(comment) {
+  return comment?.user?.login ?? comment?.actor?.login ?? '';
+}
+
+function hasFixReviewVerdict(
+  comments = [],
+  headSha = '',
+  verdictText = '',
+  trustedLogin = TRUSTED_FIX_REVIEW_LOGIN,
+) {
   const headToken = headSha ? String(headSha).slice(0, HEAD_SHA_SLICE) : '';
   return comments.some((c) => {
     const body = String(c.body ?? '');
     return (
+      (!trustedLogin || commentAuthor(c) === trustedLogin) &&
       body.includes(FIX_REVIEW_NOOP_MARKER) &&
-      body.includes(FIX_REVIEW_NOOP_TEXT) &&
+      body.includes(verdictText) &&
       (!headToken || body.includes(headToken))
     );
+  });
+}
+
+function hasFixReviewNoOp(comments = [], headSha = '') {
+  return hasFixReviewVerdict(comments, headSha, FIX_REVIEW_NOOP_TEXT);
+}
+
+function hasFixReviewSkipped(comments = [], headSha = '') {
+  return hasFixReviewVerdict(comments, headSha, FIX_REVIEW_SKIP_TEXT);
+}
+
+// A same-head, workflow-owned skip suppresses auto-cover only when its
+// machine-readable reason stays ineligible under automation mode. Transient
+// reasons (stale dispatch, manual-only class) and unrecognized/legacy skips do
+// not suppress — automation re-evaluates eligibility fresh each cycle.
+function hasTerminalFixReviewSkip(comments = [], headSha = '') {
+  const headToken = headSha ? String(headSha).slice(0, HEAD_SHA_SLICE) : '';
+  return comments.some((c) => {
+    const body = String(c.body ?? '');
+    if (
+      commentAuthor(c) !== TRUSTED_FIX_REVIEW_LOGIN ||
+      !body.includes(FIX_REVIEW_NOOP_MARKER) ||
+      !body.includes(FIX_REVIEW_SKIP_TEXT) ||
+      (headToken && !body.includes(headToken))
+    ) {
+      return false;
+    }
+    const match = body.match(FIX_REVIEW_SKIP_REASON_RE);
+    return Boolean(match && TERMINAL_FIX_REVIEW_SKIP_CODES.has(match[1]));
   });
 }
 
@@ -158,6 +218,14 @@ function evaluateAutoCoverReview({
     };
   }
 
+  if (hasTerminalFixReviewSkip(comments, headSha)) {
+    return {
+      should_run: false,
+      reason:
+        'Latest fix-review was skipped for a reason that stays ineligible under automation mode.',
+    };
+  }
+
   if (hasActiveFixReviewRun(fixReviewRuns, pr.number, headSha)) {
     return {
       should_run: false,
@@ -212,8 +280,12 @@ module.exports = {
   FIX_REVIEW_COMMIT,
   FIX_REVIEW_NOOP_MARKER,
   FIX_REVIEW_NOOP_TEXT,
+  TERMINAL_FIX_REVIEW_SKIP_CODES,
+  TRUSTED_FIX_REVIEW_LOGIN,
   countFixReviewCommits,
   evaluateAutoCoverReview,
   hasActiveFixReviewRun,
   hasFixReviewNoOp,
+  hasFixReviewSkipped,
+  hasTerminalFixReviewSkip,
 };

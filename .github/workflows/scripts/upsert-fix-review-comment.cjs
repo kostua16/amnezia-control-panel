@@ -67,10 +67,20 @@ function renderWorking({ headSha, runUrl, command, updatedAt }) {
   ].join('\n');
 }
 
-function renderSkipped({ headSha, runUrl, reason, updatedAt }) {
-  return [
-    COMMENT_MARKER,
-    reportHeading('⏭️ Review fix skipped'),
+function renderSkipped({ headSha, runUrl, reason, skipReasonCode, updatedAt }) {
+  const lines = [COMMENT_MARKER, reportHeading('⏭️ Review fix skipped')];
+  if (skipReasonCode) {
+    // Machine-readable skip reason so auto-cover-review can tell skips that
+    // stay ineligible under automation mode apart from transient ones (a stale
+    // dispatch, or a manual-only class that automation mode re-allows) without
+    // pattern-matching the quoted prose below. Strip any comment-closing
+    // sequence so a future code containing `-->` (or `--!>`) cannot break the
+    // HTML comment boundary and corrupt the rendered markdown. Codes are
+    // hardcoded today; this enforces that contract at the renderer.
+    const safeCode = String(skipReasonCode).replace(/--!?>/g, '');
+    lines.push(`<!-- fix-review-skip-reason: ${safeCode} -->`);
+  }
+  lines.push(
     '',
     `- Head SHA: \`${shortSha(headSha)}\``,
     `- Run: ${runUrl || '_n/a_'}`,
@@ -83,7 +93,8 @@ function renderSkipped({ headSha, runUrl, reason, updatedAt }) {
     'Re-run `/fix-review` (or `/address-review`) on an eligible open same-repo PR.',
     '',
     '<!-- updated: ' + updatedAt + ' -->',
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 function renderNoChanges({ headSha, runUrl, command, structured, updatedAt }) {
@@ -523,6 +534,7 @@ function main() {
         headSha,
         runUrl,
         reason: getArg('--reason'),
+        skipReasonCode: getArg('--skip-reason-code'),
         updatedAt: now,
       });
       break;

@@ -71,6 +71,7 @@ test('hard repair blockers still skip fix-review', () => {
 
   assert.equal(result.eligible, false);
   assert.match(result.reason, /do-not-merge/);
+  assert.equal(result.skip_reason_code, 'hard-blocker');
 });
 
 test('stale dispatch is skipped with a specific reason', () => {
@@ -82,6 +83,7 @@ test('stale dispatch is skipped with a specific reason', () => {
 
   assert.equal(result.eligible, false);
   assert.equal(result.reason, 'PR head SHA is stale.');
+  assert.equal(result.skip_reason_code, 'stale');
 });
 
 test('automation review loop is retained as metadata, not required for repair', () => {
@@ -128,6 +130,11 @@ test('manual repair skips automation planning and dependency classes', () => {
     assert.equal(result.eligible, false, item.branch);
     assert.equal(result.pr_class, item.expectedClass, item.branch);
     assert.match(result.reason, /requires automation review loop/, item.branch);
+    assert.equal(
+      result.skip_reason_code,
+      'requires-automation-loop',
+      item.branch,
+    );
   }
 });
 

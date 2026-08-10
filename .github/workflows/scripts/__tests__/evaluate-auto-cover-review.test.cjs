@@ -8,11 +8,36 @@ const {
   evaluateAutoCoverReview,
   hasActiveFixReviewRun,
   hasFixReviewNoOp,
+  hasFixReviewSkipped,
+  hasTerminalFixReviewSkip,
+  TRUSTED_FIX_REVIEW_LOGIN,
 } = require('../evaluate-auto-cover-review.cjs');
 
 const policy = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', '..', 'policy.json'), 'utf8'),
 );
+
+const BOT = { login: TRUSTED_FIX_REVIEW_LOGIN };
+
+// Wrap a comment body in a workflow-owned (github-actions[bot]) author so it
+// mirrors what fetch-auto-cover-context supplies from the real sticky comment.
+function bot(body, overrides = {}) {
+  return { body, user: BOT, ...overrides };
+}
+
+function noOpBody(headSha) {
+  return `<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed\n\n- Head SHA: \`${headSha}\``;
+}
+
+// Mirrors renderSkipped's output: an optional machine-readable skip-reason code
+// sits between the heading and the Head SHA line.
+function skippedBody(headSha, code, reason = '') {
+  const head = `<!-- fix-review-summary -->\n## FIX-REVIEW Report: ⏭️ Review fix skipped`;
+  const codeLine = code ? `\n<!-- fix-review-skip-reason: ${code} -->` : '';
+  const shaLine = `\n\n- Head SHA: \`${headSha}\``;
+  const reasonLine = reason ? `\n\n> ${reason}` : '';
+  return `${head}${codeLine}${shaLine}${reasonLine}`;
+}
 
 function pr(overrides = {}) {
   return {
@@ -42,6 +67,7 @@ function run(input = {}) {
       },
     ],
     externalReview: input.externalReview,
+    comments: input.comments ?? [],
     commits: input.commits ?? [],
     attempts: input.attempts ?? [],
     fixReviewRuns: input.fixReviewRuns ?? [],
@@ -166,34 +192,53 @@ test('detects active current fix-review runs', () => {
 });
 
 test('hasFixReviewNoOp detects no-changes fix-review comment', () => {
-  const noOpBody = (headSha) =>
-    `<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed\n\n- Head SHA: \`${headSha}\``;
-  assert.equal(hasFixReviewNoOp([{ body: noOpBody('abc123') }]), true);
-  assert.equal(hasFixReviewNoOp([{ body: noOpBody('abc123') }], 'abc123'), true);
+  assert.equal(hasFixReviewNoOp([bot(noOpBody('abc123'))]), true);
+  assert.equal(hasFixReviewNoOp([bot(noOpBody('abc123'))], 'abc123'), true);
   // Stale no-op from a prior commit must not match the current head.
-  assert.equal(hasFixReviewNoOp([{ body: noOpBody('oldheadsha12') }], 'abc123'), false);
+  assert.equal(
+    hasFixReviewNoOp([bot(noOpBody('oldheadsha12'))], 'abc123'),
+    false,
+  );
   assert.equal(
     hasFixReviewNoOp([
-      {
-        body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ✅ Review fixes applied',
-      },
+      bot(
+        '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ✅ Review fixes applied',
+      ),
     ]),
     false,
   );
   assert.equal(hasFixReviewNoOp([]), false);
-  assert.equal(hasFixReviewNoOp([{ body: 'unrelated comment' }]), false);
+  assert.equal(hasFixReviewNoOp([bot('unrelated comment')]), false);
+});
+
+test('hasFixReviewSkipped detects skipped fix-review comment', () => {
+  assert.equal(hasFixReviewSkipped([bot(skippedBody('abc123'))]), true);
+  assert.equal(
+    hasFixReviewSkipped([bot(skippedBody('abc123', 'draft'))], 'abc123'),
+    true,
+  );
+  // Stale skip from a prior commit must not match the current head.
+  assert.equal(
+    hasFixReviewSkipped([bot(skippedBody('oldheadsha12', 'draft'))], 'abc123'),
+    false,
+  );
+  assert.equal(
+    hasFixReviewSkipped([
+      bot(
+        '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ✅ Review fixes applied',
+      ),
+    ]),
+    false,
+  );
+  assert.equal(hasFixReviewSkipped([]), false);
+  assert.equal(hasFixReviewSkipped([bot('unrelated comment')]), false);
 });
 
 test('skips dispatch when latest fix-review confirmed false positives', () => {
-  const comments = [
-    {
-      body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed\n\n- Head SHA: `abc123`',
-    },
-  ];
   const result = evaluateAutoCoverReview({
     pr: pr(),
     policy,
-    comments,
+    comments: [bot(noOpBody('abc123'))],
     attempts: [],
     fixReviewRuns: [],
   });
@@ -203,18 +248,140 @@ test('skips dispatch when latest fix-review confirmed false positives', () => {
 });
 
 test('stale no-op comment does not suppress dispatch for a newer commit', () => {
-  const comments = [
-    {
-      body: '<!-- fix-review-summary -->\n## FIX-REVIEW Report: ℹ️ No changes needed\n\n- Head SHA: `oldheadsha1`',
-    },
-  ];
   const result = evaluateAutoCoverReview({
     pr: pr(),
     policy,
-    comments,
+    comments: [bot(noOpBody('oldheadsha1'))],
     attempts: [],
     fixReviewRuns: [],
   });
 
   assert.equal(result.should_run, true);
+});
+
+test('hasTerminalFixReviewSkip suppresses only on immutable codes', () => {
+  // Immutable reasons (merged, cross-repo) can never flip eligible without a
+  // new commit, so a same-head sticky stays authoritative -> suppress.
+  assert.equal(
+    hasTerminalFixReviewSkip([bot(skippedBody('abc123', 'merged'))], 'abc123'),
+    true,
+  );
+  assert.equal(
+    hasTerminalFixReviewSkip(
+      [bot(skippedBody('abc123', 'cross-repo'))],
+      'abc123',
+    ),
+    true,
+  );
+  // Mutable reasons can flip eligible without a new head (reopen,
+  // ready-for-review, label removal, stale re-dispatch, automation-mode
+  // re-allow) and are re-validated live each cycle -> never suppress.
+  for (const code of [
+    'not-open',
+    'draft',
+    'hard-blocker',
+    'stale',
+    'requires-automation-loop',
+  ]) {
+    assert.equal(
+      hasTerminalFixReviewSkip([bot(skippedBody('abc123', code))], 'abc123'),
+      false,
+      code,
+    );
+  }
+  // A legacy skip with no machine-readable code never suppresses.
+  assert.equal(
+    hasTerminalFixReviewSkip([bot(skippedBody('abc123'))], 'abc123'),
+    false,
+  );
+  // A skip for a different head never suppresses (head-token guard).
+  assert.equal(
+    hasTerminalFixReviewSkip(
+      [bot(skippedBody('oldheadsha12', 'merged'))],
+      'abc123',
+    ),
+    false,
+  );
+});
+
+// Regression for the BLOCKER: a manual /fix-review rejects an automation-owned
+// PR with "requires automation review loop", but auto-cover dispatches the same
+// repair in automation mode (automationReviewLoop=true) — that skip must not
+// permanently suppress the eligible automated dispatch.
+test('requires-automation-loop skip does not suppress automation dispatch', () => {
+  const result = evaluateAutoCoverReview({
+    pr: pr(),
+    policy,
+    comments: [
+      bot(
+        skippedBody(
+          'abc123',
+          'requires-automation-loop',
+          'PR class "automation-fix" requires automation review loop.',
+        ),
+      ),
+    ],
+    attempts: [],
+    fixReviewRuns: [],
+  });
+
+  assert.equal(result.should_run, true);
+});
+
+// Regression for the BLOCKER stale-race: when the head moved between dispatch
+// and run, fix-review stamps the EXPECTED sha for a stale skip, so the live
+// head never matches. Even if the live sha were stamped, the "stale" code is
+// non-terminal and must not suppress.
+test('stale skip (live head) does not permanently suppress repair', () => {
+  const result = evaluateAutoCoverReview({
+    pr: pr(),
+    policy,
+    comments: [bot(skippedBody('abc123', 'stale', 'PR head SHA is stale.'))],
+    attempts: [],
+    fixReviewRuns: [],
+  });
+
+  assert.equal(result.should_run, true);
+});
+
+// Mutable state: a hard-blocker skip (e.g. do-not-merge) on the same head must
+// NOT suppress once the blocker label is removed — the label can change without
+// a new commit, and auto-cover re-validates it live each cycle.
+test('hard-blocker skip does not suppress after the blocker is removed', () => {
+  const result = evaluateAutoCoverReview({
+    pr: pr(),
+    policy,
+    comments: [
+      bot(
+        skippedBody(
+          'abc123',
+          'hard-blocker',
+          'Hard repair blocker present: do-not-merge.',
+        ),
+      ),
+    ],
+    attempts: [],
+    fixReviewRuns: [],
+  });
+
+  assert.equal(result.should_run, true);
+});
+
+// SUGGESTION: only the workflow-owned sticky comment is trusted. A forged
+// skip summary from any other author must not suppress repair.
+test('untrusted-author skip does not suppress dispatch', () => {
+  const forged = {
+    body: skippedBody('abc123', 'hard-blocker', 'do-not-merge'),
+    user: { login: 'attacker' },
+  };
+  const result = evaluateAutoCoverReview({
+    pr: pr(),
+    policy,
+    comments: [forged],
+    attempts: [],
+    fixReviewRuns: [],
+  });
+
+  assert.equal(result.should_run, true);
+  assert.equal(hasTerminalFixReviewSkip([forged], 'abc123'), false);
 });
