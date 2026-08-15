@@ -66,11 +66,16 @@ function isRunnableCandidate(candidate) {
     return false;
   }
   // existsSync is true for directories (and on Unix for non-executables).
-  // command -v skipped those; a false hit earlier in PATH then abort
-  // execFileSync with EACCES instead of continuing the search.
+  // command -v used access(X_OK); a mode-bit check is broader (other/group
+  // execute the process is not in) and still EACCES-aborts. Skip non-files
+  // and anything this process cannot execute, then keep searching PATH.
   if (!stat.isFile()) return false;
-  if (process.platform === 'win32') return true;
-  return (stat.mode & 0o111) !== 0;
+  try {
+    fs.accessSync(candidate, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function resolveCommand(name, env = process.env) {
