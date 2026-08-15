@@ -98,34 +98,79 @@ function fingerprint(text) {
 }
 
 /**
+ * Per-PR disposition tokens and known placeholders. These belong on
+ * `human_disposition` / `auto_prs_inspected[].recommendation`, never on a
+ * systemic-fix card — ingesting them produced the APR-E10 false escalations
+ * for merge/close/review (fingerprints 283128acef14 / 310ff200149b /
+ * c97ace4c8fef).
+ */
+const GENERIC_DISPOSITION_TOKENS = new Set([
+  'merge',
+  'close',
+  'review',
+  'rebase',
+  'block',
+  'none',
+  '-',
+  'n/a',
+  'na',
+  'n.a.',
+  'not applicable',
+  'skip',
+  'skipped',
+  'no-op',
+  'noop',
+  'todo',
+  'tbd',
+]);
+
+// The token denylist above only names placeholders seen in practice; any other
+// one-word answer ("fix", "later", "asap") would still fingerprint and open a
+// false escalation after two consecutive audits. A systemic-fix card must read
+// like an implementable fix, so require at least this many words instead of
+// growing the denylist forever.
+const MIN_SUMMARY_WORDS = 2;
+
+function normalizeSummary(text) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isActionableSummary(text) {
+  const normalized = normalizeSummary(text);
+  if (!normalized) return false;
+  if (GENERIC_DISPOSITION_TOKENS.has(normalized.toLowerCase())) return false;
+  const words = normalized.split(' ').filter(Boolean);
+  return words.length >= MIN_SUMMARY_WORDS;
+}
+
+/**
  * Extract unique recommendation fingerprints from structured output.
- * Sources: `auto_prs_inspected[].recommendation` + `risk_patterns[]`.
+ *
+ * Consumes ONLY `systemic_fix_recommendations[]` objects. Per-PR
+ * `recommendation`, `risk_patterns`, and `human_disposition` are evidence,
+ * not implementable systemic fixes — there is no legacy fallback. Missing
+ * or non-array field (old schema) yields an empty list so a clean gap is
+ * recorded. Fingerprints are computed from the normalized summary only;
+ * `evidence` is ignored so wording about a specific PR cannot split or
+ * poison a streak.
  */
 function extractRecommendations(data) {
   const seen = new Set();
   const recs = [];
-
-  const inspected = Array.isArray(data.auto_prs_inspected)
-    ? data.auto_prs_inspected
+  const items = Array.isArray(data && data.systemic_fix_recommendations)
+    ? data.systemic_fix_recommendations
     : [];
-  for (const pr of inspected) {
-    const rec = pr && pr.recommendation;
-    if (!rec || rec === '-' || rec === 'none') continue;
-    const fp = fingerprint(rec);
-    if (!seen.has(fp)) {
-      seen.add(fp);
-      recs.push({ fingerprint: fp, text: String(rec).trim() });
-    }
-  }
 
-  const risks = Array.isArray(data.risk_patterns) ? data.risk_patterns : [];
-  for (const r of risks) {
-    if (!r) continue;
-    const fp = fingerprint(r);
-    if (!seen.has(fp)) {
-      seen.add(fp);
-      recs.push({ fingerprint: fp, text: String(r).trim() });
-    }
+  for (const item of items) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const summary = normalizeSummary(item.summary);
+    if (!isActionableSummary(summary)) continue;
+    const fp = fingerprint(summary);
+    if (seen.has(fp)) continue;
+    seen.add(fp);
+    recs.push({ fingerprint: fp, text: summary });
   }
 
   return recs;
@@ -627,7 +672,10 @@ module.exports = {
   LOG_TITLE,
   LOG_SEARCH_MARKER,
   ESCALATION_LABELS,
+  GENERIC_DISPOSITION_TOKENS,
   fingerprint,
+  normalizeSummary,
+  isActionableSummary,
   extractRecommendations,
   parseStructuredOutput,
   parseLogBody,
