@@ -162,17 +162,13 @@ test('a fingerprint reported in both lists resolves to fixed without crashing', 
 test('file order does not change the fingerprint used for dedup', () => {
   const first = appendToLedger({
     ledger: emptyLedger(),
-    manualFindings: [
-      makeFinding({ files: ['src/lib/a.ts', 'src/lib/b.ts'] }),
-    ],
+    manualFindings: [makeFinding({ files: ['src/lib/a.ts', 'src/lib/b.ts'] })],
     runId: RUN_1,
     now: NOW_1,
   });
   const second = appendToLedger({
     ledger: first.ledger,
-    manualFindings: [
-      makeFinding({ files: ['src/lib/b.ts', 'src/lib/a.ts'] }),
-    ],
+    manualFindings: [makeFinding({ files: ['src/lib/b.ts', 'src/lib/a.ts'] })],
     runId: RUN_2,
     now: NOW_2,
   });
@@ -225,7 +221,10 @@ test('corrupt ledger JSON fails loudly instead of wiping history', () => {
   fs.writeFileSync(filePath, '{ not json');
 
   assert.throws(() => loadLedger(filePath), /not valid JSON/);
-  assert.throws(() => loadLedger(filePath), new RegExp(filePath.replace(/\\/g, '\\\\')));
+  assert.throws(
+    () => loadLedger(filePath),
+    new RegExp(filePath.replace(/\\/g, '\\\\')),
+  );
 
   const cli = runCliScript(['--append', '--ledger', filePath], {
     CLAUDE_STRUCTURED_OUTPUT: JSON.stringify({
