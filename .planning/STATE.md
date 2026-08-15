@@ -159,8 +159,9 @@ Resume file: None
 | 2026-06-09 | 260609-p3k | User creation DB↔VPN consistency — compensating actions for partial failures (#444) |
 | 2026-06-04 | 260604-l3n | Replace STUB public keys in chain-router with real key generation (#442) |
 | 2026-07-20 | 260721-4ej | Fix npm audit infrastructure failure classification |
+| 2026-08-15 | 260815-shf | #922 canonical advisory-matrix reconciliation + tracker closures |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-07-20 - Completed quick task 260721-4ej_
+_Last updated: 2026-08-15 - Completed quick task 260815-shf_
