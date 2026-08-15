@@ -129,9 +129,11 @@ test('groupStalePrs splits conflicting from clean within a kind', () => {
   assert.equal(groups.length, 2);
   assert.deepEqual(groups[0].source_prs, [40]);
   assert.equal(groups[0].conflict_risk, 'low');
+  assert.equal(groups[0].rejection_reason, null);
   assert.deepEqual(groups[1].source_prs, [41]);
   assert.equal(groups[1].conflict_risk, 'high');
   assert.equal(groups[1].recommended_action, 'rebase-first');
+  assert.match(groups[1].rejection_reason, /rebased in place/);
 });
 
 test('groupStalePrs marks a multi-PR all-conflicting group manual-review, not consolidate', () => {
@@ -151,6 +153,7 @@ test('dependency group recommends manual-review', () => {
   ]);
   assert.equal(groups[0].kind, 'dependency');
   assert.equal(groups[0].recommended_action, 'manual-review');
+  assert.match(groups[0].rejection_reason, /[Dd]ependency/);
 });
 
 test('conflictRiskFor maps mergeable states to risk levels', () => {
