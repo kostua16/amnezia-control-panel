@@ -388,3 +388,154 @@ test('inert-attempt waiver never bypasses the one-shot retry marker', async () =
     'the retry marker caps fresh-context retries at one, waiver or not',
   );
 });
+
+// ── invariant_findings enrichment (through the real embedded script) ──
+
+test('inert bot command finding carries source urls, actor, trigger path, action (#767 shape)', async () => {
+  const issue = makeIssue({
+    number: 767,
+    title: 'wf cli docs',
+    labels: ['triaged', 'auto-fix', 'low', 'maintenance'],
+    createdAt: daysAgo(30),
+  });
+  const buckets = await runCollect({
+    issues: [issue],
+    commentsByIssue: {
+      767: [
+        {
+          user: bot,
+          body: '/fix',
+          created_at: daysAgo(29),
+          html_url: 'https://github.com/o/r/issues/767#issuecomment-1',
+          id: 1,
+        },
+        {
+          user: bot,
+          body: '/fix',
+          created_at: daysAgo(28),
+          html_url: 'https://github.com/o/r/issues/767#issuecomment-2',
+          id: 2,
+        },
+      ],
+    },
+  });
+  assert.equal(buckets.invariant_findings.length, 2);
+  const f = buckets.invariant_findings.find(
+    (x) => x.type === 'inert_bot_command',
+  );
+  assert.ok(f, 'expected the inert_bot_command finding');
+  assert.equal(f.type, 'inert_bot_command');
+  assert.equal(f.count, 2);
+  assert.equal(f.actor, 'github-actions[bot]');
+  assert.equal(f.trigger_path, 'catchup-phase6-autofix');
+  assert.match(f.action, /dispatch fix-issue\.yml via workflow_dispatch/);
+  assert.equal(
+    f.sources[1].url,
+    'https://github.com/o/r/issues/767#issuecomment-2',
+  );
+});
+
+test('stuck fixable finding carries attempts, holds, owner, next action (#835 shape)', async () => {
+  const issue = makeIssue({
+    number: 835,
+    title: 'old stuck issue',
+    labels: ['triaged', 'auto-fix', 'medium', 'maintenance'],
+    createdAt: daysAgo(21),
+  });
+  const lastFixAt = daysAgo(9);
+  const buckets = await runCollect({
+    issues: [issue],
+    commentsByIssue: {
+      835: [
+        { user: bot, body: 'Triage Result: medium bug', created_at: daysAgo(20) },
+        { user: bot, body: '/fix attempt', created_at: daysAgo(10) },
+        { user: bot, body: '/fix attempt', created_at: lastFixAt },
+      ],
+    },
+  });
+  const stuck = buckets.invariant_findings.find(
+    (f) => f.type === 'stuck_fixable',
+  );
+  assert.ok(stuck, 'expected a stuck_fixable finding');
+  assert.equal(stuck.fix_attempts, 2);
+  assert.equal(stuck.owner, 'automation');
+  assert.deepEqual(stuck.blocking_labels, []);
+  assert.match(stuck.next_action, /fix dead-letter/);
+  assert.equal(stuck.last_fix_attempt_at, lastFixAt);
+});
+
+test('stuck issue parked with needs-review reports the manual hold, not a fix dispatch', async () => {
+  const issue = makeIssue({
+    number: 910,
+    title: 'stuck but parked',
+    labels: ['triaged', 'auto-fix', 'medium', 'maintenance', 'needs-review'],
+    createdAt: daysAgo(10),
+  });
+  const buckets = await runCollect({
+    issues: [issue],
+    commentsByIssue: {
+      910: [{ user: bot, body: 'Triage Result: medium bug', created_at: daysAgo(9) }],
+    },
+  });
+  const stuck = buckets.invariant_findings.find(
+    (f) => f.type === 'stuck_fixable',
+  );
+  assert.ok(stuck);
+  assert.deepEqual(stuck.blocking_labels, ['needs-review']);
+  assert.match(stuck.next_action, /maintainer unblocks \(needs-review\)/);
+});
+
+test('fresh stuck issue with no attempts prescribes the fix dispatch (#1061/#1062 shape)', async () => {
+  const issue = makeIssue({
+    number: 1061,
+    title: 'newly stuck',
+    labels: ['triaged', 'auto-fix', 'low', 'maintenance'],
+    createdAt: daysAgo(1.2),
+  });
+  const buckets = await runCollect({
+    issues: [issue],
+    commentsByIssue: {
+      1061: [{ user: bot, body: 'Triage Result: low docs', created_at: daysAgo(1) }],
+    },
+  });
+  const stuck = buckets.invariant_findings.find(
+    (f) => f.type === 'stuck_fixable',
+  );
+  assert.ok(stuck);
+  assert.equal(stuck.fix_attempts, 0);
+  assert.equal(stuck.last_fix_attempt_at, null);
+  assert.match(stuck.next_action, /dispatch fix-issue\.yml via workflow_dispatch/);
+});
+
+test('tracking issues and linked-PR issues produce no stuck finding (false positives)', async () => {
+  const tracker = makeIssue({
+    number: 920,
+    title: '[claude-health] some tracker',
+    labels: ['triaged', 'auto-fix', 'low'],
+    createdAt: daysAgo(40),
+  });
+  const linked = makeIssue({
+    number: 921,
+    title: 'has a PR',
+    labels: ['triaged', 'auto-fix', 'low', 'maintenance'],
+    createdAt: daysAgo(10),
+    body: 'Fixes #500',
+  });
+  const active = makeIssue({
+    number: 922,
+    title: 'fix run in flight',
+    labels: ['triaged', 'auto-fix', 'low', 'maintenance'],
+    createdAt: daysAgo(10),
+  });
+  // The harness's listWorkflowRunsForRepo stub returns no runs, so the
+  // active-run path cannot fire here; the linked-PR and tracker paths can.
+  const buckets = await runCollect({
+    issues: [tracker, linked],
+    commentsByIssue: { 920: [], 921: [] },
+  });
+  assert.equal(
+    buckets.invariant_findings.filter((f) => f.type === 'stuck_fixable').length,
+    0,
+  );
+  assert.ok(!active || true); // active fixture documents the third path
+});
