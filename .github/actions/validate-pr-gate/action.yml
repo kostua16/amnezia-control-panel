@@ -104,7 +104,12 @@ runs:
       id: gate-ledger
       shell: bash
       continue-on-error: true
-      run: node .github/workflows/scripts/audit-findings-ledger.cjs --validate --ledger .planning/audit-backlog.json
+      run: |
+        # Shared by 8+ non-audit workflows. --validate skips when the ledger
+        # is absent (pre-seed checkout, rebase baseline, fix-review restore
+        # of this action without the seed). Corrupt/malformed files still
+        # fail. CI Test uses --require so audit stays fail-closed.
+        node .github/workflows/scripts/audit-findings-ledger.cjs --validate --ledger .planning/audit-backlog.json
 
     - name: Aggregate gate verdict
       id: aggregate

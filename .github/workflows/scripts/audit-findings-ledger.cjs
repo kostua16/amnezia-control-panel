@@ -6,12 +6,12 @@ const {
   collectManualFindings,
   fingerprintFinding,
   normalizeFinding,
+  normalizeSeverity,
   parseJsonMaybe,
 } = require('./upsert-audit-manual-findings.cjs');
 
 const DEFAULT_LEDGER_PATH = '.planning/audit-backlog.json';
 const LEDGER_VERSION = 1;
-const SEVERITIES = ['critical', 'high', 'medium', 'low', 'unspecified'];
 const ENTRY_STATUSES = ['open', 'manual', 'fixed'];
 const FINGERPRINT_PATTERN = /^[0-9a-f]{16}$/;
 const SEVERITY_RANKS = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -47,11 +47,12 @@ function isParseableTimestamp(value) {
   return isNonEmptyString(value) && !Number.isNaN(Date.parse(value));
 }
 
+// Same contract as upsert-audit-manual-findings.normalizeSeverity: lowercase
+// pass-through, empty → 'unspecified'. Do not collapse info/warning/urgent/
+// deferred (or any other agent vocabulary) — the issue upsert stores those
+// literals, and the ledger must agree.
 function normalizeLedgerSeverity(value) {
-  const severity = String(value || '')
-    .trim()
-    .toLowerCase();
-  return SEVERITIES.includes(severity) ? severity : 'unspecified';
+  return normalizeSeverity(value);
 }
 
 function validateLedger(ledger) {
@@ -87,10 +88,12 @@ function validateLedger(ledger) {
     }
 
     if (!ENTRY_STATUSES.includes(entry.status)) {
-      reasons.push(`${where}.status must be one of: ${ENTRY_STATUSES.join(', ')}`);
+      reasons.push(
+        `${where}.status must be one of: ${ENTRY_STATUSES.join(', ')}`,
+      );
     }
-    if (!SEVERITIES.includes(entry.severity)) {
-      reasons.push(`${where}.severity must be one of: ${SEVERITIES.join(', ')}`);
+    if (!isNonEmptyString(entry.severity)) {
+      reasons.push(`${where}.severity must be a non-empty string`);
     }
     if (!isNonEmptyString(entry.summary)) {
       reasons.push(`${where}.summary must be a non-empty string`);
@@ -345,9 +348,19 @@ function runCli() {
     if (validate) {
       // Read-only structural check: unlike append/list-open it must not fall
       // back to the empty-ledger init, which would mask a missing file.
+      // Default: skip when absent so the shared validate-pr-gate (8+
+      // non-audit callers) does not fail pre-seed checkouts. --require
+      // keeps CI / audit fail-closed on a missing seed.
+      const requireLedger = args.require === 'true';
       if (!fs.existsSync(ledgerPath)) {
-        process.stderr.write(`Ledger file not found: ${ledgerPath}\n`);
-        process.exitCode = 1;
+        if (requireLedger) {
+          process.stderr.write(`Ledger file not found: ${ledgerPath}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        process.stdout.write(
+          `Ledger file not present; skipping validation: ${ledgerPath}\n`,
+        );
         return;
       }
       const ledger = loadLedger(ledgerPath);

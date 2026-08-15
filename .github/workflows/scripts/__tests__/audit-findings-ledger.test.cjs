@@ -15,7 +15,10 @@ const {
   serializeLedger,
   validateLedger,
 } = require('../audit-findings-ledger.cjs');
-const { fingerprintFinding } = require('../upsert-audit-manual-findings.cjs');
+const {
+  fingerprintFinding,
+  normalizeSeverity,
+} = require('../upsert-audit-manual-findings.cjs');
 
 const SCRIPT_PATH = path.join(__dirname, '..', 'audit-findings-ledger.cjs');
 const NOW_1 = '2026-08-15T10:00:00.000Z';
@@ -467,11 +470,22 @@ test('--validate accepts a valid seeded ledger without touching the file', () =>
   assert.equal(fs.readFileSync(filePath, 'utf8'), before);
 });
 
-test('--validate fails on a missing ledger instead of initializing it', () => {
+test('--validate skips a missing ledger so shared-gate callers stay green', () => {
   const dir = makeTempDir();
   const filePath = path.join(dir, 'missing.json');
 
   const cli = runCliScript(['--validate', '--ledger', filePath]);
+
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stdout, /skipping validation/);
+  assert.equal(fs.existsSync(filePath), false);
+});
+
+test('--validate --require fails on a missing ledger instead of initializing it', () => {
+  const dir = makeTempDir();
+  const filePath = path.join(dir, 'missing.json');
+
+  const cli = runCliScript(['--validate', '--require', '--ledger', filePath]);
 
   assert.notEqual(cli.status, 0);
   assert.match(cli.stderr, /not found/);
@@ -483,9 +497,14 @@ test('invalid top-level ledger shape reports a structure error', () => {
     JSON.stringify({ version: 1, findings: {} }),
   );
   assert.throws(() => loadLedger(findingsNotArray), /invalid structure/);
-  assert.throws(() => loadLedger(findingsNotArray), /findings must be an array/);
+  assert.throws(
+    () => loadLedger(findingsNotArray),
+    /findings must be an array/,
+  );
 
-  const wrongVersion = writeRawLedger(JSON.stringify({ version: 2, findings: [] }));
+  const wrongVersion = writeRawLedger(
+    JSON.stringify({ version: 2, findings: [] }),
+  );
   assert.throws(() => loadLedger(wrongVersion), /invalid structure/);
   assert.throws(() => loadLedger(wrongVersion), /version must be 1/);
 
@@ -513,8 +532,8 @@ const MALFORMED_ENTRY_CASES = [
     build: (entry) => ledgerWith({ ...entry, status: 'closed' }),
   },
   {
-    name: 'unknown severity',
-    build: (entry) => ledgerWith({ ...entry, severity: 'urgent' }),
+    name: 'empty severity',
+    build: (entry) => ledgerWith({ ...entry, severity: '' }),
   },
   {
     name: 'files is not an array',
@@ -522,8 +541,7 @@ const MALFORMED_ENTRY_CASES = [
   },
   {
     name: 'files contains an empty string',
-    build: (entry) =>
-      ledgerWith({ ...entry, files: ['src/lib/utils.ts', ''] }),
+    build: (entry) => ledgerWith({ ...entry, files: ['src/lib/utils.ts', ''] }),
   },
   {
     name: 'empty summary',
@@ -557,7 +575,7 @@ for (const { name, build } of MALFORMED_ENTRY_CASES) {
 
 test('CLI --validate reports the structural error for malformed entries', () => {
   for (const name of [
-    'unknown severity',
+    'empty severity',
     'fingerprint does not match summary/files content',
     'fixed entry without fixed_in_run',
   ]) {
@@ -650,9 +668,20 @@ test('a refreshed severity change reorders list-open output', () => {
   );
 });
 
-test('unknown finding severities normalize so written ledgers stay valid', () => {
+test('ledger severity matches upsert pass-through, including extended vocabulary', () => {
+  for (const value of [
+    'HIGH',
+    'info',
+    'warning',
+    'urgent',
+    'deferred',
+    '',
+    undefined,
+  ]) {
+    assert.equal(normalizeLedgerSeverity(value), normalizeSeverity(value));
+  }
   assert.equal(normalizeLedgerSeverity('HIGH'), 'high');
-  assert.equal(normalizeLedgerSeverity('deferred'), 'unspecified');
+  assert.equal(normalizeLedgerSeverity('deferred'), 'deferred');
   assert.equal(normalizeLedgerSeverity(undefined), 'unspecified');
 
   const result = appendToLedger({
@@ -662,8 +691,33 @@ test('unknown finding severities normalize so written ledgers stay valid', () =>
     now: NOW_1,
   });
 
-  assert.equal(result.ledger.findings[0].severity, 'unspecified');
+  assert.equal(result.ledger.findings[0].severity, 'urgent');
   assert.deepEqual(validateLedger(result.ledger), []);
   const filePath = writeLedgerFile(result.ledger);
   assert.doesNotThrow(() => loadLedger(filePath));
+});
+
+test('shared gate skips a missing ledger; CI Test requires the seed', () => {
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  const gateAction = fs.readFileSync(
+    path.join(repoRoot, '.github/actions/validate-pr-gate/action.yml'),
+    'utf8',
+  );
+  const ciWorkflow = fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/ci.yml'),
+    'utf8',
+  );
+
+  assert.match(
+    gateAction,
+    /audit-findings-ledger\.cjs --validate --ledger \.planning\/audit-backlog\.json/,
+  );
+  assert.doesNotMatch(
+    gateAction,
+    /audit-findings-ledger\.cjs --validate --require/,
+  );
+  assert.match(
+    ciWorkflow,
+    /audit-findings-ledger\.cjs --validate --require --ledger \.planning\/audit-backlog\.json/,
+  );
 });
