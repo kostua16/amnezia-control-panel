@@ -58,6 +58,21 @@ function classifyChangedFiles(
   return { workflowYamlFiles, shellFiles };
 }
 
+function isRunnableCandidate(candidate) {
+  let stat;
+  try {
+    stat = fs.statSync(candidate);
+  } catch {
+    return false;
+  }
+  // existsSync is true for directories (and on Unix for non-executables).
+  // command -v skipped those; a false hit earlier in PATH then abort
+  // execFileSync with EACCES instead of continuing the search.
+  if (!stat.isFile()) return false;
+  if (process.platform === 'win32') return true;
+  return (stat.mode & 0o111) !== 0;
+}
+
 function resolveCommand(name, env = process.env) {
   const pathEnv = env.PATH || env.Path || '';
   const exts =
@@ -68,7 +83,7 @@ function resolveCommand(name, env = process.env) {
     if (!dir) continue;
     for (const ext of exts) {
       const candidate = path.join(dir, name + ext);
-      if (fs.existsSync(candidate)) return candidate;
+      if (isRunnableCandidate(candidate)) return candidate;
     }
   }
   return null;

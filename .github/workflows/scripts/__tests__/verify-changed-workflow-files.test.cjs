@@ -18,6 +18,7 @@ const {
   parseChangedFiles,
   classifyChangedFiles,
   isWorkflowOrActionYaml,
+  resolveCommand,
   verifyChangedWorkflowFiles,
   ACTIONLINT_MISSING,
 } = require(scriptPath);
@@ -228,6 +229,26 @@ test('changed shell scripts still reach shellcheck', () => {
   assert.deepEqual(JSON.parse(fs.readFileSync(argvLog, 'utf8')), [
     'scripts/ok.sh',
   ]);
+});
+
+test('resolveCommand skips a same-named directory earlier in PATH', () => {
+  const decoyDir = tmpDir('mon-decoy-');
+  const binDir = tmpDir('mon-real-bin-');
+  fs.mkdirSync(path.join(decoyDir, 'actionlint'));
+  writeFakeBin(binDir, 'actionlint', 'process.exit(0);');
+
+  const env = {
+    PATH: `${decoyDir}${path.delimiter}${binDir}`,
+    Path: `${decoyDir}${path.delimiter}${binDir}`,
+    PATHEXT: process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD',
+  };
+  const resolved = resolveCommand('actionlint', env);
+  assert.ok(resolved, 'expected a later PATH file, not the decoy directory');
+  assert.ok(
+    resolved.startsWith(binDir),
+    `resolved ${resolved} should be under ${binDir}`,
+  );
+  assert.equal(fs.statSync(resolved).isFile(), true);
 });
 
 test('monitor workflow invokes the scoped verifier', () => {
