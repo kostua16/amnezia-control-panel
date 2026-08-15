@@ -261,19 +261,20 @@ jobs:
               // github-actions[bot] is inert by construction — GitHub never
               // starts workflows from GITHUB_TOKEN events. Any such comment
               // means some automation believes it triggered something that
-              // never ran (the exact failure that stranded issue #771).
-              const inertBotCommands = comments.filter(c =>
-                c.user?.login === 'github-actions[bot]' &&
-                /^\s*\/(fix|triage)\b/.test(c.body || '')
+              // never ran (the exact failure that stranded issue #771). The
+              // shared detector enriches the finding with the source comment
+              // URL, actor, trigger path, and deterministic remediation.
+              const {
+                detectInertBotCommand,
+                detectStuckFixable
+              } = require(
+                `${process.env.GITHUB_WORKSPACE}/.github/workflows/scripts/lib/issue-pipeline-invariants.cjs`
               );
-              if (inertBotCommands.length > 0) {
-                buckets.invariant_findings.push({
-                  number: num,
-                  type: 'inert_bot_command',
-                  count: inertBotCommands.length,
-                  last: inertBotCommands[inertBotCommands.length - 1].created_at
-                });
-              }
+              const inertFinding = detectInertBotCommand({
+                issueNumber: num,
+                comments
+              });
+              if (inertFinding) buckets.invariant_findings.push(inertFinding);
 
               // A dead-letter fresh-context retry resets the attempt counter:
               // attempts made before the latest retry marker are history, not
@@ -422,20 +423,23 @@ jobs:
               // Invariant: a triaged, automation-fixable issue with no linked
               // PR and no active fix run after 24h means the fix pipeline is
               // not converging — either triggers are inert or fixes keep
-              // failing. Recorded for the health tracker; the issue still
-              // flows through the normal buckets below.
-              if (
-                createdAt < new Date(Date.now() - 24 * 60 * 60 * 1000) &&
-                labels.includes('auto-fix') &&
-                ['low', 'medium', 'high'].some(p => labels.includes(p))
-              ) {
-                buckets.invariant_findings.push({
-                  number: num,
-                  type: 'stuck_fixable',
-                  age_hours: Math.round((Date.now() - createdAt.getTime()) / 3600000),
-                  fix_attempts: fixComments.length
-                });
-              }
+              // failing. The shared detector applies the same routing guards,
+              // excludes false positives (tracking issues, exempt labels,
+              // linked PRs, active runs), and attaches the remediation
+              // metadata (attempts, holds, owner, next action). Recorded for
+              // the health tracker; the issue still flows through the normal
+              // buckets below.
+              const stuckFinding = detectStuckFixable({
+                issue,
+                comments,
+                // fixComments is already filtered past the dead-letter-retry
+                // reset above — the module derives both the attempt count and
+                // the last-attempt timestamp from this one list.
+                fixComments,
+                activeFixRun: activeRuns.has(num),
+                now: Date.now()
+              });
+              if (stuckFinding) buckets.invariant_findings.push(stuckFinding);
 
               // Check fix attempt count
               if (fixComments.length >= 2) {
@@ -726,44 +730,26 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
           script: |
-            const crypto = require('crypto');
             const buckets = JSON.parse(process.env.CATEGORIZED || '{}');
             const findings = buckets.invariant_findings || [];
             const dryRun = process.env.DRY_RUN === 'true';
             const TITLE = '[claude-health] Issue-pipeline invariant findings';
+            const {
+              renderFindingsReport,
+              isUnchangedReport
+            } = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/workflows/scripts/lib/issue-pipeline-invariants.cjs`
+            );
             if (findings.length === 0) {
               core.info('No invariant findings — nothing to report.');
               return;
             }
 
-            // Cap the report so the comment body stays far below GitHub's
-            // 65536-char limit even if findings pile up across many issues.
-            const MAX_REPORTED = 50;
-            const reported = findings.slice(0, MAX_REPORTED);
-            const lines = reported.map((f) => {
-              if (f.type === 'inert_bot_command') {
-                return `- #${f.number} — **inert bot command**: ${f.count} \`/fix\`/\`/triage\` comment(s) authored by github-actions[bot] (GITHUB_TOKEN events never start workflows); last at ${f.last}`;
-              }
-              if (f.type === 'stuck_fixable') {
-                return `- #${f.number} — **stuck fixable issue**: triaged + auto-fix + priority, no linked PR after ${f.age_hours}h (${f.fix_attempts} fix attempt(s))`;
-              }
-              return `- #${f.number} — ${f.type}`;
+            const report = renderFindingsReport({
+              findings,
+              generatedAt: new Date().toISOString()
             });
-            if (findings.length > MAX_REPORTED) {
-              lines.push(`- …and ${findings.length - MAX_REPORTED} more finding(s) — see the run summary`);
-            }
-            const hash = crypto.createHash('sha256')
-              .update(JSON.stringify(findings.map(f => [f.type, f.number]).sort()))
-              .digest('hex').slice(0, 16);
-            const marker = `<!-- invariant-findings:${hash} -->`;
-            const body = [
-              marker,
-              `## Invariant findings (${new Date().toISOString()})`,
-              '',
-              ...lines,
-              '',
-              '_Reported by issue-catch-up. Findings repeat until the underlying issue is unstuck; an unchanged set is not re-posted._'
-            ].join('\n');
+            const { marker, body } = report;
 
             if (dryRun) {
               core.info(`DRY RUN: would report ${findings.length} invariant finding(s)`);
@@ -784,10 +770,10 @@ jobs:
                 body: [
                   'Rolling tracker for issue-pipeline invariant violations found by the hourly catch-up sweep:',
                   '',
-                  '- **inert bot command** — a `/fix` or `/triage` comment authored by github-actions[bot]; GITHUB_TOKEN events never start workflows, so whatever posted it believes it triggered something that never ran.',
-                  '- **stuck fixable issue** — triaged, automation-fixable, but no linked PR and no active fix run after 24h.',
+                  '- **inert bot command** — a `/fix` or `/triage` comment authored by github-actions[bot]; GITHUB_TOKEN events never start workflows, so whatever posted it believes it triggered something that never ran. Each report line links the source comment, names the actor and trigger path, and prescribes the deterministic action (dispatch the workflow via workflow_dispatch with GH_PAT, or delete the inert comment).',
+                  '- **stuck fixable issue** — triaged, automation-fixable, but no linked PR and no active fix run after 24h. Each report line carries the fix-attempt count with the last real attempt, blocking labels holding the issue, the owner, and the next action (dispatch fix-issue.yml, maintainer unblock, or dead-letter route).',
                   '',
-                  'One comment is appended per changed findings set. Close after the findings are handled; the sweep recreates it when new findings appear.'
+                  'One comment is appended per changed actionable state; hourly age/timestamp drift alone does not re-post. Close after the findings are handled; the sweep recreates it when new findings appear.'
                 ].join('\n')
               });
               tracker = created.data;
@@ -800,7 +786,7 @@ jobs:
                 (c.body || '').includes('<!-- invariant-findings:')
               );
               const latest = invariantComments[invariantComments.length - 1];
-              if (latest && latest.body.includes(marker)) {
+              if (latest && isUnchangedReport({ latestBody: latest.body || '', marker })) {
                 core.info('Findings unchanged since last report — skipping.');
                 return;
               }
