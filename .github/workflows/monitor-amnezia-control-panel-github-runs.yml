@@ -413,70 +413,13 @@ jobs:
       # (src/** only)/test/build/script-tests/prisma-safe but does NOT run
       # actionlint or shellcheck, so malformed workflow/action YAML or shell
       # scripts could otherwise pass the gate and surface only at review time.
+      # Pass only the classified changed YAML list to actionlint — a repo-wide
+      # scan failed run 29803905118 on unrelated fix-review.yml SC2129 (#881).
       - name: Verify changed workflow/shell files
         shell: bash
         env:
           CHANGED_FILES: ${{ steps.claude_run.outputs.claude_changed_files_list }}
-        run: |
-          set -euo pipefail
-
-          node <<'NODE' > /tmp/monitor-changed-files.txt
-          const raw = process.env.CHANGED_FILES || '';
-          let files = [];
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              files = parsed;
-            }
-          } catch {}
-
-          if (files.length === 0) {
-            files = raw.split(/\r?\n|,/);
-          }
-
-          files = [...new Set(files.map((file) => String(file).trim()).filter(Boolean))];
-          process.stdout.write(files.join('\n'));
-          NODE
-
-          if [ ! -s /tmp/monitor-changed-files.txt ]; then
-            echo "No changed files to verify."
-            exit 0
-          fi
-
-          workflow_yaml_files=()
-          shell_files=()
-
-          # `|| [ -n "$file" ]` catches the final line when the node heredoc
-          # emits no trailing newline, so a single changed file is still
-          # processed instead of silently skipping actionlint/shellcheck.
-          while IFS= read -r file || [ -n "$file" ]; do
-            [ -n "$file" ] || continue
-            [ -f "$file" ] || continue
-            case "$file" in
-              .github/workflows/*.yml|.github/workflows/*.yaml|.github/actions/*.yml|.github/actions/*.yaml)
-                workflow_yaml_files+=("$file")
-                ;;
-              *.sh)
-                shell_files+=("$file")
-                ;;
-            esac
-          done < /tmp/monitor-changed-files.txt
-
-          if [ "${#workflow_yaml_files[@]}" -gt 0 ]; then
-            if ! command -v actionlint >/dev/null 2>&1; then
-              echo "::error::actionlint is required for workflow/action YAML changes"
-              exit 1
-            fi
-            actionlint -config-file .github/actionlint.yaml
-          fi
-
-          if [ "${#shell_files[@]}" -gt 0 ]; then
-            if ! command -v shellcheck >/dev/null 2>&1; then
-              echo "::error::shellcheck is required for shell script changes"
-              exit 1
-            fi
-            shellcheck "${shell_files[@]}"
-          fi
+        run: node .github/workflows/scripts/verify-changed-workflow-files.cjs
 
       - name: Detect exact duplicate monitor PR
         id: duplicate
