@@ -34,6 +34,13 @@
     "maxFiles": 6,
     "maxChangedLines": 300
   },
+  "allowedBots": {
+    "_comment": "Named profiles for claude-code-action allowed_bots. github-actions and github-actions[bot] are distinct logins (run 31297801788 failed when only the [bot] form was listed). Wrappers resolve a profile at runtime; allowed-bots is an explicit documented override only.",
+    "profiles": {
+      "interactive": ["claude[bot]", "github-actions[bot]"],
+      "orchestrated": ["github-actions", "github-actions[bot]", "claude[bot]"]
+    }
+  },
   "fixApprovalLabel": "auto-fix-approved",
   "protectedEditsLabel": "allow-protected-edits",
   "maxAutoFixAttempts": 3,
