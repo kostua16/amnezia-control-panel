@@ -432,7 +432,10 @@ jobs:
               const stuckFinding = detectStuckFixable({
                 issue,
                 comments,
-                fixAttempts: fixComments.length,
+                // fixComments is already filtered past the dead-letter-retry
+                // reset above — the module derives both the attempt count and
+                // the last-attempt timestamp from this one list.
+                fixComments,
                 activeFixRun: activeRuns.has(num),
                 now: Date.now()
               });
