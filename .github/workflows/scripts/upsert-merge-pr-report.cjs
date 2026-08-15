@@ -18,48 +18,120 @@ function getArg(name, fallback = null) {
   return index === -1 ? fallback : (process.argv[index + 1] ?? fallback);
 }
 
+function isDryRun(validation) {
+  return validation?.dryRun !== false && validation?.dryRun !== 'false';
+}
+
+function collectGroups({ selectedGroups, skippedGroups, allGroups }) {
+  if (Array.isArray(allGroups) && allGroups.length > 0) return allGroups;
+  return [...(selectedGroups || []), ...(skippedGroups || [])];
+}
+
+function formatPrs(prs) {
+  return (Array.isArray(prs) ? prs : []).map((n) => `#${n}`).join(', ');
+}
+
+// Dry-run (and the deferred write path) must never report a source PR as
+// closed. Operators reading #859 treated an empty closure section as "maybe
+// closed"; the table + this label make the no-op explicit.
+function closureLabel(result, dryRun) {
+  if (dryRun) return 'not attempted';
+  if (!result || result.status === 'not-attempted' || result.closed !== true) {
+    if (result?.closed === true) return 'closed';
+    if (
+      result &&
+      result.closed === false &&
+      result.status !== 'not-attempted'
+    ) {
+      return 'left open';
+    }
+    return 'not attempted';
+  }
+  return 'closed';
+}
+
+function renderGroupTable(groups, closureByPr, dryRun) {
+  if (groups.length === 0) return ['_None._'];
+  const lines = [
+    '| Group | PRs | Kind | Risk | Action | Decision | Reason | Eligible | Closure |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const g of groups) {
+    const id = g.group_id ?? g.id ?? '(group)';
+    const prs = formatPrs(g.source_prs);
+    const firstPr = Array.isArray(g.source_prs) ? g.source_prs[0] : null;
+    const closure = closureLabel(
+      firstPr == null ? null : closureByPr.get(firstPr),
+      dryRun,
+    );
+    const eligible = g.consolidation_eligible === true ? 'yes' : 'no';
+    const action = g.action ?? g.recommended_action ?? '';
+    const reason = String(g.reason ?? g.rejection_reason ?? '').replace(
+      /\|/g,
+      '/',
+    );
+    lines.push(
+      `| ${id} | ${prs} | ${g.kind ?? ''} | ${g.conflict_risk ?? ''} | ${action} | ${g.decision_code ?? ''} | ${reason} | ${eligible} | ${closure} |`,
+    );
+  }
+  return lines;
+}
+
 function renderMergePrReport({
   runUrl,
   generatedAt,
   selectedGroups = [],
   skippedGroups = [],
+  allGroups,
   replacementPrUrls = [],
   closureResults = [],
   validation = {},
 }) {
   const at = generatedAt || new Date().toISOString();
+  const dryRun = isDryRun(validation);
+  const groups = collectGroups({
+    selectedGroups,
+    skippedGroups,
+    allGroups,
+  });
+  const selectedCount = selectedGroups.length;
+  const unsafeCount = groups.filter((g) => g.disposition === 'unsafe').length;
+  const filteredCount = groups.filter(
+    (g) => g.disposition === 'filtered',
+  ).length;
+  const cappedCount = groups.filter(
+    (g) => g.disposition === 'capped-deferred',
+  ).length;
+  const closureByPr = new Map((closureResults || []).map((c) => [c.pr, c]));
+  const derivedClosure =
+    closureResults.length > 0
+      ? closureResults
+      : groups.flatMap((g) =>
+          (g.source_prs || []).map((pr) => ({
+            pr,
+            closed: false,
+            status: 'not-attempted',
+            reason: dryRun
+              ? 'dry-run; write path deferred'
+              : 'write path deferred; closure not attempted',
+          })),
+        );
+
   const lines = [
     REPORT_MARKER,
     '# Stale PR consolidation report',
     '',
     `- Generated: ${at}`,
     `- Run: ${runUrl || '_n/a_'}`,
-    `- Mode: ${validation?.dryRun === false || validation?.dryRun === 'false' ? 'write' : 'dry-run'}`,
+    `- Mode: ${dryRun ? 'dry-run' : 'write'}`,
     '',
-    '## Selected groups',
+    '## Groups',
+    `_Selected: ${selectedCount} · Unsafe: ${unsafeCount} · Filtered: ${filteredCount} · Capped: ${cappedCount}_`,
+    '',
+    ...renderGroupTable(groups, closureByPr, dryRun),
+    '',
+    '## Replacement PRs',
   ];
-  if (selectedGroups.length === 0) {
-    lines.push('_None._');
-  } else {
-    for (const g of selectedGroups) {
-      lines.push(
-        `- **${g.id}** — ${g.kind} · ${g.conflict_risk} risk · ${g.recommended_action} · PRs ${g.source_prs.join(', ')}`,
-      );
-    }
-  }
-
-  lines.push('', '## Skipped groups');
-  if (skippedGroups.length === 0) {
-    lines.push('_None._');
-  } else {
-    for (const s of skippedGroups) {
-      lines.push(
-        `- ${s.id ?? s.group_id ?? '(group)'}: ${s.reason ?? '(no reason)'}`,
-      );
-    }
-  }
-
-  lines.push('', '## Replacement PRs');
   if (replacementPrUrls.length === 0) {
     lines.push('_None._');
   } else {
@@ -67,11 +139,11 @@ function renderMergePrReport({
   }
 
   lines.push('', '## Source PR closure results');
-  if (closureResults.length === 0) {
+  if (derivedClosure.length === 0) {
     lines.push('_None._');
   } else {
-    for (const c of closureResults) {
-      const status = c.closed ? 'closed' : 'left open';
+    for (const c of derivedClosure) {
+      const status = closureLabel(c, dryRun);
       const note = c.reason ? ` — ${c.reason}` : '';
       lines.push(`- #${c.pr}: ${status}${note}`);
     }

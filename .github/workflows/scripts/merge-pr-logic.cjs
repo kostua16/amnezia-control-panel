@@ -130,7 +130,28 @@ function buildGroup(kind, prs) {
     rejection_reason: null,
   };
   group.recommended_action = recommendActionForGroup(group);
+  group.rejection_reason = rejectionReasonFor(group);
   return group;
+}
+
+// Stable human reason for a non-consolidate action. null when the group is
+// eligible to consolidate so reports never invent a rejection for a selected
+// group. Kept in the grouping layer so selection can copy it verbatim.
+function rejectionReasonFor(group) {
+  if (!group || group.recommended_action === 'consolidate') return null;
+  if (group.recommended_action === 'rebase-first') {
+    return 'Single conflicting PR should be rebased in place before consolidation';
+  }
+  if (
+    group.recommended_action === 'manual-review' &&
+    group.kind === 'dependency'
+  ) {
+    return 'Dependency groups require manual review and are not auto-consolidated';
+  }
+  if (group.recommended_action === 'manual-review') {
+    return 'Mutually conflicting PRs require manual review; auto-consolidation is unsafe';
+  }
+  return 'Empty group cannot be consolidated';
 }
 
 // Partition selected PRs by dominant kind, split conflicting from clean within
@@ -175,5 +196,6 @@ module.exports = {
   selectStalePrs,
   conflictRiskFor,
   recommendActionForGroup,
+  rejectionReasonFor,
   groupStalePrs,
 };
