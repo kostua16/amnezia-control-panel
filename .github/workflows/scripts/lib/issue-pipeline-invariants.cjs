@@ -13,7 +13,9 @@
 // - stuck_fixable: a triaged, automation-fixable, prioritized issue with no
 //   linked PR and no active fix run after 24h. Actionable output needs the
 //   last real fix attempt, what is holding the issue, its owner, and the next
-//   step — not just an age counter.
+//   step — not just an age counter. Fix-attempt count and timestamp derive
+//   from the same caller-filtered comment list (the sweep resets the budget
+//   at a dead-letter retry), so they can never contradict each other.
 //
 // The hash in the report covers the normalized actionable state only:
 // timestamps, age_hours, ordering, comment URLs, and owners change hourly
@@ -30,7 +32,12 @@ const { isTrackingIssue, normalizeLabels } = require('./tracking-issue.cjs');
 
 const BOT_LOGIN = 'github-actions[bot]';
 const COMMAND_PATTERN = /^\s*\/(fix|triage)\b/;
-const RETRY_DISPATCH_MARKER = '<!-- re-triage-dispatch -->';
+// Dispatch markers prove a real workflow_dispatch happened: the re-triage
+// step posts `<!-- re-triage-dispatch -->` after the API call succeeds, and
+// the dead-letter retry posts `<!-- dead-letter-retry -->` immediately before
+// its `/fix`. A bot command adjacent to such a marker was posted by a real
+// dispatch path, not left inert by a GITHUB_TOKEN event.
+const DISPATCH_MARKERS = ['<!-- re-triage-dispatch -->', '<!-- dead-letter-retry -->'];
 // Labels that legitimately hold an issue out of the fix pipeline. They do not
 // silence a finding — a stuck issue parked for weeks is still stuck — but they
 // change the next action from "route a fix" to "maintainer unblocks".
@@ -55,17 +62,29 @@ function isBotCommandComment(comment) {
   );
 }
 
-// Which automation path posted an inert command comment. The dispatch markers
-// are the only comments that legitimately follow a bot command: the re-triage
-// step posts `<!-- re-triage-dispatch -->` after a successful
-// workflow_dispatch, and the retry path posts the dead-letter marker before
-// its `/fix`. A bot command adjacent to such a marker came from a real
-// dispatch path; anything else is a legacy/stale comment.
+// Which automation path posted an inert command comment. Anything else is a
+// legacy/stale comment. Leading whitespace is stripped so an indented bot
+// command classifies by what it says, not how it was formatted (COMMAND_PATTERN
+// already tolerates indentation; the trigger path must not disagree with it).
 function commandTriggerPath(comment) {
-  const body = comment.body || '';
+  const body = (comment.body || '').trim();
   if (body.startsWith('/triage')) return 'legacy-catchup-retriage';
   if (body.startsWith('/fix')) return 'catchup-phase6-autofix';
   return 'unknown';
+}
+
+// A command comment next to a dispatch marker came from a real dispatch path
+// (the marker is only posted after the workflow_dispatch API call succeeded),
+// so it is not inert. Adjacency is positional in the chronological comment
+// list: the re-triage marker lands right after its trigger, and the
+// dead-letter retry posts its marker immediately before the `/fix`.
+function isMarkerAdjacent(comments, index) {
+  for (const neighbor of [comments[index - 1], comments[index + 1]]) {
+    if (neighbor && DISPATCH_MARKERS.some((m) => (neighbor.body || '').includes(m))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Deterministic remediation: the same trigger path always prescribes the same
@@ -82,9 +101,12 @@ function inertCommandAction(triggerPath) {
 }
 
 function detectInertBotCommand({ issueNumber, comments = [] }) {
-  const commands = comments.filter(isBotCommandComment);
+  const commands = comments
+    .map((comment, index) => ({ comment, index }))
+    .filter(({ comment }) => isBotCommandComment(comment))
+    .filter(({ index }) => !isMarkerAdjacent(comments, index));
   if (commands.length === 0) return null;
-  const last = commands[commands.length - 1];
+  const last = commands[commands.length - 1].comment;
   const actor = last.user?.login || BOT_LOGIN;
   const triggerPath = commandTriggerPath(last);
   return {
@@ -92,7 +114,7 @@ function detectInertBotCommand({ issueNumber, comments = [] }) {
     number: issueNumber,
     count: commands.length,
     last_at: last.created_at || null,
-    sources: commands.slice(-MAX_SOURCES_PER_LINE).map((c) => ({
+    sources: commands.slice(-MAX_SOURCES_PER_LINE).map(({ comment: c }) => ({
       url: commentUrl(c, issueNumber),
       actor: c.user?.login || BOT_LOGIN,
       created_at: c.created_at || null,
@@ -111,35 +133,31 @@ function linkedPrState({ issue, comments = [] }) {
   return 'none';
 }
 
-function lastFixAttemptAt(comments = []) {
-  const fixes = comments.filter(
-    (c) => (c.body || '').includes('/fix') && c.user?.login !== undefined,
-  );
-  // Prefer the most recent attempt, bot or human — recency is what matters.
-  if (fixes.length === 0) return null;
-  const sorted = [...fixes].sort(
+// The caller passes the fix-attempt comments it counts as budget (already
+// filtered past the dead-letter-retry reset), so the count and the timestamp
+// come from one list and cannot disagree.
+function lastFixAttemptAt(fixComments = []) {
+  if (fixComments.length === 0) return null;
+  const sorted = [...fixComments].sort(
     (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0),
   );
   return sorted[sorted.length - 1].created_at || null;
 }
 
-function autoFixOwner({ issue, labels }) {
-  if (['maintenance', 'auto-fix', 'ci-failure'].some((l) => labels.includes(l))) {
-    return 'automation';
-  }
-  if (issue.user?.type === 'Bot') return 'automation';
-  return 'maintainer';
+// The auto-fix label is a hard prerequisite of this detector, and the repo
+// treats it as the automation-authorship marker — so a stuck finding is always
+// automation-owned. Maintainer involvement surfaces through blocking_labels
+// (the "maintainer unblocks" next action), never through owner.
+function autoFixOwner() {
+  return 'automation';
 }
 
-// Deterministic next action for a stuck issue. A maintainer-authored issue
-// (or one held by a blocking label) never gets an automated fix routed; the
-// dead-letter route only applies once attempts burned the budget.
-function stuckNextAction({ fixAttempts, blockingLabels, owner }) {
+// Deterministic next action for a stuck issue. A held issue never gets an
+// automated fix routed; the dead-letter route only applies once attempts
+// burned the budget.
+function stuckNextAction({ fixAttempts, blockingLabels }) {
   if (blockingLabels.length > 0) {
     return `maintainer unblocks (${blockingLabels.join(', ')}), then route the fix`;
-  }
-  if (owner === 'maintainer') {
-    return 'maintainer authorizes auto-fix or fixes manually';
   }
   if (fixAttempts >= 2) {
     return 'route to fix dead-letter (park with needs-review + manual review)';
@@ -150,7 +168,7 @@ function stuckNextAction({ fixAttempts, blockingLabels, owner }) {
 function detectStuckFixable({
   issue,
   comments = [],
-  fixAttempts = 0,
+  fixComments = [],
   activeFixRun = false,
   now = Date.now(),
 }) {
@@ -181,18 +199,18 @@ function detectStuckFixable({
   if (!isTriaged || !isAutoFix || !hasPriority) return null;
 
   const blockingLabels = BLOCKING_LABELS.filter((l) => labels.includes(l));
-  const owner = autoFixOwner({ issue, labels });
+  const owner = autoFixOwner();
   return {
     type: 'stuck_fixable',
     number: issue.number,
     title: String(issue.title || ''),
     age_hours: ageHours,
-    fix_attempts: fixAttempts,
-    last_fix_attempt_at: lastFixAttemptAt(comments),
+    fix_attempts: fixComments.length,
+    last_fix_attempt_at: lastFixAttemptAt(fixComments),
     blocking_labels: blockingLabels,
     linked_pr_state: prState,
     owner,
-    next_action: stuckNextAction({ fixAttempts, blockingLabels, owner }),
+    next_action: stuckNextAction({ fixAttempts: fixComments.length, blockingLabels }),
   };
 }
 

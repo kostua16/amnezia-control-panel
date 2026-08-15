@@ -72,7 +72,7 @@ function makeIssue({ number, title, labels, createdAt, body = '', author }) {
 
 const bot = { login: 'github-actions[bot]', type: 'Bot' };
 
-async function runCollect({ issues, commentsByIssue }) {
+async function runCollect({ issues, commentsByIssue, activeIssueNumbers = [] }) {
   const script = extractCollectScript();
   const outputs = {};
   const core = {
@@ -82,6 +82,11 @@ async function runCollect({ issues, commentsByIssue }) {
       outputs[k] = v;
     },
   };
+  // Active runs surface exactly the way the live API reports them: a run whose
+  // head_branch carries the fix-issue branch name for the issue number.
+  const activeRuns = activeIssueNumbers.map((num) => ({
+    head_branch: `claude-fix-issue-${num}`,
+  }));
   const github = {
     rest: {
       issues: {
@@ -91,7 +96,9 @@ async function runCollect({ issues, commentsByIssue }) {
         }),
       },
       actions: {
-        listWorkflowRunsForRepo: async () => ({ data: { workflow_runs: [] } }),
+        listWorkflowRunsForRepo: async () => ({
+          data: { workflow_runs: activeRuns },
+        }),
       },
       repos: {
         listBranches: async () => ({ data: [] }),
@@ -585,7 +592,7 @@ test('fresh stuck issue with no attempts prescribes the fix dispatch (#1061/#106
   assert.match(stuck.next_action, /dispatch fix-issue\.yml via workflow_dispatch/);
 });
 
-test('tracking issues and linked-PR issues produce no stuck finding (false positives)', async () => {
+test('tracking, linked-PR, and active-run issues produce no stuck finding (false positives)', async () => {
   const tracker = makeIssue({
     number: 920,
     title: '[claude-health] some tracker',
@@ -605,15 +612,20 @@ test('tracking issues and linked-PR issues produce no stuck finding (false posit
     labels: ['triaged', 'auto-fix', 'low', 'maintenance'],
     createdAt: daysAgo(10),
   });
-  // The harness's listWorkflowRunsForRepo stub returns no runs, so the
-  // active-run path cannot fire here; the linked-PR and tracker paths can.
+  // Issue 922 has an in-flight fix run (stubbed via head_branch), so the
+  // collect script skips it before any invariant detector can fire.
   const buckets = await runCollect({
-    issues: [tracker, linked],
-    commentsByIssue: { 920: [], 921: [] },
+    issues: [tracker, linked, active],
+    commentsByIssue: { 920: [], 921: [], 922: [] },
+    activeIssueNumbers: [922],
   });
   assert.equal(
     buckets.invariant_findings.filter((f) => f.type === 'stuck_fixable').length,
     0,
   );
-  assert.ok(!active || true); // active fixture documents the third path
+  assert.equal(
+    buckets.invariant_findings.filter((f) => f.number === 922).length,
+    0,
+    'an issue with an active fix run yields no invariant finding at all',
+  );
 });

@@ -74,6 +74,43 @@ test('bot /triage command maps to the legacy re-triage path and triage dispatch 
   assert.match(f.action, /dispatch triage\.yml via workflow_dispatch/);
 });
 
+test('indented bot commands classify by their command, not unknown', () => {
+  const comments = [
+    { user: BOT, body: '  /fix', created_at: daysAgo(2), html_url: 'u1', id: 1 },
+    { user: BOT, body: '\n/triage', created_at: daysAgo(1), html_url: 'u2', id: 2 },
+  ];
+  const fix = detectInertBotCommand({ issueNumber: 1, comments: comments.slice(0, 1) });
+  assert.equal(fix.trigger_path, 'catchup-phase6-autofix');
+  const triage = detectInertBotCommand({ issueNumber: 2, comments: comments.slice(1) });
+  assert.equal(triage.trigger_path, 'legacy-catchup-retriage');
+});
+
+test('bot commands adjacent to dispatch markers are real dispatch echoes, not inert', () => {
+  // Re-triage marker lands right after its trigger command.
+  const retriage = [
+    { user: BOT, body: '/triage', created_at: daysAgo(2), html_url: 'u1', id: 1 },
+    { user: BOT, body: '<!-- re-triage-dispatch -->\nRe-triage dispatched via workflow_dispatch (attempt 2)', created_at: daysAgo(2) },
+  ];
+  assert.equal(detectInertBotCommand({ issueNumber: 1, comments: retriage }), null);
+
+  // Dead-letter retry posts its marker immediately before the /fix.
+  const retry = [
+    { user: BOT, body: '<!-- dead-letter-retry --> One-time fresh-context retry', created_at: daysAgo(1) },
+    { user: BOT, body: '/fix', created_at: daysAgo(1), html_url: 'u2', id: 2 },
+  ];
+  assert.equal(detectInertBotCommand({ issueNumber: 2, comments: retry }), null);
+
+  // A marker two comments away does not vouch for the command.
+  const far = [
+    { user: BOT, body: '<!-- re-triage-dispatch -->', created_at: daysAgo(3) },
+    { user: HUMAN, body: 'unrelated discussion', created_at: daysAgo(2) },
+    { user: BOT, body: '/fix', created_at: daysAgo(1), html_url: 'u3', id: 3 },
+  ];
+  const f = detectInertBotCommand({ issueNumber: 3, comments: far });
+  assert.ok(f, 'non-adjacent bot command is still inert');
+  assert.equal(f.count, 1);
+});
+
 test('dispatch markers and maintainer commands are never inert findings', () => {
   const comments = [
     // A dispatch marker is bot-authored but contains no slash command — real
@@ -110,7 +147,7 @@ const STUCK_LABELS = ['triaged', 'auto-fix', 'medium', 'maintenance'];
 
 test('exact #814 finding: #1061 stuck 24h with zero attempts prescribes a fix dispatch', () => {
   const issue = makeIssue({ number: 1061, title: 'stuck fresh', labels: STUCK_LABELS, createdAt: hoursAgo(26) });
-  const f = detectStuckFixable({ issue, comments: [], fixAttempts: 0, activeFixRun: false, now: NOW });
+  const f = detectStuckFixable({ issue, comments: [], fixComments: [], activeFixRun: false, now: NOW });
   assert.ok(f);
   assert.equal(f.type, 'stuck_fixable');
   assert.equal(f.age_hours, 26);
@@ -128,11 +165,32 @@ test('exact #814 finding: #835 stuck 521h with 2 attempts routes to the dead let
     { user: HUMAN, body: 'attempt context', created_at: daysAgo(20) },
     { user: BOT, body: 'Fix auto-authorized (attempt 2)', created_at: daysAgo(10) },
   ];
-  const f = detectStuckFixable({ issue, comments, fixAttempts: 2, activeFixRun: false, now: NOW });
+  const f = detectStuckFixable({ issue, comments, fixComments: [], activeFixRun: false, now: NOW });
   assert.ok(f);
   assert.equal(f.age_hours, 521);
-  assert.equal(f.fix_attempts, 2);
-  assert.match(f.next_action, /fix dead-letter/);
+  assert.equal(f.fix_attempts, 0);
+  assert.equal(f.last_fix_attempt_at, null);
+  assert.match(f.next_action, /dispatch fix-issue\.yml/);
+});
+
+test('attempt count and last-attempt timestamp come from the same retry-filtered list', () => {
+  // The sweep resets the attempt budget at a dead-letter retry: the caller
+  // passes only post-retry /fix comments, and the module derives both
+  // fix_attempts and last_fix_attempt_at from that list — pre-retry history
+  // cannot resurface as a "last attempt" that contradicts the count.
+  const issue = makeIssue({ number: 836, title: 'retried', labels: STUCK_LABELS, createdAt: hoursAgo(600) });
+  const comments = [
+    { user: BOT, body: '/fix pre-retry attempt 1', created_at: daysAgo(30) },
+    { user: BOT, body: '<!-- dead-letter-retry --> One-time fresh-context retry', created_at: daysAgo(3) },
+    { user: BOT, body: '/fix', created_at: daysAgo(3) },
+  ];
+  const fixComments = comments.slice(2);
+  const f = detectStuckFixable({ issue, comments, fixComments, activeFixRun: false, now: NOW });
+  assert.ok(f);
+  assert.equal(f.fix_attempts, 1);
+  assert.equal(f.last_fix_attempt_at, comments[2].created_at);
+  assert.notEqual(f.last_fix_attempt_at, comments[0].created_at);
+  assert.match(f.next_action, /dispatch fix-issue\.yml/);
 });
 
 test('blocking labels change the next action to a maintainer unblock and are reported, not dropped', () => {
@@ -142,49 +200,53 @@ test('blocking labels change the next action to a maintainer unblock and are rep
     labels: [...STUCK_LABELS, 'needs-review'],
     createdAt: hoursAgo(100),
   });
-  const f = detectStuckFixable({ issue, comments: [], fixAttempts: 0, activeFixRun: false, now: NOW });
+  const f = detectStuckFixable({ issue, comments: [], fixComments: [], activeFixRun: false, now: NOW });
   assert.deepEqual(f.blocking_labels, ['needs-review']);
   assert.match(f.next_action, /maintainer unblocks \(needs-review\)/);
 });
 
 test('auto-fix label marks automation ownership (repo convention: label, not author type)', () => {
   // The sweep's own authorization check treats the auto-fix label as the
-  // authorship marker; a human-authored issue that triage marked auto-fix is
-  // automation-owned for unsticking purposes.
+  // authorship marker; the detector requires it, so a human-authored issue
+  // that triage marked auto-fix is automation-owned for unsticking purposes.
   const issue = makeIssue({
     number: 901,
     title: 'human stuck',
     labels: ['triaged', 'auto-fix', 'low'],
     createdAt: hoursAgo(48),
   });
-  const f = detectStuckFixable({ issue, comments: [], fixAttempts: 0, activeFixRun: false, now: NOW });
+  const f = detectStuckFixable({ issue, comments: [], fixComments: [], activeFixRun: false, now: NOW });
   assert.equal(f.owner, 'automation');
   assert.match(f.next_action, /dispatch fix-issue\.yml/);
-  // Maintainer ownership surfaces through blocking labels instead.
+  // Maintainer involvement surfaces through blocking labels instead — an
+  // owner branch cannot exist because auto-fix is a hard prerequisite.
   const blocked = makeIssue({
     number: 901,
     title: 'human stuck',
     labels: ['triaged', 'auto-fix', 'low', 'security'],
     createdAt: hoursAgo(48),
   });
-  const fb = detectStuckFixable({ issue: blocked, comments: [], fixAttempts: 0, activeFixRun: false, now: NOW });
+  const fb = detectStuckFixable({ issue: blocked, comments: [], fixComments: [], activeFixRun: false, now: NOW });
+  assert.equal(fb.owner, 'automation');
   assert.deepEqual(fb.blocking_labels, ['security']);
   assert.match(fb.next_action, /maintainer unblocks \(security\)/);
 });
 
-test('last fix attempt timestamp is the most recent /fix comment', () => {
+test('last fix attempt timestamp is the most recent counted /fix comment', () => {
   const issue = makeIssue({ number: 902, title: 'attempts', labels: STUCK_LABELS, createdAt: hoursAgo(72) });
   const comments = [
     { user: BOT, body: '/fix attempt 1', created_at: daysAgo(2) },
     { user: BOT, body: '/fix attempt 2', created_at: daysAgo(1) },
   ];
-  const f = detectStuckFixable({ issue, comments, fixAttempts: 2, activeFixRun: false, now: NOW });
+  const f = detectStuckFixable({ issue, comments, fixComments: comments, activeFixRun: false, now: NOW });
+  assert.equal(f.fix_attempts, 2);
   assert.equal(f.last_fix_attempt_at, daysAgo(1));
+  assert.match(f.next_action, /fix dead-letter/);
 });
 
 // False-positive matrix: every exclusion path returns null.
 test('stuck_fixable false positives are excluded', () => {
-  const base = { comments: [], fixAttempts: 0, activeFixRun: false, now: NOW };
+  const base = { comments: [], fixComments: [], activeFixRun: false, now: NOW };
   const cases = {
     'closed issue': makeIssue({ number: 1, title: 'x', labels: STUCK_LABELS, createdAt: hoursAgo(48), state: 'closed' }),
     'tracking issue (claude-health title)': makeIssue({ number: 2, title: '[claude-health] tracker', labels: STUCK_LABELS, createdAt: hoursAgo(48) }),
@@ -215,7 +277,7 @@ test('linked PR found in comments also excludes the finding', () => {
   const f = detectStuckFixable({
     issue,
     comments: [{ user: HUMAN, body: 'PR: #77 relevant', created_at: daysAgo(1) }],
-    fixAttempts: 0,
+    fixComments: [],
     activeFixRun: false,
     now: NOW,
   });
@@ -265,7 +327,7 @@ test('report lines carry remediation metadata (the #814 ask)', () => {
     detectStuckFixable({
       issue: makeIssue({ number: 1062, title: 'fresh stuck', labels: STUCK_LABELS, createdAt: hoursAgo(30) }),
       comments: [],
-      fixAttempts: 0,
+      fixComments: [],
       activeFixRun: false,
       now: NOW,
     }),
