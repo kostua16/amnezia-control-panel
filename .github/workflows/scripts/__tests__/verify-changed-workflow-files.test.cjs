@@ -251,6 +251,29 @@ test('resolveCommand skips a same-named directory earlier in PATH', () => {
   assert.equal(fs.statSync(resolved).isFile(), true);
 });
 
+test(
+  'resolveCommand skips a non-executable file earlier in PATH',
+  { skip: process.platform === 'win32' },
+  () => {
+    const decoyDir = tmpDir('mon-nox-');
+    const binDir = tmpDir('mon-nox-bin-');
+    const decoy = path.join(decoyDir, 'actionlint');
+    fs.writeFileSync(decoy, '#!/bin/sh\nexit 0\n', { mode: 0o644 });
+    writeFakeBin(binDir, 'actionlint', 'process.exit(0);');
+
+    const env = {
+      PATH: `${decoyDir}${path.delimiter}${binDir}`,
+      Path: `${decoyDir}${path.delimiter}${binDir}`,
+    };
+    const resolved = resolveCommand('actionlint', env);
+    assert.ok(resolved, 'expected the later executable');
+    assert.ok(
+      resolved.startsWith(binDir),
+      `resolved ${resolved} should be under ${binDir}`,
+    );
+  },
+);
+
 test('monitor workflow invokes the scoped verifier', () => {
   const yaml = fs.readFileSync(
     path.join(
