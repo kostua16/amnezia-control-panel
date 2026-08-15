@@ -561,6 +561,63 @@ jobs:
           draft: 'false'
           require-rich-body: 'true'
 
+  cost-telemetry:
+    # MON-E06: aggregate per-run Claude cost/turn metrics from completed
+    # monitor runs into a retained artifact. Runs parallel to the agent job
+    # so log fetching never eats into its 25-minute timeout budget.
+    needs: [fleet-gate]
+    if: needs.fleet-gate.outputs.skip != 'true'
+    name: Aggregate per-run cost telemetry (MON-E06)
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Aggregate run costs
+        id: costs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          out_dir="$RUNNER_TEMP/cost-telemetry"
+          mkdir -p "$out_dir"
+          echo "out_dir=$out_dir" >> "$GITHUB_OUTPUT"
+          node .github/workflows/scripts/aggregate-run-costs.cjs \
+            --repo "${{ github.repository }}" \
+            --workflow-file "$MONITOR_WORKFLOW_FILE" \
+            --exclude-run-id "${{ github.run_id }}" \
+            --window-hours 168 \
+            --max-runs 50 \
+            --records-file "$out_dir/records.jsonl" \
+            --summary-file "$out_dir/summary.json" \
+            --github-output "$GITHUB_OUTPUT"
+          {
+            echo "### Per-run cost telemetry (MON-E06)"
+            echo
+            echo '```json'
+            cat "$out_dir/summary.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload cost telemetry artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: monitor-cost-telemetry-${{ github.run_id }}
+          path: ${{ steps.costs.outputs.out_dir }}
+          if-no-files-found: error
+          retention-days: 90
+
   report-failure:
     needs: [monitor-runs]
     if: ${{ always() && needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped' }}
