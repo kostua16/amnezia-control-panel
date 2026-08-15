@@ -24,6 +24,7 @@ interface ServerConfigData {
   id: number;
   name: string;
   hostname: string;
+  redirectIp?: string | null;
   port: number;
   isActive: boolean;
   services: ServiceInfo[];
@@ -41,10 +42,11 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
   const [editData, setEditData] = useState<{
     name: string;
     hostname: string;
+    redirectIp: string;
     port: string;
     apiKey: string;
     isActive: boolean;
-  }>({ name: '', hostname: '', port: '', apiKey: '', isActive: true });
+  }>({ name: '', hostname: '', redirectIp: '', port: '', apiKey: '', isActive: true });
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeyMasked, setApiKeyMasked] = useState(true);
 
@@ -73,6 +75,7 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
     setEditData({
       name: config.name,
       hostname: config.hostname,
+      redirectIp: config.redirectIp ?? '',
       port: String(config.port),
       apiKey: '',
       isActive: config.isActive,
@@ -91,6 +94,7 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
       const body: Record<string, unknown> = {
         name: editData.name,
         hostname: editData.hostname,
+        redirectIp: editData.redirectIp.trim() || null,
         port: Number(editData.port),
         isActive: editData.isActive,
       };
@@ -234,6 +238,19 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
                 />
               </div>
               <div className="space-y-1.5">
+                <label className="text-sm font-medium">Redirect IP</label>
+                <Input
+                  placeholder="Optional proxy IP"
+                  value={editData.redirectIp}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      redirectIp: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
                 <label className="text-sm font-medium">Port</label>
                 <Input
                   type="number"
@@ -316,6 +333,10 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
               <div>
                 <p className="text-sm text-muted-foreground">Hostname</p>
                 <p className="font-medium">{config.hostname}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Redirect IP</p>
+                <p className="font-medium">{config.redirectIp || <span className="text-muted-foreground italic">None</span>}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Port</p>

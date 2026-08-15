@@ -14,6 +14,7 @@ import {
   Gauge,
   TriangleAlert,
   RefreshCw,
+  RotateCcw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -83,6 +84,7 @@ export function UserList() {
   const [blockLoadingId, setBlockLoadingId] = useState<number | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<number | null>(null);
   const [syncLoadingId, setSyncLoadingId] = useState<number | null>(null);
+  const [resetTrafficLoadingId, setResetTrafficLoadingId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Debounce search input by 300ms
@@ -217,6 +219,39 @@ export function UserList() {
         );
       } finally {
         setSyncLoadingId(null);
+      }
+    },
+    [refetch],
+  );
+
+  const handleResetTraffic = useCallback(
+    async (user: UserItem) => {
+      if (!window.confirm(`Are you sure you want to reset traffic for ${user.displayName ?? user.username}?`)) {
+        return;
+      }
+      
+      setResetTrafficLoadingId(user.id);
+      setActionError(null);
+
+      try {
+        const response = await fetch(`/api/users/${user.id}/traffic`, {
+          method: 'DELETE',
+        });
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Failed to reset traffic');
+        }
+
+        refetch();
+      } catch (err) {
+        setActionError(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Failed to reset traffic.',
+        );
+      } finally {
+        setResetTrafficLoadingId(null);
       }
     },
     [refetch],
@@ -429,6 +464,21 @@ export function UserList() {
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <RefreshCw className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleResetTraffic(user)}
+                        disabled={resetTrafficLoadingId === user.id}
+                        aria-label={`Reset traffic for ${user.username}`}
+                        title="Reset Traffic"
+                      >
+                        {resetTrafficLoadingId === user.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-4 w-4 text-orange-500" />
                         )}
                       </Button>
                       <Button

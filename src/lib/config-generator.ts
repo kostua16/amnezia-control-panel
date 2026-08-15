@@ -54,6 +54,35 @@ export async function generateConfig(
     }
   }
 
+  if (options.serverId) {
+    const service = await prisma.service.findUnique({
+      where: { id: options.serverId },
+      include: { server: true },
+    });
+
+    if (service && service.server) {
+      const endpoint = service.server.redirectIp || service.server.hostname;
+      const port = service.port || service.server.port;
+
+      if (template.protocol === 'wireguard' || template.protocol === 'amneziawg') {
+        if (!config.endpoint) config.endpoint = `${endpoint}:${port}`;
+      } else {
+        if (!config.address) config.address = endpoint;
+        if (!config.port) config.port = port;
+
+        const wsSettings = config.wsSettings as Record<string, unknown> | undefined;
+        if (wsSettings && wsSettings.host === '') {
+          wsSettings.host = endpoint;
+        }
+
+        const tlsSettings = config.tlsSettings as Record<string, unknown> | undefined;
+        if (tlsSettings && tlsSettings.serverName === '') {
+          tlsSettings.serverName = endpoint;
+        }
+      }
+    }
+  }
+
   // Validate the generated config
   validateConfig(config, template.protocol);
 

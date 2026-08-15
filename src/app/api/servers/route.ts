@@ -16,6 +16,7 @@ const createServerSchema = z.object({
     .string()
     .min(1, 'Hostname is required')
     .max(255, 'Hostname must be at most 255 characters'),
+  redirectIp: z.string().nullable().optional(),
   port: z.coerce.number().int().min(1).max(65535).optional().default(22),
   apiKey: z.string().min(1, 'API key is required'),
 });
@@ -39,6 +40,7 @@ export const GET = apiHandler(async () => {
     id: server.id,
     name: server.name,
     hostname: server.hostname,
+    redirectIp: server.redirectIp,
     port: server.port,
     isActive: server.isActive,
     services: server.services.map((s) => ({
@@ -61,7 +63,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
     return validationError(parsed.error);
   }
 
-  const { name, hostname, port, apiKey } = parsed.data;
+  const { name, hostname, redirectIp, port, apiKey } = parsed.data;
 
   // Hash the API key before storing
   const apiKeyHash = await hashValue(apiKey);
@@ -70,6 +72,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
     data: {
       name,
       hostname,
+      redirectIp,
       port,
       apiKeyHash,
     },
@@ -99,6 +102,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
         id: server.id,
         name: server.name,
         hostname: server.hostname,
+        redirectIp: server.redirectIp,
         port: server.port,
         isActive: server.isActive,
         services: server.services.map((s) => ({

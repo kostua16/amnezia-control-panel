@@ -359,6 +359,29 @@ async function allocateAwgAddress(): Promise<string> {
   const prefix = awgClientAddressPrefix();
   const used = new Set<string>();
 
+  // 1. Query live AWG interface to avoid IP collisions with native peers
+  try {
+    const { stdout } = await runCli(
+      awgBinary(),
+      ['show', awgInterface(), 'allowed-ips'],
+      'AWG:show_allowed_ips',
+    );
+    
+    const lines = stdout.trim().split('\n');
+    for (const line of lines) {
+      if (!line) continue;
+      const ips = line.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/g);
+      if (ips) {
+        for (const ip of ips) {
+          used.add(ip);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[AWG] Failed to query live allowed-ips:', error);
+  }
+
+  // 2. Query Prisma database
   const protocols = await prisma.userProtocol.findMany({
     where: { serviceType: AWG_SERVICE_TYPE, isActive: true },
     select: { config: true },

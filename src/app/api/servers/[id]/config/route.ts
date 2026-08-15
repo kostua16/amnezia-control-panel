@@ -10,6 +10,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 const updateConfigSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   hostname: z.string().min(1).max(255).optional(),
+  redirectIp: z.string().nullable().optional(),
   port: z.coerce.number().int().min(1).max(65535).optional(),
   apiKey: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
@@ -107,7 +108,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const { name, hostname, port, apiKey, isActive, serviceOverrides } =
+    const { name, hostname, redirectIp, port, apiKey, isActive, serviceOverrides } =
       parsed.data;
 
     const existing = await prisma.server.findUnique({
@@ -125,6 +126,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const serverUpdateData: Record<string, unknown> = {};
     if (name !== undefined) serverUpdateData.name = name;
     if (hostname !== undefined) serverUpdateData.hostname = hostname;
+    if (redirectIp !== undefined) serverUpdateData.redirectIp = redirectIp;
     if (port !== undefined) serverUpdateData.port = port;
     if (isActive !== undefined) serverUpdateData.isActive = isActive;
 
