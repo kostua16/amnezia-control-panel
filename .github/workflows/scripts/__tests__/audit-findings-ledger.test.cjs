@@ -11,8 +11,11 @@ const {
   collectFixedFindings,
   listOpenEntries,
   loadLedger,
+  normalizeLedgerSeverity,
   serializeLedger,
+  validateLedger,
 } = require('../audit-findings-ledger.cjs');
+const { fingerprintFinding } = require('../upsert-audit-manual-findings.cjs');
 
 const SCRIPT_PATH = path.join(__dirname, '..', 'audit-findings-ledger.cjs');
 const NOW_1 = '2026-08-15T10:00:00.000Z';
@@ -44,6 +47,33 @@ function writeLedgerFile(ledger) {
   const filePath = path.join(dir, 'audit-backlog.json');
   fs.writeFileSync(filePath, serializeLedger(ledger));
   return filePath;
+}
+
+function writeRawLedger(text) {
+  const dir = makeTempDir();
+  const filePath = path.join(dir, 'audit-backlog.json');
+  fs.writeFileSync(filePath, text);
+  return filePath;
+}
+
+function makeValidEntry(overrides = {}) {
+  const finding = makeFinding();
+  return {
+    fingerprint: fingerprintFinding(finding),
+    status: 'manual',
+    severity: 'medium',
+    summary: finding.summary,
+    details: finding.details,
+    files: finding.files,
+    first_seen: NOW_1,
+    last_seen: NOW_1,
+    last_seen_run: RUN_1,
+    ...overrides,
+  };
+}
+
+function ledgerWith(entry) {
+  return { version: 1, findings: [entry] };
 }
 
 function runCliScript(args, envOverrides = {}) {
@@ -233,6 +263,7 @@ test('corrupt ledger JSON fails loudly instead of wiping history', () => {
   });
   assert.notEqual(cli.status, 0);
   assert.match(cli.stderr, /not valid JSON/);
+  assert.doesNotMatch(cli.stderr, /invalid structure/);
   assert.equal(fs.readFileSync(filePath, 'utf8'), '{ not json');
 });
 
@@ -404,6 +435,235 @@ test('CLI rejects conflicting or missing modes', () => {
     runCliScript(['--append', '--list-open', '--ledger', filePath]).status,
     2,
   );
+  assert.equal(
+    runCliScript(['--append', '--validate', '--ledger', filePath]).status,
+    2,
+  );
+  assert.equal(
+    runCliScript(['--list-open', '--validate', '--ledger', filePath]).status,
+    2,
+  );
   assert.equal(runCliScript(['--ledger', filePath]).status, 2);
   assert.equal(fs.existsSync(filePath), false);
+});
+
+test('--validate accepts a valid seeded ledger without touching the file', () => {
+  const result = appendToLedger({
+    ledger: emptyLedger(),
+    manualFindings: [makeFinding()],
+    fixedFindings: [
+      makeFinding({ severity: 'low', summary: 'Already repaired finding' }),
+    ],
+    runId: RUN_1,
+    now: NOW_1,
+  });
+  const filePath = writeLedgerFile(result.ledger);
+  const before = fs.readFileSync(filePath, 'utf8');
+
+  const cli = runCliScript(['--validate', '--ledger', filePath]);
+
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stdout, /Ledger valid: .*\(2 findings\)/);
+  assert.equal(fs.readFileSync(filePath, 'utf8'), before);
+});
+
+test('--validate fails on a missing ledger instead of initializing it', () => {
+  const dir = makeTempDir();
+  const filePath = path.join(dir, 'missing.json');
+
+  const cli = runCliScript(['--validate', '--ledger', filePath]);
+
+  assert.notEqual(cli.status, 0);
+  assert.match(cli.stderr, /not found/);
+  assert.equal(fs.existsSync(filePath), false);
+});
+
+test('invalid top-level ledger shape reports a structure error', () => {
+  const findingsNotArray = writeRawLedger(
+    JSON.stringify({ version: 1, findings: {} }),
+  );
+  assert.throws(() => loadLedger(findingsNotArray), /invalid structure/);
+  assert.throws(() => loadLedger(findingsNotArray), /findings must be an array/);
+
+  const wrongVersion = writeRawLedger(JSON.stringify({ version: 2, findings: [] }));
+  assert.throws(() => loadLedger(wrongVersion), /invalid structure/);
+  assert.throws(() => loadLedger(wrongVersion), /version must be 1/);
+
+  const cli = runCliScript(['--validate', '--ledger', wrongVersion]);
+  assert.notEqual(cli.status, 0);
+  assert.match(cli.stderr, /invalid structure/);
+});
+
+const MALFORMED_ENTRY_CASES = [
+  {
+    name: 'fingerprint is not 16 lowercase hex chars',
+    build: (entry) => ledgerWith({ ...entry, fingerprint: 'NOT-HEX-16-CHARS' }),
+  },
+  {
+    name: 'fingerprint does not match summary/files content',
+    build: (entry) =>
+      ledgerWith({ ...entry, summary: 'A totally different summary' }),
+  },
+  {
+    name: 'duplicate fingerprints',
+    build: (entry) => ({ version: 1, findings: [entry, { ...entry }] }),
+  },
+  {
+    name: 'unknown status',
+    build: (entry) => ledgerWith({ ...entry, status: 'closed' }),
+  },
+  {
+    name: 'unknown severity',
+    build: (entry) => ledgerWith({ ...entry, severity: 'urgent' }),
+  },
+  {
+    name: 'files is not an array',
+    build: (entry) => ledgerWith({ ...entry, files: 'src/lib/utils.ts' }),
+  },
+  {
+    name: 'files contains an empty string',
+    build: (entry) =>
+      ledgerWith({ ...entry, files: ['src/lib/utils.ts', ''] }),
+  },
+  {
+    name: 'empty summary',
+    build: (entry) => ledgerWith({ ...entry, summary: '' }),
+  },
+  {
+    name: 'unparseable first_seen',
+    build: (entry) => ledgerWith({ ...entry, first_seen: 'yesterday' }),
+  },
+  {
+    name: 'first_seen after last_seen',
+    build: (entry) =>
+      ledgerWith({ ...entry, first_seen: NOW_2, last_seen: NOW_1 }),
+  },
+  {
+    name: 'fixed entry without fixed_in_run',
+    build: (entry) => ledgerWith({ ...entry, status: 'fixed' }),
+  },
+  {
+    name: 'non-fixed entry with fixed_in_run',
+    build: (entry) => ledgerWith({ ...entry, fixed_in_run: RUN_1 }),
+  },
+];
+
+for (const { name, build } of MALFORMED_ENTRY_CASES) {
+  test(`loadLedger rejects malformed entry: ${name}`, () => {
+    const filePath = writeRawLedger(JSON.stringify(build(makeValidEntry())));
+    assert.throws(() => loadLedger(filePath), /invalid structure/);
+  });
+}
+
+test('CLI --validate reports the structural error for malformed entries', () => {
+  for (const name of [
+    'unknown severity',
+    'fingerprint does not match summary/files content',
+    'fixed entry without fixed_in_run',
+  ]) {
+    const caseDef = MALFORMED_ENTRY_CASES.find(
+      (candidate) => candidate.name === name,
+    );
+    const filePath = writeRawLedger(
+      JSON.stringify(caseDef.build(makeValidEntry())),
+    );
+    const cli = runCliScript(['--validate', '--ledger', filePath]);
+    assert.notEqual(cli.status, 0);
+    assert.match(cli.stderr, /invalid structure/);
+  }
+});
+
+test('re-report refreshes severity and details while identity stays stable', () => {
+  const first = appendToLedger({
+    ledger: emptyLedger(),
+    manualFindings: [makeFinding({ severity: 'low', details: 'old details' })],
+    runId: RUN_1,
+    now: NOW_1,
+  });
+  const refreshed = appendToLedger({
+    ledger: first.ledger,
+    manualFindings: [makeFinding({ severity: 'high', details: 'new details' })],
+    runId: RUN_2,
+    now: NOW_2,
+  });
+
+  assert.equal(refreshed.ledger.findings.length, 1);
+  const entry = refreshed.ledger.findings[0];
+  assert.equal(entry.severity, 'high');
+  assert.equal(entry.details, 'new details');
+  assert.equal(entry.status, 'manual');
+  assert.equal(entry.first_seen, NOW_1);
+  assert.equal(entry.fingerprint, first.ledger.findings[0].fingerprint);
+  assert.equal(entry.last_seen, NOW_2);
+  assert.equal(entry.last_seen_run, RUN_2);
+});
+
+test('fixed-to-open regression refreshes metadata and drops fixed_in_run', () => {
+  const fixed = appendToLedger({
+    ledger: emptyLedger(),
+    fixedFindings: [makeFinding({ severity: 'low', details: 'old details' })],
+    runId: RUN_1,
+    now: NOW_1,
+  });
+  const regressed = appendToLedger({
+    ledger: fixed.ledger,
+    manualFindings: [
+      makeFinding({ severity: 'critical', details: 'new details' }),
+    ],
+    runId: RUN_2,
+    now: NOW_2,
+  });
+
+  const entry = regressed.ledger.findings[0];
+  assert.equal(entry.status, 'open');
+  assert.equal('fixed_in_run' in entry, false);
+  assert.equal(entry.severity, 'critical');
+  assert.equal(entry.details, 'new details');
+  assert.equal(entry.first_seen, NOW_1);
+  assert.equal(entry.last_seen, NOW_2);
+  assert.equal(entry.last_seen_run, RUN_2);
+});
+
+test('a refreshed severity change reorders list-open output', () => {
+  const seeded = appendToLedger({
+    ledger: emptyLedger(),
+    manualFindings: [
+      makeFinding({ severity: 'low', summary: 'grows worse' }),
+      makeFinding({ severity: 'medium', summary: 'steady middle' }),
+    ],
+    runId: RUN_1,
+    now: NOW_1,
+  });
+  const refreshed = appendToLedger({
+    ledger: seeded.ledger,
+    manualFindings: [
+      makeFinding({ severity: 'critical', summary: 'grows worse' }),
+    ],
+    runId: RUN_2,
+    now: NOW_2,
+  });
+
+  const open = listOpenEntries(refreshed.ledger);
+  assert.deepEqual(
+    open.map((entry) => entry.summary),
+    ['grows worse', 'steady middle'],
+  );
+});
+
+test('unknown finding severities normalize so written ledgers stay valid', () => {
+  assert.equal(normalizeLedgerSeverity('HIGH'), 'high');
+  assert.equal(normalizeLedgerSeverity('deferred'), 'unspecified');
+  assert.equal(normalizeLedgerSeverity(undefined), 'unspecified');
+
+  const result = appendToLedger({
+    ledger: emptyLedger(),
+    manualFindings: [makeFinding({ severity: 'urgent' })],
+    runId: RUN_1,
+    now: NOW_1,
+  });
+
+  assert.equal(result.ledger.findings[0].severity, 'unspecified');
+  assert.deepEqual(validateLedger(result.ledger), []);
+  const filePath = writeLedgerFile(result.ledger);
+  assert.doesNotThrow(() => loadLedger(filePath));
 });

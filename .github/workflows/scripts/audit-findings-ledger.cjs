@@ -11,6 +11,9 @@ const {
 
 const DEFAULT_LEDGER_PATH = '.planning/audit-backlog.json';
 const LEDGER_VERSION = 1;
+const SEVERITIES = ['critical', 'high', 'medium', 'low', 'unspecified'];
+const ENTRY_STATUSES = ['open', 'manual', 'fixed'];
+const FINGERPRINT_PATTERN = /^[0-9a-f]{16}$/;
 const SEVERITY_RANKS = { critical: 0, high: 1, medium: 2, low: 3 };
 const ENTRY_FIELD_ORDER = [
   'fingerprint',
@@ -36,6 +39,112 @@ function collectFixedFindings({ structuredOutput }) {
   return [];
 }
 
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isParseableTimestamp(value) {
+  return isNonEmptyString(value) && !Number.isNaN(Date.parse(value));
+}
+
+function normalizeLedgerSeverity(value) {
+  const severity = String(value || '')
+    .trim()
+    .toLowerCase();
+  return SEVERITIES.includes(severity) ? severity : 'unspecified';
+}
+
+function validateLedger(ledger) {
+  const reasons = [];
+  if (!ledger || typeof ledger !== 'object' || Array.isArray(ledger)) {
+    return ['ledger root must be an object'];
+  }
+  if (ledger.version !== LEDGER_VERSION) {
+    reasons.push(`version must be ${LEDGER_VERSION}`);
+  }
+  if (!Array.isArray(ledger.findings)) {
+    reasons.push('findings must be an array');
+    return reasons;
+  }
+
+  const seenFingerprints = new Set();
+  ledger.findings.forEach((entry, index) => {
+    const where = `findings[${index}]`;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      reasons.push(`${where} must be an object`);
+      return;
+    }
+
+    if (
+      typeof entry.fingerprint !== 'string' ||
+      !FINGERPRINT_PATTERN.test(entry.fingerprint)
+    ) {
+      reasons.push(`${where}.fingerprint must be 16 lowercase hex chars`);
+    } else if (seenFingerprints.has(entry.fingerprint)) {
+      reasons.push(`${where}.fingerprint is duplicated`);
+    } else {
+      seenFingerprints.add(entry.fingerprint);
+    }
+
+    if (!ENTRY_STATUSES.includes(entry.status)) {
+      reasons.push(`${where}.status must be one of: ${ENTRY_STATUSES.join(', ')}`);
+    }
+    if (!SEVERITIES.includes(entry.severity)) {
+      reasons.push(`${where}.severity must be one of: ${SEVERITIES.join(', ')}`);
+    }
+    if (!isNonEmptyString(entry.summary)) {
+      reasons.push(`${where}.summary must be a non-empty string`);
+    }
+    if (!isNonEmptyString(entry.details)) {
+      reasons.push(`${where}.details must be a non-empty string`);
+    }
+    if (
+      !Array.isArray(entry.files) ||
+      entry.files.some((file) => !isNonEmptyString(file))
+    ) {
+      reasons.push(`${where}.files must be an array of non-empty strings`);
+    }
+
+    if (!isParseableTimestamp(entry.first_seen)) {
+      reasons.push(`${where}.first_seen must be a parseable timestamp`);
+    }
+    if (!isParseableTimestamp(entry.last_seen)) {
+      reasons.push(`${where}.last_seen must be a parseable timestamp`);
+    } else if (
+      isParseableTimestamp(entry.first_seen) &&
+      Date.parse(entry.first_seen) > Date.parse(entry.last_seen)
+    ) {
+      reasons.push(`${where}.first_seen must not be after last_seen`);
+    }
+    if (!isNonEmptyString(entry.last_seen_run)) {
+      reasons.push(`${where}.last_seen_run must be a non-empty string`);
+    }
+
+    if (
+      isNonEmptyString(entry.summary) &&
+      Array.isArray(entry.files) &&
+      entry.fingerprint !==
+        fingerprintFinding({ summary: entry.summary, files: entry.files })
+    ) {
+      reasons.push(`${where}.fingerprint does not match summary/files`);
+    }
+
+    if (entry.status === 'fixed') {
+      if (!isNonEmptyString(entry.fixed_in_run)) {
+        reasons.push(
+          `${where}.fixed_in_run is required when status is 'fixed'`,
+        );
+      }
+    } else if ('fixed_in_run' in entry) {
+      reasons.push(
+        `${where}.fixed_in_run must only be present when status is 'fixed'`,
+      );
+    }
+  });
+
+  return reasons;
+}
+
 function loadLedger(filePath) {
   let raw;
   try {
@@ -46,28 +155,30 @@ function loadLedger(filePath) {
     }
     throw error;
   }
+  let parsed;
   try {
-    const parsed = JSON.parse(raw);
-    if (
-      !parsed ||
-      typeof parsed !== 'object' ||
-      !Array.isArray(parsed.findings)
-    ) {
-      throw new Error('not a ledger object');
-    }
-    return parsed;
+    parsed = JSON.parse(raw);
   } catch {
     // A corrupt ledger must never be silently reinitialized: failing loudly
     // surfaces via report-failure instead of wiping the audit history.
     throw new Error(`Ledger file is not valid JSON: ${filePath}`);
   }
+  const reasons = validateLedger(parsed);
+  // A structurally malformed ledger must fail loudly here instead of crashing
+  // later steps (serialization, list-open rendering) far from the cause.
+  if (reasons.length > 0) {
+    throw new Error(
+      `Ledger file has invalid structure: ${filePath}: ${reasons[0]}`,
+    );
+  }
+  return parsed;
 }
 
 function makeEntry({ finding, status, firstSeen, now, runId }) {
   const entry = {
     fingerprint: fingerprintFinding(finding),
     status,
-    severity: finding.severity,
+    severity: normalizeLedgerSeverity(finding.severity),
     summary: finding.summary,
     details: finding.details,
     files: finding.files,
@@ -135,6 +246,13 @@ function appendToLedger({
       existing.status = 'open';
       delete existing.fixed_in_run;
     }
+    // Refresh descriptive fields from the current report so a re-reported
+    // finding reflects its latest severity/details instead of stale
+    // first-seen metadata. Fingerprint and first_seen stay stable.
+    existing.severity = normalizeLedgerSeverity(finding.severity);
+    existing.summary = finding.summary;
+    existing.details = finding.details;
+    existing.files = finding.files;
     existing.last_seen = now;
     existing.last_seen_run = runId;
     updated += 1;
@@ -210,9 +328,11 @@ function runCli() {
   const args = parseArgs(process.argv.slice(2));
   const append = args.append === 'true';
   const listOpen = args.listOpen === 'true';
-  if (append === listOpen) {
+  const validate = args.validate === 'true';
+  const selectedModes = [append, listOpen, validate].filter(Boolean).length;
+  if (selectedModes !== 1) {
     process.stderr.write(
-      'Exactly one of --append or --list-open is required.\n',
+      'Exactly one of --append, --list-open, or --validate is required.\n',
     );
     process.exitCode = 2;
     return;
@@ -222,6 +342,21 @@ function runCli() {
     args.runId || process.env.RUN_ID || process.env.GITHUB_RUN_ID || 'local';
 
   try {
+    if (validate) {
+      // Read-only structural check: unlike append/list-open it must not fall
+      // back to the empty-ledger init, which would mask a missing file.
+      if (!fs.existsSync(ledgerPath)) {
+        process.stderr.write(`Ledger file not found: ${ledgerPath}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const ledger = loadLedger(ledgerPath);
+      process.stdout.write(
+        `Ledger valid: ${ledgerPath} (${ledger.findings.length} findings)\n`,
+      );
+      return;
+    }
+
     const ledger = loadLedger(ledgerPath);
     if (listOpen) {
       for (const entry of listOpenEntries(ledger)) {
@@ -271,8 +406,10 @@ module.exports = {
   collectFixedFindings,
   loadLedger,
   listOpenEntries,
+  normalizeLedgerSeverity,
   runCli,
   serializeLedger,
+  validateLedger,
 };
 
 if (require.main === module) {
