@@ -125,7 +125,8 @@ jobs:
             --out-dir . \
             --min-age-hours "$MIN_AGE_HOURS" \
             --max-groups "$MAX_GROUPS" \
-            --group-filter "$GROUP_FILTER"
+            --group-filter "$GROUP_FILTER" \
+            --dry-run "$EFFECTIVE_DRY_RUN"
 
       - name: Render consolidation report
         id: report
@@ -136,10 +137,13 @@ jobs:
           const fs = require('fs');
           let groups = {};
           try { groups = require('./merge-pr-groups.json'); } catch {}
+          const dryRun = process.env.EFFECTIVE_DRY_RUN !== 'false';
           const report = {
             selectedGroups: groups.selected || [],
             skippedGroups: groups.skipped || [],
-            validation: { dryRun: process.env.EFFECTIVE_DRY_RUN !== 'false' },
+            allGroups: groups.all || [],
+            closureResults: groups.closure_results || [],
+            validation: { ...(groups.validation || {}), dryRun },
           };
           fs.writeFileSync('merge-pr-report.json', JSON.stringify(report));
           NODE
