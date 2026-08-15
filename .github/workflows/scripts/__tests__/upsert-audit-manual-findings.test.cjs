@@ -455,6 +455,10 @@ test('GSD report-only mode counts deferred proposals and zeroes without section'
 test('normalizeSeverity lowercases values and defaults empty values', () => {
   assert.equal(normalizeSeverity('MEDIUM'), 'medium');
   assert.equal(normalizeSeverity(''), 'unspecified');
+  assert.equal(normalizeSeverity('info'), 'info');
+  assert.equal(normalizeSeverity('warning'), 'warning');
+  assert.equal(normalizeSeverity('urgent'), 'urgent');
+  assert.equal(normalizeSeverity('deferred'), 'deferred');
 });
 
 test('missing GitHub context fails only when findings need issue upsert', () => {

@@ -279,7 +279,9 @@ test('parseNumstat handles paths with tabs', () => {
 // countFileLines
 // ---------------------------------------------------------------------------
 test('countFileLines returns 0 for empty buffer', () => {
-  const tmp = require('node:fs').mkdtempSync('/tmp/caf-test-');
+  const tmp = require('node:fs').mkdtempSync(
+    require('node:path').join(require('node:os').tmpdir(), 'caf-test-'),
+  );
   const file = require('node:path').join(tmp, 'empty.txt');
   require('node:fs').writeFileSync(file, '');
   assert.equal(countFileLines(file), 0);
@@ -287,7 +289,9 @@ test('countFileLines returns 0 for empty buffer', () => {
 });
 
 test('countFileLines counts single line without trailing newline', () => {
-  const tmp = require('node:fs').mkdtempSync('/tmp/caf-test-');
+  const tmp = require('node:fs').mkdtempSync(
+    require('node:path').join(require('node:os').tmpdir(), 'caf-test-'),
+  );
   const file = require('node:path').join(tmp, 'one.txt');
   require('node:fs').writeFileSync(file, 'hello');
   assert.equal(countFileLines(file), 1);
@@ -295,7 +299,9 @@ test('countFileLines counts single line without trailing newline', () => {
 });
 
 test('countFileLines counts multiple lines with trailing newline', () => {
-  const tmp = require('node:fs').mkdtempSync('/tmp/caf-test-');
+  const tmp = require('node:fs').mkdtempSync(
+    require('node:path').join(require('node:os').tmpdir(), 'caf-test-'),
+  );
   const file = require('node:path').join(tmp, 'lines.txt');
   require('node:fs').writeFileSync(file, 'a\nb\nc\n');
   assert.equal(countFileLines(file), 3);

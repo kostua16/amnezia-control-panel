@@ -205,3 +205,67 @@ test('keeps audit-safe PRs with unavailable changed files manual-only', () => {
     'audit-safe changed files are unavailable',
   );
 });
+
+test('audit-safe findings ledger rides safe-lane PRs', () => {
+  // The findings ledger is a machine-generated data file that every audit-fix
+  // run appends to; it is exempted by exact path so it can ride audit PRs.
+  const result = evaluatePrPolicy(makePr(auditSafePr), policy, [
+    { filename: '.planning/audit-backlog.json', additions: 4, deletions: 1 },
+    { filename: 'src/hooks/use-x.ts', additions: 5, deletions: 2 },
+  ]);
+
+  assert.equal(result.audit_safe.eligible, true);
+  assert.equal(result.eligible, true);
+  assert.equal(result.manual_only, false);
+  assert.deepEqual(result.audit_safe.matched_manual_paths, []);
+  assert.deepEqual(result.audit_safe.disallowed_paths, []);
+  assert.deepEqual(result.matched_manual_paths, []);
+});
+
+test('other planning paths still force audit-safe PRs into the manual lane', () => {
+  const result = evaluatePrPolicy(makePr(auditSafePr), policy, [
+    { filename: '.planning/other.md', additions: 2, deletions: 0 },
+    { filename: 'src/hooks/use-x.ts', additions: 5, deletions: 2 },
+  ]);
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.manual_only, true);
+  assert.deepEqual(result.audit_safe.matched_manual_paths, [
+    '.planning/other.md',
+  ]);
+});
+
+test('missing ledgerPath config fails closed onto the manual lane', () => {
+  const localPolicy = JSON.parse(JSON.stringify(policy));
+  delete localPolicy.auditSafe.ledgerPath;
+
+  const result = evaluatePrPolicy(makePr(auditSafePr), localPolicy, [
+    { filename: '.planning/audit-backlog.json', additions: 4, deletions: 1 },
+    { filename: 'src/hooks/use-x.ts', additions: 5, deletions: 2 },
+  ]);
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.manual_only, true);
+  assert.deepEqual(result.audit_safe.matched_manual_paths, [
+    '.planning/audit-backlog.json',
+  ]);
+});
+
+test('the findings ledger still counts toward audit-safe file limits', () => {
+  const files = Array.from({ length: 10 }, (_, index) => ({
+    filename: `src/hooks/use-${index}.ts`,
+    additions: 2,
+    deletions: 1,
+  }));
+  files.push({
+    filename: '.planning/audit-backlog.json',
+    additions: 4,
+    deletions: 1,
+  });
+
+  const result = evaluatePrPolicy(makePr(auditSafePr), policy, files);
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.manual_only, true);
+  assert.match(result.blocked_reason, /exceeds limit 10/);
+});
