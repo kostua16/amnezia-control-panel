@@ -160,8 +160,9 @@ Resume file: None
 | 2026-06-04 | 260604-l3n | Replace STUB public keys in chain-router with real key generation (#442) |
 | 2026-07-20 | 260721-4ej | Fix npm audit infrastructure failure classification |
 | 2026-08-15 | 260815-n6m | Persistent audit-findings ledger for audit-fix runs (AFX-E02, #1072) |
+| 2026-08-15 | 260815-r3p | Harden ledger: schema validation, metadata refresh, --validate gate (AFX-E02 review fixes, PR #1085) |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-08-15 - Completed quick task 260815-n6m_
+_Last updated: 2026-08-15 - Completed quick task 260815-r3p_
