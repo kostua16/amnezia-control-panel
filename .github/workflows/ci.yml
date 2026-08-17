@@ -119,6 +119,8 @@ jobs:
           require-gh-auth: 'false'
       - run: npm run test-only
       - run: node --test .github/workflows/scripts/__tests__/*.test.cjs
+      - name: Validate audit findings ledger
+        run: node .github/workflows/scripts/audit-findings-ledger.cjs --validate --require --ledger .planning/audit-backlog.json
 
   build:
     name: Build

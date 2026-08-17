@@ -1,8 +1,9 @@
 name: 'Validate PR gate'
 description: >-
   Pre-push gate matching CI: lint (git-tracked files only), typecheck, format
-  check, unit tests, optional build, workflow script e2e-tests, and the
-  prisma-safe-sql guard. Each check runs with continue-on-error and exposes its
+  check, unit tests, optional build, workflow script e2e-tests, the
+  prisma-safe-sql guard, and the audit-findings ledger structural validation.
+  Each check runs with continue-on-error and exposes its
   real outcome, so callers gate push on the explicit `gate_passed` output
   instead of a masked step conclusion. See
   docs/adr/0002-pre-push-gate-for-claude-driven-workflows.md.
@@ -40,6 +41,9 @@ outputs:
   prisma_safe_outcome:
     description: 'Outcome of the prisma-safe-sql guard.'
     value: ${{ steps.gate-prisma-safe.outcome }}
+  ledger_outcome:
+    description: 'Outcome of the audit-findings ledger structural validation.'
+    value: ${{ steps.gate-ledger.outcome }}
   summary:
     description: 'Markdown bullet list of the per-check outcomes.'
     value: ${{ steps.aggregate.outputs.summary }}
@@ -96,6 +100,17 @@ runs:
       continue-on-error: true
       run: node .github/workflows/scripts/check-prisma-safe-sql.cjs
 
+    - name: Gate - audit-findings ledger
+      id: gate-ledger
+      shell: bash
+      continue-on-error: true
+      run: |
+        # Shared by 8+ non-audit workflows. --validate skips when the ledger
+        # is absent (pre-seed checkout, rebase baseline, fix-review restore
+        # of this action without the seed). Corrupt/malformed files still
+        # fail. CI Test uses --require so audit stays fail-closed.
+        node .github/workflows/scripts/audit-findings-ledger.cjs --validate --ledger .planning/audit-backlog.json
+
     - name: Aggregate gate verdict
       id: aggregate
       shell: bash
@@ -107,6 +122,7 @@ runs:
         BUILD: ${{ steps.gate-build.outcome }}
         SCRIPT: ${{ steps.gate-script-tests.outcome }}
         PRISMA: ${{ steps.gate-prisma-safe.outcome }}
+        LEDGER: ${{ steps.gate-ledger.outcome }}
         RUN_BUILD: ${{ inputs.run-build }}
       run: |
         # A skipped build step (run-build != 'true') is not a failure.
@@ -123,6 +139,7 @@ runs:
         [ "$build_ok" = "true" ] || gate=false
         [ "$SCRIPT" = "success" ] || gate=false
         [ "$PRISMA" = "success" ] || gate=false
+        [ "$LEDGER" = "success" ] || gate=false
         {
           echo "gate_passed=$gate"
           echo "summary<<GATE_SUMMARY_EOF"
@@ -133,5 +150,6 @@ runs:
           echo "- build (run-build=$RUN_BUILD): $BUILD"
           echo "- workflow script e2e-tests: $SCRIPT"
           echo "- prisma-safe-sql: $PRISMA"
+          echo "- audit-findings ledger: $LEDGER"
           echo "GATE_SUMMARY_EOF"
         } >> "$GITHUB_OUTPUT"

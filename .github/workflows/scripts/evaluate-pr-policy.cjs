@@ -244,14 +244,20 @@ function evaluateAuditSafePolicy(fileDetails, policy) {
     ...(policy.manualOnlyPathGlobs ?? []),
     ...(auditSafe.manualOnlyPathGlobs ?? []),
   ];
+  // The findings ledger is a machine-generated data file that every audit-fix
+  // run appends to; it is exempted by exact string equality (no globs) so it
+  // can ride safe-lane audit PRs. An unset or misconfigured ledgerPath never
+  // matches a real path, so the exemption fails closed.
+  const ledgerPath =
+    typeof auditSafe.ledgerPath === 'string' ? auditSafe.ledgerPath : '';
   const maxFiles = Number(auditSafe.maxFiles ?? 0);
   const maxChangedLines = Number(auditSafe.maxChangedLines ?? 0);
   const files = fileDetails.map((file) => file.path);
-  const matchedManualPaths = files.filter((file) =>
-    matchesAny(file, manualOnlyPathGlobs),
+  const matchedManualPaths = files.filter(
+    (file) => file !== ledgerPath && matchesAny(file, manualOnlyPathGlobs),
   );
   const disallowedPaths = files.filter(
-    (file) => !matchesAny(file, allowedPathGlobs),
+    (file) => file !== ledgerPath && !matchesAny(file, allowedPathGlobs),
   );
   const unknownLinePaths = fileDetails
     .filter((file) => countChangedLines(file) === null)
@@ -415,15 +421,27 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
   const blockedLabels = labels.filter((label) =>
     policy.blockingLabels.includes(label),
   );
-  const matchedManualPaths = files.filter((file) =>
-    matchesAny(file, policy.manualOnlyPathGlobs),
+  const auditSafeConfig = policy.auditSafe ?? {};
+  const isAuditSafeBranch =
+    auditSafeConfig.safeBranchPrefix &&
+    headRefName.startsWith(auditSafeConfig.safeBranchPrefix);
+  // Same exact-path ledger exemption as evaluateAuditSafePolicy, applied to
+  // the repo-wide manual-only globs so a safe-lane audit PR carrying only the
+  // machine-generated findings ledger is not blocked by the .planning glob.
+  // Scoped to audit-safe branches only; absent config fails closed.
+  const auditLedgerPath =
+    isAuditSafeBranch && typeof auditSafeConfig.ledgerPath === 'string'
+      ? auditSafeConfig.ledgerPath
+      : '';
+  const matchedManualPaths = files.filter(
+    (file) =>
+      file !== auditLedgerPath && matchesAny(file, policy.manualOnlyPathGlobs),
   );
   const matchedImprovePaths = files.filter((file) =>
     matchesAny(file, policy.improveQualifyingGlobs),
   );
   const generatedStateEvaluation = evaluateGeneratedStatePolicy(files, policy);
   const dependabotUpdate = parseDependabotUpdate(pr, headRefName);
-  const auditSafeConfig = policy.auditSafe ?? {};
   const trustedPlanningConfig = policy.trustedPlanning ?? {};
   const trustedPlanningPrefixes = trustedPlanningConfig.branchPrefixes ?? [
     policy.planningBranchPrefix,
@@ -439,9 +457,6 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
   const isGsdExecutionBranch =
     gsdExecutionConfig.branchPrefix &&
     headRefName.startsWith(gsdExecutionConfig.branchPrefix);
-  const isAuditSafeBranch =
-    auditSafeConfig.safeBranchPrefix &&
-    headRefName.startsWith(auditSafeConfig.safeBranchPrefix);
   const isAuditManualBranch =
     auditSafeConfig.manualBranchPrefix &&
     headRefName.startsWith(auditSafeConfig.manualBranchPrefix);

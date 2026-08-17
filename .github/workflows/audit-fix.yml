@@ -182,10 +182,13 @@ jobs:
             Run a full repository audit for technical debt, code smells, and missing tests.
             Implement targeted fixes, run the most relevant verification you can, and stop once the audit findings are addressed.
 
+            Before fresh auditing, read `.planning/audit-backlog.json`: entries with status "open" or "manual" are the accumulated audit backlog — re-examine those findings first. Report every still-present backlog entry again in `manual_findings` (or in `fixed_findings` when you fixed it this run) so the persisted ledger stays accurate.
+
             When running tests or lint, always use `npm run <script>` or `npx <tool>` — never invoke binaries directly via node_modules paths (e.g. avoid `node node_modules/.bin/...` or `./node_modules/...`).
 
             Hard rules:
             - Do NOT run `git` or `gh`.
+            - Do NOT edit `.planning/audit-backlog.json`. The workflow maintains it from your structured output; treat it as read-only input.
             - Do NOT commit, push, merge, or open a PR. The workflow handles that.
             - Keep changes reviewable; avoid broad refactors unless they are directly required by the audit finding.
             - Prefer narrow, low-risk fixes in components, hooks, formatting helpers, API response helpers, resource monitoring, and monitoring types.
@@ -247,13 +250,21 @@ jobs:
           PR_BODY: ${{ steps.classify.outputs.body }}
         run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs --report-only
 
+      - name: Update findings ledger
+        id: update_ledger
+        env:
+          CLAUDE_STRUCTURED_OUTPUT: ${{ steps.claude_run.outputs.structured_output }}
+          CLAUDE_LAST_OUTPUT: ${{ steps.claude_run.outputs.claude_last_output }}
+          RUN_ID: ${{ github.run_id }}
+        run: node .github/workflows/scripts/audit-findings-ledger.cjs --append --ledger .planning/audit-backlog.json
+
       - name: Restore composite action files (Claude agent may alter working tree)
         if: steps.claude_run.outputs.claude_changed_files_list != ''
         run: git checkout HEAD -- .github/actions/
 
       - name: Validate (CI-matching gate)
         id: gate
-        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        if: steps.claude_run.outputs.claude_changed_files_list != '' || steps.update_ledger.outputs.changed == 'true'
         uses: ./.github/actions/validate-pr-gate
 
       - uses: ./.github/actions/commit-and-push

@@ -89,7 +89,8 @@
       "src/types/server.ts",
       "src/types/user.ts",
       "src/types/config*.ts"
-    ]
+    ],
+    "ledgerPath": ".planning/audit-backlog.json"
   },
   "improveQualifyingGlobs": [
     "src/**",
