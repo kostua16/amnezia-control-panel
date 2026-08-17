@@ -433,7 +433,7 @@ Always manual-only:
 - accepts `claude-full-output`; it defaults to `true` in this private repo but should default to `false` before public reusable workflow extraction
 - modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
 - workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; orchestrated workers that wake `pr-flow.yml` must grant `actions: write`
-- orchestrator-dispatched `workflow_dispatch` workers run as `github-actions[bot]`, so Claude/ZAI steps must pass `allowed-bots: github-actions,github-actions[bot],claude[bot]` when `orchestrated=true`; do not use wildcard bot allowance
+- orchestrator-dispatched `workflow_dispatch` workers run as `github-actions[bot]` (and sometimes `github-actions` without the suffix — run 31297801788). Pass `allowed-bots-profile: orchestrated` (or the interactive profile for human/scheduled runs). Profiles live in `policy.json` `allowedBots.profiles`. Use literal `allowed-bots` only for documented exceptions (triage + kilo-code-bot). Do not use wildcard bot allowance. `github-actions` and `github-actions[bot]` are distinct logins.
 - accepts `plugin-marketplaces` and `plugins` inputs (forwarded to `claude-code-action`) for installing Claude Code plugins per workflow
 - workflows are grouped into **plugin profiles** based on their purpose and turn budget:
   - **Profile E (Engineer):** `claude`, `fix-issue`, `_auto-fix-ci`, `audit-fix`, `gsd-planning-execute` — code-editing flows with typescript-lsp, serena (read-only), context7, code-review, security-guidance, code-simplifier, frontend-design, superpowers, caveman (+ commit-commands in claude.yml only)

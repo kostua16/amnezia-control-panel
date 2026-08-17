@@ -125,6 +125,6 @@ runs:
         model: ${{ inputs.model }}
         max-turns: ${{ inputs.max-turns }}
         track-progress: 'true'
-        allowed-bots: 'github-actions,github-actions[bot],claude[bot]'
+        allowed-bots-profile: orchestrated
         allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(rtk:*),Bash(ls *),Bash(cat *),Bash(grep *),Bash(find *),Bash(head *),Bash(tail *),Bash(sort *),Bash(wc *)'
         prompt: ${{ steps.prompt.outputs.prompt }}
