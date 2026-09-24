@@ -84,7 +84,9 @@ export function UserList() {
   const [blockLoadingId, setBlockLoadingId] = useState<number | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<number | null>(null);
   const [syncLoadingId, setSyncLoadingId] = useState<number | null>(null);
-  const [resetTrafficLoadingId, setResetTrafficLoadingId] = useState<number | null>(null);
+  const [resetTrafficLoadingId, setResetTrafficLoadingId] = useState<
+    number | null
+  >(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Debounce search input by 300ms
@@ -226,10 +228,14 @@ export function UserList() {
 
   const handleResetTraffic = useCallback(
     async (user: UserItem) => {
-      if (!window.confirm(`Are you sure you want to reset traffic for ${user.displayName ?? user.username}?`)) {
+      if (
+        !window.confirm(
+          `Are you sure you want to reset traffic for ${user.displayName ?? user.username}?`,
+        )
+      ) {
         return;
       }
-      
+
       setResetTrafficLoadingId(user.id);
       setActionError(null);
 

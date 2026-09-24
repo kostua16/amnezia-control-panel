@@ -64,18 +64,23 @@ export async function generateConfig(
       const endpoint = service.server.redirectIp || service.server.hostname;
       const port = service.port || service.server.port;
 
-      if (template.protocol === 'wireguard' || template.protocol === 'amneziawg') {
+      if (
+        template.protocol === 'wireguard' ||
+        template.protocol === 'amneziawg'
+      ) {
         if (!config.endpoint) config.endpoint = `${endpoint}:${port}`;
       } else {
         if (!config.address) config.address = endpoint;
         if (!config.port) config.port = port;
 
-        const wsSettings = config.wsSettings as Record<string, unknown> | undefined;
+        const wsSettings = config.wsSettings as
+          Record<string, unknown> | undefined;
         if (wsSettings && wsSettings.host === '') {
           wsSettings.host = endpoint;
         }
 
-        const tlsSettings = config.tlsSettings as Record<string, unknown> | undefined;
+        const tlsSettings = config.tlsSettings as
+          Record<string, unknown> | undefined;
         if (tlsSettings && tlsSettings.serverName === '') {
           tlsSettings.serverName = endpoint;
         }

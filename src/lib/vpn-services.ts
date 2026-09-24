@@ -366,7 +366,7 @@ async function allocateAwgAddress(): Promise<string> {
       ['show', awgInterface(), 'allowed-ips'],
       'AWG:show_allowed_ips',
     );
-    
+
     const lines = stdout.trim().split('\n');
     for (const line of lines) {
       if (!line) continue;
