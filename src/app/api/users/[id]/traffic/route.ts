@@ -37,7 +37,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       action: 'reset_traffic',
       resource: 'user',
       resourceId: user.id.toString(),
-      metadata: JSON.stringify({ username: user.username }),
+      metadata: { username: user.username },
     });
 
     return NextResponse.json({ success: true });
