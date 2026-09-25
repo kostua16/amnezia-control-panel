@@ -108,8 +108,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const { name, hostname, redirectIp, port, apiKey, isActive, serviceOverrides } =
-      parsed.data;
+    const {
+      name,
+      hostname,
+      redirectIp,
+      port,
+      apiKey,
+      isActive,
+      serviceOverrides,
+    } = parsed.data;
 
     const existing = await prisma.server.findUnique({
       where: { id: serverId },

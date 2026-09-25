@@ -46,7 +46,14 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
     port: string;
     apiKey: string;
     isActive: boolean;
-  }>({ name: '', hostname: '', redirectIp: '', port: '', apiKey: '', isActive: true });
+  }>({
+    name: '',
+    hostname: '',
+    redirectIp: '',
+    port: '',
+    apiKey: '',
+    isActive: true,
+  });
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeyMasked, setApiKeyMasked] = useState(true);
 
@@ -336,7 +343,11 @@ export function ServerConfig({ serverId }: ServerConfigProps) {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Redirect IP</p>
-                <p className="font-medium">{config.redirectIp || <span className="text-muted-foreground italic">None</span>}</p>
+                <p className="font-medium">
+                  {config.redirectIp || (
+                    <span className="text-muted-foreground italic">None</span>
+                  )}
+                </p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Port</p>
