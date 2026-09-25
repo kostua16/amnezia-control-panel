@@ -149,8 +149,12 @@ inputs:
     description: 'Track progress'
     default: 'false'
   allowed-bots:
-    description: 'Allowed bots'
+    description: 'Explicit allowed-bots override (documented exceptions only). Wins over allowed-bots-profile.'
     required: false
+  allowed-bots-profile:
+    description: 'Named policy.json allowedBots profile: interactive or orchestrated'
+    required: false
+    default: ''
   allowed-tools:
     description: 'Allowed tools'
     default: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*),Bash(rtk:*)'
@@ -259,6 +263,19 @@ runs:
 
         echo "value=$value" >> "$GITHUB_OUTPUT"
 
+    - name: Resolve allowed bots
+      id: resolve-allowed-bots
+      shell: bash
+      env:
+        ALLOWED_BOTS_PROFILE: ${{ inputs.allowed-bots-profile }}
+        ALLOWED_BOTS_OVERRIDE: ${{ inputs.allowed-bots }}
+      run: |
+        node "${{ github.action_path }}/../../workflows/scripts/resolve-allowed-bots.cjs" \
+          --policy "${{ github.workspace }}/.github/workflows/policy.json" \
+          --profile "${ALLOWED_BOTS_PROFILE}" \
+          --override "${ALLOWED_BOTS_OVERRIDE}" \
+          --github-output "$GITHUB_OUTPUT"
+
     - name: Resolve Bun executable
       id: resolve_bun
       shell: bash
@@ -347,7 +364,7 @@ runs:
         anthropic_api_key: ${{ inputs.api-key }}
         github_token: ${{ inputs.github-token }}
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
-        allowed_bots: ${{ inputs.allowed-bots }}
+        allowed_bots: ${{ steps.resolve-allowed-bots.outputs.allowed_bots }}
         track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
@@ -453,7 +470,7 @@ runs:
         anthropic_api_key: ${{ inputs.api-key }}
         github_token: ${{ inputs.github-token }}
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
-        allowed_bots: ${{ inputs.allowed-bots }}
+        allowed_bots: ${{ steps.resolve-allowed-bots.outputs.allowed_bots }}
         track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}
@@ -555,7 +572,7 @@ runs:
         anthropic_api_key: ${{ inputs.api-key }}
         github_token: ${{ inputs.github-token }}
         path_to_bun_executable: ${{ steps.resolve_bun.outputs.bun-path }}
-        allowed_bots: ${{ inputs.allowed-bots }}
+        allowed_bots: ${{ steps.resolve-allowed-bots.outputs.allowed_bots }}
         track_progress: ${{ steps.resolve-track-progress.outputs.value }}
         show_full_output: ${{ inputs.claude-full-output == 'true' || inputs.claude-debug == 'true' }}
         additional_permissions: ${{ inputs.additional-permissions }}

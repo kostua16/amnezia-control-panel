@@ -125,7 +125,7 @@ jobs:
           model: 'haiku'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
-          allowed-bots: ${{ github.event.inputs.orchestrated == 'true' && 'github-actions,github-actions[bot],claude[bot]' || '' }}
+          allowed-bots-profile: ${{ github.event.inputs.orchestrated == 'true' && 'orchestrated' || '' }}
           json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","manual","blocked"]},"summary":{"type":"string"},"update_type":{"type":"string","enum":["patch","minor","major","unknown"]},"risk_notes":{"type":"string"}},"required":["verdict","summary","update_type","risk_notes"],"additionalProperties":false}'
           allowed-tools: 'Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(grep *),Bash(head *),Bash(node *),Bash(rtk:*)'
           prompt: |

@@ -553,7 +553,7 @@ describe('PR flow workflow invariants', () => {
 
       assert.match(
         workflow,
-        /allowed-bots:\s*\$\{\{\s*github\.event\.inputs\.orchestrated == 'true' && 'github-actions,github-actions\[bot\],claude\[bot\]' \|\| ''\s*\}\}/,
+        /allowed-bots-profile:\s*\$\{\{\s*github\.event\.inputs\.orchestrated == 'true' && 'orchestrated' \|\| ''\s*\}\}/,
         workflowName,
       );
     }
