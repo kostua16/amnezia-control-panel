@@ -63,6 +63,13 @@ HUMAN DISPOSITION: <none | list of PRs + recommended action>
 PUSH/PR: none (workflow handles)
 ```
 
+The structured JSON **must** include `systemic_fix_recommendations` (required array, empty when none). Each item is `{summary, evidence?}`:
+
+- `summary` — one implementable repo-wide fix. Fingerprinted by APR-E10. Never a per-PR disposition token (`merge` / `close` / `review` / `rebase` / `block`) or a placeholder.
+- `evidence` — optional supporting detail. Not fingerprinted.
+
+`auto_prs_inspected[].recommendation`, `risk_patterns`, and `human_disposition` are **not** systemic fixes. APR-E10 reads only `systemic_fix_recommendations` (no legacy fallback). Putting `merge`/`close`/`review` in those other fields must not open an escalation issue.
+
 ## Skills to Activate and Use
 Activate the skills in the `skills` field and use them:
 - **kos-zai-agent-runtime-contract** — prompt is master; edit only; never mutate PRs/issues or push; `rtk gh` only.

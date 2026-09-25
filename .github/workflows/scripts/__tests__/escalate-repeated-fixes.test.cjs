@@ -8,7 +8,9 @@ const path = require('node:path');
 const {
   LOG_TITLE,
   LOG_SEARCH_MARKER,
+  GENERIC_DISPOSITION_TOKENS,
   fingerprint,
+  isActionableSummary,
   extractRecommendations,
   parseStructuredOutput,
   parseLogBody,
@@ -44,63 +46,160 @@ test('fingerprint handles empty and null input', () => {
 });
 
 // --- extractRecommendations ---
+// Live audit run 31294899310 emitted per-PR dispositions (merge/close/review)
+// plus risk_patterns. Those tokens fingerprint as the false APR-E10 issues
+// #1061 / #1062 / #1080. The extractor must ignore that shape entirely.
 
-test('extractRecommendations pulls from auto_prs_inspected', () => {
+const LIVE_FALSE_ESCALATION_FPS = {
+  merge: '283128acef14',
+  close: '310ff200149b',
+  review: 'c97ace4c8fef',
+};
+
+const liveAudit31294899310 = {
+  summary: 'Inspected automation PRs; dispositions only.',
+  auto_prs_inspected: [
+    {
+      number: 101,
+      title: 'ci: ready',
+      branch: 'auto/a',
+      author: 'github-actions[bot]',
+      evidence: 'checks green',
+      recommendation: 'merge',
+    },
+    {
+      number: 102,
+      title: 'ci: superseded',
+      branch: 'auto/b',
+      author: 'github-actions[bot]',
+      evidence: 'replaced',
+      recommendation: 'close',
+    },
+    {
+      number: 103,
+      title: 'ci: needs eyes',
+      branch: 'auto/c',
+      author: 'github-actions[bot]',
+      evidence: 'overlap',
+      recommendation: 'review',
+    },
+  ],
+  risk_patterns: [
+    'duplicate auto-PRs editing the same helper',
+    'stale automation branches',
+  ],
+  human_disposition: [
+    { number: 101, action: 'merge', reason: 'ready' },
+    { number: 102, action: 'close', reason: 'superseded' },
+    { number: 103, action: 'review', reason: 'overlap' },
+  ],
+  systemic_fix_made: false,
+  verification: [],
+  no_new_pr_reason: 'disposition only',
+};
+
+test('live disposition tokens still fingerprint as the false APR-E10 issues', () => {
+  for (const [token, fp] of Object.entries(LIVE_FALSE_ESCALATION_FPS)) {
+    assert.equal(fingerprint(token), fp, token);
+    assert.equal(GENERIC_DISPOSITION_TOKENS.has(token), true);
+    assert.equal(isActionableSummary(token), false);
+  }
+});
+
+test('extractRecommendations ignores live merge/close/review plus risk output', () => {
+  assert.deepEqual(extractRecommendations(liveAudit31294899310), []);
+  assert.deepEqual(
+    extractRecommendations({
+      ...liveAudit31294899310,
+      systemic_fix_recommendations: [],
+    }),
+    [],
+  );
+});
+
+test('extractRecommendations consumes only systemic_fix_recommendations objects', () => {
   const data = {
     auto_prs_inspected: [
       {
         number: 1,
-        title: 'T',
-        branch: 'b',
-        author: 'bot',
-        evidence: 'e',
         recommendation: 'Add shared helper for branch cleanup',
       },
+    ],
+    risk_patterns: ['Orphan branches accumulating from failed runs'],
+    systemic_fix_recommendations: [
       {
-        number: 2,
-        title: 'T2',
-        branch: 'b2',
-        author: 'bot2',
-        evidence: 'e2',
-        recommendation: '-',
+        summary: 'Add shared helper for branch cleanup',
+        evidence: 'PRs #1 and #2 copy the same cleanup block',
       },
     ],
-    risk_patterns: [],
   };
   const recs = extractRecommendations(data);
   assert.equal(recs.length, 1);
   assert.equal(recs[0].text, 'Add shared helper for branch cleanup');
+  assert.equal(
+    recs[0].fingerprint,
+    fingerprint('Add shared helper for branch cleanup'),
+  );
 });
 
-test('extractRecommendations skips placeholder recommendations', () => {
+test('extractRecommendations treats missing old schema as no recommendations', () => {
   const data = {
-    auto_prs_inspected: [
-      { number: 1, recommendation: 'none' },
-      { number: 2, recommendation: '' },
-      { number: 3, recommendation: null },
-    ],
-    risk_patterns: [],
+    auto_prs_inspected: [{ number: 1, recommendation: 'merge' }],
+    risk_patterns: ['stale branches'],
   };
   assert.equal(extractRecommendations(data).length, 0);
+  assert.equal(extractRecommendations({}).length, 0);
+  assert.equal(
+    extractRecommendations({ systemic_fix_recommendations: null }).length,
+    0,
+  );
 });
 
-test('extractRecommendations deduplicates across sources', () => {
-  const rec = 'Use fleet back-pressure gate on all scheduled workflows';
+test('extractRecommendations rejects generic tokens, empty summaries, and malformed entries', () => {
   const data = {
-    auto_prs_inspected: [{ number: 1, recommendation: rec }],
-    risk_patterns: [rec],
-  };
-  assert.equal(extractRecommendations(data).length, 1);
-});
-
-test('extractRecommendations also pulls from risk_patterns', () => {
-  const data = {
-    auto_prs_inspected: [],
-    risk_patterns: ['Orphan branches accumulating from failed runs'],
+    systemic_fix_recommendations: [
+      { summary: 'merge' },
+      { summary: 'CLOSE' },
+      { summary: ' review ' },
+      { summary: 'rebase' },
+      { summary: 'block' },
+      { summary: 'none' },
+      { summary: '-' },
+      { summary: '' },
+      { summary: '   ' },
+      { summary: null },
+      { evidence: 'no summary field' },
+      'bare string is not an object',
+      12,
+      null,
+      ['Add a shared retry helper'],
+      {
+        summary: 'Add a shared retry helper',
+        evidence: 'seen on two audit PRs',
+      },
+      {
+        summary: '  Add   a shared retry helper  ',
+        evidence: 'duplicate after normalize',
+      },
+    ],
   };
   const recs = extractRecommendations(data);
   assert.equal(recs.length, 1);
-  assert.equal(recs[0].text, 'Orphan branches accumulating from failed runs');
+  assert.equal(recs[0].text, 'Add a shared retry helper');
+});
+
+test('extractRecommendations fingerprints the summary only, not evidence', () => {
+  const summary = 'Centralize workflow retry policy';
+  const recs = extractRecommendations({
+    systemic_fix_recommendations: [
+      { summary, evidence: 'PR #11' },
+      { summary, evidence: 'different PR #22 must not split the streak' },
+    ],
+  });
+  assert.equal(recs.length, 1);
+  assert.equal(recs[0].fingerprint, fingerprint(summary));
+  assert.equal(recs[0].text, summary);
+  assert.equal(recs[0].evidence, undefined);
 });
 
 // --- parseStructuredOutput ---
@@ -366,8 +465,11 @@ function createAuditHarness() {
 
 const auditOutput = (recommendation) =>
   JSON.stringify({
-    auto_prs_inspected: recommendation ? [{ number: 1, recommendation }] : [],
+    auto_prs_inspected: [],
     risk_patterns: [],
+    systemic_fix_recommendations: recommendation
+      ? [{ summary: recommendation }]
+      : [],
   });
 
 test('runAudit records clean audits so they reset recommendation streaks', () => {
@@ -479,4 +581,108 @@ test('audit workflow runs APR-E10 with its structured output', () => {
     workflow,
     /STRUCTURED_OUTPUT: \$\{\{ needs\.audit-auto-prs\.outputs\.structured_output \}\}/,
   );
+});
+
+test('audit workflow schema requires systemic_fix_recommendations objects only', () => {
+  const workflow = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'audit-auto-prs.yml'),
+    'utf8',
+  );
+  const match = workflow.match(/json-schema:\s+'(\{.*\})'/);
+  assert.ok(match, 'expected json-schema on run-zai');
+  const schema = JSON.parse(match[1]);
+  assert.ok(
+    schema.required.includes('systemic_fix_recommendations'),
+    'schema must require the explicit systemic-fix array',
+  );
+  const recSchema = schema.properties.systemic_fix_recommendations;
+  assert.equal(recSchema.type, 'array');
+  assert.equal(recSchema.items.type, 'object');
+  assert.deepEqual(recSchema.items.required, ['summary']);
+  assert.equal(recSchema.items.additionalProperties, false);
+  assert.ok(recSchema.items.properties.summary);
+  assert.ok(recSchema.items.properties.evidence);
+});
+
+test('runAudit does not escalate live disposition-only output across consecutive runs', () => {
+  const harness = createAuditHarness();
+  const raw = JSON.stringify(liveAudit31294899310);
+  runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/31294899310',
+      rawOutput: raw,
+    },
+    harness.api,
+  );
+  runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/31294899311',
+      rawOutput: raw,
+    },
+    harness.api,
+  );
+  assert.equal(harness.entries().length, 2);
+  assert.deepEqual(harness.entries()[0].recommendations, []);
+  assert.deepEqual(harness.entries()[1].recommendations, []);
+  assert.deepEqual(harness.created, []);
+});
+
+test('runAudit escalates two consecutive explicit systemic recommendations', () => {
+  const harness = createAuditHarness();
+  const recommendation =
+    'Require systemic_fix_recommendations in the audit contract';
+  assert.equal(
+    runAudit(
+      {
+        repo: 'o/r',
+        runUrl: 'https://github.com/o/r/actions/runs/1',
+        rawOutput: auditOutput(recommendation),
+      },
+      harness.api,
+    ).escalated,
+    0,
+  );
+  assert.equal(
+    runAudit(
+      {
+        repo: 'o/r',
+        runUrl: 'https://github.com/o/r/actions/runs/2',
+        rawOutput: auditOutput(recommendation),
+      },
+      harness.api,
+    ).escalated,
+    1,
+  );
+  assert.deepEqual(harness.created, [fingerprint(recommendation)]);
+});
+
+test('runAudit treats a mixed invalid/valid batch as one normalized recommendation', () => {
+  const harness = createAuditHarness();
+  const raw = JSON.stringify({
+    ...liveAudit31294899310,
+    systemic_fix_recommendations: [
+      { summary: 'merge' },
+      { summary: 'close' },
+      { summary: '  Pin retry policy in one helper  ' },
+      { summary: 'Pin retry policy in one helper' },
+    ],
+  });
+  runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/8',
+      rawOutput: raw,
+    },
+    harness.api,
+  );
+  const recs = harness.entries()[0].recommendations;
+  assert.equal(recs.length, 1);
+  assert.equal(recs[0].text, 'Pin retry policy in one helper');
+  assert.equal(
+    recs[0].fingerprint,
+    fingerprint('Pin retry policy in one helper'),
+  );
+  assert.deepEqual(harness.created, []);
 });
