@@ -1,0 +1,13 @@
+# Treat everything as text and keep LF in both the index and the working tree, so a
+# Windows checkout with core.autocrlf=true cannot produce CRLF source files.
+* text=auto eol=lf
+
+# Shell scripts run as container entrypoints and git hooks; a CRLF shebang breaks them.
+*.sh text eol=lf
+
+# Binary payloads must never undergo line-ending conversion.
+*.ttf binary
+*.woff2 binary
+*.png binary
+*.ico binary
+*.zip binary
