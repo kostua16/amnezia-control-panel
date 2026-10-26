@@ -127,7 +127,7 @@ jobs:
           echo "::endgroup::"
           exit "$push_status"
 
-      - uses: actions/upload-artifact@ea16557c6436588529ecdaf27e31fcd76543c077
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: "push-log-s${{ matrix.scenario }}-${{ matrix.name }}"
