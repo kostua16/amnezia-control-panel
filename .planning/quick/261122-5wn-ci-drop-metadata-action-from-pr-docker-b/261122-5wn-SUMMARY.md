@@ -16,11 +16,16 @@ PR Docker validation jobs no longer depend on the GitHub REST API.
     no labels (both jobs use `push: false`).
   - `classify`: calls the new `log-rate-limit` action.
   - Publish jobs unchanged.
-- `.github/actions/log-rate-limit` (new): non-fatal `GET /rate_limit` (free) that logs one greppable line,
-  `RATE_LIMIT workflow=… job=… label=… run=<id>.<attempt> core_remaining=<n>/<limit> core_reset=… graphql=…`.
-- `.github/actions/setup-environment`: inline copy of the same step as the very first step, so every job that
-  uses it (about 80 call sites) records its quota before setup-gh validates the token. Inline rather than a
-  nested local action because jobs that check out an older PR head would not have the new action on disk.
+- `.github/actions/log-rate-limit` (new node24 action, `rate-limit.cjs` + unit test): non-fatal `GET /rate_limit`
+  (free) that logs one greppable line,
+  `RATE_LIMIT phase=<job-start|job-end|snapshot> workflow=… job=… label=… run=<id>.<attempt> core_remaining=<n>/<limit> core_reset=… graphql=…`.
+  With `report-at-job-end: true` its `post` step logs again when the job ends (`post-if: always()`).
+- `.github/actions/setup-environment`: first step is the action with `report-at-job-end`, so every job that
+  uses it (about 80 call sites) gets a start and an end line, the start before setup-gh validates the token.
+  A composite cannot declare a post step; the nested node action's post step runs at job end.
+- `.github/actions/run-claude-params`: snapshot before attempt 1 and after every Claude attempt (before the
+  retry check, which also calls the API). Guarded by `hashFiles` + `continue-on-error`, because
+  claude-code-action can switch the workspace to a PR branch that predates the action.
 
 Finding the consumer: grep job logs for `RATE_LIMIT` across runs and sort by time; `core_remaining` drops
 between consecutive lines show which workflow/job burns the quota.

@@ -43,6 +43,7 @@ jobs:
         with:
           github-token: ${{ github.token }}
           label: docker-classify
+          report-at-job-end: 'true'
 
       - name: Decide Docker image action
         id: classify
