@@ -162,6 +162,7 @@ Resume file: None
 | 2026-08-15 | 260815-n6m | Persistent audit-findings ledger for audit-fix runs (AFX-E02, #1072) |
 | 2026-08-15 | 260815-r3p | Harden ledger: schema validation, metadata refresh, --validate gate (AFX-E02 review fixes, PR #1085) |
 | 2026-11-22 | 261122-2df | Migrate all workflows from self-hosted to ubuntu-latest, rollback runbook (RUN-M01, #1128) |
+| 2026-11-22 | 261122-3zh   | Fix npm audit high+ (next 16.4.6, audit fix, effect/brace-expansion overrides, #1130) |
 
 ---
 
