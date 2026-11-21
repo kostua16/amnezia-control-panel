@@ -286,6 +286,12 @@ jobs:
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space
 
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: docker-publish
+          report-at-job-end: 'true'
+
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
         with:
@@ -350,6 +356,12 @@ jobs:
 
       - name: Ensure runner disk space
         uses: ./.github/actions/ensure-docker-disk-space
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: docker-publish
+          report-at-job-end: 'true'
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f

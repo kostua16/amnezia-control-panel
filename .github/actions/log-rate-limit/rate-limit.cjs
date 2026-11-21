@@ -14,6 +14,13 @@ function formatReset(epochSeconds) {
   return new Date(epochSeconds * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
+// Only the public prefix is reported (ghs = Actions/App installation token, ghp or github_pat = PAT),
+// so lines from jobs that pass different tokens can be told apart: each token has its own quota.
+function tokenKind(token) {
+  const match = String(token ?? '').match(/^(github_pat|gh[pousr])_/);
+  return match ? match[1] : 'unknown';
+}
+
 function formatRateLimitLine({ env, phase, label, resources }) {
   const core = resources?.core;
   return [
@@ -24,6 +31,7 @@ function formatRateLimitLine({ env, phase, label, resources }) {
     `label=${label || env.GITHUB_JOB || ''}`,
     `run=${env.GITHUB_RUN_ID ?? ''}.${env.GITHUB_RUN_ATTEMPT ?? ''}`,
     `event=${env.GITHUB_EVENT_NAME ?? ''}`,
+    `token=${tokenKind(env['INPUT_GITHUB-TOKEN'])}`,
     `core_remaining=${formatBucket(core)}`,
     `core_reset=${formatReset(core?.reset)}`,
     `graphql=${formatBucket(resources?.graphql)}`,
@@ -68,4 +76,4 @@ async function logRateLimit({
   }
 }
 
-module.exports = { formatRateLimitLine, logRateLimit };
+module.exports = { formatRateLimitLine, logRateLimit, tokenKind };

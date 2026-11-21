@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const {
   formatRateLimitLine,
   logRateLimit,
+  tokenKind,
 } = require('../../../actions/log-rate-limit/rate-limit.cjs');
 
 const ENV = {
@@ -44,8 +45,16 @@ test('formats one greppable line with phase, run identity and both quotas', () =
   assert.equal(
     line,
     'RATE_LIMIT phase=job-end workflow="Docker Image" job=classify label=docker-classify run=123.2 ' +
-      'event=pull_request core_remaining=17/5000 core_reset=2026-11-21T23:44:34Z graphql=4698/5000',
+      'event=pull_request token=unknown core_remaining=17/5000 core_reset=2026-11-21T23:44:34Z graphql=4698/5000',
   );
+});
+
+test('reports only the public token prefix so each token quota can be told apart', () => {
+  assert.equal(tokenKind('ghs_abc123'), 'ghs');
+  assert.equal(tokenKind('ghp_abc123'), 'ghp');
+  assert.equal(tokenKind('github_pat_abc123'), 'github_pat');
+  assert.equal(tokenKind('something-else'), 'unknown');
+  assert.equal(tokenKind(undefined), 'unknown');
 });
 
 test('falls back to n/a and the job id when resources or label are missing', () => {
