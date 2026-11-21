@@ -14,8 +14,16 @@ PR Docker validation jobs no longer depend on the GitHub REST API.
   - `docker-build` / `docker-build-stack`: removed `docker/metadata-action` (it calls the API and failed with
     `API rate limit exceeded for installation`); static local tags `validate-<sha>` / `stack-validate-<sha>`,
     no labels (both jobs use `push: false`).
-  - `classify`: non-fatal `gh api rate_limit` step writes core/graphql remaining + reset to the step summary.
+  - `classify`: calls the new `log-rate-limit` action.
   - Publish jobs unchanged.
+- `.github/actions/log-rate-limit` (new): non-fatal `GET /rate_limit` (free) that logs one greppable line,
+  `RATE_LIMIT workflow=… job=… label=… run=<id>.<attempt> core_remaining=<n>/<limit> core_reset=… graphql=…`.
+- `.github/actions/setup-environment`: inline copy of the same step as the very first step, so every job that
+  uses it (about 80 call sites) records its quota before setup-gh validates the token. Inline rather than a
+  nested local action because jobs that check out an older PR head would not have the new action on disk.
+
+Finding the consumer: grep job logs for `RATE_LIMIT` across runs and sort by time; `core_remaining` drops
+between consecutive lines show which workflow/job burns the quota.
 
 ## Verification
 
