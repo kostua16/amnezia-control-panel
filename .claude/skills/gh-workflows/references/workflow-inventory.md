@@ -57,7 +57,7 @@ Calculates 80/20/20 split from MAX_TURNS and appends to prompt:
 
 ### Model Resolution (in run-claude-params)
 Maps aliases → actual model IDs per wrapper:
-- **run-zai**: haiku→glm-4.7, sonnet→glm-5, opus→glm-5.2
+- **run-zai**: haiku→glm-5.3-flash, sonnet→glm-5.3-flash, opus→glm-5.3 (flash = executing a plan / triage / sweeps / simple edits; glm-5.3 = analysis, planning, root-cause debugging, review)
 - **run-claude**: haiku→claude-haiku-4-5-20251001, sonnet→claude-sonnet-4-5-20250929, opus→claude-opus-4-5-20251101
 
 ### Prettier Shortcut

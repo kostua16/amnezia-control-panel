@@ -263,7 +263,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
-          model: 'opus'
+          model: 'sonnet'
           max-turns: ${{ env.MAX_TURNS }}
           track-progress: 'false'
           allowed-bots: ${{ github.event.inputs.automation_review_loop == 'true' && 'github-actions,github-actions[bot],claude[bot]' || '' }}
