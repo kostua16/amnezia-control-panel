@@ -45,7 +45,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api rate_limit --jq '.resources | {core, graphql} | to_entries[] | "\(.key): remaining=\(.value.remaining)/\(.value.limit) reset=\(.value.reset | todate)"' | tee -a "$GITHUB_STEP_SUMMARY"
+          if quota="$(gh api rate_limit --jq '.resources | {core, graphql} | to_entries[] | "\(.key): remaining=\(.value.remaining)/\(.value.limit) reset=\(.value.reset | todate)"')"; then
+            printf '### GitHub API rate limit\n\n```\n%s\n```\n' "$quota" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo '::warning::Unable to read the GitHub API rate limit'
+          fi
 
       - name: Decide Docker image action
         id: classify
