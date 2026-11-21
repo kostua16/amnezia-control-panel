@@ -739,3 +739,5 @@ When a scenario's characterized behavior changes, update the corresponding `kos-
 - Claude, DeepSeek and dependency review workers verify that the live PR head and base repositories match before allowing the review job. They check out the verified commit SHA with credential persistence disabled. A missing head repository also skips execution.
 - A public comment cannot start or cancel a maintainer's DeepSeek review. Only a maintainer can start AI triage by comment, and automatic triage runs only for maintainer-authored issues. Maintainers can still explicitly triage an external issue.
 - CI repair requires both the triggering run and the live PR head to belong to this repository. PR Improve skips cross-repository PRs.
+- Gemini review verifies the PR head repository before the agent job for both comments and manual dispatch. Only the orchestrator wake job can write Actions state.
+- Credential hygiene checks progress tracking against checkout settings in the same job. Read-only authorization jobs can disable checkout credential persistence independently.
