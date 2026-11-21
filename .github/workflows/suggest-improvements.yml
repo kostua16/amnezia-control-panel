@@ -22,7 +22,7 @@ permissions:
 jobs:
   suggest-improvements:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
       claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}

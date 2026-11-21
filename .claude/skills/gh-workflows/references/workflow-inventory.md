@@ -5,14 +5,14 @@
 | Workflow | File | Triggers | Claude? | Action | Model | track_progress | Timeout | MAX_TURNS |
 |---|---|---|---|---|---|---|---|---|
 | CI | ci.yml | push(main), PR | No | N/A | N/A | N/A | 10-15m | N/A |
-| Claude Code | claude.yml | issue_comment, PR review comment, issues, PR review | Yes | run-zai | sonnet | true | 30m | 100 |
-| Code Review | code-review.yml | PR, issue_comment, PR review comment | Yes | run-zai | sonnet + opus (security) | true | 20m | 100 |
-| Fix Issue | fix-issue.yml | issue_comment(/fix), issues(labeled:triaged) | Yes | run-zai | sonnet | true | 20m | 100 |
-| Fix PR | fix-pr.yml | workflow_run(CI, failure) w/ PRs | Yes | run-zai | sonnet | false | 20m | 70 |
-| Fix Branch | fix-branch.yml | workflow_run(CI, failure) no PRs | Yes | run-zai | sonnet | false | 20m | 70 |
+| Claude Code | claude.yml | issue_comment, PR review comment, issues, PR review | Yes | run-zai | opus | true | 30m | 60 |
+| Code Review | code-review.yml | PR, issue_comment, PR review comment | Yes | run-zai | opus | true | 20m | 100 |
+| Fix Issue | fix-issue.yml | issue_comment(/fix), issues(labeled:triaged) | Yes | run-zai | opus | true | 30m | 60 |
+| Fix PR | fix-pr.yml | workflow_run(CI, failure) w/ PRs | Yes | run-zai | opus | false | 30m | 70 |
+| Fix Branch | fix-branch.yml | workflow_run(CI, failure) no PRs | Yes | run-zai | opus | false | 30m | 70 |
 | Issue Triage | triage.yml | issues, issue_comment(/triage), workflow_dispatch | Yes | run-zai | haiku | conditional | 15m | 80 |
-| Issue Catch-Up | issue-catch-up.yml | schedule(hourly :30), workflow_dispatch | Yes | run-zai | haiku | false | 10-30m | 50 |
-| Workflow Health | workflow-health-optimize.yml | schedule(hourly :00), workflow_dispatch | Yes | run-zai | sonnet | false | 10-20m | 25 |
+| Issue Catch-Up | issue-catch-up.yml | schedule(hourly :30), workflow_dispatch | Yes | run-zai | sonnet | false | 10-30m | 50 |
+| Workflow Health | workflow-health-optimize.yml | schedule(hourly :00), workflow_dispatch | Yes | run-zai | opus | false | 10-20m | 25 |
 | Daily Maintenance | maintenance.yml | schedule(2x daily), workflow_dispatch | Yes | run-zai | sonnet | false | 30m | 100 |
 | Stale Issues | stale.yml | schedule(weekly), workflow_dispatch | No | N/A | N/A | N/A | N/A | N/A |
 | Release Notes | release-notes.yml | push(tags v*) | Yes | run-zai | haiku | false | 10m | 80 |

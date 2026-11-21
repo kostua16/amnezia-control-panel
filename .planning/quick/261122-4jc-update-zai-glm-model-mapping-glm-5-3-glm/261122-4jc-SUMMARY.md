@@ -16,12 +16,12 @@ quick_id: 261122-4jc
 ## Per-workflow `model:`
 
 glm-5.3 (`opus`) — analysis, planning, root-cause debugging, review decisions:
-claude, code-review, fix-issue, fix-review, gsd-planning, suggest-improvements,
+claude, code-review, fix-issue, fix-review, fix-pr/fix-branch (_auto-fix-ci), gsd-planning, suggest-improvements,
 pr-improve, monitor-amnezia-control-panel-github-runs, workflow-health-optimize,
 audit-fix, audit-auto-prs, project-manager, rebase-pr.
 
 glm-5.3-flash (`sonnet`/`haiku`) — executing an existing plan, fixing known findings, triage, sweeps, simple edits:
-gsd-planning-execute (+ validation repair), issue-catch-up, _auto-fix-ci,
+gsd-planning-execute (+ validation repair), issue-catch-up,
 docs-drift, maintenance, dependency-review, release-notes, triage.
 
 ## Verification
