@@ -11,8 +11,8 @@
 | Fix PR | fix-pr.yml | workflow_run(CI, failure) w/ PRs | Yes | run-zai | opus | false | 30m | 70 |
 | Fix Branch | fix-branch.yml | workflow_run(CI, failure) no PRs | Yes | run-zai | opus | false | 30m | 70 |
 | Issue Triage | triage.yml | issues, issue_comment(/triage), workflow_dispatch | Yes | run-zai | haiku | conditional | 15m | 80 |
-| Issue Catch-Up | issue-catch-up.yml | schedule(hourly :30), workflow_dispatch | Yes | run-zai | sonnet | false | 10-30m | 50 |
-| Workflow Health | workflow-health-optimize.yml | schedule(hourly :00), workflow_dispatch | Yes | run-zai | opus | false | 10-20m | 25 |
+| Issue Catch-Up | issue-catch-up.yml | schedule(hourly :30), workflow_dispatch | Yes | run-zai | sonnet | false | 10m | 30 |
+| Workflow Health | workflow-health-optimize.yml | schedule(hourly :00), workflow_dispatch | Yes | run-zai | opus | false | 5-15m | 25 |
 | Daily Maintenance | maintenance.yml | schedule(2x daily), workflow_dispatch | Yes | run-zai | sonnet | false | 30m | 100 |
 | Stale Issues | stale.yml | schedule(weekly), workflow_dispatch | No | N/A | N/A | N/A | N/A | N/A |
 | Release Notes | release-notes.yml | push(tags v*) | Yes | run-zai | haiku | false | 10m | 80 |
