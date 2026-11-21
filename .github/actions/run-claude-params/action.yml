@@ -326,6 +326,17 @@ runs:
       shell: bash
       run: rm -f "${RUNNER_TEMP}/claude-execution-output.json"
 
+    # Quota snapshots around every Claude attempt: the action and its retry check both call the
+    # GitHub API with this token, so before/after pairs show how much one attempt spends.
+    # claude-code-action can switch the workspace to a PR branch that predates log-rate-limit,
+    # so each snapshot is guarded by hashFiles and can never fail the job.
+    - if: ${{ hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+      continue-on-error: true
+      uses: ./.github/actions/log-rate-limit
+      with:
+        github-token: ${{ inputs.github-token }}
+        label: claude-before-attempt-1
+
     # --- Attempt 1 ---
     - name: Run Claude Code (attempt 1)
       id: claude-run-1
@@ -380,6 +391,13 @@ runs:
               "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
             }
           }
+
+    - if: ${{ always() && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+      continue-on-error: true
+      uses: ./.github/actions/log-rate-limit
+      with:
+        github-token: ${{ inputs.github-token }}
+        label: claude-after-attempt-1
 
     # Check whether a failed attempt is safe to retry.
     - name: Check retry condition (attempt 1)
@@ -487,6 +505,13 @@ runs:
             }
           }
 
+    - if: ${{ always() && steps.claude-run-2.conclusion != 'skipped' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+      continue-on-error: true
+      uses: ./.github/actions/log-rate-limit
+      with:
+        github-token: ${{ inputs.github-token }}
+        label: claude-after-attempt-2
+
     - name: Check retry condition (attempt 2)
       id: check-429-2
       if: ${{ steps.claude-run-2.outcome == 'failure' }}
@@ -588,6 +613,13 @@ runs:
               "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
             }
           }
+
+    - if: ${{ always() && steps.claude-run-3.conclusion != 'skipped' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+      continue-on-error: true
+      uses: ./.github/actions/log-rate-limit
+      with:
+        github-token: ${{ inputs.github-token }}
+        label: claude-after-attempt-3
 
     - name: Select Claude outputs
       id: select-outputs
