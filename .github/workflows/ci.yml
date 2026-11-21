@@ -197,7 +197,8 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
-          # jq is not guaranteed on the self-hosted runner image and no other
+          # jq is preinstalled on GitHub-hosted ubuntu images; the text fallback below
+          # is kept so this step stays correct on any runner image. No other
           # job here installs it. With bash -eo pipefail a missing binary would
           # fail this step, producing a false CI failure for path-filtered PRs
           # — the exact outcome this terminal-signal job exists to prevent.

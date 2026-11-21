@@ -93,6 +93,7 @@ jobs:
           generate-prisma: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
+          install-actionlint: 'true'
 
       - name: Prepare monitor branch
         id: branch

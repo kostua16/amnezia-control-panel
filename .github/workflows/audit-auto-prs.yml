@@ -60,6 +60,7 @@ jobs:
           install-gsd: 'true'
           install-rtk: 'true'
           install-uv: 'true'
+          install-actionlint: 'true'
 
       - name: Prepare auto PR audit branch
         id: branch

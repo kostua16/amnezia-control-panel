@@ -106,8 +106,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # One-shot -c (not `git config`) so the rewritten URL is never written
-          # to .git/config. Persisted credentials must stay off this reused
-          # self-hosted workspace; actions/checkout uses persist-credentials: false.
+          # to .git/config. Persisted credentials must stay off the runner
+          # workspace; actions/checkout uses persist-credentials: false.
           git -c "url.https://x-access-token:${GH_TOKEN}@github.com/.insteadOf=https://github.com/" fetch origin "$BASE_REF" --depth=1
           git diff "origin/$BASE_REF" -- package.json package-lock.json .github/workflows .github/actions > /tmp/dep-diff.txt
           {

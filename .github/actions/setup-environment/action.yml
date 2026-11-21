@@ -23,12 +23,6 @@ inputs:
   install-deps:
     description: 'Run npm ci with cache'
     default: 'false'
-  minimum-disk-space-mb:
-    description: 'Prune temp/docker/local-cache data when available disk drops below this threshold'
-    default: '2048'
-  local-cache-entries-to-keep:
-    description: 'Maximum number of repo-local maxnowack/local-cache entries to keep when pruning'
-    default: '8'
   generate-prisma:
     description: 'Run npx prisma generate'
     default: 'false'
@@ -64,129 +58,28 @@ inputs:
   uv-version:
     description: 'Pinned uv version used when plugin flows require Python runtime'
     default: '0.11.21'
+  install-actionlint:
+    description: 'Install a pinned, checksum-verified actionlint for workflows whose steps or agents lint workflow YAML (not preinstalled on ubuntu-latest)'
+    default: 'false'
+  actionlint-version:
+    description: 'Pinned actionlint version installed when install-actionlint is true'
+    default: '1.7.12'
+  # IMPORTANT: actionlint-sha256 must match the linux_amd64 tarball at the pinned
+  # actionlint-version (see the release's actionlint_<version>_checksums.txt).
+  # Bump both together — changing version without updating the SHA will break install verification.
+  actionlint-sha256:
+    description: 'SHA-256 for the pinned actionlint linux_amd64 tarball'
+    default: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8'
 
 runs:
   using: 'composite'
   steps:
-    - name: Ensure minimum disk space
-      shell: bash
-      run: |
-        set -euo pipefail
-        REQUIRED_MB="${{ inputs.minimum-disk-space-mb }}"
-        LOCAL_CACHE_KEEP="${{ inputs.local-cache-entries-to-keep }}"
-
-        get_available_mb() {
-          local available_kb
-          available_kb=$(df --output=avail / | tail -1 | tr -d ' ')
-          echo $((available_kb / 1024))
-        }
-
-        cleanup_general() {
-          npm cache clean --force 2>/dev/null || true
-          rm -rf "$RUNNER_TEMP"/* 2>/dev/null || true
-          docker system prune -af --volumes 2>/dev/null || true
-        }
-
-        ensure_repo_local_cache_root() {
-          local tool_cache_root repo_cache_root
-          tool_cache_root="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
-
-          if [ -z "${GITHUB_REPOSITORY:-}" ]; then
-            echo "Skipping repo-local cache root creation because GITHUB_REPOSITORY is unset"
-            return
-          fi
-
-          repo_cache_root="${tool_cache_root}/${GITHUB_REPOSITORY}"
-          if mkdir -p "$repo_cache_root"; then
-            echo "Ensured repo-local cache root exists at ${repo_cache_root}"
-          else
-            echo "Failed to create repo-local cache root at ${repo_cache_root}; continuing without precreating it"
-          fi
-        }
-
-        prune_local_cache() {
-          local tool_cache_root repo_cache_root remaining_cache_count last_remaining_index available_mb
-          tool_cache_root="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
-          repo_cache_root="${tool_cache_root}/${GITHUB_REPOSITORY}"
-
-          if [[ ! "$LOCAL_CACHE_KEEP" =~ ^[0-9]+$ ]] || [ "$LOCAL_CACHE_KEEP" -lt 1 ]; then
-            echo "Skipping local-cache pruning because local-cache-entries-to-keep is invalid: ${LOCAL_CACHE_KEEP}"
-            return
-          fi
-
-          if [ ! -d "$repo_cache_root" ]; then
-            echo "No repo-local cache directory found at ${repo_cache_root}"
-            return
-          fi
-
-          mapfile -t cache_dirs < <(find "$repo_cache_root" -mindepth 1 -maxdepth 1 -type d -exec ls -dt {} + 2>/dev/null || true)
-          remaining_cache_count=${#cache_dirs[@]}
-          if [ "$remaining_cache_count" -eq 0 ]; then
-            echo "No repo-local cache entries found at ${repo_cache_root}"
-            return
-          fi
-
-          if [ "$remaining_cache_count" -le "$LOCAL_CACHE_KEEP" ]; then
-            echo "Repo-local cache entries within limit (${remaining_cache_count} <= ${LOCAL_CACHE_KEEP})"
-          else
-            echo "Pruning repo-local cache entries in ${repo_cache_root} (keeping newest ${LOCAL_CACHE_KEEP})"
-            for ((i = LOCAL_CACHE_KEEP; i < remaining_cache_count; i++)); do
-              echo "Removing stale local-cache entry: ${cache_dirs[$i]}"
-              rm -rf -- "${cache_dirs[$i]}" || true
-            done
-            remaining_cache_count=$LOCAL_CACHE_KEEP
-          fi
-
-          available_mb=$(get_available_mb)
-          if [ "$available_mb" -ge "$REQUIRED_MB" ]; then
-            return
-          fi
-
-          last_remaining_index=$((remaining_cache_count - 1))
-          if [ "$last_remaining_index" -lt 0 ]; then
-            echo "No repo-local cache entries remain for emergency pruning"
-            return
-          fi
-
-          echo "Disk still below threshold after standard local-cache pruning (${available_mb} MB < ${REQUIRED_MB} MB). Removing oldest remaining repo-local cache entries."
-          for ((i = last_remaining_index; i >= 0; i--)); do
-            available_mb=$(get_available_mb)
-            if [ "$available_mb" -ge "$REQUIRED_MB" ]; then
-              break
-            fi
-            echo "Removing emergency local-cache entry: ${cache_dirs[$i]}"
-            rm -rf -- "${cache_dirs[$i]}" || true
-          done
-
-          available_mb=$(get_available_mb)
-          if [ "$available_mb" -lt "$REQUIRED_MB" ]; then
-            echo "Disk space remains below threshold after emergency local-cache pruning: ${available_mb} MB < ${REQUIRED_MB} MB"
-          fi
-        }
-
-        ensure_repo_local_cache_root
-
-        available_mb=$(get_available_mb)
-        echo "Available disk space: ${available_mb} MB"
-
-        if [ "$available_mb" -lt "$REQUIRED_MB" ]; then
-          echo "Low disk space (${available_mb} MB < ${REQUIRED_MB} MB). Cleaning..."
-          cleanup_general
-          prune_local_cache
-
-          available_mb=$(get_available_mb)
-          echo "Available disk space after cleanup: ${available_mb} MB"
-        fi
-
     - if: inputs.setup-node == 'true'
       uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
       with:
         node-version: ${{ inputs.node-version }}
-        # Disabled because GitHub/Azure npm cache restores from self-hosted
-        # runners were slow and unreliable (4 GB restores in runs 26592710713
-        # and 26592710847). Keep setup-node caching off until FalconDev cache
-        # server is deployed.
-        # cache: ${{ inputs.install-deps == 'true' && 'npm' || '' }}
+        # node_modules is cached directly below (keyed on package-lock.json), so a
+        # second npm download cache would only duplicate the repo's 10 GB cache quota.
         package-manager-cache: false
 
     - if: inputs.setup-bun == 'true'
@@ -209,7 +102,7 @@ runs:
         echo "PATH(before setup-gh)=$PATH"
         command -v gh >/dev/null 2>&1 && echo "gh(before setup-gh)=$(command -v gh)" || echo "gh(before setup-gh)=<not found>"
 
-    # Self-hosted runners occasionally hit transient i/o timeouts reaching
+    # Runners occasionally hit transient i/o timeouts reaching
     # api.github.com while setup-gh validates the token (e.g. "dial tcp
     # ...:443: i/o timeout"), killing the whole job. Make the first attempt
     # non-fatal so one retry can absorb the blip before require-gh-auth decides.
@@ -287,19 +180,9 @@ runs:
           -e '/^[[:space:]]*-[[:space:]]*Token:/d' \
           -e '/^[[:space:]]*-[[:space:]]*Token scopes:/d'
 
-    # Previous GitHub-hosted cache retained for audit only. It restored from
-    # remote GitHub/Azure storage too slowly on self-hosted runners.
-    # - if: inputs.install-deps == 'true'
-    #   id: npm-deps-cache
-    #   uses: actions/cache@v5
-    #   with:
-    #     path: node_modules
-    #     key: node-modules-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('package-lock.json') }}
-    #     restore-keys: |
-    #       node-modules-${{ runner.os }}-node${{ inputs.node-version }}-
     - if: inputs.install-deps == 'true'
       id: npm-deps-cache
-      uses: maxnowack/local-cache@cca2f9dd0a74be90ac2adbe639270f564c8c3975
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: node_modules
         key: node-modules-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('package-lock.json') }}
@@ -314,18 +197,9 @@ runs:
       run: npx prisma generate
       shell: bash
 
-    # Previous GitHub-hosted cache retained for audit only. It restored from
-    # remote GitHub/Azure storage too slowly on self-hosted runners.
-    # - name: Cache Next.js
-    #   uses: actions/cache@v5
-    #   with:
-    #     path: ${{ github.workspace }}/.next/cache
-    #     key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
-    #     restore-keys: |
-    #       ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
     - if: inputs.cache-nextjs == 'true'
       name: Cache Next.js
-      uses: maxnowack/local-cache@cca2f9dd0a74be90ac2adbe639270f564c8c3975
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ github.workspace }}/.next/cache
         key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
@@ -345,17 +219,9 @@ runs:
         fi
       shell: bash
 
-    # Previous GitHub-hosted cache retained for audit only. It restored from
-    # remote GitHub/Azure storage too slowly on self-hosted runners.
-    # - if: inputs.install-rtk == 'true'
-    #   id: rtk-cache
-    #   uses: actions/cache@v5
-    #   with:
-    #     path: ~/.local/bin
-    #     key: rtk-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rtk-version }}-${{ inputs.rtk-install-sha256 }}
     - if: inputs.install-rtk == 'true'
       id: rtk-cache
-      uses: maxnowack/local-cache@cca2f9dd0a74be90ac2adbe639270f564c8c3975
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.local/bin
         key: rtk-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rtk-version }}-${{ inputs.rtk-install-sha256 }}
@@ -399,3 +265,29 @@ runs:
         # base branch before Claude starts.
         "$HOME/.local/bin/rtk" init --show
       shell: bash
+
+    - name: Install actionlint
+      if: inputs.install-actionlint == 'true'
+      shell: bash
+      env:
+        ACTIONLINT_VERSION: ${{ inputs.actionlint-version }}
+        ACTIONLINT_SHA256: ${{ inputs.actionlint-sha256 }}
+      run: |
+        set -euo pipefail
+
+        if [ "${RUNNER_OS}" != "Linux" ] || [ "${RUNNER_ARCH}" != "X64" ]; then
+          echo "::error::install-actionlint supports Linux x64 runners only (got ${RUNNER_OS}/${RUNNER_ARCH})"
+          exit 1
+        fi
+
+        tarball="$RUNNER_TEMP/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+        bin_dir="$RUNNER_TEMP/actionlint-bin"
+        mkdir -p "$bin_dir"
+
+        curl -fsSL --retry 3 -o "$tarball" \
+          "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+        printf '%s  %s\n' "$ACTIONLINT_SHA256" "$tarball" | sha256sum -c -
+        tar -xzf "$tarball" -C "$bin_dir" actionlint
+
+        echo "$bin_dir" >> "$GITHUB_PATH"
+        "$bin_dir/actionlint" -version
