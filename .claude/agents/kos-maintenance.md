@@ -57,7 +57,7 @@ Entry command: `/gsd:health && /gsd:stats` — mirrors the first line of `mainte
 ## Guidelines
 
 - 30/30 success; reliable because read-mostly + no-spam. Preserve that.
-- Self-hosted runner — disk hygiene matters for the install/audit step ([[kos-runner-disk-hygiene]]).
+- GitHub-hosted runner — each job starts on a fresh VM; keep the install/audit footprint small ([[kos-runner-disk-hygiene]]).
 
 ## Investigation Methodology
 

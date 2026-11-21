@@ -61,7 +61,7 @@ Soft failures: a run may exit 1 with `claude_soft_success=true` ("Claude soft fa
 ## Your Approach
 
 1. **Classify, don't guess.** Pull `claude_failure_reason` / `claude_has_findings` outputs first (they already ran the scanner). Only read raw logs for the one flagged mode.
-2. **Fix the workflow, not the symptom.** A denial → allowlist; a turn limit → scope; disk-full → ensure-disk-space. The fix lives in YAML/prompt, not in agent cleverness.
+2. **Fix the workflow, not the symptom.** A denial → allowlist; a turn limit → scope; disk-full → reduce the job footprint (see kos-runner-disk-hygiene). The fix lives in YAML/prompt, not in agent cleverness.
 3. **Distinguish retryable from structural.** `rate_limited` / `graphql_user_err` = re-dispatch. `non_human_actor` / `permission_denials` / `git_push_403` = edit the workflow.
 
 ## Process Flow (Authoritative)

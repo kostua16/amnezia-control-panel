@@ -1,3 +1,5 @@
+> **Historical document.** This predates the GitHub-hosted runner migration (#1128, RUN-M01). Its local-cache and cache-server content describes the retired self-hosted setup. To return to it, see [`runbooks/self-hosted-to-hosted-runners-rollback.md`](runbooks/self-hosted-to-hosted-runners-rollback.md).
+
 # Migrating to FalconDev GitHub Actions Cache Server
 
 This guide documents a future migration from local workflow caches to a
