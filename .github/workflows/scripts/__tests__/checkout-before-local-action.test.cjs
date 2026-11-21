@@ -35,6 +35,37 @@ function isAlwaysTrue(condition) {
 }
 
 /**
+ * Split a normalized `if:` guard into its `&&` conjuncts.
+ */
+function guardConjuncts(guard) {
+  return new Set(
+    guard
+      .split('&&')
+      .map((part) => part.trim())
+      .filter(Boolean),
+  );
+}
+
+/**
+ * Whether a conditional checkout's `if:` guard proves the checkout ran
+ * whenever the local action step runs. Exact equality always holds; beyond
+ * that, a checkout guarded `A` covers an action guarded `A && B` — the
+ * action can only run when `A` held, so the checkout was not skipped.
+ * Guards containing `||` or parentheses fall back to exact equality only,
+ * because conjunct splitting is not conservative for them. Known residual
+ * gap: a textual guard cannot see that it reads an output produced between
+ * the checkout and the action, so its value may differ at the two
+ * evaluation points; that dynamic case is out of scope for this scan.
+ */
+function checkoutGuardCoversAction(checkoutGuard, actionGuard) {
+  if (checkoutGuard === actionGuard) return true;
+  if (/[|(]/.test(checkoutGuard) || /[|(]/.test(actionGuard)) return false;
+  const checkoutConjuncts = guardConjuncts(checkoutGuard);
+  const actionConjuncts = guardConjuncts(actionGuard);
+  return [...checkoutConjuncts].every((c) => actionConjuncts.has(c));
+}
+
+/**
  * Extract a step-level key's value from the step's lines.
  *
  * Step keys sit either inline right after the leading "- " or at the
@@ -154,9 +185,20 @@ test('every local action step has a preceding checkout step in the same job', ()
 
   const violations = [];
   let inspectedLocalActionSteps = 0;
+  // Per-file raw-vs-parsed accounting feeding the vacuity guard below.
+  const filesWithRawLocalUse = new Set();
+  const filesWithParsedLocalSteps = new Set();
 
   for (const file of ymlFiles) {
     const content = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
+    // Loose indentation-agnostic scan: a `uses:` pointing at a local
+    // action anywhere in the raw text. When this finds a hit, the step
+    // parser must find at least one local-action step in that same file,
+    // so a layout change that breaks step parsing cannot silently zero
+    // out a single file while the global counter stays positive.
+    if (/uses:\s*\.\/\.github\/actions\//.test(content)) {
+      filesWithRawLocalUse.add(file);
+    }
     const jobs = parseWorkflowJobs(content);
 
     for (const [, job] of Object.entries(jobs)) {
@@ -176,20 +218,24 @@ test('every local action step has a preceding checkout step in the same job', ()
         if (!isLocalActionStep(step)) continue;
 
         inspectedLocalActionSteps += 1;
+        filesWithParsedLocalSteps.add(file);
 
-        // A conditional checkout only covers local actions guarded by the
-        // same condition: those steps are skipped exactly when the
-        // checkout is skipped, so the action can never resolve against a
-        // repository the checkout did not create.
+        // A conditional checkout covers a local action when its guard
+        // implies the action's guard (see checkoutGuardCoversAction): the
+        // checkout is never skipped while the action runs, so the action
+        // cannot resolve against a repository the checkout did not create.
         const actionGuard = step.if === null ? null : normalizeIf(step.if);
         const covered =
           hasUnconditionalCheckout ||
-          (actionGuard !== null && conditionalCheckoutGuards.has(actionGuard));
+          (actionGuard !== null &&
+            [...conditionalCheckoutGuards].some((guard) =>
+              checkoutGuardCoversAction(guard, actionGuard),
+            ));
         if (covered) continue;
 
         const stepLabel = step.name ? `"${step.name}"` : step.uses;
         const reason = sawCheckout
-          ? "preceding checkout is conditional and does not share this step's if: guard"
+          ? "preceding checkout is conditional and its if: guard does not imply this step's"
           : 'no preceding actions/checkout@ step';
         violations.push({ file, job: job.name, step: stepLabel, reason });
       }
@@ -204,6 +250,16 @@ test('every local action step has a preceding checkout step in the same job', ()
     inspectedLocalActionSteps > 0,
     'scanner inspected zero local action steps — invariant ran vacuously',
   );
+  // Per-file vacuity guard: a workflow whose raw text contains a
+  // local-action `uses:` must yield at least one parsed local-action step.
+  const unparsedFiles = [...filesWithRawLocalUse].filter(
+    (f) => !filesWithParsedLocalSteps.has(f),
+  );
+  if (unparsedFiles.length > 0) {
+    assert.fail(
+      `step parser found zero local action steps in: ${unparsedFiles.join(', ')}`,
+    );
+  }
 
   // Build a readable assertion message if violations found
   if (violations.length > 0) {
