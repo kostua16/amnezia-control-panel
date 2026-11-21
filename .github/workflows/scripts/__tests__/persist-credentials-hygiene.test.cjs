@@ -3,7 +3,7 @@
 // (contents: read, no contents: write anywhere in the file) must set
 // persist-credentials: false. Catches credential hygiene drift — without this
 // guard, GITHUB_TOKEN persists in the runner's git config after checkout,
-// creating unnecessary attack surface on self-hosted runners.
+// creating unnecessary attack surface on shared runners.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

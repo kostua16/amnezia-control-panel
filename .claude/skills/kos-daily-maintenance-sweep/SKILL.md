@@ -59,7 +59,7 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 - **Issue spam** → creating an issue every run for the same standing finding (dedupe first).
 - **Clean-category "failure"** → no findings is a clean success; do not force an issue.
 - **Missing critical escalation** → HIGH/CRITICAL security must reach PRs, not just an issue.
-- **Disk** → self-hosted runner; ensure-disk-space before `npm audit` install.
+- **Disk** → fresh GitHub-hosted VM per job; keep the `npm audit` install footprint small (see [[kos-runner-disk-hygiene]]).
 
 ## Process Flow (Authoritative)
 

@@ -38,7 +38,7 @@ env:
 jobs:
   fleet-gate:
     name: Fleet back-pressure gate
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
@@ -52,7 +52,7 @@ jobs:
     name: Promote deferred proposal
     needs: [fleet-gate]
     if: needs.fleet-gate.outputs.skip != 'true'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -127,7 +127,7 @@ jobs:
   execute:
     needs: [fleet-gate]
     if: needs.fleet-gate.outputs.skip != 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
       claude_failed: ${{ steps.gsd.outputs.claude_failed }}
@@ -583,7 +583,7 @@ jobs:
   report-failure:
     needs: [execute]
     if: ${{ always() && needs.execute.result != 'success' && needs.execute.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read

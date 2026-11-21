@@ -343,7 +343,7 @@ jobs:
 
   optimize:
     name: Analyze & Optimize Workflows
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [collect-runs, detect-flaky]
     if: needs.collect-runs.outputs.has-problems == 'true' && needs.detect-flaky.outputs.flaky_detected != 'true'

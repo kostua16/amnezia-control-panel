@@ -239,7 +239,7 @@ comments from real wakes**:
 
 Only prt state-change runs cancel older runs (`cancel-in-progress` is `true`
 solely for non-label prt events). Wakes never cancel an in-flight run: an
-in-progress wake — including one still queued for a self-hosted runner — always
+in-progress wake — including one still queued for a runner — always
 finishes, while queued wakes still collapse newest-wins through GitHub's
 pending-run replacement. A wake can never cancel a prt run, so the prt
 `orchestrate` — the only run that reports a check on the PR — always runs to
@@ -258,8 +258,8 @@ replacement run skipped itself as non-actionable (observed on PR #695).
 
 ### Why cancellation exists at all
 
-`pr-flow.yml` has two feedback loops that would otherwise flood the **shared
-self-hosted runner pool**:
+`pr-flow.yml` has two feedback loops that would otherwise flood **the runner
+queue**:
 
 1. **Label loop** — orchestrate adds `flow/*` labels → `pull_request_target`
    `labeled` → re-triggers pr-flow. Bot-applied labels are prefiltered by
@@ -271,7 +271,7 @@ self-hosted runner pool**:
    re-evaluates after each worker/check finishes.
 
 Redundant wakes collapse in the queue (GitHub keeps only the newest pending run
-per group) — protecting limited runner capacity — but the in-flight wake is
+per group) — keeping the runner queue short — but the in-flight wake is
 never cancelled, so at least one full re-evaluation always survives a burst of
 events. No-op bot comments are kept out of the wake group entirely (see the
 `noise` row above).
@@ -310,32 +310,25 @@ because every dispatch is **label-guarded**:
 In practice the two classes rarely overlap: the prt orchestrate finishes (~70 s)
 before the first `workflow_run` wake (PR Policy ~90 s+) starts.
 
-### Runner-count assumption
+### Runner capacity
 
-This design assumes **at least two self-hosted runners** (three or more currently
-in use). Measured durations (setup overhead included):
+Every job runs on its own fresh `ubuntu-latest` GitHub-hosted VM. GitHub's
+concurrent-job cap (20 on the Free plan) replaces the old runner-count
+bottleneck, so the CI fan-out no longer serializes. Durations below were measured
+on the former runner pool (setup overhead included); expect hosted cold
+starts to add a little to each job.
 
-| job                                 | duration            | runner label          | required for `pr-flow/ready` |
-| ----------------------------------- | ------------------- | --------------------- | ---------------------------- |
-| CI Lint / Type Check / Build / Test | 43 / 62 / 55 / 53 s | `[self-hosted,big]`   | yes                          |
-| CI Security Audit                   | ~35 s               | `[self-hosted,big]`   | no                           |
-| PR Policy (`label-and-validate`)    | ~60–120 s           | `self-hosted`         | yes                          |
-| pr-flow orchestrate                 | ~70 s               | `self-hosted`         | posts `pr-flow/ready`        |
-| Dependency Review                   | 3–12 min            | `self-hosted` + `big` | no                           |
-| Code Review                         | 6–12 min            | `self-hosted`         | review signal                |
-| PR Improve / Finalizer              | 5–7 min / ~1 min    | `self-hosted`         | dispatched later             |
+| job                                 | duration            | runner label    | required for `pr-flow/ready` |
+| ----------------------------------- | ------------------- | --------------- | ---------------------------- |
+| CI Lint / Type Check / Build / Test | 43 / 62 / 55 / 53 s | `ubuntu-latest` | yes                          |
+| CI Security Audit                   | ~35 s               | `ubuntu-latest` | no                           |
+| PR Policy (`label-and-validate`)    | ~60–120 s           | `ubuntu-latest` | yes                          |
+| pr-flow orchestrate                 | ~70 s               | `ubuntu-latest` | posts `pr-flow/ready`        |
+| Dependency Review                   | 3–12 min            | `ubuntu-latest` | no                           |
+| Code Review                         | 6–12 min            | `ubuntu-latest` | review signal                |
+| PR Improve / Finalizer              | 5–7 min / ~1 min    | `ubuntu-latest` | dispatched later             |
 
-Time-to-ready (required checks green + `pr-flow/ready` posted) by runner count:
-
-| self-hosted runners | wall-clock   | notes                                                                                                                         |
-| ------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1                   | ~7.5–8.5 min | CI's 4 jobs serialize — the bottleneck. The concurrency choice swings only ~1–2 min here; a **2nd runner** is the real lever. |
-| 2                   | ~3.5–4.5 min | event-class split is effectively free (extra prt orchestrate rides the spare runner)                                          |
-| 3+                  | ~3 min       | split is free; pick the design on correctness/cosmetics                                                                       |
-
-If the pool is ever downsized to a single runner, revisit this design: the
-event-class split then costs ~1–2 min per push, and collapsing more aggressively
-(or dropping redundant `pull_request_target` triggers) may be preferable.
+To go back to self-hosted runners, follow `docs/runbooks/self-hosted-to-hosted-runners-rollback.md`.
 
 ## Policy Labels
 
@@ -424,6 +417,8 @@ Always manual-only:
 - skips GSD install when `.claude/gsd-install-state.json` is present
 - falls back to pinned `@opengsd/get-shit-done-redux` version `1.1.0` only if that file is missing
 - installs pinned RTK version `0.35.0`
+- caches `node_modules`, `.next/cache`, and the RTK binary through SHA-pinned `actions/cache` (no repo-local cache and no disk pruning: each hosted job starts on a fresh VM)
+- optionally installs a pinned, sha256-verified `actionlint` via `install-actionlint: 'true'`, because `ubuntu-latest` does not preinstall it (used by the run monitor and `audit-auto-prs`)
 - optionally installs `uv` (Python package runner) via `install-uv: 'true'` when profile flows need serena MCP server runtime
 
 `run-zai`:

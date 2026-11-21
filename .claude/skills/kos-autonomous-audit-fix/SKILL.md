@@ -25,7 +25,7 @@ metadata:
 ## References
 - `audit-fix.yml` prompt (`/gsd:audit-fix`; do NOT run git or gh; never `node_modules` paths; don't search `node_modules`/`.next`/`src/generated`/coverage).
 - `.github/workflows/scripts/classify-audit-fix.cjs`, `reconcile-audit-issues.sh` (workflow steps, not agent actions).
-- `.github/actions/ensure-disk-space/` (workflow/runner concern — see [[kos-runner-disk-hygiene]]).
+- Disk exhaustion on a runner is a workflow concern, not an agent action — see [[kos-runner-disk-hygiene]].
 - [[kos-zai-agent-runtime-contract]].
 
 ## Communication Style

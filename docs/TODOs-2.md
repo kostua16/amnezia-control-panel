@@ -7,7 +7,7 @@ Review of the six scheduled optimize/tune/audit automation workflows, producing 
 - **Rule (see CLAUDE.md):** before implementing any TODO, open (or claim) a GitHub issue for it, spun off from the workflow's umbrella tracking issue, and reference the TODO ID in the issue and PR.
 - **Automated spin-off:** the hourly issue-catch-up run (and `/fix` on an umbrella) executes `umbrella-sub-issues.cjs`, which creates dedicated sub-issues for the top-priority unchecked items (max 3 open per umbrella, native sub-issue links, `umbrella-sub-issue` label), ticks the umbrella checklist when a sub-issue closes as completed, and closes the umbrella once every item is ticked.
 - IDs are **stable** — safe to reference from issues, PRs, and commits. Do not renumber.
-- **Type:** `I` = improvement (fix/harden existing behavior), `E` = extension (new capability).
+- **Type:** `I` = improvement (fix/harden existing behavior), `E` = extension (new capability), `M` = migration.
 - **Priority:** P0 = broken now, P1 = high value / real failure evidence, P2 = worthwhile hardening, P3 = polish.
 - **Effort:** S ≤ 1h, M ≤ half day, L = larger.
 - Items already tracked in `docs/gh-workflows-architecture-review.md` (P0-1 … P2-5) are cross-referenced, not duplicated.
@@ -288,3 +288,18 @@ These patterns repeat across workflows; fix once at the shared layer, then adopt
 - **P3:** polish; batch opportunistically into related PRs (respecting the workflow-change e2e protocol).
 
 > Implementation protocol reminder: any change to `.github/workflows/**` must keep the e2e suite green (`npm run test-only` **and** `cd .github/workflows && node --test scripts/__tests__/*.test.cjs`) and update `docs/workflow-e2e-scenarios.md` when behavior changes. See `docs/code-standards.md` → "Workflow change protocol".
+
+## 8. Runner platform (RUN) — GitHub-hosted runner migration
+
+Tracking issue: #1128.
+
+### Migrations
+
+| ID      | Title                                                                       | Category          | Prio | Effort | Risk | Rationale / evidence                                                                                                                                                                                                                     |
+| ------- | --------------------------------------------------------------------------- | ----------------- | ---- | ------ | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RUN-M01 | Migrate all workflows from self-hosted to GitHub-hosted `ubuntu-latest` | cost / reliability | P1   | M      | low  | The repo is public (hosted minutes are free), no self-hosted runner is registered (`gh api actions/runners` returns none) so self-hosted jobs queue forever. Rollback guide: `docs/runbooks/self-hosted-to-hosted-runners-rollback.md`. |
+
+**Superseded by RUN-M01:**
+
+- MNT-E01, MNT-E08, MON-I09 — the runner-health and disk self-heal tooling they extend was removed.
+- SEC-I01, AFX-I09, WHO-I05 — the runner-load rationale is void on hosted runners; re-evaluate on cost and latency only.

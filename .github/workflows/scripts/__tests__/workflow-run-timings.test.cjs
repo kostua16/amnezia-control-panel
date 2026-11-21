@@ -107,7 +107,7 @@ test('summarizeJob extracts job-level timing', () => {
     name: 'build',
     status: 'completed',
     conclusion: 'success',
-    runner_name: 'linux-self-hosted',
+    runner_name: 'GitHub Actions 2',
     runner_group_name: 'default',
     created_at: '2025-01-01T00:00:00Z',
     started_at: '2025-01-01T00:00:05Z',
@@ -118,7 +118,7 @@ test('summarizeJob extracts job-level timing', () => {
   assert.equal(job.name, 'build');
   assert.equal(job.queueSec, 5);
   assert.equal(job.durationSec, 55);
-  assert.equal(job.runnerName, 'linux-self-hosted');
+  assert.equal(job.runnerName, 'GitHub Actions 2');
   assert.deepEqual(job.topSlowSteps, []);
 });
 

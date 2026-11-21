@@ -26,7 +26,7 @@ env:
 
 jobs:
   triage:
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     # Keep wall-clock headroom for the 40-turn budget; a tighter cap would
     # clip runs before the extra turns are usable.
     timeout-minutes: 15

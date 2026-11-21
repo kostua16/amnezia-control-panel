@@ -54,7 +54,7 @@ jobs:
         github.event.issue.pull_request != null &&
         contains(github.event.comment.body, '/fix')
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should_run: ${{ steps.policy.outputs.should_run }}
@@ -158,7 +158,7 @@ jobs:
   report-failure:
     needs: [evaluate, fix]
     if: ${{ always() && needs.evaluate.outputs.should_run == 'true' && needs.fix.result != 'success' && needs.fix.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

@@ -44,7 +44,7 @@ jobs:
         github.event.issue.pull_request != null &&
         contains(github.event.comment.body, '/gemini-review')
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
@@ -74,7 +74,7 @@ jobs:
   antigravity-review:
     needs: [authorize]
     if: needs.authorize.outputs.should-run == 'true' && needs.authorize.outputs.trusted == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -164,7 +164,7 @@ jobs:
   wake-orchestrator:
     needs: [authorize, antigravity-review]
     if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

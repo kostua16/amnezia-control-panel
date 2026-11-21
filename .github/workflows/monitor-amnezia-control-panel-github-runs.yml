@@ -44,7 +44,7 @@ permissions:
 jobs:
   fleet-gate:
     name: Fleet back-pressure gate
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
@@ -58,7 +58,7 @@ jobs:
     needs: [fleet-gate]
     if: needs.fleet-gate.outputs.skip != 'true'
     name: Monitor GitHub Actions Runs
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
@@ -93,6 +93,7 @@ jobs:
           generate-prisma: 'true'
           install-gsd: 'true'
           install-rtk: 'true'
+          install-actionlint: 'true'
 
       - name: Prepare monitor branch
         id: branch
@@ -369,39 +370,6 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Self-heal runner disk pressure
-        # Deterministic recovery: when recent completed runs show disk-exhaustion
-        # signatures (ENOSPC), dispatch the cleanup workflow. Checks all conclusions
-        # (failure/cancelled/timed_out) because disk exhaustion often evicts the
-        # runner before steps can report failure.
-        if: always() && github.event_name == 'schedule'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          set -euo pipefail
-          matches=0
-          # Only scan runs from the last 3 hours to avoid re-processing old ENOSPC
-          # runs every cycle. Cap at 5 candidate runs and 90s per log fetch.
-          # gh run list --created needs an ISO-8601 timestamp; relative syntax
-          # like ">=3 hours ago" is silently rejected and yields an empty list,
-          # which would disable this self-heal entirely.
-          CUTOFF="$(date -u -d '3 hours ago' '+%Y-%m-%dT%H:%M:%SZ')"
-          for run_id in $(gh run list --status completed --limit 5 --created ">=$CUTOFF" --json databaseId,conclusion --jq '.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | .databaseId'); do
-            if timeout 90 gh run view "$run_id" --log 2>/dev/null | grep -qiE 'no space left on device|ENOSPC'; then
-              matches=$((matches + 1))
-            fi
-            if [ "$matches" -ge 2 ]; then
-              break
-            fi
-          done
-          if [ "$matches" -ge 2 ]; then
-            echo "Disk-pressure signature found in $matches recent completed runs; dispatching cleanup-runner.yml"
-            gh workflow run cleanup-runner.yml -f clear_npm_cache=true -f clear_next_cache=true
-          else
-            echo "No disk-pressure pattern detected (matches=$matches)"
-          fi
-
       - name: Fail on ZAI failure
         if: steps.claude_run.outcome == 'failure' || steps.claude_run.outputs.claude_failed == 'true'
         run: |
@@ -564,7 +532,7 @@ jobs:
   report-failure:
     needs: [monitor-runs]
     if: ${{ always() && needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read

@@ -30,7 +30,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/planning-rename-milestones'))
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
@@ -61,7 +61,7 @@ jobs:
   repair:
     needs: [authorize]
     if: needs.authorize.outputs.should-run == 'true'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout trusted repair script

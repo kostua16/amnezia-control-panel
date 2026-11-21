@@ -61,7 +61,7 @@ env:
 
 jobs:
   fix:
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       pr-number: ${{ steps.pr-context.outputs.pr_number }}

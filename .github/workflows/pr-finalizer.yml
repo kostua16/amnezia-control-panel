@@ -49,7 +49,7 @@ jobs:
     if: |
       github.event_name != 'workflow_run' ||
       toJSON(github.event.workflow_run.pull_requests) != '[]'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       decision: ${{ steps.decision.outputs.decision }}
@@ -212,7 +212,7 @@ jobs:
       needs.finalize.outputs.decision == 'approve_and_enable_automerge' &&
       (needs.finalize.outputs.apply_status == 'success' ||
        needs.finalize.outputs.apply_status == 'failed')
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

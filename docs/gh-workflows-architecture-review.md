@@ -1,3 +1,5 @@
+> **Historical document.** This predates the GitHub-hosted runner migration (#1128, RUN-M01). Its runner-contention content (the `[self-hosted, big]` pool, 82/83 self-hosted jobs, `cleanup-runner.yml`) describes the retired self-hosted setup. To return to it, see [`runbooks/self-hosted-to-hosted-runners-rollback.md`](runbooks/self-hosted-to-hosted-runners-rollback.md).
+
 # GitHub Workflows — Architecture Review
 
 **Scope:** 45 workflow YAMLs + 44 scripts (~13.4k LOC) + 20 composite actions in `.github/actions/`, plus co-located `documentation.md` and `policy.json`.

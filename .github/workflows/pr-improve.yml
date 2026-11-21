@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   collect-targets:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       targets: ${{ steps.collect.outputs.targets }}
@@ -70,7 +70,7 @@ jobs:
   improve:
     needs: [collect-targets]
     if: needs.collect-targets.outputs.count != '0'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -254,7 +254,7 @@ jobs:
   wake-orchestrator:
     needs: [collect-targets, improve]
     if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -277,7 +277,7 @@ jobs:
   report-failure:
     needs: [collect-targets, improve]
     if: ${{ always() && ((needs.collect-targets.result != 'success' && needs.collect-targets.result != 'skipped') || (needs.improve.result != 'success' && needs.improve.result != 'skipped')) }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
