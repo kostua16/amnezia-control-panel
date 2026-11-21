@@ -71,7 +71,7 @@ jobs:
     needs: [authorize]
     if: needs.authorize.outputs.triggered == 'true' && needs.authorize.outputs.trusted == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: write
       pull-requests: write
@@ -106,7 +106,7 @@ jobs:
         id: deadline
         uses: ./.github/actions/compute-stop-by-deadline
         with:
-          timeout-minutes: '10'
+          timeout-minutes: '30'
           safety-margin-minutes: '2'
           job-start-epoch: '${{ steps.job_start.outputs.epoch }}'
 
@@ -139,6 +139,6 @@ jobs:
 
             STOP_BY: ${{ steps.deadline.outputs.stop_by }}
 
-            The job has a hard 10-minute timeout. STOP_BY is the deadline by which you must produce your final output. Wrap up and report before STOP_BY — partial results are better than a timeout kill.
+            The job has a hard 30-minute timeout. STOP_BY is the deadline by which you must produce your final output. Wrap up and report before STOP_BY — partial results are better than a timeout kill.
 
             Operate as the `kos-claude` agent: first read `.claude/agents/kos-claude.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
