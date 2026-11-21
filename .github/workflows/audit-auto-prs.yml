@@ -22,7 +22,7 @@ permissions:
 jobs:
   fleet-gate:
     name: Fleet back-pressure gate
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
@@ -35,7 +35,7 @@ jobs:
   audit-auto-prs:
     needs: [fleet-gate]
     if: needs.fleet-gate.outputs.skip != 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
@@ -302,7 +302,7 @@ jobs:
     name: Reconcile resolved audit issues
     needs: [audit-auto-prs]
     if: needs.audit-auto-prs.result == 'success'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
@@ -325,7 +325,7 @@ jobs:
   report-failure:
     needs: [fleet-gate, audit-auto-prs]
     if: always() && (needs.audit-auto-prs.result == 'failure' || needs.audit-auto-prs.result == 'cancelled' || needs.fleet-gate.result == 'failure' || needs.fleet-gate.result == 'cancelled')
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -359,7 +359,7 @@ jobs:
     name: Publish human-disposition digest
     needs: [audit-auto-prs]
     if: needs.audit-auto-prs.result == 'success' && needs.audit-auto-prs.outputs.structured_output != ''
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read

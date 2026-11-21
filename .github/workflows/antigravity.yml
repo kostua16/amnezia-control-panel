@@ -55,7 +55,7 @@ jobs:
           contains(github.event.issue.body, '@antigravity')
         )
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       triggered: ${{ steps.gate.outputs.triggered }}
@@ -83,7 +83,7 @@ jobs:
   antigravity-interaction:
     needs: [authorize]
     if: needs.authorize.outputs.triggered == 'true' && needs.authorize.outputs.trusted == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout repository

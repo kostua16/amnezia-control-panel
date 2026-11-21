@@ -38,7 +38,7 @@ env:
 
 jobs:
   resolve-pr:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should-run: ${{ steps.resolve.outputs.should_run }}
@@ -77,7 +77,7 @@ jobs:
   ai-dependency-review:
     needs: [resolve-pr]
     if: needs.resolve-pr.outputs.should-run == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -212,7 +212,7 @@ jobs:
   wake-orchestrator:
     needs: [resolve-pr, ai-dependency-review]
     if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

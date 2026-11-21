@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   maintenance:
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
@@ -120,13 +120,11 @@ jobs:
             4. Check for TODO/FIXME comments in recent commits (last 12h): `git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`
             5. Review open issues older than 90 days with /gsd:inbox — skip issues labeled `stale` (owned by stale.yml's 60d-inactivity lifecycle) and issues with exempt labels (`keep-open`, `backlog`, `in-progress`). Only report issues that are old AND still actively worked or recently triaged but unresolved.
             6. Clean up stale resolved debug docs: find .planning/debug/*.md files with frontmatter `status: resolved`. Delete only files whose `updated` frontmatter field is present and parseable as a date older than 30 days; skip files where `updated` is missing or malformed. If any were deleted, commit with message "chore: prune stale resolved debug docs (maintenance)"
-            7. Runner health self-check (MNT-E08): run `node .github/workflows/scripts/runner-health-check.cjs --repo ${{ github.repository }} --since 6h`. If the output shows saturated pools or high queue latency, create an issue: `gh issue create --title "Runner health: [summary]" --label "maintenance,observability" --body "[full output]"`. Skip if all pools healthy.
 
             For EACH category where findings exist, create a NEW GitHub issue:
             - Security findings: `gh issue create --title "Security: [summary of vulnerabilities]" --label "security" --body "[detailed findings]"`
             - Stale issues (older than 90 days): `gh issue create --title "Maintenance: stale issues review" --label "maintenance" --body "[list of stale issues]"`
             - TODO/FIXME findings: `gh issue create --title "Maintenance: unresolved TODOs" --label "maintenance" --body "[list of TODOs with commit references]"`
-            - Runner health issues: `gh issue create --title "Runner health: [summary]" --label "maintenance,observability" --body "[full runner-health-check output]"`
 
             Do NOT create issues if no findings exist in that category.
             If critical security issues (HIGH/CRITICAL severity) are found, comment only on open PRs that modify dependency manifests (package.json, package-lock.json, yarn.lock). Skip workflow-only, doc-only, and src-only PRs — security advisories on non-dependency PRs trigger fix-review loops with no actionable fix.
@@ -242,7 +240,7 @@ jobs:
   report-failure:
     needs: [maintenance]
     if: ${{ always() && needs.maintenance.result != 'success' && needs.maintenance.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read

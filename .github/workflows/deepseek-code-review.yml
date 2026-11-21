@@ -43,7 +43,7 @@ jobs:
         contains(github.event.comment.body, '/deepseek-review') &&
         github.event.comment.user.type != 'Bot'
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should-run: ${{ steps.resolve.outputs.should_run }}
@@ -124,7 +124,7 @@ jobs:
   deepseek-review:
     needs: [resolve-pr]
     if: needs.resolve-pr.outputs.should-run == 'true' && needs.resolve-pr.outputs.key-available == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout PR head

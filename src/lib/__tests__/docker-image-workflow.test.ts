@@ -38,16 +38,13 @@ describe('docker-image workflow', () => {
     return [...match[1].matchAll(/'([^']+)'/g)].map((glob) => glob[1]);
   }
 
-  it('keeps classify, validation, and publish on self-hosted runners', () => {
+  it('keeps classify, validation, and publish on GitHub-hosted ubuntu-latest runners', () => {
     const workflow = readWorkflow();
 
-    assert.match(workflow, /classify:[\s\S]*?runs-on:\s+self-hosted/);
-    assert.match(
-      workflow,
-      /docker-build:[\s\S]*?runs-on:\s+\[self-hosted,\s*big\]/,
-    );
-    assert.match(workflow, /publish:[\s\S]*?runs-on:\s+\[self-hosted,\s*big\]/);
-    assert.doesNotMatch(workflow, /runs-on:\s+ubuntu-/);
+    assert.match(workflow, /classify:[\s\S]*?runs-on:\s+ubuntu-latest/);
+    assert.match(workflow, /docker-build:[\s\S]*?runs-on:\s+ubuntu-latest/);
+    assert.match(workflow, /publish:[\s\S]*?runs-on:\s+ubuntu-latest/);
+    assert.doesNotMatch(workflow, /runs-on:\s+\[?self-hosted/);
   });
 
   it('keeps Docker path gating inside jobs instead of workflow triggers', () => {

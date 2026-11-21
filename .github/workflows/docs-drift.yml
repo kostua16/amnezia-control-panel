@@ -22,7 +22,7 @@ permissions:
 jobs:
   fleet-gate:
     name: Fleet back-pressure gate
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
@@ -35,7 +35,7 @@ jobs:
   docs-drift:
     needs: [fleet-gate]
     if: needs.fleet-gate.outputs.skip != 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
@@ -223,7 +223,7 @@ jobs:
   report-failure:
     needs: [docs-drift]
     if: ${{ always() && needs.docs-drift.result != 'success' && needs.docs-drift.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read

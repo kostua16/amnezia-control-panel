@@ -92,7 +92,7 @@ jobs:
           )
         )
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       should_run: ${{ steps.classify.outputs.should_run }}
@@ -132,7 +132,7 @@ jobs:
         ) ||
         github.event.pull_request.draft != true
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

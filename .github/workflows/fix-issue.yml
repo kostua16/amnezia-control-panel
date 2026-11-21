@@ -33,7 +33,7 @@ jobs:
         github.event.issue.pull_request == null &&
         github.event.label.name == 'auto-fix-approved'
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
@@ -59,7 +59,7 @@ jobs:
 
   fix:
     needs: [authorize]
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     if: needs.authorize.outputs.should-run == 'true'
     outputs:
@@ -372,7 +372,7 @@ jobs:
   report-failure:
     needs: [fix]
     if: ${{ always() && needs.fix.result != 'success' && needs.fix.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

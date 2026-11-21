@@ -31,7 +31,7 @@ permissions:
 jobs:
   fleet-gate:
     name: Fleet back-pressure gate
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
@@ -44,7 +44,7 @@ jobs:
   audit-fix:
     needs: [fleet-gate]
     if: needs.fleet-gate.outputs.skip != 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     # Includes checkout + setup-environment (deps, prisma, gsd, rtk) before the
     # audit agent starts; the agent needs the bulk of this budget to finish a
     # full audit/fix/verify pass. Raised from 30 to 45 min — codebase growth +
@@ -318,7 +318,7 @@ jobs:
     name: Reconcile resolved audit issues
     needs: [audit-fix]
     if: needs.audit-fix.result == 'success'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
@@ -341,7 +341,7 @@ jobs:
   report-failure:
     needs: [fleet-gate, audit-fix]
     if: always() && (needs.audit-fix.result == 'failure' || needs.audit-fix.result == 'cancelled' || needs.fleet-gate.result == 'failure')
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
