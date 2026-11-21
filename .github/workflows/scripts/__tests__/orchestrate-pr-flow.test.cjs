@@ -1273,3 +1273,21 @@ test('makeDecision advances retry counter when re-dispatched by watchdog', () =>
   assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-1'));
   assert.match(decision.reason, /attempt 2\/3/);
 });
+
+test('cross-repository PR cannot dispatch a privileged worker', () => {
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+      },
+      {},
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/manual-only');
+  assert.equal(decision.dispatch, null);
+});

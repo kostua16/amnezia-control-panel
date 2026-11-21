@@ -34,8 +34,13 @@ jobs:
     # the backlog) are pre-classified and carry a deterministic Triage Result
     # comment — an AI triage run would only duplicate it.
     if: |
-      (github.event_name == 'issues' && !contains(github.event.issue.labels.*.name, 'triaged')) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request == null && startsWith(github.event.comment.body, '/triage')) ||
+      (github.event_name == 'issues' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+        !contains(github.event.issue.labels.*.name, 'triaged')) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request == null &&
+        github.event.comment.user.type != 'Bot' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+        startsWith(github.event.comment.body, '/triage')) ||
       github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -50,9 +55,12 @@ jobs:
 
       - name: Resolve issue number
         id: resolve
+        env:
+          INPUT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "number=${{ github.event.inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+            [[ "$INPUT_ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]] || exit 1
+            echo "number=$INPUT_ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
           else
             echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
           fi
