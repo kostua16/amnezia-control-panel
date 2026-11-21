@@ -732,3 +732,10 @@ When a scenario's characterized behavior changes, update the corresponding `kos-
 3. `gsd-planning-execute` terminal on persistent validation failure (G4) — partial commit or report-only?
 4. `release-notes` output target — release / PR-comment / asset? (N1)
 5. ~~prt cancel matrix~~ **RESOLVED from `pr-flow.yml:57,59`:** prt `opened`/`sync` cancel (restart), prt `labeled`/`unlabeled` do NOT (anti-thrash), wakes collapse; prt/wake are isolated groups. Locked by the `workflow-triggers.test.ts` cancellation test.
+
+## Public repository trust boundary
+
+- Fork PRs may receive metadata checks from base-branch workflows. PR Flow puts them in manual review without dispatching workers, even when the branch name matches an automation prefix or a maintainer requests review.
+- Claude, DeepSeek and dependency review workers verify that the live PR head and base repositories match before allowing the review job. They check out the verified commit SHA with credential persistence disabled. A missing head repository also skips execution.
+- A public comment cannot start or cancel a maintainer's DeepSeek review. Only a maintainer can start AI triage by comment, and automatic triage runs only for maintainer-authored issues. Maintainers can still explicitly triage an external issue.
+- CI repair requires both the triggering run and the live PR head to belong to this repository. PR Improve skips cross-repository PRs.

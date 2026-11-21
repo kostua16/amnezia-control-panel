@@ -27,7 +27,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ${{ ((github.event_name == 'issue_comment' && !(github.event.issue.pull_request != null && github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, '/deepseek-review'))) && format('deepseek-code-review-ignored-{0}', github.run_id)) || format('deepseek-code-review-{0}', github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha) }}
+  group: ${{ ((github.event_name == 'issue_comment' && !(github.event.issue.pull_request != null && github.event.comment.user.type != 'Bot' && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR') && contains(github.event.comment.body, '/deepseek-review'))) && format('deepseek-code-review-ignored-{0}', github.run_id)) || format('deepseek-code-review-{0}', github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha) }}
   cancel-in-progress: true
 
 env:
@@ -41,7 +41,8 @@ jobs:
       (
         github.event.issue.pull_request != null &&
         contains(github.event.comment.body, '/deepseek-review') &&
-        github.event.comment.user.type != 'Bot'
+        github.event.comment.user.type != 'Bot' &&
+        (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -72,7 +73,9 @@ jobs:
               const isPrComment = Boolean(context.payload.issue?.pull_request);
               const wantsReview = context.payload.comment?.body?.includes('/deepseek-review');
               const commenterIsBot = context.payload.comment?.user?.type === 'Bot';
-              if (!isPrComment || !wantsReview || commenterIsBot) {
+              const policy = require(process.env.GITHUB_WORKSPACE + '/.github/workflows/policy.json');
+              const isMaintainer = policy.maintainerAssociations.includes(context.payload.comment?.author_association);
+              if (!isPrComment || !wantsReview || commenterIsBot || !isMaintainer) {
                 core.setOutput('should_run', 'false');
                 return;
               }
@@ -102,6 +105,7 @@ jobs:
             const shouldRun =
               isOpen &&
               headMatches &&
+              pr.head.repo?.full_name === pr.base.repo?.full_name && Boolean(pr.head.repo?.full_name) &&
               !pr.draft &&
               pr.user.login !== 'dependabot[bot]' &&
               !(pr.title || '').includes('[skip-review]');
@@ -131,7 +135,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
+          ref: ${{ needs.resolve-pr.outputs.head-sha }}
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-environment

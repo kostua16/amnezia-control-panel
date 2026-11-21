@@ -1535,6 +1535,15 @@ function makeDecision(context) {
     return finish('flow/draft', 'PR is draft.');
   }
 
+  if (pr.isCrossRepository) {
+    return finish(
+      'flow/manual-only',
+      'Cross-repository PRs require manual review.',
+      null,
+      ['flow/manual-only'],
+    );
+  }
+
   if (checkStatus.status === 'failed') {
     return finish('flow/checks-failed', 'Required checks are failing.');
   }

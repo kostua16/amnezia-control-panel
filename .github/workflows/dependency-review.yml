@@ -43,6 +43,7 @@ jobs:
     outputs:
       should-run: ${{ steps.resolve.outputs.should_run }}
       pr-number: ${{ steps.resolve.outputs.pr_number }}
+      head-sha: ${{ steps.resolve.outputs.head_sha }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -69,9 +70,10 @@ jobs:
             const expectedHeadSha = context.payload.inputs?.head_sha || '';
             const headMatches = !expectedHeadSha || pr.head.sha === expectedHeadSha;
             const isOpen = pr.state === 'open' && !pr.merged;
-            const shouldRun = isOpen && headMatches && pr.user.login === 'dependabot[bot]';
+            const shouldRun = isOpen && headMatches && pr.head.repo?.full_name === pr.base.repo?.full_name && Boolean(pr.head.repo?.full_name) && pr.user.login === 'dependabot[bot]';
             core.setOutput('should_run', String(shouldRun));
             core.setOutput('pr_number', String(pr.number));
+            core.setOutput('head_sha', pr.head.sha);
             core.setOutput('base_ref', context.payload.inputs?.base_ref || pr.base.ref);
 
   ai-dependency-review:
@@ -83,7 +85,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
+          ref: ${{ needs.resolve-pr.outputs.head-sha }}
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-environment
