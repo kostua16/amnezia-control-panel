@@ -65,7 +65,7 @@ test('maintenance runs pruning before change detection and keeps writes out of t
   assert.equal(steps[prune + 1].id, 'detect_changes');
   const agent = steps.find((step) => step.id === 'claude_run');
   assert.equal(agent.with['user-settings-only'], 'true');
-  const approved = new Set([
+  const commands = [
     'gh issue create',
     'gh issue list',
     'gh issue view',
@@ -74,24 +74,24 @@ test('maintenance runs pruning before change detection and keeps writes out of t
     'gh pr view',
     'npm audit',
     'git log',
-  ]);
-  for (const grant of agent.with['allowed-tools'].split(',')) {
-    if (
-      [
-        'Read',
-        'Glob',
-        'Grep',
-        'Bash(node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health)',
-      ].includes(grant)
-    )
-      continue;
-    const command = grant.match(/^Bash\((?:rtk )?(.+):\*\)$/)?.[1];
-    assert.ok(approved.has(command), `Unexpected maintenance grant: ${grant}`);
-  }
-  assert.match(agent.with['allowed-tools'], /Bash\(gh pr comment:/);
+  ];
+  const expected = [
+    'Read',
+    'Glob',
+    'Grep',
+    'Bash(node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health)',
+    ...commands.flatMap((command) => [
+      `Bash(${command}:*)`,
+      `Bash(rtk ${command}:*)`,
+    ]),
+  ];
+  assert.deepEqual(
+    agent.with['allowed-tools'].split(',').sort(),
+    expected.sort(),
+  );
 });
 
-test('run-zai forwards settings isolation to every Claude attempt', () => {
+test('run-zai forwards settings isolation to every Claude attempt', (t) => {
   const { load } = require('js-yaml');
   const readAction = (name) =>
     load(
@@ -115,11 +115,39 @@ test('run-zai forwards settings isolation to every Claude attempt', () => {
     step.uses?.startsWith('anthropics/claude-code-action@'),
   );
   assert.equal(attempts.length, 3);
+  assert.equal(
+    wrapper.with['allowed-tools'],
+    '${{ inputs.allowed-tools }},Agent,TaskCreate,TaskUpdate,TaskGet,TaskList',
+  );
   for (const attempt of attempts) {
-    assert.ok(
-      attempt.with.claude_args.includes(
-        "\${{ inputs.user-settings-only == 'true' && '--setting-sources user' || '' }}",
-      ),
+    assert.match(attempt.with.claude_args, /--setting-sources user --settings/);
+    assert.match(
+      attempt.with.claude_args,
+      /steps\.isolated-settings\.outputs\.path/,
     );
   }
+
+  const prepare = params.runs.steps.find(
+    (step) => step.id === 'isolated-settings',
+  );
+  const generator = prepare.run.split("<<'NODE'\n")[1].split('\nNODE')[0];
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-guards-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const settingsFile = path.join(directory, 'settings.json');
+  require('node:child_process').execFileSync(
+    process.execPath,
+    ['-', settingsFile],
+    {
+      cwd: path.resolve(__dirname, '../../../..'),
+      input: generator,
+    },
+  );
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  assert.deepEqual(Object.keys(settings), ['hooks']);
+  const pre = settings.hooks.PreToolUse.flatMap((group) => group.hooks);
+  const post = settings.hooks.PostToolUse.flatMap((group) => group.hooks);
+  assert.equal(pre.length, 1);
+  assert.equal(post.length, 1);
+  assert.match(pre[0].command, /privacy-block\.cjs/);
+  assert.match(post[0].command, /gsd-read-injection-scanner\.js/);
 });

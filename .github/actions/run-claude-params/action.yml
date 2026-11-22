@@ -155,7 +155,7 @@ inputs:
     description: 'Allowed tools'
     default: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*),Bash(rtk:*)'
   user-settings-only:
-    description: 'Load Claude user settings without repository or local settings.'
+    description: 'Load Claude user settings and selected repository guard hooks without repository tool grants.'
     default: 'false'
   system-prompt:
     description: 'Custom system prompt. When empty, Claude uses its built-in default. Note: literal { and } must be escaped as {{ and }}.'
@@ -325,6 +325,34 @@ runs:
           echo "inline_guidance=" >> "$GITHUB_OUTPUT"
         fi
 
+    - name: Prepare isolated Claude guard hooks
+      id: isolated-settings
+      if: inputs.user-settings-only == 'true'
+      shell: bash
+      run: |
+        settings_file="$(mktemp "$RUNNER_TEMP/claude-guards.XXXXXX.json")"
+        node - "$settings_file" <<'NODE'
+        const fs = require('node:fs');
+        const { hooks } = JSON.parse(fs.readFileSync('.claude/settings.json', 'utf8'));
+        function selectGuard(event, filename) {
+          const groups = hooks[event]
+            .map((group) => ({
+              ...group,
+              hooks: group.hooks.filter((hook) => hook.command?.includes('/' + filename)),
+            }))
+            .filter((group) => group.hooks.length > 0);
+          if (groups.length === 0) throw new Error('Missing Claude guard: ' + filename);
+          return groups;
+        }
+        fs.writeFileSync(process.argv[2], JSON.stringify({
+          hooks: {
+            PreToolUse: selectGuard('PreToolUse', 'privacy-block.cjs'),
+            PostToolUse: selectGuard('PostToolUse', 'gsd-read-injection-scanner.js'),
+          },
+        }));
+        NODE
+        printf 'path=%s\n' "$settings_file" >> "$GITHUB_OUTPUT"
+
     - name: Clear Claude execution output (attempt 1)
       shell: bash
       run: rm -f "${RUNNER_TEMP}/claude-execution-output.json"
@@ -370,7 +398,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          ${{ inputs.user-settings-only == 'true' && '--setting-sources user' || '' }}
+          ${{ inputs.user-settings-only == 'true' && format('--setting-sources user --settings "{0}"', steps.isolated-settings.outputs.path) || '' }}
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
@@ -484,7 +512,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          ${{ inputs.user-settings-only == 'true' && '--setting-sources user' || '' }}
+          ${{ inputs.user-settings-only == 'true' && format('--setting-sources user --settings "{0}"', steps.isolated-settings.outputs.path) || '' }}
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
@@ -594,7 +622,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
-          ${{ inputs.user-settings-only == 'true' && '--setting-sources user' || '' }}
+          ${{ inputs.user-settings-only == 'true' && format('--setting-sources user --settings "{0}"', steps.isolated-settings.outputs.path) || '' }}
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
