@@ -245,6 +245,11 @@ function verifyChangedWorkflowFiles(options = {}) {
 if (require.main === module) {
   try {
     const paths = process.argv.slice(2);
+    const missing = paths.filter((file) => !fs.existsSync(file));
+    if (missing.length) {
+      console.error(`Changed paths do not exist: ${JSON.stringify(missing)}`);
+      process.exit(1);
+    }
     const options = paths.length
       ? { rawChangedFiles: JSON.stringify(paths) }
       : {};

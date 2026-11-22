@@ -169,6 +169,17 @@ test('validates changed action metadata without invoking actionlint', () => {
     log: { error: (message) => errors.push(message) },
   };
   assert.equal(verifyChangedWorkflowFiles(options).status, 0);
+  for (const runs of [
+    '{ using: node20, main: index.js }',
+    '{ using: node24, main: index.js }',
+    '{ using: docker, image: Dockerfile }',
+  ]) {
+    fs.writeFileSync(
+      path.join(root, manifest),
+      `name: example\ndescription: fixture\nruns: ${runs}\n`,
+    );
+    assert.equal(verifyChangedWorkflowFiles(options).status, 0, runs);
+  }
   fs.writeFileSync(path.join(root, manifest), 'name: example\njobs: {}\n');
   assert.equal(verifyChangedWorkflowFiles(options).status, 1);
   assert.match(errors[0], /Invalid action metadata.*runs\.using/);
@@ -205,6 +216,21 @@ test('empty CHANGED_FILES is a no-op', () => {
   assert.equal(result.status, 0);
   assert.equal(result.skipped, true);
   assert.ok(logs.includes('No changed files to verify.'));
+});
+
+test('missing positional paths fail while deleted paths from CI are skipped', () => {
+  const root = tmpDir('mon-missing-path-');
+  const missing = '.github/workflows/deleted.yml';
+  const options = {
+    cwd: root,
+    env: { ...process.env, CHANGED_FILES: JSON.stringify([missing]) },
+    encoding: 'utf8',
+  };
+  const explicit = spawnSync(process.execPath, [scriptPath, missing], options);
+  assert.equal(explicit.status, 1, explicit.stderr);
+  assert.match(explicit.stderr, /Changed paths do not exist:.*deleted\.yml/);
+  const ci = spawnSync(process.execPath, [scriptPath], options);
+  assert.equal(ci.status, 0, ci.stderr);
 });
 
 test('isWorkflowOrActionYaml includes nested action.yml', () => {
