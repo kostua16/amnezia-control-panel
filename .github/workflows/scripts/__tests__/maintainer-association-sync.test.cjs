@@ -13,9 +13,11 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  isAuthorizedTriageAuthor,
+} = require('../authorize-triage-dispatch.cjs');
 
 const workflowsDir = path.join(__dirname, '..', '..');
 const policy = JSON.parse(
@@ -67,27 +69,22 @@ test('triage dispatch authorization gates the single configured agent step', () 
   );
   const [gate] = gates;
   assert.match(gate, /echo "authorized=\$authorized" >> "\$GITHUB_OUTPUT"/);
-  const decision = gate.match(/authorized=\$\(node -e '([\s\S]+?)'\)/)?.[1];
-  assert.ok(decision, 'missing dispatch authorization decision');
-  for (const [association, type, login, authorized] of [
-    ['OWNER', 'User', 'maintainer', 'true'],
-    ['NONE', 'Bot', 'github-actions[bot]', 'true'],
-    ['NONE', 'Bot', 'unlisted-app[bot]', 'false'],
-    ['CONTRIBUTOR', 'User', 'external', 'false'],
-    ['NONE', 'User', 'github-actions[bot]', 'false'],
-  ]) {
-    const actual = execFileSync(process.execPath, ['-e', decision], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        GITHUB_WORKSPACE: path.resolve(workflowsDir, '../..'),
-        AUTHOR_ASSOCIATION: association,
-        AUTHOR_TYPE: type,
-        AUTHOR_LOGIN: login,
-      },
-    });
-    assert.equal(actual, authorized, `${association}/${type}/${login}`);
-  }
+  assert.match(
+    gate,
+    /node \.github\/workflows\/scripts\/authorize-triage-dispatch\.cjs/,
+  );
+  assert.match(
+    gate,
+    /AUTHOR_ASSOCIATION: \$\{\{ steps\.issue_details\.outputs\.author_association \}\}/,
+  );
+  assert.match(
+    gate,
+    /AUTHOR_LOGIN: \$\{\{ steps\.issue_details\.outputs\.author \}\}/,
+  );
+  assert.match(
+    gate,
+    /AUTHOR_TYPE: \$\{\{ steps\.issue_details\.outputs\.author_type \}\}/,
+  );
 
   const agents = steps.filter((step) =>
     /^(?: {8})?uses: \.\/\.github\/actions\/run-zai[ \t]*$/m.test(step),
@@ -99,4 +96,21 @@ test('triage dispatch authorization gates the single configured agent step', () 
     /^ {8}if: github\.event_name != 'workflow_dispatch' \|\| steps\.dispatch_gate\.outputs\.authorized == 'true'\s*$/m,
   );
   assert.match(agent, /^ {10}api-key:/m);
+});
+
+test('triage dispatch accepts maintainers and only allowlisted bots', () => {
+  for (const [association, type, login, authorized] of [
+    ['OWNER', 'User', 'maintainer', true],
+    ['NONE', 'Bot', 'github-actions[bot]', true],
+    ['NONE', 'Bot', 'unlisted-app[bot]', false],
+    ['CONTRIBUTOR', 'User', 'external', false],
+    ['NONE', 'User', 'github-actions[bot]', false],
+    [undefined, undefined, undefined, false],
+  ]) {
+    assert.equal(
+      isAuthorizedTriageAuthor(association, type, login),
+      authorized,
+      `${association}/${type}/${login}`,
+    );
+  }
 });

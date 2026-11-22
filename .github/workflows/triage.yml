@@ -99,13 +99,7 @@ jobs:
           AUTHOR_LOGIN: ${{ steps.issue_details.outputs.author }}
           AUTHOR_TYPE: ${{ steps.issue_details.outputs.author_type }}
         run: |
-          authorized=$(node -e '
-            const policy = require(process.env.GITHUB_WORKSPACE + "/.github/workflows/policy.json");
-            const ok = policy.maintainerAssociations.includes(process.env.AUTHOR_ASSOCIATION) ||
-              (process.env.AUTHOR_TYPE === "Bot" &&
-                policy.trustedTriageBotLogins.includes(process.env.AUTHOR_LOGIN));
-            process.stdout.write(ok ? "true" : "false");
-          ')
+          authorized=$(node .github/workflows/scripts/authorize-triage-dispatch.cjs)
           echo "authorized=$authorized" >> "$GITHUB_OUTPUT"
           if [ "$authorized" != "true" ]; then
             echo "::notice::Dispatched triage skipped: issue author ($AUTHOR_ASSOCIATION/$AUTHOR_TYPE) is outside the maintainer and repo-automation groups; triage it explicitly with a /triage comment."
