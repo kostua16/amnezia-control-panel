@@ -198,3 +198,19 @@ test('groups readings without token_id under one unknown token per window', () =
   assert.equal(summary.windows[0].token, 'unknown');
   assert.equal(summary.windows[0].readings, 2);
 });
+
+test('skips a label group whose start and end counts differ instead of guessing', () => {
+  const at = '2026-11-22T20:39:11Z';
+  const other = '2026-11-22T20:41:57Z';
+  const summary = summarize([
+    line({ phase: 'job-start', id: 'a', remaining: 4300, reset: at }),
+    // inner invocation lost its end reading: only one end for two starts
+    line({ phase: 'job-start', id: 'a', remaining: 4290, reset: at }),
+    line({ phase: 'job-end', id: 'b', remaining: 4700, reset: other }),
+  ]);
+
+  assert.equal(summary.ambiguous, 1);
+  assert.equal(summary.jobsWithBoth, 0);
+  assert.equal(summary.mismatched.length, 0);
+  assert.match(format(summary), /1 label groups skipped/);
+});
