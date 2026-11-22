@@ -343,5 +343,8 @@ module.exports = {
 };
 
 if (require.main === module) {
-  process.exit(main());
+  // Assign the exit code instead of process.exit(main()) — a hard exit can
+  // cut off piped stdout (GitHub Actions logs, `| jq`, $(...)) before
+  // asynchronous writes drain, truncating the report.
+  process.exitCode = main();
 }
