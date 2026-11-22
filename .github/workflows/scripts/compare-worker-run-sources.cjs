@@ -175,9 +175,11 @@ function main() {
         // is only trusted when it reaches back to the head commit. Strict: a
         // failed read would otherwise read as "date unknown", send every worker
         // of this PR down the per-workflow path and compare it with itself.
-        headCommittedAt: flow.fetchHeadCommittedAt(meta.headRefOid, {
-          strict: true,
-        }),
+        // Cross-repository PRs never reach the head lookup, so the date is not
+        // needed (and an unrelated failed read must not mark them unreadable).
+        headCommittedAt: meta.isCrossRepository
+          ? ''
+          : flow.fetchHeadCommittedAt(meta.headRefOid, { strict: true }),
       };
       const row = {
         number,
