@@ -58,13 +58,22 @@ function runGh(args) {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 30_000,
+        // Job logs stream whole into stdout; the 1 MB default would kill
+        // the largest (most expensive) runs before capLogText() can bound
+        // what is kept in memory.
+        maxBuffer: 64 * 1024 * 1024,
       }),
     };
   } catch (error) {
     return {
       ok: false,
       stdout: '',
-      error: error instanceof Error ? error.message : String(error),
+      // gh writes its diagnostic (e.g. "gh: HTTP 404") to stderr; the
+      // Error message alone is only "Command failed: gh api ...".
+      error:
+        error instanceof Error
+          ? String(error.stderr || error.message)
+          : String(error),
     };
   }
 }
@@ -94,6 +103,22 @@ function fetchCompletedRuns(
   { repo, workflowFile, since, excludeRunId, maxRuns, perPage },
   ghRunner = runGh,
 ) {
+  // An empty window must never report green: without `since` the filter
+  // below would drop every run and callers would surface runs_scanned: 0
+  // as success. Fail closed instead — collectCostTelemetry turns listing
+  // errors into a hard failure (main() exits 1).
+  if (!since) {
+    return {
+      runs: [],
+      errors: [
+        {
+          scope: 'runs-list',
+          detail:
+            'missing --since window; refusing to scan an unbounded window',
+        },
+      ],
+    };
+  }
   const errors = [];
   const result = ghRunner([
     'api',
@@ -122,11 +147,17 @@ function fetchCompletedRuns(
     if (!run || typeof run.id !== 'number') return false;
     if (excludeRunId && Number(run.id) === Number(excludeRunId)) return false;
     const timestamp = runTimestamp(run);
-    return Boolean(since) && timestamp >= since;
+    return timestamp >= since;
   });
   return {
     runs: runs
-      .sort((a, b) => (runTimestamp(a) < runTimestamp(b) ? 1 : -1))
+      .sort((a, b) =>
+        runTimestamp(a) < runTimestamp(b)
+          ? 1
+          : runTimestamp(a) > runTimestamp(b)
+            ? -1
+            : 0,
+      )
       .slice(0, maxRuns),
     errors,
   };
@@ -147,7 +178,9 @@ function fetchRunJobs({ repo, runId, perPage }, ghRunner = runGh) {
   if (!result.ok) {
     return {
       jobs: [],
-      errors: [{ scope: `run-${runId}-jobs`, detail: result.error || 'gh api failed' }],
+      errors: [
+        { scope: `run-${runId}-jobs`, detail: result.error || 'gh api failed' },
+      ],
     };
   }
   const jobs = parseGhJsonLines(result.stdout, []).filter(
@@ -239,25 +272,39 @@ function groupStats(records) {
   return {
     records: records.length,
     runs: new Set(records.map((record) => record.run_id)).size,
-    turns: stats(records.map((r) => r.turns), 1),
-    cost_usd: stats(records.map((r) => r.cost_usd), 4),
-    cost_per_turn: stats(records.map((r) => r.cost_per_turn), 4),
-    duration_sec: stats(records.map((r) => r.duration_sec), 1),
+    turns: stats(
+      records.map((r) => r.turns),
+      1,
+    ),
+    cost_usd: stats(
+      records.map((r) => r.cost_usd),
+      4,
+    ),
+    cost_per_turn: stats(
+      records.map((r) => r.cost_per_turn),
+      4,
+    ),
+    duration_sec: stats(
+      records.map((r) => r.duration_sec),
+      1,
+    ),
     outcomes,
   };
 }
 
 function aggregate(records, extras = {}) {
   const byWorkflow = {};
-  for (const name of [...new Set(records.map((r) => r.workflow || 'unknown'))]
-    .sort()) {
+  for (const name of [
+    ...new Set(records.map((r) => r.workflow || 'unknown')),
+  ].sort()) {
     byWorkflow[name] = groupStats(
       records.filter((r) => (r.workflow || 'unknown') === name),
     );
   }
   const byModel = {};
-  for (const model of [...new Set(records.map((r) => r.model || 'unknown'))]
-    .sort()) {
+  for (const model of [
+    ...new Set(records.map((r) => r.model || 'unknown')),
+  ].sort()) {
     byModel[model] = groupStats(
       records.filter((r) => (r.model || 'unknown') === model),
     );
@@ -296,7 +343,11 @@ function collectCostTelemetry(options = {}, ghRunner = runGh) {
       error: 'run-list-failed',
       records: [],
       summary: aggregate([], {
-        window: { since, workflow_file: workflowFile, exclude_run_id: excludeRunId },
+        window: {
+          since,
+          workflow_file: workflowFile,
+          exclude_run_id: excludeRunId,
+        },
         fetchErrors: errors,
       }),
     };
@@ -327,7 +378,12 @@ function collectCostTelemetry(options = {}, ghRunner = runGh) {
         }
         continue;
       }
-      const record = buildRecord({ run, job, logText: fetched.logText, maxLogBytes });
+      const record = buildRecord({
+        run,
+        job,
+        logText: fetched.logText,
+        maxLogBytes,
+      });
       if (record) records.push(record);
       else missingJobs += 1;
     }
@@ -346,7 +402,11 @@ function collectCostTelemetry(options = {}, ghRunner = runGh) {
     error: null,
     records: deduped,
     summary: aggregate(deduped, {
-      window: { since, workflow_file: workflowFile, exclude_run_id: excludeRunId },
+      window: {
+        since,
+        workflow_file: workflowFile,
+        exclude_run_id: excludeRunId,
+      },
       runsScanned: runs.length,
       jobsScanned,
       missingJobs,
@@ -363,7 +423,8 @@ function renderRecordsJsonl(records) {
 function writeGithubOutput(outputPath, entries) {
   if (!outputPath) return;
   const lines = Object.entries(entries).map(
-    ([key, value]) => `${key}=${value === null || value === undefined ? '' : value}`,
+    ([key, value]) =>
+      `${key}=${value === null || value === undefined ? '' : value}`,
   );
   appendFileSync(outputPath, `${lines.join('\n')}\n`);
 }
@@ -373,16 +434,15 @@ function main() {
   const repo = args.repo || process.env.GITHUB_REPOSITORY;
   const workflowFile = args.workflowFile || '';
   if (!repo || !workflowFile) {
-    process.stderr.write(
-      'Error: --repo and --workflow-file are required\n',
-    );
+    process.stderr.write('Error: --repo and --workflow-file are required\n');
     process.exit(1);
   }
 
   const since =
     args.since ||
     new Date(
-      Date.now() - positiveInt(args.windowHours, DEFAULT_WINDOW_HOURS) * 3600_000,
+      Date.now() -
+        positiveInt(args.windowHours, DEFAULT_WINDOW_HOURS) * 3600_000,
     ).toISOString();
 
   const result = collectCostTelemetry({
@@ -438,6 +498,7 @@ module.exports = {
   aggregate,
   fetchCompletedRuns,
   fetchRunJobs,
+  fetchJobLogText,
   collectCostTelemetry,
   renderRecordsJsonl,
   writeGithubOutput,

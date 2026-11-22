@@ -107,7 +107,10 @@ test('buildRecord keeps partial metrics (turns only or cost only)', () => {
 test('buildRecord returns null for logs without Claude metrics (missing jobs)', () => {
   const cases = [
     ['empty log', ''],
-    ['unrelated job log', '##[group]Run fleet back-pressure gate\nok 1 - gate passed\n'],
+    [
+      'unrelated job log',
+      '##[group]Run fleet back-pressure gate\nok 1 - gate passed\n',
+    ],
     ['garbage non-JSON', 'xxx not json at all\n{"nope": true}\n'],
   ];
   for (const [name, logText] of cases) {
@@ -154,6 +157,49 @@ test('capLogText dropping the metrics region yields a missing job', () => {
   assert.equal(record, null);
 });
 
+// ── runGh: real execFileSync failure shape ───────────────────────────
+
+test('runGh surfaces gh stderr so purged-log 404s classify as missing, not failed', () => {
+  const childProcess = require('node:child_process');
+  const scriptPath = require.resolve('../aggregate-run-costs.cjs');
+  const cachedModule = require.cache[scriptPath];
+  const realExecFileSync = childProcess.execFileSync;
+  const seenOptions = [];
+  // Re-require the script against a stubbed execFileSync so the test
+  // exercises the error shape execFileSync really throws (diagnostic in
+  // error.stderr, not in error.message).
+  delete require.cache[scriptPath];
+  childProcess.execFileSync = (command, args, options) => {
+    seenOptions.push(options);
+    const error = new Error(`Command failed: gh ${args.join(' ')}`);
+    error.stderr = 'gh: HTTP 404 (Not Found)\n';
+    throw error;
+  };
+  try {
+    const { runGh, fetchJobLogText } = require(scriptPath);
+    const result = runGh(['api', 'repos/owner/repo/actions/jobs/555001/logs']);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /HTTP 404/);
+    assert.doesNotMatch(result.error, /Command failed/);
+    const fetched = fetchJobLogText({ repo: 'owner/repo', jobId: 555001 });
+    assert.equal(fetched.missingLog, true);
+
+    // execFileSync defaults maxBuffer to 1 MB; logs of long monitor jobs
+    // exceed that before capLogText() ever gets a chance to truncate.
+    assert.ok(
+      seenOptions[0].maxBuffer >= 16 * 1024 * 1024,
+      'maxBuffer must exceed the largest expected job log',
+    );
+  } finally {
+    childProcess.execFileSync = realExecFileSync;
+    if (cachedModule) {
+      require.cache[scriptPath] = cachedModule;
+    } else {
+      delete require.cache[scriptPath];
+    }
+  }
+});
+
 // ── fetchCompletedRuns: NDJSON, window, exclusions, caps ─────────────
 
 function runsRunner(pages, calls = []) {
@@ -196,7 +242,10 @@ test('fetchCompletedRuns parses paginated NDJSON and applies window filters', ()
     ),
   );
   assert.deepEqual(errors, []);
-  assert.deepEqual(runs.map((r) => r.id), [1002]);
+  assert.deepEqual(
+    runs.map((r) => r.id),
+    [1002],
+  );
   assert.ok(calls[0].includes('status=completed'));
   assert.ok(calls[0].includes('--paginate'));
 });
@@ -217,7 +266,49 @@ test('fetchCompletedRuns sorts newest first and caps at maxRuns', () => {
     },
     runsRunner(entries.map((e) => JSON.stringify(e))),
   );
-  assert.deepEqual(runs.map((r) => r.id), [5, 4, 3]);
+  assert.deepEqual(
+    runs.map((r) => r.id),
+    [5, 4, 3],
+  );
+});
+
+test('fetchCompletedRuns fails closed when since is missing', () => {
+  const calls = [];
+  const { runs, errors } = fetchCompletedRuns(
+    {
+      repo: 'owner/repo',
+      workflowFile: 'monitor.yml',
+      maxRuns: 10,
+      perPage: 100,
+    },
+    runsRunner([], calls),
+  );
+  assert.deepEqual(runs, []);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].scope, 'runs-list');
+  assert.match(errors[0].detail, /since/);
+  assert.equal(calls.length, 0, 'gh must not be called without a window');
+});
+
+test('fetchCompletedRuns preserves input order for equal timestamps', () => {
+  const first = { ...RUN, id: 2001, run_started_at: '2026-08-15T05:00:00Z' };
+  const second = { ...RUN, id: 2002, run_started_at: '2026-08-15T05:00:00Z' };
+  const { runs } = fetchCompletedRuns(
+    {
+      repo: 'owner/repo',
+      workflowFile: 'monitor.yml',
+      since: '2026-08-15T00:00:00Z',
+      maxRuns: 10,
+      perPage: 100,
+    },
+    runsRunner([JSON.stringify(first), JSON.stringify(second)]),
+  );
+  // Array#sort is stable, so a comparator that returns 0 for equal
+  // timestamps keeps the order of equal-timestamped runs deterministic.
+  assert.deepEqual(
+    runs.map((r) => r.id),
+    [2001, 2002],
+  );
 });
 
 test('fetchRunJobs parses NDJSON and drops malformed job rows', () => {
@@ -232,7 +323,10 @@ test('fetchRunJobs parses NDJSON and drops malformed job rows', () => {
       ].join('\n'),
     }),
   );
-  assert.deepEqual(jobs.map((j) => j.id), [555001, 555002]);
+  assert.deepEqual(
+    jobs.map((j) => j.id),
+    [555001, 555002],
+  );
 });
 
 // ── dedupe ────────────────────────────────────────────────────────────
@@ -296,16 +390,55 @@ function rec(overrides = {}) {
 
 test('aggregate computes fleet totals, averages, and maxima', () => {
   const records = [
-    rec({ run_id: 1, turns: 40, cost_usd: 4, cost_per_turn: 0.1, duration_sec: 200 }),
-    rec({ run_id: 2, job_id: 2, turns: 20, cost_usd: 2, cost_per_turn: 0.1, duration_sec: 100, outcome: 'failure' }),
-    rec({ run_id: 3, turns: 10, cost_usd: 1, cost_per_turn: 0.1, duration_sec: 50 }),
+    rec({
+      run_id: 1,
+      turns: 40,
+      cost_usd: 4,
+      cost_per_turn: 0.1,
+      duration_sec: 200,
+    }),
+    rec({
+      run_id: 2,
+      job_id: 2,
+      turns: 20,
+      cost_usd: 2,
+      cost_per_turn: 0.1,
+      duration_sec: 100,
+      outcome: 'failure',
+    }),
+    rec({
+      run_id: 3,
+      turns: 10,
+      cost_usd: 1,
+      cost_per_turn: 0.1,
+      duration_sec: 50,
+    }),
   ];
-  const summary = aggregate(records, { runsScanned: 3, jobsScanned: 5, missingJobs: 2 });
+  const summary = aggregate(records, {
+    runsScanned: 3,
+    jobsScanned: 5,
+    missingJobs: 2,
+  });
   assert.equal(summary.fleet.records, 3);
   assert.equal(summary.fleet.runs, 3);
-  assert.deepEqual(summary.fleet.turns, { count: 3, total: 70, avg: 23.3, max: 40 });
-  assert.deepEqual(summary.fleet.cost_usd, { count: 3, total: 7, avg: 2.3333, max: 4 });
-  assert.deepEqual(summary.fleet.duration_sec, { count: 3, total: 350, avg: 116.7, max: 200 });
+  assert.deepEqual(summary.fleet.turns, {
+    count: 3,
+    total: 70,
+    avg: 23.3,
+    max: 40,
+  });
+  assert.deepEqual(summary.fleet.cost_usd, {
+    count: 3,
+    total: 7,
+    avg: 2.3333,
+    max: 4,
+  });
+  assert.deepEqual(summary.fleet.duration_sec, {
+    count: 3,
+    total: 350,
+    avg: 116.7,
+    max: 200,
+  });
   assert.deepEqual(summary.fleet.outcomes, { success: 2, failure: 1 });
   assert.equal(summary.missing_metrics_jobs, 2);
 });
@@ -325,9 +458,16 @@ test('aggregate groups by workflow and model with unknown fallbacks', () => {
 });
 
 test('aggregate treats zero values as samples, not missing', () => {
-  const records = [rec({ turns: 0, cost_usd: 0, cost_per_turn: 0, duration_sec: 0 })];
+  const records = [
+    rec({ turns: 0, cost_usd: 0, cost_per_turn: 0, duration_sec: 0 }),
+  ];
   const summary = aggregate(records);
-  assert.deepEqual(summary.fleet.cost_usd, { count: 1, total: 0, avg: 0, max: 0 });
+  assert.deepEqual(summary.fleet.cost_usd, {
+    count: 1,
+    total: 0,
+    avg: 0,
+    max: 0,
+  });
   assert.deepEqual(summary.fleet.turns, { count: 1, total: 0, avg: 0, max: 0 });
 });
 
@@ -356,7 +496,8 @@ function fakeGh(script) {
   return (args) => {
     const joined = args.join(' ');
     const handler = script.find((entry) => joined.includes(entry.match));
-    if (!handler) return { ok: false, stdout: '', error: `no script for ${joined}` };
+    if (!handler)
+      return { ok: false, stdout: '', error: `no script for ${joined}` };
     return handler.respond(args);
   };
 }
@@ -424,7 +565,8 @@ test('collectCostTelemetry treats a purged (404) job log as missing metrics, not
       respond: () => ({
         ok: false,
         stdout: '',
-        error: 'Command failed: gh api repos/owner/repo/actions/jobs/555001/logs\ngh: HTTP 404\n',
+        error:
+          'Command failed: gh api repos/owner/repo/actions/jobs/555001/logs\ngh: HTTP 404\n',
       }),
     },
   ]);
@@ -586,7 +728,10 @@ test('monitor workflow runs cost telemetry as a dedicated parallel job', () => {
 
   const jobIndex = workflow.indexOf('  cost-telemetry:');
   assert.ok(jobIndex >= 0, 'cost-telemetry job must exist');
-  const jobBlock = workflow.slice(jobIndex, workflow.indexOf('  report-failure:'));
+  const jobBlock = workflow.slice(
+    jobIndex,
+    workflow.indexOf('  report-failure:'),
+  );
 
   assert.match(jobBlock, /needs: \[fleet-gate\]/);
   assert.match(jobBlock, /timeout-minutes: 10/);
@@ -608,10 +753,19 @@ test('monitor workflow runs cost telemetry as a dedicated parallel job', () => {
 test('monitor workflow uploads a named retained telemetry artifact', () => {
   const workflow = fs.readFileSync(WORKFLOW_PATH, 'utf8');
   const jobIndex = workflow.indexOf('  cost-telemetry:');
-  const jobBlock = workflow.slice(jobIndex, workflow.indexOf('  report-failure:'));
+  const jobBlock = workflow.slice(
+    jobIndex,
+    workflow.indexOf('  report-failure:'),
+  );
 
-  assert.match(jobBlock, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
-  assert.match(jobBlock, /name: monitor-cost-telemetry-\$\{\{ github\.run_id \}\}/);
+  assert.match(
+    jobBlock,
+    /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/,
+  );
+  assert.match(
+    jobBlock,
+    /name: monitor-cost-telemetry-\$\{\{ github\.run_id \}\}/,
+  );
   assert.match(jobBlock, /retention-days: 90/);
   assert.match(jobBlock, /if-no-files-found: error/);
   assert.match(jobBlock, /if: always\(\)/);
