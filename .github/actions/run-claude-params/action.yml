@@ -410,13 +410,28 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_JOB_NAME: ${{ github.job }}
       run: |
+        # The probe's own failure (exit 28 timeout, network error) must not
+        # fail this check step: with -eo pipefail the step dies before the
+        # classifier runs, which skips every retry attempt. curl prints 000
+        # via -w on failure (empty if it printed nothing); the classifier
+        # treats both as probe-unreachable and retries after backoff.
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
           -H "content-type: application/json" \
           -H "x-api-key: ${API_KEY}" \
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
-          --max-time 30)
+          --max-time 30) || true
+
+        # An unreachable probe (000/empty) has no branch in the retry
+        # classifier; remap it onto the retryable overload code so the attempt
+        # retries with the existing backoff instead of falling through to
+        # non-retryable. A probe that cannot reach the API right after an
+        # attempt died is the same transient outage, not an API verdict.
+        if [ -z "$http_code" ] || [ "$http_code" = "000" ]; then
+          echo "::warning::API probe unreachable (timeout or network error) — classifying attempt as retryable overload"
+          http_code="529"
+        fi
 
         # Job log lets the classifier see pre-execution failures (e.g. branch
         # setup dying on an unauthenticated git fetch) that never reach the
@@ -515,13 +530,25 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_JOB_NAME: ${{ github.job }}
       run: |
+        # The probe's own failure (exit 28 timeout, network error) must not
+        # fail this check step: with -eo pipefail the step dies before the
+        # classifier runs, which skips every retry attempt. curl prints 000
+        # via -w on failure (empty if it printed nothing); the classifier
+        # treats both as probe-unreachable and retries after backoff.
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
           -H "content-type: application/json" \
           -H "x-api-key: ${API_KEY}" \
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
-          --max-time 30)
+          --max-time 30) || true
+
+        # Same remap as check-429-1: an unreachable probe is transient
+        # evidence, not a non-retryable verdict.
+        if [ -z "$http_code" ] || [ "$http_code" = "000" ]; then
+          echo "::warning::API probe unreachable (timeout or network error) — classifying attempt as retryable overload"
+          http_code="529"
+        fi
 
         # Same pre-execution-failure visibility as check-429-1.
         LOG_FILE=$(mktemp "${RUNNER_TEMP:-/tmp}/claude-retry-log-XXXXXX.log")
