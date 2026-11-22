@@ -1310,9 +1310,116 @@ function publishCommitStatus(pr, status) {
   }
 }
 
-function publishFlowStatuses(pr, visibility) {
-  for (const status of visibility.orderedStatuses) {
-    publishCommitStatus(pr, status);
+// Status ids are monotonic but may arrive as strings, and a missing id
+// (null, undefined, '') coerces to 0 via Number — guard the raw value
+// before coercing so an absent id is never treated as a real id of 0.
+function usableStatusId(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const id = Number(raw);
+  return Number.isFinite(id) ? id : null;
+}
+
+// Compare duplicate entries for the same context without trusting array
+// order. A usable created_at outranks an unusable one, so a missing or
+// malformed timestamp cannot pin the first array entry. Equal timestamps
+// (GitHub has second granularity, so overlapping prt/wake runs on the same
+// head can tie) and pairs with no usable timestamp both fall back to the
+// monotonic status id, where a usable id likewise outranks an unusable one.
+// Only when neither signal is usable does the first array entry stay.
+function isNewerStatusEntry(entry, current) {
+  const entryAt = Date.parse(entry.created_at ?? '');
+  const currentAt = Date.parse(current.created_at ?? '');
+  const entryUsable = !Number.isNaN(entryAt);
+  const currentUsable = !Number.isNaN(currentAt);
+  if (entryUsable !== currentUsable) return entryUsable;
+  if (entryUsable && entryAt !== currentAt) return entryAt > currentAt;
+  const entryId = usableStatusId(entry.id);
+  const currentId = usableStatusId(current.id);
+  if ((entryId === null) !== (currentId === null)) return entryId !== null;
+  if (entryId !== null && entryId !== currentId) return entryId > currentId;
+  return false;
+}
+
+// Index the latest status per context explicitly by created_at (tie-broken
+// on the status id) instead of trusting array order: a caller passing full
+// history (commits/{sha}/statuses) would make last-wins pick the oldest
+// duplicate, which could suppress a needed success POST while the real
+// latest status is a failure.
+function indexStatusesByContext(statuses) {
+  const byContext = new Map();
+  if (!Array.isArray(statuses)) return byContext;
+  for (const entry of statuses) {
+    if (entry && typeof entry.context === 'string') {
+      const current = byContext.get(entry.context);
+      if (!current || isNewerStatusEntry(entry, current)) {
+        byContext.set(entry.context, entry);
+      }
+    }
+  }
+  return byContext;
+}
+
+// Only an unchanged `success` is safe to skip. The watchdog and the Kilo
+// review timeout read the age and history of pending/failure/error statuses,
+// so those are re-posted on every wake to keep refreshing their timestamps.
+function shouldPublishStatus(
+  previousStatusByContext,
+  status,
+  currentRunUrl = getCurrentRunUrl(),
+) {
+  const previous = previousStatusByContext?.get?.(status.context);
+  if (!previous) return true;
+  if (String(status.state).toLowerCase() !== 'success') return true;
+  if (String(previous.state).toLowerCase() !== 'success') return true;
+  if (
+    String(previous.description ?? '') !==
+    truncateStatusDescription(status.description)
+  ) {
+    return true;
+  }
+  const previousUrl = String(previous.target_url ?? '');
+  const nextUrl = String(status.targetUrl ?? '');
+  // The orchestrator run URL changes on every wake, so requiring it to match
+  // would make the skip never apply to statuses that link to the current run.
+  // When the new link is that volatile URL the previous link is kept instead:
+  // an older worker-run link stays in place (a run URL is a run URL, and the
+  // worker link is more specific than the orchestrator one), while a status
+  // that had no link yet is posted once so it actually gains the link.
+  const nextUrlIsCurrentRun = nextUrl !== '' && nextUrl === currentRunUrl;
+  if (nextUrlIsCurrentRun && previousUrl === '') return true;
+  return !(nextUrlIsCurrentRun || previousUrl === nextUrl);
+}
+
+function publishFlowStatuses(
+  pr,
+  visibility,
+  {
+    readStatuses = fetchCommitStatuses,
+    publishStatus = publishCommitStatus,
+    currentRunUrl = getCurrentRunUrl(),
+  } = {},
+) {
+  const statuses = visibility.orderedStatuses;
+  let previousByContext = new Map();
+  // Nothing can be skipped unless some status is a success, so avoid the
+  // extra read otherwise.
+  if (statuses.some((s) => String(s.state).toLowerCase() === 'success')) {
+    try {
+      // Read at publish time rather than reusing a snapshot from earlier in
+      // the wake (e.g. the external-review evaluation): prt and wake runs use
+      // separate concurrency groups, so another orchestrator run for the same
+      // head may have posted statuses in between.
+      previousByContext = indexStatusesByContext(readStatuses(pr.headSha));
+    } catch (error) {
+      console.error(
+        `Could not read current commit statuses; posting all: ${formatCommandError(error)}`,
+      );
+    }
+  }
+  for (const status of statuses) {
+    if (shouldPublishStatus(previousByContext, status, currentRunUrl)) {
+      publishStatus(pr, status);
+    }
   }
 }
 
@@ -1362,7 +1469,7 @@ function fetchCommitStatuses(headSha) {
   if (!headSha) return [];
   const response = runJson(
     'gh',
-    ['api', `repos/${getRepoSlug()}/commits/${headSha}/status`],
+    ['api', `repos/${getRepoSlug()}/commits/${headSha}/status?per_page=100`],
     { statuses: [] },
   );
   return response?.statuses ?? [];
@@ -2256,8 +2363,11 @@ module.exports = {
   MAX_CODE_REVIEW_RETRIES,
   MAX_FINALIZER_RETRIES,
   pathsMatch,
+  publishFlowStatuses,
   readConfig,
   renderFlowComment,
   resolvePrNumber,
+  shouldPublishStatus,
   summarizeWorkerRuns,
+  usableStatusId,
 };
