@@ -54,6 +54,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Collect PR targets
         id: collect
@@ -265,6 +266,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Wake PR Orchestrator
         env:
@@ -292,6 +294,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           node-version: ${{ env.NODE_VERSION }}
 
       - uses: ./.github/actions/report-failure

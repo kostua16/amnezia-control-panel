@@ -28,6 +28,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93
         with:

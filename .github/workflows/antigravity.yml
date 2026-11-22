@@ -68,6 +68,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
       - name: Evaluate trigger trust
         id: gate
         shell: bash
@@ -109,6 +110,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Verify API Key Presence
         id: check-secrets

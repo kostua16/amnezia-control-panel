@@ -38,6 +38,24 @@ inputs:
   require-gh-auth:
     description: 'Fail the action when setup-gh authentication or verification fails'
     default: 'true'
+  # validate: setup-gh logs in with the token (a REST validation call), stores
+  # it in an isolated gh config and `gh auth status` verifies it.
+  # env: no setup-gh and no API call; GitHub-hosted runners ship gh, so the
+  # token is only exported as GH_TOKEN for later steps. With require-gh-auth a
+  # missing gh, an empty token or an exhausted quota (read for free by the
+  # rate-limit snapshot) still fails the job here, before side effects.
+  # Callers pass `${{ vars.GH_AUTH_MODE || 'env' }}` so the repository
+  # variable switches every caller back without a commit. Callers that later
+  # override GH_TOKEN with a secret that may be empty keep validate: gh falls
+  # back to the stored token only in that mode.
+  gh-auth-mode:
+    description: "How gh gets the token: 'validate' (setup-gh login + auth status) or 'env' (export GH_TOKEN, no API call)"
+    default: 'validate'
+
+outputs:
+  core-remaining:
+    description: 'Remaining core (REST) quota of github-token at job start; empty when it could not be read'
+    value: ${{ steps.rate_limit.outputs.core-remaining }}
   gsd-version:
     description: 'Pinned @opengsd/gsd-core version used when project-local GSD assets are missing'
     default: '1.2.0'
@@ -78,7 +96,8 @@ runs:
     # setup-gh token validation later fails with "API rate limit exceeded") and again from the
     # action's post step when the job ends, whatever its outcome. Composite actions cannot define
     # post steps themselves; the nested node action's post step is what runs at job end.
-    - uses: ./.github/actions/log-rate-limit
+    - id: rate_limit
+      uses: ./.github/actions/log-rate-limit
       with:
         github-token: ${{ inputs.github-token }}
         label: setup-environment
@@ -116,7 +135,10 @@ runs:
     # api.github.com while setup-gh validates the token (e.g. "dial tcp
     # ...:443: i/o timeout"), killing the whole job. Make the first attempt
     # non-fatal so one retry can absorb the blip before require-gh-auth decides.
+    # In env mode setup_gh is skipped, so its outcome is 'skipped' and the
+    # backoff and retry below (gated on 'failure') are skipped too.
     - id: setup_gh
+      if: inputs.gh-auth-mode != 'env'
       uses: kostua16/setup-gh@55cc7662a66e327280ca51930c27d09e4f7113db
       continue-on-error: true
       with:
@@ -161,7 +183,7 @@ runs:
         command -v gh >/dev/null 2>&1 && echo "gh(after setup-gh)=$(command -v gh)" || echo "gh(after setup-gh)=<not found>"
 
     - name: Verify gh authenticated
-      if: inputs.require-gh-auth == 'true'
+      if: inputs.require-gh-auth == 'true' && inputs.gh-auth-mode != 'env'
       shell: bash
       run: |
         set -euo pipefail
@@ -189,6 +211,46 @@ runs:
           -e '/^[[:space:]]*Token scopes:/d' \
           -e '/^[[:space:]]*-[[:space:]]*Token:/d' \
           -e '/^[[:space:]]*-[[:space:]]*Token scopes:/d'
+
+    # Without require-gh-auth (CI, perf-check) problems are only warnings so
+    # those jobs stay runnable without gh credentials. The token is never
+    # printed: it is masked before being written to GITHUB_ENV.
+    - name: Export gh token without validation
+      if: inputs.gh-auth-mode == 'env'
+      shell: bash
+      env:
+        GH_AUTH_TOKEN: ${{ inputs.github-token }}
+        REQUIRE_GH_AUTH: ${{ inputs.require-gh-auth }}
+        CORE_REMAINING: ${{ steps.rate_limit.outputs.core-remaining }}
+      run: |
+        set -euo pipefail
+
+        fail_or_warn() {
+          if [[ "$REQUIRE_GH_AUTH" == 'true' ]]; then
+            echo "::error::$1" >&2
+            exit 1
+          fi
+          echo "::warning::$1"
+        }
+
+        if [[ -z "$GH_AUTH_TOKEN" ]]; then
+          fail_or_warn "gh authentication token is empty; GH_TOKEN was not exported."
+        elif [[ "$GH_AUTH_TOKEN" == *$'\n'* || "$GH_AUTH_TOKEN" == *$'\r'* ]]; then
+          fail_or_warn "gh authentication token contains a line break; GH_TOKEN was not exported."
+        else
+          echo "::add-mask::$GH_AUTH_TOKEN"
+          echo "GH_TOKEN=$GH_AUTH_TOKEN" >> "$GITHUB_ENV"
+        fi
+
+        if [[ "$REQUIRE_GH_AUTH" == 'true' && "$CORE_REMAINING" == '0' ]]; then
+          fail_or_warn "API rate limit exceeded for installation: the token has 0 core requests left at job start. Aborting before any side effect."
+        fi
+
+        if command -v gh >/dev/null 2>&1; then
+          gh --version
+        else
+          fail_or_warn "gh is not on PATH (env mode does not install it). Aborting."
+        fi
 
     - if: inputs.install-deps == 'true'
       id: npm-deps-cache

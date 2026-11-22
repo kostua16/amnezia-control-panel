@@ -52,6 +52,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Resolve Dependabot PR context
         id: resolve
@@ -91,6 +92,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           install-deps: 'true'
           install-rtk: 'true'
 
@@ -223,6 +225,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Wake PR Orchestrator
         env:

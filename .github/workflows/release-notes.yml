@@ -23,6 +23,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Get previous tag
         id: prev-tag
