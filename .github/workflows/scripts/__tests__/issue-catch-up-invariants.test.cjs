@@ -187,14 +187,32 @@ test('stuck detection never sees an issue with an in-flight fix run', () => {
   // The sweep skips every issue in activeRuns at the top of its loop, so the
   // stuck detector only runs for issues without a run in flight — the call
   // site has no active-run state to forward (activeRuns.has(num) there would
-  // always be false). Pin the skip that does the exclusion, ahead of the
-  // detector call.
-  const skipAt = content.indexOf('if (activeRuns.has(num)) continue;');
+  // always be false). Pin both facts structurally: the skip sits inside the
+  // same loop body as the detector call, and the call site passes no
+  // active-run state. The loop scoping matters — comparing raw first
+  // occurrences anywhere in the YAML stays green even after the two strings
+  // drift into different loops.
   const detectAt = content.indexOf('detectStuckFixable({');
-  assert.notEqual(skipAt, -1, 'sweep must skip issues with an active fix run');
   assert.notEqual(detectAt, -1, 'sweep must call the stuck detector');
+  const loopStart = content.lastIndexOf(
+    'for (const issue of allIssues)',
+    detectAt,
+  );
+  assert.notEqual(
+    loopStart,
+    -1,
+    'detector call must live in the categorize loop',
+  );
   assert.ok(
-    skipAt < detectAt,
-    'active-run skip must precede the detector call',
+    content
+      .slice(loopStart, detectAt)
+      .includes('if (activeRuns.has(num)) continue;'),
+    'the loop containing the detector must skip active runs first',
+  );
+  const callEnd = content.indexOf('});', detectAt);
+  assert.notEqual(callEnd, -1, 'detector call must be closed');
+  assert.ok(
+    !/activeRuns|activeFixRun/.test(content.slice(detectAt, callEnd)),
+    'detector call site must not forward active-run state — the loop skip already excluded in-flight issues',
   );
 });
