@@ -68,8 +68,8 @@ function summarize(lines) {
 
     // The label is part of the key: one job can log several independent
     // start/end pairs (e.g. setup-environment plus job-level calls). Repeated
-    // invocations with the same label are paired in log order: a job-start
-    // opens a pair, the next job-end closes the oldest open one.
+    // invocations with the same label are paired like nested calls: post steps run in
+    // reverse order, so a job-end closes the most recent open job-start.
     const jobKey = `${entry.run}|${entry.job}|${entry.label ?? ''}`;
     const pairs = jobs.get(jobKey) ?? [];
     jobs.set(jobKey, pairs);
@@ -77,7 +77,7 @@ function summarize(lines) {
     if (entry.phase === 'job-start') {
       pairs.push({ ...base, 'job-start': entry });
     } else if (entry.phase === 'job-end') {
-      const open = pairs.find((pair) => !pair['job-end']);
+      const open = pairs.findLast((pair) => !pair['job-end']);
       if (open) open['job-end'] = entry;
       else pairs.push({ ...base, 'job-end': entry });
     }

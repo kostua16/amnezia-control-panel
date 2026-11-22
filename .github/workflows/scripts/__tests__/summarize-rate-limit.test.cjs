@@ -159,7 +159,22 @@ test('keeps separate start/end pairs of one job apart by label', () => {
   assert.equal(summary.mismatched.length, 0);
 });
 
-test('pairs repeated invocations that share a label in log order', () => {
+test('pairs repeated same-label invocations like nested calls (last in, first out)', () => {
+  const at = '2026-11-22T20:39:11Z';
+  const other = '2026-11-22T20:41:57Z';
+  const summary = summarize([
+    line({ phase: 'job-start', id: 'a', remaining: 4300, reset: at }),
+    line({ phase: 'job-start', id: 'b', remaining: 4700, reset: other }),
+    // post steps run in reverse order: the inner invocation ends first
+    line({ phase: 'job-end', id: 'b', remaining: 4690, reset: other }),
+    line({ phase: 'job-end', id: 'a', remaining: 4200, reset: at }),
+  ]);
+
+  assert.equal(summary.jobsWithBoth, 2);
+  assert.equal(summary.mismatched.length, 0);
+});
+
+test('still flags a same-label pair whose end reads another window', () => {
   const at = '2026-11-22T20:39:11Z';
   const other = '2026-11-22T20:41:57Z';
   const summary = summarize([
