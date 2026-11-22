@@ -90,8 +90,8 @@ jobs:
             // outside the maintainer group may not reach an AI prompt via
             // the sweep's workflow_dispatch path. A maintainer can still
             // triage any issue explicitly.
-            const { maintainerAssociations, trustedTriageBotLogins } = require(
-              `${process.env.GITHUB_WORKSPACE}/.github/workflows/policy.json`
+            const { isAuthorizedTriageAuthor } = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/workflows/scripts/authorize-triage-dispatch.cjs`
             );
 
             // --- Fetch all open issues ---
@@ -322,10 +322,11 @@ jobs:
               // own failure-report and spin-off issues carry NONE
               // association) may be auto-triaged by this sweep. External
               // human authors never reach the AI triage prompt.
-              const maintainerAuthored =
-                maintainerAssociations.includes(issue.author_association) ||
-                (issue.user?.type === 'Bot' &&
-                  trustedTriageBotLogins.includes(issue.user.login));
+              const maintainerAuthored = isAuthorizedTriageAuthor(
+                issue.author_association,
+                issue.user?.type,
+                issue.user?.login,
+              );
 
               // Parked dead letters: issues needs-review'd after repeated
               // automation failures get exactly ONE fresh-context retry after

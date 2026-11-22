@@ -11,6 +11,7 @@
 // before the resolve gate rejects the new run. This test pins every literal
 // to the policy.
 
+const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -59,6 +60,30 @@ test('triage dispatch authorization gates the single configured agent step', () 
   const steps = readWorkflow('triage.yml')
     .split(/^ {6}- /m)
     .slice(1);
+  const details = steps.filter((step) =>
+    /^ {8}id: issue_details\s*$/m.test(step),
+  );
+  assert.equal(details.length, 1);
+  const [producer] = details;
+  assert.match(producer, /--jq '\{[^}]+\}' > \/tmp\/issue\.json/);
+  for (const [output, field] of [
+    ['author', '.user.login'],
+    ['author_association', '.author_association'],
+    ['author_type', '.user.type'],
+  ]) {
+    assert.ok(
+      producer.includes(`${output}: ${field}`),
+      `missing projection for ${output}`,
+    );
+    assert.ok(
+      producer.includes(
+        `echo "${output}=\$(jq -r .${output} /tmp/issue.json)"`,
+      ),
+      `missing step output ${output}`,
+    );
+  }
+  assert.match(producer, /} >> "\$GITHUB_OUTPUT"/);
+
   const gates = steps.filter((step) =>
     /^ {8}id: dispatch_gate\s*$/m.test(step),
   );
@@ -111,6 +136,27 @@ test('triage dispatch accepts maintainers and only allowlisted bots', () => {
       isAuthorizedTriageAuthor(association, type, login),
       authorized,
       `${association}/${type}/${login}`,
+    );
+  }
+});
+
+test('triage dispatch CLI reads the workflow author inputs', () => {
+  const script = path.join(
+    workflowsDir,
+    'scripts',
+    'authorize-triage-dispatch.cjs',
+  );
+  for (const [AUTHOR_ASSOCIATION, AUTHOR_TYPE, AUTHOR_LOGIN, expected] of [
+    ['OWNER', 'User', 'maintainer', 'true'],
+    ['NONE', 'Bot', 'github-actions[bot]', 'true'],
+    ['NONE', 'Bot', 'unlisted-app[bot]', 'false'],
+  ]) {
+    assert.equal(
+      execFileSync(process.execPath, [script], {
+        encoding: 'utf8',
+        env: { AUTHOR_ASSOCIATION, AUTHOR_TYPE, AUTHOR_LOGIN },
+      }),
+      expected,
     );
   }
 });
