@@ -1310,9 +1310,79 @@ function publishCommitStatus(pr, status) {
   }
 }
 
-function publishFlowStatuses(pr, visibility) {
-  for (const status of visibility.orderedStatuses) {
-    publishCommitStatus(pr, status);
+function indexStatusesByContext(statuses) {
+  const byContext = new Map();
+  if (!Array.isArray(statuses)) return byContext;
+  for (const entry of statuses) {
+    if (entry && typeof entry.context === 'string') {
+      byContext.set(entry.context, entry);
+    }
+  }
+  return byContext;
+}
+
+// Only an unchanged `success` is safe to skip. The watchdog and the Kilo
+// review timeout read the age and history of pending/failure/error statuses,
+// so those are re-posted on every wake to keep refreshing their timestamps.
+function shouldPublishStatus(
+  previousStatusByContext,
+  status,
+  currentRunUrl = getCurrentRunUrl(),
+) {
+  const previous = previousStatusByContext?.get?.(status.context);
+  if (!previous) return true;
+  if (String(status.state).toLowerCase() !== 'success') return true;
+  if (String(previous.state).toLowerCase() !== 'success') return true;
+  if (
+    String(previous.description ?? '') !==
+    truncateStatusDescription(status.description)
+  ) {
+    return true;
+  }
+  const previousUrl = String(previous.target_url ?? '');
+  const nextUrl = String(status.targetUrl ?? '');
+  // The orchestrator run URL changes on every wake, so requiring it to match
+  // would make the skip never apply to statuses that link to the current run.
+  const nextUrlIsCurrentRun = nextUrl !== '' && nextUrl === currentRunUrl;
+  return !(nextUrlIsCurrentRun || previousUrl === nextUrl);
+}
+
+// Per-run memoized reader so the status list fetched for the external review
+// evaluation is reused when publishing, instead of fetching it twice.
+function createCommitStatusReader(fetchStatuses = fetchCommitStatuses) {
+  const bySha = new Map();
+  return (headSha) => {
+    if (!bySha.has(headSha)) bySha.set(headSha, fetchStatuses(headSha));
+    return bySha.get(headSha);
+  };
+}
+
+function publishFlowStatuses(
+  pr,
+  visibility,
+  {
+    readStatuses = fetchCommitStatuses,
+    publishStatus = publishCommitStatus,
+    currentRunUrl = getCurrentRunUrl(),
+  } = {},
+) {
+  const statuses = visibility.orderedStatuses;
+  let previousByContext = new Map();
+  // Nothing can be skipped unless some status is a success, so avoid the
+  // extra read otherwise.
+  if (statuses.some((s) => String(s.state).toLowerCase() === 'success')) {
+    try {
+      previousByContext = indexStatusesByContext(readStatuses(pr.headSha));
+    } catch (error) {
+      console.error(
+        `Could not read current commit statuses; posting all: ${formatCommandError(error)}`,
+      );
+    }
+  }
+  for (const status of statuses) {
+    if (shouldPublishStatus(previousByContext, status, currentRunUrl)) {
+      publishStatus(pr, status);
+    }
   }
 }
 
@@ -1362,7 +1432,10 @@ function fetchCommitStatuses(headSha) {
   if (!headSha) return [];
   const response = runJson(
     'gh',
-    ['api', `repos/${getRepoSlug()}/commits/${headSha}/status`],
+    [
+      'api',
+      `repos/${getRepoSlug()}/commits/${headSha}/status?per_page=100`,
+    ],
     { statuses: [] },
   );
   return response?.statuses ?? [];
@@ -1390,14 +1463,14 @@ function fetchHeadCommittedAt(headSha) {
   );
 }
 
-function collectExternalReview(pr) {
+function collectExternalReview(pr, readStatuses = fetchCommitStatuses) {
   return evaluateExternalReview({
     pr,
     comments: fetchPrIssueComments(pr.number),
     reviewComments: fetchPrReviewComments(pr.number),
     reviews: fetchPrReviews(pr.number),
     checkRuns: fetchCheckRuns(pr.headSha),
-    statuses: fetchCommitStatuses(pr.headSha),
+    statuses: readStatuses(pr.headSha),
   });
 }
 
@@ -2038,6 +2111,7 @@ function main() {
     reason: 'PR is draft.',
   };
   let policy = emptyPolicy();
+  const readCommitStatuses = createCommitStatusReader();
   let externalReview = {
     state: 'skipped',
     reason: 'Kilo review was not required.',
@@ -2070,7 +2144,7 @@ function main() {
 
     if (!policy.dependabot) {
       externalReview = timeStep(timings, 'worker-runs', () =>
-        collectExternalReview(pr),
+        collectExternalReview(pr, readCommitStatuses),
       );
     }
   }
@@ -2151,7 +2225,9 @@ function main() {
         visibilityErrors,
       });
 
-      publishFlowStatuses(pr, visibility);
+      publishFlowStatuses(pr, visibility, {
+        readStatuses: readCommitStatuses,
+      });
 
       try {
         upsertFlowComment(
@@ -2256,8 +2332,10 @@ module.exports = {
   MAX_CODE_REVIEW_RETRIES,
   MAX_FINALIZER_RETRIES,
   pathsMatch,
+  publishFlowStatuses,
   readConfig,
   renderFlowComment,
   resolvePrNumber,
+  shouldPublishStatus,
   summarizeWorkerRuns,
 };

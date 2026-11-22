@@ -10,8 +10,10 @@ const {
   getWorkerDispatchRef,
   makeDecision: makePrFlowDecision,
   pathsMatch,
+  publishFlowStatuses,
   renderFlowComment,
   resolvePrNumber,
+  shouldPublishStatus,
   summarizeWorkerRuns,
 } = require('../orchestrate-pr-flow.cjs');
 
@@ -847,6 +849,213 @@ test('buildFlowVisibility orderedStatuses includes aggregate and all workers', (
   assert.equal(visibility.orderedStatuses[4].context, 'pr-flow/kilo-review');
   assert.equal(visibility.orderedStatuses[5].context, 'pr-flow/pr-improve');
   assert.equal(visibility.orderedStatuses[6].context, 'pr-flow/finalizer');
+});
+
+// ── commit status publishing ─────────────────────────────────────────
+
+const RUN_URL = 'https://github.com/test/repo/actions/runs/200';
+const OLD_RUN_URL = 'https://github.com/test/repo/actions/runs/100';
+const WORKER_URL = 'https://github.com/test/repo/actions/runs/55';
+
+function makeStatus(overrides = {}) {
+  return {
+    context: 'pr-flow/code-review',
+    state: 'success',
+    displayState: 'success',
+    description: 'Code review passed.',
+    targetUrl: WORKER_URL,
+    details: '',
+    ...overrides,
+  };
+}
+
+function previousStatuses(entries) {
+  return new Map(entries.map((entry) => [entry.context, entry]));
+}
+
+function previousSuccess(overrides = {}) {
+  return {
+    context: 'pr-flow/code-review',
+    state: 'success',
+    description: 'Code review passed.',
+    target_url: WORKER_URL,
+    ...overrides,
+  };
+}
+
+test('shouldPublishStatus skips an identical success status', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  assert.equal(shouldPublishStatus(previous, makeStatus(), RUN_URL), false);
+});
+
+test('shouldPublishStatus skips an identical success that links to the current run', () => {
+  const previous = previousStatuses([
+    previousSuccess({ target_url: OLD_RUN_URL }),
+  ]);
+  const status = makeStatus({ targetUrl: RUN_URL });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
+});
+
+test('shouldPublishStatus compares descriptions after truncation', () => {
+  const long = 'x'.repeat(200);
+  const previous = previousStatuses([
+    previousSuccess({ description: `${'x'.repeat(137)}...` }),
+  ]);
+  const status = makeStatus({ description: long });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
+});
+
+test('shouldPublishStatus posts when the success description changed', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  const status = makeStatus({ description: 'Security review passed.' });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus posts when a worker run url changed', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  const status = makeStatus({
+    targetUrl: 'https://github.com/test/repo/actions/runs/56',
+  });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus posts when the previous status had a different link or none', () => {
+  const noUrl = previousStatuses([previousSuccess({ target_url: null })]);
+  assert.equal(shouldPublishStatus(noUrl, makeStatus(), RUN_URL), true);
+  const cleared = previousStatuses([previousSuccess()]);
+  const status = makeStatus({ targetUrl: '' });
+  assert.equal(shouldPublishStatus(cleared, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus always posts pending, failure and error even when identical', () => {
+  for (const state of ['pending', 'failure', 'error']) {
+    const previous = previousStatuses([previousSuccess({ state })]);
+    const status = makeStatus({ state, displayState: state });
+    assert.equal(
+      shouldPublishStatus(previous, status, RUN_URL),
+      true,
+      `${state} must be re-posted`,
+    );
+  }
+});
+
+test('shouldPublishStatus posts when the previous state differs', () => {
+  for (const state of ['pending', 'failure', 'error']) {
+    const previous = previousStatuses([previousSuccess({ state })]);
+    assert.equal(shouldPublishStatus(previous, makeStatus(), RUN_URL), true);
+  }
+});
+
+test('shouldPublishStatus posts when there is no previous status for the context', () => {
+  assert.equal(shouldPublishStatus(new Map(), makeStatus(), RUN_URL), true);
+  const other = previousStatuses([
+    previousSuccess({ context: 'pr-flow/finalizer' }),
+  ]);
+  assert.equal(shouldPublishStatus(other, makeStatus(), RUN_URL), true);
+  assert.equal(shouldPublishStatus(undefined, makeStatus(), RUN_URL), true);
+});
+
+function statusVisibility() {
+  return {
+    orderedStatuses: [
+      makeStatus({
+        context: 'pr-flow/ready',
+        state: 'pending',
+        description: 'Waiting.',
+        targetUrl: RUN_URL,
+      }),
+      makeStatus({
+        context: 'pr-flow/code-review',
+        state: 'success',
+        targetUrl: WORKER_URL,
+      }),
+      makeStatus({
+        context: 'pr-flow/kilo-review',
+        state: 'success',
+        description: 'N/A',
+        targetUrl: RUN_URL,
+      }),
+    ],
+  };
+}
+
+test('publishFlowStatuses skips only unchanged successes and keeps order', () => {
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({
+        context: 'pr-flow/ready',
+        state: 'pending',
+        description: 'Waiting.',
+        target_url: OLD_RUN_URL,
+      }),
+      previousSuccess(),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses posts everything when the status read throws', () => {
+  const posted = [];
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => {
+        throw new Error('boom');
+      },
+      publishStatus: (_pr, status) => posted.push(status.context),
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(posted, [
+    'pr-flow/ready',
+    'pr-flow/code-review',
+    'pr-flow/kilo-review',
+  ]);
+});
+
+test('publishFlowStatuses posts everything when the read returns an unexpected shape', () => {
+  for (const unexpected of [null, undefined, {}, 'nope', [null, 42]]) {
+    const posted = [];
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => unexpected,
+      publishStatus: (_pr, status) => posted.push(status.context),
+    });
+    assert.equal(posted.length, 3);
+  }
+});
+
+test('publishFlowStatuses does not read statuses when nothing is a success', () => {
+  let reads = 0;
+  const posted = [];
+  publishFlowStatuses(
+    { ...basePr },
+    { orderedStatuses: [makeStatus({ state: 'pending' })] },
+    {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => {
+        reads += 1;
+        return [];
+      },
+      publishStatus: (_pr, status) => posted.push(status.context),
+    },
+  );
+
+  assert.equal(reads, 0);
+  assert.equal(posted.length, 1);
 });
 
 // ── resolvePrNumber ──────────────────────────────────────────────────
