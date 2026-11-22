@@ -131,7 +131,10 @@ test('run-zai forwards settings isolation to every Claude attempt', (t) => {
   const prepare = params.runs.steps.find(
     (step) => step.id === 'isolated-settings',
   );
-  const generator = prepare.run.split("<<'NODE'\n")[1].split('\nNODE')[0];
+  assert.ok(prepare, 'Missing isolated-settings step in run-claude-params');
+  const heredoc = prepare.run?.match(/<<'NODE'\n([\s\S]+?)\nNODE$/m);
+  assert.ok(heredoc, 'Expected a NODE heredoc in the isolated-settings step');
+  const [, generator] = heredoc;
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-guards-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const settingsFile = path.join(directory, 'settings.json');
