@@ -36,10 +36,7 @@ test('orchestrated profile keeps github-actions and github-actions[bot] distinct
   const logins = resolveAllowedBots(policy, { profile: 'orchestrated' });
   assert.ok(logins.includes('github-actions'));
   assert.ok(logins.includes('github-actions[bot]'));
-  assert.notEqual(
-    logins.includes('github-actions'),
-    logins.includes('github-actions[bot]') && false,
-  );
+  assert.equal(new Set(logins).size, logins.length);
 });
 
 test('interactive profile resolves without the unbracketed github-actions login', () => {
@@ -110,7 +107,10 @@ test('formatAllowedBots is comma-joined without spaces', () => {
 const HARDCODED_BOT_LIST =
   /allowed-bots:\s*(?:\$\{\{[^}]*&&\s*)?['"][^'"]*(?:\[bot\]|github-actions,)[^'"]*['"]/;
 
-const OVERRIDE_ALLOWLIST = new Set([path.normalize('workflows/triage.yml')]);
+const OVERRIDE_ALLOWLIST = new Set([
+  path.normalize('workflows/triage.yml'),
+  path.normalize('workflows/issue-catch-up.yml'),
+]);
 
 test('workflow and action callers use profiles instead of hardcoded bot lists', () => {
   const repoGithub = path.join(__dirname, '..', '..', '..');

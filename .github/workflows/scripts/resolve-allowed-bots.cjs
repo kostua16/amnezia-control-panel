@@ -10,8 +10,6 @@
 const fs = require('fs');
 const path = require('path');
 
-const KNOWN_PROFILES = ['interactive', 'orchestrated'];
-
 function getArg(name, argv = process.argv) {
   const index = argv.indexOf(name);
   if (index === -1) return null;
@@ -94,7 +92,6 @@ function main({ argv = process.argv } = {}) {
 }
 
 module.exports = {
-  KNOWN_PROFILES,
   parseCsv,
   assertExactLogins,
   resolveAllowedBots,

@@ -852,7 +852,10 @@ jobs:
           # maintainer author, so authorization was silently inert. The PAT
           # makes those comments maintainer-authored real triggers.
           github-token: ${{ secrets.GH_PAT }}
-          allowed-bots-profile: orchestrated
+          # Documented single-login exception (documentation.md): scheduled
+          # runs act as github-actions[bot] only, so this PAT-holding agent
+          # keeps the narrowest allowlist instead of a wider profile.
+          allowed-bots: 'github-actions[bot]'
           # Least privilege: this agent holds the PAT and reads untrusted issue
           # bodies — a prompt-injection payload must not be able to reach
           # `gh api`/`gh repo`/`gh workflow` with PAT scope, nor destructive
