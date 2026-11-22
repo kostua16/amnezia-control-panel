@@ -212,5 +212,13 @@ test('skips a label group whose start and end counts differ instead of guessing'
   assert.equal(summary.ambiguous, 1);
   assert.equal(summary.jobsWithBoth, 0);
   assert.equal(summary.mismatched.length, 0);
-  assert.match(format(summary), /1 label groups skipped/);
+  const report = format(summary);
+  assert.ok(
+    report.includes('skipped label groups (unequal start/end counts): 1'),
+  );
+  assert.ok(
+    report.includes(
+      'skipped PR Orchestrator / orchestrate (label orchestrate, run 1.1): 2 starts, 1 ends',
+    ),
+  );
 });

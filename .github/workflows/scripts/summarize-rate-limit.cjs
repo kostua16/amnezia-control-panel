@@ -73,7 +73,12 @@ function summarize(lines) {
     const jobKey = `${entry.run}|${entry.job}|${entry.label ?? ''}`;
     const pairs = jobs.get(jobKey) ?? [];
     jobs.set(jobKey, pairs);
-    const base = { workflow: entry.workflow, job: entry.job };
+    const base = {
+      workflow: entry.workflow,
+      job: entry.job,
+      label: entry.label,
+      run: entry.run,
+    };
     if (entry.phase === 'job-start') {
       pairs.push({ ...base, 'job-start': entry });
     } else if (entry.phase === 'job-end') {
@@ -86,13 +91,16 @@ function summarize(lines) {
   // A label whose job-start and job-end counts differ (an invocation lost its
   // end reading) cannot be paired reliably, so it is counted as ambiguous and
   // never compared: a guess could invent a phantom window mismatch.
-  let ambiguous = 0;
+  const skipped = [];
   const allPairs = [...jobs.values()]
     .filter((pairs) => {
       const starts = pairs.filter((pair) => pair['job-start']).length;
       const ends = pairs.filter((pair) => pair['job-end']).length;
       if (starts === ends) return true;
-      ambiguous += 1;
+      const { workflow, job, label, run } = pairs[0];
+      skipped.push(
+        `${workflow} / ${job} (label ${label}, run ${run}): ${starts} starts, ${ends} ends`,
+      );
       return false;
     })
     .flat();
@@ -110,7 +118,8 @@ function summarize(lines) {
   return {
     readings: entries.length,
     withoutWindow,
-    ambiguous,
+    ambiguous: skipped.length,
+    skipped,
     windows: [...windows.values()].sort((a, b) =>
       a.reset.localeCompare(b.reset),
     ),
@@ -137,9 +146,11 @@ function format(summary) {
     `jobs with start+end: ${summary.jobsWithBoth}, ` +
       `start and end from a different window/token: ${summary.mismatched.length}` +
       (summary.ambiguous
-        ? `, ${summary.ambiguous} label groups skipped (unequal start/end counts)`
+        ? `, skipped label groups (unequal start/end counts): ${summary.ambiguous}`
         : ''),
   );
+  for (const description of summary.skipped)
+    out.push(`  skipped ${description}`);
   for (const job of summary.mismatched) {
     const start = job['job-start'];
     const end = job['job-end'];
