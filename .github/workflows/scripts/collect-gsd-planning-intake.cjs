@@ -111,6 +111,10 @@ function frontmatterStatus(content) {
 // a stemmed one (`<stem>-PLAN.md`, `<stem>_PLAN.md`) owns `<stem>-SUMMARY.md`.
 // A directory-wide lookup lets one artifact's summary retire its neighbours:
 // `.planning/quick/` itself is shared by every `deferred-issue-<n>-plan.md`.
+// When a stemmed plan has no summary of its own, a plain `SUMMARY.md` in the
+// directory still counts unless a stemless plan there owns it: an unowned
+// summary is this plan's completion record under a drifted name, and ignoring
+// it would re-import finished work as a no-op execution.
 function siblingSummaryPaths(filePath) {
   const basename = path.basename(filePath);
   const stemMatch = /^proposal\.md$/i.test(basename)
@@ -126,6 +130,14 @@ function siblingSummaryPaths(filePath) {
     names = fs.readdirSync(dir);
   } catch {
     return [];
+  }
+  const lowered = names.map((name) => name.toLowerCase());
+  if (
+    stem &&
+    !lowered.some((name) => owned.includes(name)) &&
+    !lowered.some((name) => name === 'plan.md' || name === 'proposal.md')
+  ) {
+    owned.push('summary.md');
   }
   return names
     .filter((name) => owned.includes(name.toLowerCase()))
@@ -233,7 +245,29 @@ function collectImportedSources(queueDir = DEFAULT_QUEUE_DIR) {
     const hash = String(row.source_artifact_sha256 ?? '');
     const sourcePath = String(row.source_artifact ?? '');
     const slot = String(row.plan ?? '').match(/^999-(\d+)$/);
-    if (/^[a-f0-9]+$/i.test(hash)) imported.hashes.add(hash);
+    // The ledger is hand-maintained, so a row whose fields would silently lose
+    // their retirement effect (a digest that is not hex, a plan that is not a
+    // `999-<n>` slot) is flagged in the run log instead of quietly letting the
+    // source be re-imported or the slot be handed out twice. stderr keeps
+    // stdout pure JSON for the workflow's output redirect.
+    const problems = [];
+    if (!/^[a-f0-9]+$/i.test(hash)) {
+      problems.push('source_artifact_sha256 is not a hex digest');
+    }
+    if (!sourcePath) problems.push('source_artifact is missing');
+    if (!slot) {
+      problems.push(
+        `plan ${JSON.stringify(String(row.plan ?? ''))} is not a 999-<n> slot`,
+      );
+    }
+    if (problems.length > 0) {
+      process.stderr.write(
+        `::warning title=${COMPLETED_SOURCES_FILE}::malformed ledger row - ${problems.join('; ')}\n`,
+      );
+    }
+    // Candidate digests always come from sha256() (lowercase); normalise so a
+    // hand-written uppercase entry still retires its source.
+    if (/^[a-f0-9]+$/i.test(hash)) imported.hashes.add(hash.toLowerCase());
     if (sourcePath) imported.paths.add(normalizeRepoPath(sourcePath));
     if (slot) {
       imported.maxPlanNumber = Math.max(

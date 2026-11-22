@@ -609,3 +609,173 @@ test('runCollector ignores a malformed completed-sources ledger', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('runCollector keeps an artifact whose sibling SUMMARY is not terminal', () => {
+  // In-flight work has no completion record: a SUMMARY still reporting
+  // `in-progress` must never retire the artifact beside it, whatever the
+  // status detection does with the terminal-status set.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const dir = path.join(quickDir, '260611-wip');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'PLAN.md'),
+      '---\nstatus: in-progress\n---\n# WIP\n',
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(dir, 'PLAN-SUMMARY.md'),
+      '---\nstatus: in-progress\n---\n# Partial\n',
+      'utf8',
+    );
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.has_candidate, true);
+    assert.equal(result.skipped.length, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a stemmed plan falls back to an unowned plain SUMMARY beside it', () => {
+  // A rename or generator drift can leave `<stem>-PLAN.md` with its completion
+  // record as a plain `SUMMARY.md`. With no stemless plan in the directory to
+  // own that summary, it is this plan's record and must retire it; otherwise
+  // the completed artifact is re-imported and the no-op persistence loop
+  // returns without any warning.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const dir = path.join(quickDir, '260901-drift');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, '260901-drift-PLAN.md'),
+      '---\nstatus: ready\n---\n# Drifted\n',
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(dir, 'SUMMARY.md'),
+      '---\nstatus: complete\n---\n# Done\n',
+      'utf8',
+    );
+    writeCandidate(quickDir, '260902-next', '# Next\n');
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.has_candidate, true);
+    assert.match(result.selected[0].path, /260902-next\/proposal\.md$/);
+    assert.equal(result.skipped.length, 1);
+    assert.match(result.skipped[0].path, /260901-drift-PLAN\.md$/);
+    assert.equal(result.skipped[0].reason, 'source-complete');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a completed-sources row with an uppercase hash retires its source without warning', () => {
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const dir = path.join(quickDir, '260611-done');
+    fs.mkdirSync(dir, { recursive: true });
+    const artifact = path.join(dir, 'PLAN.md');
+    const content = '---\nstatus: ready\n---\n# Done\n';
+    fs.writeFileSync(artifact, content, 'utf8');
+    writeCandidate(quickDir, '260612-next', '# Next\n');
+    fs.writeFileSync(
+      path.join(queueDir, COMPLETED_SOURCES_FILE),
+      JSON.stringify([
+        {
+          plan: '999-116',
+          source_artifact: artifact,
+          // Candidate digests come from sha256() (lowercase); a hand-written
+          // uppercase entry must still match after normalisation.
+          source_artifact_sha256: sha256(content).toUpperCase(),
+        },
+      ]),
+      'utf8',
+    );
+
+    const warnings = [];
+    const originalWrite = process.stderr.write;
+    process.stderr.write = (chunk) => {
+      warnings.push(String(chunk));
+      return true;
+    };
+    let result;
+    try {
+      result = runCollector({
+        quickDir,
+        queueDir,
+        openPrsFile: '',
+        write: false,
+        maxPlans: 1,
+      });
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+
+    assert.match(result.selected[0].path, /260612-next\/proposal\.md$/);
+    assert.equal(result.skipped[0].reason, 'already-imported-hash');
+    assert.equal(
+      warnings.join('').includes('::warning'),
+      false,
+      'a well-formed row must not warn',
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a malformed completed-sources row warns and leaves its slot reusable', () => {
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    writeCandidate(quickDir, '260611-next', '# Next\n');
+    fs.writeFileSync(
+      path.join(queueDir, COMPLETED_SOURCES_FILE),
+      JSON.stringify([{ plan: '116', source_artifact_sha256: 'not-a-hash' }]),
+      'utf8',
+    );
+
+    const warnings = [];
+    const originalWrite = process.stderr.write;
+    process.stderr.write = (chunk) => {
+      warnings.push(String(chunk));
+      return true;
+    };
+    let result;
+    try {
+      result = runCollector({
+        quickDir,
+        queueDir,
+        openPrsFile: '',
+        write: true,
+        maxPlans: 1,
+      });
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+
+    assert.equal(result.has_candidate, true);
+    // The unparseable slot must not consume 999-116: numbering starts at 001.
+    assert.equal(result.selected[0].plan, '999-001');
+    const emitted = warnings.join('');
+    assert.match(emitted, /::warning title=completed-sources\.json/);
+    assert.match(emitted, /is not a 999-<n> slot/);
+    assert.match(emitted, /is not a hex digest/);
+    assert.match(emitted, /source_artifact is missing/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
