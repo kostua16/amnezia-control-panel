@@ -137,3 +137,43 @@ test('dry-run validation reports dry-run mode and never prints closed', () => {
   assert.match(md, /"minAgeHours": 23/);
   assert.match(md, /"maxGroups": 1/);
 });
+
+test('header counts the rendered groups, not only the selected list', () => {
+  const selected = {
+    group_id: 'app-code-1',
+    source_prs: [1],
+    disposition: 'selected',
+  };
+  const unsafe = {
+    group_id: 'workflow-2',
+    source_prs: [2],
+    disposition: 'unsafe',
+  };
+  const header = (md) => /_Selected: [^\n]*_/.exec(md)[0];
+
+  // allGroups alone: the header must still count the selected row it renders.
+  assert.equal(
+    header(renderMergePrReport({ allGroups: [selected, unsafe] })),
+    '_Selected: 1 · Unsafe: 1 · Filtered: 0 · Capped: 0_',
+  );
+  // Drift between the lists must not desynchronize the header and the table.
+  assert.equal(
+    header(
+      renderMergePrReport({
+        selectedGroups: [selected, selected],
+        allGroups: [selected, unsafe],
+      }),
+    ),
+    '_Selected: 1 · Unsafe: 1 · Filtered: 0 · Capped: 0_',
+  );
+  // Groups without a disposition fall back to the selected list.
+  assert.equal(
+    header(
+      renderMergePrReport({
+        selectedGroups: [{ id: 'app-code-1', source_prs: [1] }],
+        skippedGroups: [{ id: 'workflow-2', source_prs: [2] }],
+      }),
+    ),
+    '_Selected: 1 · Unsafe: 0 · Filtered: 0 · Capped: 0_',
+  );
+});

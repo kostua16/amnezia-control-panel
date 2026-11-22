@@ -93,7 +93,13 @@ function renderMergePrReport({
     skippedGroups,
     allGroups,
   });
-  const selectedCount = selectedGroups.length;
+  // Header counts must describe the same rows as the table: count the
+  // disposition on the rendered groups and fall back to the selected list
+  // only for payloads whose groups carry no disposition.
+  const hasDispositions = groups.some((g) => g.disposition);
+  const selectedCount = hasDispositions
+    ? groups.filter((g) => g.disposition === 'selected').length
+    : selectedGroups.length;
   const unsafeCount = groups.filter((g) => g.disposition === 'unsafe').length;
   const filteredCount = groups.filter(
     (g) => g.disposition === 'filtered',

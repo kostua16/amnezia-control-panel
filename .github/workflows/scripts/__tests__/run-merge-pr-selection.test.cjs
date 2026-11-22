@@ -1,11 +1,17 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const { selectStalePrs, groupStalePrs } = require('../merge-pr-logic.cjs');
 const {
   DECISION_CODES,
   finalizeStalePrSelection,
+  getArg,
+  isDryRun,
 } = require('../run-merge-pr-selection.cjs');
 const { renderMergePrReport } = require('../upsert-merge-pr-report.cjs');
 
@@ -256,4 +262,93 @@ test('max_groups cap defers extra consolidate groups', () => {
   assert.equal(result.capped_deferred[0].consolidation_eligible, true);
   assert.equal(result.validation.maxGroups, 1);
   assert.equal(result.validation.cappedDeferredCount, 1);
+});
+
+test('--dry-run parsing fails closed to dry-run', () => {
+  const argv = (...args) => ['node', 'run-merge-pr-selection.cjs', ...args];
+  // A bare --dry-run followed by another flag must not adopt it as the value.
+  assert.equal(
+    getArg('--dry-run', 'true', argv('--dry-run', '--out-dir', '.')),
+    'true',
+  );
+  assert.equal(getArg('--dry-run', 'true', argv('--max-groups', '1')), 'true');
+  assert.equal(getArg('--dry-run', 'true', argv('--dry-run')), 'true');
+  assert.equal(
+    getArg('--dry-run', 'true', argv('--dry-run', 'false')),
+    'false',
+  );
+  // Only an explicit `false` enables the write path, as in the report step.
+  for (const value of [true, 'true', 'TRUE', '1', '', '--out-dir', undefined]) {
+    assert.equal(isDryRun(value), true, `isDryRun(${String(value)})`);
+  }
+  assert.equal(isDryRun(false), false);
+  assert.equal(isDryRun('false'), false);
+});
+
+test('CLI stays in dry-run unless --dry-run is an explicit false', () => {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-pr-selection-'));
+  try {
+    const validationDryRun = (...args) => {
+      execFileSync(
+        process.execPath,
+        [
+          path.join(__dirname, '..', 'run-merge-pr-selection.cjs'),
+          '--in',
+          '-',
+          '--out-dir',
+          outDir,
+          ...args,
+        ],
+        { encoding: 'utf8', input: '[]' },
+      );
+      const { validation } = JSON.parse(
+        fs.readFileSync(path.join(outDir, 'merge-pr-groups.json'), 'utf8'),
+      );
+      return validation.dryRun;
+    };
+
+    assert.equal(validationDryRun(), true);
+    // The flag must not adopt the flag after it as its value.
+    assert.equal(validationDryRun('--dry-run', '--out-dir', outDir), true);
+    assert.equal(validationDryRun('--dry-run', 'TRUE'), true);
+    assert.equal(validationDryRun('--dry-run', 'false'), false);
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('unrecognized recommended_action is unsafe, never consolidation-eligible', () => {
+  const groupWith = (recommended_action) => ({
+    id: 'app-code-70',
+    kind: 'app-code',
+    conflict_risk: 'low',
+    source_prs: [70],
+    recommended_action,
+    rejection_reason: null,
+  });
+
+  for (const action of ['needs-human', undefined]) {
+    const result = finalizeStalePrSelection({
+      groups: [groupWith(action)],
+      stalePrCount: 1,
+    });
+    assert.equal(result.selected.length, 0);
+    const group = result.unsafe[0];
+    assert.equal(group.disposition, 'unsafe');
+    assert.equal(group.consolidation_eligible, false);
+    assert.equal(group.closure_policy, 'not-eligible');
+    assert.equal(
+      group.decision_code,
+      DECISION_CODES.MANUAL_REVIEW_UNKNOWN_ACTION,
+    );
+    assert.match(group.reason, /not auto-consolidated/);
+  }
+
+  // A filtered unknown action keeps the unrecognized-action cause.
+  const filtered = finalizeStalePrSelection({
+    groups: [groupWith('needs-human')],
+    groupFilter: 'other-group',
+  }).filtered[0];
+  assert.equal(filtered.decision_code, DECISION_CODES.FILTERED_OUT);
+  assert.match(filtered.reason, /group_filter match; underlying: Unrecognized/);
 });

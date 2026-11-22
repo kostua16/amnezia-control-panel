@@ -13,6 +13,7 @@ const DECISION_CODES = {
   REBASE_FIRST_CONFLICT: 'REBASE_FIRST_CONFLICT',
   MANUAL_REVIEW_MULTI_CONFLICT: 'MANUAL_REVIEW_MULTI_CONFLICT',
   MANUAL_REVIEW_DEPENDENCY: 'MANUAL_REVIEW_DEPENDENCY',
+  MANUAL_REVIEW_UNKNOWN_ACTION: 'MANUAL_REVIEW_UNKNOWN_ACTION',
   REPORT_ONLY_EMPTY: 'REPORT_ONLY_EMPTY',
   FILTERED_OUT: 'FILTERED_OUT',
 };
@@ -22,13 +23,21 @@ const FILTERED_REASON = 'Group excluded by exact group_filter match';
 const DRY_RUN_CLOSURE = 'dry-run; write path deferred';
 const WRITE_DEFERRED_CLOSURE = 'write path deferred; closure not attempted';
 
-function getArg(name, fallback = null) {
-  const index = process.argv.indexOf(name);
-  return index === -1 ? fallback : (process.argv[index + 1] ?? fallback);
+function getArg(name, fallback = null, argv = process.argv) {
+  const index = argv.indexOf(name);
+  if (index === -1) return fallback;
+  // The token after a flag is its value only when it is not another flag, so
+  // `--dry-run --out-dir .` falls back instead of adopting `--out-dir`.
+  const value = argv[index + 1];
+  return typeof value === 'string' && !value.startsWith('--')
+    ? value
+    : fallback;
 }
 
-function isTrue(value) {
-  return value === true || value === 'true';
+// Mirrors the report step (`EFFECTIVE_DRY_RUN !== 'false'`): dry-run is the
+// fail-safe default, so only an explicit `false` enables the write path.
+function isDryRun(value) {
+  return value !== false && value !== 'false';
 }
 
 function readInput(inPath) {
@@ -83,10 +92,24 @@ function decisionForAction(group) {
       consolidation_eligible: false,
     };
   }
+  if (action === 'consolidate') {
+    return {
+      decision_code: DECISION_CODES.CONSOLIDATE_SELECTED,
+      reason: 'Kind-strict compatible group is eligible for consolidation',
+      consolidation_eligible: true,
+    };
+  }
+  // classifyGroups buckets every non-consolidate action as unsafe, so an
+  // action this classifier does not recognize must be described as not
+  // eligible rather than as consolidation-eligible.
   return {
-    decision_code: DECISION_CODES.CONSOLIDATE_SELECTED,
-    reason: 'Kind-strict compatible group is eligible for consolidation',
-    consolidation_eligible: true,
+    decision_code: DECISION_CODES.MANUAL_REVIEW_UNKNOWN_ACTION,
+    reason:
+      group.rejection_reason ||
+      `Unrecognized recommended_action ${JSON.stringify(
+        action,
+      )} is not auto-consolidated`,
+    consolidation_eligible: false,
   };
 }
 
@@ -224,7 +247,7 @@ function main() {
   );
   const groupFilter = getArg('--group-filter', '');
   const now = getArg('--now');
-  const dryRun = isTrue(getArg('--dry-run', 'true'));
+  const dryRun = isDryRun(getArg('--dry-run', 'true'));
 
   const options = { minAgeHours };
   if (now) options.now = new Date(now);
@@ -287,6 +310,8 @@ if (require.main === module) {
 
 module.exports = {
   DECISION_CODES,
+  getArg,
+  isDryRun,
   readInput,
   enrichGroup,
   finalizeStalePrSelection,
