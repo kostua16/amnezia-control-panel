@@ -4,11 +4,13 @@ const assert = require('node:assert/strict');
 
 const {
   MAX_PAGES_PER_CONNECTION,
+  REVIEW_INPUTS_QUERY,
   ReviewInputsUnavailable,
   fetchReviewInputsGraphql,
 } = require('../lib/review-inputs-graphql.cjs');
 const { isKiloUser, KILO_MARKER } = require('../lib/kilo.cjs');
 const { evaluateExternalReview } = require('../evaluate-external-review.cjs');
+const { normalizeInputs } = require('../compare-review-input-sources.cjs');
 const {
   collectExternalReview,
   resolveReviewSource,
@@ -153,6 +155,13 @@ test('a human account named kilo-code-bot is not a trusted Kilo signal', () => {
   assert.equal(result.state, 'pending');
 });
 
+test('the review-thread query requests the original inline comment commit', () => {
+  assert.match(
+    REVIEW_INPUTS_QUERY,
+    /reviewThreads\([^)]*\)[\s\S]*?comments\([^)]*\)\s*\{\s*nodes\s*\{[^\n]*originalCommit\s*\{\s*oid\s*\}/,
+  );
+});
+
 for (const [name, kiloBody, inline, expected, originalCommit] of [
   ['passed', KILO_PASSED, null, 'passed'],
   ['blocked by summary', KILO_BLOCKED, null, 'blocked'],
@@ -248,6 +257,18 @@ for (const [name, kiloBody, inline, expected, originalCommit] of [
     const viaRest = evaluateExternalReview({ ...args, ...restInputs });
     assert.equal(viaRest.state, expected);
     assert.deepEqual(viaGraphql, viaRest);
+    const normalizedRest = normalizeInputs(restInputs);
+    const normalizedGraphql = normalizeInputs(graphqlInputs);
+    assert.deepEqual(
+      normalizedGraphql.reviewComments,
+      normalizedRest.reviewComments,
+    );
+    if (inline) {
+      assert.equal(
+        normalizedGraphql.reviewComments[0].original_commit_id,
+        originalCommit ?? null,
+      );
+    }
   });
 }
 

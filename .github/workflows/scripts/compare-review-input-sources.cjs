@@ -62,6 +62,7 @@ function normalizeInputs(inputs) {
       login: login(c),
       body: c.body ?? '',
       commit_id: c.commit_id ?? null,
+      original_commit_id: c.original_commit_id ?? null,
       ...time(c),
     })),
     reviews: [...inputs.reviews].sort(byId).map((r) => ({
