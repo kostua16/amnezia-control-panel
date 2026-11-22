@@ -26,8 +26,17 @@ function login(item) {
   return item.user?.login ?? null;
 }
 
+// Mirrors the field list of `isKiloCheck` in evaluate-external-review.cjs
+// (including the camelCase `workflowName`), so the verdict-relevant filter
+// cannot under-match the evaluator this script certifies.
 function isKiloCheck(check) {
-  return [check.name, check.app?.slug, check.app?.name, check.workflow_name]
+  return [
+    check.name,
+    check.app?.slug,
+    check.app?.name,
+    check.workflowName,
+    check.workflow_name,
+  ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
@@ -67,6 +76,7 @@ function normalizeInputs(inputs) {
         conclusion: c.conclusion ?? null,
         app: c.app ? { slug: c.app.slug, name: c.app.name } : null,
         workflow_name: c.workflow_name ?? null,
+        workflowName: c.workflowName ?? null,
       }))
       .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
     statuses: inputs.statuses
