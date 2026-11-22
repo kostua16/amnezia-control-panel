@@ -110,14 +110,29 @@ function findExistingComment(
 // the refreshed report appears as the latest PR timeline comment. Callers can
 // opt out with replaceExisting: false when they need to preserve comment URLs.
 // `marker` identifies which sticky comment family to update.
+//
+// `skipIfUnchanged` (default false, so every other caller keeps replacing) makes
+// an existing comment that already says the same thing a no-op: replacing it
+// costs a POST and a DELETE and fires a new issue_comment event, all for an
+// identical timeline entry. `sameBody(existingBody, body)` decides "the same
+// thing" for bodies that carry a volatile token (e.g. the current run URL).
 function upsertComment({
   repo,
   prNumber,
   marker,
   body,
   replaceExisting = true,
+  skipIfUnchanged = false,
+  sameBody = (existingBody, nextBody) => existingBody === nextBody,
 }) {
   const existing = findExistingComment(listComments(repo, prNumber), marker);
+  if (
+    skipIfUnchanged &&
+    existing &&
+    sameBody(String(existing.body ?? ''), body)
+  ) {
+    return;
+  }
   const payloadPath = writeTempJson('sticky-comment', { body });
 
   try {

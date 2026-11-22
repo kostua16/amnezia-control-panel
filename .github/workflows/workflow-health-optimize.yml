@@ -27,9 +27,18 @@ jobs:
     name: Fleet back-pressure gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The gate only reads (gh pr list); do not hand it the workflow's write scopes.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
     steps:
+      - name: Checkout for fleet gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
       - uses: ./.github/actions/fleet-back-pressure
         id: fleet_check
         with:
@@ -50,6 +59,12 @@ jobs:
       starvation-alert: ${{ steps.collect.outputs.starvation_alert }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: workflow-health-collect-runs
+          report-at-job-end: 'true'
 
       - name: Collect workflow runs from past hour
         id: collect
@@ -308,6 +323,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          label: workflow-health-detect-flaky
+          report-at-job-end: 'true'
+
       - name: Detect flaky workflows across hours (WHO-E04)
         id: flaky
         shell: bash
@@ -328,6 +349,12 @@ jobs:
     if: needs.collect-runs.outputs.starvation-alert == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          label: workflow-health-queue-starvation
+          report-at-job-end: 'true'
 
       - name: File queue starvation alert (WHO-E03)
         shell: bash
@@ -383,6 +410,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
+          model: 'opus'
           max-turns: '${{ env.MAX_TURNS }}'
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(echo:*),Bash(rtk:*)'
           prompt: |
@@ -527,6 +555,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          label: workflow-health-blocked-gate
+          report-at-job-end: 'true'
+
       - name: Track blocked optimization gate
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -556,6 +590,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: workflow-health-report-failure
+          report-at-job-end: 'true'
 
       - name: Report workflow health check failure
         uses: ./.github/actions/report-failure

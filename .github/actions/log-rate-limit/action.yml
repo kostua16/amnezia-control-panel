@@ -1,0 +1,19 @@
+name: 'Log GitHub API Rate Limit'
+description: 'Log the remaining GitHub REST quota of a token as one greppable RATE_LIMIT line (now, and optionally again when the job ends) so exhaustion can be attributed to a workflow/job. Never fails the job; GET /rate_limit does not consume quota.'
+
+inputs:
+  github-token:
+    description: 'Token whose quota is reported (the token the job actually uses for API calls)'
+    required: true
+  label:
+    description: 'Call-site label added to the log line (defaults to the job id)'
+    default: ''
+  report-at-job-end:
+    description: 'When true, also log the quota in the post step at the end of the job (even if the job failed or was cancelled)'
+    default: 'false'
+
+runs:
+  using: node24
+  main: main.cjs
+  post: post.cjs
+  post-if: always()

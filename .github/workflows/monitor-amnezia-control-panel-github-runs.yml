@@ -46,13 +46,28 @@ jobs:
     name: Fleet back-pressure gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The gate only reads (gh pr list); do not hand it the workflow's write scopes.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
     steps:
+      # Pin to main like the Checkout main step below so a non-default
+      # workflow_dispatch ref cannot run branch-local gate code. The ref
+      # is forwarded into the composite so its internal checkout cannot
+      # re-check out github.ref and re-import branch-local scripts.
+      - name: Checkout main for fleet gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+
       - uses: ./.github/actions/fleet-back-pressure
         id: fleet_check
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
 
   monitor-runs:
     needs: [fleet-gate]
@@ -234,6 +249,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
+          model: 'opus'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           claude-full-output: 'false'

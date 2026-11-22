@@ -10,9 +10,11 @@ const {
   getRequiredCheckStatus,
 } = require('./required-check-evidence.cjs');
 const { evaluateExternalReview } = require('./evaluate-external-review.cjs');
+const { fetchReviewInputsGraphql } = require('./lib/review-inputs-graphql.cjs');
 // Shared sticky-comment create-or-update helper (single source for the
 // marker-based PR comment upsert used across review/size/orchestration scripts).
 const { upsertComment } = require('./lib/sticky-comment.cjs');
+const { createWorkerRunsLoader } = require('./lib/worker-runs-by-head.cjs');
 
 const TIMING_NAMES = [
   'resolve-pr',
@@ -1287,6 +1289,47 @@ function renderFlowComment({
   ].join('\n');
 }
 
+const RUN_LINK_AT_ROW_END = /\[run\]\(([^)]*)\) \|$/;
+
+function workerRowKey(line) {
+  return line.startsWith('| ') ? line.slice(2, line.indexOf(' | ', 2)) : null;
+}
+
+// Every wake renders a different link for workers that have no run of their
+// own (it falls back to the orchestrator run URL), so a freshly rendered body
+// is never byte-identical to the stored one even when nothing changed. Rows
+// whose new link is the current run URL therefore keep the stored link; every
+// other difference (state, reason, a changed worker-run link, ...) is kept
+// as is and still counts as a change. A stored row with no link at all does
+// not adopt the volatile one for free: gaining a link is a real change.
+function stabilizeRunLinks(existingBody, newBody, currentRunUrl) {
+  if (!currentRunUrl) return newBody;
+  const storedLinkByRow = new Map();
+  for (const line of String(existingBody).split('\n')) {
+    const key = workerRowKey(line);
+    const match = key === null ? null : line.match(RUN_LINK_AT_ROW_END);
+    if (match) storedLinkByRow.set(key, match[1]);
+  }
+
+  return newBody
+    .split('\n')
+    .map((line) => {
+      const match = line.match(RUN_LINK_AT_ROW_END);
+      if (!match || match[1] !== currentRunUrl) return line;
+      const storedLink = storedLinkByRow.get(workerRowKey(line));
+      return storedLink === undefined
+        ? line
+        : line.replace(RUN_LINK_AT_ROW_END, () => `[run](${storedLink}) |`);
+    })
+    .join('\n');
+}
+
+// GitHub may hand a stored body back with CRLF line endings.
+function flowCommentUnchanged(existingBody, newBody, currentRunUrl) {
+  const stored = existingBody.replace(/\r\n/g, '\n');
+  return stored === stabilizeRunLinks(stored, newBody, currentRunUrl);
+}
+
 function publishCommitStatus(pr, status) {
   const repo = getRepoSlug();
   const payloadFile = writeTempJson('pr-flow-status', {
@@ -1310,18 +1353,134 @@ function publishCommitStatus(pr, status) {
   }
 }
 
-function publishFlowStatuses(pr, visibility) {
-  for (const status of visibility.orderedStatuses) {
-    publishCommitStatus(pr, status);
+// Status ids are monotonic but may arrive as strings, and a missing id
+// (null, undefined, '') coerces to 0 via Number — guard the raw value
+// before coercing so an absent id is never treated as a real id of 0.
+function usableStatusId(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const id = Number(raw);
+  return Number.isFinite(id) ? id : null;
+}
+
+// Compare duplicate entries for the same context without trusting array
+// order. A usable created_at outranks an unusable one, so a missing or
+// malformed timestamp cannot pin the first array entry. Equal timestamps
+// (GitHub has second granularity, so overlapping prt/wake runs on the same
+// head can tie) and pairs with no usable timestamp both fall back to the
+// monotonic status id, where a usable id likewise outranks an unusable one.
+// Only when neither signal is usable does the first array entry stay.
+function isNewerStatusEntry(entry, current) {
+  const entryAt = Date.parse(entry.created_at ?? '');
+  const currentAt = Date.parse(current.created_at ?? '');
+  const entryUsable = !Number.isNaN(entryAt);
+  const currentUsable = !Number.isNaN(currentAt);
+  if (entryUsable !== currentUsable) return entryUsable;
+  if (entryUsable && entryAt !== currentAt) return entryAt > currentAt;
+  const entryId = usableStatusId(entry.id);
+  const currentId = usableStatusId(current.id);
+  if ((entryId === null) !== (currentId === null)) return entryId !== null;
+  if (entryId !== null && entryId !== currentId) return entryId > currentId;
+  return false;
+}
+
+// Index the latest status per context explicitly by created_at (tie-broken
+// on the status id) instead of trusting array order: a caller passing full
+// history (commits/{sha}/statuses) would make last-wins pick the oldest
+// duplicate, which could suppress a needed success POST while the real
+// latest status is a failure.
+function indexStatusesByContext(statuses) {
+  const byContext = new Map();
+  if (!Array.isArray(statuses)) return byContext;
+  for (const entry of statuses) {
+    if (entry && typeof entry.context === 'string') {
+      const current = byContext.get(entry.context);
+      if (!current || isNewerStatusEntry(entry, current)) {
+        byContext.set(entry.context, entry);
+      }
+    }
+  }
+  return byContext;
+}
+
+// Only an unchanged `success` is safe to skip. The watchdog and the Kilo
+// review timeout read the age and history of pending/failure/error statuses,
+// so those are re-posted on every wake to keep refreshing their timestamps.
+function shouldPublishStatus(
+  previousStatusByContext,
+  status,
+  currentRunUrl = getCurrentRunUrl(),
+) {
+  const previous = previousStatusByContext?.get?.(status.context);
+  if (!previous) return true;
+  if (String(status.state).toLowerCase() !== 'success') return true;
+  if (String(previous.state).toLowerCase() !== 'success') return true;
+  if (
+    String(previous.description ?? '') !==
+    truncateStatusDescription(status.description)
+  ) {
+    return true;
+  }
+  const previousUrl = String(previous.target_url ?? '');
+  const nextUrl = String(status.targetUrl ?? '');
+  // The orchestrator run URL changes on every wake, so requiring it to match
+  // would make the skip never apply to statuses that link to the current run.
+  // When the new link is that volatile URL the previous link is kept instead:
+  // an older worker-run link stays in place (a run URL is a run URL, and the
+  // worker link is more specific than the orchestrator one), while a status
+  // that had no link yet is posted once so it actually gains the link.
+  const nextUrlIsCurrentRun = nextUrl !== '' && nextUrl === currentRunUrl;
+  if (nextUrlIsCurrentRun && previousUrl === '') return true;
+  return !(nextUrlIsCurrentRun || previousUrl === nextUrl);
+}
+
+function publishFlowStatuses(
+  pr,
+  visibility,
+  {
+    readStatuses = fetchCommitStatuses,
+    publishStatus = publishCommitStatus,
+    currentRunUrl = getCurrentRunUrl(),
+  } = {},
+) {
+  const statuses = visibility.orderedStatuses;
+  let previousByContext = new Map();
+  // Nothing can be skipped unless some status is a success, so avoid the
+  // extra read otherwise.
+  if (statuses.some((s) => String(s.state).toLowerCase() === 'success')) {
+    try {
+      // Read at publish time rather than reusing a snapshot from earlier in
+      // the wake (e.g. the external-review evaluation): prt and wake runs use
+      // separate concurrency groups, so another orchestrator run for the same
+      // head may have posted statuses in between.
+      previousByContext = indexStatusesByContext(readStatuses(pr.headSha));
+    } catch (error) {
+      console.error(
+        `Could not read current commit statuses; posting all: ${formatCommandError(error)}`,
+      );
+    }
+  }
+  for (const status of statuses) {
+    if (shouldPublishStatus(previousByContext, status, currentRunUrl)) {
+      publishStatus(pr, status);
+    }
   }
 }
 
-function upsertFlowComment(pr, body) {
-  upsertComment({
+// The wake rewrites the comment only when its content changed: replacing it is
+// a POST plus a DELETE and a new issue_comment event every time.
+function upsertFlowComment(
+  pr,
+  body,
+  { upsert = upsertComment, currentRunUrl = getCurrentRunUrl() } = {},
+) {
+  upsert({
     repo: getRepoSlug(),
     prNumber: pr.number,
     marker: COMMENT_MARKER,
     body,
+    skipIfUnchanged: true,
+    sameBody: (existingBody, nextBody) =>
+      flowCommentUnchanged(existingBody, nextBody, currentRunUrl),
   });
 }
 
@@ -1362,7 +1521,7 @@ function fetchCommitStatuses(headSha) {
   if (!headSha) return [];
   const response = runJson(
     'gh',
-    ['api', `repos/${getRepoSlug()}/commits/${headSha}/status`],
+    ['api', `repos/${getRepoSlug()}/commits/${headSha}/status?per_page=100`],
     { statuses: [] },
   );
   return response?.statuses ?? [];
@@ -1378,27 +1537,102 @@ function fetchCheckRuns(headSha) {
   return response?.check_runs ?? [];
 }
 
-function fetchHeadCommittedAt(headSha) {
+// `strict` drops the empty fallback so a failed commit read throws instead of
+// reading as "date unknown". The orchestrator wants the fallback (an unknown
+// date only sends the worker-run lookup to the per-workflow path), but the
+// parity comparison must not classify a failed read as that legitimate case.
+function fetchHeadCommittedAt(headSha, { strict = false } = {}) {
   if (!headSha) return '';
   const response = runJson(
     'gh',
     ['api', `repos/${getRepoSlug()}/commits/${headSha}`],
-    null,
+    strict ? undefined : null,
   );
   return (
     response?.commit?.committer?.date ?? response?.commit?.author?.date ?? ''
   );
 }
 
-function collectExternalReview(pr) {
-  return evaluateExternalReview({
-    pr,
+// Which transport feeds the Kilo review evaluation. GraphQL has its own quota
+// bucket, so it spares the (scarcer) REST one; REST stays the reference path
+// and the fallback. A repository variable overrides the default without a
+// commit: `rest` is the rollback switch.
+const DEFAULT_REVIEW_SOURCE = 'graphql';
+
+function resolveReviewSource(value = process.env.PR_FLOW_REVIEW_SOURCE) {
+  const requested = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (requested === '') return DEFAULT_REVIEW_SOURCE;
+  if (requested === 'graphql' || requested === 'rest') return requested;
+  // A typo must never silently enable the newer path.
+  console.warn(
+    `orchestrate-pr-flow: unknown PR_FLOW_REVIEW_SOURCE "${requested}", using rest.`,
+  );
+  return 'rest';
+}
+
+// The -f vs -F split is load-bearing: the query declares `: Boolean!` /
+// `: Int!` variables, and a boolean or number routed through -f would be sent
+// as the JSON string "false"/"7", which GraphQL rejects on every call.
+function buildGraphqlArgs(query, variables) {
+  const args = ['api', 'graphql', '-f', `query=${query}`];
+  for (const [key, value] of Object.entries(variables)) {
+    if (value === null || value === undefined) continue;
+    // -f keeps strings (cursors) literal; -F types numbers and booleans.
+    args.push(typeof value === 'string' ? '-f' : '-F', `${key}=${value}`);
+  }
+  return args;
+}
+
+function runGraphqlQuery(query, variables) {
+  return JSON.parse(
+    run('gh', buildGraphqlArgs(query, variables), { retry: true }),
+  );
+}
+
+function fetchRestReviewInputs(pr) {
+  return {
     comments: fetchPrIssueComments(pr.number),
     reviewComments: fetchPrReviewComments(pr.number),
     reviews: fetchPrReviews(pr.number),
     checkRuns: fetchCheckRuns(pr.headSha),
     statuses: fetchCommitStatuses(pr.headSha),
+  };
+}
+
+function fetchGraphqlReviewInputs(pr) {
+  const { cost, ...inputs } = fetchReviewInputsGraphql({
+    repo: getRepoSlug(),
+    prNumber: pr.number,
+    headSha: pr.headSha,
+    runGraphql: runGraphqlQuery,
   });
+  console.log(`orchestrate-pr-flow: review inputs via GraphQL (cost ${cost}).`);
+  return inputs;
+}
+
+function collectExternalReview(
+  pr,
+  {
+    source = resolveReviewSource(),
+    loadRest = fetchRestReviewInputs,
+    loadGraphql = fetchGraphqlReviewInputs,
+    evaluate = evaluateExternalReview,
+  } = {},
+) {
+  let inputs = null;
+  if (source === 'graphql') {
+    try {
+      inputs = loadGraphql(pr);
+    } catch (error) {
+      // Any doubt about the GraphQL data: use REST for this wake only.
+      console.warn(
+        `orchestrate-pr-flow: GraphQL review inputs unavailable, using REST: ${error.message}`,
+      );
+    }
+  }
+  return evaluate({ pr, ...(inputs ?? loadRest(pr)) });
 }
 
 function decisionWithDispatchError({ decision, pr, config, errorMessage }) {
@@ -1882,7 +2116,10 @@ function makeDecision(context) {
   );
 }
 
-function collectWorkerRuns(config, workerName) {
+// `strict` drops the empty-list fallback so a failed `gh run list` throws
+// instead of reading as "no runs" — the parity comparison must not classify a
+// failed read as data.
+function collectWorkerRuns(config, workerName, { strict = false } = {}) {
   const worker = config.workers?.[workerName];
   if (!worker?.workflow) {
     return [];
@@ -1900,7 +2137,7 @@ function collectWorkerRuns(config, workerName) {
       '--json',
       'databaseId,status,conclusion,event,displayTitle,createdAt,updatedAt,url',
     ],
-    [],
+    strict ? undefined : [],
   );
 }
 
@@ -2104,10 +2341,17 @@ function main() {
   }
 
   const workerRuns = {};
+  const loadWorkerRuns = createWorkerRunsLoader({
+    config,
+    pr,
+    getRepo: getRepoSlug,
+    run,
+    loadLegacy: (workerName) => collectWorkerRuns(config, workerName),
+  });
   const getWorkerRuns = (workerName) => {
     if (workerRuns[workerName] === undefined) {
       workerRuns[workerName] = timeStep(timings, 'worker-runs', () =>
-        collectWorkerRuns(config, workerName),
+        loadWorkerRuns(workerName),
       );
     }
     return workerRuns[workerName];
@@ -2272,20 +2516,38 @@ if (require.main === module) {
 
 module.exports = {
   buildFlowGuidance,
+  buildGraphqlArgs,
   buildFlowVisibility,
   collectCheckEvidence,
+  collectExternalReview,
   decisionWithDispatchError,
+  fetchCheckRuns,
+  fetchCommitStatuses,
+  fetchHeadCommittedAt,
+  fetchPrIssueComments,
+  fetchPrReviewComments,
+  fetchPrReviews,
   getFinalizerRetryCount,
   getWorkerDispatchRef,
+  getWorkerTargetUrl,
   getLabelsForDecision,
+  matchesWorkerTitle,
   getRequiredCheckStatus,
   evaluatePolicy,
   makeDecision,
   MAX_CODE_REVIEW_RETRIES,
   MAX_FINALIZER_RETRIES,
   pathsMatch,
+  publishFlowStatuses,
   readConfig,
   renderFlowComment,
   resolvePrNumber,
+  resolveReviewSource,
+  runGraphqlQuery,
+  shouldPublishStatus,
+  stabilizeRunLinks,
   summarizeWorkerRuns,
+  upsertFlowComment,
+  usableStatusId,
+  collectWorkerRuns,
 };

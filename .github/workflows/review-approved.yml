@@ -55,6 +55,12 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.pull_request.base.ref }}
 
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: review-approved-record-approval
+          report-at-job-end: 'true'
+
       - name: Ensure maintainer-approved label exists
         uses: ./.github/actions/ensure-workflow-labels
         with:
