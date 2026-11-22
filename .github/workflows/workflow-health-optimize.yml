@@ -433,7 +433,7 @@ jobs:
             ## Task: Analyze Workflow Runs and Optimize Workflow Files
 
             You have completed workflow run data from the past hour AND workflow YAML files in `.github/workflows/`.
-            WHO-E06 accepted rerun requests for these run IDs (comma-separated): ${{ steps.rerun_transient.outputs.rerun_ids || 'none' }}
+            GitHub accepted requests to rerun failed jobs after transient infrastructure errors for these run IDs (comma-separated): ${{ steps.rerun_transient.outputs.rerun_ids || 'none' }}
             Skip Completed Runs Data entries whose `run_id` is listed above. If the list is `none`, review all entries using the usual evidence rules.
             The run data may include compact `claudeSummary`, `timingSummary`, and `duplicateSameSha` objects extracted by the workflow itself.
 
