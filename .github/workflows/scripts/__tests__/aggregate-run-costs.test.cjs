@@ -290,6 +290,31 @@ test('fetchCompletedRuns fails closed when since is missing', () => {
   assert.equal(calls.length, 0, 'gh must not be called without a window');
 });
 
+test('fetchCompletedRuns fails closed when since is not a real timestamp', () => {
+  const calls = [];
+  // A bare `--since` parses to the literal 'true'; non-ISO values like
+  // 'yesterday' or '2026-13-45' are truthy but make `timestamp >= since`
+  // drop every run — the green-empty-window case the guard exists for.
+  for (const bad of ['true', 'yesterday', '2026-13-45']) {
+    const { runs, errors } = fetchCompletedRuns(
+      {
+        repo: 'owner/repo',
+        workflowFile: 'monitor.yml',
+        since: bad,
+        maxRuns: 10,
+        perPage: 100,
+      },
+      runsRunner([], calls),
+    );
+    assert.deepEqual(runs, [], `no runs for since=${bad}`);
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].scope, 'runs-list');
+    assert.match(errors[0].detail, /since/);
+    assert.ok(errors[0].detail.includes(bad), 'detail names the bad value');
+  }
+  assert.equal(calls.length, 0, 'gh must not be called for a bad window');
+});
+
 test('fetchCompletedRuns preserves input order for equal timestamps', () => {
   const first = { ...RUN, id: 2001, run_started_at: '2026-08-15T05:00:00Z' };
   const second = { ...RUN, id: 2002, run_started_at: '2026-08-15T05:00:00Z' };

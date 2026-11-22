@@ -103,18 +103,21 @@ function fetchCompletedRuns(
   { repo, workflowFile, since, excludeRunId, maxRuns, perPage },
   ghRunner = runGh,
 ) {
-  // An empty window must never report green: without `since` the filter
-  // below would drop every run and callers would surface runs_scanned: 0
-  // as success. Fail closed instead — collectCostTelemetry turns listing
-  // errors into a hard failure (main() exits 1).
-  if (!since) {
+  // An empty or unparseable window must never report green: a `since` that
+  // is not a real timestamp (e.g. a bare `--since` parsed to 'true') makes
+  // the filter below drop every run, and callers would surface
+  // runs_scanned: 0 as success. Fail closed instead —
+  // collectCostTelemetry turns listing errors into a hard failure (main()
+  // exits 1).
+  if (!since || !Number.isFinite(Date.parse(since))) {
     return {
       runs: [],
       errors: [
         {
           scope: 'runs-list',
-          detail:
-            'missing --since window; refusing to scan an unbounded window',
+          detail: `invalid or missing --since window (${
+            since ? `"${since}"` : 'none'
+          }); refusing to scan an unbounded window`,
         },
       ],
     };
