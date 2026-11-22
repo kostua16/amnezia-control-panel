@@ -38,11 +38,22 @@ test('mapWithConcurrency preserves order and caps concurrency', async () => {
   assert.ok(maxActive <= 2, `concurrency exceeded cap: ${maxActive}`);
 });
 
-test('extractAttempts keeps only auto-cover summary comments', () => {
+test('extractAttempts keeps only workflow-owned auto-cover summary comments', () => {
+  const bot = { login: 'github-actions[bot]' };
   const comments = [
-    { body: '<!-- auto-cover-review-summary -->\ndispatched' },
-    { body: 'random human comment' },
-    { body: '<!-- kilo-review -->\nblocked' },
+    { user: bot, body: '<!-- auto-cover-review-summary -->\ndispatched' },
+    { user: bot, body: 'random bot comment' },
+    { user: { login: 'octocat' }, body: 'random human comment' },
+    {
+      user: { login: 'kilo-code-bot[bot]' },
+      body: '<!-- kilo-review -->\nblocked',
+    },
+    // A copied marker from anyone else never counts as an attempt.
+    {
+      user: { login: 'octocat' },
+      body: '<!-- auto-cover-review-summary -->\nquoted',
+    },
+    { body: '<!-- auto-cover-review-summary -->\nno author' },
   ];
   assert.equal(extractAttempts(comments).length, 1);
   assert.ok(extractAttempts(comments)[0].body.includes(AUTO_COVER_MARKER));

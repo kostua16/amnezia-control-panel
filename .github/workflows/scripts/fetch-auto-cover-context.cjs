@@ -157,9 +157,16 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
+// Attempt records are the workflow-owned summary comments posted with the
+// GITHUB_TOKEN. Counting only those keeps a copied marker in a human comment
+// from consuming (or faking) a repair attempt.
+const ATTEMPT_RECORD_LOGIN = 'github-actions[bot]';
+
 function extractAttempts(comments = []) {
-  return comments.filter((comment) =>
-    String(comment.body ?? '').includes(AUTO_COVER_MARKER),
+  return comments.filter(
+    (comment) =>
+      String(comment.body ?? '').includes(AUTO_COVER_MARKER) &&
+      (comment.user?.login ?? comment.author?.login) === ATTEMPT_RECORD_LOGIN,
   );
 }
 
