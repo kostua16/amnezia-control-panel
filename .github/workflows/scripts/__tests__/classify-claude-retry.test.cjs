@@ -135,7 +135,17 @@ test('retry CLI preserves an explicitly empty HTTP code from either probe step',
     ),
   );
   for (const id of ['check-429-1', 'check-429-2']) {
-    const step = action.runs.steps.find((candidate) => candidate.id === id);
+    const index = action.runs.steps.findIndex(
+      (candidate) => candidate.id === id,
+    );
+    const step = action.runs.steps[index];
+    const backoff = action.runs.steps[index + 1];
+    assert.ok(
+      backoff.if.includes(
+        'steps.' + id + ".outputs.retry_reason == 'transient_transport'",
+      ),
+    );
+    assert.equal(backoff.run, 'sleep 120');
     assert.ok(step.run.includes('--max-time 30) || probe_exit=$?'));
     assert.ok(step.run.includes('--probe-exit-code "$probe_exit"'));
   }
@@ -168,4 +178,28 @@ test('an execution socket close retries even if the subsequent probe is healthy'
   });
   assert.equal(result.shouldRetry, true);
   assert.equal(result.retryReason, 'transient_transport');
+});
+
+test('HTTP/2 framing, partial responses, and stream failures retry', () => {
+  for (const probeExitCode of ['16', '18', '92']) {
+    for (const httpCode of ['000', '200']) {
+      const result = classifyClaudeRetry({ httpCode, probeExitCode });
+      assert.equal(result.retryReason, 'probe_unreachable');
+    }
+  }
+});
+
+test('quoted socket-close text in the transcript does not trigger transport retry', () => {
+  const result = classifyClaudeRetry({
+    httpCode: '200',
+    executionText: JSON.stringify([
+      {
+        type: 'assistant',
+        message: 'The socket connection was closed unexpectedly',
+      },
+      { type: 'result', is_error: true, result: 'Turn limit reached' },
+    ]),
+  });
+  assert.equal(result.shouldRetry, false);
+  assert.equal(result.retryReason, 'non_retryable');
 });

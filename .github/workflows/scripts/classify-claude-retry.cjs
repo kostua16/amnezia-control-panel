@@ -55,6 +55,24 @@ function hasSuccessfulResult(executionText) {
   return false;
 }
 
+function hasSocketCloseResult(executionText) {
+  for (const value of parseJsonValues(executionText)) {
+    let found = false;
+    walk(value, (node) => {
+      if (
+        node.type === 'result' &&
+        asBoolean(node.is_error) === true &&
+        typeof node.result === 'string' &&
+        /socket connection was closed unexpectedly/i.test(node.result)
+      ) {
+        found = true;
+      }
+    });
+    if (found) return true;
+  }
+  return false;
+}
+
 // Detects whether the execution output carries any result node at all
 // (success or error). An empty execution file — no turns, no result — means
 // the action step died before producing any diagnostic output.
@@ -191,11 +209,14 @@ function classifyClaudeRetry({
   // not a real code or prompt error (those leave a result or action_error).
   // Retry once instead of giving up; bounded by the existing 3-attempt cap.
   const transientProbe =
-    probeUnavailable &&
-    ['0', '28', '52', '55', '56'].includes(String(probeExitCode));
+    (probeUnavailable && String(probeExitCode) === '0') ||
+    ((probeUnavailable || normalizedHttpCode === '200') &&
+      ['16', '18', '28', '52', '55', '56', '92'].includes(
+        String(probeExitCode),
+      ));
   const transientExecution =
-    /socket connection was closed unexpectedly/i.test(executionText) &&
-    (normalizedHttpCode === '200' || transientProbe);
+    (normalizedHttpCode === '200' || transientProbe) &&
+    hasSocketCloseResult(executionText);
   if (transientProbe || transientExecution) {
     return {
       httpCode: normalizedHttpCode,

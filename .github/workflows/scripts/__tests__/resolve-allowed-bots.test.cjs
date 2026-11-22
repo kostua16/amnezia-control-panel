@@ -128,15 +128,22 @@ test('workflow and action callers use profiles instead of hardcoded bot lists', 
       const jobs = doc.runs ? [doc.runs] : Object.values(doc.jobs ?? {});
       for (const job of jobs) {
         if (job.with?.['allowed-bots'] !== undefined) offenders.push(rel);
+        const steps = job.steps ?? [];
+        const envBlocks = [doc.env, job.env, ...steps.map((step) => step.env)];
+        const hardcodedEnv = envBlocks.some((env) =>
+          Object.entries(env ?? {}).some(
+            ([key, value]) =>
+              /^allowed[-_]?bots$/i.test(key) &&
+              typeof value === 'string' &&
+              /(?:\[bot\]|github-actions\s*,)/.test(value),
+          ),
+        );
         const embedded = [
-          ...Object.values(doc.env ?? {}),
-          ...Object.values(job.env ?? {}),
-          ...(job.steps ?? []).flatMap((step) => [
-            step.run,
-            ...Object.values(step.env ?? {}),
-          ]),
+          ...envBlocks.flatMap((env) => Object.values(env ?? {})),
+          ...steps.map((step) => step.run),
         ];
         if (
+          hardcodedEnv ||
           embedded.some(
             (value) =>
               typeof value === 'string' &&
@@ -147,7 +154,6 @@ test('workflow and action callers use profiles instead of hardcoded bot lists', 
         ) {
           offenders.push(rel);
         }
-        const steps = job.steps ?? [];
         for (const [index, step] of steps.entries()) {
           const value = step.with?.['allowed-bots'];
           if (value === undefined || value === '${{ inputs.allowed-bots }}')
