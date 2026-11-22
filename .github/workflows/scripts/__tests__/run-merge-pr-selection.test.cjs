@@ -219,6 +219,26 @@ test('group filter keeps the matching group and marks others filtered', () => {
   assert.ok(result.skipped.some((g) => g.group_id === 'workflow-10'));
 });
 
+test('filtered unsafe group keeps its underlying rejection reason', () => {
+  const result = selectAndFinalize(
+    [
+      pr({
+        number: 10,
+        files: [{ path: '.github/workflows/a.yml' }],
+        mergeable: 'CONFLICTING',
+      }),
+      pr({ number: 11, files: [{ path: 'src/lib/a.ts' }] }),
+    ],
+    { groupFilter: 'app-code-11', maxGroups: 1 },
+  );
+  const filtered = result.filtered[0];
+  assert.equal(filtered.group_id, 'workflow-10');
+  assert.equal(filtered.decision_code, DECISION_CODES.FILTERED_OUT);
+  assert.match(filtered.reason, /group_filter match/);
+  assert.match(filtered.reason, /rebased in place/);
+  assert.match(filtered.rejection_reason, /rebased in place/);
+});
+
 test('max_groups cap defers extra consolidate groups', () => {
   const result = selectAndFinalize(
     [1, 2, 3, 4].map((n) => pr({ number: n })),

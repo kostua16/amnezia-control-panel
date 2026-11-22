@@ -101,6 +101,7 @@ test('renders a stable table of all groups with PR/kind/risk/action/reason/closu
   );
   assert.match(md, /app-code-460-444/);
   assert.match(md, /#460, #444/);
+  assert.match(md, /#460: closed, #444: left open/);
   assert.match(md, /CONSOLIDATE_SELECTED/);
   assert.match(md, /dependency-50/);
   assert.match(md, /MANUAL_REVIEW_DEPENDENCY/);

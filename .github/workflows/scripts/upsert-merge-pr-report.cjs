@@ -36,18 +36,12 @@ function formatPrs(prs) {
 // closed"; the table + this label make the no-op explicit.
 function closureLabel(result, dryRun) {
   if (dryRun) return 'not attempted';
-  if (!result || result.status === 'not-attempted' || result.closed !== true) {
-    if (result?.closed === true) return 'closed';
-    if (
-      result &&
-      result.closed === false &&
-      result.status !== 'not-attempted'
-    ) {
-      return 'left open';
-    }
-    return 'not attempted';
+  if (!result) return 'not attempted';
+  if (result.closed === true) return 'closed';
+  if (result.closed === false && result.status !== 'not-attempted') {
+    return 'left open';
   }
-  return 'closed';
+  return 'not attempted';
 }
 
 function renderGroupTable(groups, closureByPr, dryRun) {
@@ -59,11 +53,16 @@ function renderGroupTable(groups, closureByPr, dryRun) {
   for (const g of groups) {
     const id = g.group_id ?? g.id ?? '(group)';
     const prs = formatPrs(g.source_prs);
-    const firstPr = Array.isArray(g.source_prs) ? g.source_prs[0] : null;
-    const closure = closureLabel(
-      firstPr == null ? null : closureByPr.get(firstPr),
-      dryRun,
-    );
+    // Closure is decided per source PR: once the write path lands, a group can
+    // mix closed and left-open PRs, so render each PR's outcome rather than
+    // letting the first PR speak for the whole row.
+    const prNums = Array.isArray(g.source_prs) ? g.source_prs : [];
+    const closure =
+      prNums.length === 0
+        ? 'not attempted'
+        : prNums
+            .map((n) => `#${n}: ${closureLabel(closureByPr.get(n), dryRun)}`)
+            .join(', ');
     const eligible = g.consolidation_eligible === true ? 'yes' : 'no';
     const action = g.action ?? g.recommended_action ?? '';
     const reason = String(g.reason ?? g.rejection_reason ?? '').replace(

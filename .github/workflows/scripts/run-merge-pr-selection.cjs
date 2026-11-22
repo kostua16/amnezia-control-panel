@@ -47,21 +47,7 @@ function appendOutputs(values) {
   fs.appendFileSync(githubOutput, `${lines.join('\n')}\n`);
 }
 
-function decisionFor(group, disposition) {
-  if (disposition === 'filtered') {
-    return {
-      decision_code: DECISION_CODES.FILTERED_OUT,
-      reason: FILTERED_REASON,
-      consolidation_eligible: false,
-    };
-  }
-  if (disposition === 'capped-deferred') {
-    return {
-      decision_code: DECISION_CODES.CONSOLIDATE_CAPPED,
-      reason: CAPPED_REASON,
-      consolidation_eligible: true,
-    };
-  }
+function decisionForAction(group) {
   const action = group.recommended_action;
   if (action === 'rebase-first') {
     return {
@@ -102,6 +88,30 @@ function decisionFor(group, disposition) {
     reason: 'Kind-strict compatible group is eligible for consolidation',
     consolidation_eligible: true,
   };
+}
+
+function decisionFor(group, disposition) {
+  if (disposition === 'filtered') {
+    // The filter exclusion must not hide why a group could never have been
+    // consolidated anyway: a filtered rebase-first / manual-review group keeps
+    // its underlying rejection next to the group_filter reason.
+    const underlying = decisionForAction(group);
+    return {
+      decision_code: DECISION_CODES.FILTERED_OUT,
+      reason: underlying.consolidation_eligible
+        ? FILTERED_REASON
+        : `${FILTERED_REASON}; underlying: ${underlying.reason}`,
+      consolidation_eligible: false,
+    };
+  }
+  if (disposition === 'capped-deferred') {
+    return {
+      decision_code: DECISION_CODES.CONSOLIDATE_CAPPED,
+      reason: CAPPED_REASON,
+      consolidation_eligible: true,
+    };
+  }
+  return decisionForAction(group);
 }
 
 function enrichGroup(group, { disposition }) {
@@ -176,10 +186,10 @@ function finalizeStalePrSelection({
   const classified = classifyGroups(groups, { groupFilter, maxGroups });
   const { selected, unsafe, filtered, capped } = classified;
   const skipped = [...unsafe, ...filtered, ...capped];
-  const all = groups.map((group) => {
-    const match = [...selected, ...skipped].find((g) => g.id === group.id);
-    return match ?? enrichGroup(group, { disposition: 'unsafe' });
-  });
+  // classifyGroups assigns every group to exactly one bucket, so a single Map
+  // keyed by id replaces the per-group linear re-scan of a rebuilt array.
+  const byId = new Map([...selected, ...skipped].map((g) => [g.id, g]));
+  const all = groups.map((group) => byId.get(group.id));
   return {
     all,
     selected,
