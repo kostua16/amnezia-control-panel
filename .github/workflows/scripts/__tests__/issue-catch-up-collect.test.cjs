@@ -267,6 +267,53 @@ test('externally-authored untriaged issue is never dispatched to AI triage', asy
   assert.equal(buckets.priority_escalation.length, 0);
 });
 
+test('bot-authored untriaged issue keeps the automatic triage safety net', async () => {
+  // Repo automation (failure reports, backlog spin-offs) authors issues with
+  // NONE association; excluding bot authors from auto-triage would strand the
+  // pipeline's own issues in the log-only external bucket with no retry.
+  const botIssue = {
+    ...makeIssue({
+      number: 811,
+      title: 'automation failure report',
+      labels: [],
+      createdAt: daysAgo(1),
+    }),
+    author_association: 'NONE',
+    user: { login: 'github-actions[bot]', type: 'Bot' },
+  };
+  const buckets = await runCollect({
+    issues: [botIssue],
+    commentsByIssue: { 811: [] },
+  });
+  assert.equal(buckets.needs_retriage.length, 1);
+  assert.equal(buckets.needs_retriage[0].number, 811);
+  assert.equal(buckets.external_untriaged.length, 0);
+});
+
+test('external high untriaged issue gets the priority nudge, not silence', async () => {
+  // The sweep will not auto-triage an external issue, but a high/critical
+  // one must not disappear into the log-only bucket — the nudge keeps a
+  // human notified.
+  const external = {
+    ...makeIssue({
+      number: 812,
+      title: 'external high issue never triaged',
+      labels: ['high'],
+      createdAt: daysAgo(3),
+    }),
+    author_association: 'NONE',
+    user: { login: 'external-contributor', type: 'User' },
+  };
+  const buckets = await runCollect({
+    issues: [external],
+    commentsByIssue: { 812: [] },
+  });
+  assert.equal(buckets.needs_retriage.length, 0);
+  assert.equal(buckets.external_untriaged.length, 1);
+  assert.equal(buckets.priority_escalation.length, 1);
+  assert.equal(buckets.priority_escalation[0].number, 812);
+});
+
 test('manually parked high issue without a dead-letter comment gets the nudge, not re-triage', async () => {
   // needs-review without an "attempted 2x" comment is a human park — the
   // sweep must neither re-triage it nor go silent, so the deduped reminder

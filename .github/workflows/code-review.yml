@@ -46,6 +46,7 @@ jobs:
       pr-number: ${{ steps.resolve.outputs.pr_number }}
       head-sha: ${{ steps.resolve.outputs.head_sha }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
+      skip-reason: ${{ steps.resolve.outputs.skip_reason }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -82,18 +83,46 @@ jobs:
             const expectedHeadSha = context.payload.inputs?.head_sha || '';
             const headMatches = !expectedHeadSha || pr.head.sha === expectedHeadSha;
             const isOpen = pr.state === 'open' && !pr.merged;
+            const crossRepository =
+              pr.head.repo?.full_name !== pr.base.repo?.full_name ||
+              !Boolean(pr.head.repo?.full_name);
             const shouldRun =
               isOpen &&
               headMatches &&
-              pr.head.repo?.full_name === pr.base.repo?.full_name && Boolean(pr.head.repo?.full_name) &&
+              !crossRepository &&
               !pr.draft &&
               pr.user.login !== 'dependabot[bot]' &&
               !(pr.title || '').includes('[skip-review]');
 
+            // A maintainer dispatching this workflow on a fork PR must not
+            // see a green no-op — record why the review declined.
+            if (!shouldRun && isOpen && headMatches && crossRepository) {
+              core.notice('Review skipped: cross-repository PR');
+              core.setOutput(
+                'skip_reason',
+                'cross-repository PR — AI review only runs for same-repository heads'
+              );
+            }
             core.setOutput('should_run', String(shouldRun));
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('base_ref', context.payload.inputs?.base_ref || pr.base.ref);
+
+  report-skip:
+    needs: [resolve-pr]
+    # Cross-repository PRs skip the review jobs by design; this job makes
+    # the skip visible to the maintainer who explicitly dispatched it.
+    if: needs.resolve-pr.outputs.should-run != 'true' && needs.resolve-pr.outputs.skip-reason != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Explain skipped review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
+          SKIP_REASON: ${{ needs.resolve-pr.outputs.skip-reason }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body "AI code review skipped: $SKIP_REASON. A maintainer can review the fork PR manually."
 
   claude-combined-review:
     needs: [resolve-pr]

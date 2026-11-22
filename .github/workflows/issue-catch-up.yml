@@ -174,9 +174,9 @@ jobs:
               triaged_no_fix: [],
               fix_dead_letter: [],
               dead_letter_retry: [],
-              // Untriaged issues authored outside the maintainer group —
-              // visible in the summary for a human, never dispatched to AI
-              // triage.
+              // Untriaged issues authored outside the maintainer and
+              // repo-automation groups — visible in the summary for a
+              // human, never dispatched to AI triage.
               external_untriaged: [],
               // Pipeline invariant violations — reported to the claude-health
               // tracker by a deterministic step, never acted on by the agent.
@@ -317,12 +317,14 @@ jobs:
                 c.body.includes('/fix') && afterRetry(c)
               );
 
-              // Mirrors triage.yml's `issues`-event author gate: only
-              // maintainer-associated authors may have their issues
-              // auto-triaged by this sweep.
-              const maintainerAuthored = maintainerAssociations.includes(
-                issue.author_association
-              );
+              // Mirrors triage.yml's author gates: maintainer-associated
+              // authors AND repo automation (bot accounts — the pipeline's
+              // own failure-report and spin-off issues carry NONE
+              // association) may be auto-triaged by this sweep. External
+              // human authors never reach the AI triage prompt.
+              const maintainerAuthored =
+                maintainerAssociations.includes(issue.author_association) ||
+                issue.user?.type === 'Bot';
 
               // Parked dead letters: issues needs-review'd after repeated
               // automation failures get exactly ONE fresh-context retry after
@@ -373,10 +375,14 @@ jobs:
                   !labels.includes('critical') &&
                   !DL_AUTO_GEN.some(p => p.test(issue.title));
                 // Triage-kind retries re-enter needs_retriage after the
-                // unpark, so they inherit the maintainer-authorship gate —
-                // external triage dead letters stay parked for a human.
+                // unpark, so they inherit the authorship gate — external
+                // triage dead letters stay parked for a human. dlFixEligible
+                // applies to fix-kind dead letters only: a triage-kind dead
+                // letter merely passing the fix filters would be un-parked
+                // into external_untriaged and never triaged again.
                 const retryEligible =
-                  (kind === 'triage' && maintainerAuthored) || dlFixEligible;
+                  (kind === 'triage' && maintainerAuthored) ||
+                  (kind === 'fix' && dlFixEligible);
                 if (!hasRetryMarker && parkedLongEnough && retryEligible) {
                   buckets.dead_letter_retry.push({
                     number: num,
@@ -412,11 +418,23 @@ jobs:
               }
 
               if (!hasTriaged) {
-                // Maintainer-authorship gate (same associations as
-                // triage.yml's `issues` event): untrusted issue text must
-                // not reach the AI triage prompt via workflow_dispatch.
-                // External untriaged issues stay visible for manual triage.
+                // Authorship gate (same rule as triage.yml's author gates):
+                // untrusted issue text must not reach the AI triage prompt
+                // via workflow_dispatch. External untriaged issues stay
+                // visible for manual triage; high/critical ones also keep
+                // the priority nudge — external_untriaged alone is log-only
+                // and would leave them invisible to every human.
                 if (!maintainerAuthored) {
+                  if (
+                    priorityEscalationEligible &&
+                    shouldNudgePriority(comments)
+                  ) {
+                    buckets.priority_escalation.push({
+                      number: num,
+                      title: issue.title,
+                      labels
+                    });
+                  }
                   buckets.external_untriaged.push({
                     number: num,
                     title: issue.title
