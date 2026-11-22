@@ -22,6 +22,10 @@
 // side (useful as a library). Exit codes: 0 = report produced (even when
 // vulnerable trackers remain — the matrix is the output), 1 = bad input or
 // a total tracker-sweep failure (--repo given, every label query errored).
+// A PARTIAL sweep failure still exits 0 with its partial report, but the
+// --json result always carries `failed_labels` and `truncated_labels`
+// (empty arrays on a clean sweep) so coverage gaps stay machine-detectable
+// instead of living only in stderr warnings.
 
 const { execFileSync } = require('node:child_process');
 const { readFileSync } = require('node:fs');
@@ -252,35 +256,41 @@ function loadAuditFile(auditPath) {
   }
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
+// Returns the process exit code (0/1) instead of calling process.exit so
+// tests can drive failure paths with an injected gh runner in-process.
+function main(argv = process.argv.slice(2), ghRunner = runGh) {
+  const args = parseArgs(argv);
   const loaded = loadAuditFile(args.auditFile);
   if (loaded.error) {
     process.stderr.write(`Error: ${loaded.error}\n`);
-    process.exit(1);
+    return 1;
   }
 
   const auditIds = advisoryIdsFromAudit(loaded.audit);
   let candidates = [];
+  let failedLabels = [];
+  let truncatedLabels = [];
   if (args.repo) {
-    const sweep = fetchCandidateIssues(args.repo);
+    const sweep = fetchCandidateIssues(args.repo, ghRunner);
     candidates = sweep.issues;
+    failedLabels = sweep.failedLabels;
+    truncatedLabels = sweep.truncatedLabels;
     // An empty issue list must mean "no trackers", never "gh failed" — a
     // total sweep failure would otherwise report a false clean sweep.
-    if (sweep.failedLabels.length === TRACKER_LABELS.length) {
+    if (failedLabels.length === TRACKER_LABELS.length) {
       process.stderr.write(
-        `Error: every tracker-label sweep failed for ${args.repo}:\n${sweep.failedLabels
+        `Error: every tracker-label sweep failed for ${args.repo}:\n${failedLabels
           .map((failure) => `  ${failure.label}: ${failure.error}`)
           .join('\n')}\n`,
       );
-      process.exit(1);
+      return 1;
     }
-    for (const failure of sweep.failedLabels) {
+    for (const failure of failedLabels) {
       process.stderr.write(
         `Warning: tracker-label sweep failed (${failure.label}: ${failure.error}) — issues with this label are missing from the matrix\n`,
       );
     }
-    for (const label of sweep.truncatedLabels) {
+    for (const label of truncatedLabels) {
       process.stderr.write(
         `Warning: label "${label}" returned ${ISSUE_SWEEP_LIMIT} issues (sweep limit) — results may be truncated\n`,
       );
@@ -296,6 +306,10 @@ function main() {
   }
 
   const rows = reconcileTrackers({ trackers, presentIds: auditIds });
+  // A partial sweep still produces a report, so the coverage gaps must ride
+  // IN the result — stderr warnings are invisible to --json consumers that
+  // only capture stdout, and the exit code cannot distinguish partial from
+  // complete.
   const result = {
     audit_advisory_ids: auditIds,
     trackers: rows,
@@ -303,6 +317,8 @@ function main() {
       unrelated: ignored.unrelated.map((issue) => issue.number),
       'no-advisory-id': ignored['no-advisory-id'].map((issue) => issue.number),
     },
+    failed_labels: failedLabels,
+    truncated_labels: truncatedLabels,
   };
 
   if (args.json === 'true') {
@@ -310,6 +326,7 @@ function main() {
   } else {
     process.stdout.write(`${renderMatrix({ auditIds, rows, ignored })}\n`);
   }
+  return 0;
 }
 
 module.exports = {
@@ -322,8 +339,9 @@ module.exports = {
   reconcileTrackers,
   renderMatrix,
   fetchCandidateIssues,
+  main,
 };
 
 if (require.main === module) {
-  main();
+  process.exit(main());
 }

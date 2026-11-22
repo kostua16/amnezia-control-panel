@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const {
@@ -14,6 +15,7 @@ const {
   reconcileTrackers,
   renderMatrix,
   fetchCandidateIssues,
+  main,
 } = require('../reconcile-security-trackers.cjs');
 
 function issue(overrides = {}) {
@@ -356,4 +358,120 @@ test('script file exists and exports the reconciliation contract', () => {
   const run = spawnSync(process.execPath, [scriptPath], { encoding: 'utf8' });
   assert.equal(run.status, 1, 'missing --audit-file must exit 1');
   assert.match(run.stderr, /Error: missing --audit-file/);
+});
+
+// ── main() exit paths and coverage reporting ─────────────────────────
+
+// main() writes reports via process.stdout/stderr and returns an exit code
+// instead of calling process.exit — capture both to assert on them.
+function runMainCaptured(argv, ghRunner) {
+  const captured = { stdout: '', stderr: '' };
+  const originalStdout = process.stdout.write;
+  const originalStderr = process.stderr.write;
+  process.stdout.write = (chunk) => {
+    captured.stdout += String(chunk);
+    return true;
+  };
+  process.stderr.write = (chunk) => {
+    captured.stderr += String(chunk);
+    return true;
+  };
+  try {
+    captured.exitCode = main(argv, ghRunner);
+  } finally {
+    process.stdout.write = originalStdout;
+    process.stderr.write = originalStderr;
+  }
+  return captured;
+}
+
+function withTempAudit(auditJson, run) {
+  const auditPath = path.join(
+    os.tmpdir(),
+    `reconcile-audit-${process.pid}-${Math.floor(performance.now())}.json`,
+  );
+  fs.writeFileSync(auditPath, JSON.stringify(auditJson));
+  try {
+    return run(auditPath);
+  } finally {
+    fs.unlinkSync(auditPath);
+  }
+}
+
+test('main exits 1 with per-label errors when every label sweep fails', () => {
+  withTempAudit({}, (auditPath) => {
+    const captured = runMainCaptured(
+      ['--audit-file', auditPath, '--repo', 'owner/repo', '--json'],
+      () => ({ ok: false, stdout: '', error: 'HTTP 502' }),
+    );
+    assert.equal(captured.exitCode, 1);
+    assert.match(captured.stderr, /Error: every tracker-label sweep failed/);
+    assert.match(captured.stderr, /security: HTTP 502/);
+    assert.match(captured.stderr, /dependencies: HTTP 502/);
+    assert.equal(captured.stdout, '', 'total failure must emit no report');
+  });
+});
+
+test('main exits 0 on a partial failure but reports it in stderr and --json', () => {
+  withTempAudit({}, (auditPath) => {
+    const captured = runMainCaptured(
+      ['--audit-file', auditPath, '--repo', 'owner/repo', '--json'],
+      (args) =>
+        args.includes('security')
+          ? {
+              ok: true,
+              stdout: JSON.stringify(
+                issue({ number: 7, body: 'GHSA-mh99-v99m-4gvg' }),
+              ),
+            }
+          : { ok: false, stdout: '', error: 'HTTP 502' },
+    );
+    assert.equal(captured.exitCode, 0);
+    assert.match(
+      captured.stderr,
+      /Warning: tracker-label sweep failed \(dependencies: HTTP 502\)/,
+    );
+    const result = JSON.parse(captured.stdout);
+    assert.deepEqual(result.failed_labels, [
+      { label: 'dependencies', error: 'HTTP 502' },
+    ]);
+    assert.deepEqual(result.truncated_labels, []);
+    // The successful label's tracker still lands in the partial report.
+    assert.deepEqual(
+      result.trackers.map((row) => row.number),
+      [7],
+    );
+  });
+});
+
+test('main surfaces sweep-limit truncation in stderr and --json', () => {
+  withTempAudit({}, (auditPath) => {
+    const fullPage = Array.from({ length: ISSUE_SWEEP_LIMIT }, (_, i) =>
+      JSON.stringify(issue({ number: i + 1 })),
+    ).join('\n');
+    const captured = runMainCaptured(
+      ['--audit-file', auditPath, '--repo', 'owner/repo', '--json'],
+      () => ({ ok: true, stdout: fullPage }),
+    );
+    assert.equal(captured.exitCode, 0);
+    assert.match(
+      captured.stderr,
+      new RegExp(
+        `Warning: label "security" returned ${ISSUE_SWEEP_LIMIT} issues \\(sweep limit\\)`,
+      ),
+    );
+    const result = JSON.parse(captured.stdout);
+    assert.deepEqual(result.truncated_labels, TRACKER_LABELS);
+    assert.deepEqual(result.failed_labels, []);
+  });
+});
+
+test('main without --repo reports empty coverage gaps in --json', () => {
+  withTempAudit({}, (auditPath) => {
+    const captured = runMainCaptured(['--audit-file', auditPath, '--json']);
+    assert.equal(captured.exitCode, 0);
+    const result = JSON.parse(captured.stdout);
+    assert.deepEqual(result.failed_labels, []);
+    assert.deepEqual(result.truncated_labels, []);
+  });
 });
