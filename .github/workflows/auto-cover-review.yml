@@ -121,13 +121,26 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-environment
+        id: setup
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           node-version: '24.x'
           install-deps: 'false'
 
+      # Auto Cover is deferrable: below the reserve it stops here (green, with
+      # a notice) and the next trigger or the 3-hourly scan retries. Uses the
+      # quota setup-environment already read at job start; QUOTA_RESERVE=0
+      # disables the gate.
+      - name: Check API quota reserve
+        id: reserve
+        env:
+          CORE_REMAINING: ${{ steps.setup.outputs.core-remaining }}
+          QUOTA_RESERVE: ${{ vars.QUOTA_RESERVE || '600' }}
+        run: node .github/workflows/scripts/check-quota-reserve.cjs
+
       - name: Evaluate and dispatch review repair
+        if: steps.reserve.outputs.proceed != 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
