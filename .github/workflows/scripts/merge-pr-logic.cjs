@@ -134,24 +134,37 @@ function buildGroup(kind, prs) {
   return group;
 }
 
+// Canonical rejection reasons for non-consolidate actions. The selection
+// layer (run-merge-pr-selection.cjs) references these as its fallbacks so the
+// grouping layer and the decision layer cannot drift apart.
+const REJECTION_REASONS = {
+  REBASE_FIRST:
+    'Single conflicting PR should be rebased in place before consolidation',
+  MANUAL_REVIEW_DEPENDENCY:
+    'Dependency groups require manual review and are not auto-consolidated',
+  MANUAL_REVIEW_MULTI_CONFLICT:
+    'Mutually conflicting PRs require manual review; auto-consolidation is unsafe',
+  EMPTY_GROUP: 'Empty group cannot be consolidated',
+};
+
 // Stable human reason for a non-consolidate action. null when the group is
 // eligible to consolidate so reports never invent a rejection for a selected
 // group. Kept in the grouping layer so selection can copy it verbatim.
 function rejectionReasonFor(group) {
   if (!group || group.recommended_action === 'consolidate') return null;
   if (group.recommended_action === 'rebase-first') {
-    return 'Single conflicting PR should be rebased in place before consolidation';
+    return REJECTION_REASONS.REBASE_FIRST;
   }
   if (
     group.recommended_action === 'manual-review' &&
     group.kind === 'dependency'
   ) {
-    return 'Dependency groups require manual review and are not auto-consolidated';
+    return REJECTION_REASONS.MANUAL_REVIEW_DEPENDENCY;
   }
   if (group.recommended_action === 'manual-review') {
-    return 'Mutually conflicting PRs require manual review; auto-consolidation is unsafe';
+    return REJECTION_REASONS.MANUAL_REVIEW_MULTI_CONFLICT;
   }
-  return 'Empty group cannot be consolidated';
+  return REJECTION_REASONS.EMPTY_GROUP;
 }
 
 // Partition selected PRs by dominant kind, split conflicting from clean within
@@ -191,6 +204,7 @@ module.exports = {
   DEFAULT_MAX_GROUP_SIZE,
   EXCLUDE_LABELS,
   KIND_PRIORITY,
+  REJECTION_REASONS,
   classifyPathKind,
   dominantKindForPr,
   selectStalePrs,

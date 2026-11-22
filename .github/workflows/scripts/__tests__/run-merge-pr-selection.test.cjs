@@ -344,6 +344,27 @@ test('unrecognized recommended_action is unsafe, never consolidation-eligible', 
     assert.match(group.reason, /not auto-consolidated/);
   }
 
+  // A populated rejection_reason must not mask the unrecognized-action cause:
+  // the grouping layer's fall-through reason labels non-empty groups "empty".
+  const populated = finalizeStalePrSelection({
+    groups: [
+      {
+        ...groupWith('needs-human'),
+        rejection_reason: 'Empty group cannot be consolidated',
+      },
+    ],
+    stalePrCount: 1,
+  }).unsafe[0];
+  assert.equal(
+    populated.decision_code,
+    DECISION_CODES.MANUAL_REVIEW_UNKNOWN_ACTION,
+  );
+  assert.match(populated.reason, /^Unrecognized recommended_action/);
+  assert.match(
+    populated.reason,
+    /underlying: Empty group cannot be consolidated$/,
+  );
+
   // A filtered unknown action keeps the unrecognized-action cause.
   const filtered = finalizeStalePrSelection({
     groups: [groupWith('needs-human')],

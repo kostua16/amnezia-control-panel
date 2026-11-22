@@ -176,4 +176,16 @@ test('header counts the rendered groups, not only the selected list', () => {
     ),
     '_Selected: 1 · Unsafe: 0 · Filtered: 0 · Capped: 0_',
   );
+  // A partially dispositioned payload counts per row: the undispositioned
+  // selected row must not vanish from the Selected count.
+  const undispositioned = { group_id: 'app-code-9', source_prs: [9] };
+  assert.equal(
+    header(
+      renderMergePrReport({
+        selectedGroups: [selected, undispositioned],
+        allGroups: [selected, unsafe, undispositioned],
+      }),
+    ),
+    '_Selected: 2 · Unsafe: 1 · Filtered: 0 · Capped: 0_',
+  );
 });

@@ -5,7 +5,11 @@
 // with an explicit decision record. Pure grouping lives in merge-pr-logic.cjs;
 // classification + report payload live here and are unit-tested.
 const fs = require('node:fs');
-const { selectStalePrs, groupStalePrs } = require('./merge-pr-logic.cjs');
+const {
+  selectStalePrs,
+  groupStalePrs,
+  REJECTION_REASONS,
+} = require('./merge-pr-logic.cjs');
 
 const DECISION_CODES = {
   CONSOLIDATE_SELECTED: 'CONSOLIDATE_SELECTED',
@@ -61,9 +65,7 @@ function decisionForAction(group) {
   if (action === 'rebase-first') {
     return {
       decision_code: DECISION_CODES.REBASE_FIRST_CONFLICT,
-      reason:
-        group.rejection_reason ||
-        'Single conflicting PR should be rebased in place before consolidation',
+      reason: group.rejection_reason || REJECTION_REASONS.REBASE_FIRST,
       consolidation_eligible: false,
     };
   }
@@ -71,8 +73,7 @@ function decisionForAction(group) {
     return {
       decision_code: DECISION_CODES.MANUAL_REVIEW_DEPENDENCY,
       reason:
-        group.rejection_reason ||
-        'Dependency groups require manual review and are not auto-consolidated',
+        group.rejection_reason || REJECTION_REASONS.MANUAL_REVIEW_DEPENDENCY,
       consolidation_eligible: false,
     };
   }
@@ -81,14 +82,14 @@ function decisionForAction(group) {
       decision_code: DECISION_CODES.MANUAL_REVIEW_MULTI_CONFLICT,
       reason:
         group.rejection_reason ||
-        'Mutually conflicting PRs require manual review; auto-consolidation is unsafe',
+        REJECTION_REASONS.MANUAL_REVIEW_MULTI_CONFLICT,
       consolidation_eligible: false,
     };
   }
   if (action === 'report-only') {
     return {
       decision_code: DECISION_CODES.REPORT_ONLY_EMPTY,
-      reason: group.rejection_reason || 'Empty group cannot be consolidated',
+      reason: group.rejection_reason || REJECTION_REASONS.EMPTY_GROUP,
       consolidation_eligible: false,
     };
   }
@@ -101,14 +102,18 @@ function decisionForAction(group) {
   }
   // classifyGroups buckets every non-consolidate action as unsafe, so an
   // action this classifier does not recognize must be described as not
-  // eligible rather than as consolidation-eligible.
+  // eligible rather than as consolidation-eligible. The grouping layer's
+  // fall-through reason ("Empty group cannot be consolidated") would
+  // mislabel a non-empty group, so the unrecognized-action cause leads and
+  // any populated rejection_reason trails it, as in the filtered branch.
+  const unrecognized = `Unrecognized recommended_action ${JSON.stringify(
+    action,
+  )} is not auto-consolidated`;
   return {
     decision_code: DECISION_CODES.MANUAL_REVIEW_UNKNOWN_ACTION,
-    reason:
-      group.rejection_reason ||
-      `Unrecognized recommended_action ${JSON.stringify(
-        action,
-      )} is not auto-consolidated`,
+    reason: group.rejection_reason
+      ? `${unrecognized}; underlying: ${group.rejection_reason}`
+      : unrecognized,
     consolidation_eligible: false,
   };
 }

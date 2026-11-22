@@ -93,20 +93,23 @@ function renderMergePrReport({
     skippedGroups,
     allGroups,
   });
-  // Header counts must describe the same rows as the table: count the
-  // disposition on the rendered groups and fall back to the selected list
-  // only for payloads whose groups carry no disposition.
-  const hasDispositions = groups.some((g) => g.disposition);
-  const selectedCount = hasDispositions
-    ? groups.filter((g) => g.disposition === 'selected').length
-    : selectedGroups.length;
-  const unsafeCount = groups.filter((g) => g.disposition === 'unsafe').length;
-  const filteredCount = groups.filter(
-    (g) => g.disposition === 'filtered',
-  ).length;
-  const cappedCount = groups.filter(
-    (g) => g.disposition === 'capped-deferred',
-  ).length;
+  // Header counts must describe the same rows as the table: each row's own
+  // disposition decides its bucket, and only a row without a disposition
+  // falls back to selected-list membership — a partially dispositioned
+  // payload must not under-count the selected rows it renders.
+  const selectedIds = new Set(
+    (selectedGroups || []).map((g) => g.group_id ?? g.id),
+  );
+  const countDisposition = (disposition, fallback) =>
+    groups.filter((g) =>
+      g.disposition ? g.disposition === disposition : fallback(g),
+    ).length;
+  const selectedCount = countDisposition('selected', (g) =>
+    selectedIds.has(g.group_id ?? g.id),
+  );
+  const unsafeCount = countDisposition('unsafe', () => false);
+  const filteredCount = countDisposition('filtered', () => false);
+  const cappedCount = countDisposition('capped-deferred', () => false);
   const closureByPr = new Map((closureResults || []).map((c) => [c.pr, c]));
   const derivedClosure =
     closureResults.length > 0
