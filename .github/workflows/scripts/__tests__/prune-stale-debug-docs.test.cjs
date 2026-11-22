@@ -1,0 +1,66 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const test = require('node:test');
+const { pruneStaleDebugDocs } = require('../prune-stale-debug-docs.cjs');
+
+test('prunes only top-level resolved docs strictly older than 30 days', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'prune-debug-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const documents = {
+    'old.md':
+      "---\r\nstatus: 'resolved'\r\nupdated: 2026-05-01T23:59:59Z\r\n---\r\n",
+    'boundary.md': '---\nstatus: resolved\nupdated: 2026-05-02\n---\n',
+    'fresh.md': '---\nstatus: resolved\nupdated: 2026-05-03\n---\n',
+    'fixed.md': '---\nstatus: fixed\nupdated: 2026-04-01\n---\n',
+    'invalid.md': '---\nstatus: resolved\nupdated: invalid\n---\n',
+    'missing.md': '---\nstatus: resolved\n---\n',
+    'body.md': 'Debug notes\n---\nstatus: resolved\nupdated: 2026-04-01\n---\n',
+  };
+  for (const [filename, content] of Object.entries(documents)) {
+    fs.writeFileSync(path.join(directory, filename), content);
+  }
+  fs.mkdirSync(path.join(directory, 'resolved'));
+  fs.writeFileSync(
+    path.join(directory, 'resolved', 'old.md'),
+    documents['old.md'],
+  );
+
+  pruneStaleDebugDocs(directory, Date.parse('2026-06-01T00:00:00Z'));
+
+  assert.deepEqual(
+    fs.readdirSync(directory).sort(),
+    [
+      ...Object.keys(documents).filter((filename) => filename !== 'old.md'),
+      'resolved',
+    ].sort(),
+  );
+  assert.ok(fs.existsSync(path.join(directory, 'resolved', 'old.md')));
+  pruneStaleDebugDocs(path.join(directory, 'missing-directory'));
+});
+
+test('maintenance runs pruning before change detection and keeps writes out of the allowlist', () => {
+  const { load } = require('js-yaml');
+  const workflow = load(
+    fs.readFileSync(path.join(__dirname, '../../maintenance.yml'), 'utf8'),
+  );
+  const steps = workflow.jobs.maintenance.steps;
+  const prune = steps.findIndex(
+    (step) =>
+      step.run === 'node .github/workflows/scripts/prune-stale-debug-docs.cjs',
+  );
+  assert.ok(
+    prune >
+      steps.findIndex(
+        (step) => step.name === 'Fail workflow on Claude failure',
+      ),
+  );
+  assert.equal(steps[prune + 1].id, 'detect_changes');
+  const agent = steps.find((step) => step.id === 'claude_run');
+  assert.doesNotMatch(
+    agent.with['allowed-tools'],
+    /github_inline_comment|Bash\(git (?:add|commit|rm):/,
+  );
+  assert.match(agent.with['allowed-tools'], /Bash\(gh pr comment:/);
+});
