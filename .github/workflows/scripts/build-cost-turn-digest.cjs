@@ -59,9 +59,13 @@ const MAX_LOG_DOWNLOADS = 400;
 // workflow's MAX_TURNS, or its average cost exceeds this many dollars.
 const BUDGET_PRESSURE_RATIO = 0.8;
 const HIGH_COST_PER_RUN_USD = 1;
-// How many body-marker search hits to inspect; only digest issues carry the
-// marker, so the page stays tiny in practice.
-const ISSUE_CANDIDATE_LIMIT = 20;
+// Search pages are followed until a short page: failure-report issues
+// token-match the digest title and can pile up in front of the marker-bearing
+// digest, which must never be pushed past the scan.
+const ISSUE_SEARCH_PAGE_SIZE = 50;
+// The search API itself refuses to serve past a thousand hits, so following
+// twenty 50-hit pages is the full result set, not a sample.
+const ISSUE_SEARCH_PAGE_LIMIT = 20;
 
 const VALUE_FLAGS = new Set([
   'repo',
@@ -186,35 +190,25 @@ function matchLogJsonField(text, field) {
 
 // Agent steps retry and multi-step jobs emit several result blocks; only the
 // last one reflects the job's final outcome, so cost/turn/error metrics are
-// read from after the last `"type": "result"` line rather than the first
-// match anywhere in the log.
+// read from the last `"type": "result"` line rather than the first match
+// anywhere in the log.
 function splitLastResultBlock(logText) {
   const lines = String(logText || '').split('\n');
   let anchor = -1;
-  let matchStart = 0;
-  let matchEnd = 0;
   for (let index = 0; index < lines.length; index += 1) {
-    const match = lines[index].match(/"type"\s*:\s*"result"/);
-    if (match) {
-      anchor = index;
-      matchStart = match.index;
-      matchEnd = matchStart + match[0].length;
-    }
+    if (/"type"\s*:\s*"result"/.test(lines[index])) anchor = index;
   }
   if (anchor === -1) {
     return { metricsText: logText || '', modelText: logText || '' };
   }
-  // Compact stream-json records keep the metrics on the anchor line itself,
-  // so that line is split at the match instead of being discarded whole.
+  // Compact stream-json records keep every result field on the anchor line,
+  // and JSON key order is not guaranteed: metrics and the model may sit
+  // before or after the type key. The whole anchor line is therefore searched
+  // for both; only earlier lines are excluded, since they belong to prior
+  // attempts whose metrics must not leak into the final result.
   return {
-    metricsText: [
-      lines[anchor].slice(matchEnd),
-      ...lines.slice(anchor + 1),
-    ].join('\n'),
-    modelText: [
-      ...lines.slice(0, anchor),
-      lines[anchor].slice(0, matchStart),
-    ].join('\n'),
+    metricsText: [lines[anchor], ...lines.slice(anchor + 1)].join('\n'),
+    modelText: lines.slice(0, anchor + 1).join('\n'),
   };
 }
 
@@ -623,6 +617,13 @@ function costNotReported(stats) {
   );
 }
 
+// True when only some agent runs reported a cost: the reported sums omit the
+// no-cost runs, so every cost figure for the window is a floor, and rendering
+// it unmarked would understate the week.
+function partialCostCoverage(stats) {
+  return stats.agentJobs > 0 && stats.noCostJobs > 0 && !costNotReported(stats);
+}
+
 function buildBudgetNotes(rows) {
   const notes = [];
   for (const row of rows) {
@@ -653,8 +654,14 @@ function buildBudgetNotes(rows) {
 function renderDigestBody(data, windowLabel) {
   const { totals, rows, workflows } = data;
   const costUnknown = costNotReported(totals);
+  const costPartial = partialCostCoverage(totals);
   const fleetCost = (value, digits) =>
-    costUnknown ? COST_NOT_REPORTED_FLEET : formatUsd(value, digits);
+    costUnknown
+      ? COST_NOT_REPORTED_FLEET
+      : `${costPartial ? '≥' : ''}${formatUsd(value, digits)}`;
+  const averagesClaim = costPartial
+    ? `Averages are exact only for the ${totals.agentJobs - totals.noCostJobs} sampled agent run(s) that reported a cost; ${totals.noCostJobs} reported none, so this window's figures are lower bounds.`
+    : 'Averages are exact for the sampled runs. The weekly estimate scales the sampled cost per run by all completed runs.';
   const lines = [
     `<!-- ${DIGEST_BODY_MARKER} -->`,
     '',
@@ -678,7 +685,7 @@ function renderDigestBody(data, windowLabel) {
     `| Agent runs with \`is_error\` | ${totals.errors} |`,
     `| Models (agent runs) | ${formatModels(totals.models)} |`,
     '',
-    'Averages are exact for the sampled runs. The weekly estimate scales the sampled cost per run by all completed runs.',
+    averagesClaim,
     '',
     '### Per workflow',
     '',
@@ -688,7 +695,9 @@ function renderDigestBody(data, windowLabel) {
   for (const row of rows) {
     const rowCostUnknown = costNotReported(row);
     const rowCost = (value, digits) =>
-      rowCostUnknown ? COST_NOT_REPORTED_ROW : formatUsd(value, digits);
+      rowCostUnknown
+        ? COST_NOT_REPORTED_ROW
+        : `${partialCostCoverage(row) ? '≥' : ''}${formatUsd(value, digits)}`;
     lines.push(
       `| \`${escapeTableCell(row.file)}\` | ${row.totalRuns} | ${row.sampledRuns} | ${row.agentJobs} | ${rowCost(round(row.costUsd))} | ${rowCost(row.estCostUsd)} | ${rowCost(row.avgCostPerRun, 4)} | ${row.avgTurnsPerRun ?? '-'} | ${row.maxTurns} | ${row.maxTurnsBudget ?? '-'} | ${rowCost(row.costPerTurn, 4)} | ${row.errors} |`,
     );
@@ -726,6 +735,11 @@ function renderDigestBody(data, windowLabel) {
       `- No sampled agent run reported \`total_cost_usd\`; this provider's cost is unknown for the window.`,
     );
   }
+  if (costPartial) {
+    lines.push(
+      `- ${totals.noCostJobs} of ${totals.agentJobs} sampled agent runs reported no \`total_cost_usd\`; cost figures marked ≥ are lower bounds for the window.`,
+    );
+  }
   if (totals.cappedLogDownloads > 0) {
     lines.push(
       `- ${totals.cappedLogDownloads} job log(s) were not read; the serial log download budget (${MAX_LOG_DOWNLOADS}) was reached.`,
@@ -745,44 +759,40 @@ function renderDigestBody(data, windowLabel) {
 // of reading as "no digest exists", which would create a duplicate on the
 // next run.
 function findExistingIssue(repo, runGhFn = runGh) {
-  const output = runGhFn(
-    [
-      'issue',
-      'list',
-      '--repo',
-      repo,
-      '--state',
-      'open',
-      '--search',
-      ISSUE_SEARCH_MARKER,
-      '--json',
-      'number,body',
-      '--limit',
-      String(ISSUE_CANDIDATE_LIMIT),
-    ],
-    { allowFailure: true },
-  );
-  if (output === null) {
-    throw new Error('Could not search for the existing digest issue');
+  for (let page = 1; page <= ISSUE_SEARCH_PAGE_LIMIT; page += 1) {
+    const output = runGhFn(
+      [
+        'api',
+        '-X',
+        'GET',
+        'search/issues',
+        '-f',
+        `q=repo:${repo} is:issue is:open ${ISSUE_SEARCH_MARKER}`,
+        '-f',
+        `per_page=${ISSUE_SEARCH_PAGE_SIZE}`,
+        '-f',
+        `page=${page}`,
+        '--jq',
+        '.items[] | {number, body}',
+      ],
+      { allowFailure: true },
+    );
+    if (output === null) {
+      throw new Error('Could not search for the existing digest issue');
+    }
+    const issues = parseGhJsonLines(output, []);
+    // The body search can still surface unrelated hits (an issue quoting the
+    // marker, a failure report, a stale copy); only a body carrying the
+    // digest marker identifies the issue this script owns, wherever in the
+    // result set it ranks.
+    const ours = issues.find((issue) =>
+      String(issue?.body || '').includes(DIGEST_BODY_MARKER),
+    );
+    if (ours) return Number(ours.number);
+    // A short page is the end of the result set.
+    if (issues.length < ISSUE_SEARCH_PAGE_SIZE) return null;
   }
-  let issues = null;
-  try {
-    const parsed = JSON.parse(output);
-    if (Array.isArray(parsed)) issues = parsed;
-  } catch {
-    issues = null;
-  }
-  if (issues === null) {
-    throw new Error('Could not read the digest issue search results');
-  }
-  // The body search can still surface unrelated hits (an issue quoting the
-  // marker, a stale copy); only a body carrying the digest marker identifies
-  // the issue this script owns, and the hit may rank anywhere in the list,
-  // not first.
-  const ours = issues.find((issue) =>
-    String(issue?.body || '').includes(DIGEST_BODY_MARKER),
-  );
-  return ours ? Number(ours.number) : null;
+  return null;
 }
 
 function upsertDigestIssue({ repo, title, body }, runGhFn = runGh) {
@@ -877,8 +887,19 @@ function main() {
     return;
   }
 
+  // A cost-less week with agent runs is either an honest provider or a broken
+  // extractor; the digest body alone cannot tell them apart, so the run
+  // summary and the Actions outputs say it explicitly.
+  const costUnknown = costNotReported(data.totals);
+
   if (process.env.GITHUB_STEP_SUMMARY) {
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`);
+    if (costUnknown) {
+      fs.appendFileSync(
+        process.env.GITHUB_STEP_SUMMARY,
+        '\n> [!WARNING]\n> No sampled agent run reported `total_cost_usd`. If this provider reports cost, the log extractor is broken.\n',
+      );
+    }
   }
 
   const issue = upsertDigestIssue({
@@ -902,6 +923,7 @@ function main() {
       ['agent_run_count', data.totals.agentJobs],
       ['sampled_cost_usd', round(data.totals.costUsd, 4) ?? 0],
       ['est_weekly_cost_usd', data.totals.estCostUsd ?? 0],
+      ['cost_not_reported', costUnknown ? 'true' : 'false'],
       ['missing_metrics_jobs', data.totals.missingJobs],
       ['fetch_error_count', data.totals.fetchErrors],
     ]);
@@ -918,6 +940,7 @@ module.exports = {
   DIGEST_TITLE_PREFIX,
   HIGH_COST_PER_RUN_USD,
   ISSUE_SEARCH_MARKER,
+  ISSUE_SEARCH_PAGE_SIZE,
   buildBudgetNotes,
   claudeActionNames,
   collectDigestData,

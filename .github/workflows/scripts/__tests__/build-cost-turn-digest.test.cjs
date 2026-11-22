@@ -12,6 +12,7 @@ const {
   DIGEST_LABELS,
   DIGEST_TITLE_PREFIX,
   ISSUE_SEARCH_MARKER,
+  ISSUE_SEARCH_PAGE_SIZE,
   buildBudgetNotes,
   claudeActionNames,
   collectDigestData,
@@ -40,6 +41,9 @@ function claudeLog({ turns, cost, isError = false, model = 'glm-5-turbo' }) {
     `${TS}"duration_ms": 216800,`,
   ].join('\n');
 }
+
+// `gh api --jq` answers with JSON lines, the shape parseGhJsonLines expects.
+const jsonl = (items) => items.map((item) => JSON.stringify(item)).join('\n');
 
 // Fake `gh` runner: first route whose regex matches the joined argv answers.
 function createFakeGh(routes) {
@@ -218,6 +222,16 @@ test('extractJobMetrics reads compact single-line result records', () => {
     costUsd: 0.2,
     turns: 4,
     isError: false,
+    model: 'glm-5-turbo',
+  });
+  // JSON key order is not guaranteed: metrics may precede the type key and
+  // the model may follow it on the same compact line.
+  const reordered =
+    '{"num_turns":9,"total_cost_usd":0.01,"type":"result","is_error":true,"model":"glm-5-turbo"}';
+  assert.deepEqual(extractJobMetrics(reordered), {
+    costUsd: 0.01,
+    turns: 9,
+    isError: true,
     model: 'glm-5-turbo',
   });
 });
@@ -672,13 +686,63 @@ test('renderDigestBody marks a provider that reports no cost', () => {
   assert.doesNotMatch(body, /\$0\.00/);
 });
 
+test('renderDigestBody marks a window with mixed cost coverage', () => {
+  // Mixed providers: one agent run reported a cost, one did not. The sums
+  // omit the no-cost run, so plain figures would understate the week.
+  const body = renderDigestBody(
+    {
+      maxRuns: 4,
+      workflows: [{ file: 'a.yml' }],
+      totals: {
+        totalRuns: 4,
+        sampledRuns: 2,
+        agentJobs: 2,
+        costUsd: 1,
+        noCostJobs: 1,
+        turns: 10,
+        errors: 0,
+        missingJobs: 0,
+        fetchErrors: 0,
+        estCostUsd: 2,
+        models: { 'glm-5-turbo': 2 },
+      },
+      rows: [
+        {
+          file: 'a.yml',
+          totalRuns: 4,
+          sampledRuns: 2,
+          agentJobs: 2,
+          costUsd: 1,
+          noCostJobs: 1,
+          turns: 10,
+          errors: 0,
+          maxTurns: 5,
+          models: {},
+          avgCostPerRun: 0.5,
+          avgTurnsPerRun: 5,
+          costPerTurn: 0.1,
+          estCostUsd: 2,
+          maxTurnsBudget: 25,
+        },
+      ],
+    },
+    'WINDOW',
+  );
+  assert.match(body, /\| Sampled cost \| ≥\$1\.00 \|/);
+  assert.match(body, /\| Estimated weekly cost \| ≥\$2\.00 \|/);
+  assert.match(body, /\| `a\.yml` \| 4 \| 2 \| 2 \| ≥\$1\.00 \|/);
+  assert.match(body, /1 of 2 sampled agent runs reported no `total_cost_usd`/);
+  assert.match(body, /this window's figures are lower bounds/);
+  // Partial coverage is not the all-unknown case.
+  assert.doesNotMatch(body, /not reported by provider/);
+  assert.doesNotMatch(body, /not reported \|/);
+});
+
 test('upsertDigestIssue edits the open digest or creates a labelled one', () => {
   const existing = createFakeGh([
     [
-      /^issue list .*--search "weekly-cost-turn-digest" in:body/,
-      JSON.stringify([
-        { number: 77, body: '<!-- weekly-cost-turn-digest -->' },
-      ]),
+      /^api -X GET search\/issues/,
+      jsonl([{ number: 77, body: '<!-- weekly-cost-turn-digest -->' }]),
     ],
   ]);
   assert.deepEqual(
@@ -687,7 +751,7 @@ test('upsertDigestIssue edits the open digest or creates a labelled one', () => 
   );
   assert.match(existing.calls.at(-1), /^issue edit 77 .*--title T --body B$/);
 
-  const fresh = createFakeGh([[/^issue list /, '[]']]);
+  const fresh = createFakeGh([[/^api -X GET search\/issues/, '']]);
   assert.deepEqual(
     upsertDigestIssue({ repo: 'o/r', title: 'T', body: 'B' }, fresh.runGh),
     { action: 'created', number: null },
@@ -701,8 +765,8 @@ test('upsertDigestIssue edits the open digest or creates a labelled one', () => 
 test('upsertDigestIssue never edits a title match without the marker', () => {
   const hijacked = createFakeGh([
     [
-      /^issue list /,
-      JSON.stringify([
+      /^api -X GET search\/issues/,
+      jsonl([
         { number: 76, body: 'backlog issue that requested the digest' },
         { number: 78, body: '[cost-digest] failure report body' },
       ]),
@@ -719,8 +783,8 @@ test('upsertDigestIssue never edits a title match without the marker', () => {
 test('upsertDigestIssue picks the marker-bearing hit wherever it ranks', () => {
   const mixed = createFakeGh([
     [
-      /^issue list /,
-      JSON.stringify([
+      /^api -X GET search\/issues/,
+      jsonl([
         { number: 76, body: 'no marker here' },
         { number: 79, body: 'digest body <!-- weekly-cost-turn-digest -->' },
       ]),
@@ -731,6 +795,32 @@ test('upsertDigestIssue picks the marker-bearing hit wherever it ranks', () => {
     { action: 'updated', number: 79 },
   );
   assert.match(mixed.calls.at(-1), /^issue edit 79 /);
+});
+
+test('upsertDigestIssue scans every search page for the marker', () => {
+  // Failure reports token-match the digest title and can fill the whole
+  // first page; the marker-bearing digest must still be found behind them.
+  const fillers = Array.from(
+    { length: ISSUE_SEARCH_PAGE_SIZE },
+    (_, index) => ({
+      number: 1000 + index,
+      body: 'failure report that token-matches the digest title',
+    }),
+  );
+  const paged = createFakeGh([
+    [/^api -X GET search\/issues .*page=1 /, jsonl(fillers)],
+    [
+      /^api -X GET search\/issues .*page=2 /,
+      jsonl([{ number: 88, body: 'digest <!-- weekly-cost-turn-digest -->' }]),
+    ],
+  ]);
+  assert.deepEqual(
+    upsertDigestIssue({ repo: 'o/r', title: 'T', body: 'B' }, paged.runGh),
+    { action: 'updated', number: 88 },
+  );
+  assert.ok(paged.calls.some((call) => call.includes('page=1 ')));
+  assert.ok(paged.calls.some((call) => call.includes('page=2 ')));
+  assert.match(paged.calls.at(-1), /^issue edit 88 /);
 });
 
 test('upsertDigestIssue refuses to create when the search fails', () => {
