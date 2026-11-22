@@ -107,9 +107,19 @@ test('formatAllowedBots is comma-joined without spaces', () => {
 const HARDCODED_BOT_LIST =
   /allowed-bots:\s*(?:\$\{\{[^}]*&&\s*)?['"][^'"]*(?:\[bot\]|github-actions,)[^'"]*['"]/;
 
-const OVERRIDE_ALLOWLIST = new Set([
-  path.normalize('workflows/triage.yml'),
-  path.normalize('workflows/issue-catch-up.yml'),
+// Documented override literals (documentation.md): these callers keep one
+// explicit allowed-bots value instead of a named profile. Only the exact
+// literal is exempt from the scan — any other hardcoded bot list elsewhere
+// in these files (or a second copy of the literal) still fails the contract.
+const OVERRIDE_LITERALS = new Map([
+  [
+    path.normalize('workflows/triage.yml'),
+    "allowed-bots: 'github-actions[bot],kilo-code-bot'",
+  ],
+  [
+    path.normalize('workflows/issue-catch-up.yml'),
+    "allowed-bots: 'github-actions[bot]'",
+  ],
 ]);
 
 test('workflow and action callers use profiles instead of hardcoded bot lists', () => {
@@ -125,9 +135,13 @@ test('workflow and action callers use profiles instead of hardcoded bot lists', 
       }
       if (!/\.ya?ml$/.test(ent.name)) continue;
       const rel = path.relative(repoGithub, full);
-      if (OVERRIDE_ALLOWLIST.has(path.normalize(rel))) continue;
       const text = fs.readFileSync(full, 'utf8');
-      if (HARDCODED_BOT_LIST.test(text))
+      const exempt = OVERRIDE_LITERALS.get(path.normalize(rel));
+      // Strip at most the single documented literal so the rest of the
+      // file stays under the hardcoded-list guard (a second occurrence
+      // is not stripped and therefore still matches).
+      const scanned = exempt ? text.replace(exempt, '') : text;
+      if (HARDCODED_BOT_LIST.test(scanned))
         offenders.push(rel.replace(/\\/g, '/'));
     }
   }
