@@ -518,12 +518,18 @@ jobs:
     name: Aggregate per-run cost telemetry (MON-E06)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Read-only job: gh calls authenticate with GH_PAT and the checkout
+    # uses the same PAT, so the workflow token needs no write scopes.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: main
           token: ${{ secrets.GH_PAT }}
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-environment
         with:
@@ -545,8 +551,9 @@ jobs:
             --repo "${{ github.repository }}" \
             --workflow-file "$MONITOR_WORKFLOW_FILE" \
             --exclude-run-id "${{ github.run_id }}" \
+            --agent-job-name "Monitor GitHub Actions Runs" \
             --window-hours 168 \
-            --max-runs 50 \
+            --max-runs 200 \
             --records-file "$out_dir/records.jsonl" \
             --summary-file "$out_dir/summary.json" \
             --github-output "$GITHUB_OUTPUT"
@@ -559,17 +566,23 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload cost telemetry artifact
-        if: always()
+        # Skip when the aggregate step never ran (empty out_dir) and stay
+        # warn-only on missing files so an upstream failure — not this
+        # upload — remains the reported cause of a red run.
+        if: always() && steps.costs.outputs.out_dir != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: monitor-cost-telemetry-${{ github.run_id }}
           path: ${{ steps.costs.outputs.out_dir }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 90
 
   report-failure:
-    needs: [monitor-runs]
-    if: ${{ always() && needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped' }}
+    # cost-telemetry failures must surface too: without routing them here
+    # a failing telemetry job leaves an hourly red run with no issue and
+    # no triage dispatch.
+    needs: [monitor-runs, cost-telemetry]
+    if: ${{ always() && ((needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped') || needs.cost-telemetry.result == 'failure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
