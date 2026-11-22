@@ -46,10 +46,15 @@ function summarize(lines) {
       // a window called `n/a`.
       withoutWindow += 1;
     } else {
-      const key = `${entry.core_reset}|${entry.token_id ?? entry.token}`;
+      // Lines logged before token_id existed carry no token identity: the
+      // reset time alone identifies their bucket, and they must not be split
+      // or merged by the public token kind (ghs/ghp), which says nothing about
+      // which token it was.
+      const tokenId = entry.token_id ?? 'unknown';
+      const key = `${entry.core_reset}|${tokenId}`;
       const window = windows.get(key) ?? {
         reset: entry.core_reset,
-        token: entry.token_id ?? entry.token,
+        token: tokenId,
         limit: entry.limit,
         min: Infinity,
         max: -Infinity,
@@ -62,17 +67,24 @@ function summarize(lines) {
     }
 
     // The label is part of the key: one job can log several independent
-    // start/end pairs (e.g. setup-environment plus job-level calls).
+    // start/end pairs (e.g. setup-environment plus job-level calls). Repeated
+    // invocations with the same label are paired in log order: a job-start
+    // opens a pair, the next job-end closes the oldest open one.
     const jobKey = `${entry.run}|${entry.job}|${entry.label ?? ''}`;
-    const job = jobs.get(jobKey) ?? {
-      workflow: entry.workflow,
-      job: entry.job,
-    };
-    job[entry.phase] = entry;
-    jobs.set(jobKey, job);
+    const pairs = jobs.get(jobKey) ?? [];
+    jobs.set(jobKey, pairs);
+    const base = { workflow: entry.workflow, job: entry.job };
+    if (entry.phase === 'job-start') {
+      pairs.push({ ...base, 'job-start': entry });
+    } else if (entry.phase === 'job-end') {
+      const open = pairs.find((pair) => !pair['job-end']);
+      if (open) open['job-end'] = entry;
+      else pairs.push({ ...base, 'job-end': entry });
+    }
   }
 
-  const mismatched = [...jobs.values()].filter((job) => {
+  const allPairs = [...jobs.values()].flat();
+  const mismatched = allPairs.filter((job) => {
     const start = job['job-start'];
     const end = job['job-end'];
     return (
@@ -89,9 +101,8 @@ function summarize(lines) {
     windows: [...windows.values()].sort((a, b) =>
       a.reset.localeCompare(b.reset),
     ),
-    jobsWithBoth: [...jobs.values()].filter(
-      (job) => job['job-start'] && job['job-end'],
-    ).length,
+    jobsWithBoth: allPairs.filter((job) => job['job-start'] && job['job-end'])
+      .length,
     mismatched,
   };
 }

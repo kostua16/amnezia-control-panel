@@ -113,7 +113,7 @@ test('leaves readings without a usable window out of the windows', () => {
       id: 'a',
       remaining: 4300,
       reset: '2026-11-22T20:39:11Z',
-    }).replace('R1', '2026-11-22T20:39:11Z'),
+    }),
     line({
       phase: 'job-start',
       run: '2.1',
@@ -157,4 +157,29 @@ test('keeps separate start/end pairs of one job apart by label', () => {
 
   assert.equal(summary.jobsWithBoth, 2);
   assert.equal(summary.mismatched.length, 0);
+});
+
+test('pairs repeated invocations that share a label in log order', () => {
+  const at = '2026-11-22T20:39:11Z';
+  const other = '2026-11-22T20:41:57Z';
+  const summary = summarize([
+    line({ phase: 'job-start', id: 'a', remaining: 4300, reset: at }),
+    line({ phase: 'job-start', id: 'a', remaining: 4290, reset: at }),
+    line({ phase: 'job-end', id: 'a', remaining: 4200, reset: at }),
+    line({ phase: 'job-end', id: 'b', remaining: 4700, reset: other }),
+  ]);
+
+  assert.equal(summary.jobsWithBoth, 2);
+  assert.equal(summary.mismatched.length, 1);
+});
+
+test('groups readings without token_id under one unknown token per window', () => {
+  const at = '2026-11-22T20:39:11Z';
+  const legacy = (remaining) =>
+    `RATE_LIMIT phase=job-start workflow="X" job=j label=j run=${remaining}.1 token=ghs core_remaining=${remaining}/5000 core_reset=${at}`;
+  const summary = summarize([legacy(4000), legacy(4500)]);
+
+  assert.equal(summary.windows.length, 1);
+  assert.equal(summary.windows[0].token, 'unknown');
+  assert.equal(summary.windows[0].readings, 2);
 });
