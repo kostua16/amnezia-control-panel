@@ -11,9 +11,12 @@ const {
   getWorkerDispatchRef,
   makeDecision: makePrFlowDecision,
   pathsMatch,
+  publishFlowStatuses,
   renderFlowComment,
   resolvePrNumber,
+  shouldPublishStatus,
   summarizeWorkerRuns,
+  usableStatusId,
 } = require('../orchestrate-pr-flow.cjs');
 
 const policyPath = path.join(__dirname, '..', '..', 'policy.json');
@@ -882,6 +885,433 @@ test('buildFlowVisibility orderedStatuses includes aggregate and all workers', (
   assert.equal(visibility.orderedStatuses[4].context, 'pr-flow/kilo-review');
   assert.equal(visibility.orderedStatuses[5].context, 'pr-flow/pr-improve');
   assert.equal(visibility.orderedStatuses[6].context, 'pr-flow/finalizer');
+});
+
+// ── commit status publishing ─────────────────────────────────────────
+
+const RUN_URL = 'https://github.com/test/repo/actions/runs/200';
+const OLD_RUN_URL = 'https://github.com/test/repo/actions/runs/100';
+const WORKER_URL = 'https://github.com/test/repo/actions/runs/55';
+
+function makeStatus(overrides = {}) {
+  return {
+    context: 'pr-flow/code-review',
+    state: 'success',
+    displayState: 'success',
+    description: 'Code review passed.',
+    targetUrl: WORKER_URL,
+    details: '',
+    ...overrides,
+  };
+}
+
+function previousStatuses(entries) {
+  return new Map(entries.map((entry) => [entry.context, entry]));
+}
+
+function previousSuccess(overrides = {}) {
+  return {
+    context: 'pr-flow/code-review',
+    state: 'success',
+    description: 'Code review passed.',
+    target_url: WORKER_URL,
+    ...overrides,
+  };
+}
+
+test('shouldPublishStatus skips an identical success status', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  assert.equal(shouldPublishStatus(previous, makeStatus(), RUN_URL), false);
+});
+
+test('shouldPublishStatus skips an identical success that links to the current run', () => {
+  const previous = previousStatuses([
+    previousSuccess({ target_url: OLD_RUN_URL }),
+  ]);
+  const status = makeStatus({ targetUrl: RUN_URL });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
+});
+
+test('shouldPublishStatus keeps an older worker-run link when the new link is the current run', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  const status = makeStatus({ targetUrl: RUN_URL });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
+});
+
+test('shouldPublishStatus posts a linkless success that would gain the current-run link', () => {
+  const previous = previousStatuses([previousSuccess({ target_url: null })]);
+  const status = makeStatus({ targetUrl: RUN_URL });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus compares descriptions after truncation', () => {
+  const long = 'x'.repeat(200);
+  const previous = previousStatuses([
+    previousSuccess({ description: `${'x'.repeat(137)}...` }),
+  ]);
+  const status = makeStatus({ description: long });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
+});
+
+test('shouldPublishStatus posts when the success description changed', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  const status = makeStatus({ description: 'Security review passed.' });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus posts when a worker run url changed', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  const status = makeStatus({
+    targetUrl: 'https://github.com/test/repo/actions/runs/56',
+  });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus posts when the previous status had a different link or none', () => {
+  const noUrl = previousStatuses([previousSuccess({ target_url: null })]);
+  assert.equal(shouldPublishStatus(noUrl, makeStatus(), RUN_URL), true);
+  const cleared = previousStatuses([previousSuccess()]);
+  const status = makeStatus({ targetUrl: '' });
+  assert.equal(shouldPublishStatus(cleared, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus always posts pending, failure and error even when identical', () => {
+  for (const state of ['pending', 'failure', 'error']) {
+    const previous = previousStatuses([previousSuccess({ state })]);
+    const status = makeStatus({ state, displayState: state });
+    assert.equal(
+      shouldPublishStatus(previous, status, RUN_URL),
+      true,
+      `${state} must be re-posted`,
+    );
+  }
+});
+
+test('shouldPublishStatus posts when the previous state differs', () => {
+  for (const state of ['pending', 'failure', 'error']) {
+    const previous = previousStatuses([previousSuccess({ state })]);
+    assert.equal(shouldPublishStatus(previous, makeStatus(), RUN_URL), true);
+  }
+});
+
+test('shouldPublishStatus posts when there is no previous status for the context', () => {
+  assert.equal(shouldPublishStatus(new Map(), makeStatus(), RUN_URL), true);
+  const other = previousStatuses([
+    previousSuccess({ context: 'pr-flow/finalizer' }),
+  ]);
+  assert.equal(shouldPublishStatus(other, makeStatus(), RUN_URL), true);
+  assert.equal(shouldPublishStatus(undefined, makeStatus(), RUN_URL), true);
+});
+
+function statusVisibility() {
+  return {
+    orderedStatuses: [
+      makeStatus({
+        context: 'pr-flow/ready',
+        state: 'pending',
+        description: 'Waiting.',
+        targetUrl: RUN_URL,
+      }),
+      makeStatus({
+        context: 'pr-flow/code-review',
+        state: 'success',
+        targetUrl: WORKER_URL,
+      }),
+      makeStatus({
+        context: 'pr-flow/kilo-review',
+        state: 'success',
+        description: 'N/A',
+        targetUrl: RUN_URL,
+      }),
+    ],
+  };
+}
+
+test('publishFlowStatuses skips only unchanged successes and keeps order', () => {
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({
+        context: 'pr-flow/ready',
+        state: 'pending',
+        description: 'Waiting.',
+        target_url: OLD_RUN_URL,
+      }),
+      previousSuccess(),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses uses the newest duplicate context even in newest-first order', () => {
+  // Newest-first input, defensive: the combined /status endpoint is
+  // deduplicated to one entry per context today, so duplicates cannot
+  // reach this path; last-wins indexing would pick the older success
+  // duplicate and wrongly skip if they ever did.
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: '2026-11-22T10:00:00Z',
+      }),
+      previousSuccess({ created_at: '2026-11-22T09:00:00Z' }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+});
+
+test('publishFlowStatuses uses the newest duplicate context in oldest-first history', () => {
+  // Oldest-first input, defensive: the history endpoint
+  // (commits/{sha}/statuses) returns newest-first today, but the newest
+  // failure must still decide in either order.
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({ created_at: '2026-11-22T09:00:00Z' }),
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: '2026-11-22T10:00:00Z',
+      }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+});
+
+test('publishFlowStatuses lets a usable created_at replace an unusable one', () => {
+  // A missing or malformed timestamp must not pin the first array entry:
+  // the duplicate with a parseable created_at decides even in oldest-first
+  // order, where first-wins would keep the stale success.
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({ created_at: 'not-a-date' }),
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: '2026-11-22T10:00:00Z',
+      }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+});
+
+test('publishFlowStatuses breaks equal created_at ties on the status id', () => {
+  // GitHub timestamps have second granularity, so overlapping prt/wake runs
+  // on the same head can post the same context within one second; the
+  // monotonic id must decide in either array order.
+  const tie = '2026-11-22T10:00:00Z';
+  const staleSuccess = previousSuccess({ created_at: tie, id: '100' });
+  const newerFailure = previousSuccess({
+    context: 'pr-flow/code-review',
+    state: 'failure',
+    description: 'Code review failed.',
+    created_at: tie,
+    id: '200',
+  });
+  for (const duplicates of [
+    [staleSuccess, newerFailure],
+    [newerFailure, staleSuccess],
+  ]) {
+    const posted = [];
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => [
+        ...duplicates,
+        previousSuccess({
+          context: 'pr-flow/kilo-review',
+          description: 'N/A',
+          target_url: OLD_RUN_URL,
+        }),
+      ],
+      publishStatus: (_pr, status) => posted.push(status.context),
+    });
+
+    assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+  }
+});
+
+test('usableStatusId never coerces a missing id into a real id of 0', () => {
+  // Number(null) and Number('') are 0, which would make a missing id look
+  // like a real (and oldest) one. Only publishFlowStatuses cannot observe
+  // that, since no usable id is ever below 0, so the helper is checked here.
+  assert.equal(usableStatusId(undefined), null);
+  assert.equal(usableStatusId(null), null);
+  assert.equal(usableStatusId(''), null);
+  assert.equal(usableStatusId('not-a-number'), null);
+  assert.equal(usableStatusId(0), 0);
+  assert.equal(usableStatusId('200'), 200);
+  assert.equal(usableStatusId(200), 200);
+});
+
+test('publishFlowStatuses lets a usable id beat an unusable one on tied created_at', () => {
+  // Mirror of the created_at rule: when only one duplicate of a tied pair
+  // carries a usable id, that entry must win in either array order. The
+  // coercion edge cases (null, '') are pinned directly on usableStatusId
+  // above; here the absent id is what the ordering assertions can observe.
+  const tie = '2026-11-22T10:00:00Z';
+  const staleSuccess = previousSuccess({ created_at: tie, id: '200' });
+  for (const unusableId of [undefined, null, '']) {
+    const failure = previousSuccess({
+      context: 'pr-flow/code-review',
+      state: 'failure',
+      description: 'Code review failed.',
+      created_at: tie,
+      ...(unusableId === undefined ? {} : { id: unusableId }),
+    });
+    for (const duplicates of [
+      [staleSuccess, failure],
+      [failure, staleSuccess],
+    ]) {
+      const posted = [];
+      publishFlowStatuses({ ...basePr }, statusVisibility(), {
+        currentRunUrl: RUN_URL,
+        readStatuses: () => [
+          ...duplicates,
+          previousSuccess({
+            context: 'pr-flow/kilo-review',
+            description: 'N/A',
+            target_url: OLD_RUN_URL,
+          }),
+        ],
+        publishStatus: (_pr, status) => posted.push(status.context),
+      });
+
+      assert.deepEqual(posted, ['pr-flow/ready']);
+    }
+  }
+});
+
+test('publishFlowStatuses keeps the first duplicate when created_at and id are unusable', () => {
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess(),
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: 'not-a-date',
+      }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses reads the status list once even with several successes', () => {
+  const reads = [];
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: (sha) => {
+      reads.push(sha);
+      return [];
+    },
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(reads, [basePr.headSha]);
+  assert.equal(posted.length, 3);
+});
+
+test('publishFlowStatuses posts everything when the status read throws', () => {
+  const posted = [];
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => {
+        throw new Error('boom');
+      },
+      publishStatus: (_pr, status) => posted.push(status.context),
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(posted, [
+    'pr-flow/ready',
+    'pr-flow/code-review',
+    'pr-flow/kilo-review',
+  ]);
+});
+
+test('publishFlowStatuses posts everything when the read returns an unexpected shape', () => {
+  for (const unexpected of [null, undefined, {}, 'nope', [null, 42]]) {
+    const posted = [];
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => unexpected,
+      publishStatus: (_pr, status) => posted.push(status.context),
+    });
+    assert.equal(posted.length, 3);
+  }
+});
+
+test('publishFlowStatuses does not read statuses when nothing is a success', () => {
+  let reads = 0;
+  const posted = [];
+  publishFlowStatuses(
+    { ...basePr },
+    { orderedStatuses: [makeStatus({ state: 'pending' })] },
+    {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => {
+        reads += 1;
+        return [];
+      },
+      publishStatus: (_pr, status) => posted.push(status.context),
+    },
+  );
+
+  assert.equal(reads, 0);
+  assert.equal(posted.length, 1);
 });
 
 // ── resolvePrNumber ──────────────────────────────────────────────────

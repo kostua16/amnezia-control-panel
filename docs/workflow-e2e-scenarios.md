@@ -327,6 +327,7 @@ flowchart TD
 | V10 | Dependency review required (dependabot + package.json changed)      | dependencyReview active (not skipped), codeReview=N/A → statuses reflect dependency gate                                                              | char |
 | V11 | Multiple workers running concurrently                               | each worker shows `running` displayState → PR comment table shows live progress                                                                       | char |
 | V12 | External Kilo review pending (no current-head reply under 30min)    | kiloReview=pending → `pr-flow/kilo-review` status shows waiting → PR Flow continues to other gates                                                    | char |
+| V13 | Repeat wake, status already an unchanged `success` on the head SHA  | `publishFlowStatuses` skips only that POST; pending/failure/error always re-posted (watchdog reads age); read error posts all                         | char |
 
 ---
 
