@@ -2369,4 +2369,5 @@ module.exports = {
   resolvePrNumber,
   shouldPublishStatus,
   summarizeWorkerRuns,
+  usableStatusId,
 };

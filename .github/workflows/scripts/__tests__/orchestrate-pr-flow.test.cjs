@@ -15,6 +15,7 @@ const {
   resolvePrNumber,
   shouldPublishStatus,
   summarizeWorkerRuns,
+  usableStatusId,
 } = require('../orchestrate-pr-flow.cjs');
 
 const policyPath = path.join(__dirname, '..', '..', 'policy.json');
@@ -1132,11 +1133,24 @@ test('publishFlowStatuses breaks equal created_at ties on the status id', () => 
   }
 });
 
+test('usableStatusId never coerces a missing id into a real id of 0', () => {
+  // Number(null) and Number('') are 0, which would make a missing id look
+  // like a real (and oldest) one. Only publishFlowStatuses cannot observe
+  // that, since no usable id is ever below 0, so the helper is checked here.
+  assert.equal(usableStatusId(undefined), null);
+  assert.equal(usableStatusId(null), null);
+  assert.equal(usableStatusId(''), null);
+  assert.equal(usableStatusId('not-a-number'), null);
+  assert.equal(usableStatusId(0), 0);
+  assert.equal(usableStatusId('200'), 200);
+  assert.equal(usableStatusId(200), 200);
+});
+
 test('publishFlowStatuses lets a usable id beat an unusable one on tied created_at', () => {
   // Mirror of the created_at rule: when only one duplicate of a tied pair
-  // carries a usable id, that entry must win in either array order. A
-  // missing id may arrive as absent, null or '' — none of those may be
-  // coerced into a real id of 0.
+  // carries a usable id, that entry must win in either array order. The
+  // coercion edge cases (null, '') are pinned directly on usableStatusId
+  // above; here the absent id is what the ordering assertions can observe.
   const tie = '2026-11-22T10:00:00Z';
   const staleSuccess = previousSuccess({ created_at: tie, id: '200' });
   for (const unusableId of [undefined, null, '']) {
