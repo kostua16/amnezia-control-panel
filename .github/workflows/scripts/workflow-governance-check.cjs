@@ -3,7 +3,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const yaml = require('js-yaml');
+const { isDeepStrictEqual } = require('node:util');
+const yaml = require(process.env.GOVERNANCE_YAML_PARSER || 'js-yaml');
 
 const root = process.cwd();
 const workflowDir = path.join(root, '.github', 'workflows');
@@ -23,6 +24,14 @@ const allowedPullRequestTarget = new Set([
 function cleanupPolicyErrors(text) {
   const errors = [];
   const workflow = yaml.load(text);
+  const expectedPermissions = {
+    contents: 'write',
+    'pull-requests': 'read',
+    issues: 'write',
+  };
+  if (!isDeepStrictEqual(workflow?.permissions, expectedPermissions)) {
+    errors.push('cleanup must use the approved workflow permissions');
+  }
   const trigger = workflow?.on?.pull_request_target;
   if (
     trigger?.branches?.length !== 1 ||
@@ -60,6 +69,9 @@ function cleanupPolicyErrors(text) {
     if (job?.if?.trim().replace(/\s+/g, ' ') !== condition) {
       errors.push(`${name} must retain its same-repository close guard`);
     }
+    if (job?.permissions !== undefined) {
+      errors.push(`${name} must inherit the approved workflow permissions`);
+    }
     const steps = job?.steps ?? [];
     const checkouts = steps.filter((step) =>
       step.uses?.startsWith('actions/checkout@'),
@@ -89,6 +101,11 @@ function cleanupPolicyErrors(text) {
     "github.event_name != 'pull_request_target'"
   ) {
     errors.push('the orphan sweep must skip pull_request_target events');
+  }
+  if (workflow?.jobs?.['cleanup-orphan-branches']?.permissions !== undefined) {
+    errors.push(
+      'the orphan sweep must inherit the approved workflow permissions',
+    );
   }
   return errors;
 }
@@ -239,4 +256,6 @@ function main() {
   if (errors.length > 0) process.exit(1);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { cleanupPolicyErrors };

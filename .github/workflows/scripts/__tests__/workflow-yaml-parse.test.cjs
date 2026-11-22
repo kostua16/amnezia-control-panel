@@ -100,3 +100,23 @@ test('G8b: Docker image publishing jobs use distinct rate-limit labels', () => {
     assert.equal(snapshot?.with.label, label);
   }
 });
+
+test('G8a: governance rejects wider permissions and extra close jobs', () => {
+  const { cleanupPolicyErrors } = require('../workflow-governance-check.cjs');
+  const workflow = yaml.load(
+    fs.readFileSync(
+      path.resolve(__dirname, '../../auto-pr-branch-cleanup.yml'),
+      'utf8',
+    ),
+  );
+
+  assert.deepEqual(cleanupPolicyErrors(yaml.dump(workflow)), []);
+  workflow.permissions.actions = 'write';
+  workflow.jobs['delete-generated-branch'].permissions = 'write-all';
+  workflow.jobs['unexpected-close-job'] = { 'runs-on': 'ubuntu-latest' };
+  assert.deepEqual(cleanupPolicyErrors(yaml.dump(workflow)), [
+    'cleanup must use the approved workflow permissions',
+    'unexpected job in privileged cleanup workflow: unexpected-close-job',
+    'delete-generated-branch must inherit the approved workflow permissions',
+  ]);
+});
