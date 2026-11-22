@@ -37,8 +37,12 @@ permissions:
 jobs:
   wait:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     environment: auto-cover-delay
+    # GitHub does not count the environment wait timer (the job holds no runner
+    # while it waits) toward timeout-minutes, so this only bounds the echo below.
+    # Keep it above any sane timer anyway: if the wait were ever counted, the
+    # job would be cancelled, `dispatch` skipped and every handoff would die.
     concurrency:
       group: auto-cover-wait-${{ inputs.pr_number }}
       cancel-in-progress: true

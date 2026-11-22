@@ -163,7 +163,12 @@ function summaryVerdict(
     const counts = severityCounts(text);
     if (!counts) return 'blocked';
     const total = KILO_SEVERITIES.reduce((sum, name) => sum + counts[name], 0);
-    if (total === 0) return 'blocked';
+    // A consistent all-zero table is a clean review unless the summary still
+    // asks for changes (`Address before merge`), in which case the evidence
+    // contradicts itself and the review keeps blocking.
+    if (total === 0) {
+      return /Address before merge/i.test(text) ? 'blocked' : 'passed';
+    }
     return KILO_SEVERITIES.some(
       (name) => blocking.has(name) && counts[name] > 0,
     )

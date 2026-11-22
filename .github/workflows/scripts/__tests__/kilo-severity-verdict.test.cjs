@@ -91,6 +91,27 @@ test('severityCounts reads only the current overview table', () => {
   });
 });
 
+test('a consistent all-zero table passes unless the summary still says to address findings', () => {
+  const zeros = ['| CRITICAL | 0 |', '| WARNING | 0 |', '| SUGGESTION | 0 |'];
+  const clean = [
+    '<!-- kilo-review -->',
+    '',
+    '**Status:** 0 Issues Found | **Recommendation:** Merge',
+    '',
+    '| Severity | Count |',
+    '|----------|-------|',
+    ...zeros,
+    '',
+  ].join('\n');
+  assert.equal(summaryVerdict(clean, ''), 'passed');
+  assert.equal(
+    summaryVerdict(clean.replace('Merge', 'Address before merge'), ''),
+    'blocked',
+  );
+  // Rollback keeps every finding blocking; a clean zero table has none.
+  assert.equal(summaryVerdict(clean, 'all'), 'blocked');
+});
+
 test('CRLF line endings do not change the verdict', () => {
   const crlf = revision(5).replace(/\n/g, '\r\n');
   assert.equal(summaryVerdict(crlf, ''), 'non-blocking');
