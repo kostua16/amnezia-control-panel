@@ -11,6 +11,48 @@ const fs = require('node:fs');
 const path = require('node:path');
 const yaml = require('js-yaml');
 
+test('the governance YAML trust pin matches the parser used by tests', () => {
+  const installer = fs.readFileSync(
+    path.resolve(__dirname, '../install-governance-yaml.sh'),
+    'utf8',
+  );
+  const parser = require('../../../../package-lock.json').packages?.[
+    'node_modules/js-yaml'
+  ];
+  assert.ok(parser, 'package-lock.json must contain a js-yaml package entry');
+  const { resolved, integrity } = parser;
+  assert.match(resolved ?? '', /^https:\/\//, 'js-yaml must have an HTTPS URL');
+  assert.match(
+    integrity ?? '',
+    /^sha512-/,
+    'js-yaml must have a SHA-512 lockfile digest',
+  );
+
+  assert.ok(installer.includes(`${resolved} --output`));
+  assert.ok(
+    installer.includes(`expected='${integrity.replace(/^sha512-/, '')}'`),
+  );
+});
+
+test('the governance YAML installer bounds downloads and tests the bundle', () => {
+  const installer = fs.readFileSync(
+    path.resolve(__dirname, '../install-governance-yaml.sh'),
+    'utf8',
+  );
+  for (const option of [
+    /--proto '=https'/,
+    /--proto-redir '=https'/,
+    /--retry [1-9]\d*\b/,
+    /--retry-all-errors\b/,
+    /--retry-max-time [1-9]\d*\b/,
+    /--connect-timeout [1-9]\d*\b/,
+    /--max-time [1-9]\d*\b/,
+  ]) {
+    assert.match(installer, option);
+  }
+  assert.match(installer, /node -e .*yaml\.load\(/);
+});
+
 const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const workflowsDir = path.join(repoRoot, '.github/workflows');
 
@@ -44,3 +86,79 @@ for (const file of workflowFiles) {
     );
   });
 }
+
+test('G8a: privileged close jobs check out the current trusted main', () => {
+  const workflow = yaml.load(
+    fs.readFileSync(
+      path.resolve(__dirname, '../../auto-pr-branch-cleanup.yml'),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(workflow.on.pull_request_target, {
+    branches: ['main'],
+    types: ['closed'],
+  });
+  assert.equal(workflow.on.pull_request, undefined);
+  for (const name of ['restore-deferred-proposal', 'delete-generated-branch']) {
+    const job = workflow.jobs[name];
+    assert.match(
+      job.if,
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+      `${name} must ignore fork PRs`,
+    );
+    const checkoutIndex = job.steps.findIndex((step) =>
+      step.uses?.startsWith('actions/checkout@'),
+    );
+    const snapshotIndex = job.steps.findIndex(
+      (step) => step.uses === './.github/actions/log-rate-limit',
+    );
+    assert.ok(checkoutIndex >= 0, `${name} must have a checkout step`);
+    assert.ok(
+      snapshotIndex > checkoutIndex,
+      `${name} must check out before logging`,
+    );
+    const checkout = job.steps[checkoutIndex];
+    assert.match(checkout.uses, /^actions\/checkout@[a-f0-9]{40}$/);
+    assert.equal(checkout.with.ref, 'refs/heads/main');
+    assert.equal(checkout.with['persist-credentials'], false);
+  }
+  assert.equal(
+    workflow.jobs['cleanup-orphan-branches'].if,
+    "github.event_name != 'pull_request_target'",
+  );
+});
+
+test('G8b: Docker image publishing jobs use distinct rate-limit labels', () => {
+  const workflow = yaml.load(
+    fs.readFileSync(path.resolve(__dirname, '../../docker-image.yml'), 'utf8'),
+  );
+  for (const [job, label] of [
+    ['publish', 'docker-publish'],
+    ['publish-stack', 'docker-publish-stack'],
+  ]) {
+    const snapshot = workflow.jobs[job].steps.find(
+      (step) => step.uses === './.github/actions/log-rate-limit',
+    );
+    assert.equal(snapshot?.with.label, label);
+  }
+});
+
+test('G8a: governance rejects wider permissions and extra close jobs', () => {
+  const { cleanupPolicyErrors } = require('../workflow-governance-check.cjs');
+  const workflow = yaml.load(
+    fs.readFileSync(
+      path.resolve(__dirname, '../../auto-pr-branch-cleanup.yml'),
+      'utf8',
+    ),
+  );
+
+  assert.deepEqual(cleanupPolicyErrors(yaml.dump(workflow)), []);
+  workflow.permissions.actions = 'write';
+  workflow.jobs['delete-generated-branch'].permissions = 'write-all';
+  workflow.jobs['unexpected-close-job'] = { 'runs-on': 'ubuntu-latest' };
+  assert.deepEqual(cleanupPolicyErrors(yaml.dump(workflow)), [
+    'cleanup must use the approved workflow permissions',
+    'unexpected job in privileged cleanup workflow: unexpected-close-job',
+    'delete-generated-branch must inherit the approved workflow permissions',
+  ]);
+});

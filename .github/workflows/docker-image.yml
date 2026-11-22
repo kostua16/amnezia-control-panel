@@ -360,7 +360,7 @@ jobs:
       - uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          label: docker-publish
+          label: docker-publish-stack
           report-at-job-end: 'true'
 
       - name: Log in to GHCR
