@@ -26,8 +26,14 @@ const { parseGhJsonLines } = require('./fleet-kpi-digest.cjs');
 
 const DIGEST_TITLE_PREFIX = 'Weekly Cost/Turn Digest';
 const DIGEST_LABELS = ['auto-fix', 'observability'];
-const ISSUE_SEARCH_MARKER = `${DIGEST_TITLE_PREFIX} in:title`;
 const DIGEST_BODY_MARKER = 'weekly-cost-turn-digest';
+// Search the body marker, not the title: failure-report issues also carry the
+// digest title tokens and can push the marker-bearing digest past the search
+// page, silently forking a second digest issue.
+const ISSUE_SEARCH_MARKER = `"${DIGEST_BODY_MARKER}" in:body`;
+// Rendered instead of $0.00 when no sampled agent run reported a cost field.
+const COST_NOT_REPORTED_FLEET = 'not reported by provider';
+const COST_NOT_REPORTED_ROW = 'not reported';
 
 // Local composite actions that export `claude_metrics_json`.
 const CLAUDE_ACTION_NAMES = [
@@ -53,7 +59,8 @@ const MAX_LOG_DOWNLOADS = 400;
 // workflow's MAX_TURNS, or its average cost exceeds this many dollars.
 const BUDGET_PRESSURE_RATIO = 0.8;
 const HIGH_COST_PER_RUN_USD = 1;
-// How many title-search hits to inspect for the digest marker.
+// How many body-marker search hits to inspect; only digest issues carry the
+// marker, so the page stays tiny in practice.
 const ISSUE_CANDIDATE_LIMIT = 20;
 
 const VALUE_FLAGS = new Set([
@@ -184,15 +191,30 @@ function matchLogJsonField(text, field) {
 function splitLastResultBlock(logText) {
   const lines = String(logText || '').split('\n');
   let anchor = -1;
+  let matchStart = 0;
+  let matchEnd = 0;
   for (let index = 0; index < lines.length; index += 1) {
-    if (/"type"\s*:\s*"result"/.test(lines[index])) anchor = index;
+    const match = lines[index].match(/"type"\s*:\s*"result"/);
+    if (match) {
+      anchor = index;
+      matchStart = match.index;
+      matchEnd = matchStart + match[0].length;
+    }
   }
   if (anchor === -1) {
     return { metricsText: logText || '', modelText: logText || '' };
   }
+  // Compact stream-json records keep the metrics on the anchor line itself,
+  // so that line is split at the match instead of being discarded whole.
   return {
-    metricsText: lines.slice(anchor + 1).join('\n'),
-    modelText: lines.slice(0, anchor).join('\n'),
+    metricsText: [
+      lines[anchor].slice(matchEnd),
+      ...lines.slice(anchor + 1),
+    ].join('\n'),
+    modelText: [
+      ...lines.slice(0, anchor),
+      lines[anchor].slice(0, matchStart),
+    ].join('\n'),
   };
 }
 
@@ -201,12 +223,12 @@ function extractJobMetrics(logText) {
   const { metricsText, modelText } = splitLastResultBlock(tail);
   const costUsd = matchLogJsonField(metricsText, 'total_cost_usd');
   const turns = matchLogJsonField(metricsText, 'num_turns');
-  // Metrics absent from the final result block are missing, never zero-cost:
-  // a provider that reports turns without an SDK cost must not be counted as
-  // a free agent run.
-  if (typeof costUsd !== 'number' || typeof turns !== 'number') return null;
+  // A final result without `num_turns` is not a usable agent record. Cost is
+  // optional: a provider that omits `total_cost_usd` still counts as an agent
+  // run with unknown cost, not as a broken extraction or a free week.
+  if (typeof turns !== 'number') return null;
   return {
-    costUsd,
+    costUsd: typeof costUsd === 'number' ? costUsd : null,
     turns,
     isError: matchLogJsonField(metricsText, 'is_error') === true,
     model: String(matchLogJsonField(modelText, 'model') ?? ''),
@@ -415,6 +437,7 @@ function createStats() {
   return {
     agentJobs: 0,
     costUsd: 0,
+    noCostJobs: 0,
     turns: 0,
     errors: 0,
     maxTurns: 0,
@@ -424,7 +447,10 @@ function createStats() {
 
 function addRecord(stats, record) {
   stats.agentJobs += 1;
-  stats.costUsd += record.costUsd;
+  // Runs without a reported cost are tallied apart from costUsd so a provider
+  // that omits `total_cost_usd` reads as unknown, never as free.
+  if (record.costUsd === null) stats.noCostJobs += 1;
+  else stats.costUsd += record.costUsd;
   stats.turns += record.turns;
   stats.maxTurns = Math.max(stats.maxTurns, record.turns);
   if (record.isError) stats.errors += 1;
@@ -444,6 +470,7 @@ function round(value, digits = 2) {
 
 function collectDigestData(options) {
   const { repo, since, until, maxRuns, runGhFn = runGh } = options;
+  const maxLogDownloads = options.maxLogDownloads ?? MAX_LOG_DOWNLOADS;
   const workflows = findClaudeWorkflows(
     readYamlFiles(options.workflowsDir),
     readActionFiles(options.actionsDir),
@@ -495,8 +522,6 @@ function collectDigestData(options) {
         totals.fetchErrors += 1;
         continue;
       }
-      totals.sampledRuns += 1;
-      rowSampledRuns += 1;
       const nonSkipped = parseGhJsonLines(jobsOutput, []).filter(
         (job) => job.conclusion !== 'skipped',
       );
@@ -506,8 +531,12 @@ function collectDigestData(options) {
       if (droppedJobs > 0) totals.missingJobs += droppedJobs;
       const jobs = nonSkipped.slice(0, MAX_JOBS_PER_RUN);
 
+      // A run only counts as sampled once one of its logs was actually read;
+      // runs dropped by the download budget would otherwise deflate the
+      // sampled cost and inflate the coverage share.
+      let readLogs = 0;
       for (const job of jobs) {
-        if (logDownloads >= MAX_LOG_DOWNLOADS) {
+        if (logDownloads >= maxLogDownloads) {
           totals.cappedLogDownloads += 1;
           continue;
         }
@@ -525,6 +554,7 @@ function collectDigestData(options) {
             },
           },
         );
+        if (log !== null) readLogs += 1;
         const record = log === null ? null : extractJobMetrics(log);
         if (record) {
           addRecord(stats, record);
@@ -536,6 +566,10 @@ function collectDigestData(options) {
           // missing, never zero-cost.
           totals.missingJobs += 1;
         }
+      }
+      if (readLogs > 0) {
+        totals.sampledRuns += 1;
+        rowSampledRuns += 1;
       }
     }
 
@@ -579,6 +613,16 @@ function formatModels(models) {
     .join(', ');
 }
 
+// True when agent runs were sampled but none reported a cost field: the
+// week's cost is unknown rather than zero, and must not render as $0.00.
+function costNotReported(stats) {
+  return (
+    stats.agentJobs > 0 &&
+    stats.costUsd === 0 &&
+    stats.noCostJobs === stats.agentJobs
+  );
+}
+
 function buildBudgetNotes(rows) {
   const notes = [];
   for (const row of rows) {
@@ -608,6 +652,9 @@ function buildBudgetNotes(rows) {
 
 function renderDigestBody(data, windowLabel) {
   const { totals, rows, workflows } = data;
+  const costUnknown = costNotReported(totals);
+  const fleetCost = (value, digits) =>
+    costUnknown ? COST_NOT_REPORTED_FLEET : formatUsd(value, digits);
   const lines = [
     `<!-- ${DIGEST_BODY_MARKER} -->`,
     '',
@@ -623,11 +670,11 @@ function renderDigestBody(data, windowLabel) {
     `| Agent workflow runs completed | ${totals.totalRuns} |`,
     `| Workflow runs sampled | ${totals.sampledRuns} (${formatPercent(totals.sampledRuns, totals.totalRuns)}) |`,
     `| Agent runs with metrics | ${totals.agentJobs} |`,
-    `| Sampled cost | ${formatUsd(round(totals.costUsd))} |`,
-    `| Estimated weekly cost | ${formatUsd(totals.estCostUsd)} |`,
-    `| Avg cost / agent run | ${formatUsd(round(divide(totals.costUsd, totals.agentJobs), 4), 4)} |`,
+    `| Sampled cost | ${fleetCost(round(totals.costUsd))} |`,
+    `| Estimated weekly cost | ${fleetCost(totals.estCostUsd)} |`,
+    `| Avg cost / agent run | ${fleetCost(round(divide(totals.costUsd, totals.agentJobs), 4), 4)} |`,
     `| Avg turns / agent run | ${round(divide(totals.turns, totals.agentJobs), 1) ?? '-'} |`,
-    `| Avg cost / turn | ${formatUsd(round(divide(totals.costUsd, totals.turns), 4), 4)} |`,
+    `| Avg cost / turn | ${fleetCost(round(divide(totals.costUsd, totals.turns), 4), 4)} |`,
     `| Agent runs with \`is_error\` | ${totals.errors} |`,
     `| Models (agent runs) | ${formatModels(totals.models)} |`,
     '',
@@ -639,8 +686,11 @@ function renderDigestBody(data, windowLabel) {
     '|----------|------|---------|------------|----------------|-------------|-----------|-----------|------------|-----------|-------|--------|',
   ];
   for (const row of rows) {
+    const rowCostUnknown = costNotReported(row);
+    const rowCost = (value, digits) =>
+      rowCostUnknown ? COST_NOT_REPORTED_ROW : formatUsd(value, digits);
     lines.push(
-      `| \`${escapeTableCell(row.file)}\` | ${row.totalRuns} | ${row.sampledRuns} | ${row.agentJobs} | ${formatUsd(round(row.costUsd))} | ${formatUsd(row.estCostUsd)} | ${formatUsd(row.avgCostPerRun, 4)} | ${row.avgTurnsPerRun ?? '-'} | ${row.maxTurns} | ${row.maxTurnsBudget ?? '-'} | ${formatUsd(row.costPerTurn, 4)} | ${row.errors} |`,
+      `| \`${escapeTableCell(row.file)}\` | ${row.totalRuns} | ${row.sampledRuns} | ${row.agentJobs} | ${rowCost(round(row.costUsd))} | ${rowCost(row.estCostUsd)} | ${rowCost(row.avgCostPerRun, 4)} | ${row.avgTurnsPerRun ?? '-'} | ${row.maxTurns} | ${row.maxTurnsBudget ?? '-'} | ${rowCost(row.costPerTurn, 4)} | ${row.errors} |`,
     );
   }
   lines.push('', '### Budget tuning notes', '');
@@ -671,6 +721,11 @@ function renderDigestBody(data, windowLabel) {
   lines.push(
     `- ${totals.missingJobs} job log(s) held no agent metrics or were no longer available; they are counted as missing, not as zero-cost.`,
   );
+  if (costUnknown) {
+    lines.push(
+      `- No sampled agent run reported \`total_cost_usd\`; this provider's cost is unknown for the window.`,
+    );
+  }
   if (totals.cappedLogDownloads > 0) {
     lines.push(
       `- ${totals.cappedLogDownloads} job log(s) were not read; the serial log download budget (${MAX_LOG_DOWNLOADS}) was reached.`,
@@ -720,10 +775,10 @@ function findExistingIssue(repo, runGhFn = runGh) {
   if (issues === null) {
     throw new Error('Could not read the digest issue search results');
   }
-  // The title search is token-based and can match unrelated issues (failure
-  // reports, the backlog issue that requested this digest); only a body
-  // carrying the digest marker identifies the issue this script owns. The
-  // marker-bearing hit may rank anywhere in the list, not first.
+  // The body search can still surface unrelated hits (an issue quoting the
+  // marker, a stale copy); only a body carrying the digest marker identifies
+  // the issue this script owns, and the hit may rank anywhere in the list,
+  // not first.
   const ours = issues.find((issue) =>
     String(issue?.body || '').includes(DIGEST_BODY_MARKER),
   );
@@ -771,15 +826,16 @@ function appendOutput(outputPath, lines) {
   );
 }
 
-// Runs completed but no agent cost extracted means log extraction is broken
-// or every fetch failed; an honestly empty week (no runs) is the only zero
-// cost that may be published.
-function assertAgentCostExtracted(totals) {
+// Runs completed but no agent metrics extracted means log extraction is
+// broken or every fetch failed; an honestly empty week (no runs) is the only
+// empty digest that may be published. A week whose provider reports no cost
+// is a rendering problem, not a fatal one.
+function assertAgentMetricsExtracted(totals) {
   if (totals.totalRuns === 0) return;
-  if (totals.agentJobs > 0 && totals.costUsd > 0) return;
+  if (totals.agentJobs > 0) return;
   throw new Error(
-    `No agent cost extracted from ${totals.sampledRuns} sampled run(s) of ` +
-      `${totals.totalRuns} completed run(s); refusing to publish a zero-cost digest`,
+    `No agent metrics extracted from ${totals.sampledRuns} sampled run(s) of ` +
+      `${totals.totalRuns} completed run(s); refusing to publish a metrics-free digest`,
   );
 }
 
@@ -812,7 +868,7 @@ function main() {
   // The guard runs before the dry-run return so a --dry-run smoke test is
   // self-diagnosing: a broken extractor exits non-zero instead of looking
   // green behind a printed $0.00 body.
-  assertAgentCostExtracted(data.totals);
+  assertAgentMetricsExtracted(data.totals);
 
   // Dry run is presence-based and returns before any write (step summary or
   // issue), so a smoke test can never mutate the tracked digest issue.
@@ -854,6 +910,7 @@ function main() {
 
 module.exports = {
   BUDGET_PRESSURE_RATIO,
+  assertAgentMetricsExtracted,
   CLAUDE_ACTION_NAMES,
   DEFAULT_MAX_RUNS,
   DEFAULT_WINDOW_DAYS,

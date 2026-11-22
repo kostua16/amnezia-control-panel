@@ -8,6 +8,7 @@ const path = require('path');
 
 const {
   BUDGET_PRESSURE_RATIO,
+  assertAgentMetricsExtracted,
   DIGEST_LABELS,
   DIGEST_TITLE_PREFIX,
   ISSUE_SEARCH_MARKER,
@@ -119,7 +120,7 @@ const fixture = createFixtureDir();
 test('digest constants are stable', () => {
   assert.equal(DIGEST_TITLE_PREFIX, 'Weekly Cost/Turn Digest');
   assert.deepEqual(DIGEST_LABELS, ['auto-fix', 'observability']);
-  assert.equal(ISSUE_SEARCH_MARKER, 'Weekly Cost/Turn Digest in:title');
+  assert.equal(ISSUE_SEARCH_MARKER, '"weekly-cost-turn-digest" in:body');
 });
 
 test('parseArgs reads flags and values', () => {
@@ -185,10 +186,40 @@ test('extractJobMetrics reads cost, turns, error and model', () => {
   assert.equal(extractJobMetrics('no agent output here'), null);
 });
 
-test('extractJobMetrics drops records whose final result lacks a metric', () => {
-  // Turns without an SDK cost are missing, never zero-cost agent runs.
-  assert.equal(extractJobMetrics(claudeLog({ turns: 9, cost: null })), null);
+test('extractJobMetrics keeps turns-only records with unknown cost', () => {
+  // Turns without an SDK cost are agent runs with unknown cost — not free
+  // runs, and not a broken extraction either.
+  assert.deepEqual(extractJobMetrics(claudeLog({ turns: 9, cost: null })), {
+    costUsd: null,
+    turns: 9,
+    isError: false,
+    model: 'glm-5-turbo',
+  });
+  // Without turns the record is not a usable agent result at all.
   assert.equal(extractJobMetrics(claudeLog({ turns: null, cost: 1 })), null);
+});
+
+test('extractJobMetrics reads compact single-line result records', () => {
+  // stream-json/JSONL output keeps the whole result record on one line.
+  const log = [
+    '{"type":"system","model":"glm-5-turbo"}',
+    '{"type":"result","is_error":false,"num_turns":9,"total_cost_usd":0.01}',
+  ].join('\n');
+  assert.deepEqual(extractJobMetrics(log), {
+    costUsd: 0.01,
+    turns: 9,
+    isError: false,
+    model: 'glm-5-turbo',
+  });
+  // The model may sit on the anchor line itself, before the result type.
+  const inline =
+    '{"model":"glm-5-turbo","type":"result","num_turns":4,"total_cost_usd":0.2}';
+  assert.deepEqual(extractJobMetrics(inline), {
+    costUsd: 0.2,
+    turns: 4,
+    isError: false,
+    model: 'glm-5-turbo',
+  });
 });
 
 test('extractJobMetrics reads the last result block of retried jobs', () => {
@@ -402,6 +433,68 @@ test('collectDigestData samples every workflow and aggregates metrics', () => {
   );
 });
 
+test('collectDigestData counts only runs whose logs were read as sampled', () => {
+  const { runGh } = createFakeGh([
+    [/workflows\/fix-issue\.yml\/runs .*per_page=1 /, '3'],
+    [/workflows\/fix-issue\.yml\/runs .*per_page=2 /, '{"id":1}\n{"id":2}\n'],
+    [/workflows\/wrapped\.yml\/runs .*per_page=1 /, '0'],
+    [
+      /^api -X GET repos\/o\/r\/actions\/runs\/1\/jobs/,
+      '{"id":11,"conclusion":"success"}\n',
+    ],
+    [
+      /^api -X GET repos\/o\/r\/actions\/runs\/2\/jobs/,
+      '{"id":21,"conclusion":"success"}\n',
+    ],
+    [
+      /^api repos\/o\/r\/actions\/jobs\/11\/logs$/,
+      claudeLog({ turns: 10, cost: 1 }),
+    ],
+  ]);
+  const data = collectDigestData({
+    repo: 'o/r',
+    since: 'A',
+    until: 'B',
+    maxRuns: 4,
+    workflowsDir: fixture.workflowsDir,
+    actionsDir: fixture.actionsDir,
+    runGhFn: runGh,
+    maxLogDownloads: 1,
+  });
+  // Run 2's only log hit the download budget, so the run is not a sample and
+  // must not dilute the coverage share or the weekly estimate.
+  assert.equal(data.totals.sampledRuns, 1);
+  assert.equal(data.totals.cappedLogDownloads, 1);
+  assert.equal(data.totals.costUsd, 1);
+  assert.equal(data.totals.estCostUsd, 3);
+  const fixIssue = data.rows.find((row) => row.file === 'fix-issue.yml');
+  assert.equal(fixIssue.sampledRuns, 1);
+  assert.equal(fixIssue.estCostUsd, 3);
+});
+
+test('assertAgentMetricsExtracted fails only on a metrics-free digest', () => {
+  // An honestly empty week publishes an empty digest.
+  assertAgentMetricsExtracted({ totalRuns: 0, sampledRuns: 0, agentJobs: 0 });
+  // A provider that reports no cost still produced agent runs.
+  assertAgentMetricsExtracted({
+    totalRuns: 5,
+    sampledRuns: 5,
+    agentJobs: 4,
+    costUsd: 0,
+    noCostJobs: 4,
+  });
+  assert.throws(
+    () =>
+      assertAgentMetricsExtracted({
+        totalRuns: 5,
+        sampledRuns: 5,
+        agentJobs: 0,
+        costUsd: 0,
+      }),
+    /No agent metrics extracted/,
+  );
+});
+
 test('collectDigestData separates missing metrics from failed fetches', () => {
   const { runGh } = createFakeGh([
     [/workflows\/fix-issue\.yml\/runs .*per_page=1 /, '2'],
@@ -531,10 +624,58 @@ test('renderDigestBody orders by cost and reports coverage', () => {
   assert.match(body, /1 API call\(s\) failed; this digest is partial/);
 });
 
+test('renderDigestBody marks a provider that reports no cost', () => {
+  const body = renderDigestBody(
+    {
+      maxRuns: 4,
+      workflows: [{ file: 'a.yml' }],
+      totals: {
+        totalRuns: 3,
+        sampledRuns: 2,
+        agentJobs: 2,
+        costUsd: 0,
+        noCostJobs: 2,
+        turns: 10,
+        errors: 0,
+        missingJobs: 0,
+        fetchErrors: 0,
+        estCostUsd: 0,
+        models: { 'glm-5-turbo': 2 },
+      },
+      rows: [
+        {
+          file: 'a.yml',
+          totalRuns: 3,
+          sampledRuns: 2,
+          agentJobs: 2,
+          costUsd: 0,
+          noCostJobs: 2,
+          turns: 10,
+          errors: 0,
+          maxTurns: 5,
+          models: {},
+          avgCostPerRun: 0,
+          avgTurnsPerRun: 5,
+          costPerTurn: 0,
+          estCostUsd: 0,
+          maxTurnsBudget: 25,
+        },
+      ],
+    },
+    'WINDOW',
+  );
+  // Unknown cost must read as unknown, never as a free week.
+  assert.match(body, /\| Sampled cost \| not reported by provider \|/);
+  assert.match(body, /\| Estimated weekly cost \| not reported by provider \|/);
+  assert.match(body, /\| `a\.yml` \| 3 \| 2 \| 2 \| not reported \|/);
+  assert.match(body, /No sampled agent run reported `total_cost_usd`/);
+  assert.doesNotMatch(body, /\$0\.00/);
+});
+
 test('upsertDigestIssue edits the open digest or creates a labelled one', () => {
   const existing = createFakeGh([
     [
-      /^issue list .*--search Weekly Cost\/Turn Digest in:title/,
+      /^issue list .*--search "weekly-cost-turn-digest" in:body/,
       JSON.stringify([
         { number: 77, body: '<!-- weekly-cost-turn-digest -->' },
       ]),
