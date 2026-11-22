@@ -1011,3 +1011,36 @@ test('cost-telemetry runs read-only and routes failures to report-failure', () =
     'a telemetry-only failure must not be filed with the agent job outcome',
   );
 });
+
+test('report-failure files a telemetry-only failure on its own terms', () => {
+  const workflow = fs.readFileSync(WORKFLOW_PATH, 'utf8');
+  const reportBlock = workflow.slice(workflow.indexOf('  report-failure:'));
+  const agentFailed =
+    "(needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped')";
+
+  // report-failure skips `cancelled` with no reason as transient infra, and
+  // the agent job emits no reason when it succeeded: without a
+  // telemetry-specific reason a cancelled telemetry job files nothing.
+  assert.ok(
+    reportBlock.includes(
+      `claude-failure-reason: \${{ (needs.monitor-runs.result == 'success' || needs.monitor-runs.result == 'skipped') && format('cost-telemetry job {0}', needs.cost-telemetry.result) || needs.monitor-runs.outputs.claude_failure_reason }}`,
+    ),
+    'a telemetry-only failure must carry a telemetry-specific reason',
+  );
+
+  // The agent job's Claude metrics describe the agent run only; a
+  // telemetry-only failure must not be filed with them.
+  for (const [input, output] of [
+    ['claude-turns', 'claude_num_turns'],
+    ['claude-is-error', 'claude_is_error'],
+    ['claude-used-attempt', 'claude_used_attempt'],
+    ['claude-metrics-json', 'claude_metrics_json'],
+  ]) {
+    assert.ok(
+      reportBlock.includes(
+        `${input}: \${{ ${agentFailed} && needs.monitor-runs.outputs.${output} || '' }}`,
+      ),
+      `${input} must be blank unless the agent job itself failed`,
+    );
+  }
+});

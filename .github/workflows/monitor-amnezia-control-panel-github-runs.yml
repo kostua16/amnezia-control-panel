@@ -615,8 +615,16 @@ jobs:
           # a telemetry-only failure is not filed with the successful agent
           # job's result.
           claude-step-outcome: ${{ (needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped') && needs.monitor-runs.result || needs.cost-telemetry.result }}
-          claude-turns: ${{ needs.monitor-runs.outputs.claude_num_turns }}
-          claude-is-error: ${{ needs.monitor-runs.outputs.claude_is_error }}
-          claude-used-attempt: ${{ needs.monitor-runs.outputs.claude_used_attempt }}
-          claude-failure-reason: ${{ needs.monitor-runs.outputs.claude_failure_reason }}
-          claude-metrics-json: ${{ needs.monitor-runs.outputs.claude_metrics_json }}
+          # The agent job's Claude metrics describe the agent run only; when
+          # that job succeeded they say nothing about a telemetry failure.
+          claude-turns: ${{ (needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped') && needs.monitor-runs.outputs.claude_num_turns || '' }}
+          claude-is-error: ${{ (needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped') && needs.monitor-runs.outputs.claude_is_error || '' }}
+          claude-used-attempt: ${{ (needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped') && needs.monitor-runs.outputs.claude_used_attempt || '' }}
+          # report-failure files nothing for `cancelled` with no reason (it
+          # reads as transient infra), and the agent job emits no reason when
+          # it succeeded — so a telemetry-only failure must carry its own.
+          # Inverted on purpose: `agentFailed && agentReason || telemetry`
+          # would turn an agent cancellation without a reason into a bogus
+          # issue instead of the transient skip.
+          claude-failure-reason: ${{ (needs.monitor-runs.result == 'success' || needs.monitor-runs.result == 'skipped') && format('cost-telemetry job {0}', needs.cost-telemetry.result) || needs.monitor-runs.outputs.claude_failure_reason }}
+          claude-metrics-json: ${{ (needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped') && needs.monitor-runs.outputs.claude_metrics_json || '' }}

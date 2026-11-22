@@ -23,7 +23,9 @@
 //
 // Exit codes: 0 when a window was processed (partial gh failures are
 // surfaced in stderr and summary.fetch_errors — partial data is still
-// valuable), 1 when the run listing itself failed and nothing was scanned.
+// valuable), 1 when nothing could be scanned: the run listing itself
+// failed, every run's jobs listing failed, or no job matched the agent job
+// name — each would otherwise publish a green, empty artifact.
 
 const { execFileSync } = require('node:child_process');
 const { appendFileSync, writeFileSync } = require('node:fs');
