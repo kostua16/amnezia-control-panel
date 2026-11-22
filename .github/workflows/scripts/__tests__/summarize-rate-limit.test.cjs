@@ -206,7 +206,12 @@ test('pools all tokens of one quota bucket into a single window row', () => {
   assert.equal(summary.windows[0].tokens.size, 3);
   assert.equal(summary.windows[0].readings, 4);
   assert.equal(summary.windows[0].max - summary.windows[0].min, 500);
-  assert.ok(format(summary).includes('4 readings from 3 distinct tokens'));
+  assert.equal(summary.windows[0].tagged, 3);
+  assert.ok(
+    format(summary).includes(
+      '4 readings, 3 with token_id from 3 distinct tokens',
+    ),
+  );
 });
 
 test('skips a label group whose start and end counts differ instead of guessing', () => {
@@ -244,4 +249,21 @@ test('renders missing identity fields as a dash in the skipped list', () => {
     report.includes('skipped - / - (label -, run -): 1 starts, 0 ends'),
   );
   assert.ok(!report.includes('undefined'));
+});
+
+test('keeps buckets of different token kinds apart even on the same reset second', () => {
+  const at = '2026-11-22T20:39:11Z';
+  const summary = summarize([
+    line({ phase: 'job-start', id: 'a', remaining: 4000, reset: at }),
+    line({
+      phase: 'job-start',
+      run: '2.1',
+      id: 'b',
+      remaining: 100,
+      reset: at,
+    }).replace('token=ghs', 'token=ghp'),
+  ]);
+
+  assert.equal(summary.windows.length, 2);
+  assert.deepEqual(summary.windows.map((w) => w.kind).sort(), ['ghp', 'ghs']);
 });

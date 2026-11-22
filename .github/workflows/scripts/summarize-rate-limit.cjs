@@ -46,23 +46,31 @@ function summarize(lines) {
       // a window called `n/a`.
       withoutWindow += 1;
     } else {
-      // The reset time identifies the quota bucket: every job has its own
-      // token, but they all draw from the one installation bucket, so grouping
-      // by token would split a shared bucket into per-job rows. Tokens are only
-      // counted, and compared per job in the mismatch check below.
-      const window = windows.get(entry.core_reset) ?? {
+      // A bucket is identified by its reset time and the kind of token that
+      // owns it (installation tokens, PATs and so on never share a bucket, and
+      // two kinds could coincide on one reset second). Every job has its own
+      // token, but jobs of one installation draw from one bucket, so grouping
+      // by token would split it into per-job rows: tokens are only counted here
+      // and compared per job in the mismatch check below.
+      const bucketKey = `${entry.core_reset}|${entry.token ?? 'unknown'}`;
+      const window = windows.get(bucketKey) ?? {
         reset: entry.core_reset,
+        kind: entry.token ?? 'unknown',
         limit: entry.limit,
         min: Infinity,
         max: -Infinity,
         readings: 0,
         tokens: new Set(),
+        tagged: 0,
       };
       window.min = Math.min(window.min, entry.remaining);
       window.max = Math.max(window.max, entry.remaining);
       window.readings += 1;
-      if (entry.token_id) window.tokens.add(entry.token_id);
-      windows.set(entry.core_reset, window);
+      if (entry.token_id) {
+        window.tokens.add(entry.token_id);
+        window.tagged += 1;
+      }
+      windows.set(bucketKey, window);
     }
 
     // The label is part of the key: one job can log several independent
@@ -137,8 +145,8 @@ function format(summary) {
   ];
   for (const w of summary.windows) {
     out.push(
-      `window reset=${w.reset}: remaining ${w.max} -> ${w.min} of ${w.limit} ` +
-        `(>= ${w.max - w.min} used between the highest and lowest reading, ${w.readings} readings from ${w.tokens.size} distinct tokens)`,
+      `window reset=${w.reset} kind=${w.kind}: remaining ${w.max} -> ${w.min} of ${w.limit} ` +
+        `(>= ${w.max - w.min} used between the highest and lowest reading, ${w.readings} readings, ${w.tagged} with token_id from ${w.tokens.size} distinct tokens)`,
     );
   }
   out.push(
