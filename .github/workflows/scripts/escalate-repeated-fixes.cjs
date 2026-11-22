@@ -165,7 +165,11 @@ function extractRecommendations(data) {
 
   for (const item of items) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-    const summary = normalizeSummary(item.summary);
+    // Only a real string is a summary. Coercing objects/arrays/numbers via
+    // String() would fingerprint junk like '[object Object]' or '42' and
+    // could open a false escalation across two malformed runs.
+    const summary =
+      typeof item.summary === 'string' ? normalizeSummary(item.summary) : '';
     if (!isActionableSummary(summary)) continue;
     const fp = fingerprint(summary);
     if (seen.has(fp)) continue;
