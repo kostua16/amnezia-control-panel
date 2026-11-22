@@ -896,6 +896,18 @@ test('shouldPublishStatus skips an identical success that links to the current r
   assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
 });
 
+test('shouldPublishStatus keeps an older worker-run link when the new link is the current run', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  const status = makeStatus({ targetUrl: RUN_URL });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
+});
+
+test('shouldPublishStatus posts a linkless success that would gain the current-run link', () => {
+  const previous = previousStatuses([previousSuccess({ target_url: null })]);
+  const status = makeStatus({ targetUrl: RUN_URL });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), true);
+});
+
 test('shouldPublishStatus compares descriptions after truncation', () => {
   const long = 'x'.repeat(200);
   const previous = previousStatuses([
@@ -1001,6 +1013,98 @@ test('publishFlowStatuses skips only unchanged successes and keeps order', () =>
   });
 
   assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses uses the newest duplicate context even in newest-first order', () => {
+  // The combined /status endpoint is documented newest-first; last-wins
+  // indexing would pick the older success duplicate and wrongly skip.
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: '2026-11-22T10:00:00Z',
+      }),
+      previousSuccess({ created_at: '2026-11-22T09:00:00Z' }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+});
+
+test('publishFlowStatuses uses the newest duplicate context in oldest-first history', () => {
+  // A future caller passing full history (commits/{sha}/statuses) is
+  // oldest-first; the newest failure must still decide.
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({ created_at: '2026-11-22T09:00:00Z' }),
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: '2026-11-22T10:00:00Z',
+      }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+});
+
+test('publishFlowStatuses keeps the first duplicate when created_at is unusable', () => {
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess(),
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: 'not-a-date',
+      }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses reads the status list once even with several successes', () => {
+  const reads = [];
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: (sha) => {
+      reads.push(sha);
+      return [];
+    },
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(reads, [basePr.headSha]);
+  assert.equal(posted.length, 3);
 });
 
 test('publishFlowStatuses posts everything when the status read throws', () => {
