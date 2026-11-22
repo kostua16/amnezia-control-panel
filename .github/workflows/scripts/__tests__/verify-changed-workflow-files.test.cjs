@@ -19,6 +19,7 @@ const {
   classifyChangedFiles,
   isWorkflowOrActionYaml,
   resolveCommand,
+  commandExtensions,
   verifyChangedWorkflowFiles,
   ACTIONLINT_MISSING,
 } = require(scriptPath);
@@ -273,6 +274,59 @@ test(
     );
   },
 );
+
+test('win32 commandExtensions never includes the bare name', () => {
+  const spawnable = ['.COM', '.EXE', '.BAT', '.CMD'];
+  // A trailing PATHEXT separator must not bring the bare name back.
+  assert.deepEqual(
+    commandExtensions({ PATHEXT: '.COM;.EXE;.BAT;.CMD;' }, 'win32'),
+    spawnable,
+  );
+  // Script types need a host program execFileSync does not provide.
+  assert.deepEqual(commandExtensions({ PATHEXT: '.exe;.VBS;.JS' }, 'win32'), [
+    '.EXE',
+  ]);
+  assert.deepEqual(commandExtensions({}, 'win32'), spawnable);
+  assert.deepEqual(commandExtensions({ PATHEXT: '.EXE' }, 'linux'), ['']);
+});
+
+test('resolveCommand on win32 skips a bare-name decoy file', () => {
+  const decoyDir = tmpDir('mon-win-bare-');
+  const binDir = tmpDir('mon-win-exe-');
+  const real = path.join(binDir, 'actionlint.EXE');
+  // access(X_OK) is existence-only on Windows, so any regular file passes;
+  // an executable decoy models that on POSIX runners too.
+  fs.writeFileSync(path.join(decoyDir, 'actionlint'), '#!/bin/sh\nexit 0\n', {
+    mode: 0o755,
+  });
+  fs.writeFileSync(real, '#!/usr/bin/env node\nprocess.exit(0);\n', {
+    mode: 0o755,
+  });
+
+  const env = {
+    PATH: `${decoyDir}${path.delimiter}${binDir}`,
+    Path: `${decoyDir}${path.delimiter}${binDir}`,
+    PATHEXT: '.COM;.EXE;.BAT;.CMD',
+  };
+  assert.equal(resolveCommand('actionlint', env, 'win32'), real);
+});
+
+test('resolveCommand on win32 skips a non-spawnable extension', () => {
+  const decoyDir = tmpDir('mon-win-vbs-');
+  const binDir = tmpDir('mon-win-cmd-');
+  const real = path.join(binDir, 'actionlint.CMD');
+  fs.writeFileSync(path.join(decoyDir, 'actionlint.VBS'), 'WScript.Quit 1\n', {
+    mode: 0o755,
+  });
+  fs.writeFileSync(real, '@echo off\r\n', { mode: 0o755 });
+
+  const env = {
+    PATH: `${decoyDir}${path.delimiter}${binDir}`,
+    Path: `${decoyDir}${path.delimiter}${binDir}`,
+    PATHEXT: '.VBS;.CMD',
+  };
+  assert.equal(resolveCommand('actionlint', env, 'win32'), real);
+});
 
 test('monitor workflow invokes the scoped verifier', () => {
   const yaml = fs.readFileSync(

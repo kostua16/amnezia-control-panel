@@ -69,6 +69,8 @@ function isRunnableCandidate(candidate) {
   // command -v used access(X_OK); a mode-bit check is broader (other/group
   // execute the process is not in) and still EACCES-aborts. Skip non-files
   // and anything this process cannot execute, then keep searching PATH.
+  // X_OK is existence-only on Windows; commandExtensions applies the real
+  // executability rule there (the file extension).
   if (!stat.isFile()) return false;
   try {
     fs.accessSync(candidate, fs.constants.X_OK);
@@ -78,12 +80,25 @@ function isRunnableCandidate(candidate) {
   }
 }
 
-function resolveCommand(name, env = process.env) {
+// Windows decides executability by file extension: access(X_OK) only checks
+// existence there, so a bare `actionlint` decoy passes isRunnableCandidate
+// although execFileSync cannot spawn it. Only extensions Node can spawn are
+// candidates; PATHEXT may also list script types (.VBS, .JS, ...) that need a
+// host program and would abort the step.
+const WINDOWS_SPAWNABLE_EXTENSIONS = ['.COM', '.EXE', '.BAT', '.CMD'];
+
+function commandExtensions(env, platform = process.platform) {
+  if (platform !== 'win32') return [''];
+  const configured = String(env.PATHEXT || '')
+    .split(';')
+    .map((ext) => ext.trim().toUpperCase())
+    .filter((ext) => WINDOWS_SPAWNABLE_EXTENSIONS.includes(ext));
+  return configured.length > 0 ? configured : WINDOWS_SPAWNABLE_EXTENSIONS;
+}
+
+function resolveCommand(name, env = process.env, platform = process.platform) {
   const pathEnv = env.PATH || env.Path || '';
-  const exts =
-    process.platform === 'win32'
-      ? (env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';').concat('')
-      : [''];
+  const exts = commandExtensions(env, platform);
   for (const dir of pathEnv.split(path.delimiter)) {
     if (!dir) continue;
     for (const ext of exts) {
@@ -175,6 +190,7 @@ module.exports = {
   classifyChangedFiles,
   isWorkflowOrActionYaml,
   isShellScript,
+  commandExtensions,
   resolveCommand,
   hasCommand,
   verifyChangedWorkflowFiles,
