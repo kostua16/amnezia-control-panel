@@ -29,13 +29,9 @@ function tmpDir(prefix) {
 }
 
 function writeFakeBin(binDir, name, body) {
-  const jsPath = path.join(binDir, `${name}.js`);
-  fs.writeFileSync(jsPath, `#!/usr/bin/env node\n${body}\n`);
   if (process.platform === 'win32') {
-    fs.writeFileSync(
-      path.join(binDir, `${name}.cmd`),
-      `@echo off\r\nnode "${jsPath}" %*\r\n`,
-    );
+    fs.writeFileSync(path.join(binDir, `${name}.EXE`), '');
+    fs.writeFileSync(path.join(binDir, `${name}.js`), body);
   } else {
     fs.writeFileSync(
       path.join(binDir, name),
@@ -45,6 +41,31 @@ function writeFakeBin(binDir, name, body) {
       },
     );
   }
+}
+
+function spawnVerifier(root, binDir, env) {
+  const args = [scriptPath];
+  if (process.platform === 'win32') {
+    // Dispatch fake executables through Node while exercising the real CLI.
+    const preload = path.join(binDir, 'fake-tools.cjs');
+    fs.writeFileSync(
+      preload,
+      `const { strict: assert } = require('node:assert');
+const childProcess = require('node:child_process');
+const { execFileSync } = childProcess;
+childProcess.execFileSync = (bin, args, options) => {
+  assert.ok(!options.shell);
+  assert.equal(require('node:path').dirname(bin), __dirname);
+  return execFileSync(process.execPath, [bin.replace(/\\.exe$/i, '.js'), ...args], options);
+};`,
+    );
+    args.unshift('--require', preload);
+  }
+  return spawnSync(process.execPath, args, {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+  });
 }
 
 const SC2129_ACTIONLINT = `
@@ -192,17 +213,25 @@ test('run 29803905118: untouched fix-review SC2129 cannot fail monitor', () => {
     ]),
     ACTIONLINT_ARGV_LOG: argvLog,
   };
-  const spawned = spawnSync(process.execPath, [scriptPath], {
-    cwd: root,
-    env,
-    encoding: 'utf8',
-  });
+  const spawned = spawnVerifier(root, binDir, env);
   assert.equal(spawned.status, 0, spawned.stderr || spawned.stdout);
   const argv = JSON.parse(fs.readFileSync(argvLog, 'utf8'));
   assert.deepEqual(argv, [
     '-config-file',
     '.github/actionlint.yaml',
     '.github/workflows/workflow-health-optimize.yml',
+  ]);
+
+  const failed = spawnVerifier(root, binDir, {
+    ...env,
+    CHANGED_FILES: JSON.stringify(['.github/workflows/fix-review.yml']),
+  });
+  assert.equal(failed.status, 1, failed.stderr || failed.stdout);
+  assert.match(failed.stderr, /fix-review\.yml: SC2129/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(argvLog, 'utf8')), [
+    '-config-file',
+    '.github/actionlint.yaml',
+    '.github/workflows/fix-review.yml',
   ]);
 });
 
@@ -221,11 +250,7 @@ test('changed shell scripts still reach shellcheck', () => {
     CHANGED_FILES: 'scripts/ok.sh\n.github/workflows/gone.yml',
     SHELLCHECK_ARGV_LOG: argvLog,
   };
-  const spawned = spawnSync(process.execPath, [scriptPath], {
-    cwd: root,
-    env,
-    encoding: 'utf8',
-  });
+  const spawned = spawnVerifier(root, binDir, env);
   assert.equal(spawned.status, 0, spawned.stderr || spawned.stdout);
   assert.deepEqual(JSON.parse(fs.readFileSync(argvLog, 'utf8')), [
     'scripts/ok.sh',
@@ -235,7 +260,8 @@ test('changed shell scripts still reach shellcheck', () => {
 test('resolveCommand skips a same-named directory earlier in PATH', () => {
   const decoyDir = tmpDir('mon-decoy-');
   const binDir = tmpDir('mon-real-bin-');
-  fs.mkdirSync(path.join(decoyDir, 'actionlint'));
+  const decoy = process.platform === 'win32' ? 'actionlint.EXE' : 'actionlint';
+  fs.mkdirSync(path.join(decoyDir, decoy));
   writeFakeBin(binDir, 'actionlint', 'process.exit(0);');
 
   const env = {
@@ -276,7 +302,7 @@ test(
 );
 
 test('win32 commandExtensions never includes the bare name', () => {
-  const spawnable = ['.COM', '.EXE', '.BAT', '.CMD'];
+  const spawnable = ['.COM', '.EXE'];
   // A trailing PATHEXT separator must not bring the bare name back.
   assert.deepEqual(
     commandExtensions({ PATHEXT: '.COM;.EXE;.BAT;.CMD;' }, 'win32'),
@@ -313,17 +339,20 @@ test('resolveCommand on win32 skips a bare-name decoy file', () => {
 
 test('resolveCommand on win32 skips a non-spawnable extension', () => {
   const decoyDir = tmpDir('mon-win-vbs-');
-  const binDir = tmpDir('mon-win-cmd-');
-  const real = path.join(binDir, 'actionlint.CMD');
+  const binDir = tmpDir('mon-win-native-');
+  const real = path.join(binDir, 'actionlint.EXE');
   fs.writeFileSync(path.join(decoyDir, 'actionlint.VBS'), 'WScript.Quit 1\n', {
     mode: 0o755,
   });
-  fs.writeFileSync(real, '@echo off\r\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(decoyDir, 'actionlint.CMD'), '@echo off\r\n', {
+    mode: 0o755,
+  });
+  fs.writeFileSync(real, '', { mode: 0o755 });
 
   const env = {
     PATH: `${decoyDir}${path.delimiter}${binDir}`,
     Path: `${decoyDir}${path.delimiter}${binDir}`,
-    PATHEXT: '.VBS;.CMD',
+    PATHEXT: '.VBS;.CMD;.EXE',
   };
   assert.equal(resolveCommand('actionlint', env, 'win32'), real);
 });

@@ -85,7 +85,8 @@ function isRunnableCandidate(candidate) {
 // although execFileSync cannot spawn it. Only extensions Node can spawn are
 // candidates; PATHEXT may also list script types (.VBS, .JS, ...) that need a
 // host program and would abort the step.
-const WINDOWS_SPAWNABLE_EXTENSIONS = ['.COM', '.EXE', '.BAT', '.CMD'];
+// Batch wrappers require cmd.exe, which would interpret changed filenames.
+const WINDOWS_SPAWNABLE_EXTENSIONS = ['.COM', '.EXE'];
 
 function commandExtensions(env, platform = process.platform) {
   if (platform !== 'win32') return [''];
@@ -115,8 +116,7 @@ function hasCommand(name, env = process.env) {
 
 function runTool(exec, name, args, { cwd, env }) {
   const bin = resolveCommand(name, env) || name;
-  const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin);
-  return exec(bin, args, { cwd, env, stdio: 'inherit', shell });
+  return exec(bin, args, { cwd, env, stdio: 'inherit' });
 }
 
 function verifyChangedWorkflowFiles(options = {}) {
