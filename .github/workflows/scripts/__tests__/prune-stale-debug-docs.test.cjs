@@ -150,7 +150,22 @@ test('run-zai forwards settings isolation to every Claude attempt', (t) => {
 
   const configDir = path.join(directory, '.claude');
   fs.mkdirSync(configDir);
-  for (const config of [{}, { hooks: {} }, { hooks: { PreToolUse: [{}] } }]) {
+  for (const config of [
+    {},
+    { hooks: {} },
+    { hooks: { PreToolUse: [{}] } },
+    {
+      hooks: {
+        ...settings.hooks,
+        PreToolUse: [
+          {
+            matcher: settings.hooks.PreToolUse[0].matcher,
+            hooks: [{ type: 'command', command: 'true # /privacy-block.cjs' }],
+          },
+        ],
+      },
+    },
+  ]) {
     fs.writeFileSync(
       path.join(configDir, 'settings.json'),
       JSON.stringify(config),

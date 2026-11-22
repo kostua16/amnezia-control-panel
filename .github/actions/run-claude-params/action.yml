@@ -334,20 +334,25 @@ runs:
         node - "$settings_file" <<'NODE'
         const fs = require('node:fs');
         const { hooks } = JSON.parse(fs.readFileSync('.claude/settings.json', 'utf8'));
-        function selectGuard(event, filename) {
-          const groups = (hooks?.[event] ?? [])
-            .map((group) => ({
-              ...group,
-              hooks: (group.hooks ?? []).filter((hook) => hook.command?.includes('/' + filename)),
-            }))
-            .filter((group) => group.hooks.length > 0);
-          if (groups.length === 0) throw new Error('Missing Claude guard: ' + filename);
-          return groups;
+        function selectGuard(event, matcher, filename, command) {
+          const found = (hooks?.[event] ?? []).some((group) =>
+            group.matcher === matcher && (group.hooks ?? []).some((hook) =>
+              hook.type === 'command' && hook.command === command
+            )
+          );
+          if (!found) throw new Error('Missing Claude guard: ' + filename);
+          return [{ matcher, hooks: [{ type: 'command', command }] }];
         }
         fs.writeFileSync(process.argv[2], JSON.stringify({
           hooks: {
-            PreToolUse: selectGuard('PreToolUse', 'privacy-block.cjs'),
-            PostToolUse: selectGuard('PostToolUse', 'gsd-read-injection-scanner.js'),
+            PreToolUse: selectGuard(
+              'PreToolUse', 'Bash|Glob|Grep|Read|Edit|Write', 'privacy-block.cjs',
+              'bash "$CLAUDE_PROJECT_DIR"/.claude/hooks/node-hook-runner.sh "$CLAUDE_PROJECT_DIR"/.claude/hooks/privacy-block.cjs'
+            ),
+            PostToolUse: selectGuard(
+              'PostToolUse', 'Read', 'gsd-read-injection-scanner.js',
+              'node "$CLAUDE_PROJECT_DIR"/.claude/hooks/gsd-read-injection-scanner.js'
+            ),
           },
         }));
         NODE
