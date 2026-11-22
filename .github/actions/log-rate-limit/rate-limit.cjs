@@ -28,9 +28,11 @@ function tokenKind(token) {
 // grouped by the exact token that produced them, e.g. to tell whether the start and the end of
 // one job read the same quota bucket. Deliberately unkeyed: grouping across jobs needs a value
 // every job can compute, and a keyed digest would need a repository secret that fork PRs and
-// several call sites do not have. The tokens are long random installation tokens that expire
-// within an hour, so the digest is not a usable confirmation oracle; 48 bits keep collisions
-// between the few tokens alive in one window negligible.
+// several call sites do not have. Installation tokens expire within the hour; a long-lived PAT
+// would keep a permanent digest in the logs, but anyone able to confirm a candidate against it
+// already holds the full token (one API call verifies it anyway), and the 48-bit prefix of a
+// high-entropy token cannot be inverted. 48 bits keep collisions between the few tokens alive in
+// one window negligible.
 function tokenFingerprint(token) {
   const value = String(token ?? '');
   if (!value) return 'none';
