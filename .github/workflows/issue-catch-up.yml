@@ -481,10 +481,15 @@ jobs:
               // not converging — either triggers are inert or fixes keep
               // failing. The shared detector applies the same routing guards,
               // excludes false positives (tracking issues, exempt labels,
-              // linked PRs, active runs), and attaches the remediation
-              // metadata (attempts, holds, owner, next action). Recorded for
-              // the health tracker; the issue still flows through the normal
-              // buckets below.
+              // linked PRs), and attaches the remediation metadata (attempts,
+              // holds, owner, next action). Recorded for the health tracker;
+              // the issue still flows through the normal buckets below.
+              //
+              // Active runs are excluded by the `activeRuns.has(num)` skip at
+              // the top of this loop, not here: every issue with a run in
+              // flight is already skipped, so forwarding that state would
+              // always pass false. The detector's own active-run guard is
+              // defense-in-depth that only its unit tests reach.
               const stuckFinding = detectStuckFixable({
                 issue,
                 comments,
@@ -492,7 +497,6 @@ jobs:
                 // reset above — the module derives both the attempt count and
                 // the last-attempt timestamp from this one list.
                 fixComments,
-                activeFixRun: activeRuns.has(num),
                 now: Date.now()
               });
               if (stuckFinding) buckets.invariant_findings.push(stuckFinding);

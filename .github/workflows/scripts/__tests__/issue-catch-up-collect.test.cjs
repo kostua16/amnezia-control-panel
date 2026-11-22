@@ -72,7 +72,11 @@ function makeIssue({ number, title, labels, createdAt, body = '', author }) {
 
 const bot = { login: 'github-actions[bot]', type: 'Bot' };
 
-async function runCollect({ issues, commentsByIssue, activeIssueNumbers = [] }) {
+async function runCollect({
+  issues,
+  commentsByIssue,
+  activeIssueNumbers = [],
+}) {
   const script = extractCollectScript();
   const outputs = {};
   const core = {
@@ -532,7 +536,11 @@ test('stuck fixable finding carries attempts, holds, owner, next action (#835 sh
     issues: [issue],
     commentsByIssue: {
       835: [
-        { user: bot, body: 'Triage Result: medium bug', created_at: daysAgo(20) },
+        {
+          user: bot,
+          body: 'Triage Result: medium bug',
+          created_at: daysAgo(20),
+        },
         { user: bot, body: '/fix attempt', created_at: daysAgo(10) },
         { user: bot, body: '/fix attempt', created_at: lastFixAt },
       ],
@@ -559,7 +567,13 @@ test('stuck issue parked with needs-review reports the manual hold, not a fix di
   const buckets = await runCollect({
     issues: [issue],
     commentsByIssue: {
-      910: [{ user: bot, body: 'Triage Result: medium bug', created_at: daysAgo(9) }],
+      910: [
+        {
+          user: bot,
+          body: 'Triage Result: medium bug',
+          created_at: daysAgo(9),
+        },
+      ],
     },
   });
   const stuck = buckets.invariant_findings.find(
@@ -580,7 +594,9 @@ test('fresh stuck issue with no attempts prescribes the fix dispatch (#1061/#106
   const buckets = await runCollect({
     issues: [issue],
     commentsByIssue: {
-      1061: [{ user: bot, body: 'Triage Result: low docs', created_at: daysAgo(1) }],
+      1061: [
+        { user: bot, body: 'Triage Result: low docs', created_at: daysAgo(1) },
+      ],
     },
   });
   const stuck = buckets.invariant_findings.find(
@@ -589,7 +605,10 @@ test('fresh stuck issue with no attempts prescribes the fix dispatch (#1061/#106
   assert.ok(stuck);
   assert.equal(stuck.fix_attempts, 0);
   assert.equal(stuck.last_fix_attempt_at, null);
-  assert.match(stuck.next_action, /dispatch fix-issue\.yml via workflow_dispatch/);
+  assert.match(
+    stuck.next_action,
+    /dispatch fix-issue\.yml via workflow_dispatch/,
+  );
 });
 
 test('tracking, linked-PR, and active-run issues produce no stuck finding (false positives)', async () => {

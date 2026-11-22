@@ -112,9 +112,7 @@ test('pipeline invariants are collected and reported to the health tracker', () 
     /scripts\/lib\/issue-pipeline-invariants\.cjs/,
     'both invariant steps must consume the shared module',
   );
-  const moduleConsumers = content.match(
-    /issue-pipeline-invariants\.cjs/g,
-  );
+  const moduleConsumers = content.match(/issue-pipeline-invariants\.cjs/g);
   assert.ok(
     moduleConsumers && moduleConsumers.length >= 2,
     'categorize (detection) and report (rendering/dedup) steps both require the module',
@@ -153,6 +151,8 @@ test('the invariant module carries the finding types and remediation fields', ()
   assert.equal(inert.trigger_path, 'catchup-phase6-autofix');
   assert.match(inert.action, /fix-issue\.yml/);
 
+  // One /fix attempt, 10h after the issue was created.
+  const fixAt = new Date(Date.now() - 20 * 3600000).toISOString();
   const stuck = mod.detectStuckFixable({
     issue: {
       number: 1061,
@@ -164,16 +164,37 @@ test('the invariant module carries the finding types and remediation fields', ()
       user: { login: 'kostua16', type: 'User' },
     },
     comments: [],
-    fixAttempts: 0,
+    // The categorize step passes its retry-filtered /fix comments as
+    // `fixComments`; a renamed parameter would silently fall back to the
+    // empty default, so the count assertion below pins the contract.
+    fixComments: [
+      {
+        user: { login: 'github-actions[bot]', type: 'Bot' },
+        body: '/fix',
+        created_at: fixAt,
+      },
+    ],
     activeFixRun: false,
     now: Date.now(),
   });
   assert.equal(stuck.type, 'stuck_fixable');
+  assert.equal(stuck.fix_attempts, 1);
+  assert.equal(stuck.last_fix_attempt_at, fixAt);
   assert.match(stuck.next_action, /dispatch fix-issue\.yml/);
 });
 
-test('stuck detection in the workflow passes active-run state from the sweep', () => {
-  // The workflow's call site must forward activeRuns.has(num) — a run in
-  // flight is not a stuck finding.
-  assert.match(content, /activeFixRun:\s*activeRuns\.has\(num\)/);
+test('stuck detection never sees an issue with an in-flight fix run', () => {
+  // The sweep skips every issue in activeRuns at the top of its loop, so the
+  // stuck detector only runs for issues without a run in flight — the call
+  // site has no active-run state to forward (activeRuns.has(num) there would
+  // always be false). Pin the skip that does the exclusion, ahead of the
+  // detector call.
+  const skipAt = content.indexOf('if (activeRuns.has(num)) continue;');
+  const detectAt = content.indexOf('detectStuckFixable({');
+  assert.notEqual(skipAt, -1, 'sweep must skip issues with an active fix run');
+  assert.notEqual(detectAt, -1, 'sweep must call the stuck detector');
+  assert.ok(
+    skipAt < detectAt,
+    'active-run skip must precede the detector call',
+  );
 });

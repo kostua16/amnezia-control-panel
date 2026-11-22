@@ -43,7 +43,12 @@ const DEAD_LETTER_RETRY_MARKER = '<!-- dead-letter-retry -->';
 // Labels that legitimately hold an issue out of the fix pipeline. They do not
 // silence a finding — a stuck issue parked for weeks is still stuck — but they
 // change the next action from "route a fix" to "maintainer unblocks".
-const BLOCKING_LABELS = ['security', 'critical', 'needs-review', 'triage-failed'];
+const BLOCKING_LABELS = [
+  'security',
+  'critical',
+  'needs-review',
+  'triage-failed',
+];
 // A finding line lists at most this many source comments; the count stays
 // exact.
 const MAX_SOURCES_PER_LINE = 3;
@@ -60,7 +65,8 @@ function commentUrl(comment = {}, issueNumber) {
 
 function isBotCommandComment(comment) {
   return (
-    comment.user?.login === BOT_LOGIN && COMMAND_PATTERN.test(comment.body || '')
+    comment.user?.login === BOT_LOGIN &&
+    COMMAND_PATTERN.test(comment.body || '')
   );
 }
 
@@ -196,6 +202,9 @@ function detectStuckFixable({
 
   const prState = linkedPrState({ issue, comments });
   if (prState !== 'none') return null;
+  // The sweep skips issues with an in-flight run before calling this
+  // detector, so from the workflow this guard is defense-in-depth; only the
+  // unit tests reach it.
   if (activeFixRun) return null;
 
   const createdAt = new Date(issue.created_at || 0).getTime();
@@ -219,7 +228,10 @@ function detectStuckFixable({
     blocking_labels: blockingLabels,
     linked_pr_state: prState,
     owner,
-    next_action: stuckNextAction({ fixAttempts: fixComments.length, blockingLabels }),
+    next_action: stuckNextAction({
+      fixAttempts: fixComments.length,
+      blockingLabels,
+    }),
   };
 }
 
@@ -229,7 +241,13 @@ function detectStuckFixable({
 // remediation IS, so they must re-post.
 function normalizeForHash(finding) {
   if (finding.type === 'inert_bot_command') {
-    return [finding.type, finding.number, finding.count, finding.trigger_path, finding.action];
+    return [
+      finding.type,
+      finding.number,
+      finding.count,
+      finding.trigger_path,
+      finding.action,
+    ];
   }
   if (finding.type === 'stuck_fixable') {
     return [
@@ -248,7 +266,11 @@ function findingsHash(findings = []) {
     .map(normalizeForHash)
     .map((row) => JSON.stringify(row))
     .sort();
-  return crypto.createHash('sha256').update(normalized.join('\n')).digest('hex').slice(0, 16);
+  return crypto
+    .createHash('sha256')
+    .update(normalized.join('\n'))
+    .digest('hex')
+    .slice(0, 16);
 }
 
 const MAX_REPORTED = 50;
@@ -267,9 +289,13 @@ function renderInertLine(f) {
 }
 
 function renderStuckLine(f) {
-  const holds = f.blocking_labels.length > 0 ? `, held by ${f.blocking_labels.join('+')}` : '';
-  const last =
-    f.last_fix_attempt_at ? `, last attempt ${f.last_fix_attempt_at}` : ', no real attempt yet';
+  const holds =
+    f.blocking_labels.length > 0
+      ? `, held by ${f.blocking_labels.join('+')}`
+      : '';
+  const last = f.last_fix_attempt_at
+    ? `, last attempt ${f.last_fix_attempt_at}`
+    : ', no real attempt yet';
   return (
     `- #${f.number} — **stuck fixable issue**: triaged + auto-fix + priority, no linked PR after ` +
     `${f.age_hours}h (${f.fix_attempts} fix attempt(s)${last})${holds} — owner: ${f.owner} — ` +
@@ -284,7 +310,9 @@ function renderFindingsReport({ findings = [], generatedAt = '' }) {
     f.type === 'inert_bot_command' ? renderInertLine(f) : renderStuckLine(f),
   );
   if (findings.length > MAX_REPORTED) {
-    lines.push(`- …and ${findings.length - MAX_REPORTED} more finding(s) — see the run summary`);
+    lines.push(
+      `- …and ${findings.length - MAX_REPORTED} more finding(s) — see the run summary`,
+    );
   }
   const hash = findingsHash(findings);
   const marker = `<!-- invariant-findings:${hash} -->`;
