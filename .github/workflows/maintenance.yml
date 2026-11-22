@@ -108,7 +108,7 @@ jobs:
           model: 'sonnet'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'false'
-          allowed-tools: 'Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm *),Bash(git commit *),Bash(git log *),Bash(rtk:*)'
+          allowed-tools: 'Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm *),Bash(git add:*),Bash(git commit:*),Bash(git diff:*),Bash(git log:*),Bash(git rm:*),Bash(git status:*),Bash(rtk:*)'
           prompt: |
             /gsd:health && /gsd:stats
             REPO: ${{ github.repository }}
