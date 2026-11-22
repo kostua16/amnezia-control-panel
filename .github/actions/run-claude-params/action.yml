@@ -423,16 +423,6 @@ runs:
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30) || true
 
-        # An unreachable probe (000/empty) has no branch in the retry
-        # classifier; remap it onto the retryable overload code so the attempt
-        # retries with the existing backoff instead of falling through to
-        # non-retryable. A probe that cannot reach the API right after an
-        # attempt died is the same transient outage, not an API verdict.
-        if [ -z "$http_code" ] || [ "$http_code" = "000" ]; then
-          echo "::warning::API probe unreachable (timeout or network error) — classifying attempt as retryable overload"
-          http_code="529"
-        fi
-
         # Job log lets the classifier see pre-execution failures (e.g. branch
         # setup dying on an unauthenticated git fetch) that never reach the
         # execution output file. Best-effort — an empty log keeps old behavior.
@@ -453,8 +443,8 @@ runs:
           --github-output "$GITHUB_OUTPUT"
         rm -f "$LOG_FILE"
 
-    - name: Rate limit wait (attempt 1 → 2)
-      if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' }}
+    - name: Retry backoff (attempt 1 → 2)
+      if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' || steps.check-429-1.outputs.retry_reason == 'probe_unreachable' }}
       shell: bash
       run: sleep 120
 
@@ -543,13 +533,6 @@ runs:
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
           --max-time 30) || true
 
-        # Same remap as check-429-1: an unreachable probe is transient
-        # evidence, not a non-retryable verdict.
-        if [ -z "$http_code" ] || [ "$http_code" = "000" ]; then
-          echo "::warning::API probe unreachable (timeout or network error) — classifying attempt as retryable overload"
-          http_code="529"
-        fi
-
         # Same pre-execution-failure visibility as check-429-1.
         LOG_FILE=$(mktemp "${RUNNER_TEMP:-/tmp}/claude-retry-log-XXXXXX.log")
         JOB_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" \
@@ -568,8 +551,8 @@ runs:
           --github-output "$GITHUB_OUTPUT"
         rm -f "$LOG_FILE"
 
-    - name: Rate limit wait (attempt 2 → 3)
-      if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' }}
+    - name: Retry backoff (attempt 2 → 3)
+      if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' || steps.check-429-2.outputs.retry_reason == 'probe_unreachable' }}
       shell: bash
       run: sleep 120
 

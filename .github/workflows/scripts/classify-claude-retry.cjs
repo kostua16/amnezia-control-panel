@@ -183,6 +183,19 @@ function classifyClaudeRetry({
   // or network blip that cleared before the probe ran a few seconds later —
   // not a real code or prompt error (those leave a result or action_error).
   // Retry once instead of giving up; bounded by the existing 3-attempt cap.
+  if (normalizedHttpCode === '' || normalizedHttpCode === '000') {
+    return {
+      httpCode: normalizedHttpCode,
+      isRateLimited: false,
+      shouldRetry: true,
+      retryReason: 'probe_unreachable',
+      softSuccess: false,
+      softSuccessReason: '',
+      annotation: 'warning',
+      message: `Attempt ${normalizedAttempt} failed and the API probe was unreachable. ${retrySuffix}`,
+    };
+  }
+
   if (normalizedHttpCode === '200' && !hasAnyResultNode(executionText)) {
     return {
       httpCode: normalizedHttpCode,

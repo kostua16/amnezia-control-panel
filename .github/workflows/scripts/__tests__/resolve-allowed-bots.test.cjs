@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const { load } = require('js-yaml');
 
 const {
   resolveAllowedBots,
@@ -104,27 +105,15 @@ test('formatAllowedBots is comma-joined without spaces', () => {
   );
 });
 
-const HARDCODED_BOT_LIST =
-  /allowed-bots:\s*(?:\$\{\{[^}]*&&\s*)?['"][^'"]*(?:\[bot\]|github-actions,)[^'"]*['"]/;
-
-// Documented override literals (documentation.md): these callers keep one
-// explicit allowed-bots value instead of a named profile. Only the exact
-// literal is exempt from the scan — any other hardcoded bot list elsewhere
-// in these files (or a second copy of the literal) still fails the contract.
-const OVERRIDE_LITERALS = new Map([
-  [
-    path.normalize('workflows/triage.yml'),
-    "allowed-bots: 'github-actions[bot],kilo-code-bot'",
-  ],
-  [
-    path.normalize('workflows/issue-catch-up.yml'),
-    "allowed-bots: 'github-actions[bot]'",
-  ],
+const OVERRIDES = new Map([
+  ['workflows/triage.yml', 'github-actions[bot],kilo-code-bot'],
+  ['workflows/issue-catch-up.yml', 'github-actions[bot]'],
 ]);
 
 test('workflow and action callers use profiles instead of hardcoded bot lists', () => {
   const repoGithub = path.join(__dirname, '..', '..', '..');
   const offenders = [];
+  const exceptions = new Map(OVERRIDES);
 
   function walk(dir) {
     for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -134,19 +123,64 @@ test('workflow and action callers use profiles instead of hardcoded bot lists', 
         continue;
       }
       if (!/\.ya?ml$/.test(ent.name)) continue;
-      const rel = path.relative(repoGithub, full);
-      const text = fs.readFileSync(full, 'utf8');
-      const exempt = OVERRIDE_LITERALS.get(path.normalize(rel));
-      // Strip at most the single documented literal so the rest of the
-      // file stays under the hardcoded-list guard (a second occurrence
-      // is not stripped and therefore still matches).
-      const scanned = exempt ? text.replace(exempt, '') : text;
-      if (HARDCODED_BOT_LIST.test(scanned))
-        offenders.push(rel.replace(/\\/g, '/'));
+      const rel = path.relative(repoGithub, full).split(path.sep).join('/');
+      const doc = load(fs.readFileSync(full, 'utf8'));
+      const jobs = doc.runs ? [doc.runs] : Object.values(doc.jobs ?? {});
+      for (const job of jobs) {
+        const steps = job.steps ?? [];
+        for (const [index, step] of steps.entries()) {
+          const value = step.with?.['allowed-bots'];
+          if (value === undefined || value === '${{ inputs.allowed-bots }}')
+            continue;
+          if (
+            value === '${{ steps.workflow-bot-policy.outputs.allowed_bots }}'
+          ) {
+            const prior = steps.slice(0, index);
+            const checkout = prior.find(
+              (candidate) =>
+                candidate.with?.path === '.git/workflow-bot-policy',
+            );
+            const resolver = prior.find(
+              (candidate) => candidate.id === 'workflow-bot-policy',
+            );
+            assert.equal(checkout?.with.ref, '${{ github.workflow_sha }}', rel);
+            assert.match(resolver?.run ?? '', /resolve-allowed-bots\.cjs/, rel);
+            assert.equal(step.with['allowed-bots-profile'], undefined, rel);
+            continue;
+          }
+          if (exceptions.has(rel) && value === exceptions.get(rel)) {
+            exceptions.delete(rel);
+            continue;
+          }
+          offenders.push(rel);
+        }
+      }
     }
   }
 
   walk(path.join(repoGithub, 'workflows'));
   walk(path.join(repoGithub, 'actions'));
   assert.deepEqual(offenders, []);
+  assert.deepEqual([...exceptions], []);
+});
+
+test('each policy list entry must contain exactly one login', () => {
+  for (const login of [
+    'github-actions,claude[bot]',
+    'first\nsecond',
+    'first second',
+  ]) {
+    assert.throws(
+      () =>
+        resolveAllowedBots(
+          { allowedBots: { profiles: { invalid: [login] } } },
+          { profile: 'invalid' },
+        ),
+      /invalid login/,
+    );
+  }
+  assert.throws(
+    () => resolveAllowedBots(policy, { override: 'first,,second' }),
+    /empty login/,
+  );
 });

@@ -90,3 +90,20 @@ test('empty output with healthy probe and no git-auth signature still retries', 
   assert.equal(result.shouldRetry, true);
   assert.equal(result.retryReason, 'abortive_no_output');
 });
+
+test('unreachable API probe preserves fatal Git auth precedence', () => {
+  for (const httpCode of ['000', '']) {
+    const unavailable = classifyClaudeRetry({ httpCode, attempt: '1' });
+    assert.equal(unavailable.shouldRetry, true);
+    assert.equal(unavailable.retryReason, 'probe_unreachable');
+
+    const fatal = classifyClaudeRetry({
+      httpCode,
+      attempt: '1',
+      logText:
+        "Error in branch setup: fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    });
+    assert.equal(fatal.shouldRetry, false);
+    assert.equal(fatal.retryReason, 'fatal_config_git_auth');
+  }
+});

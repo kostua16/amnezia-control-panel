@@ -179,7 +179,7 @@ describe('workflow trigger policy', () => {
     assert.match(yaml, /echo "- Fix-review run:/);
     assert.match(
       fixReviewYaml,
-      /allowed-bots-profile:\s+\$\{\{\s+github\.event\.inputs\.automation_review_loop == 'true' && 'orchestrated' \|\| ''\s+\}\}/,
+      /ALLOWED_BOTS_PROFILE:\s+\$\{\{\s+github\.event\.inputs\.automation_review_loop == 'true' && 'orchestrated' \|\| ''\s+\}\}/,
     );
   });
 

@@ -19,8 +19,7 @@ function getArg(name, argv = process.argv) {
 function parseCsv(raw) {
   return String(raw || '')
     .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
+    .map((part) => part.trim());
 }
 
 function assertExactLogins(logins, source) {
@@ -33,6 +32,9 @@ function assertExactLogins(logins, source) {
     }
     if (login.includes('*') || login.includes('?')) {
       throw new Error(`${source} rejects wildcard login: ${login}`);
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\[bot\])?$/i.test(login.trim())) {
+      throw new Error(`${source} contains an invalid login`);
     }
   }
   return logins.map((login) => login.trim());
@@ -80,7 +82,8 @@ function main({ argv = process.argv } = {}) {
   const outputPath =
     getArg('--github-output', argv) || process.env.GITHUB_OUTPUT;
 
-  const policy = loadPolicy(policyPath);
+  const policy =
+    profile.trim() && !override.trim() ? loadPolicy(policyPath) : null;
   const logins = resolveAllowedBots(policy, { profile, override });
   const value = formatAllowedBots(logins);
   if (outputPath) {
