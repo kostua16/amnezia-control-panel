@@ -52,10 +52,6 @@ inputs:
     description: "How gh gets the token: 'validate' (setup-gh login + auth status) or 'env' (export GH_TOKEN, no API call)"
     default: 'validate'
 
-outputs:
-  core-remaining:
-    description: 'Remaining core (REST) quota of github-token at job start; empty when it could not be read'
-    value: ${{ steps.rate_limit.outputs.core-remaining }}
   gsd-version:
     description: 'Pinned @opengsd/gsd-core version used when project-local GSD assets are missing'
     default: '1.2.0'
@@ -88,6 +84,11 @@ outputs:
   actionlint-sha256:
     description: 'SHA-256 for the pinned actionlint linux_amd64 tarball'
     default: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8'
+
+outputs:
+  core-remaining:
+    description: 'Remaining core (REST) quota of github-token at job start; empty when it could not be read'
+    value: ${{ steps.rate_limit.outputs.core-remaining }}
 
 runs:
   using: 'composite'
