@@ -27,9 +27,18 @@ jobs:
     name: Fleet back-pressure gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The gate only reads (gh pr list); do not hand it the workflow's write scopes.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
     steps:
+      - name: Checkout for fleet gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
       - uses: ./.github/actions/fleet-back-pressure
         id: fleet_check
         with:
@@ -401,6 +410,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
+          model: 'opus'
           max-turns: '${{ env.MAX_TURNS }}'
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(echo:*),Bash(rtk:*)'
           prompt: |

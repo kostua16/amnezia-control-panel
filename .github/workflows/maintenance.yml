@@ -105,6 +105,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
+          model: 'sonnet'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'false'
           allowed-tools: 'mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm *),Bash(gh issue:*),Bash(git *),Bash(rtk:*)'
