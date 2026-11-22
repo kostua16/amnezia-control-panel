@@ -71,7 +71,10 @@ jobs:
             exit 0
           fi
           pr_number=$(jq -r '.pr_number' /tmp/trigger-policy.json)
-          [[ "$pr_number" =~ ^[1-9][0-9]*$ ]] || exit 1
+          if [[ ! "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+            echo '::notice::antigravity review skipped: policy result carried no PR number'
+            exit 0
+          fi
           head_repo=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '.head.repo.full_name')
           if [[ "$head_repo" != "$GITHUB_REPOSITORY" ]]; then
             echo "trusted=false" >> "$GITHUB_OUTPUT"

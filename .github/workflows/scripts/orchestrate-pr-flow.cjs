@@ -1535,15 +1535,6 @@ function makeDecision(context) {
     return finish('flow/draft', 'PR is draft.');
   }
 
-  if (pr.isCrossRepository) {
-    return finish(
-      'flow/manual-only',
-      'Cross-repository PRs require manual review.',
-      null,
-      ['flow/manual-only'],
-    );
-  }
-
   if (checkStatus.status === 'failed') {
     return finish('flow/checks-failed', 'Required checks are failing.');
   }
@@ -1583,6 +1574,34 @@ function makeDecision(context) {
     return finish(
       'flow/review-blocked',
       `Blocking labels are present: ${nonReviewHardBlockingLabels.join(', ')}.`,
+    );
+  }
+
+  // Cross-repository PRs never receive automated workers — this gate must
+  // sit below the failing gates above (required checks, hard blocking
+  // labels) so a broken fork PR resolves to a failing state instead of
+  // passing the pr-flow/ready aggregate, and above any worker dispatch so a
+  // maintainer /review cannot dispatch a privileged worker either. Advisory
+  // review concerns stay blocking here: no automated review will ever
+  // replace them on a fork PR, so they cannot be masked as success.
+  if (pr.isCrossRepository) {
+    const concernLabels = (codeReviewWorker.blockLabels ?? []).filter((label) =>
+      labels.includes(label),
+    );
+    if (concernLabels.length > 0 && !maintainerApproved) {
+      return finish(
+        'flow/review-blocked',
+        `Blocking labels are present: ${concernLabels.join(', ')}.`,
+      );
+    }
+    return finish(
+      'flow/manual-only',
+      'Cross-repository PRs require manual review.',
+      null,
+      [],
+      currentLabels.filter((label) =>
+        /^flow\/finalizer-retry-\d+$/.test(label),
+      ),
     );
   }
 

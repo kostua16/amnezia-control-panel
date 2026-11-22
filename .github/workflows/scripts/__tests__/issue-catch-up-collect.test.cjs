@@ -63,6 +63,9 @@ function makeIssue({ number, title, labels, createdAt, body = '', author }) {
     labels: labels.map((name) => ({ name })),
     created_at: createdAt,
     body,
+    // The REST payload carries author_association; kostua16 is the repo
+    // owner, so the default mirrors a maintainer-authored issue.
+    author_association: 'OWNER',
     user: author || { login: 'kostua16', type: 'User' },
   };
 }
@@ -233,6 +236,34 @@ test('unparked high untriaged issue routes to re-triage, not escalation', async 
   });
   assert.equal(buckets.needs_retriage.length, 1);
   assert.equal(buckets.needs_retriage[0].number, 803);
+  assert.equal(buckets.priority_escalation.length, 0);
+});
+
+test('externally-authored untriaged issue is never dispatched to AI triage', async () => {
+  // The sweep's workflow_dispatch of triage.yml must inherit triage.yml's
+  // `issues`-event maintainer gate: issue text authored outside the
+  // maintainer group cannot reach the AI prompt via the hourly catch-up.
+  const external = {
+    ...makeIssue({
+      number: 810,
+      title: 'external issue never triaged',
+      labels: ['auto-fix'],
+      createdAt: daysAgo(3),
+    }),
+    author_association: 'NONE',
+    user: { login: 'external-contributor', type: 'User' },
+  };
+  const buckets = await runCollect({
+    issues: [external],
+    commentsByIssue: { 810: [] },
+  });
+  assert.equal(
+    buckets.needs_retriage.length,
+    0,
+    'external untriaged issues must not be dispatched to AI triage',
+  );
+  assert.equal(buckets.external_untriaged.length, 1);
+  assert.equal(buckets.external_untriaged[0].number, 810);
   assert.equal(buckets.priority_escalation.length, 0);
 });
 

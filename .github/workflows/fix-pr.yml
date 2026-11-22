@@ -90,6 +90,10 @@ jobs:
 
             if (!pr.head.repo || pr.head.repo.full_name !== pr.base.repo?.full_name) {
               core.notice('Skipping CI repair for a cross-repository PR');
+              core.setOutput(
+                'skip_reason',
+                'cross-repository PR — CI repair only runs for same-repository heads',
+              );
               return;
             }
 
@@ -147,7 +151,7 @@ jobs:
         if: steps.policy.outputs.should_run != 'true'
         shell: bash
         run: |
-          echo "Skipping PR auto-fix: ${{ steps.policy.outputs.reason || 'policy declined run' }}"
+          echo "Skipping PR auto-fix: ${{ steps.source-pr.outputs.skip_reason || steps.policy.outputs.reason || 'policy declined run' }}"
 
   fix:
     needs: [evaluate]

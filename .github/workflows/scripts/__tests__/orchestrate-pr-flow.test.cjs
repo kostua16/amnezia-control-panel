@@ -1145,7 +1145,7 @@ test('buildFlowVisibility sets all workers N/A for terminal manual-only', () => 
   }
 });
 
-function finalizerRetryContext(pr, workerRuns) {
+function finalizerRetryContext(pr, workerRuns, checkStatus) {
   const config = JSON.parse(
     require('node:fs').readFileSync(
       path.join(__dirname, '..', '..', '..', 'pr-flow.json'),
@@ -1157,7 +1157,12 @@ function finalizerRetryContext(pr, workerRuns) {
     config,
     eventName: 'workflow_dispatch',
     event: {},
-    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    checkStatus: checkStatus ?? {
+      status: 'passed',
+      failing: [],
+      pending: [],
+      missing: [],
+    },
     workerRuns,
     externalReview: { state: 'skipped', reason: 'not required' },
   };
@@ -1290,4 +1295,85 @@ test('cross-repository PR cannot dispatch a privileged worker', () => {
 
   assert.equal(decision.state, 'flow/manual-only');
   assert.equal(decision.dispatch, null);
+});
+
+test('cross-repository PR keeps failing required checks authoritative', () => {
+  // The manual-only terminal state must not mask a red required check:
+  // pr-flow/ready has to fail for a broken fork PR, not pass it to manual
+  // review as success.
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+      },
+      {},
+      {
+        status: 'failed',
+        failing: ['CI'],
+        pending: [],
+        missing: [],
+      },
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/checks-failed');
+  assert.equal(decision.dispatch, null);
+});
+
+test('cross-repository PR keeps blocking labels and review concerns authoritative', () => {
+  const hardBlocked = makePrFlowDecision({
+    ...finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+        labels: ['do-not-merge'],
+      },
+      {},
+    ),
+    policy: { blocking_labels_present: ['do-not-merge'] },
+  });
+  assert.equal(hardBlocked.state, 'flow/review-blocked');
+  assert.match(hardBlocked.reason, /do-not-merge/);
+
+  const concernBlocked = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+        labels: ['ai-review-concerns'],
+      },
+      {},
+    ),
+  );
+  assert.equal(concernBlocked.state, 'flow/review-blocked');
+  assert.match(concernBlocked.reason, /ai-review-concerns/);
+});
+
+test('cross-repository manual-only state clears stale finalizer retry labels', () => {
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+        labels: ['flow/finalizer-retry-1'],
+      },
+      {},
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/manual-only');
+  assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-1'));
 });

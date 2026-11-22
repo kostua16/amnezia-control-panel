@@ -87,7 +87,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           EXPECTED_HEAD_SHA: ${{ github.event.inputs.head_sha || '' }}
-          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          # Fail safe: the declared workflow_dispatch default is dry-run, so
+          # a caller that omits the input must never land in apply mode —
+          # only an explicit 'false' applies.
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
         run: |
           gh pr view "$PR_NUMBER" \
             --json number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \

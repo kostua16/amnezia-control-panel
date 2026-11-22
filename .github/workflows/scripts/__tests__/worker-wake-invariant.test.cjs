@@ -9,10 +9,17 @@ const workflowsDir = path.join(repoRoot, '.github/workflows');
 
 function hasWakeActionsWrite(workflow) {
   const content = workflow.replace(/\r\n/g, '\n');
-  const wakeJob =
-    content.match(
-      /^ {2}wake-orchestrator:[^\S\n]*\n((?:^ {4}.*\n|^\s*\n)*)/m,
-    )?.[1] ?? '';
+  const hasWakeJob = /^ {2}wake-orchestrator:/m.test(content);
+  const wakeJobMatch = content.match(
+    /^ {2}wake-orchestrator:[^\S\n]*\n((?:^ {4}.*\n|^\s*\n)*)/m,
+  );
+  // Fail closed: a wake job whose body cannot be extracted (trailing
+  // comment on the job key, reformat, deeper nesting) is a violation.
+  // Silently falling back to the workflow-level permissions block would
+  // false-pass a job-level block that omits actions: write — and on GitHub
+  // a job-level permissions block replaces the workflow-level one.
+  if (hasWakeJob && wakeJobMatch === null) return false;
+  const wakeJob = wakeJobMatch?.[1] ?? '';
   const jobPermissions = wakeJob.match(
     /^ {4}permissions:([^\n]*)\n((?:^ {6}.*\n)*)/m,
   );
