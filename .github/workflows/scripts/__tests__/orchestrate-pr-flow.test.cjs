@@ -6,6 +6,7 @@ const path = require('node:path');
 const {
   buildFlowGuidance,
   buildFlowVisibility,
+  buildGraphqlArgs,
   evaluatePolicy,
   getWorkerDispatchRef,
   makeDecision: makePrFlowDecision,
@@ -31,6 +32,40 @@ test('pathsMatch supports exact paths and directory-prefix globs', () => {
   assert.equal(pathsMatch(['.github/workflows.bak'], paths), false);
   assert.equal(pathsMatch(['src/app/page.tsx'], paths), false);
   assert.equal(pathsMatch([], paths), false);
+});
+
+test('buildGraphqlArgs keeps strings literal with -f and types numbers and booleans with -F', () => {
+  // The review-inputs query declares typed variables (`: Int!`, `: Boolean!`);
+  // a boolean or number routed through -f would be sent as the JSON string
+  // "false"/"7" and rejected by GraphQL on every wake, silently degrading the
+  // flow to permanent REST fallback.
+  const args = buildGraphqlArgs('query X { rateLimit { cost } }', {
+    owner: 'owner',
+    name: 'repo',
+    number: 7,
+    commentsAfter: 'cursor-1',
+    reviewsAfter: null,
+    wantComments: true,
+    wantReviews: false,
+  });
+  assert.deepEqual(args, [
+    'api',
+    'graphql',
+    '-f',
+    'query=query X { rateLimit { cost } }',
+    '-f',
+    'owner=owner',
+    '-f',
+    'name=repo',
+    '-F',
+    'number=7',
+    '-f',
+    'commentsAfter=cursor-1',
+    '-F',
+    'wantComments=true',
+    '-F',
+    'wantReviews=false',
+  ]);
 });
 
 test('dependencyReview worker paths cover github_actions Dependabot bumps', () => {
