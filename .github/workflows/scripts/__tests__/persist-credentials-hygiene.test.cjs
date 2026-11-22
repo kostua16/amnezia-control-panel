@@ -197,7 +197,7 @@ test('hardened checkouts never combine with track-progress on tag-mode events', 
       ].map((m) => m[1].trim().replace(/^['"]|['"]$/g, ''));
       if (
         trackProgressValues.some((value) => value !== 'false') &&
-        /^ +persist-credentials:[ \t]*(?:false|'false'|"false")[ \t]*(?:#.*)?\r?$/m.test(
+        /^ +persist-credentials:[ \t]*(?:false|'false'|"false")[ \t]*(?:#.*)?\r?$/im.test(
           job,
         )
       ) {

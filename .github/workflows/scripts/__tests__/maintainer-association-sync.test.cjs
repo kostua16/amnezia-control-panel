@@ -13,6 +13,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -56,11 +57,37 @@ test('triage dispatch authorization gates the single configured agent step', () 
   const steps = readWorkflow('triage.yml')
     .split(/^ {6}- /m)
     .slice(1);
-  const [gate] = steps.filter((step) =>
+  const gates = steps.filter((step) =>
     /^ {8}id: dispatch_gate\s*$/m.test(step),
   );
-  assert.ok(gate, 'missing dispatch authorization step');
+  assert.equal(
+    gates.length,
+    1,
+    'expected exactly one dispatch authorization step',
+  );
+  const [gate] = gates;
   assert.match(gate, /echo "authorized=\$authorized" >> "\$GITHUB_OUTPUT"/);
+  const decision = gate.match(/authorized=\$\(node -e '([\s\S]+?)'\)/)?.[1];
+  assert.ok(decision, 'missing dispatch authorization decision');
+  for (const [association, type, login, authorized] of [
+    ['OWNER', 'User', 'maintainer', 'true'],
+    ['NONE', 'Bot', 'github-actions[bot]', 'true'],
+    ['NONE', 'Bot', 'unlisted-app[bot]', 'false'],
+    ['CONTRIBUTOR', 'User', 'external', 'false'],
+    ['NONE', 'User', 'github-actions[bot]', 'false'],
+  ]) {
+    const actual = execFileSync(process.execPath, ['-e', decision], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GITHUB_WORKSPACE: path.resolve(workflowsDir, '../..'),
+        AUTHOR_ASSOCIATION: association,
+        AUTHOR_TYPE: type,
+        AUTHOR_LOGIN: login,
+      },
+    });
+    assert.equal(actual, authorized, `${association}/${type}/${login}`);
+  }
 
   const agents = steps.filter((step) =>
     /^(?: {8})?uses: \.\/\.github\/actions\/run-zai[ \t]*$/m.test(step),
