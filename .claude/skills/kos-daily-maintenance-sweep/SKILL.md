@@ -58,7 +58,7 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 
 - **Issue spam** → creating an issue every run for the same standing finding (dedupe first).
 - **Clean-category "failure"** → no findings is a clean success; do not force an issue.
-- **Missing critical escalation** → HIGH/CRITICAL security must reach PRs, not just an issue.
+- **Missing critical escalation** → comment on HIGH/CRITICAL findings only in open PRs changing dependency manifests.
 - **Disk** → fresh GitHub-hosted VM per job; keep the `npm audit --json` install footprint small (see [[kos-runner-disk-hygiene]]).
 
 ## Process Flow (Authoritative)
@@ -66,7 +66,7 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 1. run 5 checks.
 2. dedupe against open issues.
 3. create labeled issues only for real, non-duplicate findings.
-4. escalate critical security to PR comments.
+4. comment on critical security findings only in open PRs changing dependency manifests.
 5. report totals; clean = success.
 
 ## Output Format

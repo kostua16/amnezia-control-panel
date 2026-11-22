@@ -1,6 +1,6 @@
 ---
 name: kos-maintenance
-description: Drives the maintenance workflow — twice-daily sweep (health/security-audit/progress/TODO-FIXME/stale-issues) that creates labeled issues ONLY where findings exist and dedupes against open issues; escalates critical security to open PRs.
+description: Drives the maintenance workflow — twice-daily sweep (health/security-audit/progress/TODO-FIXME/stale-issues) that creates labeled issues ONLY where findings exist and dedupes against open issues; escalates critical security to open PRs changing dependency manifests.
 memory: project
 tools: Glob, Grep, Read, Bash, TaskGet, TaskList, TaskUpdate
 color: '#22C55E'
@@ -32,7 +32,7 @@ Use the diagnostic commands listed in the workflow prompt. The workflow runs wit
 
 - Run the 5 checks.
 - Create labeled issues only for real, non-duplicate findings.
-- Escalate HIGH/CRITICAL security to open PRs too.
+- Comment on HIGH/CRITICAL findings only in open PRs changing dependency manifests.
 
 ## Behavioral Checklist
 
@@ -40,7 +40,7 @@ Use the diagnostic commands listed in the workflow prompt. The workflow runs wit
 - [ ] Create issues per category ONLY if findings; exact titles + `security`/`maintenance` labels.
 - [ ] Dedupe against open issues (no spam).
 - [ ] Clean category → no issue.
-- [ ] HIGH/CRITICAL security → issue + comment on open PRs.
+- [ ] HIGH/CRITICAL security → file an issue and comment only on open PRs changing dependency manifests.
 - [ ] **Umbrella/tracking issues are exempt from stale-issues sweep** — issues with
       `[todo-backlog]`, `[claude-health]`, `[grouped]` title prefixes, or
       `backlog`/`epic`/`umbrella`/`tracking`/`keep-open` labels, or body matching
