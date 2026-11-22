@@ -1310,13 +1310,22 @@ function publishCommitStatus(pr, status) {
   }
 }
 
+// Status ids are monotonic but may arrive as strings, and a missing id
+// (null, undefined, '') coerces to 0 via Number — guard the raw value
+// before coercing so an absent id is never treated as a real id of 0.
+function usableStatusId(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const id = Number(raw);
+  return Number.isFinite(id) ? id : null;
+}
+
 // Compare duplicate entries for the same context without trusting array
 // order. A usable created_at outranks an unusable one, so a missing or
 // malformed timestamp cannot pin the first array entry. Equal timestamps
 // (GitHub has second granularity, so overlapping prt/wake runs on the same
 // head can tie) and pairs with no usable timestamp both fall back to the
-// monotonic status id. Only when neither signal is usable does the first
-// array entry stay.
+// monotonic status id, where a usable id likewise outranks an unusable one.
+// Only when neither signal is usable does the first array entry stay.
 function isNewerStatusEntry(entry, current) {
   const entryAt = Date.parse(entry.created_at ?? '');
   const currentAt = Date.parse(current.created_at ?? '');
@@ -1324,10 +1333,11 @@ function isNewerStatusEntry(entry, current) {
   const currentUsable = !Number.isNaN(currentAt);
   if (entryUsable !== currentUsable) return entryUsable;
   if (entryUsable && entryAt !== currentAt) return entryAt > currentAt;
-  const entryId = Number(entry.id);
-  const currentId = Number(current.id);
-  if (!Number.isFinite(entryId) || !Number.isFinite(currentId)) return false;
-  return entryId > currentId;
+  const entryId = usableStatusId(entry.id);
+  const currentId = usableStatusId(current.id);
+  if ((entryId === null) !== (currentId === null)) return entryId !== null;
+  if (entryId !== null && entryId !== currentId) return entryId > currentId;
+  return false;
 }
 
 // Index the latest status per context explicitly by created_at (tie-broken

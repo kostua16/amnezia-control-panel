@@ -1016,8 +1016,10 @@ test('publishFlowStatuses skips only unchanged successes and keeps order', () =>
 });
 
 test('publishFlowStatuses uses the newest duplicate context even in newest-first order', () => {
-  // The combined /status endpoint is documented newest-first; last-wins
-  // indexing would pick the older success duplicate and wrongly skip.
+  // Newest-first input, defensive: the combined /status endpoint is
+  // deduplicated to one entry per context today, so duplicates cannot
+  // reach this path; last-wins indexing would pick the older success
+  // duplicate and wrongly skip if they ever did.
   const posted = [];
   publishFlowStatuses({ ...basePr }, statusVisibility(), {
     currentRunUrl: RUN_URL,
@@ -1042,8 +1044,9 @@ test('publishFlowStatuses uses the newest duplicate context even in newest-first
 });
 
 test('publishFlowStatuses uses the newest duplicate context in oldest-first history', () => {
-  // A future caller passing full history (commits/{sha}/statuses) is
-  // oldest-first; the newest failure must still decide.
+  // Oldest-first input, defensive: the history endpoint
+  // (commits/{sha}/statuses) returns newest-first today, but the newest
+  // failure must still decide in either order.
   const posted = [];
   publishFlowStatuses({ ...basePr }, statusVisibility(), {
     currentRunUrl: RUN_URL,
@@ -1126,6 +1129,44 @@ test('publishFlowStatuses breaks equal created_at ties on the status id', () => 
     });
 
     assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+  }
+});
+
+test('publishFlowStatuses lets a usable id beat an unusable one on tied created_at', () => {
+  // Mirror of the created_at rule: when only one duplicate of a tied pair
+  // carries a usable id, that entry must win in either array order. A
+  // missing id may arrive as absent, null or '' — none of those may be
+  // coerced into a real id of 0.
+  const tie = '2026-11-22T10:00:00Z';
+  const staleSuccess = previousSuccess({ created_at: tie, id: '200' });
+  for (const unusableId of [undefined, null, '']) {
+    const failure = previousSuccess({
+      context: 'pr-flow/code-review',
+      state: 'failure',
+      description: 'Code review failed.',
+      created_at: tie,
+      ...(unusableId === undefined ? {} : { id: unusableId }),
+    });
+    for (const duplicates of [
+      [staleSuccess, failure],
+      [failure, staleSuccess],
+    ]) {
+      const posted = [];
+      publishFlowStatuses({ ...basePr }, statusVisibility(), {
+        currentRunUrl: RUN_URL,
+        readStatuses: () => [
+          ...duplicates,
+          previousSuccess({
+            context: 'pr-flow/kilo-review',
+            description: 'N/A',
+            target_url: OLD_RUN_URL,
+          }),
+        ],
+        publishStatus: (_pr, status) => posted.push(status.context),
+      });
+
+      assert.deepEqual(posted, ['pr-flow/ready']);
+    }
   }
 });
 
