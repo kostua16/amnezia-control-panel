@@ -96,12 +96,14 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         env:
           AUTHOR_ASSOCIATION: ${{ steps.issue_details.outputs.author_association }}
+          AUTHOR_LOGIN: ${{ steps.issue_details.outputs.author }}
           AUTHOR_TYPE: ${{ steps.issue_details.outputs.author_type }}
         run: |
           authorized=$(node -e '
             const policy = require(process.env.GITHUB_WORKSPACE + "/.github/workflows/policy.json");
             const ok = policy.maintainerAssociations.includes(process.env.AUTHOR_ASSOCIATION) ||
-              process.env.AUTHOR_TYPE === "Bot";
+              (process.env.AUTHOR_TYPE === "Bot" &&
+                policy.trustedTriageBotLogins.includes(process.env.AUTHOR_LOGIN));
             process.stdout.write(ok ? "true" : "false");
           ')
           echo "authorized=$authorized" >> "$GITHUB_OUTPUT"
@@ -110,9 +112,8 @@ jobs:
           fi
 
       - uses: ./.github/actions/run-zai
+        id: triage_agent
         if: github.event_name != 'workflow_dispatch' || steps.dispatch_gate.outputs.authorized == 'true'
-
-      - uses: ./.github/actions/run-zai
         with:
           allow-post-inline: 'true'
           api-key: ${{ secrets.ZAI_API_KEY }}
@@ -187,7 +188,7 @@ jobs:
             Operate as the `kos-triage` agent: first read `.claude/agents/kos-triage.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Ensure triaged label
-        if: success()
+        if: steps.triage_agent.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUM: ${{ steps.resolve.outputs.number }}
@@ -201,7 +202,7 @@ jobs:
           fi
 
       - name: Detect umbrella/tracking issue
-        if: always()
+        if: always() && (steps.triage_agent.outcome == 'success' || steps.triage_agent.outcome == 'failure')
         id: tracking-check
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}

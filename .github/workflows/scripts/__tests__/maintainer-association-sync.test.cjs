@@ -34,7 +34,7 @@ test('deepseek-code-review association literals match policy.maintainerAssociati
     ),
   ].map((m) => m[1]);
   // One literal set in the concurrency group, one in the resolve-pr job `if`.
-  assert.ok(literals.length >= 2, 'expected gated association literals');
+  assert.equal(literals.length, 2 * expected.length);
   assert.deepEqual([...new Set(literals)].sort(), expected);
 });
 
@@ -50,4 +50,17 @@ test('triage.yml fromJSON author-gate lists match policy.maintainerAssociations'
   for (const list of lists) {
     assert.deepEqual([...list].sort(), expected);
   }
+});
+
+test('triage dispatch authorization gates the single configured agent step', () => {
+  const workflow = readWorkflow('triage.yml').replace(/\r\n/g, '\n');
+  assert.equal(
+    [...workflow.matchAll(/^      - uses: \.\/\.github\/actions\/run-zai$/gm)]
+      .length,
+    1,
+  );
+  assert.match(
+    workflow,
+    /- uses: \.\/\.github\/actions\/run-zai\n        id: triage_agent\n        if: github\.event_name != 'workflow_dispatch' \|\| steps\.dispatch_gate\.outputs\.authorized == 'true'\n        with:/,
+  );
 });

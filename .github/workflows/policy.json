@@ -1,5 +1,6 @@
 {
   "maintainerAssociations": ["OWNER", "MEMBER", "COLLABORATOR"],
+  "trustedTriageBotLogins": ["github-actions[bot]"],
   "trustedAutomationBranchPrefixes": [
     "claude-auto-fix-ci-",
     "claude-fix-issue-",

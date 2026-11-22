@@ -119,6 +119,7 @@ jobs:
       - name: Explain skipped review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
           SKIP_REASON: ${{ needs.resolve-pr.outputs.skip-reason }}
         run: |
