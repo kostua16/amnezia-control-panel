@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const yaml = require('js-yaml');
 
 const root = process.cwd();
 const workflowDir = path.join(root, '.github', 'workflows');
@@ -12,12 +13,85 @@ const prFlowFile = path.join(root, '.github', 'pr-flow.json');
 
 const externalUsePattern = /uses:\s*([^\s#]+@([^\s#]+))/g;
 const shaPattern = /^[a-f0-9]{40}$/i;
+const cleanupWorkflow = '.github/workflows/auto-pr-branch-cleanup.yml';
 const allowedPullRequestTarget = new Set([
-  // The close jobs run only for main and check out the trusted base SHA.
-  'auto-pr-branch-cleanup.yml',
-  'pr-flow.yml',
-  'pr-policy.yml',
+  cleanupWorkflow,
+  '.github/workflows/pr-flow.yml',
+  '.github/workflows/pr-policy.yml',
 ]);
+
+function cleanupPolicyErrors(text) {
+  const errors = [];
+  const workflow = yaml.load(text);
+  const trigger = workflow?.on?.pull_request_target;
+  if (
+    trigger?.branches?.length !== 1 ||
+    trigger.branches[0] !== 'main' ||
+    trigger?.types?.length !== 1 ||
+    trigger.types[0] !== 'closed' ||
+    Object.hasOwn(workflow.on, 'pull_request')
+  ) {
+    errors.push(
+      'cleanup must use pull_request_target for closed PRs targeting main',
+    );
+  }
+
+  const sameRepo =
+    'github.event.pull_request.head.repo.full_name == github.repository';
+  const closeJobs = {
+    'restore-deferred-proposal': [
+      "github.event_name == 'pull_request_target'",
+      sameRepo,
+      'github.event.pull_request.merged != true',
+    ].join(' && '),
+    'delete-generated-branch': sameRepo,
+  };
+  const allowedJobs = new Set([
+    ...Object.keys(closeJobs),
+    'cleanup-orphan-branches',
+  ]);
+  for (const name of Object.keys(workflow?.jobs ?? {})) {
+    if (!allowedJobs.has(name)) {
+      errors.push(`unexpected job in privileged cleanup workflow: ${name}`);
+    }
+  }
+  for (const [name, condition] of Object.entries(closeJobs)) {
+    const job = workflow?.jobs?.[name];
+    if (job?.if?.trim().replace(/\s+/g, ' ') !== condition) {
+      errors.push(`${name} must retain its same-repository close guard`);
+    }
+    const steps = job?.steps ?? [];
+    const checkouts = steps.filter((step) =>
+      step.uses?.startsWith('actions/checkout@'),
+    );
+    const checkout = checkouts[0];
+    const snapshotIndex = steps.findIndex(
+      (step) => step.uses === './.github/actions/log-rate-limit',
+    );
+    if (
+      checkouts.length !== 1 ||
+      !/^actions\/checkout@[a-f0-9]{40}$/i.test(checkout.uses) ||
+      checkout.if !== undefined ||
+      checkout['continue-on-error'] !== undefined ||
+      checkout.with?.ref !== 'refs/heads/main' ||
+      checkout.with?.['persist-credentials'] !== false ||
+      ['repository', 'path'].some((key) => Object.hasOwn(checkout.with, key)) ||
+      snapshotIndex <= steps.indexOf(checkout)
+    ) {
+      errors.push(
+        `${name} must use a pinned checkout of refs/heads/main before logging`,
+      );
+    }
+  }
+
+  if (
+    workflow?.jobs?.['cleanup-orphan-branches']?.if !==
+    "github.event_name != 'pull_request_target'"
+  ) {
+    errors.push('the orphan sweep must skip pull_request_target events');
+  }
+  return errors;
+}
 
 function listFiles(dir, predicate) {
   if (!fs.existsSync(dir)) return [];
@@ -99,9 +173,19 @@ function main() {
 
       if (
         /pull_request_target:/.test(text) &&
-        !allowedPullRequestTarget.has(path.basename(file))
+        !allowedPullRequestTarget.has(rel)
       ) {
         errors.push(`${rel}: pull_request_target is not in the allow-list`);
+      }
+
+      if (rel === cleanupWorkflow) {
+        try {
+          errors.push(
+            ...cleanupPolicyErrors(text).map((error) => `${rel}: ${error}`),
+          );
+        } catch (error) {
+          errors.push(`${rel}: invalid cleanup workflow: ${error.message}`);
+        }
       }
 
       for (const block of jobBlocks(text)) {

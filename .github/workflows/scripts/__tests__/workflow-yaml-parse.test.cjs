@@ -45,7 +45,7 @@ for (const file of workflowFiles) {
   });
 }
 
-test('G8a: privileged close jobs check out the trusted PR base', () => {
+test('G8a: privileged close jobs check out the current trusted main', () => {
   const workflow = yaml.load(
     fs.readFileSync(
       path.resolve(__dirname, '../../auto-pr-branch-cleanup.yml'),
@@ -58,14 +58,27 @@ test('G8a: privileged close jobs check out the trusted PR base', () => {
   });
   assert.equal(workflow.on.pull_request, undefined);
   for (const name of ['restore-deferred-proposal', 'delete-generated-branch']) {
-    const [checkout, snapshot] = workflow.jobs[name].steps;
-    assert.match(checkout.uses, /^actions\/checkout@/);
-    assert.equal(
-      checkout.with.ref,
-      '${{ github.event.pull_request.base.sha }}',
+    const job = workflow.jobs[name];
+    assert.match(
+      job.if,
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+      `${name} must ignore fork PRs`,
     );
+    const checkoutIndex = job.steps.findIndex((step) =>
+      step.uses?.startsWith('actions/checkout@'),
+    );
+    const snapshotIndex = job.steps.findIndex(
+      (step) => step.uses === './.github/actions/log-rate-limit',
+    );
+    assert.ok(checkoutIndex >= 0, `${name} must have a checkout step`);
+    assert.ok(
+      snapshotIndex > checkoutIndex,
+      `${name} must check out before logging`,
+    );
+    const checkout = job.steps[checkoutIndex];
+    assert.match(checkout.uses, /^actions\/checkout@[a-f0-9]{40}$/);
+    assert.equal(checkout.with.ref, 'refs/heads/main');
     assert.equal(checkout.with['persist-credentials'], false);
-    assert.equal(snapshot.uses, './.github/actions/log-rate-limit');
   }
   assert.equal(
     workflow.jobs['cleanup-orphan-branches'].if,

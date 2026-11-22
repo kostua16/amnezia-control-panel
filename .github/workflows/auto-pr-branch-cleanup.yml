@@ -35,7 +35,7 @@ jobs:
       # Sparse checkout: only the rate-limit action, so this job stays cheap.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: refs/heads/main
           persist-credentials: false
           sparse-checkout: .github/actions/log-rate-limit
 
@@ -113,7 +113,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: refs/heads/main
           persist-credentials: false
 
       - uses: ./.github/actions/log-rate-limit

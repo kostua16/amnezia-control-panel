@@ -34,6 +34,9 @@ jobs:
           setup-bun: 'false'
           require-gh-auth: 'false'
 
+      - name: Install policy checker dependencies
+        run: npm ci --ignore-scripts
+
       - name: Validate workflow governance policy
         run: node .github/workflows/scripts/workflow-governance-check.cjs
 
