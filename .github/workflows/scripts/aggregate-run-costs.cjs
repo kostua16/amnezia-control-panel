@@ -35,6 +35,11 @@ const DEFAULT_MAX_RUNS = 50;
 const DEFAULT_MAX_LOG_BYTES = 512 * 1024;
 const DEFAULT_PER_PAGE = 100;
 const MAX_FETCH_ERRORS = 50;
+// Canonical UTC ISO-8601, exactly as Date#toISOString() emits it. The
+// window filter in fetchCompletedRuns compares timestamps as strings,
+// which is only order-correct in this one form.
+const CANONICAL_SINCE_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
 function parseArgs(argv) {
   const args = {};
@@ -103,13 +108,15 @@ function fetchCompletedRuns(
   { repo, workflowFile, since, excludeRunId, maxRuns, perPage },
   ghRunner = runGh,
 ) {
-  // An empty or unparseable window must never report green: a `since` that
-  // is not a real timestamp (e.g. a bare `--since` parsed to 'true') makes
-  // the filter below drop every run, and callers would surface
-  // runs_scanned: 0 as success. Fail closed instead —
-  // collectCostTelemetry turns listing errors into a hard failure (main()
-  // exits 1).
-  if (!since || !Number.isFinite(Date.parse(since))) {
+  // An empty or non-canonical window must never report green: the filter
+  // below compares timestamps as strings, which is only order-correct for
+  // the canonical UTC form this script itself emits (the --since default
+  // is toISOString()). A parse-only check would also accept '2026/08/15',
+  // 'Aug 15 2026', or '+02:00'-offset values that silently drop or
+  // mis-include runs, and callers would surface runs_scanned: 0 as
+  // success. Fail closed instead — collectCostTelemetry turns listing
+  // errors into a hard failure (main() exits 1).
+  if (!since || !CANONICAL_SINCE_PATTERN.test(since)) {
     return {
       runs: [],
       errors: [
@@ -117,7 +124,7 @@ function fetchCompletedRuns(
           scope: 'runs-list',
           detail: `invalid or missing --since window (${
             since ? `"${since}"` : 'none'
-          }); refusing to scan an unbounded window`,
+          }); expected canonical UTC ISO-8601 as emitted by toISOString(); refusing to scan an unbounded window`,
         },
       ],
     };

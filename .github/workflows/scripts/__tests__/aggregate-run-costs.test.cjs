@@ -290,12 +290,22 @@ test('fetchCompletedRuns fails closed when since is missing', () => {
   assert.equal(calls.length, 0, 'gh must not be called without a window');
 });
 
-test('fetchCompletedRuns fails closed when since is not a real timestamp', () => {
+test('fetchCompletedRuns fails closed when since is not canonical UTC', () => {
   const calls = [];
-  // A bare `--since` parses to the literal 'true'; non-ISO values like
-  // 'yesterday' or '2026-13-45' are truthy but make `timestamp >= since`
-  // drop every run — the green-empty-window case the guard exists for.
-  for (const bad of ['true', 'yesterday', '2026-13-45']) {
+  // A bare `--since` parses to the literal 'true'. The guard requires the
+  // canonical UTC form the script itself emits: Date.parse-valid but
+  // non-canonical values ('2026/08/15', 'Aug 15 2026', '+02:00' offsets)
+  // would pass a parse-only check yet corrupt the string window filter
+  // into dropping every run — the green-empty-window case this guard
+  // exists to prevent.
+  for (const bad of [
+    'true',
+    'yesterday',
+    '2026-13-45',
+    '2026/08/15',
+    'Aug 15 2026',
+    '2026-08-15T09:00:00+02:00',
+  ]) {
     const { runs, errors } = fetchCompletedRuns(
       {
         repo: 'owner/repo',
@@ -313,6 +323,36 @@ test('fetchCompletedRuns fails closed when since is not a real timestamp', () =>
     assert.ok(errors[0].detail.includes(bad), 'detail names the bad value');
   }
   assert.equal(calls.length, 0, 'gh must not be called for a bad window');
+});
+
+test('fetchCompletedRuns accepts fractional canonical since and filters by it', () => {
+  // toISOString() emits milliseconds when present; the guard must accept
+  // that form while still filtering the window correctly.
+  const afterSince = {
+    ...RUN,
+    id: 1003,
+    run_started_at: '2026-08-15T09:56:30.500Z',
+  };
+  const beforeSince = {
+    ...RUN,
+    id: 1002,
+    run_started_at: '2026-08-15T09:56:30.100Z',
+  };
+  const { runs, errors } = fetchCompletedRuns(
+    {
+      repo: 'owner/repo',
+      workflowFile: 'monitor.yml',
+      since: '2026-08-15T09:56:30.123Z',
+      maxRuns: 10,
+      perPage: 100,
+    },
+    runsRunner([JSON.stringify(beforeSince), JSON.stringify(afterSince)]),
+  );
+  assert.deepEqual(errors, []);
+  assert.deepEqual(
+    runs.map((r) => r.id),
+    [1003],
+  );
 });
 
 test('fetchCompletedRuns preserves input order for equal timestamps', () => {
