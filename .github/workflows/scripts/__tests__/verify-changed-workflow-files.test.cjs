@@ -221,6 +221,8 @@ test('empty CHANGED_FILES is a no-op', () => {
 test('invalid positional paths fail while deleted paths from CI are skipped', () => {
   const root = tmpDir('mon-missing-path-');
   const missing = '.github/workflows/deleted.yml';
+  const workflow = '.github/workflows/workflow-health-optimize.yml';
+  seedRun29803905118(root);
   fs.mkdirSync(path.join(root, 'directory.sh'));
   fs.writeFileSync(path.join(root, 'README.md'), '');
   const options = {
@@ -228,11 +230,17 @@ test('invalid positional paths fail while deleted paths from CI are skipped', ()
     env: { ...process.env, CHANGED_FILES: JSON.stringify([missing]) },
     encoding: 'utf8',
   };
-  for (const file of [missing, 'directory.sh', 'README.md']) {
+  for (const file of [
+    missing,
+    'directory.sh',
+    'README.md',
+    `./${workflow}`,
+    path.join(root, workflow),
+  ]) {
     const explicit = spawnSync(process.execPath, [scriptPath, file], options);
     assert.equal(explicit.status, 1, explicit.stderr);
     assert.match(explicit.stderr, /Expected existing workflow/);
-    assert.ok(explicit.stderr.includes(file));
+    assert.ok(explicit.stderr.includes(JSON.stringify(file)));
   }
   const ci = spawnSync(process.execPath, [scriptPath], options);
   assert.equal(ci.status, 0, ci.stderr);
