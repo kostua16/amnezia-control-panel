@@ -15,7 +15,9 @@ const {
   renderFlowComment,
   resolvePrNumber,
   shouldPublishStatus,
+  stabilizeRunLinks,
   summarizeWorkerRuns,
+  upsertFlowComment,
   usableStatusId,
 } = require('../orchestrate-pr-flow.cjs');
 
@@ -1737,4 +1739,287 @@ test('makeDecision advances retry counter when re-dispatched by watchdog', () =>
   assert.ok(decision.desiredLabels.includes('flow/finalizer-retry-2'));
   assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-1'));
   assert.match(decision.reason, /attempt 2\/3/);
+});
+
+// A comment rendered for a given orchestrator run: workers without a run of
+// their own link to the orchestrator run itself.
+const runUrl = (runId) => `https://github.com/owner/repo/actions/runs/${runId}`;
+
+function commentForRun(runId, { visibility = {}, decision = {} } = {}) {
+  return makeComment({
+    decision,
+    visibility: {
+      ...visibility,
+      workers: {
+        // Rows that fall back to the current orchestrator run link.
+        dependencyReview: {
+          displayState: 'N/A',
+          description: 'N/A: Dependency review is not required for this PR.',
+          targetUrl: runUrl(runId),
+        },
+        kiloReview: {
+          displayState: 'N/A',
+          description: 'Kilo review was skipped.',
+          targetUrl: runUrl(runId),
+        },
+        prImprove: {
+          displayState: 'N/A',
+          description: 'N/A: PR Improve is not required for this PR.',
+          targetUrl: runUrl(runId),
+        },
+        ...(visibility.workers ?? {}),
+      },
+    },
+  });
+}
+
+test('stabilizeRunLinks makes two wakes with the same content compare equal', () => {
+  const stored = commentForRun(111);
+  const fresh = commentForRun(222);
+
+  assert.notEqual(stored, fresh);
+  assert.equal(stabilizeRunLinks(stored, fresh, runUrl(222)), stored);
+});
+
+test('stabilizeRunLinks keeps a changed worker-run link as a real change', () => {
+  const stored = commentForRun(111);
+  const fresh = commentForRun(222, {
+    visibility: {
+      workers: {
+        codeReview: {
+          displayState: 'pending',
+          description: 'Waiting for code review signal.',
+          targetUrl: 'https://example.test/code-review-rerun',
+        },
+      },
+    },
+  });
+
+  const stabilized = stabilizeRunLinks(stored, fresh, runUrl(222));
+  assert.notEqual(stabilized, stored);
+  assert.match(
+    stabilized,
+    /\[run\]\(https:\/\/example\.test\/code-review-rerun\)/,
+  );
+});
+
+test('stabilizeRunLinks keeps state, reason and description changes', () => {
+  const stored = commentForRun(111);
+
+  for (const changed of [
+    commentForRun(222, { decision: { reason: 'Something else happened.' } }),
+    commentForRun(222, { decision: { state: 'flow/review-blocked' } }),
+    commentForRun(222, {
+      visibility: {
+        workers: {
+          finalizer: {
+            displayState: 'success',
+            description: 'Finalizer finished.',
+            targetUrl: 'https://example.test/finalizer',
+          },
+        },
+      },
+    }),
+  ]) {
+    assert.notEqual(stabilizeRunLinks(stored, changed, runUrl(222)), stored);
+  }
+});
+
+test('stabilizeRunLinks treats a row that gains its first link as a change', () => {
+  const stored = commentForRun(111, {
+    visibility: {
+      workers: {
+        prImprove: {
+          displayState: 'N/A',
+          description: 'N/A: PR Improve is not required for this PR.',
+          targetUrl: '',
+        },
+      },
+    },
+  });
+  const fresh = commentForRun(222);
+
+  assert.notEqual(stabilizeRunLinks(stored, fresh, runUrl(222)), stored);
+});
+
+test('stabilizeRunLinks is the identity without a current run url', () => {
+  const stored = commentForRun(111);
+  const fresh = commentForRun(222);
+
+  assert.equal(stabilizeRunLinks(stored, fresh, ''), fresh);
+});
+
+test('upsertFlowComment asks the sticky helper to skip unchanged comments', () => {
+  const previous = process.env.GITHUB_REPOSITORY;
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+  const received = [];
+
+  try {
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+    });
+  } finally {
+    if (previous === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = previous;
+  }
+
+  assert.equal(received.length, 1);
+  assert.equal(received[0].skipIfUnchanged, true);
+  assert.equal(received[0].prNumber, 7);
+  assert.equal(received[0].marker, '<!-- pr-flow-orchestration -->');
+  assert.equal(
+    received[0].sameBody(commentForRun(111), commentForRun(222)),
+    true,
+  );
+  assert.equal(
+    received[0].sameBody(
+      commentForRun(111).replace(/\n/g, '\r\n'),
+      commentForRun(222),
+    ),
+    true,
+    'a stored body returned with CRLF line endings is still the same body',
+  );
+  assert.equal(
+    received[0].sameBody(
+      commentForRun(111),
+      commentForRun(222, { decision: { reason: 'Changed.' } }),
+    ),
+    false,
+  );
+});
+
+// Runs the real orchestrator and sticky helper against a stubbed gh, as one
+// wake with its own GITHUB_RUN_ID.
+function wakeAgainstStoredComment(storedBody, nextBody, runId) {
+  const childProcess = require('node:child_process');
+  const original = childProcess.execFileSync;
+  const modulePaths = [
+    require.resolve('../lib/sticky-comment.cjs'),
+    require.resolve('../orchestrate-pr-flow.cjs'),
+  ];
+  const calls = [];
+  const saved = {
+    GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY,
+    GITHUB_RUN_ID: process.env.GITHUB_RUN_ID,
+  };
+  childProcess.execFileSync = (command, args) => {
+    calls.push(args);
+    return args.includes('--paginate')
+      ? JSON.stringify([
+          {
+            id: 5,
+            user: { login: 'github-actions[bot]' },
+            body: storedBody,
+          },
+        ])
+      : '{}';
+  };
+  for (const modulePath of modulePaths) delete require.cache[modulePath];
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+  process.env.GITHUB_RUN_ID = String(runId);
+
+  try {
+    const flow = require('../orchestrate-pr-flow.cjs');
+    flow.upsertFlowComment({ number: 7 }, nextBody);
+  } finally {
+    childProcess.execFileSync = original;
+    for (const modulePath of modulePaths) delete require.cache[modulePath];
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+  return calls.map((args) => args.slice(0, 4));
+}
+
+test('a wake with unchanged content writes nothing to the sticky comment', () => {
+  const calls = wakeAgainstStoredComment(
+    commentForRun(111),
+    commentForRun(222),
+    222,
+  );
+
+  assert.deepEqual(calls, [
+    ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+  ]);
+});
+
+test('a wake whose worker link changed replaces the sticky comment once', () => {
+  const changed = commentForRun(222, {
+    visibility: {
+      workers: {
+        codeReview: {
+          displayState: 'success',
+          description: 'Code review passed.',
+          targetUrl: 'https://example.test/code-review-2',
+        },
+      },
+    },
+  });
+  const calls = wakeAgainstStoredComment(commentForRun(111), changed, 222);
+
+  assert.deepEqual(calls, [
+    ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+    ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+    ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/5'],
+  ]);
+});
+
+test('a wake with a changed decision reason replaces the sticky comment once', () => {
+  const calls = wakeAgainstStoredComment(
+    commentForRun(111),
+    commentForRun(222, { decision: { reason: 'Waiting for something new.' } }),
+    222,
+  );
+
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls[1].slice(1, 3), ['-X', 'POST']);
+});
+
+// Runs `fn` against a freshly loaded orchestrator whose commit read
+// (`gh api repos/<owner/repo>/commits/<sha>`) answers through `onCommitRead`.
+function withCommitRead(onCommitRead, fn) {
+  const childProcess = require('node:child_process');
+  const original = childProcess.execFileSync;
+  const modulePath = require.resolve('../orchestrate-pr-flow.cjs');
+  const saved = process.env.GITHUB_REPOSITORY;
+  childProcess.execFileSync = (command, args) =>
+    String(args?.[1] ?? '').includes('/commits/') ? onCommitRead() : '{}';
+  delete require.cache[modulePath];
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+
+  try {
+    fn(require(modulePath));
+  } finally {
+    childProcess.execFileSync = original;
+    delete require.cache[modulePath];
+    if (saved === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = saved;
+  }
+}
+
+test('fetchHeadCommittedAt keeps an empty date for a failed commit read unless strict', () => {
+  const sha = 'c'.repeat(40);
+  const date = '2026-07-01T08:00:00Z';
+  const failed = () => {
+    throw Object.assign(new Error('gh: Not Found'), { stderr: '' });
+  };
+
+  withCommitRead(
+    () => JSON.stringify({ commit: { committer: { date } } }),
+    (flow) => assert.equal(flow.fetchHeadCommittedAt(sha), date),
+  );
+  // An unknown date only sends the worker-run lookup to the per-workflow
+  // path, so the orchestrator keeps the fallback.
+  withCommitRead(failed, (flow) =>
+    assert.equal(flow.fetchHeadCommittedAt(sha), ''),
+  );
+  // A parity comparison must not read the failure as that legitimate case.
+  withCommitRead(failed, (flow) =>
+    assert.throws(
+      () => flow.fetchHeadCommittedAt(sha, { strict: true }),
+      /Not Found/,
+    ),
+  );
 });
