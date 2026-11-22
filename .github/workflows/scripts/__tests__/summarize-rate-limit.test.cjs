@@ -188,15 +188,25 @@ test('still flags a same-label pair whose end reads another window', () => {
   assert.equal(summary.mismatched.length, 1);
 });
 
-test('groups readings without token_id under one unknown token per window', () => {
+test('pools all tokens of one quota bucket into a single window row', () => {
   const at = '2026-11-22T20:39:11Z';
-  const legacy = (remaining) =>
-    `RATE_LIMIT phase=job-start workflow="X" job=j label=j run=${remaining}.1 token=ghs core_remaining=${remaining}/5000 core_reset=${at}`;
-  const summary = summarize([legacy(4000), legacy(4500)]);
+  const tagged = (id, remaining, run) =>
+    line({ phase: 'job-start', run, id, remaining, reset: at });
+  const legacy =
+    'RATE_LIMIT phase=job-start workflow="X" job=j label=j run=9.1 token=ghs core_remaining=4000/5000 core_reset=' +
+    at;
+  const summary = summarize([
+    tagged('aaa', 4500, '1.1'),
+    tagged('bbb', 4400, '2.1'),
+    tagged('ccc', 4300, '3.1'),
+    legacy,
+  ]);
 
   assert.equal(summary.windows.length, 1);
-  assert.equal(summary.windows[0].token, 'unknown');
-  assert.equal(summary.windows[0].readings, 2);
+  assert.equal(summary.windows[0].tokens.size, 3);
+  assert.equal(summary.windows[0].readings, 4);
+  assert.equal(summary.windows[0].max - summary.windows[0].min, 500);
+  assert.ok(format(summary).includes('4 readings from 3 distinct tokens'));
 });
 
 test('skips a label group whose start and end counts differ instead of guessing', () => {

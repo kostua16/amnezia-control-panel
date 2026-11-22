@@ -9,7 +9,7 @@ const readline = require('node:readline');
 //     gh run view "$id" --log
 //   done | node .github/workflows/scripts/summarize-rate-limit.cjs
 //
-// Output: one row per quota window (core_reset + token), with how far `remaining` fell
+// Output: one row per quota window (core_reset), with how far `remaining` fell
 // inside it (a lower bound of what the window consumed, at least max - min: every concurrent job shares the
 // bucket, so per-job deltas are NOT attributable and are deliberately not printed), plus
 // every job whose start and end readings came from different windows or different tokens.
@@ -46,24 +46,23 @@ function summarize(lines) {
       // a window called `n/a`.
       withoutWindow += 1;
     } else {
-      // Lines logged before token_id existed carry no token identity: the
-      // reset time alone identifies their bucket, and they must not be split
-      // or merged by the public token kind (ghs/ghp), which says nothing about
-      // which token it was.
-      const tokenId = entry.token_id ?? 'unknown';
-      const key = `${entry.core_reset}|${tokenId}`;
-      const window = windows.get(key) ?? {
+      // The reset time identifies the quota bucket: every job has its own
+      // token, but they all draw from the one installation bucket, so grouping
+      // by token would split a shared bucket into per-job rows. Tokens are only
+      // counted, and compared per job in the mismatch check below.
+      const window = windows.get(entry.core_reset) ?? {
         reset: entry.core_reset,
-        token: tokenId,
         limit: entry.limit,
         min: Infinity,
         max: -Infinity,
         readings: 0,
+        tokens: new Set(),
       };
       window.min = Math.min(window.min, entry.remaining);
       window.max = Math.max(window.max, entry.remaining);
       window.readings += 1;
-      windows.set(key, window);
+      if (entry.token_id) window.tokens.add(entry.token_id);
+      windows.set(entry.core_reset, window);
     }
 
     // The label is part of the key: one job can log several independent
@@ -138,8 +137,8 @@ function format(summary) {
   ];
   for (const w of summary.windows) {
     out.push(
-      `window reset=${w.reset} token=${w.token}: remaining ${w.max} -> ${w.min} of ${w.limit} ` +
-        `(>= ${w.max - w.min} used between the highest and lowest reading, ${w.readings} readings)`,
+      `window reset=${w.reset}: remaining ${w.max} -> ${w.min} of ${w.limit} ` +
+        `(>= ${w.max - w.min} used between the highest and lowest reading, ${w.readings} readings from ${w.tokens.size} distinct tokens)`,
     );
   }
   out.push(
