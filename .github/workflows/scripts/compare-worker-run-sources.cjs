@@ -155,81 +155,92 @@ function main() {
 
   const repo = process.env.GITHUB_REPOSITORY;
   const rows = [];
+  const readErrors = [];
   for (const number of numbers) {
-    const meta = JSON.parse(
-      gh([
-        'pr',
-        'view',
-        String(number),
-        '--json',
-        'headRefOid,state,isCrossRepository',
-      ]),
-    );
-    const pr = {
-      number,
-      headSha: meta.headRefOid,
-      isCrossRepository: meta.isCrossRepository,
-      // The orchestrator resolves this before the lookup; the dispatch window is
-      // only trusted when it reaches back to the head commit.
-      headCommittedAt: flow.fetchHeadCommittedAt(meta.headRefOid),
-    };
-    const row = {
-      number,
-      state: meta.state,
-      sha: pr.headSha.slice(0, 7),
-      cross: pr.isCrossRepository,
-      results: [],
-      restNew: 0,
-      fellBack: null,
-    };
+    try {
+      const meta = JSON.parse(
+        gh([
+          'pr',
+          'view',
+          String(number),
+          '--json',
+          'headRefOid,state,isCrossRepository',
+        ]),
+      );
+      const pr = {
+        number,
+        headSha: meta.headRefOid,
+        isCrossRepository: meta.isCrossRepository,
+        // The orchestrator resolves this before the lookup; the dispatch window is
+        // only trusted when it reaches back to the head commit.
+        headCommittedAt: flow.fetchHeadCommittedAt(meta.headRefOid),
+      };
+      const row = {
+        number,
+        state: meta.state,
+        sha: pr.headSha.slice(0, 7),
+        cross: pr.isCrossRepository,
+        results: [],
+        restNew: 0,
+        fellBack: null,
+      };
 
-    // The reference: what the orchestrator read before, one lookup per worker.
-    // Strict, so a rate-limited or 5xx read aborts the comparison instead of
-    // reading as an empty window the new lookup "recovered" from.
-    const oldRuns = Object.fromEntries(
-      workers.map((name) => [
-        name,
-        flow.collectWorkerRuns(config, name, { strict: true }),
-      ]),
-    );
-    // gh run list resolves the workflow, then lists its runs.
-    row.restOld = workers.length * 2;
+      // The reference: what the orchestrator read before, one lookup per worker.
+      // Strict, so a rate-limited or 5xx read aborts the comparison instead of
+      // reading as an empty window the new lookup "recovered" from.
+      const oldRuns = Object.fromEntries(
+        workers.map((name) => [
+          name,
+          flow.collectWorkerRuns(config, name, { strict: true }),
+        ]),
+      );
+      // gh run list resolves the workflow, then lists its runs.
+      row.restOld = workers.length * 2;
 
-    const warnings = [];
-    let legacyUsed = false;
-    const loadNew = createWorkerRunsLoader({
-      config,
-      pr,
-      source: 'head',
-      getRepo: () => repo,
-      run: (...args) => {
-        row.restNew += 1;
-        return run(...args);
-      },
-      loadLegacy: (name) => {
-        legacyUsed = true;
-        row.restNew += 2;
-        return flow.collectWorkerRuns(config, name, { strict: true });
-      },
-      warn: (message) => warnings.push(message),
-    });
-    const newRuns = Object.fromEntries(
-      workers.map((name) => [name, loadNew(name)]),
-    );
-    row.fellBack = legacyUsed
-      ? pr.isCrossRepository
-        ? 'cross-repo'
-        : warnings[0] || 'fallback'
-      : null;
-
-    for (const name of workers) {
-      row.results.push({
-        name,
-        ...classify(oldRuns[name], newRuns[name], flow, pr, name),
+      const warnings = [];
+      let legacyUsed = false;
+      const loadNew = createWorkerRunsLoader({
+        config,
+        pr,
+        source: 'head',
+        getRepo: () => repo,
+        run: (...args) => {
+          row.restNew += 1;
+          return run(...args);
+        },
+        loadLegacy: (name) => {
+          legacyUsed = true;
+          row.restNew += 2;
+          return flow.collectWorkerRuns(config, name, { strict: true });
+        },
+        warn: (message) => warnings.push(message),
       });
+      const newRuns = Object.fromEntries(
+        workers.map((name) => [name, loadNew(name)]),
+      );
+      row.fellBack = legacyUsed
+        ? pr.isCrossRepository
+          ? 'cross-repo'
+          : warnings[0] || 'fallback'
+        : null;
+
+      for (const name of workers) {
+        row.results.push({
+          name,
+          ...classify(oldRuns[name], newRuns[name], flow, pr, name),
+        });
+      }
+      rows.push(row);
+      console.error(`compared #${number} (${rows.length}/${numbers.length})`);
+    } catch (error) {
+      // A failed strict read says nothing about the lookups; keep going and
+      // report it separately so it is never mistaken for a regression.
+      readErrors.push({
+        number,
+        message: String(error.message ?? error).split('\n')[0],
+      });
+      console.error(`could not read #${number}: ${readErrors.at(-1).message}`);
     }
-    rows.push(row);
-    console.error(`compared #${number} (${rows.length}/${numbers.length})`);
   }
 
   console.log('| PR | state | head | lookup | REST old -> new | per worker |');
@@ -265,10 +276,17 @@ function main() {
     `PRs where the new lookup sees extra older runs: ${prsWithExtra}; PRs where it recovers runs the old window lost: ${prsRecovered}`,
   );
   console.log(
-    `REST reads per wake (all workers): old ${rows[0].restOld}, new ${headRows[0]?.restNew ?? 'n/a'} on the head path`,
+    `REST reads per wake (all workers): old ${rows[0]?.restOld ?? 'n/a'}, new ${headRows[0]?.restNew ?? 'n/a'} on the head path`,
   );
   console.log(`regressions: ${regressions.length}`);
-  process.exit(regressions.length > 0 ? 1 : 0);
+  console.log(`read errors: ${readErrors.length}`);
+  for (const failed of readErrors) {
+    console.log(`  #${failed.number}: ${failed.message}`);
+  }
+  // 1 = the new lookup lost runs; 3 = some PRs could not be read at all, so the
+  // result is incomplete (never reported as success).
+  if (regressions.length > 0) process.exit(1);
+  process.exit(readErrors.length > 0 ? 3 : 0);
 }
 
 if (require.main === module) main();
