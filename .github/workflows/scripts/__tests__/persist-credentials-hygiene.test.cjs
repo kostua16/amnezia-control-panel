@@ -184,14 +184,22 @@ test('hardened checkouts never combine with track-progress on tag-mode events', 
     if (!TRACKED_EVENT_RE.test(onBlock)) continue;
 
     // Jobs have isolated checkouts and Git configuration.
-    const jobs = content.match(/^jobs:[^\S\n]*\n([\s\S]*)/m)?.[1] ?? '';
-    for (const job of jobs.split(/^ {2}(?=[\w-]+:)/m).slice(1)) {
+    const jobsBlock =
+      content.match(/^jobs:[ \t]*(?:#[^\r\n]*)?\r?\n([\s\S]*)/m)?.[1] ?? '';
+    const jobs = jobsBlock.split(/^ {2}(?=[\w-]+:)/m).slice(1);
+    assert.ok(
+      jobs.length,
+      `${file}: expected a jobs mapping with at least one job`,
+    );
+    for (const job of jobs) {
       const trackProgressValues = [
-        ...job.matchAll(/track-progress:\s*(.+)/g),
+        ...job.matchAll(/^ +track-progress:[ \t]*(.+)/gm),
       ].map((m) => m[1].trim().replace(/^['"]|['"]$/g, ''));
       if (
         trackProgressValues.some((value) => value !== 'false') &&
-        /persist-credentials:\s*false/.test(job)
+        /^ +persist-credentials:[ \t]*(?:false|'false'|"false")[ \t]*(?:#.*)?\r?$/m.test(
+          job,
+        )
       ) {
         violations.push(`${file} / ${job.split(':', 1)[0]}`);
       }

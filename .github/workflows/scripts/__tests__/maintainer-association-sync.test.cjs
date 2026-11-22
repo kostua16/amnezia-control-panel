@@ -53,14 +53,23 @@ test('triage.yml fromJSON author-gate lists match policy.maintainerAssociations'
 });
 
 test('triage dispatch authorization gates the single configured agent step', () => {
-  const workflow = readWorkflow('triage.yml').replace(/\r\n/g, '\n');
-  assert.equal(
-    [...workflow.matchAll(/^      - uses: \.\/\.github\/actions\/run-zai$/gm)]
-      .length,
-    1,
+  const steps = readWorkflow('triage.yml')
+    .split(/^ {6}- /m)
+    .slice(1);
+  const [gate] = steps.filter((step) =>
+    /^ {8}id: dispatch_gate\s*$/m.test(step),
   );
+  assert.ok(gate, 'missing dispatch authorization step');
+  assert.match(gate, /echo "authorized=\$authorized" >> "\$GITHUB_OUTPUT"/);
+
+  const agents = steps.filter((step) =>
+    /^(?: {8})?uses: \.\/\.github\/actions\/run-zai[ \t]*$/m.test(step),
+  );
+  assert.equal(agents.length, 1);
+  const [agent] = agents;
   assert.match(
-    workflow,
-    /- uses: \.\/\.github\/actions\/run-zai\n        id: triage_agent\n        if: github\.event_name != 'workflow_dispatch' \|\| steps\.dispatch_gate\.outputs\.authorized == 'true'\n        with:/,
+    agent,
+    /^ {8}if: github\.event_name != 'workflow_dispatch' \|\| steps\.dispatch_gate\.outputs\.authorized == 'true'\s*$/m,
   );
+  assert.match(agent, /^ {10}api-key:/m);
 });
