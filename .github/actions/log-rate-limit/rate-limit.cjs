@@ -24,13 +24,17 @@ function tokenKind(token) {
   return match ? match[1] : 'unknown';
 }
 
-// Short one-way fingerprint of the token (first 8 hex chars of its SHA-256). It reveals nothing
-// usable about the secret but lets lines be grouped by the exact token that produced them, e.g.
-// to tell whether the start and the end of one job read the same quota bucket.
+// Short one-way fingerprint of the token (first 12 hex chars of its SHA-256) so lines can be
+// grouped by the exact token that produced them, e.g. to tell whether the start and the end of
+// one job read the same quota bucket. Deliberately unkeyed: grouping across jobs needs a value
+// every job can compute, and a keyed digest would need a repository secret that fork PRs and
+// several call sites do not have. The tokens are long random installation tokens that expire
+// within an hour, so the digest is not a usable confirmation oracle; 48 bits keep collisions
+// between the few tokens alive in one window negligible.
 function tokenFingerprint(token) {
   const value = String(token ?? '');
   if (!value) return 'none';
-  return createHash('sha256').update(value).digest('hex').slice(0, 8);
+  return createHash('sha256').update(value).digest('hex').slice(0, 12);
 }
 
 function formatRateLimitLine({ env, phase, label, resources }) {

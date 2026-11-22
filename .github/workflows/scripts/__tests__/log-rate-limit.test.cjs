@@ -46,7 +46,7 @@ test('formats one greppable line with phase, run identity and both quotas', () =
   assert.equal(
     line,
     'RATE_LIMIT phase=job-end workflow="Docker Image" job=classify label=docker-classify run=123.2 ' +
-      `event=pull_request token=unknown token_id=${tokenFingerprint('token-value')} core_remaining=17/5000 core_reset=2026-11-21T23:44:34Z graphql=4698/5000`,
+      `event=pull_request token=unknown token_id=e6c02a5742ea core_remaining=17/5000 core_reset=2026-11-21T23:44:34Z graphql=4698/5000`,
   );
 });
 
@@ -60,7 +60,7 @@ test('reports only the public token prefix so each token quota can be told apart
 
 test('fingerprints the token without exposing it', () => {
   const id = tokenFingerprint('ghs_secretvalue');
-  assert.match(id, /^[0-9a-f]{8}$/);
+  assert.match(id, /^[0-9a-f]{12}$/);
   assert.equal(id, tokenFingerprint('ghs_secretvalue'));
   assert.notEqual(id, tokenFingerprint('ghs_othervalue'));
   assert.ok(!id.includes('secret'));
