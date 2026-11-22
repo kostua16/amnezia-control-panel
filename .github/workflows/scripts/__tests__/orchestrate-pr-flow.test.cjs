@@ -12,6 +12,7 @@ const {
   makeDecision: makePrFlowDecision,
   pathsMatch,
   publishFlowStatuses,
+  publishVisibilityUpdates,
   renderFlowComment,
   resolvePrNumber,
   shouldPublishStatus,
@@ -2022,4 +2023,179 @@ test('fetchHeadCommittedAt keeps an empty date for a failed commit read unless s
       /Not Found/,
     ),
   );
+});
+
+test('publishFlowStatuses uses the fresh GraphQL statuses and skips the REST read', () => {
+  const posted = [];
+  let restReads = 0;
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    freshStatuses: [
+      previousSuccess({
+        context: 'pr-flow/ready',
+        state: 'pending',
+        description: 'Waiting.',
+        target_url: OLD_RUN_URL,
+      }),
+      previousSuccess(),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    readStatuses: () => {
+      restReads += 1;
+      return [];
+    },
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.equal(restReads, 0);
+  assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses reads REST when no fresh statuses were supplied', () => {
+  for (const missing of [null, undefined, 'nope', {}]) {
+    const reads = [];
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      freshStatuses: missing,
+      readStatuses: (sha) => {
+        reads.push(sha);
+        return [];
+      },
+      publishStatus: () => {},
+    });
+    assert.deepEqual(reads, [basePr.headSha], String(missing));
+  }
+});
+
+test('publishFlowStatuses treats an empty fresh status list as "nothing posted yet"', () => {
+  const posted = [];
+  let restReads = 0;
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    freshStatuses: [],
+    readStatuses: () => {
+      restReads += 1;
+      return [];
+    },
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.equal(restReads, 0);
+  assert.equal(posted.length, 3);
+});
+
+test('upsertFlowComment hands the fresh comment list to the sticky helper', () => {
+  const previous = process.env.GITHUB_REPOSITORY;
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+  const received = [];
+  const fresh = [{ id: 5, user: { login: 'github-actions[bot]' }, body: 'x' }];
+
+  try {
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+      freshComments: fresh,
+    });
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+    });
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+      freshComments: null,
+    });
+  } finally {
+    if (previous === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = previous;
+  }
+
+  assert.equal(received[0].comments, fresh);
+  // Without a fresh list the helper must read the comments itself.
+  assert.equal('comments' in received[1], false);
+  assert.equal('comments' in received[2], false);
+});
+
+test('publishVisibilityUpdates reads the comment list only after the status POSTs', () => {
+  // Regression guard for the duplicate-comment race: the sticky-comment list
+  // must be read after the status POSTs, never together with the status read.
+  const order = [];
+  const reads = [];
+  const freshStatuses = [previousSuccess()];
+  const freshComments = [{ id: 42 }];
+
+  const result = publishVisibilityUpdates({ ...basePr }, statusVisibility(), {
+    reviewSource: 'graphql',
+    decision: { state: 'ready', reason: 'nothing to do' },
+    readSnapshot: (_pr, options) => {
+      reads.push([options.wantComments, options.wantStatuses]);
+      order.push(options.wantStatuses ? 'read:statuses' : 'read:comments');
+      return options.wantStatuses
+        ? { comments: null, statuses: freshStatuses }
+        : { comments: freshComments, statuses: null };
+    },
+    publishStatuses: (_pr, _visibility, options) => {
+      order.push('post:statuses');
+      assert.equal(options.freshStatuses, freshStatuses);
+    },
+    renderComment: () => 'rendered body',
+    writeComment: (_pr, body, options) => {
+      order.push('write:comment');
+      assert.equal(body, 'rendered body');
+      assert.equal(options.freshComments, freshComments);
+    },
+  });
+
+  assert.deepEqual(order, [
+    'read:statuses',
+    'post:statuses',
+    'read:comments',
+    'write:comment',
+  ]);
+  // Each read asks only for the connection its consumer needs.
+  assert.deepEqual(reads, [
+    [false, true],
+    [true, false],
+  ]);
+  assert.equal(result.fatalError, null);
+});
+
+test('publishVisibilityUpdates keeps the failure handling when the comment write fails', () => {
+  const visibilityErrors = [];
+  const errorVisibility = {
+    orderedStatuses: [],
+    aggregate: makeStatus({ context: 'pr-flow/aggregate', state: 'failure' }),
+  };
+  const aggregates = [];
+  const built = [];
+
+  const result = publishVisibilityUpdates({ ...basePr }, statusVisibility(), {
+    reviewSource: 'graphql',
+    decision: { state: 'ready', reason: 'nothing to do' },
+    visibilityErrors,
+    readSnapshot: () => ({ comments: null, statuses: null }),
+    publishStatuses: () => {},
+    renderComment: () => 'rendered body',
+    writeComment: () => {
+      throw new Error('gh exploded');
+    },
+    buildVisibility: (context) => {
+      built.push(context);
+      return errorVisibility;
+    },
+    publishAggregateStatus: (_pr, status) => aggregates.push(status),
+  });
+
+  assert.equal(result.visibility, errorVisibility);
+  assert.equal(
+    result.fatalError.message,
+    'PR flow comment update failed: gh exploded',
+  );
+  assert.equal(built[0].visibilityErrors, visibilityErrors);
+  assert.deepEqual(aggregates, [errorVisibility.aggregate]);
+  assert.equal(visibilityErrors.length, 1);
 });

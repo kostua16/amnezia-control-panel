@@ -1440,6 +1440,7 @@ function publishFlowStatuses(
     readStatuses = fetchCommitStatuses,
     publishStatus = publishCommitStatus,
     currentRunUrl = getCurrentRunUrl(),
+    freshStatuses = null,
   } = {},
 ) {
   const statuses = visibility.orderedStatuses;
@@ -1451,8 +1452,11 @@ function publishFlowStatuses(
       // Read at publish time rather than reusing a snapshot from earlier in
       // the wake (e.g. the external-review evaluation): prt and wake runs use
       // separate concurrency groups, so another orchestrator run for the same
-      // head may have posted statuses in between.
-      previousByContext = indexStatusesByContext(readStatuses(pr.headSha));
+      // head may have posted statuses in between. `freshStatuses` is such a
+      // publish-time read made through GraphQL; without one the REST read runs.
+      previousByContext = indexStatusesByContext(
+        Array.isArray(freshStatuses) ? freshStatuses : readStatuses(pr.headSha),
+      );
     } catch (error) {
       console.error(
         `Could not read current commit statuses; posting all: ${formatCommandError(error)}`,
@@ -1467,11 +1471,17 @@ function publishFlowStatuses(
 }
 
 // The wake rewrites the comment only when its content changed: replacing it is
-// a POST plus a DELETE and a new issue_comment event every time.
+// a POST plus a DELETE and a new issue_comment event every time. `freshComments`
+// is a publish-time GraphQL read of the PR's issue comments; without one the
+// sticky lookup reads them over REST.
 function upsertFlowComment(
   pr,
   body,
-  { upsert = upsertComment, currentRunUrl = getCurrentRunUrl() } = {},
+  {
+    upsert = upsertComment,
+    currentRunUrl = getCurrentRunUrl(),
+    freshComments = null,
+  } = {},
 ) {
   upsert({
     repo: getRepoSlug(),
@@ -1481,6 +1491,7 @@ function upsertFlowComment(
     skipIfUnchanged: true,
     sameBody: (existingBody, nextBody) =>
       flowCommentUnchanged(existingBody, nextBody, currentRunUrl),
+    ...(Array.isArray(freshComments) ? { comments: freshComments } : {}),
   });
 }
 
@@ -1633,6 +1644,171 @@ function collectExternalReview(
     }
   }
   return evaluate({ pr, ...(inputs ?? loadRest(pr)) });
+}
+
+// The head commit date comes from the `commits` field of the PR read the wake
+// already makes (a GraphQL call), instead of a separate REST `commits/{sha}`
+// read. Only the PR's last commit counts, and only when it is the head: `gh`
+// lists a bounded page of commits, so on a very long PR the last listed commit
+// may not be the tip. Same precedence as REST (committer date, then author
+// date); anything unusable returns '' so the caller reads REST.
+function headCommittedAtFromCommits(commits, headSha) {
+  if (!headSha || !Array.isArray(commits) || commits.length === 0) return '';
+  const last = commits[commits.length - 1];
+  if (last?.oid !== headSha) return '';
+  const date = last.committedDate ?? last.authoredDate ?? '';
+  return Number.isNaN(Date.parse(date)) ? '' : date;
+}
+
+function resolveHeadCommittedAt(
+  rawPr,
+  pr,
+  { source = resolveReviewSource(), readRest = fetchHeadCommittedAt } = {},
+) {
+  if (source === 'graphql') {
+    const date = headCommittedAtFromCommits(rawPr?.commits, pr.headSha);
+    if (date) return date;
+    console.warn(
+      'orchestrate-pr-flow: head commit date missing from the PR read, using REST.',
+    );
+  }
+  return readRest(pr.headSha);
+}
+
+// Both flags are normalized to strict booleans before they reach the adapter:
+// it treats an omitted `contexts` as `true`, so a truthy-but-not-`true`
+// `wantStatuses` would pay for the status rollup and then be discarded here.
+function fetchPublishSnapshotGraphql(
+  pr,
+  { wantComments = true, wantStatuses = false } = {},
+) {
+  const comments = wantComments === true;
+  const statuses = wantStatuses === true;
+  const snapshot = fetchReviewInputsGraphql({
+    repo: getRepoSlug(),
+    prNumber: pr.number,
+    headSha: pr.headSha,
+    runGraphql: runGraphqlQuery,
+    want: {
+      comments,
+      reviews: false,
+      threads: false,
+      contexts: statuses,
+    },
+  });
+  console.log(
+    `orchestrate-pr-flow: publish snapshot via GraphQL (cost ${snapshot.cost}).`,
+  );
+  return {
+    comments: comments ? snapshot.comments : null,
+    statuses: statuses ? snapshot.statuses : null,
+  };
+}
+
+// Publish-time GraphQL reads at the visibility step, each taken immediately
+// before its consumer: the commit statuses right before their POSTs (only when
+// a success status could be skipped) and the sticky-comment list right before
+// the comment write, after the status POSTs. Reading the comment list before
+// those up-to-seven REST writes would leave it stale long enough for
+// overlapping prt/wake runs on one head to both see "no sticky comment" and
+// both POST one — a duplicate `skipIfUnchanged` then never converges away.
+// Every field is null when the read is unavailable (or the source is `rest`),
+// and each consumer then performs its own REST read.
+function readPublishSnapshot(
+  pr,
+  {
+    wantComments = true,
+    wantStatuses = false,
+    source = resolveReviewSource(),
+    loadGraphql = fetchPublishSnapshotGraphql,
+  },
+) {
+  const none = { comments: null, statuses: null };
+  if (source !== 'graphql') return none;
+  try {
+    return loadGraphql(pr, {
+      wantComments: wantComments === true,
+      wantStatuses: wantStatuses === true,
+    });
+  } catch (error) {
+    console.warn(
+      `orchestrate-pr-flow: publish-time GraphQL read unavailable, using REST: ${error.message}`,
+    );
+    return none;
+  }
+}
+
+// The visibility step's writes, in one enforced order: read the commit
+// statuses, post the flow statuses, and only then read the PR's comment list
+// and upsert the sticky comment. Reading the comment list together with the
+// status read would leave it stale across those up-to-seven REST writes long
+// enough for overlapping prt/wake runs on one head to both see "no sticky
+// comment" and both POST one — a duplicate `skipIfUnchanged` comment then
+// never converges away. Readers and writers are injectable so the ordering
+// stays regression-tested. A failed comment write re-renders the visibility
+// with the error surfaced and returns it as `fatalError` for the caller.
+function publishVisibilityUpdates(
+  pr,
+  visibility,
+  {
+    reviewSource,
+    decision,
+    dispatchOutcome,
+    config,
+    policy,
+    externalReview,
+    workerRuns,
+    eventName,
+    event,
+    visibilityErrors = [],
+    readSnapshot = readPublishSnapshot,
+    publishStatuses = publishFlowStatuses,
+    writeComment = upsertFlowComment,
+    renderComment = renderFlowComment,
+    publishAggregateStatus = publishCommitStatus,
+    buildVisibility = buildFlowVisibility,
+  } = {},
+) {
+  const statusSnapshot = readSnapshot(pr, {
+    wantComments: false,
+    wantStatuses: visibility.orderedStatuses.some(
+      (status) => String(status.state).toLowerCase() === 'success',
+    ),
+    source: reviewSource,
+  });
+  publishStatuses(pr, visibility, { freshStatuses: statusSnapshot.statuses });
+
+  const commentSnapshot = readSnapshot(pr, {
+    wantComments: true,
+    wantStatuses: false,
+    source: reviewSource,
+  });
+  try {
+    writeComment(
+      pr,
+      renderComment({ pr, decision, visibility, dispatchOutcome }),
+      { freshComments: commentSnapshot.comments },
+    );
+    return { visibility, fatalError: null };
+  } catch (error) {
+    const errorMessage = formatCommandError(error);
+    const commentError = `PR flow comment update failed: ${errorMessage}`;
+    visibilityErrors.push(commentError);
+    const errorVisibility = buildVisibility({
+      pr,
+      config,
+      policy,
+      decision,
+      externalReview,
+      workerRuns,
+      eventName,
+      event,
+      dispatchOutcome,
+      visibilityErrors,
+    });
+    publishAggregateStatus(pr, errorVisibility.aggregate);
+    return { visibility: errorVisibility, fatalError: new Error(commentError) };
+  }
 }
 
 function decisionWithDispatchError({ decision, pr, config, errorMessage }) {
@@ -2181,7 +2357,12 @@ function dispatchWorker(pr, dispatch) {
   run('gh', args);
 }
 
-function fetchPullRequest(prNumber) {
+const PULL_REQUEST_FIELDS =
+  'number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository,autoMergeRequest';
+
+// `includeCommits` adds the commit list that supplies the head commit date; the
+// `rest` source leaves the call exactly as it was.
+function fetchPullRequest(prNumber, { includeCommits = false } = {}) {
   return runJson(
     'gh',
     [
@@ -2189,7 +2370,7 @@ function fetchPullRequest(prNumber) {
       'view',
       String(prNumber),
       '--json',
-      'number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository,autoMergeRequest',
+      includeCommits ? `${PULL_REQUEST_FIELDS},commits` : PULL_REQUEST_FIELDS,
     ],
     null,
     { allowedFailurePattern: PR_NOT_FOUND_PATTERN },
@@ -2220,6 +2401,9 @@ function main() {
   );
   const event =
     eventPath && fs.existsSync(eventPath) ? readJson(eventPath) : {};
+  // Resolved once so a mistyped variable warns once and every reuse point of
+  // this wake agrees on the transport.
+  const reviewSource = resolveReviewSource();
 
   const resolved = timeStep(timings, 'resolve-pr', () => {
     const prNumber = resolvePrNumber(eventName, event, explicitPrNumber);
@@ -2228,10 +2412,14 @@ function main() {
     }
 
     const config = readConfig(configFile);
-    const rawPr = fetchPullRequest(prNumber);
+    const rawPr = fetchPullRequest(prNumber, {
+      includeCommits: reviewSource === 'graphql',
+    });
     const pr = rawPr ? normalizePr(rawPr) : null;
     if (pr) {
-      pr.headCommittedAt = fetchHeadCommittedAt(pr.headSha);
+      pr.headCommittedAt = resolveHeadCommittedAt(rawPr, pr, {
+        source: reviewSource,
+      });
     }
     return { prNumber, config, pr };
   });
@@ -2307,7 +2495,7 @@ function main() {
 
     if (!policy.dependabot) {
       externalReview = timeStep(timings, 'worker-runs', () =>
-        collectExternalReview(pr),
+        collectExternalReview(pr, { source: reviewSource }),
       );
     }
   }
@@ -2395,38 +2583,23 @@ function main() {
         visibilityErrors,
       });
 
-      publishFlowStatuses(pr, visibility);
-
-      try {
-        upsertFlowComment(
-          pr,
-          renderFlowComment({
-            pr,
-            decision: appliedDecision,
-            visibility,
-            dispatchOutcome,
-          }),
-        );
-      } catch (error) {
-        const errorMessage = formatCommandError(error);
-        const commentError = `PR flow comment update failed: ${errorMessage}`;
-        visibilityErrors.push(commentError);
-        const errorVisibility = buildFlowVisibility({
-          pr,
-          config,
-          policy,
-          decision: appliedDecision,
-          externalReview,
-          workerRuns,
-          eventName,
-          event,
-          dispatchOutcome,
-          visibilityErrors,
-        });
-        visibility = errorVisibility;
-        publishCommitStatus(pr, errorVisibility.aggregate);
-        fatalError = new Error(commentError);
-      }
+      // Statuses are read and posted before the comment list so the sticky
+      // write matches against a list that cannot be stale across those REST
+      // writes; publishVisibilityUpdates owns and regression-tests that order.
+      const published = publishVisibilityUpdates(pr, visibility, {
+        reviewSource,
+        decision: appliedDecision,
+        dispatchOutcome,
+        config,
+        policy,
+        externalReview,
+        workerRuns,
+        eventName,
+        event,
+        visibilityErrors,
+      });
+      visibility = published.visibility;
+      fatalError = published.fatalError;
     });
 
     if (dispatchOutcome?.ok === false || visibilityErrors.length > 0) {
@@ -2492,17 +2665,21 @@ module.exports = {
   buildFlowVisibility,
   collectCheckEvidence,
   collectExternalReview,
+  COMMENT_MARKER,
   decisionWithDispatchError,
   fetchCheckRuns,
   fetchCommitStatuses,
   fetchHeadCommittedAt,
   fetchPrIssueComments,
+  fetchPublishSnapshotGraphql,
   fetchPrReviewComments,
   fetchPrReviews,
   getFinalizerRetryCount,
   getWorkerDispatchRef,
+  headCommittedAtFromCommits,
   getWorkerTargetUrl,
   getLabelsForDecision,
+  indexStatusesByContext,
   matchesWorkerTitle,
   getRequiredCheckStatus,
   evaluatePolicy,
@@ -2511,8 +2688,11 @@ module.exports = {
   MAX_FINALIZER_RETRIES,
   pathsMatch,
   publishFlowStatuses,
+  publishVisibilityUpdates,
   readConfig,
+  readPublishSnapshot,
   renderFlowComment,
+  resolveHeadCommittedAt,
   resolvePrNumber,
   resolveReviewSource,
   runGraphqlQuery,

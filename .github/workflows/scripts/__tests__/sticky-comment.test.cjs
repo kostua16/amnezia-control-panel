@@ -360,3 +360,108 @@ test('upsertComment lets the caller decide what counts as unchanged', () => {
   assert.deepEqual(seen, [[`${MARKER}\nrun 1`, `${MARKER}\nrun 2`]]);
   assert.equal(calls.length, 1);
 });
+
+test('upsertComment uses a supplied comment list instead of reading REST', () => {
+  const body = `${MARKER}\nsame body`;
+  const { lib, calls } = loadWithStubbedGh({
+    // The REST list would point at a different comment; it must not be read.
+    comments: [{ ...botComment(body), id: 99 }],
+  });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nnew body`,
+    skipIfUnchanged: true,
+    comments: [botComment(`${MARKER}\nold body`)],
+  });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [
+      ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+      ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/42'],
+    ],
+  );
+});
+
+test('upsertComment with a supplied list still skips an unchanged comment without any request', () => {
+  const body = `${MARKER}\nsame body`;
+  const { lib, calls } = loadWithStubbedGh({ comments: [] });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body,
+    skipIfUnchanged: true,
+    comments: [botComment(body)],
+  });
+
+  assert.deepEqual(calls, []);
+});
+
+test('upsertComment posts a new comment from an empty supplied list without listing REST', () => {
+  const { lib, calls } = loadWithStubbedGh({
+    comments: [botComment(`${MARKER}\nold body`)],
+  });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nfirst body`,
+    comments: [],
+  });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments']],
+  );
+});
+
+test('upsertComment reads REST when the supplied value is not a list', () => {
+  for (const notAList of [null, undefined, 'nope', {}]) {
+    const { lib, calls } = loadWithStubbedGh({ comments: [] });
+
+    lib.upsertComment({
+      repo: 'owner/repo',
+      prNumber: 7,
+      marker: MARKER,
+      body: `${MARKER}\nbody`,
+      comments: notAList,
+    });
+
+    assert.deepEqual(
+      calls[0].slice(0, 3),
+      ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+      String(notAList),
+    );
+  }
+});
+
+test('upsertComment re-lists REST when a supplied match has no usable id', () => {
+  const { lib, calls } = loadWithStubbedGh({
+    comments: [botComment(`${MARKER}\nold body`)],
+  });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nnew body`,
+    // A matched comment whose id is not an integer cannot be PATCHed or
+    // DELETEd; the write must address the REST list's id, not `undefined`.
+    comments: [{ ...botComment(`${MARKER}\nstale`), id: undefined }],
+  });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [
+      ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+      ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+      ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/42'],
+    ],
+  );
+});

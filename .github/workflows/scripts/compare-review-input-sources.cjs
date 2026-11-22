@@ -1,9 +1,12 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-// Read-only parity check for the Kilo review input sources. For each PR it
-// loads the inputs through the REST loaders the PR flow uses and through the
-// GraphQL adapter, diffs the normalized inputs, runs evaluateExternalReview on
-// both with one frozen `now` and one shared head commit time, and prints a
-// table. Exits 1 when any verdict differs.
+// Read-only parity check for the PR flow's REST-to-GraphQL reads. For each PR
+// it loads the Kilo review inputs through the REST loaders the PR flow uses and
+// through the GraphQL adapter, diffs the normalized inputs, runs
+// evaluateExternalReview on both with one frozen `now` and one shared head
+// commit time, and prints a table. It then compares the three other reads the
+// PR flow moved to GraphQL: the head commit date, the sticky-comment lookup
+// and the commit statuses (as the post/skip decisions `shouldPublishStatus`
+// makes from them). Exits 1 when any verdict or any of those differs.
 //
 // Usage (needs an authenticated `gh`; GITHUB_REPOSITORY defaults to the
 // current repo):
@@ -17,6 +20,11 @@ const { execFileSync } = require('node:child_process');
 const { evaluateExternalReview } = require('./evaluate-external-review.cjs');
 const { isKiloUser } = require('./lib/kilo.cjs');
 const { fetchReviewInputsGraphql } = require('./lib/review-inputs-graphql.cjs');
+const { findExistingComment } = require('./lib/sticky-comment.cjs');
+
+// A fixed link standing in for "the run that is publishing now"; only used to
+// exercise the same branches `shouldPublishStatus` takes in production.
+const PARITY_RUN_URL = 'https://github.com/owner/repo/actions/runs/1';
 
 function gh(args) {
   return execFileSync('gh', args, { encoding: 'utf8' }).trim();
@@ -128,6 +136,148 @@ function diffInputs(rest, graphql) {
   return diffs;
 }
 
+// The fields `shouldPublishStatus` and `indexStatusesByContext` read, in a
+// stable order.
+function normalizeStatusList(statuses) {
+  return [...(statuses ?? [])]
+    .map((s) => ({
+      context: s.context,
+      state: String(s.state ?? '').toLowerCase(),
+      description: s.description ?? null,
+      target_url: s.target_url ?? null,
+      created_at: s.created_at ?? null,
+    }))
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+}
+
+// For each context the post/skip answer `shouldPublishStatus` gives for the
+// four kinds of candidate a wake can publish: the same success again, a
+// success whose description changed, a pending status, and a success that links
+// to the publishing run. Identical answers on both sources mean the skip logic
+// cannot tell the sources apart.
+function statusDecisions(statuses, flow) {
+  const index = flow.indexStatusesByContext(statuses);
+  const decisions = {};
+  for (const [context, previous] of [...index].sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    const description = previous.description ?? '';
+    const targetUrl = previous.target_url ?? '';
+    const candidates = {
+      same: { context, state: 'success', description, targetUrl },
+      changedDescription: {
+        context,
+        state: 'success',
+        description: `${description} (changed)`,
+        targetUrl,
+      },
+      pending: { context, state: 'pending', description, targetUrl },
+      currentRunLink: {
+        context,
+        state: 'success',
+        description,
+        targetUrl: PARITY_RUN_URL,
+      },
+    };
+    decisions[context] = Object.fromEntries(
+      Object.entries(candidates).map(([name, status]) => [
+        name,
+        flow.shouldPublishStatus(index, status, PARITY_RUN_URL),
+      ]),
+    );
+  }
+  return decisions;
+}
+
+function verdict(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b) ? 'identical' : 'DIFFERENT';
+}
+
+/**
+ * Compares the head commit date, the sticky-comment lookup and the statuses
+ * between the REST reads and what the PR flow now reads through GraphQL.
+ *
+ * @param {object} args
+ * @param {object} args.flow           the orchestrate-pr-flow module
+ * @param {string} args.headSha
+ * @param {string} args.restHeadCommittedAt
+ * @param {Array|undefined} args.prCommits  `commits` of `gh pr view --json commits`
+ * @param {Array} args.restComments
+ * @param {Array} args.restStatuses
+ * @param {{comments: Array, statuses: Array}|null} args.snapshot
+ *   the publish-time GraphQL read, or null when it fell back to REST
+ */
+function compareReusePoints({
+  flow,
+  headSha,
+  restHeadCommittedAt,
+  prCommits,
+  restComments,
+  restStatuses,
+  snapshot,
+}) {
+  const graphqlDate = flow.headCommittedAtFromCommits(prCommits, headSha);
+  const head =
+    graphqlDate === ''
+      ? {
+          result: 'fallback',
+          detail: `REST ${restHeadCommittedAt || '(none)'}, PR read has no usable date`,
+        }
+      : {
+          result: verdict(restHeadCommittedAt, graphqlDate),
+          detail: `REST ${restHeadCommittedAt} vs PR read ${graphqlDate}`,
+        };
+
+  if (!snapshot) {
+    return {
+      head,
+      sticky: { result: 'fallback', detail: 'publish-time read unavailable' },
+      statuses: { result: 'fallback', detail: 'publish-time read unavailable' },
+    };
+  }
+
+  const restId =
+    findExistingComment(restComments, flow.COMMENT_MARKER)?.id ?? null;
+  const graphqlId =
+    findExistingComment(snapshot.comments, flow.COMMENT_MARKER)?.id ?? null;
+  const listDiff = diffInputs(
+    normalizeInputs({
+      comments: restComments,
+      reviewComments: [],
+      reviews: [],
+      checkRuns: [],
+      statuses: [],
+    }),
+    normalizeInputs({
+      comments: snapshot.comments,
+      reviewComments: [],
+      reviews: [],
+      checkRuns: [],
+      statuses: [],
+    }),
+  );
+  const sticky = {
+    result:
+      restId === graphqlId && listDiff.length === 0 ? 'identical' : 'DIFFERENT',
+    detail: `REST id ${restId ?? 'none'} vs GraphQL id ${graphqlId ?? 'none'}${listDiff.length ? `; ${listDiff.join('; ')}` : ''}`,
+  };
+
+  const restList = normalizeStatusList(restStatuses);
+  const graphqlList = normalizeStatusList(snapshot.statuses);
+  const restDecisions = statusDecisions(restStatuses, flow);
+  const graphqlDecisions = statusDecisions(snapshot.statuses, flow);
+  const statusesMatch =
+    verdict(restList, graphqlList) === 'identical' &&
+    verdict(restDecisions, graphqlDecisions) === 'identical';
+  const statuses = {
+    result: statusesMatch ? 'identical' : 'DIFFERENT',
+    detail: statusesMatch
+      ? `${restList.length} status(es), post/skip answers equal for ${Object.keys(restDecisions).length} context(s)`
+      : `REST ${JSON.stringify(restList)} ${JSON.stringify(restDecisions)} vs GraphQL ${JSON.stringify(graphqlList)} ${JSON.stringify(graphqlDecisions)}`,
+  };
+  return { head, sticky, statuses };
+}
+
 function listPrs(args) {
   const numbers = [];
   for (let i = 0; i < args.length; i += 1) {
@@ -188,8 +338,9 @@ function main() {
   const rows = [];
   let maxCost = 0;
   for (const number of numbers) {
+    // One call, as in the orchestrator: `commits` supplies the head commit date.
     const meta = JSON.parse(
-      gh(['pr', 'view', String(number), '--json', 'headRefOid,state']),
+      gh(['pr', 'view', String(number), '--json', 'headRefOid,state,commits']),
     );
     const pr = { number, headSha: meta.headRefOid };
     pr.headCommittedAt = flow.fetchHeadCommittedAt(pr.headSha);
@@ -227,6 +378,24 @@ function main() {
       row.relevant = [];
       row.full = [];
     }
+    // The publish-time read, exactly as the orchestrator makes it.
+    let snapshot = null;
+    try {
+      snapshot = flow.fetchPublishSnapshotGraphql(pr, { wantStatuses: true });
+    } catch {
+      snapshot = null;
+    }
+    row.reuse = compareReusePoints({
+      flow,
+      headSha: pr.headSha,
+      restHeadCommittedAt: flow.fetchHeadCommittedAt(pr.headSha, {
+        strict: true,
+      }),
+      prCommits: meta.commits,
+      restComments: restInputs.comments,
+      restStatuses: restInputs.statuses,
+      snapshot,
+    });
     // A fallback reads REST for that wake, so its verdict cannot differ; it is
     // reported separately because it means GraphQL gave no coverage there.
     row.match = row.fallback ? null : row.rest === row.graphql;
@@ -247,9 +416,36 @@ function main() {
   console.log(
     `\nverdict parity: ${identical}/${rows.length} identical, ${fallbacks} GraphQL fallbacks, max rateLimit cost ${maxCost}`,
   );
-  process.exit(rows.some((r) => r.match === false) ? 1 : 0);
+
+  console.log(
+    '\n| PR | head commit date | sticky comment id (REST vs GraphQL) | statuses and post/skip decisions |',
+  );
+  console.log('|---|---|---|---|');
+  for (const r of rows) {
+    const { head, sticky, statuses } = r.reuse;
+    console.log(
+      `| #${r.number} | ${head.result}: ${head.detail} | ${sticky.result}: ${sticky.detail} | ${statuses.result}: ${statuses.detail} |`,
+    );
+  }
+  const points = ['head', 'sticky', 'statuses'];
+  for (const point of points) {
+    const results = rows.map((r) => r.reuse[point].result);
+    console.log(
+      `${point} parity: ${results.filter((x) => x === 'identical').length}/${rows.length} identical, ${results.filter((x) => x === 'fallback').length} fallbacks, ${results.filter((x) => x === 'DIFFERENT').length} different`,
+    );
+  }
+  const reuseDiffers = rows.some((r) =>
+    points.some((point) => r.reuse[point].result === 'DIFFERENT'),
+  );
+  process.exit(rows.some((r) => r.match === false) || reuseDiffers ? 1 : 0);
 }
 
 if (require.main === module) main();
 
-module.exports = { diffInputs, normalizeInputs, relevantSubset };
+module.exports = {
+  compareReusePoints,
+  diffInputs,
+  normalizeInputs,
+  relevantSubset,
+  statusDecisions,
+};

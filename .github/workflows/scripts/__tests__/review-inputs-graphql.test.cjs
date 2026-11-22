@@ -7,10 +7,14 @@ const {
   ReviewInputsUnavailable,
   fetchReviewInputsGraphql,
 } = require('../lib/review-inputs-graphql.cjs');
-const { isKiloUser, KILO_MARKER } = require('../lib/kilo.cjs');
+const { isKiloUser, KILO_LOGINS, KILO_MARKER } = require('../lib/kilo.cjs');
+const { findExistingComment } = require('../lib/sticky-comment.cjs');
 const { evaluateExternalReview } = require('../evaluate-external-review.cjs');
 const {
   collectExternalReview,
+  headCommittedAtFromCommits,
+  readPublishSnapshot,
+  resolveHeadCommittedAt,
   resolveReviewSource,
 } = require('../orchestrate-pr-flow.cjs');
 
@@ -714,4 +718,390 @@ test('resolveReviewSource accepts graphql and rest, defaults when empty, and tre
   assert.equal(resolveReviewSource('grapql'), 'rest');
   assert.equal(resolveReviewSource(''), 'graphql');
   assert.equal(resolveReviewSource(undefined), 'graphql');
+});
+
+test('an issue comment without a usable databaseId makes the read unavailable', () => {
+  // The sticky-comment update/delete address a comment by this id; a null would
+  // become `DELETE issues/comments/null`.
+  for (const databaseId of [null, undefined, 0, -4, 1.5, '12']) {
+    const { run } = fetchWith([
+      response({
+        comments: conn([{ ...summaryComment(bot('x'), 'hi', 1), databaseId }]),
+      }),
+    ]);
+    assert.throws(run, ReviewInputsUnavailable, String(databaseId));
+  }
+});
+
+test('the sticky comment is found by its REST id and bot login on the GraphQL shape', () => {
+  const marker = '<!-- pr-flow-orchestration -->';
+  const { run } = fetchWith([
+    response({
+      comments: conn([
+        summaryComment(human('github-actions'), `${marker}\nspoofed`, 11),
+        summaryComment(bot('github-actions'), `${marker}\nreal`, 12),
+      ]),
+    }),
+  ]);
+  const { comments } = run();
+  const found = findExistingComment(comments, marker);
+  assert.equal(found.id, 12);
+  assert.equal(found.user.login, 'github-actions[bot]');
+});
+
+test('the Kilo allow-list is not widened to the GraphQL bot login', () => {
+  assert.deepEqual(KILO_LOGINS, ['kilo-code-bot[bot]']);
+});
+
+test('a caller can request only some connections and the others are never queried', () => {
+  const { run, calls } = fetchWith(
+    [
+      response({
+        comments: conn([summaryComment(bot('github-actions'), 'x', 5)]),
+        commits: {
+          nodes: [
+            {
+              commit: {
+                oid: HEAD,
+                statusCheckRollup: {
+                  contexts: conn([
+                    {
+                      __typename: 'StatusContext',
+                      context: 'pr-flow/ready',
+                      state: 'SUCCESS',
+                      description: 'ok',
+                      targetUrl: 'https://example.test/run/1',
+                      createdAt: '2026-01-01T10:00:00Z',
+                    },
+                  ]),
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    {
+      want: { comments: true, reviews: false, threads: false, contexts: true },
+    },
+  );
+  const result = run();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].wantComments, true);
+  assert.equal(calls[0].wantContexts, true);
+  assert.equal(calls[0].wantReviews, false);
+  assert.equal(calls[0].wantThreads, false);
+  assert.deepEqual(
+    result.comments.map((c) => c.id),
+    [5],
+  );
+  assert.deepEqual(result.statuses, [
+    {
+      context: 'pr-flow/ready',
+      state: 'success',
+      description: 'ok',
+      target_url: 'https://example.test/run/1',
+      created_at: '2026-01-01T10:00:00Z',
+    },
+  ]);
+  assert.deepEqual(result.reviews, []);
+  assert.deepEqual(result.reviewComments, []);
+});
+
+test('requesting only comments needs no status rollup and still guards the head', () => {
+  const only = { want: { reviews: false, threads: false, contexts: false } };
+  const ok = fetchWith([response()], only);
+  assert.deepEqual(ok.run().statuses, []);
+  assert.equal(ok.calls[0].wantContexts, false);
+
+  const moved = fetchWith([response({ headRefOid: OTHER })], only);
+  assert.throws(moved.run, ReviewInputsUnavailable);
+});
+
+test('requesting nothing performs no query', () => {
+  const { run, calls } = fetchWith([response()], {
+    want: { comments: false, reviews: false, threads: false, contexts: false },
+  });
+  assert.deepEqual(run().comments, []);
+  assert.equal(calls.length, 0);
+});
+
+const commit = (oid, extra = {}) => ({ oid, ...extra });
+
+test('the head commit date is the last commit committer date, then its author date', () => {
+  const commits = [
+    commit('1'.repeat(40), { committedDate: '2026-01-01T00:00:00Z' }),
+    commit(HEAD, {
+      committedDate: '2026-02-02T10:00:00Z',
+      authoredDate: '2026-02-01T09:00:00Z',
+    }),
+  ];
+  assert.equal(
+    headCommittedAtFromCommits(commits, HEAD),
+    '2026-02-02T10:00:00Z',
+  );
+  assert.equal(
+    headCommittedAtFromCommits(
+      [
+        commit(HEAD, {
+          committedDate: null,
+          authoredDate: '2026-02-01T09:00:00Z',
+        }),
+      ],
+      HEAD,
+    ),
+    '2026-02-01T09:00:00Z',
+  );
+});
+
+test('the head commit date is unknown unless the last listed commit is the head', () => {
+  const dated = { committedDate: '2026-02-02T10:00:00Z' };
+  // A long PR: the listed page ends before the tip.
+  assert.equal(headCommittedAtFromCommits([commit(OTHER, dated)], HEAD), '');
+  assert.equal(headCommittedAtFromCommits([], HEAD), '');
+  assert.equal(headCommittedAtFromCommits(undefined, HEAD), '');
+  assert.equal(headCommittedAtFromCommits([commit(HEAD, dated)], ''), '');
+  assert.equal(headCommittedAtFromCommits([commit(HEAD)], HEAD), '');
+  assert.equal(
+    headCommittedAtFromCommits(
+      [commit(HEAD, { committedDate: 'not a date' })],
+      HEAD,
+    ),
+    '',
+  );
+});
+
+function withMutedWarnings(fn) {
+  const warnings = [];
+  const original = console.warn;
+  console.warn = (message) => warnings.push(String(message));
+  try {
+    return { value: fn(), warnings };
+  } finally {
+    console.warn = original;
+  }
+}
+
+test('resolveHeadCommittedAt takes the date from the PR read and skips the REST read', () => {
+  const reads = [];
+  const { value, warnings } = withMutedWarnings(() =>
+    resolveHeadCommittedAt(
+      { commits: [commit(HEAD, { committedDate: '2026-02-02T10:00:00Z' })] },
+      { headSha: HEAD },
+      {
+        source: 'graphql',
+        readRest: (sha) => {
+          reads.push(sha);
+          return 'rest-date';
+        },
+      },
+    ),
+  );
+  assert.equal(value, '2026-02-02T10:00:00Z');
+  assert.deepEqual(reads, []);
+  assert.deepEqual(warnings, []);
+});
+
+test('resolveHeadCommittedAt reads REST once, with one warning, when the PR read has no usable date', () => {
+  const reads = [];
+  const { value, warnings } = withMutedWarnings(() =>
+    resolveHeadCommittedAt(
+      { commits: [commit(OTHER, { committedDate: '2026-02-02T10:00:00Z' })] },
+      { headSha: HEAD },
+      {
+        source: 'graphql',
+        readRest: (sha) => {
+          reads.push(sha);
+          return 'rest-date';
+        },
+      },
+    ),
+  );
+  assert.equal(value, 'rest-date');
+  assert.deepEqual(reads, [HEAD]);
+  assert.equal(warnings.length, 1);
+});
+
+test('resolveHeadCommittedAt ignores the PR read and warns nothing when the source is rest', () => {
+  const reads = [];
+  const { value, warnings } = withMutedWarnings(() =>
+    resolveHeadCommittedAt(
+      { commits: [commit(HEAD, { committedDate: '2026-02-02T10:00:00Z' })] },
+      { headSha: HEAD },
+      {
+        source: 'rest',
+        readRest: (sha) => {
+          reads.push(sha);
+          return 'rest-date';
+        },
+      },
+    ),
+  );
+  assert.equal(value, 'rest-date');
+  assert.deepEqual(reads, [HEAD]);
+  assert.deepEqual(warnings, []);
+});
+
+test('readPublishSnapshot returns the GraphQL read and passes along strict booleans', () => {
+  const seen = [];
+  const load = (pr, options) => {
+    seen.push([pr.number, options]);
+    return { comments: [{ id: 3 }], statuses: [] };
+  };
+  const snapshot = readPublishSnapshot(
+    { number: 7, headSha: HEAD },
+    {
+      wantStatuses: true,
+      source: 'graphql',
+      loadGraphql: load,
+    },
+  );
+  assert.deepEqual(snapshot, { comments: [{ id: 3 }], statuses: [] });
+
+  // A truthy-but-not-true flag must not reach the adapter, which treats an
+  // omitted connection flag as `true` — the read would be paid and discarded.
+  readPublishSnapshot(
+    { number: 7, headSha: HEAD },
+    {
+      wantComments: 1,
+      wantStatuses: 'yes',
+      source: 'graphql',
+      loadGraphql: load,
+    },
+  );
+  assert.deepEqual(seen, [
+    [7, { wantComments: true, wantStatuses: true }],
+    [7, { wantComments: false, wantStatuses: false }],
+  ]);
+});
+
+test('readPublishSnapshot gives every consumer its REST fallback when the read is unavailable', () => {
+  for (const failure of [
+    new ReviewInputsUnavailable('head moved'),
+    new Error('gh not found'),
+  ]) {
+    const { value, warnings } = withMutedWarnings(() =>
+      readPublishSnapshot(
+        { number: 7, headSha: HEAD },
+        {
+          wantStatuses: true,
+          source: 'graphql',
+          loadGraphql: () => {
+            throw failure;
+          },
+        },
+      ),
+    );
+    assert.deepEqual(value, { comments: null, statuses: null });
+    assert.equal(warnings.length, 1);
+  }
+});
+
+test('readPublishSnapshot never queries when the source is rest', () => {
+  let queried = false;
+  const snapshot = readPublishSnapshot(
+    { number: 7, headSha: HEAD },
+    {
+      wantStatuses: true,
+      source: 'rest',
+      loadGraphql: () => {
+        queried = true;
+        return { comments: [], statuses: [] };
+      },
+    },
+  );
+  assert.equal(queried, false);
+  assert.deepEqual(snapshot, { comments: null, statuses: null });
+});
+
+const flow = require('../orchestrate-pr-flow.cjs');
+const { compareReusePoints } = require('../compare-review-input-sources.cjs');
+
+const STICKY_MARKER = '<!-- pr-flow-orchestration -->';
+const restSticky = (id) => ({
+  id,
+  user: { login: 'github-actions[bot]' },
+  body: `${STICKY_MARKER}\nflow`,
+  created_at: '2026-01-01T10:00:00Z',
+  updated_at: '2026-01-01T10:00:00Z',
+});
+const restStatus = (context, overrides = {}) => ({
+  id: 9,
+  context,
+  state: 'success',
+  description: 'ok',
+  target_url: 'https://example.test/run/1',
+  created_at: '2026-01-01T10:00:00Z',
+  ...overrides,
+});
+// GraphQL status contexts carry no numeric id.
+const gqlStatus = (context, overrides = {}) => {
+  const status = restStatus(context, overrides);
+  delete status.id;
+  return status;
+};
+
+function parityInputs(overrides = {}) {
+  return {
+    flow,
+    headSha: HEAD,
+    restHeadCommittedAt: '2026-02-02T10:00:00Z',
+    prCommits: [commit(HEAD, { committedDate: '2026-02-02T10:00:00Z' })],
+    restComments: [restSticky(12)],
+    restStatuses: [restStatus('pr-flow/ready')],
+    snapshot: {
+      comments: [restSticky(12)],
+      statuses: [gqlStatus('pr-flow/ready')],
+    },
+    ...overrides,
+  };
+}
+
+test('parity reports identical reads for the head date, sticky comment and statuses', () => {
+  const result = compareReusePoints(parityInputs());
+  assert.equal(result.head.result, 'identical');
+  assert.equal(result.sticky.result, 'identical');
+  assert.equal(result.statuses.result, 'identical');
+});
+
+test('parity flags a head commit date the PR read reports differently', () => {
+  const result = compareReusePoints(
+    parityInputs({ restHeadCommittedAt: '2026-02-02T10:00:01Z' }),
+  );
+  assert.equal(result.head.result, 'DIFFERENT');
+});
+
+test('parity treats an unusable PR-read date as a fallback, not a difference', () => {
+  const result = compareReusePoints(parityInputs({ prCommits: [] }));
+  assert.equal(result.head.result, 'fallback');
+});
+
+test('parity flags a sticky comment the two sources resolve to different ids', () => {
+  const result = compareReusePoints(
+    parityInputs({
+      snapshot: { comments: [restSticky(13)], statuses: [] },
+    }),
+  );
+  assert.equal(result.sticky.result, 'DIFFERENT');
+});
+
+test('parity flags a status whose skip decision would change', () => {
+  // Same context, but the GraphQL side lost the description: an unchanged
+  // success would be re-posted on one source and skipped on the other.
+  const result = compareReusePoints(
+    parityInputs({
+      snapshot: {
+        comments: [restSticky(12)],
+        statuses: [gqlStatus('pr-flow/ready', { description: null })],
+      },
+    }),
+  );
+  assert.equal(result.statuses.result, 'DIFFERENT');
+});
+
+test('parity reports a missing publish-time read as a fallback for both reuse points', () => {
+  const result = compareReusePoints(parityInputs({ snapshot: null }));
+  assert.equal(result.sticky.result, 'fallback');
+  assert.equal(result.statuses.result, 'fallback');
+  assert.equal(result.head.result, 'identical');
 });
