@@ -942,21 +942,37 @@ test('resolveHeadCommittedAt ignores the PR read and warns nothing when the sour
   assert.deepEqual(warnings, []);
 });
 
-test('readPublishSnapshot returns the GraphQL read and passes along whether statuses are needed', () => {
+test('readPublishSnapshot returns the GraphQL read and passes along strict booleans', () => {
   const seen = [];
+  const load = (pr, options) => {
+    seen.push([pr.number, options]);
+    return { comments: [{ id: 3 }], statuses: [] };
+  };
   const snapshot = readPublishSnapshot(
     { number: 7, headSha: HEAD },
     {
       wantStatuses: true,
       source: 'graphql',
-      loadGraphql: (pr, options) => {
-        seen.push([pr.number, options]);
-        return { comments: [{ id: 3 }], statuses: [] };
-      },
+      loadGraphql: load,
     },
   );
   assert.deepEqual(snapshot, { comments: [{ id: 3 }], statuses: [] });
-  assert.deepEqual(seen, [[7, { wantStatuses: true }]]);
+
+  // A truthy-but-not-true flag must not reach the adapter, which treats an
+  // omitted connection flag as `true` — the read would be paid and discarded.
+  readPublishSnapshot(
+    { number: 7, headSha: HEAD },
+    {
+      wantComments: 1,
+      wantStatuses: 'yes',
+      source: 'graphql',
+      loadGraphql: load,
+    },
+  );
+  assert.deepEqual(seen, [
+    [7, { wantComments: true, wantStatuses: true }],
+    [7, { wantComments: false, wantStatuses: false }],
+  ]);
 });
 
 test('readPublishSnapshot gives every consumer its REST fallback when the read is unavailable', () => {

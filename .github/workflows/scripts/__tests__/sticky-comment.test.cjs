@@ -440,3 +440,28 @@ test('upsertComment reads REST when the supplied value is not a list', () => {
     );
   }
 });
+
+test('upsertComment re-lists REST when a supplied match has no usable id', () => {
+  const { lib, calls } = loadWithStubbedGh({
+    comments: [botComment(`${MARKER}\nold body`)],
+  });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nnew body`,
+    // A matched comment whose id is not an integer cannot be PATCHed or
+    // DELETEd; the write must address the REST list's id, not `undefined`.
+    comments: [{ ...botComment(`${MARKER}\nstale`), id: undefined }],
+  });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [
+      ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+      ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+      ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/42'],
+    ],
+  );
+});

@@ -119,8 +119,10 @@ function findExistingComment(
 //
 // `comments` lets a caller that has just read the PR's issue comments through
 // another transport (the orchestrator's GraphQL read) skip the REST list; it
-// must be a fresh, complete list, because the comment found in it is the one
-// that gets replaced. Without it the list is read here.
+// must be a fresh, complete list whose entries carry their REST comment `id`,
+// because the comment found in it is the one that gets replaced. A match
+// without a usable integer id falls back to the REST list rather than writing
+// against `issues/comments/undefined`. Without the list the REST read runs here.
 function upsertComment({
   repo,
   prNumber,
@@ -131,10 +133,18 @@ function upsertComment({
   sameBody = (existingBody, nextBody) => existingBody === nextBody,
   comments = null,
 }) {
-  const existing = findExistingComment(
-    Array.isArray(comments) ? comments : listComments(repo, prNumber),
+  let supplied = Array.isArray(comments) ? comments : null;
+  let existing = findExistingComment(
+    supplied ?? listComments(repo, prNumber),
     marker,
   );
+  if (supplied && existing && !Number.isInteger(existing.id)) {
+    // The PATCH/DELETE address a comment by this id; a failed DELETE after a
+    // successful POST would leave two comments with the marker, so re-list
+    // over REST and match again instead of writing against a broken id.
+    supplied = null;
+    existing = findExistingComment(listComments(repo, prNumber), marker);
+  }
   if (
     skipIfUnchanged &&
     existing &&

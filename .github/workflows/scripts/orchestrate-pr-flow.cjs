@@ -1675,36 +1675,50 @@ function resolveHeadCommittedAt(
   return readRest(pr.headSha);
 }
 
-function fetchPublishSnapshotGraphql(pr, { wantStatuses }) {
-  const { comments, statuses, cost } = fetchReviewInputsGraphql({
+// Both flags are normalized to strict booleans before they reach the adapter:
+// it treats an omitted `contexts` as `true`, so a truthy-but-not-`true`
+// `wantStatuses` would pay for the status rollup and then be discarded here.
+function fetchPublishSnapshotGraphql(
+  pr,
+  { wantComments = true, wantStatuses = false } = {},
+) {
+  const comments = wantComments === true;
+  const statuses = wantStatuses === true;
+  const snapshot = fetchReviewInputsGraphql({
     repo: getRepoSlug(),
     prNumber: pr.number,
     headSha: pr.headSha,
     runGraphql: runGraphqlQuery,
     want: {
-      comments: true,
+      comments,
       reviews: false,
       threads: false,
-      contexts: wantStatuses,
+      contexts: statuses,
     },
   });
   console.log(
-    `orchestrate-pr-flow: publish snapshot via GraphQL (cost ${cost}).`,
+    `orchestrate-pr-flow: publish snapshot via GraphQL (cost ${snapshot.cost}).`,
   );
-  return { comments, statuses: wantStatuses ? statuses : null };
+  return {
+    comments: comments ? snapshot.comments : null,
+    statuses: statuses ? snapshot.statuses : null,
+  };
 }
 
-// One GraphQL read at the visibility step, after labels and dispatch and right
-// before the first write: the sticky-comment list and (only when a success
-// status could be skipped) the commit statuses. It is deliberately NOT taken
-// earlier in the wake: prt and wake runs use separate concurrency groups and
-// may overlap on one head, so an earlier list could carry a comment id the other
-// run already replaced. Every field is null when the read is unavailable (or the
-// source is `rest`), and each consumer then performs its own REST read.
+// Publish-time GraphQL reads at the visibility step, each taken immediately
+// before its consumer: the commit statuses right before their POSTs (only when
+// a success status could be skipped) and the sticky-comment list right before
+// the comment write, after the status POSTs. Reading the comment list before
+// those up-to-seven REST writes would leave it stale long enough for
+// overlapping prt/wake runs on one head to both see "no sticky comment" and
+// both POST one — a duplicate `skipIfUnchanged` then never converges away.
+// Every field is null when the read is unavailable (or the source is `rest`),
+// and each consumer then performs its own REST read.
 function readPublishSnapshot(
   pr,
   {
-    wantStatuses,
+    wantComments = true,
+    wantStatuses = false,
     source = resolveReviewSource(),
     loadGraphql = fetchPublishSnapshotGraphql,
   },
@@ -1712,7 +1726,10 @@ function readPublishSnapshot(
   const none = { comments: null, statuses: null };
   if (source !== 'graphql') return none;
   try {
-    return loadGraphql(pr, { wantStatuses });
+    return loadGraphql(pr, {
+      wantComments: wantComments === true,
+      wantStatuses: wantStatuses === true,
+    });
   } catch (error) {
     console.warn(
       `orchestrate-pr-flow: publish-time GraphQL read unavailable, using REST: ${error.message}`,
@@ -2493,16 +2510,25 @@ function main() {
         visibilityErrors,
       });
 
-      const snapshot = readPublishSnapshot(pr, {
+      // Two publish-time reads, each immediately before its consumer: the
+      // statuses before their POSTs (they feed the skip decisions), the
+      // comment list after them, so the sticky write matches against a list
+      // that cannot be stale across those REST writes.
+      const statusSnapshot = readPublishSnapshot(pr, {
+        wantComments: false,
         wantStatuses: visibility.orderedStatuses.some(
           (status) => String(status.state).toLowerCase() === 'success',
         ),
         source: reviewSource,
       });
       publishFlowStatuses(pr, visibility, {
-        freshStatuses: snapshot.statuses,
+        freshStatuses: statusSnapshot.statuses,
       });
 
+      const commentSnapshot = readPublishSnapshot(pr, {
+        wantStatuses: false,
+        source: reviewSource,
+      });
       try {
         upsertFlowComment(
           pr,
@@ -2512,7 +2538,7 @@ function main() {
             visibility,
             dispatchOutcome,
           }),
-          { freshComments: snapshot.comments },
+          { freshComments: commentSnapshot.comments },
         );
       } catch (error) {
         const errorMessage = formatCommandError(error);
