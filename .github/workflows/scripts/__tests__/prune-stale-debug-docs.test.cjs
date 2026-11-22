@@ -11,6 +11,8 @@ test('prunes only top-level resolved docs strictly older than 30 days', (t) => {
   const documents = {
     'old.md':
       "---\r\nstatus: 'resolved'\r\nupdated: 2026-05-01T23:59:59Z\r\n---\r\n",
+    'old-offset.md':
+      '---\nstatus: resolved\nupdated: 2026-05-02T01:59:59+02:00\n---\n',
     'boundary.md': '---\nstatus: resolved\nupdated: 2026-05-02\n---\n',
     'fresh.md': '---\nstatus: resolved\nupdated: 2026-05-03\n---\n',
     'fixed.md': '---\nstatus: fixed\nupdated: 2026-04-01\n---\n',
@@ -34,7 +36,9 @@ test('prunes only top-level resolved docs strictly older than 30 days', (t) => {
   assert.deepEqual(
     fs.readdirSync(directory).sort(),
     [
-      ...Object.keys(documents).filter((filename) => filename !== 'old.md'),
+      ...Object.keys(documents).filter(
+        (filename) => !['old.md', 'old-offset.md'].includes(filename),
+      ),
       'resolved',
     ].sort(),
   );
@@ -60,14 +64,62 @@ test('maintenance runs pruning before change detection and keeps writes out of t
   );
   assert.equal(steps[prune + 1].id, 'detect_changes');
   const agent = steps.find((step) => step.id === 'claude_run');
-  assert.doesNotMatch(
-    agent.with['allowed-tools'],
-    /github_inline_comment|Bash\(git (?:add|commit|rm):/,
-  );
-  assert.doesNotMatch(
-    agent.with['allowed-tools'],
-    /Bash\((?:rtk|git|gh issue|npm)(?::\*| \*)\)/,
-  );
-  assert.match(agent.with['allowed-tools'], /Bash\(rtk npm audit:\*\)/);
+  assert.equal(agent.with['user-settings-only'], 'true');
+  const approved = new Set([
+    'gh issue create',
+    'gh issue list',
+    'gh issue view',
+    'gh pr comment',
+    'gh pr list',
+    'gh pr view',
+    'npm audit',
+    'git log',
+  ]);
+  for (const grant of agent.with['allowed-tools'].split(',')) {
+    if (
+      [
+        'Read',
+        'Glob',
+        'Grep',
+        'Bash(node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health)',
+      ].includes(grant)
+    )
+      continue;
+    const command = grant.match(/^Bash\((?:rtk )?(.+):\*\)$/)?.[1];
+    assert.ok(approved.has(command), `Unexpected maintenance grant: ${grant}`);
+  }
   assert.match(agent.with['allowed-tools'], /Bash\(gh pr comment:/);
+});
+
+test('run-zai forwards settings isolation to every Claude attempt', () => {
+  const { load } = require('js-yaml');
+  const readAction = (name) =>
+    load(
+      fs.readFileSync(
+        path.join(__dirname, '../../../actions', name, 'action.yml'),
+        'utf8',
+      ),
+    );
+  const zai = readAction('run-zai');
+  const params = readAction('run-claude-params');
+  assert.equal(zai.inputs['user-settings-only'].default, 'false');
+  assert.equal(params.inputs['user-settings-only'].default, 'false');
+  const wrapper = zai.runs.steps.find(
+    (step) => step.uses === './.github/actions/run-claude-params',
+  );
+  assert.equal(
+    wrapper.with['user-settings-only'],
+    '${{ inputs.user-settings-only }}',
+  );
+  const attempts = params.runs.steps.filter((step) =>
+    step.uses?.startsWith('anthropics/claude-code-action@'),
+  );
+  assert.equal(attempts.length, 3);
+  for (const attempt of attempts) {
+    assert.ok(
+      attempt.with.claude_args.includes(
+        "\${{ inputs.user-settings-only == 'true' && '--setting-sources user' || '' }}",
+      ),
+    );
+  }
 });

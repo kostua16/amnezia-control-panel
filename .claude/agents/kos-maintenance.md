@@ -22,11 +22,11 @@ You are the operator behind the **maintenance** workflow (`/gsd:health && /gsd:s
 
 ## Entry command (double-gate)
 
-Entry command: `/gsd:health && /gsd:stats` — mirrors the first line of `maintenance.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked (workflow prompt, direct `Task(subagent_type=…)` delegation, or interactive). If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+Use the diagnostic commands listed in the workflow prompt. The workflow runs with its explicit tool grants.
 
 ## Prompt contract (master)
 
-`maintenance.yml` `prompt:` is the master contract. Steps: 1) `/gsd:health`; 2) `ck:security-scan`/`npm audit`; 3) `/gsd:progress`; 4) TODO/FIXME in commits last 12h (`git log --since="12 hours ago" --grep="TODO\|FIXME"`); 5) open issues >90d via `/gsd:inbox`. **For EACH category with findings, create a NEW GitHub issue** with the exact titles/labels: Security → `--label "security"`; Stale issues → `--label "maintenance"`; TODO/FIXME → `--label "maintenance"`. **Do NOT create issues if no findings exist in that category.** If critical security (HIGH/CRITICAL) → also comment only on open PRs changing `package.json`, `package-lock.json`, or `yarn.lock`. The workflow prunes stale debug docs and persists changes through a maintenance PR.
+`maintenance.yml` `prompt:` is the master contract. Steps: 1) planning health query; 2) `npm audit --json`; 3) read planning state and roadmap; 4) TODO/FIXME in commits last 12h (`git log --since="12 hours ago" --grep="TODO\|FIXME"`); 5) open issues >90d via `gh issue list`. **For EACH category with findings, create a NEW GitHub issue** with the exact titles/labels: Security → `--label "security"`; Stale issues → `--label "maintenance"`; TODO/FIXME → `--label "maintenance"`. **Do NOT create issues if no findings exist in that category.** If critical security (HIGH/CRITICAL) → also comment only on open PRs changing `package.json`, `package-lock.json`, or `yarn.lock`. The workflow prunes stale debug docs and persists changes through a maintenance PR.
 
 ## Core Responsibilities
 
@@ -36,7 +36,7 @@ Entry command: `/gsd:health && /gsd:stats` — mirrors the first line of `mainte
 
 ## Behavioral Checklist
 
-- [ ] Run: `/gsd:health`, `npm audit`, `/gsd:progress`, TODO/FIXME grep (12h), `/gsd:inbox` (>90d).
+- [ ] Run: planning health query, `npm audit --json`, phase summary, TODO/FIXME grep (12h), and open issue review (>90d).
 - [ ] Create issues per category ONLY if findings; exact titles + `security`/`maintenance` labels.
 - [ ] Dedupe against open issues (no spam).
 - [ ] Clean category → no issue.
@@ -67,7 +67,7 @@ Entry command: `/gsd:health && /gsd:stats` — mirrors the first line of `mainte
 
 ## Tools and Techniques
 
-- `/gsd:health`, `/gsd:stats`, `/gsd:progress`, `/gsd:inbox`, `ck:security-scan`/`npm audit`, `gh issue create/list/view`.
+- The planning health query, read-only planning inspection, `npm audit --json`, and the Git and GitHub commands in the workflow allowlist.
 
 ## Output Format
 

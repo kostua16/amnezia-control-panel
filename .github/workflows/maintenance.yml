@@ -108,19 +108,18 @@ jobs:
           model: 'sonnet'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'false'
-          # Project settings also contribute permissions. These grants cover the sweep's expected commands.
-          allowed-tools: 'Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh repo view:*),Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm audit:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git status:*),Bash(rtk gh issue create:*),Bash(rtk gh issue list:*),Bash(rtk gh issue view:*),Bash(rtk gh repo view:*),Bash(rtk gh pr comment:*),Bash(rtk gh pr list:*),Bash(rtk gh pr view:*),Bash(rtk npm audit:*),Bash(rtk git log:*),Bash(rtk git rev-parse:*),Bash(rtk git status:*)'
+          user-settings-only: 'true'
+          allowed-tools: 'Read,Glob,Grep,Bash(node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health),Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm audit:*),Bash(git log:*),Bash(rtk gh issue create:*),Bash(rtk gh issue list:*),Bash(rtk gh issue view:*),Bash(rtk gh pr comment:*),Bash(rtk gh pr list:*),Bash(rtk gh pr view:*),Bash(rtk npm audit:*),Bash(rtk git log:*)'
           prompt: |
-            /gsd:health && /gsd:stats
             REPO: ${{ github.repository }}
 
             Perform daily repository maintenance:
 
-            1. Run /gsd:health to diagnose planning directory status
-            2. Run /ck:security-scan for dependency vulnerabilities (npm audit)
-            3. Run /gsd:progress to summarize phase completion status
+            1. Diagnose planning directory status with `node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health`.
+            2. Run `npm audit --json` and inspect its output for dependency vulnerabilities.
+            3. Read `.planning/STATE.md` and `.planning/ROADMAP.md` to summarize phase completion status and counts.
             4. Check for TODO/FIXME comments in recent commits (last 12h): `git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`
-            5. Review open issues older than 90 days with /gsd:inbox — skip issues labeled `stale` (owned by stale.yml's 60d-inactivity lifecycle) and issues with exempt labels (`keep-open`, `backlog`, `in-progress`). Only report issues that are old AND still actively worked or recently triaged but unresolved.
+            5. Review open issues older than 90 days with `gh issue list` — skip issues labeled `stale` (owned by stale.yml's 60d-inactivity lifecycle) and issues with exempt labels (`keep-open`, `backlog`, `in-progress`). Only report issues that are old AND still actively worked or recently triaged but unresolved.
 
             For EACH category where findings exist, create a NEW GitHub issue:
             - Security findings: `gh issue create --title "Security: [summary of vulnerabilities]" --label "security" --body "[detailed findings]"`

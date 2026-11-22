@@ -154,6 +154,9 @@ inputs:
   allowed-tools:
     description: 'Allowed tools'
     default: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*),Bash(rtk:*)'
+  user-settings-only:
+    description: 'Load Claude user settings without repository or local settings.'
+    default: 'false'
   system-prompt:
     description: 'Custom system prompt. When empty, Claude uses its built-in default. Note: literal { and } must be escaped as {{ and }}.'
     required: false
@@ -367,6 +370,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
+          ${{ inputs.user-settings-only == 'true' && '--setting-sources user' || '' }}
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
@@ -480,6 +484,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
+          ${{ inputs.user-settings-only == 'true' && '--setting-sources user' || '' }}
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
@@ -589,6 +594,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
+          ${{ inputs.user-settings-only == 'true' && '--setting-sources user' || '' }}
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
