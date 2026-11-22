@@ -92,6 +92,30 @@ function severityRank(content) {
   return 0;
 }
 
+const TERMINAL_STATUSES = new Set(['complete', 'completed']);
+
+function frontmatterStatus(content) {
+  const match = content.match(/^status:\s*["']?([\w-]+)["']?\s*$/im);
+  return match ? match[1].toLowerCase() : null;
+}
+
+// A quick artifact whose own frontmatter or whose sibling SUMMARY reports a
+// terminal status is finished work. Importing it would queue a no-op execution
+// that re-reports the artifact and risks overwriting its completion record.
+function isTerminalArtifact(filePath, content) {
+  if (TERMINAL_STATUSES.has(frontmatterStatus(content))) return true;
+  const dir = path.dirname(filePath);
+  const summaryNames = fs
+    .readdirSync(dir)
+    .filter((name) => /summary\.md$/i.test(name))
+    .sort();
+  return summaryNames.some((name) =>
+    TERMINAL_STATUSES.has(
+      frontmatterStatus(fs.readFileSync(path.join(dir, name), 'utf8')),
+    ),
+  );
+}
+
 function collectCandidates({ quickDir = DEFAULT_QUICK_DIR } = {}) {
   return walkFiles(quickDir)
     .filter(isPlanningArtifact)
@@ -105,6 +129,7 @@ function collectCandidates({ quickDir = DEFAULT_QUICK_DIR } = {}) {
         source_pr: extractSourcePr(content, repoPath),
         date_key: extractDateKey(repoPath),
         severity_rank: severityRank(content),
+        complete: isTerminalArtifact(filePath, content),
       };
     })
     .sort((left, right) => {
@@ -238,6 +263,11 @@ function selectCandidates({
       continue;
     }
 
+    if (candidate.complete) {
+      skipped.push({ ...candidate, reason: 'source-complete' });
+      continue;
+    }
+
     if (imported.hashes.has(candidate.hash)) {
       skipped.push({ ...candidate, reason: 'already-imported-hash' });
       continue;
@@ -315,7 +345,7 @@ function renderPlan({
     '- Translate the artifact into the smallest useful implementation.',
     '- Keep changes within the artifact intent; leave unrelated refactors alone.',
     '- Add or update tests when behavior changes.',
-    '- Do not commit, push, merge, or open pull requests; workflow automation handles Git operations.',
+    '- Do not commit, push, merge, or open pull requests; workflow automation performs all Git operations. Commit or PR conventions in the embedded artifact describe how automation labels those commits, not actions for the executor to take.',
     '',
     '## Acceptance Criteria',
     '- The implementation addresses the selected planning artifact.',

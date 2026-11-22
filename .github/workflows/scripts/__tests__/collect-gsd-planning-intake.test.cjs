@@ -75,6 +75,125 @@ test('collectOpenExecutionPlanSlots is a no-op without an open-prs file', () => 
   assert.equal(collectOpenExecutionPlanSlots('/does/not/exist.json').size, 0);
 });
 
+test('runCollector skips an artifact whose sibling SUMMARY reports completion', () => {
+  // Reproduces the 260815-n6m import: the PLAN frontmatter still says "ready",
+  // but the sibling SUMMARY records status: complete — importing it queues a
+  // no-op execution whose only output is the queue-plan persistence itself.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const dir = path.join(quickDir, '260815-example');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, '260815-example-PLAN.md'),
+      '---\nstatus: ready\n---\n# Example\n',
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(dir, '260815-example-SUMMARY.md'),
+      '---\nstatus: complete\n---\n# Done\n',
+      'utf8',
+    );
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.has_candidate, false);
+    assert.equal(result.skipped[0].reason, 'source-complete');
+    assert.equal(
+      fs.existsSync(path.join(queueDir, '999-001-PLAN.md')),
+      false,
+      'completed artifacts must not be queued for execution',
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runCollector skips an artifact whose own frontmatter reports completion', () => {
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const dir = path.join(quickDir, '260611-example');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'PLAN.md'),
+      '---\nstatus: complete\n---\n# Already done\n',
+      'utf8',
+    );
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.has_candidate, false);
+    assert.equal(result.skipped[0].reason, 'source-complete');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runCollector falls through to a later non-terminal candidate', () => {
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const doneDir = path.join(quickDir, '260610-done');
+    fs.mkdirSync(doneDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(doneDir, 'PLAN.md'),
+      '---\nstatus: complete\n---\n# Done\n',
+      'utf8',
+    );
+    writeCandidate(quickDir, '260611-next', '# Next\n');
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.has_candidate, true);
+    assert.match(result.selected[0].path, /260611-next\/proposal\.md$/);
+    assert.equal(result.skipped[0].reason, 'source-complete');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('rendered plan states the commit policy once, subordinate to workflow automation', () => {
+  // The embedded artifact may carry its own commit/PR conventions; the plan
+  // must reconcile them instead of issuing contradictory directives.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    writeCandidate(quickDir, '260606-arch-review', '# Arch review\n');
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    const plan = fs.readFileSync(result.selected[0].plan_path, 'utf8');
+    assert.match(plan, /Do not commit, push, merge, or open pull requests/);
+    assert.match(
+      plan,
+      /how automation labels those commits, not actions for the executor to take/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('runCollector uses the next low slot when no open PR reserves it (control)', () => {
   const { quickDir, queueDir, root } = makeSandbox();
   try {
