@@ -220,3 +220,248 @@ test('isTransient rejects non-transient errors', () => {
   assert.ok(!isTransient('resource not found'));
   assert.ok(!isTransient(''));
 });
+
+// Loads the library with a stubbed gh so these tests do not depend on a fake
+// executable being resolvable through PATH (it is not on Windows runners).
+function loadWithStubbedGh({ comments, onWrite = () => '{}' }) {
+  const childProcess = require('node:child_process');
+  const libPath = require.resolve('../lib/sticky-comment.cjs');
+  const original = childProcess.execFileSync;
+  const calls = [];
+  childProcess.execFileSync = (command, args) => {
+    calls.push(args);
+    if (command !== 'gh') return '';
+    return args.includes('--paginate')
+      ? JSON.stringify(comments)
+      : onWrite(args);
+  };
+  delete require.cache[libPath];
+  try {
+    return { lib: require(libPath), calls };
+  } finally {
+    childProcess.execFileSync = original;
+    delete require.cache[libPath];
+  }
+}
+
+function stickyTempFiles() {
+  return fs
+    .readdirSync(os.tmpdir())
+    .filter((name) => name.startsWith(`sticky-comment-${process.pid}-`));
+}
+
+const botComment = (body) => ({
+  id: 42,
+  user: { login: 'github-actions[bot]' },
+  body,
+});
+
+test('upsertComment with skipIfUnchanged does nothing when the stored body is identical', () => {
+  const body = `${MARKER}\nsame body`;
+  const { lib, calls } = loadWithStubbedGh({ comments: [botComment(body)] });
+  const before = stickyTempFiles();
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body,
+    skipIfUnchanged: true,
+  });
+
+  // Only the comment listing: no POST, DELETE or PATCH.
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 3)),
+    [['api', 'repos/owner/repo/issues/7/comments', '--paginate']],
+  );
+  // The skip happens before any payload file is written.
+  assert.deepEqual(stickyTempFiles(), before);
+});
+
+test('upsertComment with skipIfUnchanged still replaces a comment whose body changed', () => {
+  const { lib, calls } = loadWithStubbedGh({
+    comments: [botComment(`${MARKER}\nold body`)],
+  });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nnew body`,
+    skipIfUnchanged: true,
+  });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [
+      ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+      ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+      ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/42'],
+    ],
+  );
+});
+
+test('upsertComment with skipIfUnchanged posts when there is no existing comment', () => {
+  const { lib, calls } = loadWithStubbedGh({ comments: [] });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nfirst body`,
+    skipIfUnchanged: true,
+  });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [
+      ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+      ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+    ],
+  );
+});
+
+test('upsertComment still replaces an identical body by default', () => {
+  // Other callers rely on the refreshed comment moving to the end of the
+  // timeline, so skipping is strictly opt-in.
+  const body = `${MARKER}\nsame body`;
+  const { lib, calls } = loadWithStubbedGh({ comments: [botComment(body)] });
+
+  lib.upsertComment({ repo: 'owner/repo', prNumber: 7, marker: MARKER, body });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [
+      ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+      ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+      ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/42'],
+    ],
+  );
+});
+
+test('upsertComment lets the caller decide what counts as unchanged', () => {
+  const { lib, calls } = loadWithStubbedGh({
+    comments: [botComment(`${MARKER}\nrun 1`)],
+  });
+  const seen = [];
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nrun 2`,
+    skipIfUnchanged: true,
+    sameBody: (existingBody, nextBody) => {
+      seen.push([existingBody, nextBody]);
+      return true;
+    },
+  });
+
+  assert.deepEqual(seen, [[`${MARKER}\nrun 1`, `${MARKER}\nrun 2`]]);
+  assert.equal(calls.length, 1);
+});
+
+test('upsertComment uses a supplied comment list instead of reading REST', () => {
+  const body = `${MARKER}\nsame body`;
+  const { lib, calls } = loadWithStubbedGh({
+    // The REST list would point at a different comment; it must not be read.
+    comments: [{ ...botComment(body), id: 99 }],
+  });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nnew body`,
+    skipIfUnchanged: true,
+    comments: [botComment(`${MARKER}\nold body`)],
+  });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [
+      ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+      ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/42'],
+    ],
+  );
+});
+
+test('upsertComment with a supplied list still skips an unchanged comment without any request', () => {
+  const body = `${MARKER}\nsame body`;
+  const { lib, calls } = loadWithStubbedGh({ comments: [] });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body,
+    skipIfUnchanged: true,
+    comments: [botComment(body)],
+  });
+
+  assert.deepEqual(calls, []);
+});
+
+test('upsertComment posts a new comment from an empty supplied list without listing REST', () => {
+  const { lib, calls } = loadWithStubbedGh({
+    comments: [botComment(`${MARKER}\nold body`)],
+  });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nfirst body`,
+    comments: [],
+  });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments']],
+  );
+});
+
+test('upsertComment reads REST when the supplied value is not a list', () => {
+  for (const notAList of [null, undefined, 'nope', {}]) {
+    const { lib, calls } = loadWithStubbedGh({ comments: [] });
+
+    lib.upsertComment({
+      repo: 'owner/repo',
+      prNumber: 7,
+      marker: MARKER,
+      body: `${MARKER}\nbody`,
+      comments: notAList,
+    });
+
+    assert.deepEqual(
+      calls[0].slice(0, 3),
+      ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+      String(notAList),
+    );
+  }
+});
+
+test('upsertComment re-lists REST when a supplied match has no usable id', () => {
+  const { lib, calls } = loadWithStubbedGh({
+    comments: [botComment(`${MARKER}\nold body`)],
+  });
+
+  lib.upsertComment({
+    repo: 'owner/repo',
+    prNumber: 7,
+    marker: MARKER,
+    body: `${MARKER}\nnew body`,
+    // A matched comment whose id is not an integer cannot be PATCHed or
+    // DELETEd; the write must address the REST list's id, not `undefined`.
+    comments: [{ ...botComment(`${MARKER}\nstale`), id: undefined }],
+  });
+
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 4)),
+    [
+      ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+      ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+      ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/42'],
+    ],
+  );
+});

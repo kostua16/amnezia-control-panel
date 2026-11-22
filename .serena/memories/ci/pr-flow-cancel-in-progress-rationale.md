@@ -1,7 +1,7 @@
-# Why pr-flow cancel-in-progress exists + runner assumption
+# Why pr-flow cancel-in-progress exists + runner capacity
 
 `cancel-in-progress` in pr-flow.yml is load-bearing: pr-flow has TWO feedback loops
-that would otherwise flood the shared self-hosted runner pool:
+that would otherwise flood the runner queue:
 
 1. Label loop — orchestrate adds `flow/*` labels → `pull_request_target` `labeled`.
    Controlled by `evaluate-trigger-policy.cjs` prefilter (bot labels → should_run=false,
@@ -11,14 +11,15 @@ that would otherwise flood the shared self-hosted runner pool:
 
 `cancel-in-progress` collapses redundant wakes so only the newest run per class runs.
 
-RUNNER ASSUMPTION: the event-class split (see [[ci/pr-flow-concurrency-groups]])
-assumes >=2 self-hosted runners (3+ in current use, confirmed 2026-06). Measured:
-CI's 4 required jobs (Lint 43s / Type Check 62s / Build 55s / Test 53s) dominate
-time-to-ready; orchestrate is ~70s. The split is timing-free at N>=2 (extra prt
-orchestrate rides a spare runner); at N=1 it costs ~1–2 min, and a 2nd runner
-(N=1→2 roughly halves time-to-ready) is the higher-leverage fix. If downsized to 1
-runner, revisit: collapse more aggressively or drop redundant pull_request_target
-triggers.
+RUNNER CAPACITY: all jobs run on GitHub-hosted `ubuntu-latest` (#1128). Each job gets
+its own VM, so the limit is GitHub's concurrent-job cap (20 on the Free plan), not a
+runner count. The event-class split (see [[ci/pr-flow-concurrency-groups]]) is therefore
+timing-free: CI's 4 required jobs (Lint / Type Check / Build / Test, ~1 min each) run in
+parallel and the extra prt orchestrate does not wait for a spare runner. Only a sustained
+queue at the cap would change that; then collapse more aggressively or drop redundant
+pull_request_target triggers. Rolling back to a self-hosted pool (where >=2 runners were
+required, because 1 runner serialized CI and cost ~1-2 min) is described in
+`docs/runbooks/self-hosted-to-hosted-runners-rollback.md`.
 
 History note: the cancel-in-progress value flip-flopped around LABEL events
 (ef78e12 / 554eadc / #290 protected labels; 6b6c662 set `true` to collapse reruns;

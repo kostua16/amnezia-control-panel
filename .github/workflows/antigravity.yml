@@ -55,19 +55,24 @@ jobs:
           contains(github.event.issue.body, '@antigravity')
         )
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       triggered: ${{ steps.gate.outputs.triggered }}
       trusted: ${{ steps.gate.outputs.trusted }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Evaluate trigger trust
         id: gate
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           node .github/workflows/scripts/evaluate-trigger-policy.cjs \
             --mode antigravity \
@@ -75,6 +80,16 @@ jobs:
             --event-path "$GITHUB_EVENT_PATH" \
             --event-name "$GITHUB_EVENT_NAME" \
             > /tmp/trigger-policy.json
+          if jq -e '.trusted' /tmp/trigger-policy.json >/dev/null; then
+            pr_number=$(jq -r '.pull_request.number // (if .issue.pull_request then .issue.number else empty end)' "$GITHUB_EVENT_PATH")
+            if [[ -n "$pr_number" ]]; then
+              head_repo=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '.head.repo.full_name')
+              if [[ "$head_repo" != "$GITHUB_REPOSITORY" ]]; then
+                echo "trusted=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+          fi
           {
             echo "triggered=$(jq -r '.triggered' /tmp/trigger-policy.json)"
             echo "trusted=$(jq -r '.trusted' /tmp/trigger-policy.json)"
@@ -83,7 +98,7 @@ jobs:
   antigravity-interaction:
     needs: [authorize]
     if: needs.authorize.outputs.triggered == 'true' && needs.authorize.outputs.trusted == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout repository

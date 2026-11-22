@@ -160,8 +160,12 @@ Resume file: None
 | 2026-06-09 | 260609-p3k | User creation DB↔VPN consistency — compensating actions for partial failures (#444) |
 | 2026-06-04 | 260604-l3n | Replace STUB public keys in chain-router with real key generation (#442) |
 | 2026-07-20 | 260721-4ej | Fix npm audit infrastructure failure classification |
+| 2026-08-15 | 260815-n6m | Persistent audit-findings ledger for audit-fix runs (AFX-E02, #1072) |
+| 2026-08-15 | 260815-r3p | Harden ledger: schema validation, metadata refresh, --validate gate (AFX-E02 review fixes, PR #1085) |
+| 2026-11-22 | 261122-2df | Migrate all workflows from self-hosted to ubuntu-latest, rollback runbook (RUN-M01, #1128) |
+| 2026-11-22 | 261122-3zh   | Fix npm audit high+ (next 16.4.6, audit fix, effect/brace-expansion overrides, #1130) |
 
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-07-20 - Completed quick task 260721-4ej_
+_Last updated: 2026-11-22 - Completed quick task 261122-2df_

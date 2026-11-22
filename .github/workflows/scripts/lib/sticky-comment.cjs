@@ -110,14 +110,47 @@ function findExistingComment(
 // the refreshed report appears as the latest PR timeline comment. Callers can
 // opt out with replaceExisting: false when they need to preserve comment URLs.
 // `marker` identifies which sticky comment family to update.
+//
+// `skipIfUnchanged` (default false, so every other caller keeps replacing) makes
+// an existing comment that already says the same thing a no-op: replacing it
+// costs a POST and a DELETE and fires a new issue_comment event, all for an
+// identical timeline entry. `sameBody(existingBody, body)` decides "the same
+// thing" for bodies that carry a volatile token (e.g. the current run URL).
+//
+// `comments` lets a caller that has just read the PR's issue comments through
+// another transport (the orchestrator's GraphQL read) skip the REST list; it
+// must be a fresh, complete list whose entries carry their REST comment `id`,
+// because the comment found in it is the one that gets replaced. A match
+// without a usable integer id falls back to the REST list rather than writing
+// against `issues/comments/undefined`. Without the list the REST read runs here.
 function upsertComment({
   repo,
   prNumber,
   marker,
   body,
   replaceExisting = true,
+  skipIfUnchanged = false,
+  sameBody = (existingBody, nextBody) => existingBody === nextBody,
+  comments = null,
 }) {
-  const existing = findExistingComment(listComments(repo, prNumber), marker);
+  const supplied = Array.isArray(comments) ? comments : null;
+  let existing = findExistingComment(
+    supplied ?? listComments(repo, prNumber),
+    marker,
+  );
+  if (supplied && existing && !Number.isInteger(existing.id)) {
+    // The PATCH/DELETE address a comment by this id; a failed DELETE after a
+    // successful POST would leave two comments with the marker, so re-list
+    // over REST and match again instead of writing against a broken id.
+    existing = findExistingComment(listComments(repo, prNumber), marker);
+  }
+  if (
+    skipIfUnchanged &&
+    existing &&
+    sameBody(String(existing.body ?? ''), body)
+  ) {
+    return;
+  }
   const payloadPath = writeTempJson('sticky-comment', { body });
 
   try {

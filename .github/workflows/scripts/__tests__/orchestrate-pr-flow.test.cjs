@@ -6,13 +6,20 @@ const path = require('node:path');
 const {
   buildFlowGuidance,
   buildFlowVisibility,
+  buildGraphqlArgs,
   evaluatePolicy,
   getWorkerDispatchRef,
   makeDecision: makePrFlowDecision,
   pathsMatch,
+  publishFlowStatuses,
+  publishVisibilityUpdates,
   renderFlowComment,
   resolvePrNumber,
+  shouldPublishStatus,
+  stabilizeRunLinks,
   summarizeWorkerRuns,
+  upsertFlowComment,
+  usableStatusId,
 } = require('../orchestrate-pr-flow.cjs');
 
 const policyPath = path.join(__dirname, '..', '..', 'policy.json');
@@ -28,6 +35,40 @@ test('pathsMatch supports exact paths and directory-prefix globs', () => {
   assert.equal(pathsMatch(['.github/workflows.bak'], paths), false);
   assert.equal(pathsMatch(['src/app/page.tsx'], paths), false);
   assert.equal(pathsMatch([], paths), false);
+});
+
+test('buildGraphqlArgs keeps strings literal with -f and types numbers and booleans with -F', () => {
+  // The review-inputs query declares typed variables (`: Int!`, `: Boolean!`);
+  // a boolean or number routed through -f would be sent as the JSON string
+  // "false"/"7" and rejected by GraphQL on every wake, silently degrading the
+  // flow to permanent REST fallback.
+  const args = buildGraphqlArgs('query X { rateLimit { cost } }', {
+    owner: 'owner',
+    name: 'repo',
+    number: 7,
+    commentsAfter: 'cursor-1',
+    reviewsAfter: null,
+    wantComments: true,
+    wantReviews: false,
+  });
+  assert.deepEqual(args, [
+    'api',
+    'graphql',
+    '-f',
+    'query=query X { rateLimit { cost } }',
+    '-f',
+    'owner=owner',
+    '-f',
+    'name=repo',
+    '-F',
+    'number=7',
+    '-f',
+    'commentsAfter=cursor-1',
+    '-F',
+    'wantComments=true',
+    '-F',
+    'wantReviews=false',
+  ]);
 });
 
 test('dependencyReview worker paths cover github_actions Dependabot bumps', () => {
@@ -849,6 +890,433 @@ test('buildFlowVisibility orderedStatuses includes aggregate and all workers', (
   assert.equal(visibility.orderedStatuses[6].context, 'pr-flow/finalizer');
 });
 
+// ── commit status publishing ─────────────────────────────────────────
+
+const RUN_URL = 'https://github.com/test/repo/actions/runs/200';
+const OLD_RUN_URL = 'https://github.com/test/repo/actions/runs/100';
+const WORKER_URL = 'https://github.com/test/repo/actions/runs/55';
+
+function makeStatus(overrides = {}) {
+  return {
+    context: 'pr-flow/code-review',
+    state: 'success',
+    displayState: 'success',
+    description: 'Code review passed.',
+    targetUrl: WORKER_URL,
+    details: '',
+    ...overrides,
+  };
+}
+
+function previousStatuses(entries) {
+  return new Map(entries.map((entry) => [entry.context, entry]));
+}
+
+function previousSuccess(overrides = {}) {
+  return {
+    context: 'pr-flow/code-review',
+    state: 'success',
+    description: 'Code review passed.',
+    target_url: WORKER_URL,
+    ...overrides,
+  };
+}
+
+test('shouldPublishStatus skips an identical success status', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  assert.equal(shouldPublishStatus(previous, makeStatus(), RUN_URL), false);
+});
+
+test('shouldPublishStatus skips an identical success that links to the current run', () => {
+  const previous = previousStatuses([
+    previousSuccess({ target_url: OLD_RUN_URL }),
+  ]);
+  const status = makeStatus({ targetUrl: RUN_URL });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
+});
+
+test('shouldPublishStatus keeps an older worker-run link when the new link is the current run', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  const status = makeStatus({ targetUrl: RUN_URL });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
+});
+
+test('shouldPublishStatus posts a linkless success that would gain the current-run link', () => {
+  const previous = previousStatuses([previousSuccess({ target_url: null })]);
+  const status = makeStatus({ targetUrl: RUN_URL });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus compares descriptions after truncation', () => {
+  const long = 'x'.repeat(200);
+  const previous = previousStatuses([
+    previousSuccess({ description: `${'x'.repeat(137)}...` }),
+  ]);
+  const status = makeStatus({ description: long });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), false);
+});
+
+test('shouldPublishStatus posts when the success description changed', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  const status = makeStatus({ description: 'Security review passed.' });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus posts when a worker run url changed', () => {
+  const previous = previousStatuses([previousSuccess()]);
+  const status = makeStatus({
+    targetUrl: 'https://github.com/test/repo/actions/runs/56',
+  });
+  assert.equal(shouldPublishStatus(previous, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus posts when the previous status had a different link or none', () => {
+  const noUrl = previousStatuses([previousSuccess({ target_url: null })]);
+  assert.equal(shouldPublishStatus(noUrl, makeStatus(), RUN_URL), true);
+  const cleared = previousStatuses([previousSuccess()]);
+  const status = makeStatus({ targetUrl: '' });
+  assert.equal(shouldPublishStatus(cleared, status, RUN_URL), true);
+});
+
+test('shouldPublishStatus always posts pending, failure and error even when identical', () => {
+  for (const state of ['pending', 'failure', 'error']) {
+    const previous = previousStatuses([previousSuccess({ state })]);
+    const status = makeStatus({ state, displayState: state });
+    assert.equal(
+      shouldPublishStatus(previous, status, RUN_URL),
+      true,
+      `${state} must be re-posted`,
+    );
+  }
+});
+
+test('shouldPublishStatus posts when the previous state differs', () => {
+  for (const state of ['pending', 'failure', 'error']) {
+    const previous = previousStatuses([previousSuccess({ state })]);
+    assert.equal(shouldPublishStatus(previous, makeStatus(), RUN_URL), true);
+  }
+});
+
+test('shouldPublishStatus posts when there is no previous status for the context', () => {
+  assert.equal(shouldPublishStatus(new Map(), makeStatus(), RUN_URL), true);
+  const other = previousStatuses([
+    previousSuccess({ context: 'pr-flow/finalizer' }),
+  ]);
+  assert.equal(shouldPublishStatus(other, makeStatus(), RUN_URL), true);
+  assert.equal(shouldPublishStatus(undefined, makeStatus(), RUN_URL), true);
+});
+
+function statusVisibility() {
+  return {
+    orderedStatuses: [
+      makeStatus({
+        context: 'pr-flow/ready',
+        state: 'pending',
+        description: 'Waiting.',
+        targetUrl: RUN_URL,
+      }),
+      makeStatus({
+        context: 'pr-flow/code-review',
+        state: 'success',
+        targetUrl: WORKER_URL,
+      }),
+      makeStatus({
+        context: 'pr-flow/kilo-review',
+        state: 'success',
+        description: 'N/A',
+        targetUrl: RUN_URL,
+      }),
+    ],
+  };
+}
+
+test('publishFlowStatuses skips only unchanged successes and keeps order', () => {
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({
+        context: 'pr-flow/ready',
+        state: 'pending',
+        description: 'Waiting.',
+        target_url: OLD_RUN_URL,
+      }),
+      previousSuccess(),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses uses the newest duplicate context even in newest-first order', () => {
+  // Newest-first input, defensive: the combined /status endpoint is
+  // deduplicated to one entry per context today, so duplicates cannot
+  // reach this path; last-wins indexing would pick the older success
+  // duplicate and wrongly skip if they ever did.
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: '2026-11-22T10:00:00Z',
+      }),
+      previousSuccess({ created_at: '2026-11-22T09:00:00Z' }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+});
+
+test('publishFlowStatuses uses the newest duplicate context in oldest-first history', () => {
+  // Oldest-first input, defensive: the history endpoint
+  // (commits/{sha}/statuses) returns newest-first today, but the newest
+  // failure must still decide in either order.
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({ created_at: '2026-11-22T09:00:00Z' }),
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: '2026-11-22T10:00:00Z',
+      }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+});
+
+test('publishFlowStatuses lets a usable created_at replace an unusable one', () => {
+  // A missing or malformed timestamp must not pin the first array entry:
+  // the duplicate with a parseable created_at decides even in oldest-first
+  // order, where first-wins would keep the stale success.
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({ created_at: 'not-a-date' }),
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: '2026-11-22T10:00:00Z',
+      }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+});
+
+test('publishFlowStatuses breaks equal created_at ties on the status id', () => {
+  // GitHub timestamps have second granularity, so overlapping prt/wake runs
+  // on the same head can post the same context within one second; the
+  // monotonic id must decide in either array order.
+  const tie = '2026-11-22T10:00:00Z';
+  const staleSuccess = previousSuccess({ created_at: tie, id: '100' });
+  const newerFailure = previousSuccess({
+    context: 'pr-flow/code-review',
+    state: 'failure',
+    description: 'Code review failed.',
+    created_at: tie,
+    id: '200',
+  });
+  for (const duplicates of [
+    [staleSuccess, newerFailure],
+    [newerFailure, staleSuccess],
+  ]) {
+    const posted = [];
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => [
+        ...duplicates,
+        previousSuccess({
+          context: 'pr-flow/kilo-review',
+          description: 'N/A',
+          target_url: OLD_RUN_URL,
+        }),
+      ],
+      publishStatus: (_pr, status) => posted.push(status.context),
+    });
+
+    assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+  }
+});
+
+test('usableStatusId never coerces a missing id into a real id of 0', () => {
+  // Number(null) and Number('') are 0, which would make a missing id look
+  // like a real (and oldest) one. Only publishFlowStatuses cannot observe
+  // that, since no usable id is ever below 0, so the helper is checked here.
+  assert.equal(usableStatusId(undefined), null);
+  assert.equal(usableStatusId(null), null);
+  assert.equal(usableStatusId(''), null);
+  assert.equal(usableStatusId('not-a-number'), null);
+  assert.equal(usableStatusId(0), 0);
+  assert.equal(usableStatusId('200'), 200);
+  assert.equal(usableStatusId(200), 200);
+});
+
+test('publishFlowStatuses lets a usable id beat an unusable one on tied created_at', () => {
+  // Mirror of the created_at rule: when only one duplicate of a tied pair
+  // carries a usable id, that entry must win in either array order. The
+  // coercion edge cases (null, '') are pinned directly on usableStatusId
+  // above; here the absent id is what the ordering assertions can observe.
+  const tie = '2026-11-22T10:00:00Z';
+  const staleSuccess = previousSuccess({ created_at: tie, id: '200' });
+  for (const unusableId of [undefined, null, '']) {
+    const failure = previousSuccess({
+      context: 'pr-flow/code-review',
+      state: 'failure',
+      description: 'Code review failed.',
+      created_at: tie,
+      ...(unusableId === undefined ? {} : { id: unusableId }),
+    });
+    for (const duplicates of [
+      [staleSuccess, failure],
+      [failure, staleSuccess],
+    ]) {
+      const posted = [];
+      publishFlowStatuses({ ...basePr }, statusVisibility(), {
+        currentRunUrl: RUN_URL,
+        readStatuses: () => [
+          ...duplicates,
+          previousSuccess({
+            context: 'pr-flow/kilo-review',
+            description: 'N/A',
+            target_url: OLD_RUN_URL,
+          }),
+        ],
+        publishStatus: (_pr, status) => posted.push(status.context),
+      });
+
+      assert.deepEqual(posted, ['pr-flow/ready']);
+    }
+  }
+});
+
+test('publishFlowStatuses keeps the first duplicate when created_at and id are unusable', () => {
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess(),
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: 'not-a-date',
+      }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses reads the status list once even with several successes', () => {
+  const reads = [];
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: (sha) => {
+      reads.push(sha);
+      return [];
+    },
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(reads, [basePr.headSha]);
+  assert.equal(posted.length, 3);
+});
+
+test('publishFlowStatuses posts everything when the status read throws', () => {
+  const posted = [];
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => {
+        throw new Error('boom');
+      },
+      publishStatus: (_pr, status) => posted.push(status.context),
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(posted, [
+    'pr-flow/ready',
+    'pr-flow/code-review',
+    'pr-flow/kilo-review',
+  ]);
+});
+
+test('publishFlowStatuses posts everything when the read returns an unexpected shape', () => {
+  for (const unexpected of [null, undefined, {}, 'nope', [null, 42]]) {
+    const posted = [];
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => unexpected,
+      publishStatus: (_pr, status) => posted.push(status.context),
+    });
+    assert.equal(posted.length, 3);
+  }
+});
+
+test('publishFlowStatuses does not read statuses when nothing is a success', () => {
+  let reads = 0;
+  const posted = [];
+  publishFlowStatuses(
+    { ...basePr },
+    { orderedStatuses: [makeStatus({ state: 'pending' })] },
+    {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => {
+        reads += 1;
+        return [];
+      },
+      publishStatus: (_pr, status) => posted.push(status.context),
+    },
+  );
+
+  assert.equal(reads, 0);
+  assert.equal(posted.length, 1);
+});
+
 // ── resolvePrNumber ──────────────────────────────────────────────────
 
 test('resolvePrNumber returns explicit pr_number when provided', () => {
@@ -1145,7 +1613,7 @@ test('buildFlowVisibility sets all workers N/A for terminal manual-only', () => 
   }
 });
 
-function finalizerRetryContext(pr, workerRuns) {
+function finalizerRetryContext(pr, workerRuns, checkStatus) {
   const config = JSON.parse(
     require('node:fs').readFileSync(
       path.join(__dirname, '..', '..', '..', 'pr-flow.json'),
@@ -1157,7 +1625,12 @@ function finalizerRetryContext(pr, workerRuns) {
     config,
     eventName: 'workflow_dispatch',
     event: {},
-    checkStatus: { status: 'passed', failing: [], pending: [], missing: [] },
+    checkStatus: checkStatus ?? {
+      status: 'passed',
+      failing: [],
+      pending: [],
+      missing: [],
+    },
     workerRuns,
     externalReview: { state: 'skipped', reason: 'not required' },
   };
@@ -1272,4 +1745,561 @@ test('makeDecision advances retry counter when re-dispatched by watchdog', () =>
   assert.ok(decision.desiredLabels.includes('flow/finalizer-retry-2'));
   assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-1'));
   assert.match(decision.reason, /attempt 2\/3/);
+});
+
+test('cross-repository PR cannot dispatch a privileged worker', () => {
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+      },
+      {},
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/manual-only');
+  assert.equal(decision.dispatch, null);
+});
+
+test('cross-repository PR keeps failing required checks authoritative', () => {
+  // The manual-only terminal state must not mask a red required check:
+  // pr-flow/ready has to fail for a broken fork PR, not pass it to manual
+  // review as success.
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+      },
+      {},
+      {
+        status: 'failed',
+        failing: ['CI'],
+        pending: [],
+        missing: [],
+      },
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/checks-failed');
+  assert.equal(decision.dispatch, null);
+});
+
+test('cross-repository PR keeps blocking labels and review concerns authoritative', () => {
+  const hardBlocked = makePrFlowDecision({
+    ...finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+        labels: ['do-not-merge'],
+      },
+      {},
+    ),
+    policy: { blocking_labels_present: ['do-not-merge'] },
+  });
+  assert.equal(hardBlocked.state, 'flow/review-blocked');
+  assert.match(hardBlocked.reason, /do-not-merge/);
+
+  const concernBlocked = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+        labels: ['ai-review-concerns'],
+      },
+      {},
+    ),
+  );
+  assert.equal(concernBlocked.state, 'flow/review-blocked');
+  assert.match(concernBlocked.reason, /ai-review-concerns/);
+});
+
+test('cross-repository manual-only state clears stale finalizer retry labels', () => {
+  const decision = makePrFlowDecision(
+    finalizerRetryContext(
+      {
+        ...basePr,
+        isDraft: false,
+        isCrossRepository: true,
+        headRefName: 'claude-auto-fix-ci-external',
+        baseRefName: 'main',
+        labels: ['flow/finalizer-retry-1'],
+      },
+      {},
+    ),
+  );
+
+  assert.equal(decision.state, 'flow/manual-only');
+  assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-1'));
+});
+
+// A comment rendered for a given orchestrator run: workers without a run of
+// their own link to the orchestrator run itself.
+const runUrl = (runId) => `https://github.com/owner/repo/actions/runs/${runId}`;
+
+function commentForRun(runId, { visibility = {}, decision = {} } = {}) {
+  return makeComment({
+    decision,
+    visibility: {
+      ...visibility,
+      workers: {
+        // Rows that fall back to the current orchestrator run link.
+        dependencyReview: {
+          displayState: 'N/A',
+          description: 'N/A: Dependency review is not required for this PR.',
+          targetUrl: runUrl(runId),
+        },
+        kiloReview: {
+          displayState: 'N/A',
+          description: 'Kilo review was skipped.',
+          targetUrl: runUrl(runId),
+        },
+        prImprove: {
+          displayState: 'N/A',
+          description: 'N/A: PR Improve is not required for this PR.',
+          targetUrl: runUrl(runId),
+        },
+        ...(visibility.workers ?? {}),
+      },
+    },
+  });
+}
+
+test('stabilizeRunLinks makes two wakes with the same content compare equal', () => {
+  const stored = commentForRun(111);
+  const fresh = commentForRun(222);
+
+  assert.notEqual(stored, fresh);
+  assert.equal(stabilizeRunLinks(stored, fresh, runUrl(222)), stored);
+});
+
+test('stabilizeRunLinks keeps a changed worker-run link as a real change', () => {
+  const stored = commentForRun(111);
+  const fresh = commentForRun(222, {
+    visibility: {
+      workers: {
+        codeReview: {
+          displayState: 'pending',
+          description: 'Waiting for code review signal.',
+          targetUrl: 'https://example.test/code-review-rerun',
+        },
+      },
+    },
+  });
+
+  const stabilized = stabilizeRunLinks(stored, fresh, runUrl(222));
+  assert.notEqual(stabilized, stored);
+  assert.match(
+    stabilized,
+    /\[run\]\(https:\/\/example\.test\/code-review-rerun\)/,
+  );
+});
+
+test('stabilizeRunLinks keeps state, reason and description changes', () => {
+  const stored = commentForRun(111);
+
+  for (const changed of [
+    commentForRun(222, { decision: { reason: 'Something else happened.' } }),
+    commentForRun(222, { decision: { state: 'flow/review-blocked' } }),
+    commentForRun(222, {
+      visibility: {
+        workers: {
+          finalizer: {
+            displayState: 'success',
+            description: 'Finalizer finished.',
+            targetUrl: 'https://example.test/finalizer',
+          },
+        },
+      },
+    }),
+  ]) {
+    assert.notEqual(stabilizeRunLinks(stored, changed, runUrl(222)), stored);
+  }
+});
+
+test('stabilizeRunLinks treats a row that gains its first link as a change', () => {
+  const stored = commentForRun(111, {
+    visibility: {
+      workers: {
+        prImprove: {
+          displayState: 'N/A',
+          description: 'N/A: PR Improve is not required for this PR.',
+          targetUrl: '',
+        },
+      },
+    },
+  });
+  const fresh = commentForRun(222);
+
+  assert.notEqual(stabilizeRunLinks(stored, fresh, runUrl(222)), stored);
+});
+
+test('stabilizeRunLinks is the identity without a current run url', () => {
+  const stored = commentForRun(111);
+  const fresh = commentForRun(222);
+
+  assert.equal(stabilizeRunLinks(stored, fresh, ''), fresh);
+});
+
+test('upsertFlowComment asks the sticky helper to skip unchanged comments', () => {
+  const previous = process.env.GITHUB_REPOSITORY;
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+  const received = [];
+
+  try {
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+    });
+  } finally {
+    if (previous === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = previous;
+  }
+
+  assert.equal(received.length, 1);
+  assert.equal(received[0].skipIfUnchanged, true);
+  assert.equal(received[0].prNumber, 7);
+  assert.equal(received[0].marker, '<!-- pr-flow-orchestration -->');
+  assert.equal(
+    received[0].sameBody(commentForRun(111), commentForRun(222)),
+    true,
+  );
+  assert.equal(
+    received[0].sameBody(
+      commentForRun(111).replace(/\n/g, '\r\n'),
+      commentForRun(222),
+    ),
+    true,
+    'a stored body returned with CRLF line endings is still the same body',
+  );
+  assert.equal(
+    received[0].sameBody(
+      commentForRun(111),
+      commentForRun(222, { decision: { reason: 'Changed.' } }),
+    ),
+    false,
+  );
+});
+
+// Runs the real orchestrator and sticky helper against a stubbed gh, as one
+// wake with its own GITHUB_RUN_ID.
+function wakeAgainstStoredComment(storedBody, nextBody, runId) {
+  const childProcess = require('node:child_process');
+  const original = childProcess.execFileSync;
+  const modulePaths = [
+    require.resolve('../lib/sticky-comment.cjs'),
+    require.resolve('../orchestrate-pr-flow.cjs'),
+  ];
+  const calls = [];
+  const saved = {
+    GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY,
+    GITHUB_RUN_ID: process.env.GITHUB_RUN_ID,
+  };
+  childProcess.execFileSync = (command, args) => {
+    calls.push(args);
+    return args.includes('--paginate')
+      ? JSON.stringify([
+          {
+            id: 5,
+            user: { login: 'github-actions[bot]' },
+            body: storedBody,
+          },
+        ])
+      : '{}';
+  };
+  for (const modulePath of modulePaths) delete require.cache[modulePath];
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+  process.env.GITHUB_RUN_ID = String(runId);
+
+  try {
+    const flow = require('../orchestrate-pr-flow.cjs');
+    flow.upsertFlowComment({ number: 7 }, nextBody);
+  } finally {
+    childProcess.execFileSync = original;
+    for (const modulePath of modulePaths) delete require.cache[modulePath];
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+  return calls.map((args) => args.slice(0, 4));
+}
+
+test('a wake with unchanged content writes nothing to the sticky comment', () => {
+  const calls = wakeAgainstStoredComment(
+    commentForRun(111),
+    commentForRun(222),
+    222,
+  );
+
+  assert.deepEqual(calls, [
+    ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+  ]);
+});
+
+test('a wake whose worker link changed replaces the sticky comment once', () => {
+  const changed = commentForRun(222, {
+    visibility: {
+      workers: {
+        codeReview: {
+          displayState: 'success',
+          description: 'Code review passed.',
+          targetUrl: 'https://example.test/code-review-2',
+        },
+      },
+    },
+  });
+  const calls = wakeAgainstStoredComment(commentForRun(111), changed, 222);
+
+  assert.deepEqual(calls, [
+    ['api', 'repos/owner/repo/issues/7/comments', '--paginate'],
+    ['api', '-X', 'POST', 'repos/owner/repo/issues/7/comments'],
+    ['api', '-X', 'DELETE', 'repos/owner/repo/issues/comments/5'],
+  ]);
+});
+
+test('a wake with a changed decision reason replaces the sticky comment once', () => {
+  const calls = wakeAgainstStoredComment(
+    commentForRun(111),
+    commentForRun(222, { decision: { reason: 'Waiting for something new.' } }),
+    222,
+  );
+
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls[1].slice(1, 3), ['-X', 'POST']);
+});
+
+// Runs `fn` against a freshly loaded orchestrator whose commit read
+// (`gh api repos/<owner/repo>/commits/<sha>`) answers through `onCommitRead`.
+function withCommitRead(onCommitRead, fn) {
+  const childProcess = require('node:child_process');
+  const original = childProcess.execFileSync;
+  const modulePath = require.resolve('../orchestrate-pr-flow.cjs');
+  const saved = process.env.GITHUB_REPOSITORY;
+  childProcess.execFileSync = (command, args) =>
+    String(args?.[1] ?? '').includes('/commits/') ? onCommitRead() : '{}';
+  delete require.cache[modulePath];
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+
+  try {
+    fn(require(modulePath));
+  } finally {
+    childProcess.execFileSync = original;
+    delete require.cache[modulePath];
+    if (saved === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = saved;
+  }
+}
+
+test('fetchHeadCommittedAt keeps an empty date for a failed commit read unless strict', () => {
+  const sha = 'c'.repeat(40);
+  const date = '2026-07-01T08:00:00Z';
+  const failed = () => {
+    throw Object.assign(new Error('gh: Not Found'), { stderr: '' });
+  };
+
+  withCommitRead(
+    () => JSON.stringify({ commit: { committer: { date } } }),
+    (flow) => assert.equal(flow.fetchHeadCommittedAt(sha), date),
+  );
+  // An unknown date only sends the worker-run lookup to the per-workflow
+  // path, so the orchestrator keeps the fallback.
+  withCommitRead(failed, (flow) =>
+    assert.equal(flow.fetchHeadCommittedAt(sha), ''),
+  );
+  // A parity comparison must not read the failure as that legitimate case.
+  withCommitRead(failed, (flow) =>
+    assert.throws(
+      () => flow.fetchHeadCommittedAt(sha, { strict: true }),
+      /Not Found/,
+    ),
+  );
+});
+
+test('publishFlowStatuses uses the fresh GraphQL statuses and skips the REST read', () => {
+  const posted = [];
+  let restReads = 0;
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    freshStatuses: [
+      previousSuccess({
+        context: 'pr-flow/ready',
+        state: 'pending',
+        description: 'Waiting.',
+        target_url: OLD_RUN_URL,
+      }),
+      previousSuccess(),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    readStatuses: () => {
+      restReads += 1;
+      return [];
+    },
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.equal(restReads, 0);
+  assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses reads REST when no fresh statuses were supplied', () => {
+  for (const missing of [null, undefined, 'nope', {}]) {
+    const reads = [];
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      freshStatuses: missing,
+      readStatuses: (sha) => {
+        reads.push(sha);
+        return [];
+      },
+      publishStatus: () => {},
+    });
+    assert.deepEqual(reads, [basePr.headSha], String(missing));
+  }
+});
+
+test('publishFlowStatuses treats an empty fresh status list as "nothing posted yet"', () => {
+  const posted = [];
+  let restReads = 0;
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    freshStatuses: [],
+    readStatuses: () => {
+      restReads += 1;
+      return [];
+    },
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.equal(restReads, 0);
+  assert.equal(posted.length, 3);
+});
+
+test('upsertFlowComment hands the fresh comment list to the sticky helper', () => {
+  const previous = process.env.GITHUB_REPOSITORY;
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+  const received = [];
+  const fresh = [{ id: 5, user: { login: 'github-actions[bot]' }, body: 'x' }];
+
+  try {
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+      freshComments: fresh,
+    });
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+    });
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+      freshComments: null,
+    });
+  } finally {
+    if (previous === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = previous;
+  }
+
+  assert.equal(received[0].comments, fresh);
+  // Without a fresh list the helper must read the comments itself.
+  assert.equal('comments' in received[1], false);
+  assert.equal('comments' in received[2], false);
+});
+
+test('publishVisibilityUpdates reads the comment list only after the status POSTs', () => {
+  // Regression guard for the duplicate-comment race: the sticky-comment list
+  // must be read after the status POSTs, never together with the status read.
+  const order = [];
+  const reads = [];
+  const freshStatuses = [previousSuccess()];
+  const freshComments = [{ id: 42 }];
+
+  const result = publishVisibilityUpdates({ ...basePr }, statusVisibility(), {
+    reviewSource: 'graphql',
+    decision: { state: 'ready', reason: 'nothing to do' },
+    readSnapshot: (_pr, options) => {
+      reads.push([options.wantComments, options.wantStatuses]);
+      order.push(options.wantStatuses ? 'read:statuses' : 'read:comments');
+      return options.wantStatuses
+        ? { comments: null, statuses: freshStatuses }
+        : { comments: freshComments, statuses: null };
+    },
+    publishStatuses: (_pr, _visibility, options) => {
+      order.push('post:statuses');
+      assert.equal(options.freshStatuses, freshStatuses);
+    },
+    renderComment: () => 'rendered body',
+    writeComment: (_pr, body, options) => {
+      order.push('write:comment');
+      assert.equal(body, 'rendered body');
+      assert.equal(options.freshComments, freshComments);
+    },
+  });
+
+  assert.deepEqual(order, [
+    'read:statuses',
+    'post:statuses',
+    'read:comments',
+    'write:comment',
+  ]);
+  // Each read asks only for the connection its consumer needs.
+  assert.deepEqual(reads, [
+    [false, true],
+    [true, false],
+  ]);
+  assert.equal(result.fatalError, null);
+});
+
+test('publishVisibilityUpdates keeps the failure handling when the comment write fails', () => {
+  const visibilityErrors = [];
+  const errorVisibility = {
+    orderedStatuses: [],
+    aggregate: makeStatus({ context: 'pr-flow/aggregate', state: 'failure' }),
+  };
+  const aggregates = [];
+  const built = [];
+
+  const result = publishVisibilityUpdates({ ...basePr }, statusVisibility(), {
+    reviewSource: 'graphql',
+    decision: { state: 'ready', reason: 'nothing to do' },
+    visibilityErrors,
+    readSnapshot: () => ({ comments: null, statuses: null }),
+    publishStatuses: () => {},
+    renderComment: () => 'rendered body',
+    writeComment: () => {
+      throw new Error('gh exploded');
+    },
+    buildVisibility: (context) => {
+      built.push(context);
+      return errorVisibility;
+    },
+    publishAggregateStatus: (_pr, status) => aggregates.push(status),
+  });
+
+  assert.equal(result.visibility, errorVisibility);
+  assert.equal(
+    result.fatalError.message,
+    'PR flow comment update failed: gh exploded',
+  );
+  assert.equal(built[0].visibilityErrors, visibilityErrors);
+  assert.deepEqual(aggregates, [errorVisibility.aggregate]);
+  assert.equal(visibilityErrors.length, 1);
 });

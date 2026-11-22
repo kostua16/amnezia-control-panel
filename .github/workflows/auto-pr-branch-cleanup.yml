@@ -30,6 +30,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Sparse checkout: only the rate-limit action, so this job stays cheap.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/log-rate-limit
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: branch-cleanup-restore-deferred-proposal
+          report-at-job-end: 'true'
+
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
@@ -97,6 +109,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: branch-cleanup-delete-generated-branch
+          report-at-job-end: 'true'
 
       - name: Delete closed automation branch
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -176,6 +194,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: branch-cleanup-orphan-sweep
+          report-at-job-end: 'true'
 
       - name: Sweep orphan automation branches
         env:

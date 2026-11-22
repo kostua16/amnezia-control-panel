@@ -7,8 +7,29 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const workflowsDir = path.join(repoRoot, '.github/workflows');
 
-function hasPermission(content, permission) {
-  return new RegExp(`^  ${permission}:`, 'm').test(content);
+function hasWakeActionsWrite(workflow) {
+  const content = workflow.replace(/\r\n/g, '\n');
+  const hasWakeJob = /^ {2}wake-orchestrator:/m.test(content);
+  const wakeJobMatch = content.match(
+    /^ {2}wake-orchestrator:[^\S\n]*\n((?:^ {4}.*\n|^\s*\n)*)/m,
+  );
+  // Fail closed: a wake job whose body cannot be extracted (trailing
+  // comment on the job key, reformat, deeper nesting) is a violation.
+  // Silently falling back to the workflow-level permissions block would
+  // false-pass a job-level block that omits actions: write — and on GitHub
+  // a job-level permissions block replaces the workflow-level one.
+  if (hasWakeJob && wakeJobMatch === null) return false;
+  const wakeJob = wakeJobMatch?.[1] ?? '';
+  const jobPermissions = wakeJob.match(
+    /^ {4}permissions:([^\n]*)\n((?:^ {6}.*\n)*)/m,
+  );
+  if (jobPermissions) {
+    return /^ {6}actions: write\s*$/m.test(jobPermissions[2]);
+  }
+
+  const workflowPermissions =
+    content.match(/^permissions:[^\n]*\n((?:^ {2}.*\n)*)/m)?.[1] ?? '';
+  return /^ {2}actions: write\s*$/m.test(workflowPermissions);
 }
 
 function hasWakeOrchestratorJob(content) {
@@ -50,9 +71,9 @@ test('all dispatched workers have wake-orchestrator contract', () => {
 
     const content = fs.readFileSync(filePath, 'utf8');
 
-    if (!hasPermission(content, 'actions')) {
+    if (!hasWakeActionsWrite(content)) {
       violations.push(
-        `${worker.name} (${worker.workflow}): missing top-level 'actions' permission`,
+        `${worker.name} (${worker.workflow}): wake-orchestrator needs actions: write`,
       );
     }
 

@@ -33,7 +33,7 @@ Key actions (`.github/actions/`):
 - `report-failure` — open a failure issue + dispatch triage on a red run.
 - `ensure-workflow-labels` — create labels from `policy.json`.
 - `commit-and-push`, `prepare-automation-branch`, `upsert-pull-request` — PR/branch lifecycle.
-- `validate-pr-gate`, `ensure-disk-space`, `ensure-docker-disk-space`, `prettier-auto-fix`.
+- `validate-pr-gate`, `ensure-docker-disk-space`, `prettier-auto-fix`.
 - `collect-workflow-failure-context` — gather context for a failed run.
 
 Key scripts (`.github/workflows/scripts/`):
@@ -65,7 +65,7 @@ YAGNI / KISS / DRY. If an action exists for the step, use it. One tool per inten
 | Diagnose a Claude run | `scan-claude-logs.cjs` (outputs `claude_has_findings`, `claude_failure_reason`) |
 | Commit + push a fix | `commit-and-push` after `setup-bot-git` |
 | Open/reuse automation PR | `upsert-pull-request` + `find-duplicate-automation-pr.cjs` |
-| Free runner disk | `ensure-disk-space` / `ensure-docker-disk-space` |
+| Guard Docker image job disk | `ensure-docker-disk-space` (other jobs: reduce footprint) |
 | Analyze many runs | `analyze-claude-runs.sh` |
 
 ## Your Approach

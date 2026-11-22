@@ -82,7 +82,7 @@ describe('workflow trigger policy', () => {
   it('classifies PR label triggers before allocating the orchestrator runner', () => {
     const workflow = readWorkflowText('pr-flow.yml');
 
-    assert.match(workflow, /classify-trigger:[\s\S]*?runs-on:\s+self-hosted/);
+    assert.match(workflow, /classify-trigger:[\s\S]*?runs-on:\s+ubuntu-latest/);
     assert.match(
       workflow,
       /should_run:\s+\$\{\{\s*steps\.classify\.outputs\.should_run\s*\}\}/,

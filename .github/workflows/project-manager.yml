@@ -65,7 +65,7 @@ env:
 
 jobs:
   manage:
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
       route: ${{ steps.plan.outputs.route }}
@@ -169,7 +169,7 @@ jobs:
   report-failure:
     needs: [manage]
     if: ${{ always() && needs.manage.result != 'success' && needs.manage.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

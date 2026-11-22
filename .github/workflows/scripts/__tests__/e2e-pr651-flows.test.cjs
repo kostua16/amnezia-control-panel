@@ -2,8 +2,8 @@
 // E2E scenario tests for PR #651 recovery/autonomy flows.
 // Covers: P9b fleet back-pressure (composite action contract),
 // G6 deferred proposal promotion lifecycle, G8 restore on unmerged close,
-// P14 disk-pressure self-heal detection, PM37 CI cancelled rerun, PM38
-// flow/review-failed escalation. See docs/workflow-e2e-scenarios.md.
+// PM37 CI cancelled rerun, PM38 flow/review-failed escalation. See
+// docs/workflow-e2e-scenarios.md.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -157,55 +157,6 @@ test('audit-fix reports fleet-gate failures and audit-fix cancellations', () => 
     content,
     /needs\.fleet-gate\.result == 'failure'/,
     'report-failure must run when fleet-gate fails before audit-fix starts',
-  );
-});
-
-// ---------------------------------------------------------------------------
-// P14 — Disk-pressure self-heal detects non-failure conclusions
-// ---------------------------------------------------------------------------
-test('P14: monitor workflow checks completed runs with --log (not --log-failed)', () => {
-  const content = fs.readFileSync(
-    path.resolve(
-      __dirname,
-      '../../monitor-amnezia-control-panel-github-runs.yml',
-    ),
-    'utf8',
-  );
-
-  // Extract only the disk-pressure self-heal step (lines between the step name
-  // and the next step or job), ignoring comments elsewhere in the file.
-  const healMatch = content.match(
-    /name: Self-heal runner disk pressure[\s\S]*?(?=\n      - name:|\n  \w)/,
-  );
-  assert.ok(healMatch, 'must find the Self-heal step block');
-  const healBlock = healMatch[0];
-
-  assert.match(
-    healBlock,
-    /--status completed/,
-    'must scan completed runs (not only failure)',
-  );
-  assert.ok(
-    !healBlock.includes('--status failure'),
-    'must not limit to --status failure',
-  );
-  assert.match(healBlock, /--log\b/, 'must use --log (not --log-failed)');
-  assert.ok(!healBlock.includes('--log-failed'), 'must not use --log-failed');
-});
-
-test('P14: monitor filters for failure/cancelled/timed_out conclusions', () => {
-  const content = fs.readFileSync(
-    path.resolve(
-      __dirname,
-      '../../monitor-amnezia-control-panel-github-runs.yml',
-    ),
-    'utf8',
-  );
-
-  assert.match(
-    content,
-    /conclusion == .failure.|conclusion == .cancelled.|conclusion == .timed_out/,
-    'must filter for disk-pressure-relevant conclusions',
   );
 });
 

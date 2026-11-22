@@ -38,11 +38,12 @@ env:
 
 jobs:
   resolve-pr:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should-run: ${{ steps.resolve.outputs.should_run }}
       pr-number: ${{ steps.resolve.outputs.pr_number }}
+      head-sha: ${{ steps.resolve.outputs.head_sha }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -69,21 +70,22 @@ jobs:
             const expectedHeadSha = context.payload.inputs?.head_sha || '';
             const headMatches = !expectedHeadSha || pr.head.sha === expectedHeadSha;
             const isOpen = pr.state === 'open' && !pr.merged;
-            const shouldRun = isOpen && headMatches && pr.user.login === 'dependabot[bot]';
+            const shouldRun = isOpen && headMatches && pr.head.repo?.full_name === pr.base.repo?.full_name && Boolean(pr.head.repo?.full_name) && pr.user.login === 'dependabot[bot]';
             core.setOutput('should_run', String(shouldRun));
             core.setOutput('pr_number', String(pr.number));
+            core.setOutput('head_sha', pr.head.sha);
             core.setOutput('base_ref', context.payload.inputs?.base_ref || pr.base.ref);
 
   ai-dependency-review:
     needs: [resolve-pr]
     if: needs.resolve-pr.outputs.should-run == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
+          ref: ${{ needs.resolve-pr.outputs.head-sha }}
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-environment
@@ -106,8 +108,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # One-shot -c (not `git config`) so the rewritten URL is never written
-          # to .git/config. Persisted credentials must stay off this reused
-          # self-hosted workspace; actions/checkout uses persist-credentials: false.
+          # to .git/config. Persisted credentials must stay off the runner
+          # workspace; actions/checkout uses persist-credentials: false.
           git -c "url.https://x-access-token:${GH_TOKEN}@github.com/.insteadOf=https://github.com/" fetch origin "$BASE_REF" --depth=1
           git diff "origin/$BASE_REF" -- package.json package-lock.json .github/workflows .github/actions > /tmp/dep-diff.txt
           {
@@ -233,7 +235,7 @@ jobs:
   wake-orchestrator:
     needs: [resolve-pr, ai-dependency-review]
     if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

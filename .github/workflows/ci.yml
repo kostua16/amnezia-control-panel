@@ -17,7 +17,7 @@ concurrency:
 jobs:
   changes:
     name: Detect changes
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       run-heavy: ${{ steps.detect.outputs.run-heavy }}
@@ -55,7 +55,7 @@ jobs:
     name: Lint
     needs: [changes]
     if: needs.changes.outputs.run-heavy == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -87,7 +87,7 @@ jobs:
     name: Type Check
     needs: [changes]
     if: needs.changes.outputs.run-heavy == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -105,7 +105,7 @@ jobs:
     name: Test
     needs: [changes]
     if: needs.changes.outputs.run-heavy == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -119,12 +119,14 @@ jobs:
           require-gh-auth: 'false'
       - run: npm run test-only
       - run: node --test .github/workflows/scripts/__tests__/*.test.cjs
+      - name: Validate audit findings ledger
+        run: node .github/workflows/scripts/audit-findings-ledger.cjs --validate --require --ledger .planning/audit-backlog.json
 
   build:
     name: Build
     needs: [changes]
     if: needs.changes.outputs.run-heavy == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -166,7 +168,7 @@ jobs:
     name: Security Audit
     needs: [changes]
     if: needs.changes.outputs.run-heavy == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -188,14 +190,15 @@ jobs:
     name: CI Result
     needs: [changes, lint, typecheck, test, build, security-audit]
     if: always()
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Evaluate required job results
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
-          # jq is not guaranteed on the self-hosted runner image and no other
+          # jq is preinstalled on GitHub-hosted ubuntu images; the text fallback below
+          # is kept so this step stays correct on any runner image. No other
           # job here installs it. With bash -eo pipefail a missing binary would
           # fail this step, producing a false CI failure for path-filtered PRs
           # — the exact outcome this terminal-signal job exists to prevent.

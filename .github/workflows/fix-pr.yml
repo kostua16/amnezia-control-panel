@@ -47,6 +47,7 @@ jobs:
       (
         github.event_name == 'workflow_run' &&
         github.event.workflow_run.conclusion == 'failure' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
         toJSON(github.event.workflow_run.pull_requests) != '[]'
       ) ||
       (
@@ -54,7 +55,7 @@ jobs:
         github.event.issue.pull_request != null &&
         contains(github.event.comment.body, '/fix')
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should_run: ${{ steps.policy.outputs.should_run }}
@@ -65,6 +66,12 @@ jobs:
       triggering_run_url: ${{ steps.source-pr.outputs.triggering-run-url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: fix-pr-evaluate
+          report-at-job-end: 'true'
 
       - name: Read source PR metadata
         id: source-pr
@@ -86,6 +93,15 @@ jobs:
               repo: context.repo.repo,
               pull_number: prNumber,
             });
+
+            if (!pr.head.repo || pr.head.repo.full_name !== pr.base.repo?.full_name) {
+              core.notice('Skipping CI repair for a cross-repository PR');
+              core.setOutput(
+                'skip_reason',
+                'cross-repository PR — CI repair only runs for same-repository heads',
+              );
+              return;
+            }
 
             const AUTO_FIX_MSG = /^(fix\(ci\): auto-fix CI failures|style: auto-fix prettier formatting)/;
             let autoFixAttempts = 0;
@@ -124,6 +140,7 @@ jobs:
 
       - name: Evaluate PR auto-fix policy
         id: policy
+        if: steps.source-pr.outputs.path != ''
         shell: bash
         run: |
           result=$(node .github/workflows/scripts/evaluate-trigger-policy.cjs \
@@ -140,7 +157,7 @@ jobs:
         if: steps.policy.outputs.should_run != 'true'
         shell: bash
         run: |
-          echo "Skipping PR auto-fix: ${{ steps.policy.outputs.reason || 'policy declined run' }}"
+          echo "Skipping PR auto-fix: ${{ steps.source-pr.outputs.skip_reason || steps.policy.outputs.reason || 'policy declined run' }}"
 
   fix:
     needs: [evaluate]
@@ -158,7 +175,7 @@ jobs:
   report-failure:
     needs: [evaluate, fix]
     if: ${{ always() && needs.evaluate.outputs.should_run == 'true' && needs.fix.result != 'success' && needs.fix.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

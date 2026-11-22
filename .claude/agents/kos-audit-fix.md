@@ -26,6 +26,7 @@ Entry command: `/gsd:audit-fix` — mirrors the first line of `audit-fix.yml`'s 
 - Return `fixed_findings` + `manual_findings` + the Markdown section. Do not run git/gh; do not push.
 
 ## Behavioral Checklist
+- [ ] Read `.planning/audit-backlog.json` first; re-examine open/manual entries before fresh auditing, and report them again (`manual_findings`, or `fixed_findings` when fixed this run). Never edit the file — the workflow maintains it.
 - [ ] Enumerate concrete findings (file:line) before editing.
 - [ ] One finding → one minimal change (no opportunistic refactors).
 - [ ] Use `npm run`/`npx` only; never `node_modules` paths; don't search `node_modules`/`.next`/`src/generated`/coverage.

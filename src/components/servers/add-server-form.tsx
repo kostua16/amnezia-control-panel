@@ -14,6 +14,7 @@ interface AddServerFormProps {
 interface FormErrors {
   name?: string;
   hostname?: string;
+  redirectIp?: string;
   port?: string;
   apiKey?: string;
 }
@@ -29,6 +30,7 @@ function validateHostname(hostname: string): boolean {
 export function AddServerForm({ onServerAdded, onCancel }: AddServerFormProps) {
   const [name, setName] = useState('');
   const [hostname, setHostname] = useState('');
+  const [redirectIp, setRedirectIp] = useState('');
   const [port, setPort] = useState('22');
   const [apiKey, setApiKey] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
@@ -49,6 +51,9 @@ export function AddServerForm({ onServerAdded, onCancel }: AddServerFormProps) {
       newErrors.hostname = 'Hostname is required';
     } else if (!validateHostname(hostname.trim())) {
       newErrors.hostname = 'Invalid hostname format';
+    }
+    if (redirectIp.trim() && !validateHostname(redirectIp.trim())) {
+      newErrors.redirectIp = 'Invalid redirect IP/hostname format';
     }
     const portNum = Number(port);
     if (!port || Number.isNaN(portNum) || portNum < 1 || portNum > 65535) {
@@ -74,6 +79,7 @@ export function AddServerForm({ onServerAdded, onCancel }: AddServerFormProps) {
         body: JSON.stringify({
           name: name.trim(),
           hostname: hostname.trim(),
+          redirectIp: redirectIp.trim() || undefined,
           port: Number(port),
           apiKey: apiKey.trim(),
         }),
@@ -122,6 +128,7 @@ export function AddServerForm({ onServerAdded, onCancel }: AddServerFormProps) {
         body: JSON.stringify({
           name: name.trim(),
           hostname: hostname.trim(),
+          redirectIp: redirectIp.trim() || undefined,
           port: Number(port),
           apiKey: apiKey.trim(),
         }),
@@ -198,6 +205,30 @@ export function AddServerForm({ onServerAdded, onCancel }: AddServerFormProps) {
         />
         {errors.hostname && (
           <p className="text-sm text-destructive">{errors.hostname}</p>
+        )}
+      </div>
+
+      {/* Redirect IP */}
+      <div className="space-y-1.5">
+        <label
+          htmlFor="server-redirect-ip"
+          className="text-sm font-medium text-foreground"
+        >
+          Redirect IP (Optional Proxy)
+        </label>
+        <Input
+          id="server-redirect-ip"
+          type="text"
+          placeholder="Proxy IP for VPN configs"
+          value={redirectIp}
+          onChange={(e) => {
+            setRedirectIp(e.target.value);
+            setErrors((prev) => ({ ...prev, redirectIp: undefined }));
+          }}
+          className={clsx(errors.redirectIp && 'border-destructive')}
+        />
+        {errors.redirectIp && (
+          <p className="text-sm text-destructive">{errors.redirectIp}</p>
         )}
       </div>
 

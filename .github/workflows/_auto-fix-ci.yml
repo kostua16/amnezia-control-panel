@@ -57,12 +57,12 @@ permissions:
 
 env:
   NODE_VERSION: '24.x'
-  MAX_TURNS: '70'
+  MAX_TURNS: '60'
 
 jobs:
   fix:
-    runs-on: [self-hosted, big]
-    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       pr-number: ${{ steps.pr-context.outputs.pr_number }}
       pushed: ${{ steps.push.outputs.pushed }}
@@ -239,6 +239,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           allowed-bots: ${{ steps.workflow-bot-policy.outputs.allowed_bots }}
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(rtk:*),mcp__plugin_serena_serena__find_symbol,mcp__plugin_serena_serena__get_symbols_overview,mcp__plugin_serena_serena__find_referencing_symbols,mcp__plugin_serena_serena__find_implementations,mcp__plugin_serena_serena__find_declaration,mcp__plugin_serena_serena__search_for_pattern,mcp__plugin_serena_serena__find_file,mcp__plugin_serena_serena__list_dir,mcp__plugin_serena_serena__read_file,mcp__plugin_serena_serena__get_diagnostics_for_file,mcp__plugin_context7_context7__query-docs,mcp__plugin_context7_context7__resolve-library-id,mcp__plugin_typescript-lsp__*'
+          model: 'opus'
           max-turns: ${{ env.MAX_TURNS }}
           plugin-marketplaces: |-
             https://github.com/anthropics/claude-plugins-official.git

@@ -152,6 +152,9 @@ inputs:
   allowed-tools:
     description: 'Allowed tools'
     default: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*)'
+  user-settings-only:
+    description: 'Load Claude user settings and selected repository guard hooks without repository tool grants.'
+    default: 'false'
   system-prompt:
     description: 'Custom system prompt. When empty, Claude uses its built-in default. Note: literal { and } must be escaped as {{ and }}.'
     required: false
@@ -161,11 +164,11 @@ inputs:
     required: false
     default: ''
   model:
-    description: 'Override default model (glm-5)'
+    description: 'Override default model (alias: haiku|sonnet -> glm-5.3-flash, opus -> glm-5.3)'
     required: false
     default: 'sonnet'
   subagent-model:
-    description: 'Override default agent model (glm-5)'
+    description: 'Override default subagent model (alias; glm-5.3-flash by default)'
     required: false
     default: 'haiku'
   claude-debug:
@@ -189,17 +192,17 @@ inputs:
     required: false
     default: ''
   haiku-model:
-    description: 'Override default haiku model (glm-4.7)'
+    description: 'Override default haiku model (glm-5.3-flash)'
     required: false
-    default: 'glm-4.7'
+    default: 'glm-5.3-flash'
   sonnet-model:
-    description: 'Override default sonnet model (glm-5-turbo)'
+    description: 'Override default sonnet model (glm-5.3-flash)'
     required: false
-    default: 'glm-5-turbo'
+    default: 'glm-5.3-flash'
   opus-model:
-    description: 'Override default opus model (glm-5.2)'
+    description: 'Override default opus model (glm-5.3)'
     required: false
-    default: 'glm-5.2'
+    default: 'glm-5.3'
   github-token:
     description: 'GitHub token for Claude GitHub operations, log scanning, and issue reporting'
     required: false
@@ -222,6 +225,7 @@ runs:
         track-progress: ${{ inputs.track-progress }}
         allowed-bots: ${{ inputs.allowed-bots }}
         allowed-bots-profile: ${{ inputs.allowed-bots-profile }}
+        user-settings-only: ${{ inputs.user-settings-only }}
         allowed-tools: '${{ inputs.allowed-tools }},Agent,TaskCreate,TaskUpdate,TaskGet,TaskList'
         system-prompt: ${{ inputs.system-prompt }}
         json-schema: ${{ inputs.json-schema }}

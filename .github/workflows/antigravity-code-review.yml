@@ -26,10 +26,8 @@ on:
         type: boolean
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  actions: write
+  contents: read
+  pull-requests: read
 
 concurrency:
   group: antigravity-code-review-${{ github.event.issue.number || github.event.pull_request.number || github.sha }}
@@ -44,7 +42,7 @@ jobs:
         github.event.issue.pull_request != null &&
         contains(github.event.comment.body, '/gemini-review')
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
@@ -52,12 +50,16 @@ jobs:
       pr-number: ${{ steps.gate.outputs.pr_number }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Evaluate trigger trust
         id: gate
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           node .github/workflows/scripts/evaluate-trigger-policy.cjs \
             --mode antigravity-review \
@@ -65,6 +67,19 @@ jobs:
             --event-path "$GITHUB_EVENT_PATH" \
             --event-name "$GITHUB_EVENT_NAME" \
             > /tmp/trigger-policy.json
+          if ! jq -e '.should_run and .trusted' /tmp/trigger-policy.json >/dev/null; then
+            exit 0
+          fi
+          pr_number=$(jq -r '.pr_number' /tmp/trigger-policy.json)
+          if [[ ! "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+            echo '::notice::antigravity review skipped: policy result carried no PR number'
+            exit 0
+          fi
+          head_repo=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '.head.repo.full_name')
+          if [[ "$head_repo" != "$GITHUB_REPOSITORY" ]]; then
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           {
             echo "should_run=$(jq -r '.should_run' /tmp/trigger-policy.json)"
             echo "trusted=$(jq -r '.trusted' /tmp/trigger-policy.json)"
@@ -72,14 +87,19 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   antigravity-review:
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     needs: [authorize]
     if: needs.authorize.outputs.should-run == 'true' && needs.authorize.outputs.trusted == 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-environment
@@ -88,8 +108,10 @@ jobs:
 
       - name: Verify API Key Presence
         id: check-secrets
+        env:
+          GEMINI_KEY: ${{ secrets.GEMINI_API_KEY || secrets.AV_API_KEY }}
         run: |
-          if [ -z "${{ secrets.GEMINI_API_KEY }}" ] && [ -z "${{ secrets.AV_API_KEY }}" ]; then
+          if [ -z "$GEMINI_KEY" ]; then
             echo "Error: Neither GEMINI_API_KEY nor AV_API_KEY secret is configured."
             echo "missing=true" >> "$GITHUB_OUTPUT"
           fi
@@ -99,8 +121,8 @@ jobs:
         if: steps.check-secrets.outputs.missing != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ needs.authorize.outputs.pr-number }}
         run: |
-          PR_NUM="${{ needs.authorize.outputs.pr-number }}"
           if [ -z "$PR_NUM" ] || [ "$PR_NUM" == "null" ]; then
             echo "No PR number provided."
             exit 1
@@ -162,12 +184,17 @@ jobs:
             });
 
   wake-orchestrator:
+    permissions:
+      contents: read
+      actions: write
     needs: [authorize, antigravity-review]
     if: always() && github.event.inputs.orchestrated == 'true' && github.event.inputs.pr_number != ''
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-environment
         with:

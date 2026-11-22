@@ -21,8 +21,8 @@ permissions:
 
 jobs:
   suggest-improvements:
-    runs-on: [self-hosted, big]
-    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
       claude_failure_reason: ${{ steps.claude_run.outputs.claude_failure_reason }}
@@ -98,6 +98,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
+          model: 'opus'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           allowed-bots-profile: interactive
@@ -185,7 +186,7 @@ jobs:
   report-failure:
     needs: [suggest-improvements]
     if: ${{ always() && needs.suggest-improvements.result != 'success' && needs.suggest-improvements.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read

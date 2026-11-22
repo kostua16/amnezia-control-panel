@@ -158,6 +158,9 @@ inputs:
   allowed-tools:
     description: 'Allowed tools'
     default: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*),Bash(rtk:*)'
+  user-settings-only:
+    description: 'Load Claude user settings and selected repository guard hooks without repository tool grants.'
+    default: 'false'
   system-prompt:
     description: 'Custom system prompt. When empty, Claude uses its built-in default. Note: literal { and } must be escaped as {{ and }}.'
     required: false
@@ -339,9 +342,57 @@ runs:
           echo "inline_guidance=" >> "$GITHUB_OUTPUT"
         fi
 
+    - name: Prepare isolated Claude guard hooks
+      id: isolated-settings
+      if: inputs.user-settings-only == 'true'
+      shell: bash
+      run: |
+        settings_file="$(mktemp "$RUNNER_TEMP/claude-guards.XXXXXX.json")"
+        node - "$settings_file" <<'NODE'
+        const fs = require('node:fs');
+        const { hooks } = JSON.parse(fs.readFileSync('.claude/settings.json', 'utf8'));
+        function selectGuard(event, matcher, filename, command) {
+          const groups = hooks?.[event];
+          const candidates = Array.isArray(groups) ? groups : [];
+          for (const group of candidates) {
+            if (group?.matcher !== matcher || !Array.isArray(group.hooks)) continue;
+            const hook = group.hooks.find((entry) => entry?.type === 'command' && entry.command === command);
+            if (!hook) continue;
+            const guard = { type: 'command', command };
+            if (Number.isSafeInteger(hook.timeout) && hook.timeout > 0) guard.timeout = hook.timeout;
+            return [{ matcher, hooks: [guard] }];
+          }
+          throw new Error('Missing Claude guard: ' + filename);
+        }
+        fs.writeFileSync(process.argv[2], JSON.stringify({
+          hooks: {
+            PreToolUse: selectGuard(
+              'PreToolUse', 'Bash|Glob|Grep|Read|Edit|Write', 'privacy-block.cjs',
+              'bash "$CLAUDE_PROJECT_DIR"/.claude/hooks/node-hook-runner.sh "$CLAUDE_PROJECT_DIR"/.claude/hooks/privacy-block.cjs'
+            ),
+            PostToolUse: selectGuard(
+              'PostToolUse', 'Read', 'gsd-read-injection-scanner.js',
+              'node "$CLAUDE_PROJECT_DIR"/.claude/hooks/gsd-read-injection-scanner.js'
+            ),
+          },
+        }));
+        NODE
+        printf 'path=%s\n' "$settings_file" >> "$GITHUB_OUTPUT"
+
     - name: Clear Claude execution output (attempt 1)
       shell: bash
       run: rm -f "${RUNNER_TEMP}/claude-execution-output.json"
+
+    # Quota snapshots around every Claude attempt: the action and its retry check both call the
+    # GitHub API with this token, so before/after pairs show how much one attempt spends.
+    # claude-code-action can switch the workspace to a PR branch that predates log-rate-limit,
+    # so each snapshot is guarded by hashFiles and can never fail the job.
+    - if: ${{ hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+      continue-on-error: true
+      uses: ./.github/actions/log-rate-limit
+      with:
+        github-token: ${{ inputs.github-token }}
+        label: claude-before-attempt-1
 
     # --- Attempt 1 ---
     - name: Run Claude Code (attempt 1)
@@ -373,6 +424,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
+          ${{ inputs.user-settings-only == 'true' && format('--setting-sources user --settings "{0}"', steps.isolated-settings.outputs.path) || '' }}
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
@@ -397,6 +449,13 @@ runs:
               "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
             }
           }
+
+    - if: ${{ always() && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+      continue-on-error: true
+      uses: ./.github/actions/log-rate-limit
+      with:
+        github-token: ${{ inputs.github-token }}
+        label: claude-after-attempt-1
 
     # Check whether a failed attempt is safe to retry.
     - name: Check retry condition (attempt 1)
@@ -482,6 +541,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
+          ${{ inputs.user-settings-only == 'true' && format('--setting-sources user --settings "{0}"', steps.isolated-settings.outputs.path) || '' }}
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
@@ -506,6 +566,13 @@ runs:
               "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
             }
           }
+
+    - if: ${{ always() && steps.claude-run-2.conclusion != 'skipped' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+      continue-on-error: true
+      uses: ./.github/actions/log-rate-limit
+      with:
+        github-token: ${{ inputs.github-token }}
+        label: claude-after-attempt-2
 
     - name: Check retry condition (attempt 2)
       id: check-429-2
@@ -587,6 +654,7 @@ runs:
         claude_args: |-
           --model ${{ steps.resolve-models.outputs.model }}
           --max-turns ${{ inputs.max-turns }}
+          ${{ inputs.user-settings-only == 'true' && format('--setting-sources user --settings "{0}"', steps.isolated-settings.outputs.path) || '' }}
           --allowedTools '${{ steps.resolve_allowed_tools.outputs.tools }}'${{ inputs.system-prompt != '' && format(' --system-prompt "{0}"', inputs.system-prompt) || '' }}${{ inputs.json-schema != '' && format(' --json-schema {0}', toJSON(inputs.json-schema)) || '' }}
         prompt: |-
           ${{ inputs.prompt }}.
@@ -611,6 +679,13 @@ runs:
               "ANTHROPIC_AUTH_TOKEN": "${{ inputs.api-key }}"
             }
           }
+
+    - if: ${{ always() && steps.claude-run-3.conclusion != 'skipped' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+      continue-on-error: true
+      uses: ./.github/actions/log-rate-limit
+      with:
+        github-token: ${{ inputs.github-token }}
+        label: claude-after-attempt-3
 
     - name: Select Claude outputs
       id: select-outputs

@@ -27,9 +27,18 @@ jobs:
     name: Fleet back-pressure gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The gate only reads (gh pr list); do not hand it the workflow's write scopes.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
     steps:
+      - name: Checkout for fleet gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
       - uses: ./.github/actions/fleet-back-pressure
         id: fleet_check
         with:
@@ -48,8 +57,15 @@ jobs:
       summary-path: ${{ steps.collect.outputs.summary_path }}
       queue-telemetry: ${{ steps.collect.outputs.queue_telemetry }}
       starvation-alert: ${{ steps.collect.outputs.starvation_alert }}
+      since-timestamp: ${{ steps.collect.outputs.since_timestamp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: workflow-health-collect-runs
+          report-at-job-end: 'true'
 
       - name: Collect workflow runs from past hour
         id: collect
@@ -63,6 +79,7 @@ jobs:
             } = require('./.github/workflows/scripts/workflow-run-timings.cjs');
 
             const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            core.setOutput('since_timestamp', oneHourAgo);
 
             function compactClaudeSummary(metrics) {
               const hasSignal = metrics.actionError ||
@@ -136,6 +153,7 @@ jobs:
               const isSlow = durationSec > 300;
               const summary = {
                 name: run.name,
+                run_id: run.id,
                 status: run.conclusion,
                 runNumber: run.run_number,
                 headSha: run.head_sha,
@@ -308,6 +326,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          label: workflow-health-detect-flaky
+          report-at-job-end: 'true'
+
       - name: Detect flaky workflows across hours (WHO-E04)
         id: flaky
         shell: bash
@@ -329,6 +353,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          label: workflow-health-queue-starvation
+          report-at-job-end: 'true'
+
       - name: File queue starvation alert (WHO-E03)
         shell: bash
         env:
@@ -343,7 +373,7 @@ jobs:
 
   optimize:
     name: Analyze & Optimize Workflows
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [collect-runs, detect-flaky]
     if: needs.collect-runs.outputs.has-problems == 'true' && needs.detect-flaky.outputs.flaky_detected != 'true'
@@ -371,6 +401,19 @@ jobs:
           install-rtk: 'true'
           generate-prisma: 'true'
 
+      - name: Re-run transient infra failures (WHO-E06)
+        id: rerun_transient
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/rerun-transient-failed-runs.cjs \
+            --repo "${{ github.repository }}" \
+            --since "${{ needs.collect-runs.outputs.since-timestamp }}" \
+            --limit 10 \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Prepare optimization branch
         id: branch
         uses: ./.github/actions/prepare-automation-branch
@@ -383,6 +426,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
+          model: 'opus'
           max-turns: '${{ env.MAX_TURNS }}'
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(echo:*),Bash(rtk:*)'
           prompt: |
@@ -391,6 +435,10 @@ jobs:
             ## Task: Analyze Workflow Runs and Optimize Workflow Files
 
             You have completed workflow run data from the past hour AND workflow YAML files in `.github/workflows/`.
+            GitHub accepted requests to rerun failed jobs after transient infrastructure errors for these run IDs (comma-separated): ${{ steps.rerun_transient.outputs.rerun_ids || 'none' }}
+            Match the list against `run_id`. An accepted rerun request records a retry and leaves its outcome unknown.
+            Assess each failed job independently, including jobs in listed runs. Use the failed step names and log tail together. Only attribute a log message to the failure when the supplied evidence links it to a failed step. Job log tails can include output from successful steps.
+            Skip YAML fixes for failures explained by temporary infrastructure errors, such as network timeouts, service outages, or rate limits. Continue analyzing any separately evidenced permanent failure, including one in the same job or run. When logs are capped, missing, or ambiguous, require other supplied evidence of a specific YAML defect before proposing a change.
             The run data may include compact `claudeSummary`, `timingSummary`, and `duplicateSameSha` objects extracted by the workflow itself.
 
             ### Completed Runs Data
@@ -527,6 +575,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          label: workflow-health-blocked-gate
+          report-at-job-end: 'true'
+
       - name: Track blocked optimization gate
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -556,6 +610,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: workflow-health-report-failure
+          report-at-job-end: 'true'
 
       - name: Report workflow health check failure
         uses: ./.github/actions/report-failure

@@ -54,7 +54,7 @@ describe('workflow run timing helpers', () => {
           name: 'Build',
           status: 'completed',
           conclusion: 'success',
-          runner_name: 'self-hosted-big-1',
+          runner_name: 'GitHub Actions 1',
           created_at: '2026-06-03T12:00:00Z',
           started_at: '2026-06-03T12:00:45Z',
           completed_at: '2026-06-03T12:10:45Z',
@@ -82,7 +82,7 @@ describe('workflow run timing helpers', () => {
       ],
     });
 
-    assert.equal(summary.jobs[0].runnerName, 'self-hosted-big-1');
+    assert.equal(summary.jobs[0].runnerName, 'GitHub Actions 1');
     assert.equal(summary.jobs[0].queueSec, 45);
     assert.equal(summary.jobs[0].durationSec, 600);
     assert.deepEqual(

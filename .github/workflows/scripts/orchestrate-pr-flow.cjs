@@ -10,9 +10,11 @@ const {
   getRequiredCheckStatus,
 } = require('./required-check-evidence.cjs');
 const { evaluateExternalReview } = require('./evaluate-external-review.cjs');
+const { fetchReviewInputsGraphql } = require('./lib/review-inputs-graphql.cjs');
 // Shared sticky-comment create-or-update helper (single source for the
 // marker-based PR comment upsert used across review/size/orchestration scripts).
 const { upsertComment } = require('./lib/sticky-comment.cjs');
+const { createWorkerRunsLoader } = require('./lib/worker-runs-by-head.cjs');
 
 const TIMING_NAMES = [
   'resolve-pr',
@@ -1287,6 +1289,47 @@ function renderFlowComment({
   ].join('\n');
 }
 
+const RUN_LINK_AT_ROW_END = /\[run\]\(([^)]*)\) \|$/;
+
+function workerRowKey(line) {
+  return line.startsWith('| ') ? line.slice(2, line.indexOf(' | ', 2)) : null;
+}
+
+// Every wake renders a different link for workers that have no run of their
+// own (it falls back to the orchestrator run URL), so a freshly rendered body
+// is never byte-identical to the stored one even when nothing changed. Rows
+// whose new link is the current run URL therefore keep the stored link; every
+// other difference (state, reason, a changed worker-run link, ...) is kept
+// as is and still counts as a change. A stored row with no link at all does
+// not adopt the volatile one for free: gaining a link is a real change.
+function stabilizeRunLinks(existingBody, newBody, currentRunUrl) {
+  if (!currentRunUrl) return newBody;
+  const storedLinkByRow = new Map();
+  for (const line of String(existingBody).split('\n')) {
+    const key = workerRowKey(line);
+    const match = key === null ? null : line.match(RUN_LINK_AT_ROW_END);
+    if (match) storedLinkByRow.set(key, match[1]);
+  }
+
+  return newBody
+    .split('\n')
+    .map((line) => {
+      const match = line.match(RUN_LINK_AT_ROW_END);
+      if (!match || match[1] !== currentRunUrl) return line;
+      const storedLink = storedLinkByRow.get(workerRowKey(line));
+      return storedLink === undefined
+        ? line
+        : line.replace(RUN_LINK_AT_ROW_END, () => `[run](${storedLink}) |`);
+    })
+    .join('\n');
+}
+
+// GitHub may hand a stored body back with CRLF line endings.
+function flowCommentUnchanged(existingBody, newBody, currentRunUrl) {
+  const stored = existingBody.replace(/\r\n/g, '\n');
+  return stored === stabilizeRunLinks(stored, newBody, currentRunUrl);
+}
+
 function publishCommitStatus(pr, status) {
   const repo = getRepoSlug();
   const payloadFile = writeTempJson('pr-flow-status', {
@@ -1310,18 +1353,145 @@ function publishCommitStatus(pr, status) {
   }
 }
 
-function publishFlowStatuses(pr, visibility) {
-  for (const status of visibility.orderedStatuses) {
-    publishCommitStatus(pr, status);
+// Status ids are monotonic but may arrive as strings, and a missing id
+// (null, undefined, '') coerces to 0 via Number — guard the raw value
+// before coercing so an absent id is never treated as a real id of 0.
+function usableStatusId(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const id = Number(raw);
+  return Number.isFinite(id) ? id : null;
+}
+
+// Compare duplicate entries for the same context without trusting array
+// order. A usable created_at outranks an unusable one, so a missing or
+// malformed timestamp cannot pin the first array entry. Equal timestamps
+// (GitHub has second granularity, so overlapping prt/wake runs on the same
+// head can tie) and pairs with no usable timestamp both fall back to the
+// monotonic status id, where a usable id likewise outranks an unusable one.
+// Only when neither signal is usable does the first array entry stay.
+function isNewerStatusEntry(entry, current) {
+  const entryAt = Date.parse(entry.created_at ?? '');
+  const currentAt = Date.parse(current.created_at ?? '');
+  const entryUsable = !Number.isNaN(entryAt);
+  const currentUsable = !Number.isNaN(currentAt);
+  if (entryUsable !== currentUsable) return entryUsable;
+  if (entryUsable && entryAt !== currentAt) return entryAt > currentAt;
+  const entryId = usableStatusId(entry.id);
+  const currentId = usableStatusId(current.id);
+  if ((entryId === null) !== (currentId === null)) return entryId !== null;
+  if (entryId !== null && entryId !== currentId) return entryId > currentId;
+  return false;
+}
+
+// Index the latest status per context explicitly by created_at (tie-broken
+// on the status id) instead of trusting array order: a caller passing full
+// history (commits/{sha}/statuses) would make last-wins pick the oldest
+// duplicate, which could suppress a needed success POST while the real
+// latest status is a failure.
+function indexStatusesByContext(statuses) {
+  const byContext = new Map();
+  if (!Array.isArray(statuses)) return byContext;
+  for (const entry of statuses) {
+    if (entry && typeof entry.context === 'string') {
+      const current = byContext.get(entry.context);
+      if (!current || isNewerStatusEntry(entry, current)) {
+        byContext.set(entry.context, entry);
+      }
+    }
+  }
+  return byContext;
+}
+
+// Only an unchanged `success` is safe to skip. The watchdog and the Kilo
+// review timeout read the age and history of pending/failure/error statuses,
+// so those are re-posted on every wake to keep refreshing their timestamps.
+function shouldPublishStatus(
+  previousStatusByContext,
+  status,
+  currentRunUrl = getCurrentRunUrl(),
+) {
+  const previous = previousStatusByContext?.get?.(status.context);
+  if (!previous) return true;
+  if (String(status.state).toLowerCase() !== 'success') return true;
+  if (String(previous.state).toLowerCase() !== 'success') return true;
+  if (
+    String(previous.description ?? '') !==
+    truncateStatusDescription(status.description)
+  ) {
+    return true;
+  }
+  const previousUrl = String(previous.target_url ?? '');
+  const nextUrl = String(status.targetUrl ?? '');
+  // The orchestrator run URL changes on every wake, so requiring it to match
+  // would make the skip never apply to statuses that link to the current run.
+  // When the new link is that volatile URL the previous link is kept instead:
+  // an older worker-run link stays in place (a run URL is a run URL, and the
+  // worker link is more specific than the orchestrator one), while a status
+  // that had no link yet is posted once so it actually gains the link.
+  const nextUrlIsCurrentRun = nextUrl !== '' && nextUrl === currentRunUrl;
+  if (nextUrlIsCurrentRun && previousUrl === '') return true;
+  return !(nextUrlIsCurrentRun || previousUrl === nextUrl);
+}
+
+function publishFlowStatuses(
+  pr,
+  visibility,
+  {
+    readStatuses = fetchCommitStatuses,
+    publishStatus = publishCommitStatus,
+    currentRunUrl = getCurrentRunUrl(),
+    freshStatuses = null,
+  } = {},
+) {
+  const statuses = visibility.orderedStatuses;
+  let previousByContext = new Map();
+  // Nothing can be skipped unless some status is a success, so avoid the
+  // extra read otherwise.
+  if (statuses.some((s) => String(s.state).toLowerCase() === 'success')) {
+    try {
+      // Read at publish time rather than reusing a snapshot from earlier in
+      // the wake (e.g. the external-review evaluation): prt and wake runs use
+      // separate concurrency groups, so another orchestrator run for the same
+      // head may have posted statuses in between. `freshStatuses` is such a
+      // publish-time read made through GraphQL; without one the REST read runs.
+      previousByContext = indexStatusesByContext(
+        Array.isArray(freshStatuses) ? freshStatuses : readStatuses(pr.headSha),
+      );
+    } catch (error) {
+      console.error(
+        `Could not read current commit statuses; posting all: ${formatCommandError(error)}`,
+      );
+    }
+  }
+  for (const status of statuses) {
+    if (shouldPublishStatus(previousByContext, status, currentRunUrl)) {
+      publishStatus(pr, status);
+    }
   }
 }
 
-function upsertFlowComment(pr, body) {
-  upsertComment({
+// The wake rewrites the comment only when its content changed: replacing it is
+// a POST plus a DELETE and a new issue_comment event every time. `freshComments`
+// is a publish-time GraphQL read of the PR's issue comments; without one the
+// sticky lookup reads them over REST.
+function upsertFlowComment(
+  pr,
+  body,
+  {
+    upsert = upsertComment,
+    currentRunUrl = getCurrentRunUrl(),
+    freshComments = null,
+  } = {},
+) {
+  upsert({
     repo: getRepoSlug(),
     prNumber: pr.number,
     marker: COMMENT_MARKER,
     body,
+    skipIfUnchanged: true,
+    sameBody: (existingBody, nextBody) =>
+      flowCommentUnchanged(existingBody, nextBody, currentRunUrl),
+    ...(Array.isArray(freshComments) ? { comments: freshComments } : {}),
   });
 }
 
@@ -1362,7 +1532,7 @@ function fetchCommitStatuses(headSha) {
   if (!headSha) return [];
   const response = runJson(
     'gh',
-    ['api', `repos/${getRepoSlug()}/commits/${headSha}/status`],
+    ['api', `repos/${getRepoSlug()}/commits/${headSha}/status?per_page=100`],
     { statuses: [] },
   );
   return response?.statuses ?? [];
@@ -1378,27 +1548,267 @@ function fetchCheckRuns(headSha) {
   return response?.check_runs ?? [];
 }
 
-function fetchHeadCommittedAt(headSha) {
+// `strict` drops the empty fallback so a failed commit read throws instead of
+// reading as "date unknown". The orchestrator wants the fallback (an unknown
+// date only sends the worker-run lookup to the per-workflow path), but the
+// parity comparison must not classify a failed read as that legitimate case.
+function fetchHeadCommittedAt(headSha, { strict = false } = {}) {
   if (!headSha) return '';
   const response = runJson(
     'gh',
     ['api', `repos/${getRepoSlug()}/commits/${headSha}`],
-    null,
+    strict ? undefined : null,
   );
   return (
     response?.commit?.committer?.date ?? response?.commit?.author?.date ?? ''
   );
 }
 
-function collectExternalReview(pr) {
-  return evaluateExternalReview({
-    pr,
+// Which transport feeds the Kilo review evaluation. GraphQL has its own quota
+// bucket, so it spares the (scarcer) REST one; REST stays the reference path
+// and the fallback. A repository variable overrides the default without a
+// commit: `rest` is the rollback switch.
+const DEFAULT_REVIEW_SOURCE = 'graphql';
+
+function resolveReviewSource(value = process.env.PR_FLOW_REVIEW_SOURCE) {
+  const requested = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (requested === '') return DEFAULT_REVIEW_SOURCE;
+  if (requested === 'graphql' || requested === 'rest') return requested;
+  // A typo must never silently enable the newer path.
+  console.warn(
+    `orchestrate-pr-flow: unknown PR_FLOW_REVIEW_SOURCE "${requested}", using rest.`,
+  );
+  return 'rest';
+}
+
+// The -f vs -F split is load-bearing: the query declares `: Boolean!` /
+// `: Int!` variables, and a boolean or number routed through -f would be sent
+// as the JSON string "false"/"7", which GraphQL rejects on every call.
+function buildGraphqlArgs(query, variables) {
+  const args = ['api', 'graphql', '-f', `query=${query}`];
+  for (const [key, value] of Object.entries(variables)) {
+    if (value === null || value === undefined) continue;
+    // -f keeps strings (cursors) literal; -F types numbers and booleans.
+    args.push(typeof value === 'string' ? '-f' : '-F', `${key}=${value}`);
+  }
+  return args;
+}
+
+function runGraphqlQuery(query, variables) {
+  return JSON.parse(
+    run('gh', buildGraphqlArgs(query, variables), { retry: true }),
+  );
+}
+
+function fetchRestReviewInputs(pr) {
+  return {
     comments: fetchPrIssueComments(pr.number),
     reviewComments: fetchPrReviewComments(pr.number),
     reviews: fetchPrReviews(pr.number),
     checkRuns: fetchCheckRuns(pr.headSha),
     statuses: fetchCommitStatuses(pr.headSha),
+  };
+}
+
+function fetchGraphqlReviewInputs(pr) {
+  const { cost, ...inputs } = fetchReviewInputsGraphql({
+    repo: getRepoSlug(),
+    prNumber: pr.number,
+    headSha: pr.headSha,
+    runGraphql: runGraphqlQuery,
   });
+  console.log(`orchestrate-pr-flow: review inputs via GraphQL (cost ${cost}).`);
+  return inputs;
+}
+
+function collectExternalReview(
+  pr,
+  {
+    source = resolveReviewSource(),
+    loadRest = fetchRestReviewInputs,
+    loadGraphql = fetchGraphqlReviewInputs,
+    evaluate = evaluateExternalReview,
+  } = {},
+) {
+  let inputs = null;
+  if (source === 'graphql') {
+    try {
+      inputs = loadGraphql(pr);
+    } catch (error) {
+      // Any doubt about the GraphQL data: use REST for this wake only.
+      console.warn(
+        `orchestrate-pr-flow: GraphQL review inputs unavailable, using REST: ${error.message}`,
+      );
+    }
+  }
+  return evaluate({ pr, ...(inputs ?? loadRest(pr)) });
+}
+
+// The head commit date comes from the `commits` field of the PR read the wake
+// already makes (a GraphQL call), instead of a separate REST `commits/{sha}`
+// read. Only the PR's last commit counts, and only when it is the head: `gh`
+// lists a bounded page of commits, so on a very long PR the last listed commit
+// may not be the tip. Same precedence as REST (committer date, then author
+// date); anything unusable returns '' so the caller reads REST.
+function headCommittedAtFromCommits(commits, headSha) {
+  if (!headSha || !Array.isArray(commits) || commits.length === 0) return '';
+  const last = commits[commits.length - 1];
+  if (last?.oid !== headSha) return '';
+  const date = last.committedDate ?? last.authoredDate ?? '';
+  return Number.isNaN(Date.parse(date)) ? '' : date;
+}
+
+function resolveHeadCommittedAt(
+  rawPr,
+  pr,
+  { source = resolveReviewSource(), readRest = fetchHeadCommittedAt } = {},
+) {
+  if (source === 'graphql') {
+    const date = headCommittedAtFromCommits(rawPr?.commits, pr.headSha);
+    if (date) return date;
+    console.warn(
+      'orchestrate-pr-flow: head commit date missing from the PR read, using REST.',
+    );
+  }
+  return readRest(pr.headSha);
+}
+
+// Both flags are normalized to strict booleans before they reach the adapter:
+// it treats an omitted `contexts` as `true`, so a truthy-but-not-`true`
+// `wantStatuses` would pay for the status rollup and then be discarded here.
+function fetchPublishSnapshotGraphql(
+  pr,
+  { wantComments = true, wantStatuses = false } = {},
+) {
+  const comments = wantComments === true;
+  const statuses = wantStatuses === true;
+  const snapshot = fetchReviewInputsGraphql({
+    repo: getRepoSlug(),
+    prNumber: pr.number,
+    headSha: pr.headSha,
+    runGraphql: runGraphqlQuery,
+    want: {
+      comments,
+      reviews: false,
+      threads: false,
+      contexts: statuses,
+    },
+  });
+  console.log(
+    `orchestrate-pr-flow: publish snapshot via GraphQL (cost ${snapshot.cost}).`,
+  );
+  return {
+    comments: comments ? snapshot.comments : null,
+    statuses: statuses ? snapshot.statuses : null,
+  };
+}
+
+// Publish-time GraphQL reads at the visibility step, each taken immediately
+// before its consumer: the commit statuses right before their POSTs (only when
+// a success status could be skipped) and the sticky-comment list right before
+// the comment write, after the status POSTs. Reading the comment list before
+// those up-to-seven REST writes would leave it stale long enough for
+// overlapping prt/wake runs on one head to both see "no sticky comment" and
+// both POST one — a duplicate `skipIfUnchanged` then never converges away.
+// Every field is null when the read is unavailable (or the source is `rest`),
+// and each consumer then performs its own REST read.
+function readPublishSnapshot(
+  pr,
+  {
+    wantComments = true,
+    wantStatuses = false,
+    source = resolveReviewSource(),
+    loadGraphql = fetchPublishSnapshotGraphql,
+  },
+) {
+  const none = { comments: null, statuses: null };
+  if (source !== 'graphql') return none;
+  try {
+    return loadGraphql(pr, {
+      wantComments: wantComments === true,
+      wantStatuses: wantStatuses === true,
+    });
+  } catch (error) {
+    console.warn(
+      `orchestrate-pr-flow: publish-time GraphQL read unavailable, using REST: ${error.message}`,
+    );
+    return none;
+  }
+}
+
+// The visibility step's writes, in one enforced order: read the commit
+// statuses, post the flow statuses, and only then read the PR's comment list
+// and upsert the sticky comment. Reading the comment list together with the
+// status read would leave it stale across those up-to-seven REST writes long
+// enough for overlapping prt/wake runs on one head to both see "no sticky
+// comment" and both POST one — a duplicate `skipIfUnchanged` comment then
+// never converges away. Readers and writers are injectable so the ordering
+// stays regression-tested. A failed comment write re-renders the visibility
+// with the error surfaced and returns it as `fatalError` for the caller.
+function publishVisibilityUpdates(
+  pr,
+  visibility,
+  {
+    reviewSource,
+    decision,
+    dispatchOutcome,
+    config,
+    policy,
+    externalReview,
+    workerRuns,
+    eventName,
+    event,
+    visibilityErrors = [],
+    readSnapshot = readPublishSnapshot,
+    publishStatuses = publishFlowStatuses,
+    writeComment = upsertFlowComment,
+    renderComment = renderFlowComment,
+    publishAggregateStatus = publishCommitStatus,
+    buildVisibility = buildFlowVisibility,
+  } = {},
+) {
+  const statusSnapshot = readSnapshot(pr, {
+    wantComments: false,
+    wantStatuses: visibility.orderedStatuses.some(
+      (status) => String(status.state).toLowerCase() === 'success',
+    ),
+    source: reviewSource,
+  });
+  publishStatuses(pr, visibility, { freshStatuses: statusSnapshot.statuses });
+
+  const commentSnapshot = readSnapshot(pr, {
+    wantComments: true,
+    wantStatuses: false,
+    source: reviewSource,
+  });
+  try {
+    writeComment(
+      pr,
+      renderComment({ pr, decision, visibility, dispatchOutcome }),
+      { freshComments: commentSnapshot.comments },
+    );
+    return { visibility, fatalError: null };
+  } catch (error) {
+    const errorMessage = formatCommandError(error);
+    const commentError = `PR flow comment update failed: ${errorMessage}`;
+    visibilityErrors.push(commentError);
+    const errorVisibility = buildVisibility({
+      pr,
+      config,
+      policy,
+      decision,
+      externalReview,
+      workerRuns,
+      eventName,
+      event,
+      dispatchOutcome,
+      visibilityErrors,
+    });
+    publishAggregateStatus(pr, errorVisibility.aggregate);
+    return { visibility: errorVisibility, fatalError: new Error(commentError) };
+  }
 }
 
 function decisionWithDispatchError({ decision, pr, config, errorMessage }) {
@@ -1574,6 +1984,34 @@ function makeDecision(context) {
     return finish(
       'flow/review-blocked',
       `Blocking labels are present: ${nonReviewHardBlockingLabels.join(', ')}.`,
+    );
+  }
+
+  // Cross-repository PRs never receive automated workers — this gate must
+  // sit below the failing gates above (required checks, hard blocking
+  // labels) so a broken fork PR resolves to a failing state instead of
+  // passing the pr-flow/ready aggregate, and above any worker dispatch so a
+  // maintainer /review cannot dispatch a privileged worker either. Advisory
+  // review concerns stay blocking here: no automated review will ever
+  // replace them on a fork PR, so they cannot be masked as success.
+  if (pr.isCrossRepository) {
+    const concernLabels = (codeReviewWorker.blockLabels ?? []).filter((label) =>
+      labels.includes(label),
+    );
+    if (concernLabels.length > 0 && !maintainerApproved) {
+      return finish(
+        'flow/review-blocked',
+        `Blocking labels are present: ${concernLabels.join(', ')}.`,
+      );
+    }
+    return finish(
+      'flow/manual-only',
+      'Cross-repository PRs require manual review.',
+      null,
+      [],
+      currentLabels.filter((label) =>
+        /^flow\/finalizer-retry-\d+$/.test(label),
+      ),
     );
   }
 
@@ -1854,7 +2292,10 @@ function makeDecision(context) {
   );
 }
 
-function collectWorkerRuns(config, workerName) {
+// `strict` drops the empty-list fallback so a failed `gh run list` throws
+// instead of reading as "no runs" — the parity comparison must not classify a
+// failed read as data.
+function collectWorkerRuns(config, workerName, { strict = false } = {}) {
   const worker = config.workers?.[workerName];
   if (!worker?.workflow) {
     return [];
@@ -1872,7 +2313,7 @@ function collectWorkerRuns(config, workerName) {
       '--json',
       'databaseId,status,conclusion,event,displayTitle,createdAt,updatedAt,url',
     ],
-    [],
+    strict ? undefined : [],
   );
 }
 
@@ -1944,7 +2385,12 @@ function dispatchWorker(pr, dispatch) {
   run('gh', args);
 }
 
-function fetchPullRequest(prNumber) {
+const PULL_REQUEST_FIELDS =
+  'number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository,autoMergeRequest';
+
+// `includeCommits` adds the commit list that supplies the head commit date; the
+// `rest` source leaves the call exactly as it was.
+function fetchPullRequest(prNumber, { includeCommits = false } = {}) {
   return runJson(
     'gh',
     [
@@ -1952,7 +2398,7 @@ function fetchPullRequest(prNumber) {
       'view',
       String(prNumber),
       '--json',
-      'number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository,autoMergeRequest',
+      includeCommits ? `${PULL_REQUEST_FIELDS},commits` : PULL_REQUEST_FIELDS,
     ],
     null,
     { allowedFailurePattern: PR_NOT_FOUND_PATTERN },
@@ -1983,6 +2429,9 @@ function main() {
   );
   const event =
     eventPath && fs.existsSync(eventPath) ? readJson(eventPath) : {};
+  // Resolved once so a mistyped variable warns once and every reuse point of
+  // this wake agrees on the transport.
+  const reviewSource = resolveReviewSource();
 
   const resolved = timeStep(timings, 'resolve-pr', () => {
     const prNumber = resolvePrNumber(eventName, event, explicitPrNumber);
@@ -1991,10 +2440,14 @@ function main() {
     }
 
     const config = readConfig(configFile);
-    const rawPr = fetchPullRequest(prNumber);
+    const rawPr = fetchPullRequest(prNumber, {
+      includeCommits: reviewSource === 'graphql',
+    });
     const pr = rawPr ? normalizePr(rawPr) : null;
     if (pr) {
-      pr.headCommittedAt = fetchHeadCommittedAt(pr.headSha);
+      pr.headCommittedAt = resolveHeadCommittedAt(rawPr, pr, {
+        source: reviewSource,
+      });
     }
     return { prNumber, config, pr };
   });
@@ -2070,16 +2523,23 @@ function main() {
 
     if (!policy.dependabot) {
       externalReview = timeStep(timings, 'worker-runs', () =>
-        collectExternalReview(pr),
+        collectExternalReview(pr, { source: reviewSource }),
       );
     }
   }
 
   const workerRuns = {};
+  const loadWorkerRuns = createWorkerRunsLoader({
+    config,
+    pr,
+    getRepo: getRepoSlug,
+    run,
+    loadLegacy: (workerName) => collectWorkerRuns(config, workerName),
+  });
   const getWorkerRuns = (workerName) => {
     if (workerRuns[workerName] === undefined) {
       workerRuns[workerName] = timeStep(timings, 'worker-runs', () =>
-        collectWorkerRuns(config, workerName),
+        loadWorkerRuns(workerName),
       );
     }
     return workerRuns[workerName];
@@ -2151,38 +2611,23 @@ function main() {
         visibilityErrors,
       });
 
-      publishFlowStatuses(pr, visibility);
-
-      try {
-        upsertFlowComment(
-          pr,
-          renderFlowComment({
-            pr,
-            decision: appliedDecision,
-            visibility,
-            dispatchOutcome,
-          }),
-        );
-      } catch (error) {
-        const errorMessage = formatCommandError(error);
-        const commentError = `PR flow comment update failed: ${errorMessage}`;
-        visibilityErrors.push(commentError);
-        const errorVisibility = buildFlowVisibility({
-          pr,
-          config,
-          policy,
-          decision: appliedDecision,
-          externalReview,
-          workerRuns,
-          eventName,
-          event,
-          dispatchOutcome,
-          visibilityErrors,
-        });
-        visibility = errorVisibility;
-        publishCommitStatus(pr, errorVisibility.aggregate);
-        fatalError = new Error(commentError);
-      }
+      // Statuses are read and posted before the comment list so the sticky
+      // write matches against a list that cannot be stale across those REST
+      // writes; publishVisibilityUpdates owns and regression-tests that order.
+      const published = publishVisibilityUpdates(pr, visibility, {
+        reviewSource,
+        decision: appliedDecision,
+        dispatchOutcome,
+        config,
+        policy,
+        externalReview,
+        workerRuns,
+        eventName,
+        event,
+        visibilityErrors,
+      });
+      visibility = published.visibility;
+      fatalError = published.fatalError;
     });
 
     if (dispatchOutcome?.ok === false || visibilityErrors.length > 0) {
@@ -2244,20 +2689,45 @@ if (require.main === module) {
 
 module.exports = {
   buildFlowGuidance,
+  buildGraphqlArgs,
   buildFlowVisibility,
   collectCheckEvidence,
+  collectExternalReview,
+  COMMENT_MARKER,
   decisionWithDispatchError,
+  fetchCheckRuns,
+  fetchCommitStatuses,
+  fetchHeadCommittedAt,
+  fetchPrIssueComments,
+  fetchPublishSnapshotGraphql,
+  fetchPrReviewComments,
+  fetchPrReviews,
   getFinalizerRetryCount,
   getWorkerDispatchRef,
+  headCommittedAtFromCommits,
+  getWorkerTargetUrl,
   getLabelsForDecision,
+  indexStatusesByContext,
+  matchesWorkerTitle,
   getRequiredCheckStatus,
   evaluatePolicy,
   makeDecision,
   MAX_CODE_REVIEW_RETRIES,
   MAX_FINALIZER_RETRIES,
   pathsMatch,
+  publishFlowStatuses,
+  publishVisibilityUpdates,
   readConfig,
+  readPublishSnapshot,
   renderFlowComment,
+  resolveHeadCommittedAt,
   resolvePrNumber,
+  resolveReviewSource,
+  runGraphqlQuery,
+  shouldPublishStatus,
+  stabilizeRunLinks,
   summarizeWorkerRuns,
+  upsertFlowComment,
+  usableStatusId,
+  collectWorkerRuns,
 };

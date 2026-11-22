@@ -31,11 +31,20 @@ permissions:
 jobs:
   fleet-gate:
     name: Fleet back-pressure gate
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The gate only reads (gh pr list); do not hand it the workflow's write scopes.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
     steps:
+      - name: Checkout for fleet gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
       - uses: ./.github/actions/fleet-back-pressure
         id: fleet_check
         with:
@@ -44,7 +53,7 @@ jobs:
   audit-fix:
     needs: [fleet-gate]
     if: needs.fleet-gate.outputs.skip != 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     # Includes checkout + setup-environment (deps, prisma, gsd, rtk) before the
     # audit agent starts; the agent needs the bulk of this budget to finish a
     # full audit/fix/verify pass. Raised from 30 to 45 min — codebase growth +
@@ -99,6 +108,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
+          model: 'opus'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           claude-full-output: 'false'
@@ -182,10 +192,13 @@ jobs:
             Run a full repository audit for technical debt, code smells, and missing tests.
             Implement targeted fixes, run the most relevant verification you can, and stop once the audit findings are addressed.
 
+            Before fresh auditing, read `.planning/audit-backlog.json`: entries with status "open" or "manual" are the accumulated audit backlog — re-examine those findings first. Report every still-present backlog entry again in `manual_findings` (or in `fixed_findings` when you fixed it this run) so the persisted ledger stays accurate.
+
             When running tests or lint, always use `npm run <script>` or `npx <tool>` — never invoke binaries directly via node_modules paths (e.g. avoid `node node_modules/.bin/...` or `./node_modules/...`).
 
             Hard rules:
             - Do NOT run `git` or `gh`.
+            - Do NOT edit `.planning/audit-backlog.json`. The workflow maintains it from your structured output; treat it as read-only input.
             - Do NOT commit, push, merge, or open a PR. The workflow handles that.
             - Keep changes reviewable; avoid broad refactors unless they are directly required by the audit finding.
             - Prefer narrow, low-risk fixes in components, hooks, formatting helpers, API response helpers, resource monitoring, and monitoring types.
@@ -247,13 +260,21 @@ jobs:
           PR_BODY: ${{ steps.classify.outputs.body }}
         run: node .github/workflows/scripts/upsert-audit-manual-findings.cjs --report-only
 
+      - name: Update findings ledger
+        id: update_ledger
+        env:
+          CLAUDE_STRUCTURED_OUTPUT: ${{ steps.claude_run.outputs.structured_output }}
+          CLAUDE_LAST_OUTPUT: ${{ steps.claude_run.outputs.claude_last_output }}
+          RUN_ID: ${{ github.run_id }}
+        run: node .github/workflows/scripts/audit-findings-ledger.cjs --append --ledger .planning/audit-backlog.json
+
       - name: Restore composite action files (Claude agent may alter working tree)
         if: steps.claude_run.outputs.claude_changed_files_list != ''
         run: git checkout HEAD -- .github/actions/
 
       - name: Validate (CI-matching gate)
         id: gate
-        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        if: steps.claude_run.outputs.claude_changed_files_list != '' || steps.update_ledger.outputs.changed == 'true'
         uses: ./.github/actions/validate-pr-gate
 
       - uses: ./.github/actions/commit-and-push
@@ -307,7 +328,7 @@ jobs:
     name: Reconcile resolved audit issues
     needs: [audit-fix]
     if: needs.audit-fix.result == 'success'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
@@ -330,7 +351,7 @@ jobs:
   report-failure:
     needs: [fleet-gate, audit-fix]
     if: always() && (needs.audit-fix.result == 'failure' || needs.audit-fix.result == 'cancelled' || needs.fleet-gate.result == 'failure')
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read

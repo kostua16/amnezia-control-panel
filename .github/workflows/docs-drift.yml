@@ -22,11 +22,20 @@ permissions:
 jobs:
   fleet-gate:
     name: Fleet back-pressure gate
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The gate only reads (gh pr list); do not hand it the workflow's write scopes.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       skip: ${{ steps.fleet_check.outputs.skip }}
     steps:
+      - name: Checkout for fleet gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
       - uses: ./.github/actions/fleet-back-pressure
         id: fleet_check
         with:
@@ -35,7 +44,7 @@ jobs:
   docs-drift:
     needs: [fleet-gate]
     if: needs.fleet-gate.outputs.skip != 'true'
-    runs-on: [self-hosted, big]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
@@ -71,6 +80,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
+          model: 'sonnet'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           allowed-bots-profile: interactive
@@ -223,7 +233,7 @@ jobs:
   report-failure:
     needs: [docs-drift]
     if: ${{ always() && needs.docs-drift.result != 'success' && needs.docs-drift.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read

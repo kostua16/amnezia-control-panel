@@ -33,7 +33,7 @@ jobs:
         github.event.issue.pull_request == null &&
         github.event.label.name == 'auto-fix-approved'
       )
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should-run: ${{ steps.gate.outputs.should_run }}
@@ -59,8 +59,8 @@ jobs:
 
   fix:
     needs: [authorize]
-    runs-on: [self-hosted, big]
-    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: needs.authorize.outputs.should-run == 'true'
     outputs:
       claude_failed: ${{ steps.claude_run.outputs.claude_failed }}
@@ -155,7 +155,7 @@ jobs:
         id: deadline
         uses: ./.github/actions/compute-stop-by-deadline
         with:
-          timeout-minutes: '10'
+          timeout-minutes: '30'
           safety-margin-minutes: '2'
           job-start-epoch: '${{ steps.job_start.outputs.epoch }}'
 
@@ -166,6 +166,7 @@ jobs:
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GH_PAT }}
+          model: 'opus'
           max-turns: ${{ env.MAX_TURNS }}
           track-progress: 'true'
           allowed-bots-profile: interactive
@@ -193,7 +194,7 @@ jobs:
 
             STOP_BY: ${{ steps.deadline.outputs.stop_by }}
 
-            The job has a hard 10-minute timeout. STOP_BY is the deadline by which you must produce your final output. Wrap up and report before STOP_BY — partial results are better than a timeout kill.
+            The job has a hard 30-minute timeout. STOP_BY is the deadline by which you must produce your final output. Wrap up and report before STOP_BY — partial results are better than a timeout kill.
 
             Steps:
             1. Run `gh issue view ${{ github.event.issue.number }}` to read full issue description
@@ -372,7 +373,7 @@ jobs:
   report-failure:
     needs: [fix]
     if: ${{ always() && needs.fix.result != 'success' && needs.fix.result != 'skipped' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

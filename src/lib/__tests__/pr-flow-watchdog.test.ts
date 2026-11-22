@@ -379,7 +379,7 @@ describe('PR flow workflow invariants', () => {
     const workflow = readWorkflow('.github/workflows/pr-flow.yml');
 
     assert.match(workflow, /classify-trigger:\s*\n\s+if:\s+>-\s*\n/);
-    assert.match(workflow, /classify-trigger:[\s\S]*?runs-on:\s+self-hosted/);
+    assert.match(workflow, /classify-trigger:[\s\S]*?runs-on:\s+ubuntu-latest/);
     assert.match(
       workflow,
       /orchestrate:\s*\n\s+needs:\s+classify-trigger\s*\n\s+if:\s+>-\s*\n\s+needs\.classify-trigger\.outputs\.should_run == 'true'/,
