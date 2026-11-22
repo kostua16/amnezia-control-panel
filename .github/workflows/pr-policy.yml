@@ -37,6 +37,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           policy-file: .github/workflows/policy.json
+          mode: ${{ vars.ENSURE_LABELS_MODE || 'diff' }}
 
       - name: Apply PR labels and policy status
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3

@@ -67,6 +67,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           policy-file: .github/workflows/policy.json
+          mode: ${{ vars.ENSURE_LABELS_MODE || 'diff' }}
 
       - name: Resolve PR context
         id: resolve
