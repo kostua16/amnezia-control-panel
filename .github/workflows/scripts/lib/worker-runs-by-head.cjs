@@ -89,6 +89,23 @@ function fetchDispatchRuns({ repo, run }) {
   return readRunsPage({ repo, query: 'event=workflow_dispatch', run });
 }
 
+// True when the dispatch listing is complete for runs created at or after
+// `headCommittedAt`: either it returned every dispatch run that exists, or its
+// oldest run is not newer than the head commit. Unknown or unparseable inputs
+// are "not covered" so the caller degrades to the per-workflow lookup.
+function dispatchWindowCoversHead(dispatched, headCommittedAt) {
+  if (dispatched.total <= dispatched.runs.length) return true;
+  const headTime = Date.parse(String(headCommittedAt ?? ''));
+  if (Number.isNaN(headTime)) return false;
+  let oldest = Infinity;
+  for (const runItem of dispatched.runs) {
+    const created = Date.parse(String(runItem.created_at ?? ''));
+    if (Number.isNaN(created)) return false;
+    if (created < oldest) oldest = created;
+  }
+  return oldest <= headTime;
+}
+
 // The workflow file a run belongs to. `path` can carry an `@refs/...` suffix;
 // comparing basenames keeps `code-review.yml` from matching
 // `antigravity-code-review.yml`.
@@ -157,20 +174,28 @@ function createWorkerRunsLoader({
       // Resolved inside the try so a missing repository variable degrades to
       // the per-workflow lookup instead of aborting the wake.
       const repo = getRepo();
+      // The dispatch read goes first: when its window does not reach the head
+      // commit the whole lookup degrades anyway, so the head read is skipped
+      // and an idle PR pays one extra read instead of two.
+      const dispatched = fetchDispatch({ repo, run });
+      // The dispatch window is shared by all workflows' dispatches. Its
+      // total_count counts every dispatch run the repository ever kept, so
+      // "total > page" is true almost always and says nothing about this PR.
+      // What matters is whether the window reaches back to the head: a run
+      // dispatched for this head cannot predate the head commit, so a window
+      // whose oldest run is older than the commit holds all of them. Otherwise
+      // base-ref runs of an idle PR may have fallen out of the window and the
+      // per-workflow lookup is the only read with a per-worker guarantee.
+      if (!dispatchWindowCoversHead(dispatched, pr.headCommittedAt)) {
+        warn(
+          `orchestrate-pr-flow: workflow_dispatch window does not reach the head commit of ${pr.headSha}, using per-workflow lookup.`,
+        );
+        return grouped;
+      }
       const head = fetchHead({ repo, headSha: pr.headSha, run });
       if (head.total > head.runs.length) {
         warn(
           `orchestrate-pr-flow: ${head.total} runs on ${pr.headSha} exceed one page, using per-workflow lookup.`,
-        );
-        return grouped;
-      }
-      const dispatched = fetchDispatch({ repo, run });
-      // The dispatch window is shared by all workflows' dispatches, so a full
-      // page means the PR's base-ref runs may sit outside it; the per-workflow
-      // lookup is the only read with a per-worker guarantee.
-      if (dispatched.total > dispatched.runs.length) {
-        warn(
-          `orchestrate-pr-flow: ${dispatched.total} workflow_dispatch runs exceed one page, using per-workflow lookup.`,
         );
         return grouped;
       }
@@ -192,6 +217,7 @@ function createWorkerRunsLoader({
 
 module.exports = {
   createWorkerRunsLoader,
+  dispatchWindowCoversHead,
   fetchDispatchRuns,
   fetchRunsForHead,
   groupWorkerRuns,

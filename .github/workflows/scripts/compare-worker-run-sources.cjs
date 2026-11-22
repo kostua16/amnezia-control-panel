@@ -169,6 +169,9 @@ function main() {
       number,
       headSha: meta.headRefOid,
       isCrossRepository: meta.isCrossRepository,
+      // The orchestrator resolves this before the lookup; the dispatch window is
+      // only trusted when it reaches back to the head commit.
+      headCommittedAt: flow.fetchHeadCommittedAt(meta.headRefOid),
     };
     const row = {
       number,

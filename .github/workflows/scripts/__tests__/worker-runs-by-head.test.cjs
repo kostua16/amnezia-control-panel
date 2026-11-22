@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 
 const {
   createWorkerRunsLoader,
+  dispatchWindowCoversHead,
   fetchDispatchRuns,
   fetchRunsForHead,
   groupWorkerRuns,
@@ -316,18 +317,98 @@ test('loader falls back when the head has more runs than one page returned', () 
   loader('finalizer');
 
   assert.deepEqual(calls.legacy, ['codeReview', 'finalizer']);
-  assert.equal(calls.dispatch, 0);
+  // The dispatch read runs first, so it has already happened by then.
+  assert.equal(calls.dispatch, 1);
   assert.equal(calls.warnings.length, 1);
   assert.match(calls.warnings[0], /exceed one page/);
 });
 
-test('loader falls back when workflow_dispatch runs exceed one page', () => {
-  // The dispatch window is repo-wide, so a full page can evict the PR's only
-  // base-ref run; the per-workflow lookup keeps its per-worker guarantee.
+test('dispatchWindowCoversHead only trusts a window that reaches back to the head commit', () => {
+  const run = (created_at) => restRun({ created_at });
+  const headCommit = '2026-07-01T08:00:00Z';
+
+  // Everything that exists was returned: always complete.
+  assert.equal(
+    dispatchWindowCoversHead(page([run('2026-07-01T09:00:00Z')]), ''),
+    true,
+  );
+  // total_count counts every dispatch run ever kept, so a full page is the
+  // normal case; it is trustworthy only if its oldest run predates the commit.
+  assert.equal(
+    dispatchWindowCoversHead(
+      page([run('2026-07-01T07:00:00Z')], 2500),
+      headCommit,
+    ),
+    true,
+  );
+  assert.equal(
+    dispatchWindowCoversHead(
+      page([run('2026-07-01T09:00:00Z')], 2500),
+      headCommit,
+    ),
+    false,
+  );
+  // Unknown or unparseable inputs are never "covered".
+  assert.equal(
+    dispatchWindowCoversHead(page([run('2026-07-01T07:00:00Z')], 2500), ''),
+    false,
+  );
+  assert.equal(
+    dispatchWindowCoversHead(
+      page([run('2026-07-01T07:00:00Z')], 2500),
+      undefined,
+    ),
+    false,
+  );
+  assert.equal(
+    dispatchWindowCoversHead(page([run('not a date')], 2500), headCommit),
+    false,
+  );
+});
+
+test('loader uses the dispatch window when it reaches back to the head commit', () => {
+  // total_count (2500) is the repository-wide dispatch count, not a truncation
+  // signal for this PR; a window older than the head commit is complete.
+  const baseRefRun = restRun({
+    id: 77,
+    head_sha: BASE_TIP,
+    created_at: '2026-07-01T07:00:00Z',
+  });
   const { loader, calls } = makeLoader({
+    pr: {
+      number: 7,
+      headSha: HEAD,
+      isCrossRepository: false,
+      headCommittedAt: '2026-07-01T08:00:00Z',
+    },
     fetchDispatch: () => {
       calls.dispatch += 1;
-      return page([restRun()], 150);
+      return page([baseRefRun], 2500);
+    },
+  });
+
+  assert.equal(
+    loader('codeReview').some((r) => r.databaseId === 77),
+    true,
+  );
+  assert.deepEqual(calls.legacy, []);
+  assert.deepEqual(calls.warnings, []);
+});
+
+test('loader falls back when the dispatch window does not reach the head commit', () => {
+  // An idle PR's base-ref runs (finalizer, dependency-review, code-review via
+  // fix-review) may have fallen out of the repo-wide window; only the
+  // per-workflow lookup keeps its per-worker guarantee.
+  const { loader, calls } = makeLoader({
+    pr: {
+      number: 7,
+      headSha: HEAD,
+      isCrossRepository: false,
+      headCommittedAt: '2026-07-01T08:00:00Z',
+    },
+    fetchDispatch: () => {
+      calls.dispatch += 1;
+      return page([restRun({ created_at: '2026-07-01T09:30:00Z' })], 2500);
     },
   });
 
@@ -336,8 +417,22 @@ test('loader falls back when workflow_dispatch runs exceed one page', () => {
 
   assert.deepEqual(calls.legacy, ['codeReview', 'finalizer']);
   assert.equal(calls.dispatch, 1);
+  // An uncovered window ends the lookup before the head read is spent.
+  assert.equal(calls.head, 0);
   assert.equal(calls.warnings.length, 1);
-  assert.match(calls.warnings[0], /workflow_dispatch runs exceed one page/);
+  assert.match(calls.warnings[0], /does not reach the head commit/);
+});
+
+test('loader falls back when the head commit date is unknown and the window is full', () => {
+  const { loader, calls } = makeLoader({
+    fetchDispatch: () => {
+      calls.dispatch += 1;
+      return page([restRun()], 2500);
+    },
+  });
+
+  assert.equal(loader('codeReview')[0].databaseId, 'legacy');
+  assert.equal(calls.warnings.length, 1);
 });
 
 test('loader falls back with exactly one warning when the head read throws', () => {
