@@ -27,7 +27,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ${{ ((github.event_name == 'issue_comment' && !(github.event.issue.pull_request != null && github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, '/deepseek-review'))) && format('deepseek-code-review-ignored-{0}', github.run_id)) || format('deepseek-code-review-{0}', github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha) }}
+  group: ${{ ((github.event_name == 'issue_comment' && !(github.event.issue.pull_request != null && github.event.comment.user.type != 'Bot' && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR') && contains(github.event.comment.body, '/deepseek-review'))) && format('deepseek-code-review-ignored-{0}', github.run_id)) || format('deepseek-code-review-{0}', github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.sha) }}
   cancel-in-progress: true
 
 env:
@@ -41,7 +41,8 @@ jobs:
       (
         github.event.issue.pull_request != null &&
         contains(github.event.comment.body, '/deepseek-review') &&
-        github.event.comment.user.type != 'Bot'
+        github.event.comment.user.type != 'Bot' &&
+        (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -50,6 +51,7 @@ jobs:
       pr-number: ${{ steps.resolve.outputs.pr_number }}
       head-sha: ${{ steps.resolve.outputs.head_sha }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
+      skip-reason: ${{ steps.resolve.outputs.skip_reason }}
       key-available: ${{ steps.check-key.outputs.available }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -72,7 +74,9 @@ jobs:
               const isPrComment = Boolean(context.payload.issue?.pull_request);
               const wantsReview = context.payload.comment?.body?.includes('/deepseek-review');
               const commenterIsBot = context.payload.comment?.user?.type === 'Bot';
-              if (!isPrComment || !wantsReview || commenterIsBot) {
+              const policy = require(process.env.GITHUB_WORKSPACE + '/.github/workflows/policy.json');
+              const isMaintainer = policy.maintainerAssociations.includes(context.payload.comment?.author_association);
+              if (!isPrComment || !wantsReview || commenterIsBot || !isMaintainer) {
                 core.setOutput('should_run', 'false');
                 return;
               }
@@ -99,13 +103,26 @@ jobs:
             const expectedHeadSha = context.payload.inputs?.head_sha || '';
             const headMatches = !expectedHeadSha || pr.head.sha === expectedHeadSha;
             const isOpen = pr.state === 'open' && !pr.merged;
+            const crossRepository =
+              pr.head.repo?.full_name !== pr.base.repo?.full_name ||
+              !Boolean(pr.head.repo?.full_name);
             const shouldRun =
               isOpen &&
               headMatches &&
+              !crossRepository &&
               !pr.draft &&
               pr.user.login !== 'dependabot[bot]' &&
               !(pr.title || '').includes('[skip-review]');
 
+            // A maintainer requesting this review on a fork PR (comment or
+            // dispatch) must not see a green no-op — record why it declined.
+            if (!shouldRun && isOpen && headMatches && crossRepository) {
+              core.notice('Review skipped: cross-repository PR');
+              core.setOutput(
+                'skip_reason',
+                'cross-repository PR — DeepSeek review only runs for same-repository heads'
+              );
+            }
             core.setOutput('should_run', String(shouldRun));
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('head_sha', pr.head.sha);
@@ -121,6 +138,23 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
+  report-skip:
+    needs: [resolve-pr]
+    # Fires only when a maintainer explicitly requested a review (comment or
+    # dispatch) on a cross-repository PR — otherwise fork PRs skip silently.
+    if: needs.resolve-pr.outputs.should-run != 'true' && needs.resolve-pr.outputs.skip-reason != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Explain skipped review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
+          SKIP_REASON: ${{ needs.resolve-pr.outputs.skip-reason }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body "DeepSeek review skipped: $SKIP_REASON. A maintainer can review the fork PR manually."
+
   deepseek-review:
     needs: [resolve-pr]
     if: needs.resolve-pr.outputs.should-run == 'true' && needs.resolve-pr.outputs.key-available == 'true'
@@ -131,7 +165,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: refs/pull/${{ needs.resolve-pr.outputs.pr-number }}/head
+          ref: ${{ needs.resolve-pr.outputs.head-sha }}
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-environment

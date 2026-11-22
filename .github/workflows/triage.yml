@@ -34,8 +34,13 @@ jobs:
     # the backlog) are pre-classified and carry a deterministic Triage Result
     # comment — an AI triage run would only duplicate it.
     if: |
-      (github.event_name == 'issues' && !contains(github.event.issue.labels.*.name, 'triaged')) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request == null && startsWith(github.event.comment.body, '/triage')) ||
+      (github.event_name == 'issues' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+        !contains(github.event.issue.labels.*.name, 'triaged')) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request == null &&
+        github.event.comment.user.type != 'Bot' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+        startsWith(github.event.comment.body, '/triage')) ||
       github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -50,9 +55,12 @@ jobs:
 
       - name: Resolve issue number
         id: resolve
+        env:
+          INPUT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "number=${{ github.event.inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+            [[ "$INPUT_ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]] || exit 1
+            echo "number=$INPUT_ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
           else
             echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
           fi
@@ -65,7 +73,7 @@ jobs:
           ISSUE_NUM: ${{ steps.resolve.outputs.number }}
         run: |
           gh api "repos/${{ github.repository }}/issues/$ISSUE_NUM" \
-            --jq '{title: .title, body: .body, author: .user.login}' > /tmp/issue.json
+            --jq '{title: .title, body: .body, author: .user.login, author_association: .author_association, author_type: .user.type}' > /tmp/issue.json
           {
             DELIM="GHEOF-$(openssl rand -hex 8)"
             echo "title=$(jq -r .title /tmp/issue.json)"
@@ -73,9 +81,33 @@ jobs:
             jq -r .body /tmp/issue.json
             echo "$DELIM"
             echo "author=$(jq -r .author /tmp/issue.json)"
+            echo "author_association=$(jq -r .author_association /tmp/issue.json)"
+            echo "author_type=$(jq -r .author_type /tmp/issue.json)"
           } >> "$GITHUB_OUTPUT"
 
+      # The workflow_dispatch path is reachable by automation (issue-catch-up
+      # sweep, report-failure), so dispatched runs re-verify issue authorship
+      # with the same rule as the `issues`-event gate in the job `if`: untrusted
+      # issue text must not reach the AI prompt. Repo automation authors (bot
+      # accounts, e.g. failure-report issues) stay eligible; a maintainer can
+      # still triage any issue explicitly with a /triage comment.
+      - name: Authorize dispatched triage
+        id: dispatch_gate
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          AUTHOR_ASSOCIATION: ${{ steps.issue_details.outputs.author_association }}
+          AUTHOR_LOGIN: ${{ steps.issue_details.outputs.author }}
+          AUTHOR_TYPE: ${{ steps.issue_details.outputs.author_type }}
+        run: |
+          authorized=$(node .github/workflows/scripts/authorize-triage-dispatch.cjs)
+          echo "authorized=$authorized" >> "$GITHUB_OUTPUT"
+          if [ "$authorized" != "true" ]; then
+            echo "::notice::Dispatched triage skipped: issue author ($AUTHOR_ASSOCIATION/$AUTHOR_TYPE) is outside the maintainer and repo-automation groups; triage it explicitly with a /triage comment."
+          fi
+
       - uses: ./.github/actions/run-zai
+        id: triage_agent
+        if: github.event_name != 'workflow_dispatch' || steps.dispatch_gate.outputs.authorized == 'true'
         with:
           allow-post-inline: 'true'
           api-key: ${{ secrets.ZAI_API_KEY }}
@@ -150,7 +182,7 @@ jobs:
             Operate as the `kos-triage` agent: first read `.claude/agents/kos-triage.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Ensure triaged label
-        if: success()
+        if: steps.triage_agent.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUM: ${{ steps.resolve.outputs.number }}
@@ -164,7 +196,7 @@ jobs:
           fi
 
       - name: Detect umbrella/tracking issue
-        if: always()
+        if: always() && (steps.triage_agent.outcome == 'success' || steps.triage_agent.outcome == 'failure')
         id: tracking-check
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}

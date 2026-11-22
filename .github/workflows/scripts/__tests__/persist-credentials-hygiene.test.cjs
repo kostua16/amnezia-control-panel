@@ -161,7 +161,7 @@ test('every checkout step in read-only workflows has persist-credentials: false'
 //   - a trigger event where track_progress resolves true
 // fails deterministically at 0 turns (this exact trap broke every
 // issues-event triage run). Either drop track-progress or keep checkout
-// credentials for that workflow.
+// credentials for the job that needs tag-mode branch setup.
 test('hardened checkouts never combine with track-progress on tag-mode events', () => {
   const TRACKED_EVENT_RE =
     /^ {2}(issues|issue_comment|pull_request|pull_request_review|pull_request_review_comment):/m;
@@ -179,20 +179,30 @@ test('hardened checkouts never combine with track-progress on tag-mode events', 
     // YAML block scalars (track-progress: | / >) are also safe here: the
     // capture is the indicator character, which !== 'false', so the workflow
     // is flagged — the check fails closed rather than missing the value.
-    const trackProgressValues = [
-      ...content.matchAll(/track-progress:\s*(.+)/g),
-    ].map((m) => m[1].trim().replace(/^['"]|['"]$/g, ''));
-    const mayEnableTracking =
-      trackProgressValues.length > 0 &&
-      trackProgressValues.some((v) => v !== 'false');
-    if (!mayEnableTracking) continue;
-    if (!/persist-credentials:\s*false/.test(content)) continue;
+    const onBlock =
+      content.match(/^on:[^\S\n]*\n([\s\S]*?)(?=^\S)/m)?.[1] ?? '';
+    if (!TRACKED_EVENT_RE.test(onBlock)) continue;
 
-    // Extract the top-level `on:` block (up to the next top-level key).
-    const onMatch = content.match(/^on:\s*\n([\s\S]*?)(?=^\S)/m);
-    const onBlock = onMatch ? onMatch[1] : '';
-    if (TRACKED_EVENT_RE.test(onBlock)) {
-      violations.push(file);
+    // Jobs have isolated checkouts and Git configuration.
+    const jobsBlock =
+      content.match(/^jobs:[ \t]*(?:#[^\r\n]*)?\r?\n([\s\S]*)/m)?.[1] ?? '';
+    const jobs = jobsBlock.split(/^ {2}(?=[\w-]+:)/m).slice(1);
+    assert.ok(
+      jobs.length,
+      `${file}: expected a jobs mapping with at least one job`,
+    );
+    for (const job of jobs) {
+      const trackProgressValues = [
+        ...job.matchAll(/^ +track-progress:[ \t]*(.+)/gm),
+      ].map((m) => m[1].trim().replace(/^['"]|['"]$/g, ''));
+      if (
+        trackProgressValues.some((value) => value !== 'false') &&
+        /^ +persist-credentials:[ \t]*(?:false|'false'|"false")[ \t]*(?:#.*)?\r?$/im.test(
+          job,
+        )
+      ) {
+        violations.push(`${file} / ${job.split(':', 1)[0]}`);
+      }
     }
   }
 

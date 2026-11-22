@@ -161,9 +161,13 @@ function currentInlineIssue(reviewComments = [], headSha) {
   return sortNewest(
     reviewComments.filter((comment) => {
       const user = comment.user ?? comment.author ?? {};
+      // GitHub can remap a thread's displayed commit when the PR head moves.
+      const reviewedCommit =
+        comment.original_commit_id ?? normalizeCommitId(comment);
       return (
         isKiloUser(user) &&
-        isCurrentHead(comment, headSha) &&
+        headSha &&
+        reviewedCommit === headSha &&
         String(comment.body ?? '').trim().length > 0
       );
     }),

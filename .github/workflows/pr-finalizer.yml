@@ -70,11 +70,13 @@ jobs:
 
       - name: Resolve PR context
         id: resolve
+        env:
+          INPUT_PR_NUMBER: ${{ github.event.inputs.pr_number || '' }}
         run: |
           node .github/workflows/scripts/resolve-pr-context.cjs \
             --event-name "${GITHUB_EVENT_NAME}" \
             --event-path "${GITHUB_EVENT_PATH}" \
-            --pr-number "${{ github.event.inputs.pr_number || '' }}" \
+            --pr-number "$INPUT_PR_NUMBER" \
             > /tmp/pr-context.json
           echo "pr_number=$(jq -r '.pullRequests[0].number // empty' /tmp/pr-context.json)" >> "$GITHUB_OUTPUT"
 
@@ -84,11 +86,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          EXPECTED_HEAD_SHA: ${{ github.event.inputs.head_sha || '' }}
+          # Fail safe: the declared workflow_dispatch default is dry-run, so
+          # a caller that omits the input must never land in apply mode —
+          # only an explicit 'false' applies.
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
         run: |
           gh pr view "$PR_NUMBER" \
             --json number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \
             > /tmp/pr.json
-          expected_head_sha="${{ github.event.inputs.head_sha || '' }}"
+          expected_head_sha="$EXPECTED_HEAD_SHA"
           actual_head_sha=$(jq -r '.headRefOid // ""' /tmp/pr.json)
           pr_state=$(jq -r '.state // ""' /tmp/pr.json)
           merged_at=$(jq -r '.mergedAt // ""' /tmp/pr.json)
@@ -110,7 +117,7 @@ jobs:
             --pr-file /tmp/pr.json \
             --event-name "${GITHUB_EVENT_NAME}" \
             --event-path "${GITHUB_EVENT_PATH}" \
-            --dry-run "${{ github.event.inputs.dry_run || 'false' }}" \
+            --dry-run "$INPUT_DRY_RUN" \
             > /tmp/finalizer-decision.json
           {
             echo "head_ref=$(jq -r '.head_ref_name' /tmp/policy-eval.json)"

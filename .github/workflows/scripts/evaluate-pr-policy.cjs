@@ -594,6 +594,7 @@ function evaluatePrPolicy(pr, policy, filesPayload = null) {
       (dependabotUpdate && dependabotUpdate.supported));
 
   const shouldAnalyze =
+    !isCrossRepository &&
     !isDraft &&
     !isPlanningBranch &&
     !skipImprove &&

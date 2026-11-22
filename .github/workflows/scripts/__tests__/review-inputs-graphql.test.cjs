@@ -4,12 +4,14 @@ const assert = require('node:assert/strict');
 
 const {
   MAX_PAGES_PER_CONNECTION,
+  REVIEW_INPUTS_QUERY,
   ReviewInputsUnavailable,
   fetchReviewInputsGraphql,
 } = require('../lib/review-inputs-graphql.cjs');
 const { isKiloUser, KILO_LOGINS, KILO_MARKER } = require('../lib/kilo.cjs');
 const { findExistingComment } = require('../lib/sticky-comment.cjs');
 const { evaluateExternalReview } = require('../evaluate-external-review.cjs');
+const { normalizeInputs } = require('../compare-review-input-sources.cjs');
 const {
   collectExternalReview,
   headCommittedAtFromCommits,
@@ -157,11 +159,32 @@ test('a human account named kilo-code-bot is not a trusted Kilo signal', () => {
   assert.equal(result.state, 'pending');
 });
 
-for (const [name, kiloBody, inline, expected] of [
+test('the review-thread query requests the original inline comment commit', () => {
+  assert.match(
+    REVIEW_INPUTS_QUERY,
+    /reviewThreads\([^)]*\)[\s\S]*?comments\([^)]*\)\s*\{\s*nodes\s*\{[^\n]*originalCommit\s*\{\s*oid\s*\}/,
+  );
+});
+
+for (const [name, kiloBody, inline, expected, originalCommit] of [
   ['passed', KILO_PASSED, null, 'passed'],
   ['blocked by summary', KILO_BLOCKED, null, 'blocked'],
   ['blocked by inline comment', KILO_PASSED, 'fix this', 'blocked'],
   ['pending without a summary', null, null, 'pending'],
+  [
+    'ignores remapped old inline comment',
+    KILO_PASSED,
+    'old finding',
+    'passed',
+    OTHER,
+  ],
+  [
+    'blocks original head inline comment',
+    KILO_PASSED,
+    'new finding',
+    'blocked',
+    HEAD,
+  ],
 ]) {
   test(`GraphQL inputs give the same verdict as REST inputs (${name})`, () => {
     const headReview = {
@@ -187,6 +210,9 @@ for (const [name, kiloBody, inline, expected] of [
                       author: bot('kilo-code-bot'),
                       body: inline,
                       commit: { oid: HEAD },
+                      originalCommit: originalCommit
+                        ? { oid: originalCommit }
+                        : null,
                       createdAt: '2026-01-01T10:08:00Z',
                       updatedAt: '2026-01-01T10:08:00Z',
                     },
@@ -210,6 +236,7 @@ for (const [name, kiloBody, inline, expected] of [
               user: { login: 'kilo-code-bot[bot]' },
               body: inline,
               commit_id: HEAD,
+              original_commit_id: originalCommit,
               created_at: '2026-01-01T10:08:00Z',
               updated_at: '2026-01-01T10:08:00Z',
             },
@@ -234,6 +261,18 @@ for (const [name, kiloBody, inline, expected] of [
     const viaRest = evaluateExternalReview({ ...args, ...restInputs });
     assert.equal(viaRest.state, expected);
     assert.deepEqual(viaGraphql, viaRest);
+    const normalizedRest = normalizeInputs(restInputs);
+    const normalizedGraphql = normalizeInputs(graphqlInputs);
+    assert.deepEqual(
+      normalizedGraphql.reviewComments,
+      normalizedRest.reviewComments,
+    );
+    if (inline) {
+      assert.equal(
+        normalizedGraphql.reviewComments[0].original_commit_id,
+        originalCommit ?? null,
+      );
+    }
   });
 }
 

@@ -85,6 +85,15 @@ jobs:
               `${process.env.GITHUB_WORKSPACE}/.github/workflows/scripts/lib/tracking-issue.cjs`
             );
 
+            // Automatic triage must respect the same maintainer-authorship
+            // gate as triage.yml's `issues` event: issue text authored
+            // outside the maintainer group may not reach an AI prompt via
+            // the sweep's workflow_dispatch path. A maintainer can still
+            // triage any issue explicitly.
+            const { isAuthorizedTriageAuthor } = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/workflows/scripts/authorize-triage-dispatch.cjs`
+            );
+
             // --- Fetch all open issues ---
             const allIssues = [];
             let page = 1;
@@ -165,6 +174,10 @@ jobs:
               triaged_no_fix: [],
               fix_dead_letter: [],
               dead_letter_retry: [],
+              // Untriaged issues authored outside the maintainer and
+              // repo-automation groups — visible in the summary for a
+              // human, never dispatched to AI triage.
+              external_untriaged: [],
               // Pipeline invariant violations — reported to the claude-health
               // tracker by a deterministic step, never acted on by the agent.
               invariant_findings: []
@@ -304,6 +317,17 @@ jobs:
                 c.body.includes('/fix') && afterRetry(c)
               );
 
+              // Mirrors triage.yml's author gates: maintainer-associated
+              // authors AND repo automation (bot accounts — the pipeline's
+              // own failure-report and spin-off issues carry NONE
+              // association) may be auto-triaged by this sweep. External
+              // human authors never reach the AI triage prompt.
+              const maintainerAuthored = isAuthorizedTriageAuthor(
+                issue.author_association,
+                issue.user?.type,
+                issue.user?.login,
+              );
+
               // Parked dead letters: issues needs-review'd after repeated
               // automation failures get exactly ONE fresh-context retry after
               // 7 days (failures are often transient: turn limits, runner
@@ -352,7 +376,15 @@ jobs:
                   !labels.includes('security') &&
                   !labels.includes('critical') &&
                   !DL_AUTO_GEN.some(p => p.test(issue.title));
-                const retryEligible = kind === 'triage' || dlFixEligible;
+                // Triage-kind retries re-enter needs_retriage after the
+                // unpark, so they inherit the authorship gate — external
+                // triage dead letters stay parked for a human. dlFixEligible
+                // applies to fix-kind dead letters only: a triage-kind dead
+                // letter merely passing the fix filters would be un-parked
+                // into external_untriaged and never triaged again.
+                const retryEligible =
+                  (kind === 'triage' && maintainerAuthored) ||
+                  (kind === 'fix' && dlFixEligible);
                 if (!hasRetryMarker && parkedLongEnough && retryEligible) {
                   buckets.dead_letter_retry.push({
                     number: num,
@@ -388,6 +420,30 @@ jobs:
               }
 
               if (!hasTriaged) {
+                // Authorship gate (same rule as triage.yml's author gates):
+                // untrusted issue text must not reach the AI triage prompt
+                // via workflow_dispatch. External untriaged issues stay
+                // visible for manual triage; high/critical ones also keep
+                // the priority nudge — external_untriaged alone is log-only
+                // and would leave them invisible to every human.
+                if (!maintainerAuthored) {
+                  if (
+                    priorityEscalationEligible &&
+                    shouldNudgePriority(comments)
+                  ) {
+                    buckets.priority_escalation.push({
+                      number: num,
+                      title: issue.title,
+                      labels
+                    });
+                  }
+                  buckets.external_untriaged.push({
+                    number: num,
+                    title: issue.title
+                  });
+                  continue;
+                }
+
                 // Check triage cooldown — skip if /triage posted in last 2h
                 const recentTriage = triageComments.find(c =>
                   new Date(c.created_at) > twoHoursAgo
@@ -561,6 +617,7 @@ jobs:
               'groupable_candidates',
               'needs_retriage',
               'triage_dead_letter',
+              'external_untriaged',
               'invariant_findings',
             ];
             const loggedTotalActions = Object.entries(buckets)
@@ -907,10 +964,14 @@ jobs:
             deterministically by the collect job (workflow_dispatch of
             triage.yml and the `triage-failed` parking label). The
             `invariant_findings` bucket is observability data reported to the
-            claude-health tracker by the collect job. All three appear in the
+            claude-health tracker by the collect job. The
+            `external_untriaged` bucket lists untriaged issues authored
+            outside the maintainer group — they are never auto-triaged and a
+            maintainer triages them explicitly. All four appear in the
             JSON for visibility only. Do NOT post "/triage" comments, do NOT
             add `needs-review` for triage failures, and take no action on
-            `invariant_findings` — skip straight to Phase 3.
+            `invariant_findings` or `external_untriaged` — skip straight to
+            Phase 3.
 
             ### Phase 3: Priority Escalation (turns 16-20)
 

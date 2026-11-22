@@ -89,7 +89,7 @@ query ReviewInputs(
       reviewThreads(first: ${PAGE_SIZE}, after: $threadsAfter) @include(if: $wantThreads) {
         nodes {
           comments(first: ${THREAD_COMMENTS_PAGE_SIZE}) {
-            nodes { databaseId ${AUTHOR_FIELDS} body commit { oid } createdAt updatedAt }
+            nodes { databaseId ${AUTHOR_FIELDS} body commit { oid } originalCommit { oid } createdAt updatedAt }
             ${PAGE_INFO}
           }
         }
@@ -139,6 +139,7 @@ function toReviewComment(node) {
     user: toUser(node.author),
     body: node.body ?? '',
     commit_id: node.commit?.oid ?? null,
+    original_commit_id: node.originalCommit?.oid ?? null,
     created_at: node.createdAt ?? null,
     updated_at: node.updatedAt ?? null,
   };
