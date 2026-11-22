@@ -43,12 +43,20 @@ function walk(value, visit) {
   }
 }
 
+function isErrorResult(node) {
+  const explicitError = asBoolean(node.is_error);
+  return (
+    explicitError ??
+    (typeof node.subtype === 'string' && node.subtype.startsWith('error_'))
+  );
+}
+
 function hasSuccessfulResult(executionText) {
   for (const value of parseJsonValues(executionText)) {
     let found = false;
     walk(value, (node) => {
       if (found || node.type !== 'result') return;
-      found = asBoolean(node.is_error) !== true;
+      found = !isErrorResult(node);
     });
     if (found) return true;
   }
@@ -61,9 +69,17 @@ function hasSocketCloseResult(executionText) {
     walk(value, (node) => {
       if (
         node.type === 'result' &&
-        asBoolean(node.is_error) === true &&
-        typeof node.result === 'string' &&
-        /socket connection was closed unexpectedly/i.test(node.result)
+        isErrorResult(node) &&
+        [
+          node.result,
+          node.error,
+          node.message,
+          ...(Array.isArray(node.errors) ? node.errors : []),
+        ].some(
+          (text) =>
+            typeof text === 'string' &&
+            /socket connection was closed unexpectedly/i.test(text),
+        )
       ) {
         found = true;
       }
@@ -217,14 +233,18 @@ function classifyClaudeRetry({
   const transientExecution =
     (normalizedHttpCode === '200' || transientProbe) &&
     hasSocketCloseResult(executionText);
-  if (transientProbe || transientExecution) {
+  if (
+    transientExecution ||
+    (transientProbe && !hasAnyResultNode(executionText))
+  ) {
     return {
       httpCode: normalizedHttpCode,
       isRateLimited: false,
       shouldRetry: true,
-      retryReason: transientExecution
-        ? 'transient_transport'
-        : 'probe_unreachable',
+      retryReason:
+        transientExecution || !probeUnavailable
+          ? 'transient_transport'
+          : 'probe_unreachable',
       softSuccess: false,
       softSuccessReason: '',
       annotation: 'warning',

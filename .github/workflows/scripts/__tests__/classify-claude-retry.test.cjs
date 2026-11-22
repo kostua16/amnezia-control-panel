@@ -184,7 +184,20 @@ test('HTTP/2 framing, partial responses, and stream failures retry', () => {
   for (const probeExitCode of ['16', '18', '92']) {
     for (const httpCode of ['000', '200']) {
       const result = classifyClaudeRetry({ httpCode, probeExitCode });
-      assert.equal(result.retryReason, 'probe_unreachable');
+      assert.equal(
+        result.retryReason,
+        httpCode === '000' ? 'probe_unreachable' : 'transient_transport',
+      );
+      const deterministic = classifyClaudeRetry({
+        httpCode,
+        probeExitCode,
+        executionText: JSON.stringify({
+          type: 'result',
+          subtype: 'error_max_turns',
+        }),
+      });
+      assert.equal(deterministic.shouldRetry, false);
+      assert.equal(deterministic.softSuccess, false);
     }
   }
 });
@@ -202,4 +215,25 @@ test('quoted socket-close text in the transcript does not trigger transport retr
   });
   assert.equal(result.shouldRetry, false);
   assert.equal(result.retryReason, 'non_retryable');
+});
+
+test('socket-close matching recognizes alternate SDK error-result fields', () => {
+  const message = 'The socket connection was closed unexpectedly';
+  for (const fields of [
+    { error: message },
+    { result: 'Agent failed', message },
+    { errors: [message] },
+  ]) {
+    assert.equal(
+      classifyClaudeRetry({
+        httpCode: '200',
+        executionText: JSON.stringify({
+          type: 'result',
+          subtype: 'error_during_execution',
+          ...fields,
+        }),
+      }).retryReason,
+      'transient_transport',
+    );
+  }
 });
