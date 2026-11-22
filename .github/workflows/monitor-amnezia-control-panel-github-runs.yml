@@ -582,7 +582,10 @@ jobs:
     # a failing telemetry job leaves an hourly red run with no issue and
     # no triage dispatch.
     needs: [monitor-runs, cost-telemetry]
-    if: ${{ always() && ((needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped') || needs.cost-telemetry.result == 'failure') }}
+    # Mirror the monitor-runs predicate for cost-telemetry: matching only
+    # 'failure' would leave a cancelled telemetry job (cancellation race
+    # with the 10-minute timeout) invisible — red run, no issue, no triage.
+    if: ${{ always() && ((needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped') || (needs.cost-telemetry.result != 'success' && needs.cost-telemetry.result != 'skipped')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -607,7 +610,11 @@ jobs:
           labels: auto-fix,ci-failure
           ensure-labels: auto-fix,ci-failure
           dispatch-triage: 'true'
-          claude-step-outcome: ${{ needs.monitor-runs.result }}
+          # report-failure is shared between monitor-runs and cost-telemetry:
+          # attribute the outcome to whichever component actually failed, so
+          # a telemetry-only failure is not filed with the successful agent
+          # job's result.
+          claude-step-outcome: ${{ (needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped') && needs.monitor-runs.result || needs.cost-telemetry.result }}
           claude-turns: ${{ needs.monitor-runs.outputs.claude_num_turns }}
           claude-is-error: ${{ needs.monitor-runs.outputs.claude_is_error }}
           claude-used-attempt: ${{ needs.monitor-runs.outputs.claude_used_attempt }}

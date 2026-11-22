@@ -266,8 +266,14 @@ test('fetchCompletedRuns parses paginated NDJSON and applies window filters', ()
   );
   assert.ok(calls[0].includes('status=completed'));
   // The window must bound the listing server-side; a client-side filter
-  // alone would let --paginate walk the workflow's entire history.
-  assert.ok(calls[0].includes('created>=2026-08-15T00:00:00Z'));
+  // alone would let --paginate walk the workflow's entire history. gh
+  // splits -f at the FIRST '=', so the argument must be the parameter
+  // `created` with a value of `>=…` — a single '=' sends a bogus `created>`
+  // parameter GitHub silently ignores, re-opening the unbounded scan.
+  assert.ok(
+    calls[0].includes('created=>=2026-08-15T00:00:00Z'),
+    'server-side window must be parameter `created` with a >=… value',
+  );
   assert.ok(calls[0].includes('--paginate'));
   assert.equal(truncated, false);
 });
@@ -787,6 +793,42 @@ test('collectCostTelemetry fails closed when the jobs listing fails for every ru
   );
 });
 
+test('collectCostTelemetry fails closed when the agent job name matches nothing', () => {
+  // Every jobs listing succeeds, but no job carries the agent name (job
+  // renamed, matrix suffix, drifted --agent-job-name): without this guard
+  // the summary stays green with runs_scanned > 0, jobs_scanned: 0 and an
+  // empty artifact — the green-empty-window case it exists to prevent.
+  const runner = fakeGh([
+    {
+      match: 'actions/workflows/monitor.yml/runs',
+      respond: () => ({ ok: true, stdout: JSON.stringify(RUN) }),
+    },
+    {
+      match: '/actions/runs/1001/jobs',
+      respond: () => ({ ok: true, stdout: JSON.stringify(JOB) }),
+    },
+  ]);
+
+  const result = collectCostTelemetry(
+    {
+      repo: 'owner/repo',
+      workflowFile: 'monitor.yml',
+      since: '2026-08-15T00:00:00Z',
+      maxRuns: 10,
+      agentJobName: 'Renamed Agent Job',
+    },
+    runner,
+  );
+
+  assert.equal(result.error, 'agent-job-missing');
+  assert.equal(result.records.length, 0);
+  assert.equal(result.summary.runs_scanned, 1);
+  assert.equal(result.summary.jobs_scanned, 0);
+  assert.ok(
+    result.summary.fetch_errors.some((e) => e.scope === 'agent-job-missing'),
+  );
+});
+
 test('collectCostTelemetry dedupes the same job seen twice via pagination overlap', () => {
   const runner = fakeGh([
     {
@@ -960,7 +1002,12 @@ test('cost-telemetry runs read-only and routes failures to report-failure', () =
   assert.match(reportBlock, /needs: \[monitor-runs, cost-telemetry\]/);
   assert.match(
     reportBlock,
-    /needs\.cost-telemetry\.result == 'failure'/,
-    'a failing telemetry job must file an issue via report-failure',
+    /needs\.cost-telemetry\.result != 'success' && needs\.cost-telemetry\.result != 'skipped'/,
+    'a failing or cancelled telemetry job must file an issue via report-failure',
+  );
+  assert.match(
+    reportBlock,
+    /claude-step-outcome: \$\{\{ \(needs\.monitor-runs\.result != 'success' && needs\.monitor-runs\.result != 'skipped'\) && needs\.monitor-runs\.result \|\| needs\.cost-telemetry\.result \}\}/,
+    'a telemetry-only failure must not be filed with the agent job outcome',
   );
 });

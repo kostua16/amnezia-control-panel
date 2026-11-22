@@ -172,8 +172,12 @@ function fetchCompletedRuns(
     // Bound the listing server-side: with --paginate and no `created`
     // window, gh walks the workflow's entire history — growing without
     // bound and eventually blowing runGh's 30 s per-invocation timeout.
+    // gh splits -f at the FIRST '=', so the double '=' is load-bearing:
+    // it keeps the parameter `created` with a value of `>=…`. A single
+    // '=' would send a bogus `created>` parameter that GitHub silently
+    // ignores, re-opening the unbounded scan.
     '-f',
-    `created>=${toGithubCreatedAt(Date.parse(since))}`,
+    `created=>=${toGithubCreatedAt(Date.parse(since))}`,
     '-f',
     `per_page=${perPage}`,
     '--paginate',
@@ -464,22 +468,33 @@ function collectCostTelemetry(options = {}, ghRunner = runGh) {
     });
   }
 
-  // Runs were listed but zero jobs were scanned while jobs listings also
+  // Runs were listed but zero jobs were scanned: either every jobs listing
   // failed (the agent-job filter cannot zero out a run whose jobs were
-  // never listed): that would report a green empty artifact — fail closed
-  // exactly like a run-listing failure.
-  if (
-    runs.length > 0 &&
-    jobsScanned === 0 &&
-    fetchErrors.some((error) => error.scope.endsWith('-jobs'))
-  ) {
+  // never listed) or the agent-job name matched nothing (job renamed,
+  // matrix/prefix suffix, drifted --agent-job-name). Both would report a
+  // green empty artifact — fail closed exactly like a run-listing failure,
+  // independently of whether any listing errored.
+  if (runs.length > 0 && jobsScanned === 0) {
+    const jobsListFailed = fetchErrors.some((error) =>
+      error.scope.endsWith('-jobs'),
+    );
     return {
-      error: 'jobs-list-failed',
+      error: jobsListFailed ? 'jobs-list-failed' : 'agent-job-missing',
       records: [],
       summary: aggregate([], {
         window: windowInfo,
         runsScanned: runs.length,
-        fetchErrors: cappedErrors,
+        fetchErrors: jobsListFailed
+          ? cappedErrors
+          : [
+              ...cappedErrors,
+              {
+                scope: 'agent-job-missing',
+                detail: `zero jobs matched the agent job name "${
+                  agentJobName || '(unset)'
+                }" across ${runs.length} run(s); the job name may have drifted`,
+              },
+            ],
       }),
     };
   }
