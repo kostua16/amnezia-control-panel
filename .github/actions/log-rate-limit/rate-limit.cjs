@@ -1,4 +1,7 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 'use strict';
+
+const { createHash } = require('node:crypto');
 
 const DEFAULT_API_URL = 'https://api.github.com';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -21,6 +24,15 @@ function tokenKind(token) {
   return match ? match[1] : 'unknown';
 }
 
+// Short one-way fingerprint of the token (first 8 hex chars of its SHA-256). It reveals nothing
+// usable about the secret but lets lines be grouped by the exact token that produced them, e.g.
+// to tell whether the start and the end of one job read the same quota bucket.
+function tokenFingerprint(token) {
+  const value = String(token ?? '');
+  if (!value) return 'none';
+  return createHash('sha256').update(value).digest('hex').slice(0, 8);
+}
+
 function formatRateLimitLine({ env, phase, label, resources }) {
   const core = resources?.core;
   return [
@@ -32,6 +44,7 @@ function formatRateLimitLine({ env, phase, label, resources }) {
     `run=${env.GITHUB_RUN_ID ?? ''}.${env.GITHUB_RUN_ATTEMPT ?? ''}`,
     `event=${env.GITHUB_EVENT_NAME ?? ''}`,
     `token=${tokenKind(env['INPUT_GITHUB-TOKEN'])}`,
+    `token_id=${tokenFingerprint(env['INPUT_GITHUB-TOKEN'])}`,
     `core_remaining=${formatBucket(core)}`,
     `core_reset=${formatReset(core?.reset)}`,
     `graphql=${formatBucket(resources?.graphql)}`,
@@ -76,4 +89,9 @@ async function logRateLimit({
   }
 }
 
-module.exports = { formatRateLimitLine, logRateLimit, tokenKind };
+module.exports = {
+  formatRateLimitLine,
+  logRateLimit,
+  tokenFingerprint,
+  tokenKind,
+};
