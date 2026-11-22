@@ -37,6 +37,9 @@ jobs:
           setup-bun: 'false'
           require-gh-auth: 'false'
 
+      - name: Install policy checker dependencies
+        run: bash .github/workflows/scripts/install-governance-yaml.sh
+
       - name: Verify pinned workflow actions
         run: node .github/workflows/scripts/workflow-governance-check.cjs
 
