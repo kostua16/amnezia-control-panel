@@ -43,8 +43,8 @@ function writeFakeBin(binDir, name, body) {
   }
 }
 
-function spawnVerifier(root, binDir, env) {
-  const args = [scriptPath];
+function spawnVerifier(root, binDir, env, paths = []) {
+  const args = [scriptPath, ...paths];
   if (process.platform === 'win32') {
     // Dispatch fake executables through Node while exercising the real CLI.
     const preload = path.join(binDir, 'fake-tools.cjs');
@@ -172,6 +172,25 @@ test('validates changed action metadata without invoking actionlint', () => {
   fs.writeFileSync(path.join(root, manifest), 'name: example\njobs: {}\n');
   assert.equal(verifyChangedWorkflowFiles(options).status, 1);
   assert.match(errors[0], /Invalid action metadata.*runs\.using/);
+
+  for (const [body, diagnostic] of [
+    ['runs: { using: node99 }', /Unsupported runs\.using/],
+    ['runs: { using: composite }', /requires runs\.steps/],
+    ['runs: { using: node24 }', /requires runs\.main/],
+    ['runs: { using: docker }', /requires runs\.image/],
+    ['runs: { using: node24, main: index.js }\ninputs: []', /inputs must map/],
+    [
+      'runs: { using: docker, image: Dockerfile }\noutputs: { id: bad }',
+      /outputs must map/,
+    ],
+  ]) {
+    fs.writeFileSync(
+      path.join(root, manifest),
+      `name: example\ndescription: fixture\n${body}\n`,
+    );
+    assert.equal(verifyChangedWorkflowFiles(options).status, 1, body);
+    assert.match(errors.at(-1), diagnostic);
+  }
 });
 
 test('empty CHANGED_FILES is a no-op', () => {
@@ -238,10 +257,9 @@ test('run 29803905118: untouched fix-review SC2129 cannot fail monitor', () => {
     '.github/workflows/workflow-health-optimize.yml',
   ]);
 
-  const failed = spawnVerifier(root, binDir, {
-    ...env,
-    CHANGED_FILES: JSON.stringify(['.github/workflows/fix-review.yml']),
-  });
+  const failed = spawnVerifier(root, binDir, env, [
+    '.github/workflows/fix-review.yml',
+  ]);
   assert.equal(failed.status, 1, failed.stderr || failed.stdout);
   assert.match(failed.stderr, /fix-review\.yml: SC2129/);
   assert.deepEqual(JSON.parse(fs.readFileSync(argvLog, 'utf8')), [

@@ -76,6 +76,40 @@ function validateActionManifest(file, cwd) {
       'Action metadata requires name, description, and runs.using',
     );
   }
+  const { runs, inputs, outputs } = manifest;
+  switch (runs.using) {
+    case 'composite':
+      if (!Array.isArray(runs.steps)) {
+        throw new Error('Composite action requires runs.steps');
+      }
+      break;
+    case 'node20':
+    case 'node24':
+      if (typeof runs.main !== 'string' || !runs.main.trim()) {
+        throw new Error('JavaScript action requires runs.main');
+      }
+      break;
+    case 'docker':
+      if (typeof runs.image !== 'string' || !runs.image.trim()) {
+        throw new Error('Docker action requires runs.image');
+      }
+      break;
+    default:
+      throw new Error(`Unsupported runs.using: ${runs.using}`);
+  }
+  for (const [key, entries] of Object.entries({ inputs, outputs })) {
+    if (entries === undefined) continue;
+    if (
+      !isMapping(entries) ||
+      Object.values(entries).some((entry) => !isMapping(entry))
+    ) {
+      throw new Error(`Action ${key} must map IDs to metadata objects`);
+    }
+  }
+}
+
+function isMapping(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isRunnableCandidate(candidate) {
@@ -210,7 +244,11 @@ function verifyChangedWorkflowFiles(options = {}) {
 
 if (require.main === module) {
   try {
-    process.exit(verifyChangedWorkflowFiles().status);
+    const paths = process.argv.slice(2);
+    const options = paths.length
+      ? { rawChangedFiles: JSON.stringify(paths) }
+      : {};
+    process.exit(verifyChangedWorkflowFiles(options).status);
   } catch (err) {
     if (err && Number.isInteger(err.status)) process.exit(err.status);
     throw err;
