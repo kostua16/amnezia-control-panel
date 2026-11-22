@@ -44,3 +44,46 @@ for (const file of workflowFiles) {
     );
   });
 }
+
+test('G8a: privileged close jobs check out the trusted PR base', () => {
+  const workflow = yaml.load(
+    fs.readFileSync(
+      path.resolve(__dirname, '../../auto-pr-branch-cleanup.yml'),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(workflow.on.pull_request_target, {
+    branches: ['main'],
+    types: ['closed'],
+  });
+  assert.equal(workflow.on.pull_request, undefined);
+  for (const name of ['restore-deferred-proposal', 'delete-generated-branch']) {
+    const [checkout, snapshot] = workflow.jobs[name].steps;
+    assert.match(checkout.uses, /^actions\/checkout@/);
+    assert.equal(
+      checkout.with.ref,
+      '${{ github.event.pull_request.base.sha }}',
+    );
+    assert.equal(checkout.with['persist-credentials'], false);
+    assert.equal(snapshot.uses, './.github/actions/log-rate-limit');
+  }
+  assert.equal(
+    workflow.jobs['cleanup-orphan-branches'].if,
+    "github.event_name != 'pull_request_target'",
+  );
+});
+
+test('G8b: Docker image publishing jobs use distinct rate-limit labels', () => {
+  const workflow = yaml.load(
+    fs.readFileSync(path.resolve(__dirname, '../../docker-image.yml'), 'utf8'),
+  );
+  for (const [job, label] of [
+    ['publish', 'docker-publish'],
+    ['publish-stack', 'docker-publish-stack'],
+  ]) {
+    const snapshot = workflow.jobs[job].steps.find(
+      (step) => step.uses === './.github/actions/log-rate-limit',
+    );
+    assert.equal(snapshot?.with.label, label);
+  }
+});
