@@ -326,7 +326,6 @@ test('check runs and statuses are mapped to the REST casing and nesting', () => 
                     conclusion: 'CANCELLED',
                     checkSuite: {
                       app: { slug: 'kilo', name: 'Kilo' },
-                      workflowRun: { workflow: { name: 'Review' } },
                     },
                   },
                   {
@@ -343,7 +342,6 @@ test('check runs and statuses are mapped to the REST casing and nesting', () => 
                     targetUrl: null,
                     createdAt: '2026-01-01T10:00:00Z',
                   },
-                  { __typename: 'SomethingNew' },
                 ]),
               },
             },
@@ -353,14 +351,16 @@ test('check runs and statuses are mapped to the REST casing and nesting', () => 
     }),
   ]);
   const { checkRuns, statuses } = run();
+  // No `workflow_name`: the REST check-runs response carries none, and
+  // `isKiloCheck` matches it — mapping it would classify checks as Kilo on
+  // the GraphQL path only.
   assert.deepEqual(checkRuns, [
     {
       name: 'Kilo Code Review',
       conclusion: 'cancelled',
       app: { slug: 'kilo', name: 'Kilo' },
-      workflow_name: 'Review',
     },
-    { name: 'in-flight', conclusion: null, app: null, workflow_name: null },
+    { name: 'in-flight', conclusion: null, app: null },
   ]);
   assert.deepEqual(statuses, [
     {
@@ -371,6 +371,30 @@ test('check runs and statuses are mapped to the REST casing and nesting', () => 
       created_at: '2026-01-01T10:00:00Z',
     },
   ]);
+});
+
+test('a rollup context type the mapper does not know throws instead of being dropped', () => {
+  const { run } = fetchWith([
+    response({
+      commits: {
+        nodes: [
+          {
+            commit: {
+              oid: HEAD,
+              statusCheckRollup: {
+                contexts: conn([{ __typename: 'SomethingNew' }]),
+              },
+            },
+          },
+        ],
+      },
+    }),
+  ]);
+  assert.throws(run, (error) => {
+    assert.ok(error instanceof ReviewInputsUnavailable);
+    assert.match(error.message, /SomethingNew/);
+    return true;
+  });
 });
 
 test('a head commit without a status rollup yields empty checks instead of a fallback', () => {
@@ -423,6 +447,77 @@ test('pagination follows cursors and only re-requests connections that have more
   assert.equal(calls[1].wantComments, true);
   assert.equal(calls[1].wantReviews, false);
   assert.equal(calls[1].wantThreads, false);
+  assert.equal(calls[1].wantContexts, false);
+});
+
+test('contexts pagination follows its own cursor across pages', () => {
+  const checkRun = (n) => ({
+    __typename: 'CheckRun',
+    name: `check-${n}`,
+    conclusion: 'SUCCESS',
+    checkSuite: { app: null },
+  });
+  const ctxPage = (n, next) =>
+    conn(
+      [checkRun(n)],
+      next ? { hasNextPage: true, endCursor: `ctx-${n}` } : done,
+    );
+  const rollup = (contexts) => ({
+    commits: {
+      nodes: [{ commit: { oid: HEAD, statusCheckRollup: { contexts } } }],
+    },
+  });
+  const { run, calls } = fetchWith([
+    response(rollup(ctxPage(1, true))),
+    response(rollup(ctxPage(2, true))),
+    response(rollup(ctxPage(3, false))),
+  ]);
+  const { checkRuns } = run();
+  assert.deepEqual(
+    checkRuns.map((c) => c.name),
+    ['check-1', 'check-2', 'check-3'],
+  );
+  assert.equal(calls.length, 3);
+  assert.equal(calls[1].contextsAfter, 'ctx-1');
+  assert.equal(calls[2].contextsAfter, 'ctx-2');
+  assert.equal(calls[1].wantContexts, true);
+  assert.equal(calls[1].wantComments, false);
+  assert.equal(calls[1].wantReviews, false);
+  assert.equal(calls[1].wantThreads, false);
+});
+
+test('reviewThreads pagination follows its own cursor across pages', () => {
+  const thread = (id) => ({
+    comments: conn([
+      {
+        databaseId: id,
+        author: bot('kilo-code-bot'),
+        body: `thread-${id}`,
+        commit: { oid: HEAD },
+        createdAt: '2026-01-01T10:00:00Z',
+        updatedAt: '2026-01-01T10:00:00Z',
+      },
+    ]),
+  });
+  const threadPage = (ids, next) =>
+    conn(
+      ids.map(thread),
+      next ? { hasNextPage: true, endCursor: `th-${ids[0]}` } : done,
+    );
+  const { run, calls } = fetchWith([
+    response({ reviewThreads: threadPage([1, 2], true) }),
+    response({ reviewThreads: threadPage([3], false) }),
+  ]);
+  const { reviewComments } = run();
+  assert.deepEqual(
+    reviewComments.map((c) => c.id),
+    [1, 2, 3],
+  );
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].threadsAfter, 'th-1');
+  assert.equal(calls[1].wantThreads, true);
+  assert.equal(calls[1].wantComments, false);
+  assert.equal(calls[1].wantReviews, false);
   assert.equal(calls[1].wantContexts, false);
 });
 
@@ -511,9 +606,23 @@ test('a missing structural field throws', () => {
 });
 
 test('invalid arguments throw instead of querying', () => {
-  const { run, calls } = fetchWith([response()], { headSha: '' });
-  assert.throws(run, ReviewInputsUnavailable);
-  assert.equal(calls.length, 0);
+  const cases = [
+    { headSha: '' },
+    { repo: 'owner/repo/extra' },
+    { repo: 'owner/' },
+    { repo: 'justowner' },
+    { repo: null },
+    { prNumber: null },
+    { prNumber: '' },
+    { prNumber: 0 },
+    { prNumber: -3 },
+    { prNumber: 7.5 },
+  ];
+  for (const overrides of cases) {
+    const { run, calls } = fetchWith([response()], overrides);
+    assert.throws(run, ReviewInputsUnavailable, JSON.stringify(overrides));
+    assert.equal(calls.length, 0, JSON.stringify(overrides));
+  }
 });
 
 test('collectExternalReview uses GraphQL inputs when the source is graphql', () => {

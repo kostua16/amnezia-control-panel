@@ -92,14 +92,27 @@ function relevantSubset(normalized, context) {
   };
 }
 
+function snippet(value) {
+  const text = JSON.stringify(value) ?? 'undefined';
+  return text.length > 160 ? `${text.slice(0, 157)}...` : text;
+}
+
+// Lengths alone hide same-length differences (a null field on one side, a
+// replaced element in the same slot), so every diff also points at the first
+// index where the two normalized lists diverge.
 function diffInputs(rest, graphql) {
   const diffs = [];
   for (const key of Object.keys(rest)) {
-    const a = JSON.stringify(rest[key]);
-    const b = JSON.stringify(graphql[key]);
-    if (a === b) continue;
+    const a = rest[key];
+    const b = graphql[key];
+    if (JSON.stringify(a) === JSON.stringify(b)) continue;
+    const shared = Math.min(a.length, b.length);
+    const firstDivergent = Array.from({ length: shared }, (_, i) => i).find(
+      (i) => JSON.stringify(a[i]) !== JSON.stringify(b[i]),
+    );
+    const at = firstDivergent ?? shared;
     diffs.push(
-      `${key}: rest ${rest[key].length} vs graphql ${graphql[key].length}`,
+      `${key}: rest ${a.length} vs graphql ${b.length}; first diff [${at}] rest=${snippet(a[at])} graphql=${snippet(b[at])}`,
     );
   }
   return diffs;

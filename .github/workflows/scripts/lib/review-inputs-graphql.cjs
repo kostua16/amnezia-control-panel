@@ -27,6 +27,13 @@ const PAGE_INFO = 'pageInfo { hasNextPage endCursor }';
 
 // Connections are guarded by `@include` so a follow-up page only pays for the
 // connections that still have pages left.
+//
+// `statusCheckRollup` reports the LATEST run per check, whereas the REST
+// check-runs endpoint lists every run on its first page. A superseded
+// cancelled/skipped Kilo run that REST would notice is invisible here, so the
+// GraphQL path can hold a verdict at `pending` where REST said `skipped` —
+// never the other way around. Accepted trade-off: REST stays the reference
+// and the fallback.
 const REVIEW_INPUTS_QUERY = `
 query ReviewInputs(
   $owner: String!, $name: String!, $number: Int!,
@@ -52,7 +59,6 @@ query ReviewInputs(
                     conclusion
                     checkSuite {
                       app { slug name }
-                      workflowRun { workflow { name } }
                     }
                   }
                   ... on StatusContext {
@@ -149,7 +155,9 @@ function toContext(node) {
         name: node.name ?? '',
         conclusion: lower(node.conclusion),
         app: node.checkSuite?.app ?? null,
-        workflow_name: node.checkSuite?.workflowRun?.workflow?.name ?? null,
+        // Deliberately no `workflow_name`: the REST check-runs response
+        // carries none, and `isKiloCheck` matches it — mapping it here would
+        // classify checks as Kilo on the GraphQL path only.
       },
     };
   }
@@ -239,12 +247,18 @@ function nextCursor(connection, label, pagesRead) {
  * @returns {{comments, reviewComments, reviews, checkRuns, statuses, cost}}
  */
 function fetchReviewInputsGraphql({ repo, prNumber, headSha, runGraphql }) {
-  const [owner, name] = String(repo ?? '').split('/');
-  if (!owner || !name) throw unavailable('repo must be owner/name.');
-  if (!headSha) throw unavailable('headSha is required.');
-  if (!Number.isInteger(Number(prNumber))) {
-    throw unavailable('prNumber must be an integer.');
+  // `Number(null)`, `Number('')` and negatives must not reach GitHub as PR 0,
+  // so require exactly two non-empty segments and a positive integer.
+  const repoParts = String(repo ?? '').split('/');
+  if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
+    throw unavailable('repo must be exactly owner/name.');
   }
+  const [owner, name] = repoParts;
+  const number = Number(prNumber);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw unavailable('prNumber must be a positive integer.');
+  }
+  if (!headSha) throw unavailable('headSha is required.');
 
   const out = {
     comments: [],
@@ -264,7 +278,7 @@ function fetchReviewInputsGraphql({ repo, prNumber, headSha, runGraphql }) {
       response = runGraphql(REVIEW_INPUTS_QUERY, {
         owner,
         name,
-        number: Number(prNumber),
+        number,
         commentsAfter: cursors.comments,
         reviewsAfter: cursors.reviews,
         threadsAfter: cursors.threads,
@@ -308,7 +322,14 @@ function fetchReviewInputsGraphql({ repo, prNumber, headSha, runGraphql }) {
       pages.contexts += 1;
       for (const node of contexts?.nodes ?? []) {
         const mapped = toContext(node);
-        if (!mapped) continue;
+        if (!mapped) {
+          // A union member this mapper does not know must not silently shrink
+          // the input list (a missing Kilo check can hide a `cancelled`
+          // signal) — throw so the caller falls back to REST.
+          throw unavailable(
+            `Unknown status check context type: ${node?.__typename ?? '(missing __typename)'}.`,
+          );
+        }
         if (mapped.kind === 'checkRun') out.checkRuns.push(mapped.value);
         else out.statuses.push(mapped.value);
       }

@@ -1410,14 +1410,23 @@ function resolveReviewSource(value = process.env.PR_FLOW_REVIEW_SOURCE) {
   return 'rest';
 }
 
-function runGraphqlQuery(query, variables) {
+// The -f vs -F split is load-bearing: the query declares `: Boolean!` /
+// `: Int!` variables, and a boolean or number routed through -f would be sent
+// as the JSON string "false"/"7", which GraphQL rejects on every call.
+function buildGraphqlArgs(query, variables) {
   const args = ['api', 'graphql', '-f', `query=${query}`];
   for (const [key, value] of Object.entries(variables)) {
     if (value === null || value === undefined) continue;
     // -f keeps strings (cursors) literal; -F types numbers and booleans.
     args.push(typeof value === 'string' ? '-f' : '-F', `${key}=${value}`);
   }
-  return JSON.parse(run('gh', args, { retry: true }));
+  return args;
+}
+
+function runGraphqlQuery(query, variables) {
+  return JSON.parse(
+    run('gh', buildGraphqlArgs(query, variables), { retry: true }),
+  );
 }
 
 function fetchRestReviewInputs(pr) {
@@ -2307,6 +2316,7 @@ if (require.main === module) {
 
 module.exports = {
   buildFlowGuidance,
+  buildGraphqlArgs,
   buildFlowVisibility,
   collectCheckEvidence,
   collectExternalReview,
