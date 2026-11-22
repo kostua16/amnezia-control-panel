@@ -47,6 +47,15 @@ jobs:
       group: auto-cover-wait-${{ inputs.pr_number }}
       cancel-in-progress: true
     steps:
+      - name: Validate the handoff
+        shell: bash
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+        run: |
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "::error::pr_number must be a positive integer, got '$PR_NUMBER'"; exit 1; }
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::head_sha must be a full 40-character SHA, got '$HEAD_SHA'"; exit 1; }
+
       - name: Quiet period elapsed
         shell: bash
         env:
@@ -62,6 +71,15 @@ jobs:
       group: auto-cover-dispatch-${{ inputs.pr_number }}
       cancel-in-progress: false
     steps:
+      - name: Validate the handoff
+        shell: bash
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+        run: |
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "::error::pr_number must be a positive integer, got '$PR_NUMBER'"; exit 1; }
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::head_sha must be a full 40-character SHA, got '$HEAD_SHA'"; exit 1; }
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -70,6 +88,9 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
+          # Soft on purpose: an exhausted quota must reach the reserve gate below
+          # and defer green instead of failing the job at setup.
+          require-gh-auth: 'false'
           node-version: '24.x'
           install-deps: 'false'
 

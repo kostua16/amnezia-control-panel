@@ -12,11 +12,8 @@ const fs = require('node:fs');
 const { isKiloHistoryOnlyEdit } = require('./lib/kilo.cjs');
 
 function classifyKiloCommentEdit({ event, filter = '' } = {}) {
-  if (
-    String(filter ?? '')
-      .trim()
-      .toLowerCase() === 'off'
-  ) {
+  // Same comparison as the workflow expressions: exactly `off`, any case.
+  if (String(filter ?? '').toLowerCase() === 'off') {
     return {
       should_run: true,
       history_only: false,

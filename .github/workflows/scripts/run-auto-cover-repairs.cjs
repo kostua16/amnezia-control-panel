@@ -300,6 +300,18 @@ function main(argv = process.argv, env = process.env) {
     {},
   );
   const repo = env.GITHUB_REPOSITORY ?? '';
+  if (
+    mode === 'revalidate' &&
+    !/^[0-9a-f]{40}$/.test(getArg(argv, '--head-sha'))
+  ) {
+    // Without the handed-off head the stale-head veto would silently use the
+    // current head instead.
+    console.error(
+      'revalidate needs --head-sha with the full 40-character head SHA.',
+    );
+    process.exitCode = 2;
+    return;
+  }
   const result = runAutoCoverRepairs({
     dir: getArg(argv, '--context-dir'),
     mode,

@@ -115,7 +115,8 @@ test('the action keeps validate as its default and gates every setup-gh step on 
   );
   const exportStep = envStep(action);
   assert.equal(exportStep.if, "inputs.gh-auth-mode == 'env'");
-  assert.doesNotMatch(exportStep.run, /gh auths/);
+  assert.doesNotMatch(exportStep.run, /gh auth status/);
+  assert.doesNotMatch(exportStep.run, /gh auth login/);
   assert.doesNotMatch(exportStep.run, /gh api/);
   assert.equal(
     exportStep.env.CORE_REMAINING,

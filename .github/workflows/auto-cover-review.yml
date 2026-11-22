@@ -125,6 +125,9 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
+          # Soft on purpose: an exhausted quota must reach the reserve gate below
+          # and defer green instead of failing the job at setup.
+          require-gh-auth: 'false'
           node-version: '24.x'
           install-deps: 'false'
 

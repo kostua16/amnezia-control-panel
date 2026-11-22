@@ -96,6 +96,13 @@ test('only Auto Cover jobs use the reserve gate, after the setup-environment rea
       /id: reserve\r?\n\s+env:\r?\n\s+CORE_REMAINING: \$\{\{ steps\.setup\.outputs\.core-remaining \}\}\r?\n\s+QUOTA_RESERVE: \$\{\{ vars\.QUOTA_RESERVE \|\| '600' \}\}\r?\n\s+run: node \.github\/workflows\/scripts\/check-quota-reserve\.cjs/,
       file,
     );
+    // The gate reads the output of setup-environment, so it must come after it
+    // (an earlier gate would see an empty reading and fail open).
+    assert.ok(
+      yaml.indexOf('- uses: ./.github/actions/setup-environment') <
+        yaml.indexOf('id: reserve'),
+      file,
+    );
     // Every step after the gate is skipped on a deferral (a step cannot end
     // the job green by itself).
     const afterGate = yaml.split(
@@ -123,4 +130,33 @@ test('only Auto Cover jobs use the reserve gate, after the setup-environment rea
     const yaml = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
     assert.doesNotMatch(yaml, /check-quota-reserve/, file);
   }
+});
+
+test('Auto Cover jobs stay soft about auth so an exhausted quota defers instead of failing setup', () => {
+  for (const file of ['auto-cover-review.yml', 'auto-cover-dispatch.yml']) {
+    const yaml = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
+    assert.match(yaml, /require-gh-auth: 'false'/, file);
+  }
+});
+
+test('Auto Cover Dispatch validates its handoff inputs in both jobs', () => {
+  const yaml = fs.readFileSync(
+    path.join(workflowsDir, 'auto-cover-dispatch.yml'),
+    'utf8',
+  );
+  assert.equal((yaml.match(/name: Validate the handoff/g) ?? []).length, 2);
+  assert.match(yaml, /\^\[1-9\]\[0-9\]\*\$/);
+  assert.match(yaml, /\^\[0-9a-f\]\{40\}\$/);
+});
+
+test('the Kilo-edit checkout in PR Orchestrator is non-fatal and separate from the prt checkout', () => {
+  const yaml = fs.readFileSync(path.join(workflowsDir, 'pr-flow.yml'), 'utf8');
+  const classify = yaml.split('  orchestrate:')[0];
+  const checkouts = classify
+    .split(/\n      - uses: actions\/checkout@/)
+    .slice(1);
+  assert.equal(checkouts.length, 2);
+  assert.match(checkouts[0], /if: github\.event_name == 'pull_request_target'/);
+  assert.doesNotMatch(checkouts[0], /continue-on-error/);
+  assert.match(checkouts[1], /continue-on-error: true/);
 });

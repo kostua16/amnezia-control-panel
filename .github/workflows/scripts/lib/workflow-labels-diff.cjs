@@ -21,12 +21,11 @@ function firstLine(error) {
   return (errorText(error) || String(error)).trim().split('\n')[0];
 }
 
-// An exhausted or forbidden quota is not transient within a job: retrying only
-// sleeps, and every further call fails the same way.
+// An exhausted quota is not transient within a job: retrying only sleeps, and
+// every further call fails the same way. A bare 403 is not treated as quota:
+// permission and SSO failures also answer 403 and must keep their own path.
 function isQuotaError(error) {
-  return /rate limit|HTTP 4(?:03|29)\b|\(HTTP 4(?:03|29)\)/i.test(
-    errorText(error),
-  );
+  return /rate limit|HTTP 429\b|\(HTTP 429\)/i.test(errorText(error));
 }
 
 // A concurrent reconciler (another PR's run) created the label between our

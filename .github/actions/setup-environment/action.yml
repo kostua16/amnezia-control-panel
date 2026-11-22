@@ -248,7 +248,7 @@ runs:
         fi
 
         if command -v gh >/dev/null 2>&1; then
-          gh --version
+          gh --version || fail_or_warn "gh is on PATH but does not run."
         else
           fail_or_warn "gh is not on PATH (env mode does not install it). Aborting."
         fi

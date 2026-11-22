@@ -108,8 +108,9 @@ deepseek-code-review.yml
 
 fix-review.yml
   -> maintainer-only /fix-review or /address-review PR comment (issue_comment) or workflow_dispatch
-  -> automation_review_loop=true is reserved for auto-cover-review.yml and may
-     repair same-repo review-blocked/manual-only PRs without changing merge policy
+  -> automation_review_loop=true is reserved for auto-cover-review.yml (direct
+     mode) and auto-cover-dispatch.yml (delayed mode) and may repair same-repo
+     review-blocked/manual-only PRs without changing merge policy
   -> pre-fetches unresolved, non-outdated review threads + reviews + filtered PR comments
   -> applies fixes in place on the SAME PR head branch (never a new branch, never force-pushes)
   -> CI-matching gate (npm run test && npm run build + script tests + Prisma-safe check) must pass before push

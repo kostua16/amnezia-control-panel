@@ -209,15 +209,21 @@ test('an exhausted quota on the list read skips every write and every sleep', ()
   assert.match(gh.warnings[0], /quota exhausted, skipping label setup/);
 });
 
-test('HTTP 403 and 429 on the list read also count as quota exhaustion', () => {
-  for (const stderr of [
-    'HTTP 403: Forbidden',
-    'gh: Too Many Requests (HTTP 429)',
-  ]) {
-    const gh = fakeGh({ listError: ghError(stderr) });
-    assert.equal(reconcileLabels(['auto-fix'], POLICY, gh).mode, 'skipped');
-    assert.deepEqual(gh.writes, []);
-  }
+test('HTTP 429 on the list read counts as quota exhaustion', () => {
+  const gh = fakeGh({
+    listError: ghError('gh: Too Many Requests (HTTP 429)'),
+  });
+  assert.equal(reconcileLabels(['auto-fix'], POLICY, gh).mode, 'skipped');
+  assert.deepEqual(gh.writes, []);
+});
+
+test('a bare HTTP 403 (permission or SSO) is not quota and keeps the fallback', () => {
+  const gh = fakeGh({
+    listError: ghError('HTTP 403: Resource not accessible by integration'),
+  });
+  const result = reconcileLabels(['auto-fix'], POLICY, gh);
+  assert.equal(result.mode, 'legacy');
+  assert.ok(gh.writes.length > 0);
 });
 
 test('a non-quota list failure falls back to per-label --force setup', () => {

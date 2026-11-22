@@ -344,3 +344,17 @@ test('commentIdFromUrl reads the id gh prints for a new comment', () => {
   );
   assert.equal(commentIdFromUrl(''), '');
 });
+
+test('revalidate mode refuses a missing or short head SHA', () => {
+  const { spawnSync } = require('node:child_process');
+  const script = path.join(__dirname, '..', 'run-auto-cover-repairs.cjs');
+  for (const args of [[], ['--head-sha', 'abc123'], ['--head-sha', '']]) {
+    const result = spawnSync(
+      process.execPath,
+      [script, '--mode', 'revalidate', '--context-dir', os.tmpdir(), ...args],
+      { encoding: 'utf8' },
+    );
+    assert.equal(result.status, 2, args.join(' '));
+    assert.match(result.stderr, /40-character head SHA/);
+  }
+});

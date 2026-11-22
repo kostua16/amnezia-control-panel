@@ -103,19 +103,24 @@ jobs:
     outputs:
       should_run: ${{ steps.classify.outputs.should_run }}
     steps:
-      # Base-branch checkout without credentials; Kilo sticky-comment edits
-      # need it for the history-only edit classifier (a git fetch, no REST).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+        if: github.event_name == 'pull_request_target'
+
+      # Base-branch checkout for the Kilo history-only edit classifier (a git
+      # fetch, no REST). Non-fatal on purpose: if it fails the classifier call
+      # below fails too and the fallback keeps the wake, so a checkout blip can
+      # never drop a verdict-changing edit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        continue-on-error: true
+        with:
+          persist-credentials: false
         if: >-
-          github.event_name == 'pull_request_target' ||
-          (
-            github.event_name == 'issue_comment' &&
-            github.event.action == 'edited' &&
-            github.event.comment.user.login == 'kilo-code-bot[bot]' &&
-            vars.KILO_EDIT_FILTER != 'off'
-          )
+          github.event_name == 'issue_comment' &&
+          github.event.action == 'edited' &&
+          github.event.comment.user.login == 'kilo-code-bot[bot]' &&
+          vars.KILO_EDIT_FILTER != 'off'
 
       - name: Classify PR flow trigger
         id: classify
@@ -123,10 +128,10 @@ jobs:
         env:
           EVENT_ACTION: ${{ github.event.action }}
           COMMENT_LOGIN: ${{ github.event.comment.user.login }}
-          # `off` disables the Kilo history-only edit filter without a commit.
+          # `off` (any case, like the expressions above) disables the Kilo history-only edit filter without a commit.
           KILO_EDIT_FILTER: ${{ vars.KILO_EDIT_FILTER || '' }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "issue_comment" && "$EVENT_ACTION" == "edited" && "$COMMENT_LOGIN" == "kilo-code-bot[bot]" && "$KILO_EDIT_FILTER" != "off" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "issue_comment" && "$EVENT_ACTION" == "edited" && "$COMMENT_LOGIN" == "kilo-code-bot[bot]" && "${KILO_EDIT_FILTER,,}" != "off" ]]; then
             # A history-only Kilo edit cannot change the verdict; any classifier
             # failure keeps the wake.
             if ! node .github/workflows/scripts/classify-kilo-comment-edit.cjs \

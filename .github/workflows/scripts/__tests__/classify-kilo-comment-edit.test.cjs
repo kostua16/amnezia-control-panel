@@ -142,3 +142,20 @@ test('the CLI writes GITHUB_OUTPUT lines and keeps the wake on any failure', () 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the off switch is exactly "off" in any case, like the workflow expressions', () => {
+  const historyOnly = editEvent(body(4), body(5));
+  for (const filter of ['off', 'OFF', 'Off']) {
+    assert.equal(
+      classifyKiloCommentEdit({ event: historyOnly, filter }).should_run,
+      true,
+      filter,
+    );
+  }
+  // A padded value is not `off` in the expressions either, so the filter
+  // must stay active here too (no half-applied rollback).
+  assert.equal(
+    classifyKiloCommentEdit({ event: historyOnly, filter: ' off ' }).should_run,
+    false,
+  );
+});
