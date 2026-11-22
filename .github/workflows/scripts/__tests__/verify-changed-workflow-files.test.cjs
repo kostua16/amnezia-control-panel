@@ -176,7 +176,14 @@ test('validates changed action metadata without invoking actionlint', () => {
   ]) {
     fs.writeFileSync(
       path.join(root, manifest),
-      `name: example\ndescription: fixture\nruns: ${runs}\n`,
+      [
+        'name: example',
+        'description: fixture',
+        `runs: ${runs}`,
+        'inputs: { greeting: { description: Greeting to print } }',
+        'outputs: { result: { description: Printed greeting } }',
+        '',
+      ].join('\n'),
     );
     assert.equal(verifyChangedWorkflowFiles(options).status, 0, runs);
   }
