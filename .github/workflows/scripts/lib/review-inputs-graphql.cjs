@@ -117,9 +117,15 @@ function lower(value) {
   return typeof value === 'string' ? value.toLowerCase() : null;
 }
 
+// The sticky-comment update and delete address a comment by its REST id, so a
+// comment without a usable `databaseId` must fail the read instead of turning
+// into a `DELETE issues/comments/null`.
 function toIssueComment(node) {
+  if (!Number.isInteger(node.databaseId) || node.databaseId <= 0) {
+    throw unavailable('An issue comment has no usable databaseId.');
+  }
   return {
-    id: node.databaseId ?? null,
+    id: node.databaseId,
     user: toUser(node.author),
     body: node.body ?? '',
     created_at: node.createdAt ?? null,
@@ -247,9 +253,19 @@ function nextCursor(connection, label, pagesRead) {
  * @param {string} args.headSha    PR head the caller evaluates against
  * @param {(query: string, variables: object) => object} args.runGraphql
  *   synchronous; returns the parsed `{ data, errors }` response or throws
+ * @param {{comments?: boolean, reviews?: boolean, threads?: boolean, contexts?: boolean}} [args.want]
+ *   connections to read, all by default. A caller that needs only some of them
+ *   (e.g. the comment list and the commit statuses at publish time) skips the
+ *   rest, which keeps the query cheap; unrequested lists come back empty.
  * @returns {{comments, reviewComments, reviews, checkRuns, statuses, cost}}
  */
-function fetchReviewInputsGraphql({ repo, prNumber, headSha, runGraphql }) {
+function fetchReviewInputsGraphql({
+  repo,
+  prNumber,
+  headSha,
+  runGraphql,
+  want: requested = {},
+}) {
   // `Number(null)`, `Number('')` and negatives must not reach GitHub as PR 0,
   // so require exactly two non-empty segments and a positive integer.
   const repoParts = String(repo ?? '').split('/');
@@ -271,7 +287,12 @@ function fetchReviewInputsGraphql({ repo, prNumber, headSha, runGraphql }) {
     statuses: [],
   };
   const cursors = { comments: null, reviews: null, threads: null, ctx: null };
-  const want = { comments: true, reviews: true, threads: true, contexts: true };
+  const want = {
+    comments: requested.comments !== false,
+    reviews: requested.reviews !== false,
+    threads: requested.threads !== false,
+    contexts: requested.contexts !== false,
+  };
   const pages = { comments: 0, reviews: 0, threads: 0, contexts: 0 };
   let cost = 0;
 

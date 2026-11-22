@@ -2023,3 +2023,98 @@ test('fetchHeadCommittedAt keeps an empty date for a failed commit read unless s
     ),
   );
 });
+
+test('publishFlowStatuses uses the fresh GraphQL statuses and skips the REST read', () => {
+  const posted = [];
+  let restReads = 0;
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    freshStatuses: [
+      previousSuccess({
+        context: 'pr-flow/ready',
+        state: 'pending',
+        description: 'Waiting.',
+        target_url: OLD_RUN_URL,
+      }),
+      previousSuccess(),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    readStatuses: () => {
+      restReads += 1;
+      return [];
+    },
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.equal(restReads, 0);
+  assert.deepEqual(posted, ['pr-flow/ready']);
+});
+
+test('publishFlowStatuses reads REST when no fresh statuses were supplied', () => {
+  for (const missing of [null, undefined, 'nope', {}]) {
+    const reads = [];
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      freshStatuses: missing,
+      readStatuses: (sha) => {
+        reads.push(sha);
+        return [];
+      },
+      publishStatus: () => {},
+    });
+    assert.deepEqual(reads, [basePr.headSha], String(missing));
+  }
+});
+
+test('publishFlowStatuses treats an empty fresh status list as "nothing posted yet"', () => {
+  const posted = [];
+  let restReads = 0;
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    freshStatuses: [],
+    readStatuses: () => {
+      restReads += 1;
+      return [];
+    },
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.equal(restReads, 0);
+  assert.equal(posted.length, 3);
+});
+
+test('upsertFlowComment hands the fresh comment list to the sticky helper', () => {
+  const previous = process.env.GITHUB_REPOSITORY;
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+  const received = [];
+  const fresh = [{ id: 5, user: { login: 'github-actions[bot]' }, body: 'x' }];
+
+  try {
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+      freshComments: fresh,
+    });
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+    });
+    upsertFlowComment({ number: 7 }, commentForRun(222), {
+      upsert: (options) => received.push(options),
+      currentRunUrl: runUrl(222),
+      freshComments: null,
+    });
+  } finally {
+    if (previous === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = previous;
+  }
+
+  assert.equal(received[0].comments, fresh);
+  // Without a fresh list the helper must read the comments itself.
+  assert.equal('comments' in received[1], false);
+  assert.equal('comments' in received[2], false);
+});

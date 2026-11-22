@@ -116,6 +116,11 @@ function findExistingComment(
 // costs a POST and a DELETE and fires a new issue_comment event, all for an
 // identical timeline entry. `sameBody(existingBody, body)` decides "the same
 // thing" for bodies that carry a volatile token (e.g. the current run URL).
+//
+// `comments` lets a caller that has just read the PR's issue comments through
+// another transport (the orchestrator's GraphQL read) skip the REST list; it
+// must be a fresh, complete list, because the comment found in it is the one
+// that gets replaced. Without it the list is read here.
 function upsertComment({
   repo,
   prNumber,
@@ -124,8 +129,12 @@ function upsertComment({
   replaceExisting = true,
   skipIfUnchanged = false,
   sameBody = (existingBody, nextBody) => existingBody === nextBody,
+  comments = null,
 }) {
-  const existing = findExistingComment(listComments(repo, prNumber), marker);
+  const existing = findExistingComment(
+    Array.isArray(comments) ? comments : listComments(repo, prNumber),
+    marker,
+  );
   if (
     skipIfUnchanged &&
     existing &&
