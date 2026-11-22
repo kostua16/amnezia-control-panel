@@ -65,24 +65,29 @@ test('triage dispatch authorization gates the single configured agent step', () 
   );
   assert.equal(details.length, 1);
   const [producer] = details;
-  assert.match(producer, /--jq '\{[^}]+\}' > \/tmp\/issue\.json/);
+  const commands = producer.split(/\r?\n/).map((line) => line.trim());
+  const projection = commands
+    .find((line) => line.startsWith('--jq '))
+    ?.match(/^--jq '\{([^}]+)\}' > \/tmp\/issue\.json$/)?.[1];
+  assert.ok(projection, 'missing active issue metadata projection');
+  const fields = projection.split(',').map((field) => field.trim());
   for (const [output, field] of [
     ['author', '.user.login'],
     ['author_association', '.author_association'],
     ['author_type', '.user.type'],
   ]) {
     assert.ok(
-      producer.includes(`${output}: ${field}`),
+      fields.includes(`${output}: ${field}`),
       `missing projection for ${output}`,
     );
     assert.ok(
-      producer.includes(
+      commands.includes(
         `echo "${output}=\$(jq -r .${output} /tmp/issue.json)"`,
       ),
       `missing step output ${output}`,
     );
   }
-  assert.match(producer, /} >> "\$GITHUB_OUTPUT"/);
+  assert.ok(commands.includes('} >> "$GITHUB_OUTPUT"'));
 
   const gates = steps.filter((step) =>
     /^ {8}id: dispatch_gate\s*$/m.test(step),
