@@ -15,6 +15,8 @@ test('prunes only top-level resolved docs strictly older than 30 days', (t) => {
     'fresh.md': '---\nstatus: resolved\nupdated: 2026-05-03\n---\n',
     'fixed.md': '---\nstatus: fixed\nupdated: 2026-04-01\n---\n',
     'invalid.md': '---\nstatus: resolved\nupdated: invalid\n---\n',
+    'ambiguous.md': '---\nstatus: resolved\nupdated: 01/06/2026\n---\n',
+    'impossible.md': '---\nstatus: resolved\nupdated: 2026-02-30\n---\n',
     'missing.md': '---\nstatus: resolved\n---\n',
     'body.md': 'Debug notes\n---\nstatus: resolved\nupdated: 2026-04-01\n---\n',
   };
@@ -62,5 +64,10 @@ test('maintenance runs pruning before change detection and keeps writes out of t
     agent.with['allowed-tools'],
     /github_inline_comment|Bash\(git (?:add|commit|rm):/,
   );
+  assert.doesNotMatch(
+    agent.with['allowed-tools'],
+    /Bash\((?:rtk|git|gh issue|npm)(?::\*| \*)\)/,
+  );
+  assert.match(agent.with['allowed-tools'], /Bash\(rtk npm audit:\*\)/);
   assert.match(agent.with['allowed-tools'], /Bash\(gh pr comment:/);
 });

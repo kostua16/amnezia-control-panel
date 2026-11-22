@@ -108,7 +108,8 @@ jobs:
           model: 'sonnet'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'false'
-          allowed-tools: 'Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh repo view:*),Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm *),Bash(git log:*),Bash(git rev-parse:*),Bash(git status:*),Bash(rtk:*)'
+          # Project settings also contribute permissions. These grants cover the sweep's expected commands.
+          allowed-tools: 'Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh repo view:*),Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm audit:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git status:*),Bash(rtk gh issue create:*),Bash(rtk gh issue list:*),Bash(rtk gh issue view:*),Bash(rtk gh repo view:*),Bash(rtk gh pr comment:*),Bash(rtk gh pr list:*),Bash(rtk gh pr view:*),Bash(rtk npm audit:*),Bash(rtk git log:*),Bash(rtk git rev-parse:*),Bash(rtk git status:*)'
           prompt: |
             /gsd:health && /gsd:stats
             REPO: ${{ github.repository }}
