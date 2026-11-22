@@ -47,7 +47,7 @@ test('prunes only top-level resolved docs strictly older than 30 days', (t) => {
   pruneStaleDebugDocs(path.join(directory, 'missing-directory'));
 });
 
-test('maintenance runs pruning before change detection and keeps writes out of the allowlist', () => {
+test('maintenance runs pruning before change detection and pins the explicit tool grants', () => {
   const { load } = require('js-yaml');
   const workflow = load(
     fs.readFileSync(path.join(__dirname, '../../maintenance.yml'), 'utf8'),
@@ -73,14 +73,16 @@ test('maintenance runs pruning before change detection and keeps writes out of t
     'gh pr comment',
     'gh pr list',
     'gh pr view',
-    'npm audit',
-    'git log',
   ];
   const expected = [
     'Read',
     'Glob',
     'Grep',
     'Bash(node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health)',
+    ...[
+      'npm audit --json',
+      String.raw`git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`,
+    ].flatMap((command) => [`Bash(${command})`, `Bash(rtk ${command})`]),
     ...commands.flatMap((command) => [
       `Bash(${command}:*)`,
       `Bash(rtk ${command}:*)`,
@@ -151,12 +153,23 @@ test('run-zai forwards settings isolation to every Claude attempt', (t) => {
   assert.match(pre[0].command, /privacy-block\.cjs/);
   assert.match(post[0].command, /gsd-read-injection-scanner\.js/);
 
+  assert.equal(post[0].timeout, 5);
+
   const configDir = path.join(directory, '.claude');
   fs.mkdirSync(configDir);
   for (const config of [
     {},
     { hooks: {} },
     { hooks: { PreToolUse: [{}] } },
+    { hooks: { PreToolUse: {} } },
+    { hooks: { PreToolUse: [null] } },
+    {
+      hooks: {
+        PreToolUse: [
+          { matcher: settings.hooks.PreToolUse[0].matcher, hooks: {} },
+        ],
+      },
+    },
     {
       hooks: {
         ...settings.hooks,

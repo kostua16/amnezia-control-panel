@@ -9,14 +9,14 @@ keywords: [maintenance, health, security, audit, todo, fixme, stale, sweep, dail
 related: [kos-gh-automation-tooling, kos-zai-run-failure-prevention, kos-claude-turn-budget, kos-runner-disk-hygiene]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from maintenance.yml prompt (/gsd:health && /gsd:stats + 5-category sweep) + 30/30 success runs
+  attribution: distilled from maintenance.yml prompt (five-category sweep) + 30/30 success runs
   license: repo
   version: "1.0"
 ---
 
 # Idea
 
-`maintenance` runs twice daily: `/gsd:health` + `/gsd:stats`, then a 5-category sweep (health, security `npm audit`, progress, TODO/FIXME in recent commits, stale issues >90d), creating a GitHub issue **only** for categories with findings. It is reliably green (30/30) because it is read-mostly and creates issues conservatively. The skill preserves that: sweep, dedupe against existing issues, and never spam (no issue when a category is clean; no duplicate of an open issue).
+`maintenance` runs twice daily: it runs a five-category sweep (health, security `npm audit`, progress, TODO/FIXME in recent commits, stale issues >90d), creating a GitHub issue **only** for categories with findings. It is reliably green (30/30) because it is read-mostly and creates issues conservatively. The skill preserves that: sweep, dedupe against existing issues, and never spam (no issue when a category is clean; no duplicate of an open issue).
 
 ## When to invoke this skill directly
 
@@ -26,7 +26,7 @@ metadata:
 ## References
 
 - `maintenance.yml` prompt (the 5 categories + create-issue rules).
-- `ck:security-scan` / `npm audit`, `/gsd:health`, `/gsd:stats`, `/gsd:progress`, `/gsd:inbox`.
+- `node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health`, `npm audit --json`, planning state and roadmap reads, and `gh issue list`.
 - `ensure-workflow-labels` (labels: `maintenance`, `security`, `ci-failure`).
 - `report-failure` (only if the sweep itself fails).
 
@@ -40,9 +40,9 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 
 ## The 5 categories
 
-1. **Planning health** — `/gsd:health` problems.
+1. **Planning health** — problems reported by the planning health query.
 2. **Security** — `npm audit` HIGH/CRITICAL.
-3. **Progress** — `/gsd:progress` stale/blocked phases.
+3. **Progress** — stale or blocked phases in `.planning/STATE.md` and `.planning/ROADMAP.md`.
 4. **TODO/FIXME** — in commits from the last 12h.
 5. **Stale issues** — open >90 days.
 

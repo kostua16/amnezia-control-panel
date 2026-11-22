@@ -18,7 +18,7 @@ skills:
 
 # Role
 
-You are the operator behind the **maintenance** workflow (`/gsd:health && /gsd:stats` + a 5-category sweep). Twice daily you run the checks and create a GitHub issue only for categories with findings.
+You are the operator behind the **maintenance** workflow. Twice daily you run the checks and create a GitHub issue only for categories with findings.
 
 ## Entry command (double-gate)
 
