@@ -26,7 +26,7 @@ Use the diagnostic commands listed in the workflow prompt. The workflow runs wit
 
 ## Prompt contract (master)
 
-`maintenance.yml` `prompt:` is the master contract. Steps: 1) planning health query; 2) `npm audit --json`; 3) read planning state and roadmap; 4) TODO/FIXME in commits last 12h (`git log --since="12 hours ago" --grep="TODO\|FIXME"`); 5) open issues >90d via `gh issue list`. **For EACH category with findings, create a NEW GitHub issue** with the exact titles/labels: Security → `--label "security"`; Stale issues → `--label "maintenance"`; TODO/FIXME → `--label "maintenance"`. **Do NOT create issues if no findings exist in that category.** If critical security (HIGH/CRITICAL) → also comment only on open PRs changing `package.json`, `package-lock.json`, or `yarn.lock`. The workflow prunes stale debug docs and persists changes through a maintenance PR.
+`maintenance.yml` `prompt:` is the master contract. Steps: 1) planning health query; 2) `npm audit --json`; 3) read planning state and roadmap; 4) TODO/FIXME in commits last 12h (`git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`); 5) open issues >90d via `gh issue list`. **For EACH category with findings, create a NEW GitHub issue** with the exact titles/labels: Security → `--label "security"`; Stale issues → `--label "maintenance"`; TODO/FIXME → `--label "maintenance"`. **Do NOT create issues if no findings exist in that category.** If critical security (HIGH/CRITICAL) → also comment only on open PRs changing `package.json`, `package-lock.json`, or `yarn.lock`. The workflow prunes stale debug docs and persists changes through a maintenance PR.
 
 ## Core Responsibilities
 

@@ -16,7 +16,7 @@ metadata:
 
 # Idea
 
-`maintenance` runs twice daily: it runs a five-category sweep (health, security `npm audit`, progress, TODO/FIXME in recent commits, stale issues >90d), creating a GitHub issue **only** for categories with findings. It is reliably green (30/30) because it is read-mostly and creates issues conservatively. The skill preserves that: sweep, dedupe against existing issues, and never spam (no issue when a category is clean; no duplicate of an open issue).
+`maintenance` runs twice daily: it runs a five-category sweep (health, security `npm audit --json`, progress, TODO/FIXME in recent commits, stale issues >90d), creating a GitHub issue **only** for categories with findings. It is reliably green (30/30) because it is read-mostly and creates issues conservatively. The skill preserves that: sweep, dedupe against existing issues, and never spam (no issue when a category is clean; no duplicate of an open issue).
 
 ## When to invoke this skill directly
 
@@ -41,7 +41,7 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 ## The 5 categories
 
 1. **Planning health** — problems reported by the planning health query.
-2. **Security** — `npm audit` HIGH/CRITICAL.
+2. **Security** — `npm audit --json` HIGH/CRITICAL.
 3. **Progress** — stale or blocked phases in `.planning/STATE.md` and `.planning/ROADMAP.md`.
 4. **TODO/FIXME** — in commits from the last 12h.
 5. **Stale issues** — open >90 days.
@@ -59,7 +59,7 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 - **Issue spam** → creating an issue every run for the same standing finding (dedupe first).
 - **Clean-category "failure"** → no findings is a clean success; do not force an issue.
 - **Missing critical escalation** → HIGH/CRITICAL security must reach PRs, not just an issue.
-- **Disk** → fresh GitHub-hosted VM per job; keep the `npm audit` install footprint small (see [[kos-runner-disk-hygiene]]).
+- **Disk** → fresh GitHub-hosted VM per job; keep the `npm audit --json` install footprint small (see [[kos-runner-disk-hygiene]]).
 
 ## Process Flow (Authoritative)
 
