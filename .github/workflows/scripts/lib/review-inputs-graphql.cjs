@@ -28,12 +28,15 @@ const PAGE_INFO = 'pageInfo { hasNextPage endCursor }';
 // Connections are guarded by `@include` so a follow-up page only pays for the
 // connections that still have pages left.
 //
-// `statusCheckRollup` reports the LATEST run per check, whereas the REST
-// check-runs endpoint lists every run on its first page. A superseded
-// cancelled/skipped Kilo run that REST would notice is invisible here, so the
-// GraphQL path can hold a verdict at `pending` where REST said `skipped` —
-// never the other way around. Accepted trade-off: REST stays the reference
-// and the fallback.
+// `statusCheckRollup` reports the LATEST run per check; the REST check-runs
+// endpoint lists every run but only its first page (oldest ~30 by id). The
+// two can therefore drift in BOTH directions: a superseded cancelled/skipped
+// Kilo run that REST sees is invisible here (GraphQL stays `pending` where
+// REST said `skipped`), and on a busy head REST's page can miss the latest
+// Kilo run entirely (GraphQL says `skipped` where REST stays `pending`).
+// Accepted trade-off: both drifts are safe — `skipped` and an aged-out
+// `pending` both continue the flow, and `blocked`/`passed` verdicts come from
+// comments/reviews, not check runs. REST stays the reference and the fallback.
 const REVIEW_INPUTS_QUERY = `
 query ReviewInputs(
   $owner: String!, $name: String!, $number: Int!,
