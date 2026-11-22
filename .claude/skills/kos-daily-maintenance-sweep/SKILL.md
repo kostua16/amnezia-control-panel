@@ -9,14 +9,14 @@ keywords: [maintenance, health, security, audit, todo, fixme, stale, sweep, dail
 related: [kos-gh-automation-tooling, kos-zai-run-failure-prevention, kos-claude-turn-budget, kos-runner-disk-hygiene]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from maintenance.yml prompt (/gsd:health && /gsd:stats + 5-category sweep) + 30/30 success runs
+  attribution: distilled from maintenance.yml prompt (five-category sweep) + 30/30 success runs
   license: repo
   version: "1.0"
 ---
 
 # Idea
 
-`maintenance` runs twice daily: `/gsd:health` + `/gsd:stats`, then a 5-category sweep (health, security `npm audit`, progress, TODO/FIXME in recent commits, stale issues >90d), creating a GitHub issue **only** for categories with findings. It is reliably green (30/30) because it is read-mostly and creates issues conservatively. The skill preserves that: sweep, dedupe against existing issues, and never spam (no issue when a category is clean; no duplicate of an open issue).
+`maintenance` runs twice daily: it runs a five-category sweep (health, security `npm audit --json`, progress, TODO/FIXME in recent commits, stale issues >90d), creating a GitHub issue **only** for categories with findings. It is reliably green (30/30) because it is read-mostly and creates issues conservatively. The skill preserves that: sweep, dedupe against existing issues, and never spam (no issue when a category is clean; no duplicate of an open issue).
 
 ## When to invoke this skill directly
 
@@ -26,7 +26,7 @@ metadata:
 ## References
 
 - `maintenance.yml` prompt (the 5 categories + create-issue rules).
-- `ck:security-scan` / `npm audit`, `/gsd:health`, `/gsd:stats`, `/gsd:progress`, `/gsd:inbox`.
+- `node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health`, `npm audit --json`, planning state and roadmap reads, and `gh issue list`.
 - `ensure-workflow-labels` (labels: `maintenance`, `security`, `ci-failure`).
 - `report-failure` (only if the sweep itself fails).
 
@@ -36,13 +36,13 @@ Per category: findings count → issue created / skipped (clean) / skipped (dupl
 
 ## Core Principles
 
-YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical security → also comment on open PRs. Clean category = no issue (success, not failure).
+YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical security → also comment only on open PRs changing dependency manifests. Clean category = no issue (success, not failure).
 
 ## The 5 categories
 
-1. **Planning health** — `/gsd:health` problems.
-2. **Security** — `npm audit` HIGH/CRITICAL.
-3. **Progress** — `/gsd:progress` stale/blocked phases.
+1. **Planning health** — problems reported by the planning health query.
+2. **Security** — `npm audit --json` HIGH/CRITICAL.
+3. **Progress** — stale or blocked phases in `.planning/STATE.md` and `.planning/ROADMAP.md`.
 4. **TODO/FIXME** — in commits from the last 12h.
 5. **Stale issues** — open >90 days.
 
@@ -51,22 +51,22 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 1. Run each category's check.
 2. For findings: search for an open issue covering it before creating a new one.
 3. Create with the right label (`security`/`maintenance`) only if findings + no duplicate.
-4. Critical security → comment on open PRs too.
+4. Critical security → comment only on open PRs changing dependency manifests.
 5. Clean category → skip (no issue).
 
 ## Failure modes to avoid
 
 - **Issue spam** → creating an issue every run for the same standing finding (dedupe first).
 - **Clean-category "failure"** → no findings is a clean success; do not force an issue.
-- **Missing critical escalation** → HIGH/CRITICAL security must reach PRs, not just an issue.
-- **Disk** → fresh GitHub-hosted VM per job; keep the `npm audit` install footprint small (see [[kos-runner-disk-hygiene]]).
+- **Missing critical escalation** → comment on HIGH/CRITICAL findings only in open PRs changing dependency manifests.
+- **Disk** → fresh GitHub-hosted VM per job; keep the `npm audit --json` install footprint small (see [[kos-runner-disk-hygiene]]).
 
 ## Process Flow (Authoritative)
 
 1. run 5 checks.
 2. dedupe against open issues.
 3. create labeled issues only for real, non-duplicate findings.
-4. escalate critical security to PR comments.
+4. comment on critical security findings only in open PRs changing dependency manifests.
 5. report totals; clean = success.
 
 ## Output Format
@@ -81,5 +81,5 @@ ESCALATION: pr-comments=<n|none>
 
 - Never create a duplicate of an open issue — search first.
 - Never create an issue for a clean category.
-- HIGH/CRITICAL security findings must also be commented on open PRs.
+- HIGH/CRITICAL security findings must also be commented on only for open PRs changing dependency manifests.
 - Ensure disk space before the install/audit step.
