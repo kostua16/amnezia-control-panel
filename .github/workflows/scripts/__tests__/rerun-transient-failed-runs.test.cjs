@@ -234,15 +234,24 @@ test('WHO-E06 passes accepted rerun IDs to the optimizer prompt', () => {
   );
   const preflight = workflow.indexOf('id: rerun_transient');
   const prompt = workflow.indexOf('prompt: |', preflight);
+  const promptEnd = workflow.indexOf('### Completed Runs Data', prompt);
 
-  assert.ok(preflight >= 0 && prompt > preflight);
+  assert.ok(preflight >= 0 && prompt > preflight && promptEnd > prompt);
+  const promptBlock = workflow.slice(prompt, promptEnd);
   assert.match(
-    workflow.slice(prompt),
+    promptBlock,
     /\$\{\{ steps\.rerun_transient\.outputs\.rerun_ids \|\| 'none' \}\}/,
   );
   assert.match(
-    workflow.slice(prompt),
+    promptBlock,
     /Skip Completed Runs Data entries whose `run_id` is listed above/,
+  );
+  assert.match(promptBlock, /ECONNRESET\/ETIMEDOUT\/HTTP 5xx/);
+  // The skip key must exist in the collected run summary, not just as an
+  // API param elsewhere in the collect script.
+  assert.match(
+    workflow,
+    /const summary = \{\s*name: run\.name,\s*run_id: run\.id,/,
   );
 });
 
