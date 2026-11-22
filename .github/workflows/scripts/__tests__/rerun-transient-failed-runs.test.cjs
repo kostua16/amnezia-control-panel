@@ -227,6 +227,25 @@ test('monitor workflow runs transient recovery before the ZAI diagnosis step', (
   assert.match(workflow, /absent, invalid, or reports an error/);
 });
 
+test('WHO-E06 passes accepted rerun IDs to the optimizer prompt', () => {
+  const workflow = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'workflow-health-optimize.yml'),
+    'utf8',
+  );
+  const preflight = workflow.indexOf('id: rerun_transient');
+  const prompt = workflow.indexOf('prompt: |', preflight);
+
+  assert.ok(preflight >= 0 && prompt > preflight);
+  assert.match(
+    workflow.slice(prompt),
+    /\$\{\{ steps\.rerun_transient\.outputs\.rerun_ids \|\| 'none' \}\}/,
+  );
+  assert.match(
+    workflow.slice(prompt),
+    /Skip Completed Runs Data entries whose `run_id` is listed above/,
+  );
+});
+
 test('static monitor agent mirrors the runtime MON-E04 recovery contract', () => {
   const agent = fs.readFileSync(
     path.join(

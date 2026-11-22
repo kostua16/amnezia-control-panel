@@ -433,8 +433,8 @@ jobs:
             ## Task: Analyze Workflow Runs and Optimize Workflow Files
 
             You have completed workflow run data from the past hour AND workflow YAML files in `.github/workflows/`.
-            Transient infra failures (ECONNRESET, ETIMEDOUT, HTTP 5xx, etc.) were already classified and re-run by the WHO-E06 preflight step.
-            Skip any runs that were re-run as transient — focus analysis on permanent-signature and non-transient failures only.
+            WHO-E06 accepted rerun requests for these run IDs (comma-separated): ${{ steps.rerun_transient.outputs.rerun_ids || 'none' }}
+            Skip Completed Runs Data entries whose `run_id` is listed above. If the list is `none`, review all entries using the usual evidence rules.
             The run data may include compact `claudeSummary`, `timingSummary`, and `duplicateSameSha` objects extracted by the workflow itself.
 
             ### Completed Runs Data
