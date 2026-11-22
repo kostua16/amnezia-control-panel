@@ -12,6 +12,7 @@ const {
   makeDecision: makePrFlowDecision,
   pathsMatch,
   publishFlowStatuses,
+  publishVisibilityUpdates,
   renderFlowComment,
   resolvePrNumber,
   shouldPublishStatus,
@@ -2117,4 +2118,84 @@ test('upsertFlowComment hands the fresh comment list to the sticky helper', () =
   // Without a fresh list the helper must read the comments itself.
   assert.equal('comments' in received[1], false);
   assert.equal('comments' in received[2], false);
+});
+
+test('publishVisibilityUpdates reads the comment list only after the status POSTs', () => {
+  // Regression guard for the duplicate-comment race: the sticky-comment list
+  // must be read after the status POSTs, never together with the status read.
+  const order = [];
+  const reads = [];
+  const freshStatuses = [previousSuccess()];
+  const freshComments = [{ id: 42 }];
+
+  const result = publishVisibilityUpdates({ ...basePr }, statusVisibility(), {
+    reviewSource: 'graphql',
+    decision: { state: 'ready', reason: 'nothing to do' },
+    readSnapshot: (_pr, options) => {
+      reads.push([options.wantComments, options.wantStatuses]);
+      order.push(options.wantStatuses ? 'read:statuses' : 'read:comments');
+      return options.wantStatuses
+        ? { comments: null, statuses: freshStatuses }
+        : { comments: freshComments, statuses: null };
+    },
+    publishStatuses: (_pr, _visibility, options) => {
+      order.push('post:statuses');
+      assert.equal(options.freshStatuses, freshStatuses);
+    },
+    renderComment: () => 'rendered body',
+    writeComment: (_pr, body, options) => {
+      order.push('write:comment');
+      assert.equal(body, 'rendered body');
+      assert.equal(options.freshComments, freshComments);
+    },
+  });
+
+  assert.deepEqual(order, [
+    'read:statuses',
+    'post:statuses',
+    'read:comments',
+    'write:comment',
+  ]);
+  // Each read asks only for the connection its consumer needs.
+  assert.deepEqual(reads, [
+    [false, true],
+    [true, false],
+  ]);
+  assert.equal(result.fatalError, null);
+});
+
+test('publishVisibilityUpdates keeps the failure handling when the comment write fails', () => {
+  const visibilityErrors = [];
+  const errorVisibility = {
+    orderedStatuses: [],
+    aggregate: makeStatus({ context: 'pr-flow/aggregate', state: 'failure' }),
+  };
+  const aggregates = [];
+  const built = [];
+
+  const result = publishVisibilityUpdates({ ...basePr }, statusVisibility(), {
+    reviewSource: 'graphql',
+    decision: { state: 'ready', reason: 'nothing to do' },
+    visibilityErrors,
+    readSnapshot: () => ({ comments: null, statuses: null }),
+    publishStatuses: () => {},
+    renderComment: () => 'rendered body',
+    writeComment: () => {
+      throw new Error('gh exploded');
+    },
+    buildVisibility: (context) => {
+      built.push(context);
+      return errorVisibility;
+    },
+    publishAggregateStatus: (_pr, status) => aggregates.push(status),
+  });
+
+  assert.equal(result.visibility, errorVisibility);
+  assert.equal(
+    result.fatalError.message,
+    'PR flow comment update failed: gh exploded',
+  );
+  assert.equal(built[0].visibilityErrors, visibilityErrors);
+  assert.deepEqual(aggregates, [errorVisibility.aggregate]);
+  assert.equal(visibilityErrors.length, 1);
 });

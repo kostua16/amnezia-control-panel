@@ -1738,6 +1738,79 @@ function readPublishSnapshot(
   }
 }
 
+// The visibility step's writes, in one enforced order: read the commit
+// statuses, post the flow statuses, and only then read the PR's comment list
+// and upsert the sticky comment. Reading the comment list together with the
+// status read would leave it stale across those up-to-seven REST writes long
+// enough for overlapping prt/wake runs on one head to both see "no sticky
+// comment" and both POST one — a duplicate `skipIfUnchanged` comment then
+// never converges away. Readers and writers are injectable so the ordering
+// stays regression-tested. A failed comment write re-renders the visibility
+// with the error surfaced and returns it as `fatalError` for the caller.
+function publishVisibilityUpdates(
+  pr,
+  visibility,
+  {
+    reviewSource,
+    decision,
+    dispatchOutcome,
+    config,
+    policy,
+    externalReview,
+    workerRuns,
+    eventName,
+    event,
+    visibilityErrors = [],
+    readSnapshot = readPublishSnapshot,
+    publishStatuses = publishFlowStatuses,
+    writeComment = upsertFlowComment,
+    renderComment = renderFlowComment,
+    publishAggregateStatus = publishCommitStatus,
+    buildVisibility = buildFlowVisibility,
+  } = {},
+) {
+  const statusSnapshot = readSnapshot(pr, {
+    wantComments: false,
+    wantStatuses: visibility.orderedStatuses.some(
+      (status) => String(status.state).toLowerCase() === 'success',
+    ),
+    source: reviewSource,
+  });
+  publishStatuses(pr, visibility, { freshStatuses: statusSnapshot.statuses });
+
+  const commentSnapshot = readSnapshot(pr, {
+    wantComments: true,
+    wantStatuses: false,
+    source: reviewSource,
+  });
+  try {
+    writeComment(
+      pr,
+      renderComment({ pr, decision, visibility, dispatchOutcome }),
+      { freshComments: commentSnapshot.comments },
+    );
+    return { visibility, fatalError: null };
+  } catch (error) {
+    const errorMessage = formatCommandError(error);
+    const commentError = `PR flow comment update failed: ${errorMessage}`;
+    visibilityErrors.push(commentError);
+    const errorVisibility = buildVisibility({
+      pr,
+      config,
+      policy,
+      decision,
+      externalReview,
+      workerRuns,
+      eventName,
+      event,
+      dispatchOutcome,
+      visibilityErrors,
+    });
+    publishAggregateStatus(pr, errorVisibility.aggregate);
+    return { visibility: errorVisibility, fatalError: new Error(commentError) };
+  }
+}
+
 function decisionWithDispatchError({ decision, pr, config, errorMessage }) {
   const failureStateByWorker = {
     codeReview: 'flow/review-failed',
@@ -2510,56 +2583,23 @@ function main() {
         visibilityErrors,
       });
 
-      // Two publish-time reads, each immediately before its consumer: the
-      // statuses before their POSTs (they feed the skip decisions), the
-      // comment list after them, so the sticky write matches against a list
-      // that cannot be stale across those REST writes.
-      const statusSnapshot = readPublishSnapshot(pr, {
-        wantComments: false,
-        wantStatuses: visibility.orderedStatuses.some(
-          (status) => String(status.state).toLowerCase() === 'success',
-        ),
-        source: reviewSource,
+      // Statuses are read and posted before the comment list so the sticky
+      // write matches against a list that cannot be stale across those REST
+      // writes; publishVisibilityUpdates owns and regression-tests that order.
+      const published = publishVisibilityUpdates(pr, visibility, {
+        reviewSource,
+        decision: appliedDecision,
+        dispatchOutcome,
+        config,
+        policy,
+        externalReview,
+        workerRuns,
+        eventName,
+        event,
+        visibilityErrors,
       });
-      publishFlowStatuses(pr, visibility, {
-        freshStatuses: statusSnapshot.statuses,
-      });
-
-      const commentSnapshot = readPublishSnapshot(pr, {
-        wantStatuses: false,
-        source: reviewSource,
-      });
-      try {
-        upsertFlowComment(
-          pr,
-          renderFlowComment({
-            pr,
-            decision: appliedDecision,
-            visibility,
-            dispatchOutcome,
-          }),
-          { freshComments: commentSnapshot.comments },
-        );
-      } catch (error) {
-        const errorMessage = formatCommandError(error);
-        const commentError = `PR flow comment update failed: ${errorMessage}`;
-        visibilityErrors.push(commentError);
-        const errorVisibility = buildFlowVisibility({
-          pr,
-          config,
-          policy,
-          decision: appliedDecision,
-          externalReview,
-          workerRuns,
-          eventName,
-          event,
-          dispatchOutcome,
-          visibilityErrors,
-        });
-        visibility = errorVisibility;
-        publishCommitStatus(pr, errorVisibility.aggregate);
-        fatalError = new Error(commentError);
-      }
+      visibility = published.visibility;
+      fatalError = published.fatalError;
     });
 
     if (dispatchOutcome?.ok === false || visibilityErrors.length > 0) {
@@ -2648,6 +2688,7 @@ module.exports = {
   MAX_FINALIZER_RETRIES,
   pathsMatch,
   publishFlowStatuses,
+  publishVisibilityUpdates,
   readConfig,
   readPublishSnapshot,
   renderFlowComment,

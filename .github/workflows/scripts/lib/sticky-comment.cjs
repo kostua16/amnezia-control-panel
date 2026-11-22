@@ -133,7 +133,7 @@ function upsertComment({
   sameBody = (existingBody, nextBody) => existingBody === nextBody,
   comments = null,
 }) {
-  let supplied = Array.isArray(comments) ? comments : null;
+  const supplied = Array.isArray(comments) ? comments : null;
   let existing = findExistingComment(
     supplied ?? listComments(repo, prNumber),
     marker,
@@ -142,7 +142,6 @@ function upsertComment({
     // The PATCH/DELETE address a comment by this id; a failed DELETE after a
     // successful POST would leave two comments with the marker, so re-list
     // over REST and match again instead of writing against a broken id.
-    supplied = null;
     existing = findExistingComment(listComments(repo, prNumber), marker);
   }
   if (
