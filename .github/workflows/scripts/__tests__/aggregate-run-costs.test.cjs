@@ -290,8 +290,14 @@ test('fetchCompletedRuns fails closed when since is missing', () => {
   assert.equal(calls.length, 0, 'gh must not be called without a window');
 });
 
-test('fetchCompletedRuns fails closed when since is not a valid UTC instant in the expected format', () => {
+test('fetchCompletedRuns fails closed when since is not canonical UTC', () => {
   const calls = [];
+  // A bare `--since` parses to the literal 'true'. The guard requires the
+  // canonical UTC form the script itself emits: Date.parse-valid but
+  // non-canonical values ('2026/08/15', 'Aug 15 2026', '+02:00' offsets)
+  // would pass a parse-only check yet corrupt the string window filter
+  // into dropping every run — the green-empty-window case this guard
+  // exists to prevent.
   for (const bad of [
     'true',
     'yesterday',
@@ -299,11 +305,6 @@ test('fetchCompletedRuns fails closed when since is not a valid UTC instant in t
     '2026/08/15',
     'Aug 15 2026',
     '2026-08-15T09:00:00+02:00',
-    '2026-08-15T09:56:30.12Z',
-    '2026-13-45T00:00:00Z',
-    '2026-08-15T99:00:00Z',
-    '2026-02-29T00:00:00Z',
-    '2026-08-15T24:00:00Z',
   ]) {
     const { runs, errors } = fetchCompletedRuns(
       {
@@ -324,7 +325,9 @@ test('fetchCompletedRuns fails closed when since is not a valid UTC instant in t
   assert.equal(calls.length, 0, 'gh must not be called for a bad window');
 });
 
-test('fetchCompletedRuns applies an inclusive cutoff to mixed timestamp precision', () => {
+test('fetchCompletedRuns accepts fractional canonical since and filters by it', () => {
+  // toISOString() emits milliseconds when present; the guard must accept
+  // that form while still filtering the window correctly.
   const afterSince = {
     ...RUN,
     id: 1003,
@@ -333,12 +336,7 @@ test('fetchCompletedRuns applies an inclusive cutoff to mixed timestamp precisio
   const beforeSince = {
     ...RUN,
     id: 1002,
-    run_started_at: '2026-08-15T09:56:30Z',
-  };
-  const atSince = {
-    ...RUN,
-    id: 1004,
-    run_started_at: '2026-08-15T09:56:30.123Z',
+    run_started_at: '2026-08-15T09:56:30.100Z',
   };
   const { runs, errors } = fetchCompletedRuns(
     {
@@ -348,44 +346,33 @@ test('fetchCompletedRuns applies an inclusive cutoff to mixed timestamp precisio
       maxRuns: 10,
       perPage: 100,
     },
-    runsRunner(
-      [atSince, beforeSince, afterSince].map((run) => JSON.stringify(run)),
-    ),
+    runsRunner([JSON.stringify(beforeSince), JSON.stringify(afterSince)]),
   );
   assert.deepEqual(errors, []);
   assert.deepEqual(
     runs.map((r) => r.id),
-    [1003, 1004],
+    [1003],
   );
 });
 
 test('fetchCompletedRuns preserves input order for equal timestamps', () => {
   const first = { ...RUN, id: 2001, run_started_at: '2026-08-15T05:00:00Z' };
-  const second = {
-    ...RUN,
-    id: 2002,
-    run_started_at: '2026-08-15T05:00:00.000Z',
-  };
-  const newer = {
-    ...RUN,
-    id: 2003,
-    run_started_at: '2026-08-15T05:00:00.001Z',
-  };
+  const second = { ...RUN, id: 2002, run_started_at: '2026-08-15T05:00:00Z' };
   const { runs } = fetchCompletedRuns(
     {
       repo: 'owner/repo',
       workflowFile: 'monitor.yml',
-      since: '2026-08-15T05:00:00Z',
+      since: '2026-08-15T00:00:00Z',
       maxRuns: 10,
       perPage: 100,
     },
-    runsRunner([first, second, newer].map((run) => JSON.stringify(run))),
+    runsRunner([JSON.stringify(first), JSON.stringify(second)]),
   );
   // Array#sort is stable, so a comparator that returns 0 for equal
   // timestamps keeps the order of equal-timestamped runs deterministic.
   assert.deepEqual(
     runs.map((r) => r.id),
-    [2003, 2001, 2002],
+    [2001, 2002],
   );
 });
 

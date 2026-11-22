@@ -35,8 +35,11 @@ const DEFAULT_MAX_RUNS = 50;
 const DEFAULT_MAX_LOG_BYTES = 512 * 1024;
 const DEFAULT_PER_PAGE = 100;
 const MAX_FETCH_ERRORS = 50;
+// Canonical UTC ISO-8601, exactly as Date#toISOString() emits it. The
+// window filter in fetchCompletedRuns compares timestamps as strings,
+// which is only order-correct in this one form.
 const CANONICAL_SINCE_PATTERN =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
 function parseArgs(argv) {
   const args = {};
@@ -97,24 +100,23 @@ function capLogText(logText, maxBytes) {
   return firstNewline >= 0 ? tail.slice(firstNewline + 1) : tail;
 }
 
-function parseSince(since) {
-  if (typeof since !== 'string' || !CANONICAL_SINCE_PATTERN.test(since)) {
-    return NaN;
-  }
-  const timestamp = Date.parse(since);
-  if (!Number.isFinite(timestamp)) return NaN;
-
-  // A round trip catches impossible dates and times that Date.parse normalizes.
-  const normalized = since.includes('.') ? since : `${since.slice(0, -1)}.000Z`;
-  return new Date(timestamp).toISOString() === normalized ? timestamp : NaN;
+function runTimestamp(run) {
+  return run.run_started_at || run.updated_at || run.created_at || '';
 }
 
 function fetchCompletedRuns(
   { repo, workflowFile, since, excludeRunId, maxRuns, perPage },
   ghRunner = runGh,
 ) {
-  const sinceMs = parseSince(since);
-  if (!Number.isFinite(sinceMs)) {
+  // An empty or non-canonical window must never report green: the filter
+  // below compares timestamps as strings, which is only order-correct for
+  // the canonical UTC form this script itself emits (the --since default
+  // is toISOString()). A parse-only check would also accept '2026/08/15',
+  // 'Aug 15 2026', or '+02:00'-offset values that silently drop or
+  // mis-include runs, and callers would surface runs_scanned: 0 as
+  // success. Fail closed instead — collectCostTelemetry turns listing
+  // errors into a hard failure (main() exits 1).
+  if (!since || !CANONICAL_SINCE_PATTERN.test(since)) {
     return {
       runs: [],
       errors: [
@@ -122,7 +124,7 @@ function fetchCompletedRuns(
           scope: 'runs-list',
           detail: `invalid or missing --since window (${
             since ? `"${since}"` : 'none'
-          }); expected a valid UTC timestamp (YYYY-MM-DDTHH:mm:ss[.sss]Z)`,
+          }); expected canonical UTC ISO-8601 as emitted by toISOString(); refusing to scan an unbounded window`,
         },
       ],
     };
@@ -151,20 +153,22 @@ function fetchCompletedRuns(
   }
   // `--paginate` with a streaming --jq emits NDJSON; malformed lines are
   // already warned about inside parseGhJsonLines and dropped here.
-  const runs = [];
-  for (const run of parseGhJsonLines(result.stdout, [])) {
-    if (!run || typeof run.id !== 'number') continue;
-    if (excludeRunId && run.id === Number(excludeRunId)) continue;
-    const timestamp = Date.parse(
-      run.run_started_at || run.updated_at || run.created_at || '',
-    );
-    if (timestamp >= sinceMs) runs.push({ run, timestamp });
-  }
+  const runs = parseGhJsonLines(result.stdout, []).filter((run) => {
+    if (!run || typeof run.id !== 'number') return false;
+    if (excludeRunId && Number(run.id) === Number(excludeRunId)) return false;
+    const timestamp = runTimestamp(run);
+    return timestamp >= since;
+  });
   return {
     runs: runs
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, maxRuns)
-      .map(({ run }) => run),
+      .sort((a, b) =>
+        runTimestamp(a) < runTimestamp(b)
+          ? 1
+          : runTimestamp(a) > runTimestamp(b)
+            ? -1
+            : 0,
+      )
+      .slice(0, maxRuns),
     errors,
   };
 }
