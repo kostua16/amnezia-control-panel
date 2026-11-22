@@ -1310,18 +1310,31 @@ function publishCommitStatus(pr, status) {
   }
 }
 
+// Compare duplicate entries for the same context without trusting array
+// order. A usable created_at outranks an unusable one, so a missing or
+// malformed timestamp cannot pin the first array entry. Equal timestamps
+// (GitHub has second granularity, so overlapping prt/wake runs on the same
+// head can tie) and pairs with no usable timestamp both fall back to the
+// monotonic status id. Only when neither signal is usable does the first
+// array entry stay.
 function isNewerStatusEntry(entry, current) {
   const entryAt = Date.parse(entry.created_at ?? '');
   const currentAt = Date.parse(current.created_at ?? '');
-  if (Number.isNaN(entryAt) || Number.isNaN(currentAt)) return false;
-  return entryAt > currentAt;
+  const entryUsable = !Number.isNaN(entryAt);
+  const currentUsable = !Number.isNaN(currentAt);
+  if (entryUsable !== currentUsable) return entryUsable;
+  if (entryUsable && entryAt !== currentAt) return entryAt > currentAt;
+  const entryId = Number(entry.id);
+  const currentId = Number(current.id);
+  if (!Number.isFinite(entryId) || !Number.isFinite(currentId)) return false;
+  return entryId > currentId;
 }
 
-// Index the latest status per context explicitly by created_at instead of
-// trusting array order: a caller passing full history (commits/{sha}/statuses)
-// would make last-wins pick the oldest duplicate, which could suppress a
-// needed success POST while the real latest status is a failure. Entries
-// without a usable created_at fall back to first-wins.
+// Index the latest status per context explicitly by created_at (tie-broken
+// on the status id) instead of trusting array order: a caller passing full
+// history (commits/{sha}/statuses) would make last-wins pick the oldest
+// duplicate, which could suppress a needed success POST while the real
+// latest status is a failure.
 function indexStatusesByContext(statuses) {
   const byContext = new Map();
   if (!Array.isArray(statuses)) return byContext;

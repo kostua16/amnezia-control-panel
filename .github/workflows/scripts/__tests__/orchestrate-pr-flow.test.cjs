@@ -1067,7 +1067,69 @@ test('publishFlowStatuses uses the newest duplicate context in oldest-first hist
   assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
 });
 
-test('publishFlowStatuses keeps the first duplicate when created_at is unusable', () => {
+test('publishFlowStatuses lets a usable created_at replace an unusable one', () => {
+  // A missing or malformed timestamp must not pin the first array entry:
+  // the duplicate with a parseable created_at decides even in oldest-first
+  // order, where first-wins would keep the stale success.
+  const posted = [];
+  publishFlowStatuses({ ...basePr }, statusVisibility(), {
+    currentRunUrl: RUN_URL,
+    readStatuses: () => [
+      previousSuccess({ created_at: 'not-a-date' }),
+      previousSuccess({
+        context: 'pr-flow/code-review',
+        state: 'failure',
+        description: 'Code review failed.',
+        created_at: '2026-11-22T10:00:00Z',
+      }),
+      previousSuccess({
+        context: 'pr-flow/kilo-review',
+        description: 'N/A',
+        target_url: OLD_RUN_URL,
+      }),
+    ],
+    publishStatus: (_pr, status) => posted.push(status.context),
+  });
+
+  assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+});
+
+test('publishFlowStatuses breaks equal created_at ties on the status id', () => {
+  // GitHub timestamps have second granularity, so overlapping prt/wake runs
+  // on the same head can post the same context within one second; the
+  // monotonic id must decide in either array order.
+  const tie = '2026-11-22T10:00:00Z';
+  const staleSuccess = previousSuccess({ created_at: tie, id: '100' });
+  const newerFailure = previousSuccess({
+    context: 'pr-flow/code-review',
+    state: 'failure',
+    description: 'Code review failed.',
+    created_at: tie,
+    id: '200',
+  });
+  for (const duplicates of [
+    [staleSuccess, newerFailure],
+    [newerFailure, staleSuccess],
+  ]) {
+    const posted = [];
+    publishFlowStatuses({ ...basePr }, statusVisibility(), {
+      currentRunUrl: RUN_URL,
+      readStatuses: () => [
+        ...duplicates,
+        previousSuccess({
+          context: 'pr-flow/kilo-review',
+          description: 'N/A',
+          target_url: OLD_RUN_URL,
+        }),
+      ],
+      publishStatus: (_pr, status) => posted.push(status.context),
+    });
+
+    assert.deepEqual(posted, ['pr-flow/ready', 'pr-flow/code-review']);
+  }
+});
+
+test('publishFlowStatuses keeps the first duplicate when created_at and id are unusable', () => {
   const posted = [];
   publishFlowStatuses({ ...basePr }, statusVisibility(), {
     currentRunUrl: RUN_URL,
