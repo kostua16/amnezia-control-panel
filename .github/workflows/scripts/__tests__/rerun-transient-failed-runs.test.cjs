@@ -244,20 +244,21 @@ test('WHO-E06 passes accepted rerun IDs to the optimizer prompt', () => {
     promptBlock,
     /\$\{\{ steps\.rerun_transient\.outputs\.rerun_ids \|\| 'none' \}\}/,
   );
+  assert.match(promptBlock, /Match the list against `run_id`/);
   assert.match(
     promptBlock,
-    /Skip Completed Runs Data entries whose `run_id` is listed above/,
-  );
-  assert.match(
-    promptBlock,
-    /For every unlisted failure, use `failureClassification`/,
+    /Assess each failed job independently, including jobs in listed runs/,
   );
   const collect = workflow.jobs['collect-runs'].steps.find(
     (step) => step.id === 'collect',
   ).with.script;
   const summary = collect.match(/const summary = \{([\s\S]*?)^\s*\};/m)?.[1];
   assert.match(summary, /^\s*run_id: run\.id,/m);
-  assert.match(collect, /classifyFailureLog\(raw\)\.reason/);
+  assert.match(promptBlock, /supplied evidence links it to a failed step/);
+  assert.match(
+    promptBlock,
+    /Continue analyzing any separately evidenced permanent failure/,
+  );
 });
 
 test('static monitor agent mirrors the runtime MON-E04 recovery contract', () => {
