@@ -173,6 +173,9 @@ function runTool(exec, name, args, { cwd, env }) {
   return exec(bin, args, { cwd, env, stdio: 'inherit' });
 }
 
+// Use files for explicit lint targets. Every entry must be an existing
+// supported file on disk. Use rawChangedFiles or CHANGED_FILES for a diff
+// that may contain unrelated or deleted paths. existsSync applies to diff mode.
 function verifyChangedWorkflowFiles(options = {}) {
   const {
     rawChangedFiles = process.env.CHANGED_FILES || '',

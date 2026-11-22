@@ -305,6 +305,20 @@ test('run 29803905118: untouched fix-review SC2129 cannot fail monitor', () => {
     '.github/workflows/workflow-health-optimize.yml',
   ]);
 
+  const workflow = '.github/workflows/workflow-health-optimize.yml';
+  const calls = [];
+  const explicit = verifyChangedWorkflowFiles({
+    files: [workflow],
+    cwd: root,
+    env,
+    exec: (bin, args) => calls.push({ bin, args }),
+  });
+  assert.equal(explicit.status, 0);
+  assert.deepEqual(explicit.workflowYamlFiles, [workflow]);
+  assert.deepEqual(calls, [
+    { bin: resolveCommand('actionlint', env), args: argv },
+  ]);
+
   const failed = spawnVerifier(root, binDir, env, [
     '.github/workflows/fix-review.yml',
   ]);
