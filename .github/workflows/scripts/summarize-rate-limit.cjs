@@ -74,10 +74,10 @@ function summarize(lines) {
     const pairs = jobs.get(jobKey) ?? [];
     jobs.set(jobKey, pairs);
     const base = {
-      workflow: entry.workflow,
-      job: entry.job,
-      label: entry.label,
-      run: entry.run,
+      workflow: entry.workflow ?? '-',
+      job: entry.job ?? '-',
+      label: entry.label ?? '-',
+      run: entry.run ?? '-',
     };
     if (entry.phase === 'job-start') {
       pairs.push({ ...base, 'job-start': entry });

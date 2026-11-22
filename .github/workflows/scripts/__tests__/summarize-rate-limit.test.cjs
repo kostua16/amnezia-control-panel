@@ -222,3 +222,16 @@ test('skips a label group whose start and end counts differ instead of guessing'
     ),
   );
 });
+
+test('renders missing identity fields as a dash in the skipped list', () => {
+  const summary = summarize([
+    'RATE_LIMIT phase=job-start core_remaining=50/5000 core_reset=2026-11-22T20:39:11Z',
+  ]);
+
+  assert.equal(summary.ambiguous, 1);
+  const report = format(summary);
+  assert.ok(
+    report.includes('skipped - / - (label -, run -): 1 starts, 0 ends'),
+  );
+  assert.ok(!report.includes('undefined'));
+});
