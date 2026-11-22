@@ -6,6 +6,7 @@ const path = require('node:path');
 
 const {
   TRACKER_LABELS,
+  ISSUE_SWEEP_LIMIT,
   parseArgs,
   extractAdvisoryIds,
   advisoryIdsFromAudit,
@@ -38,7 +39,10 @@ test('extractAdvisoryIds canonicalizes case and dedupes', () => {
 });
 
 test('extractAdvisoryIds returns empty shapes for no-id text', () => {
-  assert.deepEqual(extractAdvisoryIds('no advisories here'), { ghsa: [], cve: [] });
+  assert.deepEqual(extractAdvisoryIds('no advisories here'), {
+    ghsa: [],
+    cve: [],
+  });
   assert.deepEqual(extractAdvisoryIds(''), { ghsa: [], cve: [] });
 });
 
@@ -47,9 +51,12 @@ test('extractAdvisoryIds returns empty shapes for no-id text', () => {
 test('advisoryIdsFromAudit collects ids from via[] advisory objects only', () => {
   const audit = {
     vulnerabilities: {
-      'postcss': {
+      postcss: {
         via: [
-          { url: 'https://github.com/advisories/GHSA-r28c-9q8g-f849', title: 'postcss path traversal' },
+          {
+            url: 'https://github.com/advisories/GHSA-r28c-9q8g-f849',
+            title: 'postcss path traversal',
+          },
         ],
       },
       'brace-expansion': {
@@ -96,14 +103,18 @@ test('classifyTracker accepts gh-style label objects ({name}) as well as strings
     'security-tracker',
   );
   assert.equal(
-    classifyTracker(issue({ labels: [{ name: 'bug' }], body: 'GHSA-2v37-7h3g-55p8' })),
+    classifyTracker(
+      issue({ labels: [{ name: 'bug' }], body: 'GHSA-2v37-7h3g-55p8' }),
+    ),
     'unrelated',
   );
 });
 
 test('classifyTracker: dependencies label also marks a tracker', () => {
   assert.equal(
-    classifyTracker(issue({ labels: ['dependencies'], body: 'CVE-2026-33327 chain' })),
+    classifyTracker(
+      issue({ labels: ['dependencies'], body: 'CVE-2026-33327 chain' }),
+    ),
     'security-tracker',
   );
   assert.deepEqual(TRACKER_LABELS, ['security', 'dependencies']);
@@ -111,14 +122,21 @@ test('classifyTracker: dependencies label also marks a tracker', () => {
 
 test('classifyTracker: security label without any advisory id = no-advisory-id', () => {
   assert.equal(
-    classifyTracker(issue({ title: 'Security: vague concern', body: 'no ids' })),
+    classifyTracker(
+      issue({ title: 'Security: vague concern', body: 'no ids' }),
+    ),
     'no-advisory-id',
   );
 });
 
 test('classifyTracker: issue without security/dependencies labels = unrelated', () => {
   assert.equal(
-    classifyTracker(issue({ labels: ['bug'], body: 'mentions GHSA-2v37-7h3g-55p8 in passing' })),
+    classifyTracker(
+      issue({
+        labels: ['bug'],
+        body: 'mentions GHSA-2v37-7h3g-55p8 in passing',
+      }),
+    ),
     'unrelated',
   );
   assert.equal(classifyTracker(issue({ labels: [] })), 'unrelated');
@@ -136,7 +154,10 @@ test('reconcileTrackers marks fixed only when every referenced id is absent', ()
   });
   assert.deepEqual(
     rows.map((r) => [r.number, r.verdict]),
-    [[967, 'fixed'], [1036, 'fixed']],
+    [
+      [967, 'fixed'],
+      [1036, 'fixed'],
+    ],
   );
   assert.deepEqual(rows[0].matched_ids, []);
 });
@@ -160,6 +181,15 @@ test('reconcileTrackers is case-insensitive across tracker text and audit ids', 
   assert.equal(rows[0].verdict, 'open-vulnerable');
 });
 
+test('reconcileTrackers normalizes lowercase presentIds instead of marking a tracker fixed', () => {
+  const rows = reconcileTrackers({
+    trackers: [issue({ body: 'GHSA-C333-CCCC-CCCC' })],
+    presentIds: ['ghsa-c333-cccc-cccc'],
+  });
+  assert.equal(rows[0].verdict, 'open-vulnerable');
+  assert.deepEqual(rows[0].matched_ids, ['GHSA-C333-CCCC-CCCC']);
+});
+
 test('reconcileTrackers sorts rows by issue number for stable output', () => {
   const rows = reconcileTrackers({
     trackers: [
@@ -169,26 +199,46 @@ test('reconcileTrackers sorts rows by issue number for stable output', () => {
     ],
     presentIds: [],
   });
-  assert.deepEqual(rows.map((r) => r.number), [10, 20, 30]);
+  assert.deepEqual(
+    rows.map((r) => r.number),
+    [10, 20, 30],
+  );
 });
 
 // ── renderMatrix ─────────────────────────────────────────────────────
 
 test('renderMatrix renders the canonical matrix with audit summary', () => {
   const rows = reconcileTrackers({
-    trackers: [issue({ number: 967, title: 'brace-expansion DoS', body: 'GHSA-mh99-v99m-4gvg' })],
+    trackers: [
+      issue({
+        number: 967,
+        title: 'brace-expansion DoS',
+        body: 'GHSA-mh99-v99m-4gvg',
+      }),
+    ],
     presentIds: [],
   });
   const matrix = renderMatrix({
     auditIds: [],
     rows,
-    ignored: { unrelated: [], 'no-advisory-id': [issue({ number: 952, title: 'common', labels: ['security'] })] },
+    ignored: {
+      unrelated: [],
+      'no-advisory-id': [
+        issue({ number: 952, title: 'common', labels: ['security'] }),
+      ],
+    },
   });
   assert.match(matrix, /#967/);
   assert.match(matrix, /GHSA-MH99-V99M-4GVG/);
   assert.match(matrix, /\| fixed \|/);
   assert.match(matrix, /none \(0 vulnerabilities\)/);
   assert.match(matrix, /#952/);
+});
+
+test('renderMatrix tolerates an ignored map missing the no-advisory-id key', () => {
+  const matrix = renderMatrix({ auditIds: [], rows: [], ignored: {} });
+  assert.match(matrix, /none \(0 vulnerabilities\)/);
+  assert.doesNotMatch(matrix, /No-advisory-id/);
 });
 
 // ── fetchCandidateIssues (injected gh runner) ────────────────────────
@@ -209,13 +259,27 @@ test('fetchCandidateIssues sweeps both labels, dedupes, and streams via --jq .[]
     }
     return {
       ok: true,
-      stdout: JSON.stringify(issue({ number: 1036, labels: ['dependencies'], body: 'GHSA-2v37-7h3g-55p8' })).concat('\n'),
+      stdout: JSON.stringify(
+        issue({
+          number: 1036,
+          labels: ['dependencies'],
+          body: 'GHSA-2v37-7h3g-55p8',
+        }),
+      ).concat('\n'),
     };
   };
-  const issues = fetchCandidateIssues('owner/repo', runner);
+  const { issues, failedLabels, truncatedLabels } = fetchCandidateIssues(
+    'owner/repo',
+    runner,
+  );
 
   assert.equal(issues.length, 3); // 922 counted once despite both labels
-  assert.deepEqual(issues.map((i) => i.number), [922, 967, 1036]);
+  assert.deepEqual(
+    issues.map((i) => i.number),
+    [922, 967, 1036],
+  );
+  assert.deepEqual(failedLabels, []);
+  assert.deepEqual(truncatedLabels, []);
   for (const call of calls) {
     const jqIndex = call.indexOf('--jq');
     assert.equal(call[jqIndex + 1], '.[]');
@@ -224,13 +288,52 @@ test('fetchCandidateIssues sweeps both labels, dedupes, and streams via --jq .[]
   }
 });
 
-test('fetchCandidateIssues tolerates a failing label query', () => {
-  const issues = fetchCandidateIssues('owner/repo', () => ({
+test('fetchCandidateIssues reports a total sweep failure instead of a silent empty list', () => {
+  const { issues, failedLabels } = fetchCandidateIssues('owner/repo', () => ({
     ok: false,
     stdout: '',
     error: 'HTTP 502',
   }));
   assert.deepEqual(issues, []);
+  assert.deepEqual(
+    failedLabels.map((failure) => failure.label),
+    TRACKER_LABELS,
+  );
+  assert.ok(
+    failedLabels.every((failure) => failure.error.includes('HTTP 502')),
+  );
+});
+
+test('fetchCandidateIssues keeps partial results and reports the failed label', () => {
+  const { issues, failedLabels } = fetchCandidateIssues('owner/repo', (args) =>
+    args.includes('security')
+      ? {
+          ok: true,
+          stdout: JSON.stringify(
+            issue({ number: 7, body: 'GHSA-mh99-v99m-4gvg' }),
+          ),
+        }
+      : { ok: false, stdout: '', error: 'HTTP 502' },
+  );
+  assert.deepEqual(
+    issues.map((i) => i.number),
+    [7],
+  );
+  assert.deepEqual(
+    failedLabels.map((failure) => failure.label),
+    ['dependencies'],
+  );
+});
+
+test('fetchCandidateIssues flags a label sweep that hits the issue limit', () => {
+  const fullPage = Array.from({ length: ISSUE_SWEEP_LIMIT }, (_, i) =>
+    JSON.stringify(issue({ number: i + 1 })),
+  ).join('\n');
+  const { truncatedLabels } = fetchCandidateIssues('owner/repo', () => ({
+    ok: true,
+    stdout: fullPage,
+  }));
+  assert.deepEqual(truncatedLabels, TRACKER_LABELS);
 });
 
 // ── CLI-facing helpers ────────────────────────────────────────────────
