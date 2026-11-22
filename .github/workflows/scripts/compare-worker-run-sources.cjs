@@ -181,8 +181,13 @@ function main() {
     };
 
     // The reference: what the orchestrator read before, one lookup per worker.
+    // Strict, so a rate-limited or 5xx read aborts the comparison instead of
+    // reading as an empty window the new lookup "recovered" from.
     const oldRuns = Object.fromEntries(
-      workers.map((name) => [name, flow.collectWorkerRuns(config, name)]),
+      workers.map((name) => [
+        name,
+        flow.collectWorkerRuns(config, name, { strict: true }),
+      ]),
     );
     // gh run list resolves the workflow, then lists its runs.
     row.restOld = workers.length * 2;
@@ -201,7 +206,7 @@ function main() {
       loadLegacy: (name) => {
         legacyUsed = true;
         row.restNew += 2;
-        return flow.collectWorkerRuns(config, name);
+        return flow.collectWorkerRuns(config, name, { strict: true });
       },
       warn: (message) => warnings.push(message),
     });

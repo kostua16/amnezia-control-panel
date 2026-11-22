@@ -166,7 +166,7 @@ test('groupWorkerRuns dedupes runs seen by both reads and leaves workflow-less w
   assert.deepEqual(grouped.antigravityCodeReview, []);
 });
 
-test('fetchRunsForHead reads one page of the head trimmed server-side', () => {
+test('fetchRunsForHead reads one page of the head, trimmed inside gh', () => {
   const calls = [];
   const result = fetchRunsForHead({
     repo: 'owner/repo',
@@ -319,6 +319,25 @@ test('loader falls back when the head has more runs than one page returned', () 
   assert.equal(calls.dispatch, 0);
   assert.equal(calls.warnings.length, 1);
   assert.match(calls.warnings[0], /exceed one page/);
+});
+
+test('loader falls back when workflow_dispatch runs exceed one page', () => {
+  // The dispatch window is repo-wide, so a full page can evict the PR's only
+  // base-ref run; the per-workflow lookup keeps its per-worker guarantee.
+  const { loader, calls } = makeLoader({
+    fetchDispatch: () => {
+      calls.dispatch += 1;
+      return page([restRun()], 150);
+    },
+  });
+
+  assert.equal(loader('codeReview')[0].databaseId, 'legacy');
+  loader('finalizer');
+
+  assert.deepEqual(calls.legacy, ['codeReview', 'finalizer']);
+  assert.equal(calls.dispatch, 1);
+  assert.equal(calls.warnings.length, 1);
+  assert.match(calls.warnings[0], /workflow_dispatch runs exceed one page/);
 });
 
 test('loader falls back with exactly one warning when the head read throws', () => {

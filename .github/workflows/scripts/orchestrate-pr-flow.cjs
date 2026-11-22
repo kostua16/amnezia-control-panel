@@ -2084,7 +2084,10 @@ function makeDecision(context) {
   );
 }
 
-function collectWorkerRuns(config, workerName) {
+// `strict` drops the empty-list fallback so a failed `gh run list` throws
+// instead of reading as "no runs" — the parity comparison must not classify a
+// failed read as data.
+function collectWorkerRuns(config, workerName, { strict = false } = {}) {
   const worker = config.workers?.[workerName];
   if (!worker?.workflow) {
     return [];
@@ -2102,7 +2105,7 @@ function collectWorkerRuns(config, workerName) {
       '--json',
       'databaseId,status,conclusion,event,displayTitle,createdAt,updatedAt,url',
     ],
-    [],
+    strict ? undefined : [],
   );
 }
 

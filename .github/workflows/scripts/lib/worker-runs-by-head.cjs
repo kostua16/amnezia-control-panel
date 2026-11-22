@@ -24,7 +24,8 @@ const SOURCE_HEAD = 'head';
 const SOURCE_LEGACY = 'legacy';
 
 // A page of 100 full run objects is ~1 MB, past the 1 MiB execFileSync buffer.
-// Trimming server-side keeps the response to the fields the orchestrator reads.
+// Applying --jq inside gh keeps the captured stdout to the fields the
+// orchestrator reads; the full page still crosses the wire.
 const RUN_FIELDS_JQ =
   '{total_count, workflow_runs: [.workflow_runs[] | {id, path, head_sha, display_title, event, status, conclusion, created_at, updated_at, html_url}]}';
 
@@ -80,8 +81,10 @@ function fetchRunsForHead({ repo, headSha, run }) {
   });
 }
 
-// A recency window by nature, exactly like the per-workflow `--limit 50` it
-// replaces, so it is never treated as truncated.
+// A repo-wide recency window shared by every workflow_dispatch trigger, so it
+// can cover a far shorter history than the per-workflow `--limit 50` it
+// replaces; truncation must degrade to the per-workflow lookup, like the head
+// read (checked by the caller).
 function fetchDispatchRuns({ repo, run }) {
   return readRunsPage({ repo, query: 'event=workflow_dispatch', run });
 }
@@ -162,6 +165,15 @@ function createWorkerRunsLoader({
         return grouped;
       }
       const dispatched = fetchDispatch({ repo, run });
+      // The dispatch window is shared by all workflows' dispatches, so a full
+      // page means the PR's base-ref runs may sit outside it; the per-workflow
+      // lookup is the only read with a per-worker guarantee.
+      if (dispatched.total > dispatched.runs.length) {
+        warn(
+          `orchestrate-pr-flow: ${dispatched.total} workflow_dispatch runs exceed one page, using per-workflow lookup.`,
+        );
+        return grouped;
+      }
       grouped = groupWorkerRuns([...head.runs, ...dispatched.runs], config);
     } catch (error) {
       grouped = null;
