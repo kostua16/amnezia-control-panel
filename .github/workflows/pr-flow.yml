@@ -189,6 +189,8 @@ jobs:
           PR_FLOW_REVIEW_SOURCE: ${{ vars.PR_FLOW_REVIEW_SOURCE || '' }}
           # Worker run lookup: head | legacy. Empty keeps the script default; set the repository variable to `legacy` to roll back to the per-workflow lookup without a commit.
           PR_FLOW_WORKER_RUNS_SOURCE: ${{ vars.PR_FLOW_WORKER_RUNS_SOURCE || '' }}
+          # Kilo severities that block pr-flow/kilo-review (comma-separated). Empty keeps the script default `critical,warning` (SUGGESTION-only reviews pass); set the repository variable to `all` to make every finding block again without a commit. Auto Cover Review passes the same variable.
+          KILO_BLOCKING_SEVERITIES: ${{ vars.KILO_BLOCKING_SEVERITIES || '' }}
         run: |
           node .github/workflows/scripts/orchestrate-pr-flow.cjs \
             --event-name "$GITHUB_EVENT_NAME" \

@@ -85,6 +85,8 @@ jobs:
           INPUT_PR_NUMBER: ${{ github.event.inputs.pr_number }}
           INPUT_HEAD_SHA: ${{ github.event.inputs.head_sha }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          # Same switch as the PR Orchestrator so both verdict producers agree: empty = `critical,warning`, `all` = every Kilo finding blocks.
+          KILO_BLOCKING_SEVERITIES: ${{ vars.KILO_BLOCKING_SEVERITIES || '' }}
         shell: bash
         run: |
           set -euo pipefail
