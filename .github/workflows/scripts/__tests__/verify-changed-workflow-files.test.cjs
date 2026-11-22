@@ -241,6 +241,15 @@ test('invalid positional paths fail while deleted paths from CI are skipped', ()
     assert.equal(explicit.status, 1, explicit.stderr);
     assert.match(explicit.stderr, /Expected existing workflow/);
     assert.ok(explicit.stderr.includes(JSON.stringify(file)));
+
+    const result = verifyChangedWorkflowFiles({
+      files: [file],
+      cwd: root,
+      log: { error() {} },
+      exec: () => assert.fail('invalid paths must fail before running tools'),
+    });
+    assert.equal(result.status, 1);
+    assert.ok(result.error.includes(JSON.stringify(file)));
   }
   const ci = spawnSync(process.execPath, [scriptPath], options);
   assert.equal(ci.status, 0, ci.stderr);

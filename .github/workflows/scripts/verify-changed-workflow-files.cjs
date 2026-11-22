@@ -176,7 +176,7 @@ function runTool(exec, name, args, { cwd, env }) {
 function verifyChangedWorkflowFiles(options = {}) {
   const {
     rawChangedFiles = process.env.CHANGED_FILES || '',
-    files = parseChangedFiles(rawChangedFiles),
+    files: explicitFiles,
     cwd = process.cwd(),
     env = process.env,
     exec = execFileSync,
@@ -184,6 +184,7 @@ function verifyChangedWorkflowFiles(options = {}) {
     log = console,
   } = options;
 
+  const files = explicitFiles ?? parseChangedFiles(rawChangedFiles);
   if (files.length === 0) {
     log.log('No changed files to verify.');
     return {
@@ -197,9 +198,25 @@ function verifyChangedWorkflowFiles(options = {}) {
 
   const classified = classifyChangedFiles(files, {
     cwd,
-    existsSync,
+    existsSync: explicitFiles
+      ? (file) => fs.statSync(file, { throwIfNoEntry: false })?.isFile()
+      : existsSync,
   });
   const { workflowYamlFiles, actionYamlFiles, shellFiles } = classified;
+
+  if (explicitFiles) {
+    const accepted = new Set([
+      ...workflowYamlFiles,
+      ...actionYamlFiles,
+      ...shellFiles,
+    ]);
+    const invalid = explicitFiles.filter((file) => !accepted.has(file));
+    if (invalid.length) {
+      const error = `Expected existing workflow, action metadata, or shell files: ${JSON.stringify(invalid)}`;
+      log.error(error);
+      return { status: 1, ...classified, error };
+    }
+  }
 
   for (const file of actionYamlFiles) {
     try {
@@ -245,17 +262,6 @@ function verifyChangedWorkflowFiles(options = {}) {
 if (require.main === module) {
   try {
     const paths = process.argv.slice(2);
-    const invalid = paths.filter(
-      (file) =>
-        !(isWorkflowOrActionYaml(file) || isShellScript(file)) ||
-        !fs.statSync(file, { throwIfNoEntry: false })?.isFile(),
-    );
-    if (invalid.length) {
-      console.error(
-        `Expected existing workflow, action metadata, or shell files: ${JSON.stringify(invalid)}`,
-      );
-      process.exit(1);
-    }
     const options = paths.length ? { files: paths } : {};
     process.exit(verifyChangedWorkflowFiles(options).status);
   } catch (err) {
