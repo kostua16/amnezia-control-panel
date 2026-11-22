@@ -353,7 +353,18 @@ describe('workflow trigger policy', () => {
     // before job `if:` gates evaluate).
     assert.match(
       workflow,
-      /group: pr-flow-\$\{\{ \(github\.event_name == 'pull_request_target' && 'prt'\) \|\| \(github\.event_name == 'issue_comment' && github\.event\.comment\.user\.login == 'github-actions\[bot\]' && 'noise'\) \|\| 'wake' \}/,
+      /group: pr-flow-\$\{\{ \(github\.event_name == 'pull_request_target' && 'prt'\) \|\| \(github\.event_name == 'issue_comment' && github\.event\.comment\.user\.login == 'github-actions\[bot\]' && 'noise'\) \|\| \(github\.event_name == 'issue_comment' && github\.event\.action == 'edited' && github\.event\.comment\.user\.login == 'kilo-code-bot\[bot\]' && vars\.KILO_EDIT_FILTER != 'off' && 'kiloedit'\) \|\| 'wake' \}/,
+    );
+    // Kilo sticky-comment edits sit in their own group ahead of the `wake`
+    // fallback, so a history-only edit dropped by classify-trigger can only
+    // displace another Kilo edit, never a pending check/worker or command wake.
+    assert.match(
+      workflow,
+      /classify-kilo-comment-edit\.cjs[\s\S]*?--event-path "\$GITHUB_EVENT_PATH"/,
+    );
+    assert.match(
+      workflow,
+      /KILO_EDIT_FILTER: \$\{\{ vars\.KILO_EDIT_FILTER \|\| '' \}\}/,
     );
     // Only prt opened/synchronize/ready_for_review cancel an older prt (a new
     // commit restarts orchestration); prt labeled/unlabeled do NOT
@@ -396,8 +407,20 @@ describe('workflow trigger policy', () => {
     // Noise runs have cancel-in-progress=false so they never cancel anything.
     assert.match(
       workflow,
-      /cancel-in-progress: \$\{\{ github\.event_name != 'issue_comment' \|\| github\.event\.comment\.user\.login != 'github-actions\[bot\]' \}\}/,
+      /cancel-in-progress: \$\{\{ github\.event_name != 'issue_comment' \|\| \(github\.event\.comment\.user\.login != 'github-actions\[bot\]' && \(vars\.KILO_EDIT_FILTER == 'off' \|\| \(github\.event\.action != 'edited' && github\.event\.comment\.user\.login == 'kilo-code-bot\[bot\]' && contains\(github\.event\.comment\.body, '<!-- kilo-review -->'\)\)\)\) \}\}/,
     );
+    // Kilo sticky-comment edits get a per-PR `kiloedit` group and other
+    // ignored comments join the noise group; a cheap `classify` job gates
+    // `cover` for edits.
+    assert.match(
+      workflow,
+      /vars\.KILO_EDIT_FILTER != 'off' && format\('kiloedit-\{0\}', github\.event\.issue\.number\)/,
+    );
+    assert.match(
+      workflow,
+      /\n  classify:\r?\n[\s\S]*?classify-kilo-comment-edit\.cjs[\s\S]*?\n  cover:\r?\n    needs: classify\r?\n/,
+    );
+    assert.match(workflow, /needs\.classify\.outputs\.should_run != 'false'/);
   });
 
   // P0-1b — heavy CI jobs are gated on the `changes` job, so docs-only changes

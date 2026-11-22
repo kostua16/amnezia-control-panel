@@ -45,24 +45,74 @@ concurrency:
   # run creation, before job `if:` gates run — routing them to a per-PR noise
   # group with cancel-in-progress=false prevents them from cancelling or
   # displacing a real fix-review wake (same bug class as PR #695 / #715).
+  # Kilo sticky-comment edits get their own per-PR `kiloedit` group with
+  # cancel-in-progress=false: Kilo edits the comment twice per review and the
+  # `classify` job drops the second, history-only edit, so a dropped edit may
+  # only displace another Kilo edit, never a pending Code Review completion or
+  # targeted dispatch, and never cancels the in-flight first edit. Every other
+  # comment that `cover` ignores anyway (human comments, Kilo comments without
+  # the sticky marker) joins the per-PR noise group, so it cannot cancel an
+  # in-flight run either. Only a newly created Kilo sticky comment still
+  # cancels like a Code Review completion. KILO_EDIT_FILTER=off restores the
+  # previous grouping and cancellation.
   group: >-
     auto-cover-review-${{
       (github.event_name == 'issue_comment' && github.event.comment.user.login == 'github-actions[bot]' && format('noise-{0}', github.event.issue.number)) ||
+      (github.event_name == 'issue_comment' && vars.KILO_EDIT_FILTER != 'off' && (github.event.comment.user.login != 'kilo-code-bot[bot]' || !contains(github.event.comment.body, '<!-- kilo-review -->')) && format('noise-{0}', github.event.issue.number)) ||
+      (github.event_name == 'issue_comment' && github.event.action == 'edited' && github.event.comment.user.login == 'kilo-code-bot[bot]' && vars.KILO_EDIT_FILTER != 'off' && format('kiloedit-{0}', github.event.issue.number)) ||
       github.event.issue.number ||
       github.event.inputs.pr_number ||
       github.event.workflow_run.pull_requests[0].number ||
       'scan'
     }}
-  cancel-in-progress: ${{ github.event_name != 'issue_comment' || github.event.comment.user.login != 'github-actions[bot]' }}
+  cancel-in-progress: ${{ github.event_name != 'issue_comment' || (github.event.comment.user.login != 'github-actions[bot]' && (vars.KILO_EDIT_FILTER == 'off' || (github.event.action != 'edited' && github.event.comment.user.login == 'kilo-code-bot[bot]' && contains(github.event.comment.body, '<!-- kilo-review -->')))) }}
 
 jobs:
-  cover:
+  # Cheap gate for Kilo sticky-comment edits: no setup-environment, no API
+  # call. A history-only edit ends here; anything else (and any classifier
+  # failure) lets `cover` run.
+  classify:
     if: >-
-      github.event_name != 'issue_comment' ||
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'edited' &&
+      github.event.issue.pull_request != null &&
+      github.event.comment.user.login == 'kilo-code-bot[bot]' &&
+      contains(github.event.comment.body, '<!-- kilo-review -->') &&
+      vars.KILO_EDIT_FILTER != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      should_run: ${{ steps.classify.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Classify Kilo sticky-comment edit
+        id: classify
+        shell: bash
+        env:
+          KILO_EDIT_FILTER: ${{ vars.KILO_EDIT_FILTER || '' }}
+        run: |
+          if ! node .github/workflows/scripts/classify-kilo-comment-edit.cjs \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --filter "$KILO_EDIT_FILTER" >> "$GITHUB_OUTPUT"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  cover:
+    needs: classify
+    # `classify` is skipped for every other event; `!cancelled()` lets `cover`
+    # run then, and only an explicit should_run=false stops it.
+    if: >-
+      !cancelled() &&
+      needs.classify.outputs.should_run != 'false' &&
       (
-        github.event.issue.pull_request != null &&
-        github.event.comment.user.login == 'kilo-code-bot[bot]' &&
-        contains(github.event.comment.body, '<!-- kilo-review -->')
+        github.event_name != 'issue_comment' ||
+        (
+          github.event.issue.pull_request != null &&
+          github.event.comment.user.login == 'kilo-code-bot[bot]' &&
+          contains(github.event.comment.body, '<!-- kilo-review -->')
+        )
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -73,6 +123,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           node-version: '24.x'
           install-deps: 'false'
 
