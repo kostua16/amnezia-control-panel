@@ -35,9 +35,11 @@ const COMMAND_PATTERN = /^\s*\/(fix|triage)\b/;
 // Dispatch markers prove a real workflow_dispatch happened: the re-triage
 // step posts `<!-- re-triage-dispatch -->` after the API call succeeds, and
 // the dead-letter retry posts `<!-- dead-letter-retry -->` immediately before
-// its `/fix`. A bot command adjacent to such a marker was posted by a real
-// dispatch path, not left inert by a GITHUB_TOKEN event.
-const DISPATCH_MARKERS = ['<!-- re-triage-dispatch -->', '<!-- dead-letter-retry -->'];
+// its `/fix`. Each marker vouches only for the command it corresponds to, on
+// the side where the workflow posts it — anything else adjacent is a
+// different dispatch's echo and leaves the command inert.
+const RETRIAGE_DISPATCH_MARKER = '<!-- re-triage-dispatch -->';
+const DEAD_LETTER_RETRY_MARKER = '<!-- dead-letter-retry -->';
 // Labels that legitimately hold an issue out of the fix pipeline. They do not
 // silence a finding — a stuck issue parked for weeks is still stuck — but they
 // change the next action from "route a fix" to "maintainer unblocks".
@@ -73,16 +75,23 @@ function commandTriggerPath(comment) {
   return 'unknown';
 }
 
-// A command comment next to a dispatch marker came from a real dispatch path
-// (the marker is only posted after the workflow_dispatch API call succeeded),
-// so it is not inert. Adjacency is positional in the chronological comment
-// list: the re-triage marker lands right after its trigger, and the
-// dead-letter retry posts its marker immediately before the `/fix`.
+// A command comment is vouched by its dispatch marker (the marker is only
+// posted after the workflow_dispatch API call succeeded), so it is not inert.
+// Adjacency is positional AND marker-specific in the chronological comment
+// list: the re-triage marker lands right after the `/triage` it dispatched,
+// so only a following re-triage marker vouches for a `/triage`; the
+// dead-letter retry posts its marker immediately before the `/fix` it
+// restarted, so only a preceding dead-letter marker vouches for a `/fix`.
+// A marker on the wrong side, or of the other kind, belongs to a different
+// command — the adjacent one is still inert and must be reported.
 function isMarkerAdjacent(comments, index) {
-  for (const neighbor of [comments[index - 1], comments[index + 1]]) {
-    if (neighbor && DISPATCH_MARKERS.some((m) => (neighbor.body || '').includes(m))) {
-      return true;
-    }
+  const command = (comments[index].body || '').trim();
+  const neighborBody = (i) => (comments[i] ? comments[i].body || '' : '');
+  if (command.startsWith('/triage')) {
+    return neighborBody(index + 1).includes(RETRIAGE_DISPATCH_MARKER);
+  }
+  if (command.startsWith('/fix')) {
+    return neighborBody(index - 1).includes(DEAD_LETTER_RETRY_MARKER);
   }
   return false;
 }

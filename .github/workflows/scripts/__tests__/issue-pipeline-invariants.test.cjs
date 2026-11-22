@@ -109,6 +109,27 @@ test('bot commands adjacent to dispatch markers are real dispatch echoes, not in
   const f = detectInertBotCommand({ issueNumber: 3, comments: far });
   assert.ok(f, 'non-adjacent bot command is still inert');
   assert.equal(f.count, 1);
+
+  // A marker of the other kind on the wrong side belongs to a different
+  // command: an inert /fix before a re-triage marker and an inert /triage
+  // after a dead-letter marker are both still inert findings.
+  const fixBeforeRetriage = [
+    { user: BOT, body: '/fix', created_at: daysAgo(2), html_url: 'u4', id: 4 },
+    { user: BOT, body: '<!-- re-triage-dispatch -->\nRe-triage dispatched (attempt 2)', created_at: daysAgo(2) },
+  ];
+  const fixFinding = detectInertBotCommand({ issueNumber: 4, comments: fixBeforeRetriage });
+  assert.ok(fixFinding, 'a /fix preceding a re-triage marker is still inert');
+  assert.equal(fixFinding.count, 1);
+  assert.equal(fixFinding.trigger_path, 'catchup-phase6-autofix');
+
+  const triageAfterRetry = [
+    { user: BOT, body: '<!-- dead-letter-retry --> One-time fresh-context retry', created_at: daysAgo(1) },
+    { user: BOT, body: '/triage', created_at: daysAgo(1), html_url: 'u5', id: 5 },
+  ];
+  const triageFinding = detectInertBotCommand({ issueNumber: 5, comments: triageAfterRetry });
+  assert.ok(triageFinding, 'a /triage following a dead-letter marker is still inert');
+  assert.equal(triageFinding.count, 1);
+  assert.equal(triageFinding.trigger_path, 'legacy-catchup-retriage');
 });
 
 test('dispatch markers and maintainer commands are never inert findings', () => {
