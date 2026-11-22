@@ -10,6 +10,7 @@ const {
   getRequiredCheckStatus,
 } = require('./required-check-evidence.cjs');
 const { evaluateExternalReview } = require('./evaluate-external-review.cjs');
+const { fetchReviewInputsGraphql } = require('./lib/review-inputs-graphql.cjs');
 // Shared sticky-comment create-or-update helper (single source for the
 // marker-based PR comment upsert used across review/size/orchestration scripts).
 const { upsertComment } = require('./lib/sticky-comment.cjs');
@@ -1390,15 +1391,77 @@ function fetchHeadCommittedAt(headSha) {
   );
 }
 
-function collectExternalReview(pr) {
-  return evaluateExternalReview({
-    pr,
+// Which transport feeds the Kilo review evaluation. GraphQL has its own quota
+// bucket, so it spares the (scarcer) REST one; REST stays the reference path
+// and the fallback. A repository variable overrides the default without a
+// commit: `rest` is the rollback switch.
+const DEFAULT_REVIEW_SOURCE = 'graphql';
+
+function resolveReviewSource(value = process.env.PR_FLOW_REVIEW_SOURCE) {
+  const requested = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (requested === '') return DEFAULT_REVIEW_SOURCE;
+  if (requested === 'graphql' || requested === 'rest') return requested;
+  // A typo must never silently enable the newer path.
+  console.warn(
+    `orchestrate-pr-flow: unknown PR_FLOW_REVIEW_SOURCE "${requested}", using rest.`,
+  );
+  return 'rest';
+}
+
+function runGraphqlQuery(query, variables) {
+  const args = ['api', 'graphql', '-f', `query=${query}`];
+  for (const [key, value] of Object.entries(variables)) {
+    if (value === null || value === undefined) continue;
+    // -f keeps strings (cursors) literal; -F types numbers and booleans.
+    args.push(typeof value === 'string' ? '-f' : '-F', `${key}=${value}`);
+  }
+  return JSON.parse(run('gh', args, { retry: true }));
+}
+
+function fetchRestReviewInputs(pr) {
+  return {
     comments: fetchPrIssueComments(pr.number),
     reviewComments: fetchPrReviewComments(pr.number),
     reviews: fetchPrReviews(pr.number),
     checkRuns: fetchCheckRuns(pr.headSha),
     statuses: fetchCommitStatuses(pr.headSha),
+  };
+}
+
+function fetchGraphqlReviewInputs(pr) {
+  const { cost, ...inputs } = fetchReviewInputsGraphql({
+    repo: getRepoSlug(),
+    prNumber: pr.number,
+    headSha: pr.headSha,
+    runGraphql: runGraphqlQuery,
   });
+  console.log(`orchestrate-pr-flow: review inputs via GraphQL (cost ${cost}).`);
+  return inputs;
+}
+
+function collectExternalReview(
+  pr,
+  {
+    source = resolveReviewSource(),
+    loadRest = fetchRestReviewInputs,
+    loadGraphql = fetchGraphqlReviewInputs,
+    evaluate = evaluateExternalReview,
+  } = {},
+) {
+  let inputs = null;
+  if (source === 'graphql') {
+    try {
+      inputs = loadGraphql(pr);
+    } catch (error) {
+      // Any doubt about the GraphQL data: use REST for this wake only.
+      console.warn(
+        `orchestrate-pr-flow: GraphQL review inputs unavailable, using REST: ${error.message}`,
+      );
+    }
+  }
+  return evaluate({ pr, ...(inputs ?? loadRest(pr)) });
 }
 
 function decisionWithDispatchError({ decision, pr, config, errorMessage }) {
@@ -2246,7 +2309,14 @@ module.exports = {
   buildFlowGuidance,
   buildFlowVisibility,
   collectCheckEvidence,
+  collectExternalReview,
   decisionWithDispatchError,
+  fetchCheckRuns,
+  fetchCommitStatuses,
+  fetchHeadCommittedAt,
+  fetchPrIssueComments,
+  fetchPrReviewComments,
+  fetchPrReviews,
   getFinalizerRetryCount,
   getWorkerDispatchRef,
   getLabelsForDecision,
@@ -2259,5 +2329,7 @@ module.exports = {
   readConfig,
   renderFlowComment,
   resolvePrNumber,
+  resolveReviewSource,
+  runGraphqlQuery,
   summarizeWorkerRuns,
 };

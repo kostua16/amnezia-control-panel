@@ -185,6 +185,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.comment.outputs.pr_number || github.event.inputs.pr_number || '' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          # Kilo review input transport: graphql | rest. Empty keeps the script default; set the repository variable to `rest` to roll back without a commit.
+          PR_FLOW_REVIEW_SOURCE: ${{ vars.PR_FLOW_REVIEW_SOURCE || '' }}
         run: |
           node .github/workflows/scripts/orchestrate-pr-flow.cjs \
             --event-name "$GITHUB_EVENT_NAME" \
