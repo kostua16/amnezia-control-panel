@@ -22,7 +22,6 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { escapeTableCell } = require('./md-escape.cjs');
-const { parseClaudeExecution } = require('./parse-claude-execution.cjs');
 const { parseGhJsonLines } = require('./fleet-kpi-digest.cjs');
 
 const DIGEST_TITLE_PREFIX = 'Weekly Cost/Turn Digest';
@@ -46,10 +45,25 @@ const MAX_LOG_BUFFER_BYTES = 64 * 1024 * 1024;
 // A workflow run rarely has more than a couple of agent jobs; the rest are
 // gates and reports whose logs cannot hold agent metrics.
 const MAX_JOBS_PER_RUN = 6;
+// Serial `gh` subprocesses are slow; bound them so a busy week cannot run
+// the digest into its job timeout. Logs past the budget are surfaced as
+// unread in the coverage notes, not silently dropped.
+const MAX_LOG_DOWNLOADS = 400;
 // An agent run is flagged when its average turns reach this share of the
 // workflow's MAX_TURNS, or its average cost exceeds this many dollars.
 const BUDGET_PRESSURE_RATIO = 0.8;
 const HIGH_COST_PER_RUN_USD = 1;
+// How many title-search hits to inspect for the digest marker.
+const ISSUE_CANDIDATE_LIMIT = 20;
+
+const VALUE_FLAGS = new Set([
+  'repo',
+  'window-days',
+  'max-runs',
+  'workflows-dir',
+  'actions-dir',
+  'github-output',
+]);
 
 function parseArgs(argv) {
   const args = {};
@@ -57,10 +71,25 @@ function parseArgs(argv) {
     if (!argv[i].startsWith('--')) continue;
     // Keys keep their kebab-case spelling so `--window-days` is read as
     // `args['window-days']`; camel-casing here silently dropped every flag.
+    // `--key=value` is split so GNU-style flags do not become a bogus key.
+    const eq = argv[i].indexOf('=');
+    if (eq >= 0) {
+      args[argv[i].slice(2, eq)] = argv[i].slice(eq + 1);
+      continue;
+    }
     const key = argv[i].slice(2);
-    const next = argv[i + 1];
-    args[key] =
-      next === undefined || next.startsWith('--') ? 'true' : argv[++i];
+    if (VALUE_FLAGS.has(key)) {
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('--')) {
+        throw new Error(`--${key} requires a value`);
+      }
+      args[key] = next;
+      i += 1;
+    } else {
+      // Boolean flags are presence-based; a stray following token is never
+      // swallowed as a value.
+      args[key] = 'true';
+    }
   }
   return args;
 }
@@ -87,15 +116,31 @@ function isNotFound(error) {
   const output = [error?.stderr, error?.stdout, error?.message]
     .filter(Boolean)
     .join('\n');
+  // 410 Gone is how the API reports expired job logs; it means the log is
+  // gone, not that the call failed.
   return (
     /\bHTTP 404\b/.test(output) ||
+    /\bHTTP 410\b/.test(output) ||
     /"status"\s*:\s*"?404"?/.test(output) ||
-    /Not Found/.test(output)
+    /"status"\s*:\s*"?410"?/.test(output) ||
+    /Not Found/.test(output) ||
+    /\bGone\b/.test(output)
+  );
+}
+
+// A log larger than the exec buffer fails locally (ENOBUFS), not at the API;
+// classifying it as an API failure would mislabel the digest as partial.
+function isLogTooLarge(error) {
+  return (
+    error?.code === 'ENOBUFS' ||
+    /ENOBUFS|maxBuffer/.test(String(error?.message || ''))
   );
 }
 
 function formatIso(date) {
-  return date.toISOString();
+  // The Actions runs filter takes search dates at second precision; sending
+  // milliseconds can get the bound rejected or ignored.
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 function formatWindow(date) {
@@ -117,16 +162,54 @@ function tailBytes(text, maxBytes) {
   return newline >= 0 ? tail.slice(newline + 1) : tail;
 }
 
-function extractJobMetrics(logText) {
-  const metrics = parseClaudeExecution({
-    logText: tailBytes(logText, MAX_LOG_TAIL_BYTES),
-  });
-  if (metrics.totalCostUsd === null && metrics.numTurns === null) return null;
+function matchLogJsonField(text, field) {
+  const match = String(text || '').match(
+    new RegExp(
+      `"${field}"\\s*:\\s*("[^"]*"|-?[0-9]+(?:\\.[0-9]+)?|true|false|null)`,
+    ),
+  );
+  if (!match) return null;
+  const raw = match[1];
+  if (raw.startsWith('"')) return raw.slice(1, -1);
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  const number = Number(raw);
+  return Number.isFinite(number) ? number : null;
+}
+
+// Agent steps retry and multi-step jobs emit several result blocks; only the
+// last one reflects the job's final outcome, so cost/turn/error metrics are
+// read from after the last `"type": "result"` line rather than the first
+// match anywhere in the log.
+function splitLastResultBlock(logText) {
+  const lines = String(logText || '').split('\n');
+  let anchor = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/"type"\s*:\s*"result"/.test(lines[index])) anchor = index;
+  }
+  if (anchor === -1) {
+    return { metricsText: logText || '', modelText: logText || '' };
+  }
   return {
-    costUsd: metrics.totalCostUsd ?? 0,
-    turns: metrics.numTurns ?? 0,
-    isError: metrics.isError === true,
-    model: metrics.modelUsed || '',
+    metricsText: lines.slice(anchor + 1).join('\n'),
+    modelText: lines.slice(0, anchor).join('\n'),
+  };
+}
+
+function extractJobMetrics(logText) {
+  const tail = tailBytes(logText, MAX_LOG_TAIL_BYTES);
+  const { metricsText, modelText } = splitLastResultBlock(tail);
+  const costUsd = matchLogJsonField(metricsText, 'total_cost_usd');
+  const turns = matchLogJsonField(metricsText, 'num_turns');
+  // Metrics absent from the final result block are missing, never zero-cost:
+  // a provider that reports turns without an SDK cost must not be counted as
+  // a free agent run.
+  if (typeof costUsd !== 'number' || typeof turns !== 'number') return null;
+  return {
+    costUsd,
+    turns,
+    isError: matchLogJsonField(metricsText, 'is_error') === true,
+    model: String(matchLogJsonField(modelText, 'model') ?? ''),
   };
 }
 
@@ -152,11 +235,38 @@ function claudeActionNames(actionFiles) {
   return names;
 }
 
-function parseMaxTurns(content) {
-  const match = String(content || '').match(
-    /(?:MAX_TURNS|max-turns):\s*'?(\d+)'?/,
+function resolveMaxTurnsValue(raw, content) {
+  const literal = String(raw)
+    .trim()
+    .match(/^'?(\d+)'?$/);
+  if (literal) return Number(literal[1]);
+  const envRef = String(raw)
+    .trim()
+    .match(/\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/);
+  if (!envRef) return null;
+  const envLine = String(content).match(
+    new RegExp(`^\\s*${envRef[1]}:\\s*'?(\\d+)'?\\s*$`, 'm'),
   );
-  return match ? Number(match[1]) : null;
+  return envLine ? Number(envLine[1]) : null;
+}
+
+// The agent step's `with.max-turns` wins; a bare env MAX_TURNS is only a
+// fallback for workflows whose steps do not pass one explicitly. A budget
+// that cannot be resolved (or conflicting per-step budgets) reads as unknown
+// rather than guessing a cap the agent never ran with.
+function parseMaxTurns(content) {
+  const text = String(content || '');
+  const inputs = [...text.matchAll(/max-turns:\s*([^\n]+)/g)];
+  if (inputs.length > 0) {
+    const resolved = new Set();
+    for (const match of inputs) {
+      const value = resolveMaxTurnsValue(match[1], text);
+      if (value !== null) resolved.add(value);
+    }
+    return resolved.size === 1 ? [...resolved][0] : null;
+  }
+  const envOnly = text.match(/^\s*MAX_TURNS:\s*'?(\d+)'?\s*$/m);
+  return envOnly ? Number(envOnly[1]) : null;
 }
 
 function workflowDisplayName(content, fallback) {
@@ -166,17 +276,65 @@ function workflowDisplayName(content, fallback) {
 }
 
 function findClaudeWorkflows(workflowFiles, actionFiles) {
-  const names = claudeActionNames(actionFiles);
-  const pattern = /\.\/\.github\/actions\/([A-Za-z0-9_-]+)/g;
+  const agentActions = claudeActionNames(actionFiles);
+  const actionPattern = /\.\/\.github\/actions\/([A-Za-z0-9_-]+)/g;
+  const reusablePattern = /\.\/\.github\/workflows\/([A-Za-z0-9_.-]+\.ya?ml)/g;
+  const byName = new Map(workflowFiles.map((file) => [file.name, file]));
+  const usesAgentAction = (content) =>
+    [...String(content || '').matchAll(actionPattern)].some((match) =>
+      agentActions.has(match[1]),
+    );
+  const calledWorkflows = (content) =>
+    [...String(content || '').matchAll(reusablePattern)].map(
+      (match) => match[1],
+    );
+  const agentBearing = new Set(
+    workflowFiles
+      .filter((file) => usesAgentAction(file.content))
+      .map((file) => file.name),
+  );
+  // A reusable workflow has no runs under its own file name; its agent jobs
+  // appear in the caller's runs. Grow the set with callers of agent-bearing
+  // workflows until no caller joins.
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const file of workflowFiles) {
+      if (agentBearing.has(file.name)) continue;
+      if (
+        calledWorkflows(file.content).some((name) => agentBearing.has(name))
+      ) {
+        agentBearing.add(file.name);
+        grew = true;
+      }
+    }
+  }
+  // A caller has no budget of its own; inherit from the callee chain.
+  const budgets = new Map();
+  const budgetFor = (name, seen = new Set()) => {
+    if (budgets.has(name)) return budgets.get(name);
+    if (seen.has(name)) return null;
+    seen.add(name);
+    const file = byName.get(name);
+    if (!file) return null;
+    let value = parseMaxTurns(file.content);
+    if (value === null) {
+      for (const callee of calledWorkflows(file.content)) {
+        if (!agentBearing.has(callee)) continue;
+        value = budgetFor(callee, seen);
+        if (value !== null) break;
+      }
+    }
+    budgets.set(name, value);
+    return value;
+  };
   const workflows = [];
   for (const file of workflowFiles) {
-    const content = String(file.content || '');
-    const used = [...content.matchAll(pattern)].map((match) => match[1]);
-    if (!used.some((name) => names.has(name))) continue;
+    if (!agentBearing.has(file.name)) continue;
     workflows.push({
       file: file.name,
-      name: workflowDisplayName(content, file.name),
-      maxTurnsBudget: parseMaxTurns(content),
+      name: workflowDisplayName(file.content, file.name),
+      maxTurnsBudget: budgetFor(file.name),
     });
   }
   return workflows.sort((a, b) => a.file.localeCompare(b.file));
@@ -244,7 +402,9 @@ function queryWorkflowRuns({ repo, file, since, until, limit }, runGhFn) {
           endpoint,
           ...filters,
           '-f',
-          `per_page=${limit}`,
+          // The runs endpoint caps per_page at 100 and silently clamps a
+          // larger value; clamp here so the sample size is what it claims.
+          `per_page=${Math.min(100, limit)}`,
           '--jq',
           '.workflow_runs[] | {id}',
         ]);
@@ -301,8 +461,10 @@ function collectDigestData(options) {
     sampledRuns: 0,
     missingJobs: 0,
     fetchErrors: 0,
+    cappedLogDownloads: 0,
   });
   const rows = [];
+  let logDownloads = 0;
 
   for (const workflow of workflows) {
     const runs = queryWorkflowRuns(
@@ -311,6 +473,7 @@ function collectDigestData(options) {
     );
     totals.totalRuns += runs.total;
     const stats = createStats();
+    let rowSampledRuns = 0;
 
     for (const run of runs.items) {
       const jobsOutput = runGhFn(
@@ -333,21 +496,32 @@ function collectDigestData(options) {
         continue;
       }
       totals.sampledRuns += 1;
-      const jobs = parseGhJsonLines(jobsOutput, [])
-        .filter((job) => job.conclusion !== 'skipped')
-        .slice(0, MAX_JOBS_PER_RUN);
+      rowSampledRuns += 1;
+      const nonSkipped = parseGhJsonLines(jobsOutput, []).filter(
+        (job) => job.conclusion !== 'skipped',
+      );
+      // Jobs past the per-run cap are dropped positionally; surface the
+      // undercount instead of silently missing a late agent job.
+      const droppedJobs = Math.max(0, nonSkipped.length - MAX_JOBS_PER_RUN);
+      if (droppedJobs > 0) totals.missingJobs += droppedJobs;
+      const jobs = nonSkipped.slice(0, MAX_JOBS_PER_RUN);
 
       for (const job of jobs) {
-        let notFound = false;
+        if (logDownloads >= MAX_LOG_DOWNLOADS) {
+          totals.cappedLogDownloads += 1;
+          continue;
+        }
         let failed = false;
+        logDownloads += 1;
         const log = runGhFn(
           ['api', `repos/${repo}/actions/jobs/${job.id}/logs`],
           {
             allowFailure: true,
             raw: true,
             onError: (error) => {
-              if (isNotFound(error)) notFound = true;
-              else failed = true;
+              // Purged (404/410) and oversized logs are missing data, not
+              // API failures.
+              if (!isNotFound(error) && !isLogTooLarge(error)) failed = true;
             },
           },
         );
@@ -358,25 +532,24 @@ function collectDigestData(options) {
         } else if (failed) {
           totals.fetchErrors += 1;
         } else {
-          // No agent metrics in the log, or the log was purged: missing,
-          // never zero-cost.
+          // No agent metrics in the log, or the log was purged or unreadable:
+          // missing, never zero-cost.
           totals.missingJobs += 1;
         }
-        void notFound;
       }
     }
 
     rows.push({
       ...workflow,
       totalRuns: runs.total,
-      sampledRuns: runs.items.length,
+      sampledRuns: rowSampledRuns,
       ...stats,
       models: { ...stats.models },
       avgCostPerRun: round(divide(stats.costUsd, stats.agentJobs), 4),
       avgTurnsPerRun: round(divide(stats.turns, stats.agentJobs), 1),
       costPerTurn: round(divide(stats.costUsd, stats.turns), 4),
       estCostUsd: round(
-        (divide(stats.costUsd, runs.items.length) ?? 0) * runs.total,
+        (divide(stats.costUsd, rowSampledRuns) ?? 0) * runs.total,
       ),
     });
   }
@@ -481,8 +654,14 @@ function renderDigestBody(data, windowLabel) {
   }
   const idle = rows.filter((row) => row.totalRuns === 0);
   lines.push('', '### Coverage', '');
+  // per_page is capped at 100 by the runs API; report the effective sample
+  // size, not the requested one.
+  const perWorkflowLimit = Math.min(
+    100,
+    Math.max(1, Math.floor(data.maxRuns / workflows.length)),
+  );
   lines.push(
-    `- Sampled up to ${Math.max(1, Math.floor(data.maxRuns / workflows.length))} newest completed runs per workflow.`,
+    `- Sampled up to ${perWorkflowLimit} newest completed runs per workflow.`,
   );
   if (idle.length > 0) {
     lines.push(
@@ -492,6 +671,11 @@ function renderDigestBody(data, windowLabel) {
   lines.push(
     `- ${totals.missingJobs} job log(s) held no agent metrics or were no longer available; they are counted as missing, not as zero-cost.`,
   );
+  if (totals.cappedLogDownloads > 0) {
+    lines.push(
+      `- ${totals.cappedLogDownloads} job log(s) were not read; the serial log download budget (${MAX_LOG_DOWNLOADS}) was reached.`,
+    );
+  }
   if (totals.fetchErrors > 0) {
     lines.push(
       `- **${totals.fetchErrors} API call(s) failed; this digest is partial.**`,
@@ -501,6 +685,10 @@ function renderDigestBody(data, windowLabel) {
   return lines.join('\n');
 }
 
+// Returns the open issue number whose body carries the digest marker, or
+// null when no candidate does. A failed or unreadable search throws instead
+// of reading as "no digest exists", which would create a duplicate on the
+// next run.
 function findExistingIssue(repo, runGhFn = runGh) {
   const output = runGhFn(
     [
@@ -513,42 +701,38 @@ function findExistingIssue(repo, runGhFn = runGh) {
       '--search',
       ISSUE_SEARCH_MARKER,
       '--json',
-      'number',
-      '--jq',
-      '.[0].number // empty',
+      'number,body',
+      '--limit',
+      String(ISSUE_CANDIDATE_LIMIT),
     ],
     { allowFailure: true },
   );
-  const number = parseInt(output ?? '', 10);
-  return Number.isNaN(number) ? null : number;
+  if (output === null) {
+    throw new Error('Could not search for the existing digest issue');
+  }
+  let issues = null;
+  try {
+    const parsed = JSON.parse(output);
+    if (Array.isArray(parsed)) issues = parsed;
+  } catch {
+    issues = null;
+  }
+  if (issues === null) {
+    throw new Error('Could not read the digest issue search results');
+  }
+  // The title search is token-based and can match unrelated issues (failure
+  // reports, the backlog issue that requested this digest); only a body
+  // carrying the digest marker identifies the issue this script owns. The
+  // marker-bearing hit may rank anywhere in the list, not first.
+  const ours = issues.find((issue) =>
+    String(issue?.body || '').includes(DIGEST_BODY_MARKER),
+  );
+  return ours ? Number(ours.number) : null;
 }
 
 function upsertDigestIssue({ repo, title, body }, runGhFn = runGh) {
   const existing = findExistingIssue(repo, runGhFn);
-  // The title search is token-based and can match unrelated issues (such as
-  // the backlog issue that requested this digest), so only an issue carrying
-  // the digest marker may be edited.
-  const existingBody =
-    existing == null
-      ? ''
-      : runGhFn(
-          [
-            'issue',
-            'view',
-            String(existing),
-            '--repo',
-            repo,
-            '--json',
-            'body',
-            '--jq',
-            '.body',
-          ],
-          { allowFailure: true },
-        );
-  if (
-    existing != null &&
-    String(existingBody || '').includes(DIGEST_BODY_MARKER)
-  ) {
+  if (existing != null) {
     runGhFn([
       'issue',
       'edit',
@@ -587,6 +771,18 @@ function appendOutput(outputPath, lines) {
   );
 }
 
+// Runs completed but no agent cost extracted means log extraction is broken
+// or every fetch failed; an honestly empty week (no runs) is the only zero
+// cost that may be published.
+function assertAgentCostExtracted(totals) {
+  if (totals.totalRuns === 0) return;
+  if (totals.agentJobs > 0 && totals.costUsd > 0) return;
+  throw new Error(
+    `No agent cost extracted from ${totals.sampledRuns} sampled run(s) of ` +
+      `${totals.totalRuns} completed run(s); refusing to publish a zero-cost digest`,
+  );
+}
+
 function main() {
   const args = parseArgs(process.argv);
   const repo = args.repo || process.env.GITHUB_REPOSITORY;
@@ -613,21 +809,20 @@ function main() {
   data.maxRuns = maxRuns;
   const body = renderDigestBody(data, windowLabel);
 
-  if (process.env.GITHUB_STEP_SUMMARY) {
-    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`);
-  }
+  // The guard runs before the dry-run return so a --dry-run smoke test is
+  // self-diagnosing: a broken extractor exits non-zero instead of looking
+  // green behind a printed $0.00 body.
+  assertAgentCostExtracted(data.totals);
 
-  if (args['dry-run'] === 'true') {
+  // Dry run is presence-based and returns before any write (step summary or
+  // issue), so a smoke test can never mutate the tracked digest issue.
+  if (args['dry-run'] !== undefined) {
     process.stdout.write(`${body}\n`);
     return;
   }
 
-  // Sampled runs without a single agent metric mean log extraction is
-  // broken; never publish that as a zero-cost week.
-  if (data.totals.sampledRuns > 0 && data.totals.agentJobs === 0) {
-    throw new Error(
-      `No agent metrics found in ${data.totals.sampledRuns} sampled run(s)`,
-    );
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`);
   }
 
   const issue = upsertDigestIssue({

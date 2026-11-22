@@ -47,10 +47,7 @@ function createFakeGh(routes) {
     const key = args.join(' ');
     calls.push(key);
     const route = routes.find(([pattern]) => pattern.test(key));
-    // Only an issue carrying the digest marker may be edited; writes succeed.
-    if (!route && /^issue view 77 /.test(key)) {
-      return '<!-- weekly-cost-turn-digest -->';
-    }
+    // Writes succeed; reads must be routed explicitly.
     if (!route && /^issue (edit|create) /.test(key)) return '';
     if (!route) {
       if (options.allowFailure) return null;
@@ -143,11 +140,30 @@ test('parseArgs reads flags and values', () => {
   assert.equal(args['github-output'], '/tmp/out');
 });
 
-test('windowBounds spans the requested days', () => {
+test('parseArgs splits --key=value and rejects valueless value flags', () => {
+  const args = parseArgs([
+    'node',
+    'script',
+    '--window-days=14',
+    '--max-runs=5',
+  ]);
+  assert.equal(args['window-days'], '14');
+  assert.equal(args['max-runs'], '5');
+  assert.throws(
+    () => parseArgs(['node', 'script', '--github-output']),
+    /--github-output requires a value/,
+  );
+  // Boolean flags are presence-based and never swallow a stray token.
+  const bools = parseArgs(['node', 'script', '--dry-run', 'stray']);
+  assert.equal(bools['dry-run'], 'true');
+  assert.equal(bools.stray, undefined);
+});
+
+test('windowBounds spans the requested days at second precision', () => {
   const now = new Date('2026-11-22T17:00:00.000Z');
   const bounds = windowBounds(7, now);
-  assert.equal(bounds.since, '2026-11-15T17:00:00.000Z');
-  assert.equal(bounds.until, '2026-11-22T17:00:00.000Z');
+  assert.equal(bounds.since, '2026-11-15T17:00:00Z');
+  assert.equal(bounds.until, '2026-11-22T17:00:00Z');
 });
 
 test('tailBytes keeps the tail and drops a cut first line', () => {
@@ -169,6 +185,25 @@ test('extractJobMetrics reads cost, turns, error and model', () => {
   assert.equal(extractJobMetrics('no agent output here'), null);
 });
 
+test('extractJobMetrics drops records whose final result lacks a metric', () => {
+  // Turns without an SDK cost are missing, never zero-cost agent runs.
+  assert.equal(extractJobMetrics(claudeLog({ turns: 9, cost: null })), null);
+  assert.equal(extractJobMetrics(claudeLog({ turns: null, cost: 1 })), null);
+});
+
+test('extractJobMetrics reads the last result block of retried jobs', () => {
+  const log = [
+    claudeLog({ turns: 5, cost: 1, isError: true }),
+    claudeLog({ turns: 9, cost: 2, isError: false }),
+  ].join('\n');
+  assert.deepEqual(extractJobMetrics(log), {
+    costUsd: 2,
+    turns: 9,
+    isError: false,
+    model: 'glm-5-turbo',
+  });
+});
+
 test('claudeActionNames grows through wrapping composite actions', () => {
   const names = claudeActionNames([
     { name: 'agent-wrapper', content: 'uses: ./.github/actions/run-claude' },
@@ -184,6 +219,26 @@ test('parseMaxTurns reads env and action-input forms', () => {
   assert.equal(parseMaxTurns('env:\n  MAX_TURNS: 25\n'), 25);
   assert.equal(parseMaxTurns("with:\n  max-turns: '40'\n"), 40);
   assert.equal(parseMaxTurns('max-turns: ${{ env.MAX_TURNS }}'), null);
+  // The step input wins over a bare env MAX_TURNS, resolving env refs.
+  assert.equal(
+    parseMaxTurns(
+      [
+        'env:',
+        '  MAX_TURNS: 30',
+        '  MAX_REVIEW_TURNS: 80',
+        'jobs:',
+        '  review:',
+        '    with:',
+        '      max-turns: ${{ env.MAX_REVIEW_TURNS }}',
+      ].join('\n'),
+    ),
+    80,
+  );
+  // Conflicting per-step budgets are unknown, not a guess.
+  assert.equal(
+    parseMaxTurns("steps:\n  - max-turns: '20'\n  - max-turns: '40'\n"),
+    null,
+  );
 });
 
 test('findClaudeWorkflows detects direct and wrapped agent use', () => {
@@ -214,6 +269,43 @@ test('findClaudeWorkflows detects direct and wrapped agent use', () => {
   assert.equal(workflows[0].name, 'Fix Issue');
   assert.equal(workflows[0].maxTurnsBudget, 25);
   assert.equal(workflows[1].maxTurnsBudget, 40);
+});
+
+test('findClaudeWorkflows follows reusable workflow callers', () => {
+  const read = (name) => ({
+    name,
+    content: fs.readFileSync(path.join(fixture.workflowsDir, name), 'utf8'),
+  });
+  const workflows = findClaudeWorkflows(
+    [
+      read('plain.yml'),
+      read('wrapped.yml'),
+      {
+        name: 'fix-pr-like.yml',
+        content: [
+          'jobs:',
+          '  auto-fix:',
+          '    uses: ./.github/workflows/wrapped.yml',
+          '',
+        ].join('\n'),
+      },
+    ],
+    [
+      {
+        name: 'agent-wrapper',
+        content: fs.readFileSync(
+          path.join(fixture.actionsDir, 'agent-wrapper', 'action.yml'),
+          'utf8',
+        ),
+      },
+    ],
+  );
+  assert.deepEqual(
+    workflows.map((workflow) => workflow.file),
+    ['fix-pr-like.yml', 'wrapped.yml'],
+  );
+  // The caller has no budget of its own; it inherits the callee's.
+  assert.equal(workflows[0].maxTurnsBudget, 40);
 });
 
 test('queryWorkflowRuns uses GET, the window and completed status', () => {
@@ -248,8 +340,9 @@ test('queryWorkflowRuns throws when the run count is unreadable', () => {
   );
 });
 
-test('isNotFound recognises purged logs only', () => {
+test('isNotFound recognises purged and expired logs only', () => {
   assert.equal(isNotFound(new Error('gh: Not Found (HTTP 404)')), true);
+  assert.equal(isNotFound(new Error('gh: Gone (HTTP 410)')), true);
   assert.equal(isNotFound(new Error('HTTP 502 Bad Gateway')), false);
 });
 
@@ -310,7 +403,6 @@ test('collectDigestData samples every workflow and aggregates metrics', () => {
 });
 
 test('collectDigestData separates missing metrics from failed fetches', () => {
-  let id = 0;
   const { runGh } = createFakeGh([
     [/workflows\/fix-issue\.yml\/runs .*per_page=1 /, '2'],
     [/workflows\/fix-issue\.yml\/runs .*per_page=2 /, '{"id":1}\n{"id":2}\n'],
@@ -347,7 +439,6 @@ test('collectDigestData separates missing metrics from failed fetches', () => {
   });
   assert.equal(data.totals.missingJobs, 2);
   assert.equal(data.totals.fetchErrors, 1);
-  assert.equal(id, 0);
 });
 
 test('buildBudgetNotes flags turn pressure and costly runs', () => {
@@ -428,6 +519,9 @@ test('renderDigestBody orders by cost and reports coverage', () => {
     ],
   };
   const body = renderDigestBody(data, 'WINDOW');
+  // The marker is what the upsert search keys on; losing it would silently
+  // duplicate the digest issue every week.
+  assert.match(body, /<!-- weekly-cost-turn-digest -->/);
   assert.match(body, /## Weekly Cost\/Turn Digest — WINDOW/);
   assert.match(body, /\| Estimated weekly cost \| \$30\.00 \|/);
   assert.match(body, /\| Workflow runs sampled \| 4 \(10%\) \|/);
@@ -439,7 +533,12 @@ test('renderDigestBody orders by cost and reports coverage', () => {
 
 test('upsertDigestIssue edits the open digest or creates a labelled one', () => {
   const existing = createFakeGh([
-    [/^issue list .*--search Weekly Cost\/Turn Digest in:title/, '77\n'],
+    [
+      /^issue list .*--search Weekly Cost\/Turn Digest in:title/,
+      JSON.stringify([
+        { number: 77, body: '<!-- weekly-cost-turn-digest -->' },
+      ]),
+    ],
   ]);
   assert.deepEqual(
     upsertDigestIssue({ repo: 'o/r', title: 'T', body: 'B' }, existing.runGh),
@@ -447,7 +546,7 @@ test('upsertDigestIssue edits the open digest or creates a labelled one', () => 
   );
   assert.match(existing.calls.at(-1), /^issue edit 77 .*--title T --body B$/);
 
-  const fresh = createFakeGh([[/^issue list /, '']]);
+  const fresh = createFakeGh([[/^issue list /, '[]']]);
   assert.deepEqual(
     upsertDigestIssue({ repo: 'o/r', title: 'T', body: 'B' }, fresh.runGh),
     { action: 'created', number: null },
@@ -456,6 +555,52 @@ test('upsertDigestIssue edits the open digest or creates a labelled one', () => 
     fresh.calls.at(-1),
     /^issue create --repo o\/r --title T --body B --label auto-fix,observability$/,
   );
+});
+
+test('upsertDigestIssue never edits a title match without the marker', () => {
+  const hijacked = createFakeGh([
+    [
+      /^issue list /,
+      JSON.stringify([
+        { number: 76, body: 'backlog issue that requested the digest' },
+        { number: 78, body: '[cost-digest] failure report body' },
+      ]),
+    ],
+  ]);
+  assert.deepEqual(
+    upsertDigestIssue({ repo: 'o/r', title: 'T', body: 'B' }, hijacked.runGh),
+    { action: 'created', number: null },
+  );
+  assert.ok(!hijacked.calls.some((call) => /^issue edit /.test(call)));
+  assert.match(hijacked.calls.at(-1), /^issue create /);
+});
+
+test('upsertDigestIssue picks the marker-bearing hit wherever it ranks', () => {
+  const mixed = createFakeGh([
+    [
+      /^issue list /,
+      JSON.stringify([
+        { number: 76, body: 'no marker here' },
+        { number: 79, body: 'digest body <!-- weekly-cost-turn-digest -->' },
+      ]),
+    ],
+  ]);
+  assert.deepEqual(
+    upsertDigestIssue({ repo: 'o/r', title: 'T', body: 'B' }, mixed.runGh),
+    { action: 'updated', number: 79 },
+  );
+  assert.match(mixed.calls.at(-1), /^issue edit 79 /);
+});
+
+test('upsertDigestIssue refuses to create when the search fails', () => {
+  // No route matches; allowFailure turns the failed search into null.
+  const failing = createFakeGh([]);
+  assert.throws(
+    () =>
+      upsertDigestIssue({ repo: 'o/r', title: 'T', body: 'B' }, failing.runGh),
+    /Could not search for the existing digest issue/,
+  );
+  assert.ok(!failing.calls.some((call) => /^issue (create|edit) /.test(call)));
 });
 
 test('collectDigestData fails loudly when no workflow runs an agent', () => {
