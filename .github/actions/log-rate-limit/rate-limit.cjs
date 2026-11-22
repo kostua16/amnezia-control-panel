@@ -1,4 +1,7 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 'use strict';
+
+const { createHash } = require('node:crypto');
 
 const DEFAULT_API_URL = 'https://api.github.com';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -21,6 +24,21 @@ function tokenKind(token) {
   return match ? match[1] : 'unknown';
 }
 
+// Short one-way fingerprint of the token (first 12 hex chars of its SHA-256) so lines can be
+// grouped by the exact token that produced them, e.g. to tell whether the start and the end of
+// one job read the same quota bucket. Deliberately unkeyed: grouping across jobs needs a value
+// every job can compute, and a keyed digest would need a repository secret that fork PRs and
+// several call sites do not have. Installation tokens expire within the hour; a long-lived PAT
+// would keep a permanent digest in the logs, but anyone able to confirm a candidate against it
+// already holds the full token (one API call verifies it anyway), and the 48-bit prefix of a
+// high-entropy token cannot be inverted. 48 bits keep collisions between the few tokens alive in
+// one window negligible.
+function tokenFingerprint(token) {
+  const value = String(token ?? '');
+  if (!value) return 'none';
+  return createHash('sha256').update(value).digest('hex').slice(0, 12);
+}
+
 function formatRateLimitLine({ env, phase, label, resources }) {
   const core = resources?.core;
   return [
@@ -32,6 +50,7 @@ function formatRateLimitLine({ env, phase, label, resources }) {
     `run=${env.GITHUB_RUN_ID ?? ''}.${env.GITHUB_RUN_ATTEMPT ?? ''}`,
     `event=${env.GITHUB_EVENT_NAME ?? ''}`,
     `token=${tokenKind(env['INPUT_GITHUB-TOKEN'])}`,
+    `token_id=${tokenFingerprint(env['INPUT_GITHUB-TOKEN'])}`,
     `core_remaining=${formatBucket(core)}`,
     `core_reset=${formatReset(core?.reset)}`,
     `graphql=${formatBucket(resources?.graphql)}`,
@@ -76,4 +95,9 @@ async function logRateLimit({
   }
 }
 
-module.exports = { formatRateLimitLine, logRateLimit, tokenKind };
+module.exports = {
+  formatRateLimitLine,
+  logRateLimit,
+  tokenFingerprint,
+  tokenKind,
+};
