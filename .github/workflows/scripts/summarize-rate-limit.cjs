@@ -10,7 +10,7 @@ const readline = require('node:readline');
 //   done | node .github/workflows/scripts/summarize-rate-limit.cjs
 //
 // Output: one row per quota window (core_reset + token), with how far `remaining` fell
-// inside it (an upper bound of what the window consumed: every concurrent job shares the
+// inside it (a lower bound of what the window consumed, at least max - min: every concurrent job shares the
 // bucket, so per-job deltas are NOT attributable and are deliberately not printed), plus
 // every job whose start and end readings came from different windows or different tokens.
 // Readings without a usable `core_reset` are counted but never pooled into a window.
