@@ -16,13 +16,41 @@ test('the governance YAML trust pin matches the parser used by tests', () => {
     path.resolve(__dirname, '../install-governance-yaml.sh'),
     'utf8',
   );
-  const { resolved, integrity } = require('../../../../package-lock.json')
-    .packages['node_modules/js-yaml'];
+  const parser = require('../../../../package-lock.json').packages?.[
+    'node_modules/js-yaml'
+  ];
+  assert.ok(parser, 'package-lock.json must contain a js-yaml package entry');
+  const { resolved, integrity } = parser;
+  assert.match(resolved ?? '', /^https:\/\//, 'js-yaml must have an HTTPS URL');
+  assert.match(
+    integrity ?? '',
+    /^sha512-/,
+    'js-yaml must have a SHA-512 lockfile digest',
+  );
 
   assert.ok(installer.includes(`${resolved} --output`));
   assert.ok(
     installer.includes(`expected='${integrity.replace(/^sha512-/, '')}'`),
   );
+});
+
+test('the governance YAML installer bounds downloads and tests the bundle', () => {
+  const installer = fs.readFileSync(
+    path.resolve(__dirname, '../install-governance-yaml.sh'),
+    'utf8',
+  );
+  for (const option of [
+    /--proto '=https'/,
+    /--proto-redir '=https'/,
+    /--retry [1-9]\d*\b/,
+    /--retry-all-errors\b/,
+    /--retry-max-time [1-9]\d*\b/,
+    /--connect-timeout [1-9]\d*\b/,
+    /--max-time [1-9]\d*\b/,
+  ]) {
+    assert.match(installer, option);
+  }
+  assert.match(installer, /node -e .*yaml\.load\(/);
 });
 
 const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
