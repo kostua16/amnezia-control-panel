@@ -89,21 +89,38 @@ function fetchDispatchRuns({ repo, run }) {
   return readRunsPage({ repo, query: 'event=workflow_dispatch', run });
 }
 
-// True when the dispatch listing is complete for runs created at or after
-// `headCommittedAt`: either it returned every dispatch run that exists, or its
-// oldest run is not newer than the head commit. Unknown or unparseable inputs
-// are "not covered" so the caller degrades to the per-workflow lookup.
-function dispatchWindowCoversHead(dispatched, headCommittedAt) {
-  if (dispatched.total <= dispatched.runs.length) return true;
+// How far ahead of the clock a head commit's committer date may lie before it
+// is treated as unknown: contributor clocks drift by seconds, not by much more.
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+// Returns null when the dispatch listing is complete for runs created at or
+// after `headCommittedAt`: either it returned every dispatch run that exists,
+// or its oldest run is not newer than the head commit. Otherwise returns the
+// reason it cannot be trusted, for the fallback warning. A head commit date
+// that is unknown, unparseable or ahead of the clock is never trusted: an
+// empty value usually means the commit read failed, and a committer date in
+// the future (skewed contributor clock, GIT_COMMITTER_DATE) would make any
+// truncated window look complete.
+function dispatchWindowGap(dispatched, headCommittedAt, now = Date.now()) {
+  if (dispatched.total <= dispatched.runs.length) return null;
   const headTime = Date.parse(String(headCommittedAt ?? ''));
-  if (Number.isNaN(headTime)) return false;
+  if (Number.isNaN(headTime)) {
+    return 'workflow_dispatch window unchecked: head commit date unavailable';
+  }
+  if (headTime > now + CLOCK_SKEW_MS) {
+    return `workflow_dispatch window unchecked: head commit date ${headCommittedAt} is ahead of the clock`;
+  }
   let oldest = Infinity;
   for (const runItem of dispatched.runs) {
     const created = Date.parse(String(runItem.created_at ?? ''));
-    if (Number.isNaN(created)) return false;
+    if (Number.isNaN(created)) {
+      return 'workflow_dispatch window unchecked: a dispatch run has no readable created_at';
+    }
     if (created < oldest) oldest = created;
   }
-  return oldest <= headTime;
+  return oldest <= headTime
+    ? null
+    : 'workflow_dispatch window does not reach the head commit';
 }
 
 // The workflow file a run belongs to. `path` can carry an `@refs/...` suffix;
@@ -178,17 +195,17 @@ function createWorkerRunsLoader({
       // commit the whole lookup degrades anyway, so the head read is skipped
       // and an idle PR pays one extra read instead of two.
       const dispatched = fetchDispatch({ repo, run });
-      // The dispatch window is shared by all workflows' dispatches. Its
-      // total_count counts every dispatch run the repository ever kept, so
-      // "total > page" is true almost always and says nothing about this PR.
-      // What matters is whether the window reaches back to the head: a run
-      // dispatched for this head cannot predate the head commit, so a window
-      // whose oldest run is older than the commit holds all of them. Otherwise
-      // base-ref runs of an idle PR may have fallen out of the window and the
-      // per-workflow lookup is the only read with a per-worker guarantee.
-      if (!dispatchWindowCoversHead(dispatched, pr.headCommittedAt)) {
+      // The dispatch window is shared by all workflows' dispatches and its
+      // total_count is the repository-wide lifetime count, so only its reach
+      // relative to the head commit tells whether it holds this PR's runs. A
+      // run dispatched for this head cannot predate the head commit; when the
+      // window cannot be trusted, base-ref runs of an idle PR may have fallen
+      // out of it and the per-workflow lookup is the only read with a
+      // per-worker guarantee.
+      const gap = dispatchWindowGap(dispatched, pr.headCommittedAt);
+      if (gap) {
         warn(
-          `orchestrate-pr-flow: workflow_dispatch window does not reach the head commit of ${pr.headSha}, using per-workflow lookup.`,
+          `orchestrate-pr-flow: ${gap} (head ${pr.headSha}), using per-workflow lookup.`,
         );
         return grouped;
       }
@@ -217,7 +234,7 @@ function createWorkerRunsLoader({
 
 module.exports = {
   createWorkerRunsLoader,
-  dispatchWindowCoversHead,
+  dispatchWindowGap,
   fetchDispatchRuns,
   fetchRunsForHead,
   groupWorkerRuns,

@@ -171,9 +171,13 @@ function main() {
         number,
         headSha: meta.headRefOid,
         isCrossRepository: meta.isCrossRepository,
-        // The orchestrator resolves this before the lookup; the dispatch window is
-        // only trusted when it reaches back to the head commit.
-        headCommittedAt: flow.fetchHeadCommittedAt(meta.headRefOid),
+        // The orchestrator resolves this before the lookup; the dispatch window
+        // is only trusted when it reaches back to the head commit. Strict: a
+        // failed read would otherwise read as "date unknown", send every worker
+        // of this PR down the per-workflow path and compare it with itself.
+        headCommittedAt: flow.fetchHeadCommittedAt(meta.headRefOid, {
+          strict: true,
+        }),
       };
       const row = {
         number,

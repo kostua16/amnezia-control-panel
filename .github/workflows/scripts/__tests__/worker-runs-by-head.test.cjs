@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 
 const {
   createWorkerRunsLoader,
-  dispatchWindowCoversHead,
+  dispatchWindowGap,
   fetchDispatchRuns,
   fetchRunsForHead,
   groupWorkerRuns,
@@ -323,47 +323,54 @@ test('loader falls back when the head has more runs than one page returned', () 
   assert.match(calls.warnings[0], /exceed one page/);
 });
 
-test('dispatchWindowCoversHead only trusts a window that reaches back to the head commit', () => {
+test('dispatchWindowGap only trusts a window that reaches back to the head commit', () => {
   const run = (created_at) => restRun({ created_at });
   const headCommit = '2026-07-01T08:00:00Z';
+  const now = Date.parse('2026-07-01T12:00:00Z');
+  const full = (runs) => page(runs, 2500);
 
   // Everything that exists was returned: always complete.
   assert.equal(
-    dispatchWindowCoversHead(page([run('2026-07-01T09:00:00Z')]), ''),
-    true,
+    dispatchWindowGap(page([run('2026-07-01T09:00:00Z')]), '', now),
+    null,
   );
   // total_count counts every dispatch run ever kept, so a full page is the
   // normal case; it is trustworthy only if its oldest run predates the commit.
   assert.equal(
-    dispatchWindowCoversHead(
-      page([run('2026-07-01T07:00:00Z')], 2500),
-      headCommit,
-    ),
-    true,
+    dispatchWindowGap(full([run('2026-07-01T07:00:00Z')]), headCommit, now),
+    null,
   );
-  assert.equal(
-    dispatchWindowCoversHead(
-      page([run('2026-07-01T09:00:00Z')], 2500),
-      headCommit,
-    ),
-    false,
+  // An idle PR whose base-ref runs fell out of the window.
+  assert.match(
+    dispatchWindowGap(full([run('2026-07-01T09:00:00Z')]), headCommit, now),
+    /does not reach the head commit$/,
   );
-  // Unknown or unparseable inputs are never "covered".
-  assert.equal(
-    dispatchWindowCoversHead(page([run('2026-07-01T07:00:00Z')], 2500), ''),
-    false,
+  // Unknown or unparseable inputs are never "covered", and the reason names
+  // the cause instead of blaming the window's reach.
+  for (const unknown of ['', undefined, 'not a date']) {
+    assert.match(
+      dispatchWindowGap(full([run('2026-07-01T07:00:00Z')]), unknown, now),
+      /head commit date unavailable$/,
+    );
+  }
+  assert.match(
+    dispatchWindowGap(full([run('not a date')]), headCommit, now),
+    /dispatch run has no readable created_at$/,
   );
-  assert.equal(
-    dispatchWindowCoversHead(
-      page([run('2026-07-01T07:00:00Z')], 2500),
-      undefined,
-    ),
-    false,
+});
+
+test('dispatchWindowGap treats a head commit dated ahead of the clock as unknown', () => {
+  // A future committer date (skewed contributor clock, GIT_COMMITTER_DATE)
+  // would make any truncated window look complete, so it gets no trust.
+  const now = Date.parse('2026-07-01T12:00:00Z');
+  const window = page([restRun({ created_at: '2026-07-01T11:00:00Z' })], 2500);
+
+  assert.match(
+    dispatchWindowGap(window, '2026-07-01T13:00:00Z', now),
+    /head commit date 2026-07-01T13:00:00Z is ahead of the clock$/,
   );
-  assert.equal(
-    dispatchWindowCoversHead(page([run('not a date')], 2500), headCommit),
-    false,
-  );
+  // A clock that runs a little fast must not cost every wake the fallback.
+  assert.equal(dispatchWindowGap(window, '2026-07-01T12:03:00Z', now), null);
 });
 
 test('loader uses the dispatch window when it reaches back to the head commit', () => {
@@ -423,6 +430,28 @@ test('loader falls back when the dispatch window does not reach the head commit'
   assert.match(calls.warnings[0], /does not reach the head commit/);
 });
 
+test('loader falls back when the head commit is dated ahead of the clock', () => {
+  // The window reaches back further than any real commit, so only the
+  // future-dated head commit can tell that it is truncated.
+  const { loader, calls } = makeLoader({
+    pr: {
+      number: 7,
+      headSha: HEAD,
+      isCrossRepository: false,
+      headCommittedAt: '2126-07-01T08:00:00Z',
+    },
+    fetchDispatch: () => {
+      calls.dispatch += 1;
+      return page([restRun({ created_at: '2026-07-01T07:00:00Z' })], 2500);
+    },
+  });
+
+  assert.equal(loader('codeReview')[0].databaseId, 'legacy');
+  assert.equal(calls.head, 0);
+  assert.equal(calls.warnings.length, 1);
+  assert.match(calls.warnings[0], /is ahead of the clock/);
+});
+
 test('loader falls back when the head commit date is unknown and the window is full', () => {
   const { loader, calls } = makeLoader({
     fetchDispatch: () => {
@@ -433,6 +462,8 @@ test('loader falls back when the head commit date is unknown and the window is f
 
   assert.equal(loader('codeReview')[0].databaseId, 'legacy');
   assert.equal(calls.warnings.length, 1);
+  // The commit date is missing; the warning must not blame the window's reach.
+  assert.match(calls.warnings[0], /head commit date unavailable/);
 });
 
 test('loader falls back with exactly one warning when the head read throws', () => {

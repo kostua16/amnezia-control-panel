@@ -1537,12 +1537,16 @@ function fetchCheckRuns(headSha) {
   return response?.check_runs ?? [];
 }
 
-function fetchHeadCommittedAt(headSha) {
+// `strict` drops the empty fallback so a failed commit read throws instead of
+// reading as "date unknown". The orchestrator wants the fallback (an unknown
+// date only sends the worker-run lookup to the per-workflow path), but the
+// parity comparison must not classify a failed read as that legitimate case.
+function fetchHeadCommittedAt(headSha, { strict = false } = {}) {
   if (!headSha) return '';
   const response = runJson(
     'gh',
     ['api', `repos/${getRepoSlug()}/commits/${headSha}`],
-    null,
+    strict ? undefined : null,
   );
   return (
     response?.commit?.committer?.date ?? response?.commit?.author?.date ?? ''

@@ -1976,3 +1976,50 @@ test('a wake with a changed decision reason replaces the sticky comment once', (
   assert.equal(calls.length, 3);
   assert.deepEqual(calls[1].slice(1, 3), ['-X', 'POST']);
 });
+
+// Runs `fn` against a freshly loaded orchestrator whose commit read
+// (`gh api repos/<owner/repo>/commits/<sha>`) answers through `onCommitRead`.
+function withCommitRead(onCommitRead, fn) {
+  const childProcess = require('node:child_process');
+  const original = childProcess.execFileSync;
+  const modulePath = require.resolve('../orchestrate-pr-flow.cjs');
+  const saved = process.env.GITHUB_REPOSITORY;
+  childProcess.execFileSync = (command, args) =>
+    String(args?.[1] ?? '').includes('/commits/') ? onCommitRead() : '{}';
+  delete require.cache[modulePath];
+  process.env.GITHUB_REPOSITORY = 'owner/repo';
+
+  try {
+    fn(require(modulePath));
+  } finally {
+    childProcess.execFileSync = original;
+    delete require.cache[modulePath];
+    if (saved === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = saved;
+  }
+}
+
+test('fetchHeadCommittedAt keeps an empty date for a failed commit read unless strict', () => {
+  const sha = 'c'.repeat(40);
+  const date = '2026-07-01T08:00:00Z';
+  const failed = () => {
+    throw Object.assign(new Error('gh: Not Found'), { stderr: '' });
+  };
+
+  withCommitRead(
+    () => JSON.stringify({ commit: { committer: { date } } }),
+    (flow) => assert.equal(flow.fetchHeadCommittedAt(sha), date),
+  );
+  // An unknown date only sends the worker-run lookup to the per-workflow
+  // path, so the orchestrator keeps the fallback.
+  withCommitRead(failed, (flow) =>
+    assert.equal(flow.fetchHeadCommittedAt(sha), ''),
+  );
+  // A parity comparison must not read the failure as that legitimate case.
+  withCommitRead(failed, (flow) =>
+    assert.throws(
+      () => flow.fetchHeadCommittedAt(sha, { strict: true }),
+      /Not Found/,
+    ),
+  );
+});
