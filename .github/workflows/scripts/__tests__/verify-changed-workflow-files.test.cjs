@@ -150,12 +150,28 @@ test('classifyChangedFiles skips deleted paths and splits yaml vs shell', () => 
     { cwd: root },
   );
   assert.deepEqual(classified, {
-    workflowYamlFiles: [
-      '.github/workflows/workflow-health-optimize.yml',
-      '.github/actions/example/action.yml',
-    ],
+    workflowYamlFiles: ['.github/workflows/workflow-health-optimize.yml'],
+    actionYamlFiles: ['.github/actions/example/action.yml'],
     shellFiles: ['scripts/ok.sh'],
   });
+});
+
+test('validates changed action metadata without invoking actionlint', () => {
+  const root = tmpDir('mon-action-');
+  seedRun29803905118(root);
+  const manifest = '.github/actions/example/action.yml';
+  const errors = [];
+  const options = {
+    cwd: root,
+    rawChangedFiles: manifest,
+    env: {},
+    exec: () => assert.fail('actionlint must not receive action metadata'),
+    log: { error: (message) => errors.push(message) },
+  };
+  assert.equal(verifyChangedWorkflowFiles(options).status, 0);
+  fs.writeFileSync(path.join(root, manifest), 'name: example\njobs: {}\n');
+  assert.equal(verifyChangedWorkflowFiles(options).status, 1);
+  assert.match(errors[0], /Invalid action metadata.*runs\.using/);
 });
 
 test('empty CHANGED_FILES is a no-op', () => {
@@ -240,6 +256,7 @@ test('changed shell scripts still reach shellcheck', () => {
   const binDir = tmpDir('mon-sh-bin-');
   const argvLog = path.join(root, 'shellcheck-argv.json');
   seedRun29803905118(root);
+  fs.writeFileSync(path.join(root, '-example.sh'), '#!/bin/sh\n');
   writeFakeBin(binDir, 'actionlint', SC2129_ACTIONLINT);
   writeFakeBin(binDir, 'shellcheck', RECORD_SHELLCHECK);
   const env = {
@@ -247,13 +264,15 @@ test('changed shell scripts still reach shellcheck', () => {
     PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
     Path: `${binDir}${path.delimiter}${process.env.Path || process.env.PATH || ''}`,
     PATHEXT: process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD',
-    CHANGED_FILES: 'scripts/ok.sh\n.github/workflows/gone.yml',
+    CHANGED_FILES: 'scripts/ok.sh\n-example.sh\n.github/workflows/gone.yml',
     SHELLCHECK_ARGV_LOG: argvLog,
   };
   const spawned = spawnVerifier(root, binDir, env);
   assert.equal(spawned.status, 0, spawned.stderr || spawned.stdout);
   assert.deepEqual(JSON.parse(fs.readFileSync(argvLog, 'utf8')), [
+    '--',
     'scripts/ok.sh',
+    '-example.sh',
   ]);
 });
 

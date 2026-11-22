@@ -7,6 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const yaml = require('js-yaml');
 
 const ACTIONLINT_MISSING =
   'actionlint is required for workflow/action YAML changes';
@@ -35,7 +36,7 @@ function isWorkflowOrActionYaml(file) {
   const normalized = normalizeRepoPath(file);
   return (
     /^\.github\/workflows\/[^/]+\.ya?ml$/.test(normalized) ||
-    /^\.github\/actions\/.+\.ya?ml$/.test(normalized)
+    /^\.github\/actions\/(?:[^/]+\/)+action\.ya?ml$/.test(normalized)
   );
 }
 
@@ -48,14 +49,33 @@ function classifyChangedFiles(
   { cwd = process.cwd(), existsSync = fs.existsSync } = {},
 ) {
   const workflowYamlFiles = [];
+  const actionYamlFiles = [];
   const shellFiles = [];
   for (const file of files) {
     const abs = path.isAbsolute(file) ? file : path.join(cwd, file);
     if (!existsSync(abs)) continue;
-    if (isWorkflowOrActionYaml(file)) workflowYamlFiles.push(file);
-    else if (isShellScript(file)) shellFiles.push(file);
+    if (isWorkflowOrActionYaml(file)) {
+      if (normalizeRepoPath(file).startsWith('.github/actions/')) {
+        actionYamlFiles.push(file);
+      } else {
+        workflowYamlFiles.push(file);
+      }
+    } else if (isShellScript(file)) shellFiles.push(file);
   }
-  return { workflowYamlFiles, shellFiles };
+  return { workflowYamlFiles, actionYamlFiles, shellFiles };
+}
+
+function validateActionManifest(file, cwd) {
+  const manifest = yaml.load(fs.readFileSync(path.resolve(cwd, file), 'utf8'));
+  if (
+    typeof manifest?.name !== 'string' ||
+    typeof manifest.description !== 'string' ||
+    typeof manifest.runs?.using !== 'string'
+  ) {
+    throw new Error(
+      'Action metadata requires name, description, and runs.using',
+    );
+  }
 }
 
 function isRunnableCandidate(candidate) {
@@ -132,21 +152,36 @@ function verifyChangedWorkflowFiles(options = {}) {
   const files = parseChangedFiles(rawChangedFiles);
   if (files.length === 0) {
     log.log('No changed files to verify.');
-    return { status: 0, workflowYamlFiles: [], shellFiles: [], skipped: true };
+    return {
+      status: 0,
+      workflowYamlFiles: [],
+      actionYamlFiles: [],
+      shellFiles: [],
+      skipped: true,
+    };
   }
 
-  const { workflowYamlFiles, shellFiles } = classifyChangedFiles(files, {
+  const classified = classifyChangedFiles(files, {
     cwd,
     existsSync,
   });
+  const { workflowYamlFiles, actionYamlFiles, shellFiles } = classified;
+
+  for (const file of actionYamlFiles) {
+    try {
+      validateActionManifest(file, cwd);
+    } catch (err) {
+      log.error(`Invalid action metadata in ${file}: ${err.message}`);
+      return { status: 1, ...classified };
+    }
+  }
 
   if (workflowYamlFiles.length > 0) {
     if (!hasCommand('actionlint', env)) {
       log.error(`::error::${ACTIONLINT_MISSING}`);
       return {
         status: 1,
-        workflowYamlFiles,
-        shellFiles,
+        ...classified,
         error: ACTIONLINT_MISSING,
       };
     }
@@ -163,15 +198,14 @@ function verifyChangedWorkflowFiles(options = {}) {
       log.error(`::error::${SHELLCHECK_MISSING}`);
       return {
         status: 1,
-        workflowYamlFiles,
-        shellFiles,
+        ...classified,
         error: SHELLCHECK_MISSING,
       };
     }
-    runTool(exec, 'shellcheck', shellFiles, { cwd, env });
+    runTool(exec, 'shellcheck', ['--', ...shellFiles], { cwd, env });
   }
 
-  return { status: 0, workflowYamlFiles, shellFiles };
+  return { status: 0, ...classified };
 }
 
 if (require.main === module) {

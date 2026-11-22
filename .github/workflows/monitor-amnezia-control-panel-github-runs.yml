@@ -347,8 +347,8 @@ jobs:
             ## Verification Requirements
 
             If you change JS/CJS/TS/TSX files, run `npm run lint` and targeted `npx prettier --check <changed files>`.
-            If you change workflow or action YAML, run `actionlint -config-file .github/actionlint.yaml` and targeted `npx prettier --check <changed files>`.
-            If you change shell scripts, run `shellcheck <changed files>`.
+            If you change workflow YAML, action metadata, or shell scripts, set CHANGED_FILES to a JSON array of the changed paths and run `node .github/workflows/scripts/verify-changed-workflow-files.cjs`.
+            For changed workflow or action YAML, also run targeted `npx prettier --check <changed files>`.
             Run any additional local verification directly relevant to the fix.
 
             ## Expected Final Output
@@ -397,8 +397,8 @@ jobs:
       # (src/** only)/test/build/script-tests/prisma-safe but does NOT run
       # actionlint or shellcheck, so malformed workflow/action YAML or shell
       # scripts could otherwise pass the gate and surface only at review time.
-      # Pass only the classified changed YAML list to actionlint — a repo-wide
-      # scan failed run 29803905118 on unrelated fix-review.yml SC2129 (#881).
+      # Pass only changed workflows to actionlint and parse action manifests
+      # separately. A repo-wide scan failed on unrelated fix-review.yml (#881).
       - name: Verify changed workflow/shell files
         shell: bash
         env:
