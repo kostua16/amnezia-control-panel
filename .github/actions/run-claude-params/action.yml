@@ -335,10 +335,10 @@ runs:
         const fs = require('node:fs');
         const { hooks } = JSON.parse(fs.readFileSync('.claude/settings.json', 'utf8'));
         function selectGuard(event, filename) {
-          const groups = hooks[event]
+          const groups = (hooks?.[event] ?? [])
             .map((group) => ({
               ...group,
-              hooks: group.hooks.filter((hook) => hook.command?.includes('/' + filename)),
+              hooks: (group.hooks ?? []).filter((hook) => hook.command?.includes('/' + filename)),
             }))
             .filter((group) => group.hooks.length > 0);
           if (groups.length === 0) throw new Error('Missing Claude guard: ' + filename);

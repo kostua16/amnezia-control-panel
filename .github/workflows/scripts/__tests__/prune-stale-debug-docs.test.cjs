@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -134,14 +135,10 @@ test('run-zai forwards settings isolation to every Claude attempt', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-guards-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const settingsFile = path.join(directory, 'settings.json');
-  require('node:child_process').execFileSync(
-    process.execPath,
-    ['-', settingsFile],
-    {
-      cwd: path.resolve(__dirname, '../../../..'),
-      input: generator,
-    },
-  );
+  execFileSync(process.execPath, ['-', settingsFile], {
+    cwd: path.resolve(__dirname, '../../../..'),
+    input: generator,
+  });
   const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
   assert.deepEqual(Object.keys(settings), ['hooks']);
   const pre = settings.hooks.PreToolUse.flatMap((group) => group.hooks);
@@ -150,4 +147,23 @@ test('run-zai forwards settings isolation to every Claude attempt', (t) => {
   assert.equal(post.length, 1);
   assert.match(pre[0].command, /privacy-block\.cjs/);
   assert.match(post[0].command, /gsd-read-injection-scanner\.js/);
+
+  const configDir = path.join(directory, '.claude');
+  fs.mkdirSync(configDir);
+  for (const config of [{}, { hooks: {} }, { hooks: { PreToolUse: [{}] } }]) {
+    fs.writeFileSync(
+      path.join(configDir, 'settings.json'),
+      JSON.stringify(config),
+    );
+    const result = spawnSync(process.execPath, ['-', settingsFile], {
+      cwd: directory,
+      input: generator,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /Error: Missing Claude guard: privacy-block\.cjs/,
+    );
+  }
 });
