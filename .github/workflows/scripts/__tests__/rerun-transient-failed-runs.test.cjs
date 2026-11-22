@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const yaml = require('js-yaml');
 
 const {
   TRANSIENT_PATTERNS,
@@ -228,16 +229,17 @@ test('monitor workflow runs transient recovery before the ZAI diagnosis step', (
 });
 
 test('WHO-E06 passes accepted rerun IDs to the optimizer prompt', () => {
-  const workflow = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'workflow-health-optimize.yml'),
-    'utf8',
+  const workflow = yaml.load(
+    fs.readFileSync(
+      path.join(__dirname, '..', '..', 'workflow-health-optimize.yml'),
+      'utf8',
+    ),
   );
-  const preflight = workflow.indexOf('id: rerun_transient');
-  const prompt = workflow.indexOf('prompt: |', preflight);
-  const promptEnd = workflow.indexOf('### Completed Runs Data', prompt);
-
-  assert.ok(preflight >= 0 && prompt > preflight && promptEnd > prompt);
-  const promptBlock = workflow.slice(prompt, promptEnd);
+  const steps = workflow.jobs.optimize.steps;
+  const preflight = steps.findIndex((step) => step.id === 'rerun_transient');
+  const optimizer = steps.findIndex((step) => step.id === 'claude_run');
+  assert.ok(preflight >= 0 && optimizer > preflight);
+  const promptBlock = steps[optimizer].with.prompt;
   assert.match(
     promptBlock,
     /\$\{\{ steps\.rerun_transient\.outputs\.rerun_ids \|\| 'none' \}\}/,
@@ -246,13 +248,16 @@ test('WHO-E06 passes accepted rerun IDs to the optimizer prompt', () => {
     promptBlock,
     /Skip Completed Runs Data entries whose `run_id` is listed above/,
   );
-  assert.match(promptBlock, /ECONNRESET\/ETIMEDOUT\/HTTP 5xx/);
-  // The skip key must exist in the collected run summary, not just as an
-  // API param elsewhere in the collect script.
   assert.match(
-    workflow,
-    /const summary = \{\s*name: run\.name,\s*run_id: run\.id,/,
+    promptBlock,
+    /For every unlisted failure, use `failureClassification`/,
   );
+  const collect = workflow.jobs['collect-runs'].steps.find(
+    (step) => step.id === 'collect',
+  ).with.script;
+  const summary = collect.match(/const summary = \{([\s\S]*?)^\s*\};/m)?.[1];
+  assert.match(summary, /^\s*run_id: run\.id,/m);
+  assert.match(collect, /classifyFailureLog\(raw\)\.reason/);
 });
 
 test('static monitor agent mirrors the runtime MON-E04 recovery contract', () => {

@@ -85,7 +85,10 @@ function fetchFailedLogs(runId, repo, ghRunner = runGh) {
 }
 
 function classifyRun(runId, repo, ghRunner = runGh) {
-  const logs = fetchFailedLogs(runId, repo, ghRunner);
+  return classifyFailureLog(fetchFailedLogs(runId, repo, ghRunner));
+}
+
+function classifyFailureLog(logs) {
   if (!logs) return { transient: false, reason: 'log-unavailable' };
   if (PERMANENT_FAILURE_PATTERNS.some((re) => re.test(logs))) {
     return { transient: false, reason: 'permanent-signature' };
@@ -223,6 +226,7 @@ module.exports = {
   TRANSIENT_PATTERNS,
   PERMANENT_FAILURE_PATTERNS,
   isTransientLog,
+  classifyFailureLog,
   classifyRun,
   rerunTransientFailedRuns,
   buildRecoveryLedger,

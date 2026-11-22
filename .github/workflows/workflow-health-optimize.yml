@@ -73,6 +73,7 @@ jobs:
         with:
           script: |
             const { parseClaudeExecution } = require('./.github/workflows/scripts/parse-claude-execution.cjs');
+            const { classifyFailureLog } = require('./.github/workflows/scripts/rerun-transient-failed-runs.cjs');
             const {
               duplicateSameSha,
               summarizeWorkflowRunTiming,
@@ -196,6 +197,7 @@ jobs:
 
               // Collect failure logs for failed runs (only detailed ones)
               if (run.conclusion === 'failure') {
+                summary.failureClassification = 'log-unavailable';
                 if (!isDetailed) {
                   summary.failureLogs = [{ job: 'skipped', reason: `failure-log cap applied (max ${MAX_DETAILED_FAILURES} detailed failures)` }];
                 } else if (!jobs) {
@@ -218,6 +220,7 @@ jobs:
                         job_id: fj.id
                       });
                       const raw = typeof logs.data === 'string' ? logs.data : String(logs.data);
+                      fj.failureClassification = classifyFailureLog(raw).reason;
                       fj.logTail = raw.slice(-2000);
                       fj.claudeSummary = compactClaudeSummary(parseClaudeExecution({
                         logText: raw,
@@ -228,6 +231,9 @@ jobs:
                       fj.claudeSummary = null;
                     }
                   }
+                  const classifications = failedJobs.map(j => j.failureClassification || 'log-unavailable');
+                  summary.failureClassification = ['permanent-signature', 'log-unavailable', 'transient-signature']
+                    .find(reason => classifications.includes(reason)) || (classifications.length ? 'non-transient' : 'log-unavailable');
                   summary.failureLogs = failedJobs.map(j => ({
                     job: j.name,
                     failedSteps: (j.steps || []).filter(s => s.conclusion === 'failure').map(s => s.name),
@@ -411,7 +417,8 @@ jobs:
           node .github/workflows/scripts/rerun-transient-failed-runs.cjs \
             --repo "${{ github.repository }}" \
             --since "${{ needs.collect-runs.outputs.since-timestamp }}" \
-            --limit 10
+            --limit 10 \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Prepare optimization branch
         id: branch
@@ -435,7 +442,7 @@ jobs:
 
             You have completed workflow run data from the past hour AND workflow YAML files in `.github/workflows/`.
             GitHub accepted requests to rerun failed jobs after transient infrastructure errors for these run IDs (comma-separated): ${{ steps.rerun_transient.outputs.rerun_ids || 'none' }}
-            Skip Completed Runs Data entries whose `run_id` is listed above. If the list is `none`, still treat runs whose `failureLogs` log tails show ECONNRESET/ETIMEDOUT/HTTP 5xx as transient infrastructure failures and do not propose YAML fixes for them.
+            Skip Completed Runs Data entries whose `run_id` is listed above. For every unlisted failure, use `failureClassification` from the collected job logs. Treat `transient-signature` as an infrastructure failure and skip YAML fixes for it. Continue normal analysis for `permanent-signature` or `non-transient`. Treat `log-unavailable` as unresolved and propose a YAML fix only if other supplied evidence identifies a specific defect.
             The run data may include compact `claudeSummary`, `timingSummary`, and `duplicateSameSha` objects extracted by the workflow itself.
 
             ### Completed Runs Data
