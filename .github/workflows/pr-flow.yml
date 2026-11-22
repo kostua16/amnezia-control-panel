@@ -187,6 +187,8 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           # Kilo review input transport: graphql | rest. Empty keeps the script default; set the repository variable to `rest` to roll back without a commit.
           PR_FLOW_REVIEW_SOURCE: ${{ vars.PR_FLOW_REVIEW_SOURCE || '' }}
+          # Worker run lookup: head | legacy. Empty keeps the script default; set the repository variable to `legacy` to roll back to the per-workflow lookup without a commit.
+          PR_FLOW_WORKER_RUNS_SOURCE: ${{ vars.PR_FLOW_WORKER_RUNS_SOURCE || '' }}
         run: |
           node .github/workflows/scripts/orchestrate-pr-flow.cjs \
             --event-name "$GITHUB_EVENT_NAME" \

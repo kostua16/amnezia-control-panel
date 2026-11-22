@@ -14,6 +14,7 @@ const { fetchReviewInputsGraphql } = require('./lib/review-inputs-graphql.cjs');
 // Shared sticky-comment create-or-update helper (single source for the
 // marker-based PR comment upsert used across review/size/orchestration scripts).
 const { upsertComment } = require('./lib/sticky-comment.cjs');
+const { createWorkerRunsLoader } = require('./lib/worker-runs-by-head.cjs');
 
 const TIMING_NAMES = [
   'resolve-pr',
@@ -1288,6 +1289,47 @@ function renderFlowComment({
   ].join('\n');
 }
 
+const RUN_LINK_AT_ROW_END = /\[run\]\(([^)]*)\) \|$/;
+
+function workerRowKey(line) {
+  return line.startsWith('| ') ? line.slice(2, line.indexOf(' | ', 2)) : null;
+}
+
+// Every wake renders a different link for workers that have no run of their
+// own (it falls back to the orchestrator run URL), so a freshly rendered body
+// is never byte-identical to the stored one even when nothing changed. Rows
+// whose new link is the current run URL therefore keep the stored link; every
+// other difference (state, reason, a changed worker-run link, ...) is kept
+// as is and still counts as a change. A stored row with no link at all does
+// not adopt the volatile one for free: gaining a link is a real change.
+function stabilizeRunLinks(existingBody, newBody, currentRunUrl) {
+  if (!currentRunUrl) return newBody;
+  const storedLinkByRow = new Map();
+  for (const line of String(existingBody).split('\n')) {
+    const key = workerRowKey(line);
+    const match = key === null ? null : line.match(RUN_LINK_AT_ROW_END);
+    if (match) storedLinkByRow.set(key, match[1]);
+  }
+
+  return newBody
+    .split('\n')
+    .map((line) => {
+      const match = line.match(RUN_LINK_AT_ROW_END);
+      if (!match || match[1] !== currentRunUrl) return line;
+      const storedLink = storedLinkByRow.get(workerRowKey(line));
+      return storedLink === undefined
+        ? line
+        : line.replace(RUN_LINK_AT_ROW_END, () => `[run](${storedLink}) |`);
+    })
+    .join('\n');
+}
+
+// GitHub may hand a stored body back with CRLF line endings.
+function flowCommentUnchanged(existingBody, newBody, currentRunUrl) {
+  const stored = existingBody.replace(/\r\n/g, '\n');
+  return stored === stabilizeRunLinks(stored, newBody, currentRunUrl);
+}
+
 function publishCommitStatus(pr, status) {
   const repo = getRepoSlug();
   const payloadFile = writeTempJson('pr-flow-status', {
@@ -1424,12 +1466,21 @@ function publishFlowStatuses(
   }
 }
 
-function upsertFlowComment(pr, body) {
-  upsertComment({
+// The wake rewrites the comment only when its content changed: replacing it is
+// a POST plus a DELETE and a new issue_comment event every time.
+function upsertFlowComment(
+  pr,
+  body,
+  { upsert = upsertComment, currentRunUrl = getCurrentRunUrl() } = {},
+) {
+  upsert({
     repo: getRepoSlug(),
     prNumber: pr.number,
     marker: COMMENT_MARKER,
     body,
+    skipIfUnchanged: true,
+    sameBody: (existingBody, nextBody) =>
+      flowCommentUnchanged(existingBody, nextBody, currentRunUrl),
   });
 }
 
@@ -2255,10 +2306,17 @@ function main() {
   }
 
   const workerRuns = {};
+  const loadWorkerRuns = createWorkerRunsLoader({
+    config,
+    pr,
+    getRepo: getRepoSlug,
+    run,
+    loadLegacy: (workerName) => collectWorkerRuns(config, workerName),
+  });
   const getWorkerRuns = (workerName) => {
     if (workerRuns[workerName] === undefined) {
       workerRuns[workerName] = timeStep(timings, 'worker-runs', () =>
-        collectWorkerRuns(config, workerName),
+        loadWorkerRuns(workerName),
       );
     }
     return workerRuns[workerName];
@@ -2436,7 +2494,9 @@ module.exports = {
   fetchPrReviews,
   getFinalizerRetryCount,
   getWorkerDispatchRef,
+  getWorkerTargetUrl,
   getLabelsForDecision,
+  matchesWorkerTitle,
   getRequiredCheckStatus,
   evaluatePolicy,
   makeDecision,
@@ -2450,6 +2510,9 @@ module.exports = {
   resolveReviewSource,
   runGraphqlQuery,
   shouldPublishStatus,
+  stabilizeRunLinks,
   summarizeWorkerRuns,
+  upsertFlowComment,
   usableStatusId,
+  collectWorkerRuns,
 };
