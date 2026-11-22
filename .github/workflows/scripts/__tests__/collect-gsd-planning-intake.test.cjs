@@ -6,8 +6,10 @@ const os = require('os');
 const path = require('path');
 
 const {
+  COMPLETED_SOURCES_FILE,
   collectOpenExecutionPlanSlots,
   runCollector,
+  sha256,
 } = require('../collect-gsd-planning-intake.cjs');
 
 function openPrBody(slot) {
@@ -352,6 +354,257 @@ test('runCollector reserves the real slot a stale-marker open PR occupies', () =
 
     assert.equal(result.selected[0].plan, '999-006');
     assert.match(result.selected[0].plan_path, /999-006-PLAN\.md$/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runCollector imports a deferred proposal whose issue body contains a status: complete line', () => {
+  // promote-deferred-proposal.cjs embeds the raw issue body after the heading.
+  // There is no frontmatter block, so a body-level `status:` line is content.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    fs.writeFileSync(
+      path.join(quickDir, 'deferred-issue-42-plan.md'),
+      [
+        '# Deferred proposal from issue #42',
+        '',
+        'Source: deferred-proposal issue #42.',
+        '',
+        '```yaml',
+        'status: complete',
+        '```',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.has_candidate, true);
+    assert.match(result.selected[0].path, /deferred-issue-42-plan\.md$/);
+    assert.equal(result.skipped.length, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('sibling SUMMARY detection is scoped to the artifact whose stem it shares', () => {
+  // Two artifacts in one directory: only the stemless PLAN.md owns the plain
+  // SUMMARY.md, so its completion must not retire the stemmed plan beside it.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const dir = path.join(quickDir, '260901-shared');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'PLAN.md'),
+      '---\nstatus: ready\n---\n# Done one\n',
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(dir, 'SUMMARY.md'),
+      '---\nstatus: complete\n---\n# Done\n',
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(dir, '260901-alpha-PLAN.md'),
+      '---\nstatus: ready\n---\n# Alpha\n',
+      'utf8',
+    );
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 2,
+    });
+
+    assert.deepEqual(
+      result.selected.map((entry) => path.basename(entry.path)),
+      ['260901-alpha-PLAN.md'],
+    );
+    assert.equal(result.skipped.length, 1);
+    assert.match(result.skipped[0].path, /260901-shared\/PLAN\.md$/);
+    assert.equal(result.skipped[0].reason, 'source-complete');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a root-level SUMMARY does not retire deferred proposals sharing .planning/quick', () => {
+  // promote-deferred-proposal.cjs writes deferred-issue-<n>-plan.md at the
+  // quick root, so a directory-wide lookup would suppress every proposal.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    fs.writeFileSync(
+      path.join(quickDir, 'deferred-issue-7-plan.md'),
+      '# Deferred seven\n',
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(quickDir, 'deferred-issue-9-SUMMARY.md'),
+      '---\nstatus: complete\n---\n# Done nine\n',
+      'utf8',
+    );
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.has_candidate, true);
+    assert.match(result.selected[0].path, /deferred-issue-7-plan\.md$/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runCollector treats an unreadable sibling SUMMARY as non-terminal', () => {
+  // A directory named SUMMARY.md makes readFileSync throw EISDIR; intake must
+  // keep going rather than fail the whole run.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const dir = path.join(quickDir, '260611-race');
+    fs.mkdirSync(path.join(dir, 'SUMMARY.md'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'PLAN.md'),
+      '---\nstatus: ready\n---\n# Ready\n',
+      'utf8',
+    );
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.has_candidate, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an explicit candidate path overrides the completion gate', () => {
+  // candidate_path is only set by workflow_dispatch: a maintainer naming a
+  // finished artifact means to re-queue it, unlike the scheduled sweep.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const dir = path.join(quickDir, '260611-example');
+    fs.mkdirSync(dir, { recursive: true });
+    const artifact = path.join(dir, 'PLAN.md');
+    fs.writeFileSync(
+      artifact,
+      '---\nstatus: complete\n---\n# Already done\n',
+      'utf8',
+    );
+
+    const scheduled = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: false,
+      maxPlans: 1,
+    });
+    const manual = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: false,
+      maxPlans: 1,
+      candidatePath: artifact,
+    });
+
+    assert.equal(scheduled.has_candidate, false);
+    assert.equal(scheduled.skipped[0].reason, 'source-complete');
+    assert.equal(manual.has_candidate, true);
+    assert.equal(manual.skipped.length, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runCollector does not re-import a source recorded in the completed-sources ledger', () => {
+  // A queue plan is deleted once its execution is a no-op; the ledger keeps
+  // the hash, path, and slot it carried so the source stays retired.
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    const dir = path.join(quickDir, '260611-done');
+    fs.mkdirSync(dir, { recursive: true });
+    const artifact = path.join(dir, 'PLAN.md');
+    const content = '---\nstatus: ready\n---\n# Done\n';
+    fs.writeFileSync(artifact, content, 'utf8');
+    writeCandidate(quickDir, '260612-next', '# Next\n');
+    fs.writeFileSync(
+      path.join(queueDir, COMPLETED_SOURCES_FILE),
+      JSON.stringify([
+        {
+          plan: '999-116',
+          source_artifact: artifact,
+          source_artifact_sha256: sha256(content),
+        },
+      ]),
+      'utf8',
+    );
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.match(result.selected[0].path, /260612-next\/proposal\.md$/);
+    assert.equal(result.skipped[0].reason, 'already-imported-hash');
+    assert.equal(result.selected[0].plan, '999-117');
+
+    // An edited artifact no longer matches the hash, but its path stays retired.
+    fs.writeFileSync(artifact, `${content}edited\n`, 'utf8');
+    const edited = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: false,
+      maxPlans: 1,
+    });
+    assert.equal(edited.skipped[0].reason, 'already-imported-path');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runCollector ignores a malformed completed-sources ledger', () => {
+  const { quickDir, queueDir, root } = makeSandbox();
+  try {
+    writeCandidate(quickDir, '260611-next', '# Next\n');
+    fs.writeFileSync(
+      path.join(queueDir, COMPLETED_SOURCES_FILE),
+      '{not json',
+      'utf8',
+    );
+
+    const result = runCollector({
+      quickDir,
+      queueDir,
+      openPrsFile: '',
+      write: true,
+      maxPlans: 1,
+    });
+
+    assert.equal(result.has_candidate, true);
+    assert.equal(result.selected[0].plan, '999-001');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
