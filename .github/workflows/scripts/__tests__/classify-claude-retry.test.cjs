@@ -107,3 +107,65 @@ test('unreachable API probe preserves fatal Git auth precedence', () => {
     assert.equal(fatal.retryReason, 'fatal_config_git_auth');
   }
 });
+
+test('retry CLI preserves an explicitly empty HTTP code from either probe step', () => {
+  const { execFileSync } = require('node:child_process');
+  const { load } = require('js-yaml');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const output = execFileSync(
+    process.execPath,
+    [
+      require.resolve('../classify-claude-retry.cjs'),
+      '--http-code',
+      '',
+      '--probe-exit-code',
+      '28',
+      '--attempt',
+      '1',
+    ],
+    { encoding: 'utf8', env: { ...process.env, GITHUB_OUTPUT: '' } },
+  );
+  assert.match(output, /retry_reason=probe_unreachable/);
+
+  const action = load(
+    fs.readFileSync(
+      path.join(__dirname, '../../../actions/run-claude-params/action.yml'),
+      'utf8',
+    ),
+  );
+  for (const id of ['check-429-1', 'check-429-2']) {
+    const step = action.runs.steps.find((candidate) => candidate.id === id);
+    assert.ok(step.run.includes('--max-time 30) || probe_exit=$?'));
+    assert.ok(step.run.includes('--probe-exit-code "$probe_exit"'));
+  }
+});
+
+test('permanent probe failures fail fast and successful results are not replayed', () => {
+  for (const probeExitCode of ['3', '6', '7', '35', '60', '127']) {
+    assert.equal(
+      classifyClaudeRetry({ httpCode: '000', probeExitCode }).shouldRetry,
+      false,
+    );
+  }
+  const success = classifyClaudeRetry({
+    httpCode: '000',
+    probeExitCode: '28',
+    executionText: JSON.stringify({ type: 'result', is_error: false }),
+  });
+  assert.equal(success.shouldRetry, false);
+  assert.equal(success.softSuccess, true);
+});
+
+test('an execution socket close retries even if the subsequent probe is healthy', () => {
+  const result = classifyClaudeRetry({
+    httpCode: '200',
+    executionText: JSON.stringify({
+      type: 'result',
+      is_error: true,
+      result: 'The socket connection was closed unexpectedly',
+    }),
+  });
+  assert.equal(result.shouldRetry, true);
+  assert.equal(result.retryReason, 'transient_transport');
+});

@@ -127,6 +127,26 @@ test('workflow and action callers use profiles instead of hardcoded bot lists', 
       const doc = load(fs.readFileSync(full, 'utf8'));
       const jobs = doc.runs ? [doc.runs] : Object.values(doc.jobs ?? {});
       for (const job of jobs) {
+        if (job.with?.['allowed-bots'] !== undefined) offenders.push(rel);
+        const embedded = [
+          ...Object.values(doc.env ?? {}),
+          ...Object.values(job.env ?? {}),
+          ...(job.steps ?? []).flatMap((step) => [
+            step.run,
+            ...Object.values(step.env ?? {}),
+          ]),
+        ];
+        if (
+          embedded.some(
+            (value) =>
+              typeof value === 'string' &&
+              /allowed-bots:\s*['"][^'"]*(?:\[bot\]|github-actions,)[^'"]*['"]/.test(
+                value,
+              ),
+          )
+        ) {
+          offenders.push(rel);
+        }
         const steps = job.steps ?? [];
         for (const [index, step] of steps.entries()) {
           const value = step.with?.['allowed-bots'];

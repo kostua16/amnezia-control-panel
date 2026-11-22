@@ -18,7 +18,7 @@ function parseArgs(argv) {
       .slice(2)
       .replace(/-([a-z])/g, (_, char) => char.toUpperCase());
     args[key] =
-      argv[index + 1] && !argv[index + 1].startsWith('--')
+      argv[index + 1] !== undefined && !argv[index + 1].startsWith('--')
         ? argv[++index]
         : 'true';
   }
@@ -92,12 +92,15 @@ function isRateLimitOrOverloadText(value) {
 
 function classifyClaudeRetry({
   httpCode = '',
+  probeExitCode = '0',
   executionText = '',
   logText = '',
   jsonSchemaEnabled = false,
   attempt = '',
 } = {}) {
   const normalizedHttpCode = String(httpCode || '').trim();
+  const probeUnavailable =
+    normalizedHttpCode === '' || normalizedHttpCode === '000';
   const normalizedAttempt = String(attempt || '').trim();
   const finalRetry = normalizedAttempt === '2';
   const retrySuffix = finalRetry
@@ -142,17 +145,21 @@ function classifyClaudeRetry({
     };
   }
 
-  if (normalizedHttpCode === '200' && hasSuccessfulResult(executionText)) {
+  if (
+    (normalizedHttpCode === '200' || probeUnavailable) &&
+    hasSuccessfulResult(executionText)
+  ) {
     return {
       httpCode: normalizedHttpCode,
       isRateLimited: false,
       shouldRetry: false,
       retryReason: 'successful_result_after_action_probe',
       softSuccess: true,
-      softSuccessReason:
-        'Claude completed successfully, but the action API probe returned HTTP 200',
+      softSuccessReason: probeUnavailable
+        ? 'Claude completed successfully before the API probe became unavailable'
+        : 'Claude completed successfully, but the action API probe returned HTTP 200',
       annotation: 'warning',
-      message: `Attempt ${normalizedAttempt} produced a successful execution result, but the action API probe returned HTTP 200. Treating as soft success.`,
+      message: `Attempt ${normalizedAttempt} produced a successful execution result. Treating as soft success.`,
     };
   }
 
@@ -183,16 +190,24 @@ function classifyClaudeRetry({
   // or network blip that cleared before the probe ran a few seconds later —
   // not a real code or prompt error (those leave a result or action_error).
   // Retry once instead of giving up; bounded by the existing 3-attempt cap.
-  if (normalizedHttpCode === '' || normalizedHttpCode === '000') {
+  const transientProbe =
+    probeUnavailable &&
+    ['0', '28', '52', '55', '56'].includes(String(probeExitCode));
+  const transientExecution =
+    /socket connection was closed unexpectedly/i.test(executionText) &&
+    (normalizedHttpCode === '200' || transientProbe);
+  if (transientProbe || transientExecution) {
     return {
       httpCode: normalizedHttpCode,
       isRateLimited: false,
       shouldRetry: true,
-      retryReason: 'probe_unreachable',
+      retryReason: transientExecution
+        ? 'transient_transport'
+        : 'probe_unreachable',
       softSuccess: false,
       softSuccessReason: '',
       annotation: 'warning',
-      message: `Attempt ${normalizedAttempt} failed and the API probe was unreachable. ${retrySuffix}`,
+      message: `Attempt ${normalizedAttempt} failed with a transient connection error. ${retrySuffix}`,
     };
   }
 
@@ -243,6 +258,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const result = classifyClaudeRetry({
     httpCode: args.httpCode,
+    probeExitCode: args.probeExitCode,
     executionText: readOptionalFile(args.executionFile),
     logText: readOptionalFile(args.logFile),
     jsonSchemaEnabled: args.jsonSchemaEnabled,

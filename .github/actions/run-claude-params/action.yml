@@ -410,18 +410,15 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_JOB_NAME: ${{ github.job }}
       run: |
-        # The probe's own failure (exit 28 timeout, network error) must not
-        # fail this check step: with -eo pipefail the step dies before the
-        # classifier runs, which skips every retry attempt. curl prints 000
-        # via -w on failure (empty if it printed nothing); the classifier
-        # treats both as probe-unreachable and retries after backoff.
+        # Capture curl failures so the classifier can distinguish transport errors.
+        probe_exit=0
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
           -H "content-type: application/json" \
           -H "x-api-key: ${API_KEY}" \
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
-          --max-time 30) || true
+          --max-time 30) || probe_exit=$?
 
         # Job log lets the classifier see pre-execution failures (e.g. branch
         # setup dying on an unauthenticated git fetch) that never reach the
@@ -436,6 +433,7 @@ runs:
 
         node .github/workflows/scripts/classify-claude-retry.cjs \
           --http-code "$http_code" \
+          --probe-exit-code "$probe_exit" \
           --execution-file "${RUNNER_TEMP}/claude-execution-output.json" \
           --log-file "$LOG_FILE" \
           --json-schema-enabled "$JSON_SCHEMA_ENABLED" \
@@ -444,7 +442,7 @@ runs:
         rm -f "$LOG_FILE"
 
     - name: Retry backoff (attempt 1 → 2)
-      if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' || steps.check-429-1.outputs.retry_reason == 'probe_unreachable' }}
+      if: ${{ steps.check-429-1.outputs.is_rate_limited == 'true' || steps.check-429-1.outputs.retry_reason == 'probe_unreachable' || steps.check-429-1.outputs.retry_reason == 'transient_transport' }}
       shell: bash
       run: sleep 120
 
@@ -520,18 +518,15 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_JOB_NAME: ${{ github.job }}
       run: |
-        # The probe's own failure (exit 28 timeout, network error) must not
-        # fail this check step: with -eo pipefail the step dies before the
-        # classifier runs, which skips every retry attempt. curl prints 000
-        # via -w on failure (empty if it printed nothing); the classifier
-        # treats both as probe-unreachable and retries after backoff.
+        # Capture curl failures so the classifier can distinguish transport errors.
+        probe_exit=0
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
           -X POST "${API_URL}/v1/messages" \
           -H "content-type: application/json" \
           -H "x-api-key: ${API_KEY}" \
           -H "anthropic-version: 2023-06-01" \
           -d '{"model":"${{ steps.resolve-models.outputs.model }}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
-          --max-time 30) || true
+          --max-time 30) || probe_exit=$?
 
         # Same pre-execution-failure visibility as check-429-1.
         LOG_FILE=$(mktemp "${RUNNER_TEMP:-/tmp}/claude-retry-log-XXXXXX.log")
@@ -544,6 +539,7 @@ runs:
 
         node .github/workflows/scripts/classify-claude-retry.cjs \
           --http-code "$http_code" \
+          --probe-exit-code "$probe_exit" \
           --execution-file "${RUNNER_TEMP}/claude-execution-output.json" \
           --log-file "$LOG_FILE" \
           --json-schema-enabled "$JSON_SCHEMA_ENABLED" \
@@ -552,7 +548,7 @@ runs:
         rm -f "$LOG_FILE"
 
     - name: Retry backoff (attempt 2 → 3)
-      if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' || steps.check-429-2.outputs.retry_reason == 'probe_unreachable' }}
+      if: ${{ steps.check-429-2.outputs.is_rate_limited == 'true' || steps.check-429-2.outputs.retry_reason == 'probe_unreachable' || steps.check-429-2.outputs.retry_reason == 'transient_transport' }}
       shell: bash
       run: sleep 120
 
