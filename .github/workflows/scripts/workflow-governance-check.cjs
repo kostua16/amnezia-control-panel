@@ -12,7 +12,12 @@ const prFlowFile = path.join(root, '.github', 'pr-flow.json');
 
 const externalUsePattern = /uses:\s*([^\s#]+@([^\s#]+))/g;
 const shaPattern = /^[a-f0-9]{40}$/i;
-const allowedPullRequestTarget = new Set(['pr-flow.yml', 'pr-policy.yml']);
+const allowedPullRequestTarget = new Set([
+  // The close jobs run only for main and check out the trusted base SHA.
+  'auto-pr-branch-cleanup.yml',
+  'pr-flow.yml',
+  'pr-policy.yml',
+]);
 
 function listFiles(dir, predicate) {
   if (!fs.existsSync(dir)) return [];
@@ -25,7 +30,7 @@ function listFiles(dir, predicate) {
 }
 
 function relative(file) {
-  return path.relative(root, file);
+  return path.relative(root, file).split(path.sep).join('/');
 }
 
 function hasTopLevelPermissions(text) {
