@@ -158,6 +158,7 @@ Plans:
 <!-- PR-IMPROVE:1052 --> - PR #1052: fix: resolve #1050 - APR-I07: Pass '--title-prefix' to duplicate detection (audit-auto-prs) -- pr1052.2 x1. Quick artifact: `.planning/quick/260808-pr1052-workflow-improve/260808-pr1052-PLAN.md`.
 <!-- PR-IMPROVE:1076 --> - PR #1076: fix: resolve #1071 - MNT-I09: Trim allowed-tools to the sweep's needs (maintenance) -- pr1076.1 x1. Quick artifact: `.planning/quick/260809-pr1076-workflow-improve/260809-pr1076-PLAN.md`.
 <!-- PR-IMPROVE:1142 --> - PR #1142: fix(ci): auto-fix failures from #1136 -- pr1142.1 x1, pr1142.2 x1, pr1142.3 x1. Quick artifact: `.planning/quick/261122-pr1142-workflow-improve/261122-pr1142-PLAN.md`.
+<!-- PR-IMPROVE:1182 --> - PR #1182: fix(ci): use trusted main for PR branch cleanup -- pr1182.1 x1, pr1182.2 x1. Quick artifact: `.planning/quick/261122-pr1182-workflow-improve/261122-pr1182-PLAN.md`.
 <!-- PR-IMPROVE:182 --> - PR #182: fix(audit): address autonomous audit findings -- 13.2 x2, 13.3 x1, 13.4 x1. Quick artifact: `.planning/quick/260603-pr182-workflow-improve/260603-pr182-PLAN.md`.
 <!-- PR-IMPROVE:237 --> - PR #237: [codex] fix PR finalizer auto-merge stall -- pr237.1 x1, pr237.2 x1, pr237.3 x1, pr237.4 x1. Quick artifact: `.planning/quick/260605-pr237-workflow-improve/260605-pr237-PLAN.md`.
 <!-- PR-IMPROVE:352 --> - PR #352: fix: resolve #347 - Security: esbuild RCE + arbitrary file read (HIGH) and postcss XSS (moderate) -- pr352.1 x1, pr352.2 x1, pr352.3 x1, pr352.4 x1. Quick artifact: `.planning/quick/260612-pr352-workflow-improve/260612-pr352-PLAN.md`.
