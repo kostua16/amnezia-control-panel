@@ -11,6 +11,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const yaml = require('js-yaml');
 
+test('the governance YAML trust pin matches the parser used by tests', () => {
+  const installer = fs.readFileSync(
+    path.resolve(__dirname, '../install-governance-yaml.sh'),
+    'utf8',
+  );
+  const { resolved, integrity } = require('../../../../package-lock.json')
+    .packages['node_modules/js-yaml'];
+
+  assert.ok(installer.includes(`${resolved} --output`));
+  assert.ok(
+    installer.includes(`expected='${integrity.replace(/^sha512-/, '')}'`),
+  );
+});
+
 const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const workflowsDir = path.join(repoRoot, '.github/workflows');
 

@@ -411,6 +411,7 @@ Decision basis: `evaluate-pr-policy.cjs` `gsdExecution` (`safeAllowedPathGlobs`,
 | G8  | `planning-intake-open` promotion PR closed **without** merging (`auto-pr-branch-cleanup.yml` `pull_request_target: closed`)                           | `restore-deferred-proposal` job parses the source issue from the PR body, removes `in-progress`, restores `needs-review`, and comments → issue is re-selectable on the next cron (no stranded `in-progress` dead-end)                                                                 | char          |
 | G8a | a same-repository PR targeting main closes | close jobs load the rate-limit action and branch policy from current `main` with credential persistence disabled. Governance verifies the main-only close trigger, same-repository guards, pinned checkouts, and approved permissions. The orphan sweep remains limited to scheduled and manual runs | char |
 | G8b | Docker image and stack image publishing emit rate-limit snapshots | the snapshot labels are `docker-publish` and `docker-publish-stack`, respectively | char |
+| G8c | workflow governance loads its YAML parser in CI | the helper downloads the pinned bundle over HTTPS with bounded retries, verifies its checksum, and parses a sample document before exposing it to the checker. The YAML suite checks the pin against the lockfile | char |
 
 ## §6c Release → release-notes — `release-notes.yml`
 
