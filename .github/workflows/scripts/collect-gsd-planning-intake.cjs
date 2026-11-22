@@ -6,6 +6,7 @@ const path = require('path');
 const DEFAULT_QUICK_DIR = '.planning/quick';
 const DEFAULT_QUEUE_DIR = '.planning/phases/999-gh-planning-execution-queue';
 const SOURCE_HASH_MARKER = '<!-- gsd-planning-source-sha256:';
+const COMPLETED_SOURCES_FILE = 'completed-sources.json';
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -92,6 +93,95 @@ function severityRank(content) {
   return 0;
 }
 
+const TERMINAL_STATUSES = new Set(['complete', 'completed']);
+
+// Only the leading `---` block is metadata. Deferred-proposal artifacts embed
+// the raw issue body, where a `status:` line is quoted content and must not
+// retire the artifact.
+function frontmatterStatus(content) {
+  const block = content.match(
+    /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/,
+  );
+  if (!block) return null;
+  const match = block[1].match(/^status:\s*["']?([\w-]+)["']?\s*$/im);
+  return match ? match[1].toLowerCase() : null;
+}
+
+// A stemless artifact (`PLAN.md`, `proposal.md`) owns the plain `SUMMARY.md`;
+// a stemmed one (`<stem>-PLAN.md`, `<stem>_PLAN.md`) owns `<stem>-SUMMARY.md`.
+// A directory-wide lookup lets one artifact's summary retire its neighbours:
+// `.planning/quick/` itself is shared by every `deferred-issue-<n>-plan.md`.
+// When a stemmed plan has no summary of its own, a plain `SUMMARY.md` in the
+// directory still counts unless a stemless plan there owns it: an unowned
+// summary is this plan's completion record under a drifted name, and ignoring
+// it would re-import finished work as a no-op execution.
+function siblingSummaryPaths(filePath) {
+  const basename = path.basename(filePath);
+  const stemMatch = /^proposal\.md$/i.test(basename)
+    ? null
+    : basename.match(/^(.*?)[-_]plan\.md$/i);
+  const stem = stemMatch ? stemMatch[1].toLowerCase() : '';
+  const owned = stem
+    ? [`${stem}-summary.md`, `${stem}_summary.md`]
+    : ['summary.md'];
+  const dir = path.dirname(filePath);
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const lowered = names.map((name) => name.toLowerCase());
+  if (
+    stem &&
+    !lowered.some((name) => owned.includes(name)) &&
+    !lowered.some((name) => name === 'plan.md' || name === 'proposal.md')
+  ) {
+    owned.push('summary.md');
+  }
+  return names
+    .filter((name) => owned.includes(name.toLowerCase()))
+    .sort()
+    .map((name) => path.join(dir, name));
+}
+
+// An unreadable or vanished sibling says nothing about this artifact; skip it
+// instead of failing the whole intake run.
+function isTerminalSummary(summaryPath) {
+  try {
+    return TERMINAL_STATUSES.has(
+      frontmatterStatus(fs.readFileSync(summaryPath, 'utf8')),
+    );
+  } catch {
+    return false;
+  }
+}
+
+// A quick artifact whose own frontmatter or whose own SUMMARY reports a
+// terminal status is finished work. Importing it would queue a no-op execution
+// that re-reports the artifact and risks overwriting its completion record.
+function isTerminalArtifact(filePath, content) {
+  if (TERMINAL_STATUSES.has(frontmatterStatus(content))) return true;
+  return siblingSummaryPaths(filePath).some(isTerminalSummary);
+}
+
+// A queue plan is the durable record of an import, but it is removed once its
+// execution finishes without implementation changes. The ledger keeps the
+// source hash, path, and consumed slot such a plan carried so the artifact
+// stays retired.
+function readCompletedSources(queueDir) {
+  const ledgerPath = path.join(queueDir, COMPLETED_SOURCES_FILE);
+  if (!fs.existsSync(ledgerPath)) return [];
+  try {
+    const rows = JSON.parse(fs.readFileSync(ledgerPath, 'utf8'));
+    return Array.isArray(rows)
+      ? rows.filter((row) => row && typeof row === 'object')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function collectCandidates({ quickDir = DEFAULT_QUICK_DIR } = {}) {
   return walkFiles(quickDir)
     .filter(isPlanningArtifact)
@@ -105,6 +195,7 @@ function collectCandidates({ quickDir = DEFAULT_QUICK_DIR } = {}) {
         source_pr: extractSourcePr(content, repoPath),
         date_key: extractDateKey(repoPath),
         severity_rank: severityRank(content),
+        complete: isTerminalArtifact(filePath, content),
       };
     })
     .sort((left, right) => {
@@ -146,6 +237,42 @@ function collectImportedSources(queueDir = DEFAULT_QUEUE_DIR) {
       imported.maxPlanNumber = Math.max(
         imported.maxPlanNumber,
         Number(planMatch[1]),
+      );
+    }
+  }
+
+  for (const row of readCompletedSources(queueDir)) {
+    const hash = String(row.source_artifact_sha256 ?? '');
+    const sourcePath = String(row.source_artifact ?? '');
+    const slot = String(row.plan ?? '').match(/^999-(\d+)$/);
+    // The ledger is hand-maintained, so a row whose fields would silently lose
+    // their retirement effect (a digest that is not hex, a plan that is not a
+    // `999-<n>` slot) is flagged in the run log instead of quietly letting the
+    // source be re-imported or the slot be handed out twice. stderr keeps
+    // stdout pure JSON for the workflow's output redirect.
+    const problems = [];
+    if (!/^[a-f0-9]+$/i.test(hash)) {
+      problems.push('source_artifact_sha256 is not a hex digest');
+    }
+    if (!sourcePath) problems.push('source_artifact is missing');
+    if (!slot) {
+      problems.push(
+        `plan ${JSON.stringify(String(row.plan ?? ''))} is not a 999-<n> slot`,
+      );
+    }
+    if (problems.length > 0) {
+      process.stderr.write(
+        `::warning title=${COMPLETED_SOURCES_FILE}::malformed ledger row - ${problems.join('; ')}\n`,
+      );
+    }
+    // Candidate digests always come from sha256() (lowercase); normalise so a
+    // hand-written uppercase entry still retires its source.
+    if (/^[a-f0-9]+$/i.test(hash)) imported.hashes.add(hash.toLowerCase());
+    if (sourcePath) imported.paths.add(normalizeRepoPath(sourcePath));
+    if (slot) {
+      imported.maxPlanNumber = Math.max(
+        imported.maxPlanNumber,
+        Number(slot[1]),
       );
     }
   }
@@ -238,6 +365,14 @@ function selectCandidates({
       continue;
     }
 
+    // An explicit --candidate-path is a maintainer's deliberate manual choice;
+    // only the scheduled sweep, which names no path, must never re-queue
+    // finished work on its own.
+    if (candidate.complete && !normalizedCandidatePath) {
+      skipped.push({ ...candidate, reason: 'source-complete' });
+      continue;
+    }
+
     if (imported.hashes.has(candidate.hash)) {
       skipped.push({ ...candidate, reason: 'already-imported-hash' });
       continue;
@@ -315,7 +450,7 @@ function renderPlan({
     '- Translate the artifact into the smallest useful implementation.',
     '- Keep changes within the artifact intent; leave unrelated refactors alone.',
     '- Add or update tests when behavior changes.',
-    '- Do not commit, push, merge, or open pull requests; workflow automation handles Git operations.',
+    '- Do not commit, push, merge, or open pull requests; workflow automation performs all Git operations. Commit or PR conventions in the embedded artifact describe how automation labels those commits, not actions for the executor to take.',
     '',
     '## Acceptance Criteria',
     '- The implementation addresses the selected planning artifact.',
@@ -428,6 +563,7 @@ module.exports = {
   DEFAULT_QUEUE_DIR,
   DEFAULT_QUICK_DIR,
   SOURCE_HASH_MARKER,
+  COMPLETED_SOURCES_FILE,
   collectCandidates,
   collectImportedSources,
   collectOpenExecutionHashes,
