@@ -218,17 +218,22 @@ test('empty CHANGED_FILES is a no-op', () => {
   assert.ok(logs.includes('No changed files to verify.'));
 });
 
-test('missing positional paths fail while deleted paths from CI are skipped', () => {
+test('invalid positional paths fail while deleted paths from CI are skipped', () => {
   const root = tmpDir('mon-missing-path-');
   const missing = '.github/workflows/deleted.yml';
+  fs.mkdirSync(path.join(root, 'directory.sh'));
+  fs.writeFileSync(path.join(root, 'README.md'), '');
   const options = {
     cwd: root,
     env: { ...process.env, CHANGED_FILES: JSON.stringify([missing]) },
     encoding: 'utf8',
   };
-  const explicit = spawnSync(process.execPath, [scriptPath, missing], options);
-  assert.equal(explicit.status, 1, explicit.stderr);
-  assert.match(explicit.stderr, /Changed paths do not exist:.*deleted\.yml/);
+  for (const file of [missing, 'directory.sh', 'README.md']) {
+    const explicit = spawnSync(process.execPath, [scriptPath, file], options);
+    assert.equal(explicit.status, 1, explicit.stderr);
+    assert.match(explicit.stderr, /Expected existing workflow/);
+    assert.ok(explicit.stderr.includes(file));
+  }
   const ci = spawnSync(process.execPath, [scriptPath], options);
   assert.equal(ci.status, 0, ci.stderr);
 });

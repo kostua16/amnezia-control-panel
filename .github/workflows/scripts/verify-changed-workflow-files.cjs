@@ -176,6 +176,7 @@ function runTool(exec, name, args, { cwd, env }) {
 function verifyChangedWorkflowFiles(options = {}) {
   const {
     rawChangedFiles = process.env.CHANGED_FILES || '',
+    files = parseChangedFiles(rawChangedFiles),
     cwd = process.cwd(),
     env = process.env,
     exec = execFileSync,
@@ -183,7 +184,6 @@ function verifyChangedWorkflowFiles(options = {}) {
     log = console,
   } = options;
 
-  const files = parseChangedFiles(rawChangedFiles);
   if (files.length === 0) {
     log.log('No changed files to verify.');
     return {
@@ -245,14 +245,18 @@ function verifyChangedWorkflowFiles(options = {}) {
 if (require.main === module) {
   try {
     const paths = process.argv.slice(2);
-    const missing = paths.filter((file) => !fs.existsSync(file));
-    if (missing.length) {
-      console.error(`Changed paths do not exist: ${JSON.stringify(missing)}`);
+    const invalid = paths.filter(
+      (file) =>
+        !(isWorkflowOrActionYaml(file) || isShellScript(file)) ||
+        !fs.statSync(file, { throwIfNoEntry: false })?.isFile(),
+    );
+    if (invalid.length) {
+      console.error(
+        `Expected existing workflow, action metadata, or shell files: ${JSON.stringify(invalid)}`,
+      );
       process.exit(1);
     }
-    const options = paths.length
-      ? { rawChangedFiles: JSON.stringify(paths) }
-      : {};
+    const options = paths.length ? { files: paths } : {};
     process.exit(verifyChangedWorkflowFiles(options).status);
   } catch (err) {
     if (err && Number.isInteger(err.status)) process.exit(err.status);

@@ -347,7 +347,7 @@ jobs:
             ## Verification Requirements
 
             If you change JS/CJS/TS/TSX files, run `npm run lint` and targeted `npx prettier --check <changed files>`.
-            If you change workflow YAML, action metadata, or shell scripts, run `node .github/workflows/scripts/verify-changed-workflow-files.cjs <changed paths>` with each existing changed path as a separate quoted argument. Omit deleted files.
+            If you change workflow YAML, action metadata, or shell scripts, run `node .github/workflows/scripts/verify-changed-workflow-files.cjs <changed paths>`. Pass each existing changed workflow YAML, action manifest, or shell script as a separate quoted argument.
             For changed workflow or action YAML, also run targeted `npx prettier --check <changed files>`.
             Run any additional local verification directly relevant to the fix.
 
