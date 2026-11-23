@@ -127,7 +127,12 @@ test('workflow and action callers use profiles instead of hardcoded bot lists', 
       const doc = load(fs.readFileSync(full, 'utf8'));
       const jobs = doc.runs ? [doc.runs] : Object.values(doc.jobs ?? {});
       for (const job of jobs) {
-        if (job.with?.['allowed-bots'] !== undefined) offenders.push(rel);
+        if (
+          job.with?.['allowed-bots'] !== undefined ||
+          job.with?.allowed_bots !== undefined
+        ) {
+          offenders.push(rel);
+        }
         const steps = job.steps ?? [];
         const envBlocks = [doc.env, job.env, ...steps.map((step) => step.env)];
         const hardcodedEnv = envBlocks.some((env) =>
@@ -147,7 +152,7 @@ test('workflow and action callers use profiles instead of hardcoded bot lists', 
           embedded.some(
             (value) =>
               typeof value === 'string' &&
-              /allowed-bots:\s*['"][^'"]*(?:\[bot\]|github-actions,)[^'"]*['"]/.test(
+              /allowed[-_]bots:\s*['"][^'"]*(?:\[bot\]|github-actions,)[^'"]*['"]/.test(
                 value,
               ),
           )
@@ -155,6 +160,17 @@ test('workflow and action callers use profiles instead of hardcoded bot lists', 
           offenders.push(rel);
         }
         for (const [index, step] of steps.entries()) {
+          const nativeValue = step.with?.allowed_bots;
+          if (
+            nativeValue !== undefined &&
+            !(
+              rel === 'actions/run-claude-params/action.yml' &&
+              nativeValue ===
+                '${{ steps.resolve-allowed-bots.outputs.allowed_bots }}'
+            )
+          ) {
+            offenders.push(rel);
+          }
           const value = step.with?.['allowed-bots'];
           if (value === undefined || value === '${{ inputs.allowed-bots }}')
             continue;
