@@ -550,13 +550,7 @@ candidate wakes and GraphQL cost from current open PR heads. Clear it or set it
 to `off` to stop scanning. Other values, including `canary` and `active`, also
 disable the scan in this rollout.
 
-Shadow runs on the existing cron slots, after `PR Orchestrator` completes,
-and on manual dispatch from the default branch. The shadow job checks out the
-default-branch commit, uses a read-only token, and queues behind any active
-shadow job. It makes one REST request to find completed shadow-enabled runs
-and skips the scan if the latest eligible run started less than five minutes
-ago. Skipped scans count toward that cooldown. For a manual sample without
-watchdog dispatches, set `dry_run` on the workflow dispatch.
+Shadow runs on the existing cron slots, after `PR Orchestrator` completes, and on manual dispatch from the default branch. Each scan uses the default-branch commit and a read-only token. GitHub keeps one scan running and one pending in the shared group, replacing older pending scans. Each recovery-cron comparison has its own group so it can run even when the shared queue is busy. For a manual sample without watchdog dispatches, set `dry_run` on the workflow dispatch.
 
 Each scan emits one `SHADOW_SWEEP_SUMMARY` JSON line with its trigger, GraphQL
 cost and remaining budget, PR and candidate counts, and comparison differences

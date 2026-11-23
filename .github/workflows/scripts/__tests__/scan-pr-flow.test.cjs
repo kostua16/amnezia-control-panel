@@ -4,11 +4,8 @@ const test = require('node:test');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { load } = require('js-yaml');
-const {
-  checkShadowCooldown,
-  planSweep,
-  scanPrFlow,
-} = require('../scan-pr-flow.cjs');
+const { planSweep, scanPrFlow } = require('../scan-pr-flow.cjs');
+const { renderTemplate } = require('./helpers/github-expression.cjs');
 
 const head = 'a'.repeat(40);
 const now = '2026-10-01T00:30:00.000Z';
@@ -111,78 +108,36 @@ test('shadow listens for orchestrator completions, manual dispatch and the origi
     checks: 'read',
     actions: 'read',
   });
-  assert.deepEqual(shadow.concurrency, {
-    group: 'pr-flow-sweep-shadow',
-    'cancel-in-progress': false,
-  });
+  const { group, 'cancel-in-progress': cancelInProgress } = shadow.concurrency;
+  assert.equal(cancelInProgress, false);
+  assert.equal(
+    renderTemplate(group, { github: { event: {} } }),
+    'pr-flow-sweep-shadow',
+  );
+  assert.equal(
+    renderTemplate(group, { github: { event: { schedule: scanOnly } } }),
+    'pr-flow-sweep-shadow',
+  );
+  for (const runId of [1, 2]) {
+    assert.equal(
+      renderTemplate(group, {
+        github: { event: { schedule: recovery }, run_id: runId },
+      }),
+      `pr-flow-sweep-shadow-recovery-${runId}`,
+    );
+  }
   assert.equal(workflow.concurrency, undefined);
-  const [checkout, cooldown, setup, scan] = shadow.steps;
+  assert.equal(shadow.steps.length, 3);
+  const [checkout, setup, scan] = shadow.steps;
   assert.match(checkout.uses, /^actions\/checkout@[0-9a-f]{40}$/);
   assert.deepEqual(checkout.with, {
     ref: '${{ github.sha }}',
     'persist-credentials': false,
   });
-  assert.equal(cooldown.id, 'cooldown');
-  assert.match(
-    cooldown.run,
-    /scan-pr-flow\.cjs --check-cooldown >> "\$GITHUB_OUTPUT"/,
-  );
   assert.equal(setup.uses, './.github/actions/setup-environment');
-  assert.equal(setup.if, "steps.cooldown.outputs.scan == 'true'");
-  assert.equal(scan.if, setup.if);
+  assert.equal(setup.if, undefined);
+  assert.equal(scan.if, undefined);
   assert.equal(scan.run, 'node .github/workflows/scripts/scan-pr-flow.cjs\n');
-});
-
-test('cooldown checks completed shadow runs with one REST read', () => {
-  const title = 'PR Flow Watchdog (shadow enabled)';
-  assert.ok(readWorkflow('pr-flow-watchdog.yml')['run-name'].includes(title));
-  const run = (id, startedAt, fields) => ({
-    id,
-    display_title: title,
-    run_started_at: `2026-10-01T00:${startedAt}Z`,
-    conclusion: 'success',
-    ...fields,
-  });
-  const ignored = [
-    run(10, '29:00'),
-    run(9, '29:00', { display_title: 'PR Flow Watchdog' }),
-    run(8, '29:00', { conclusion: 'cancelled' }),
-  ];
-  const lines = [];
-  let reads = 0;
-  const check = (runs) =>
-    checkShadowCooldown({
-      repository: 'org/repo',
-      branch: 'main',
-      runId: '10',
-      now: Date.parse(now),
-      log: (line) => lines.push(line),
-      execGh(command, args) {
-        reads += 1;
-        assert.equal(command, 'gh');
-        assert.deepEqual(args, [
-          'api',
-          '--method',
-          'GET',
-          'repos/org/repo/actions/workflows/pr-flow-watchdog.yml/runs',
-          '-f',
-          'branch=main',
-          '-f',
-          'status=completed',
-          '-f',
-          'per_page=100',
-        ]);
-        return JSON.stringify({ workflow_runs: [...ignored, ...runs] });
-      },
-    });
-
-  assert.equal(check([]), true);
-  assert.equal(reads, 1);
-  assert.equal(check([run(7, '25:00')]), true);
-  assert.equal(reads, 2);
-  assert.equal(check([run(6, '25:00'), run(7, '25:01')]), false);
-  assert.equal(reads, 3);
-  assert.deepEqual(lines, ['skipped: last shadow run 4 min ago']);
 });
 
 test('emits one machine-readable summary for an orchestrator completion', () => {

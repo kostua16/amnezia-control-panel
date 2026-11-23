@@ -60,7 +60,8 @@ jobs:
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
       (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     concurrency:
-      group: pr-flow-sweep-shadow
+      # Keep each scheduled comparison out of the replaceable scan queue.
+      group: ${{ github.event.schedule == '7,22,37,52 * * * *' && format('pr-flow-sweep-shadow-recovery-{0}', github.run_id) || 'pr-flow-sweep-shadow' }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -76,20 +77,12 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Check shadow sweep cooldown
-        id: cooldown
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/workflows/scripts/scan-pr-flow.cjs --check-cooldown >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/setup-environment
-        if: steps.cooldown.outputs.scan == 'true'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           install-deps: 'false'
       - name: Scan open PR heads in read-only mode
-        if: steps.cooldown.outputs.scan == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_FLOW_SWEEP_MODE: ${{ vars.PR_FLOW_SWEEP_MODE }}
