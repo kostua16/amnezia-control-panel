@@ -345,13 +345,14 @@ test('review comments are read from every thread, resolved or outdated, with the
   );
 });
 
-test('reviews carry only the REST fields the evaluator orders by', () => {
+test('reviews carry the REST fields the evaluator reads', () => {
   const { run } = fetchWith([
     response({
       reviews: conn([
         {
           databaseId: 1,
           author: bot('kilo-code-bot'),
+          body: 'review body',
           commit: null,
           submittedAt: null,
           state: 'PENDING',
@@ -362,12 +363,14 @@ test('reviews carry only the REST fields the evaluator orders by', () => {
   ]);
   const [review] = run().reviews;
   assert.deepEqual(Object.keys(review).sort(), [
+    'body',
     'commit_id',
     'id',
     'state',
     'submitted_at',
     'user',
   ]);
+  assert.equal(review.body, 'review body');
   assert.equal(review.commit_id, null);
   assert.equal(review.submitted_at, null);
 });
@@ -385,6 +388,7 @@ test('check runs and statuses are mapped to the REST casing and nesting', () => 
                   {
                     __typename: 'CheckRun',
                     name: 'Kilo Code Review',
+                    status: 'COMPLETED',
                     conclusion: 'CANCELLED',
                     checkSuite: {
                       app: { slug: 'kilo', name: 'Kilo' },
@@ -393,6 +397,7 @@ test('check runs and statuses are mapped to the REST casing and nesting', () => 
                   {
                     __typename: 'CheckRun',
                     name: 'in-flight',
+                    status: 'IN_PROGRESS',
                     conclusion: null,
                     checkSuite: null,
                   },
@@ -403,6 +408,7 @@ test('check runs and statuses are mapped to the REST casing and nesting', () => 
                     description: 'waiting',
                     targetUrl: null,
                     createdAt: '2026-01-01T10:00:00Z',
+                    updatedAt: '2026-01-01T10:00:30Z',
                   },
                 ]),
               },
@@ -419,10 +425,11 @@ test('check runs and statuses are mapped to the REST casing and nesting', () => 
   assert.deepEqual(checkRuns, [
     {
       name: 'Kilo Code Review',
+      status: 'completed',
       conclusion: 'cancelled',
       app: { slug: 'kilo', name: 'Kilo' },
     },
-    { name: 'in-flight', conclusion: null, app: null },
+    { name: 'in-flight', status: 'in_progress', conclusion: null, app: null },
   ]);
   assert.deepEqual(statuses, [
     {
@@ -431,6 +438,7 @@ test('check runs and statuses are mapped to the REST casing and nesting', () => 
       description: 'waiting',
       target_url: null,
       created_at: '2026-01-01T10:00:00Z',
+      updated_at: '2026-01-01T10:00:30Z',
     },
   ]);
 });
@@ -830,6 +838,7 @@ test('a caller can request only some connections and the others are never querie
                       description: 'ok',
                       targetUrl: 'https://example.test/run/1',
                       createdAt: '2026-01-01T10:00:00Z',
+                      updatedAt: '2026-01-01T10:00:05Z',
                     },
                   ]),
                 },
@@ -860,6 +869,7 @@ test('a caller can request only some connections and the others are never querie
       description: 'ok',
       target_url: 'https://example.test/run/1',
       created_at: '2026-01-01T10:00:00Z',
+      updated_at: '2026-01-01T10:00:05Z',
     },
   ]);
   assert.deepEqual(result.reviews, []);

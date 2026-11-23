@@ -26,17 +26,20 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 const {
   fetchReviewInputsGraphql,
   MAX_PAGES_PER_CONNECTION,
 } = require('./lib/review-inputs-graphql.cjs');
-// Shared gh GraphQL transport (synchronous, retries transient HTTP errors) and
-// the head-commit-date precedence helper — the exact ones orchestrate-pr-flow
+const { MAX_RETRIES, RETRY_BASE_MS, isTransient } = require('./lib/retry.cjs');
+// Shared gh GraphQL arg building (the load-bearing -f/-F split) and the
+// head-commit-date precedence helper — the exact ones orchestrate-pr-flow
 // uses, so both GraphQL consumers speak to `gh api graphql` the same way.
+// The transport itself is Auto Cover's own: it needs a large maxBuffer and a
+// scan-wide retry budget (see createAutoCoverGraphqlRunner).
 const {
+  buildGraphqlArgs,
   headCommittedAtFromCommits,
-  runGraphqlQuery,
 } = require('./orchestrate-pr-flow.cjs');
 
 const AUTO_COVER_MARKER = '<!-- auto-cover-review-summary -->';
@@ -287,7 +290,7 @@ function resolveAutoCoverSource(value = process.env.PR_FLOW_AUTO_COVER_SOURCE) {
 // null instead of collapsing to 0, which a monitor would read as "GraphQL
 // quota exhausted".
 function createGraphqlStats() {
-  return { cost: 0, remaining: null };
+  return { cost: 0, remaining: null, fellBack: false };
 }
 
 // Number(null) is 0 and Number('') is 0 — both finite — so a raw Number()
@@ -335,6 +338,69 @@ function withRateLimitRecording(runGraphql, stats) {
   };
 }
 
+// 64 MiB, matching the REST and `gh pr view` fetchers: a comment-heavy PR can
+// push a GraphQL response past Node's 1 MiB execFileSync default, and an
+// ENOBUFS there would silently degrade every large PR to the 7-call REST path.
+const GRAPHQL_MAX_BUFFER = 64 * 1024 * 1024;
+// Cumulative retry-sleep budget for ONE scan. The transport is synchronous
+// and the `cover` job caps at 10 minutes, so during a GraphQL 5xx incident
+// unbounded per-query backoff (MAX_RETRIES per query x up to 100 PRs) could
+// exceed the job timeout on sleeps alone. Once the budget is spent the
+// transport marks itself degraded and every remaining PR goes straight to
+// the REST fallback without sleeping.
+const DEFAULT_RETRY_BUDGET_MS = 60_000;
+
+// Cross-platform synchronous sleep (the scan loop is sync inside the worker).
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Auto Cover's gh GraphQL transport: same arg building as orchestrate-pr-flow,
+// but with a large maxBuffer and a scan-wide retry budget. `budget.degraded`
+// flips true once the budget cannot cover the next backoff; callers check it
+// to skip GraphQL entirely for the remaining PRs.
+function createAutoCoverGraphqlRunner({
+  execFileSyncImpl = execFileSync,
+  sleep = sleepSync,
+  retryBudgetMs = DEFAULT_RETRY_BUDGET_MS,
+} = {}) {
+  const budget = {
+    remainingMs: Number(retryBudgetMs) || 0,
+    degraded: false,
+  };
+  function runQuery(query, variables) {
+    const args = buildGraphqlArgs(query, variables);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const stdout = execFileSyncImpl('gh', args, {
+          encoding: 'utf8',
+          maxBuffer: GRAPHQL_MAX_BUFFER,
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        return JSON.parse(String(stdout ?? '').trim() || '{}');
+      } catch (error) {
+        const stderr = String(error?.stderr ?? '');
+        if (!isTransient(stderr) || attempt >= MAX_RETRIES - 1) throw error;
+        const delay = RETRY_BASE_MS * 2 ** attempt;
+        if (budget.degraded || delay > budget.remainingMs) {
+          // Budget spent: no more sleeping; every remaining PR falls back to
+          // REST immediately.
+          budget.degraded = true;
+          throw error;
+        }
+        budget.remainingMs -= delay;
+        console.warn(
+          `fetch-auto-cover-context: transient GraphQL error, retrying in ${delay}ms ` +
+            `(retry budget left ${budget.remainingMs}ms): ${stderr.split('\n')[0]}`,
+        );
+        sleep(delay);
+      }
+    }
+  }
+  return { runQuery, budget };
+}
+
 // GraphQL-backed replacement for fetchPrContext: the shared lib query covers
 // comments, review threads, reviews, check runs and commit statuses (REST
 // shapes, cursor pagination, loud errors); one small extra query covers the
@@ -351,11 +417,21 @@ async function fetchPrContextAuto({
   stats = null,
 }) {
   const gql = stats ? withRateLimitRecording(runGraphql, stats) : runGraphql;
+  const markFallback = () => {
+    if (stats) stats.fellBack = true;
+  };
   const pr = await viewPull(prNumber);
   const headSha = normalizeHeadSha(pr);
   // Reuse the already-fetched `gh pr view` payload on the REST path.
-  const restFallback = () =>
-    fetchPrContext({ fetchJson, viewPull: async () => pr, repo, prNumber });
+  const restFallback = () => {
+    markFallback();
+    return fetchPrContext({
+      fetchJson,
+      viewPull: async () => pr,
+      repo,
+      prNumber,
+    });
+  };
 
   if (!headSha) return restFallback();
 
@@ -383,6 +459,7 @@ async function fetchPrContextAuto({
     console.warn(
       `fetch-auto-cover-context: PR #${prNumber} GraphQL commits unavailable, using REST: ${error.message}`,
     );
+    markFallback();
     commits =
       (await fetchJson(`repos/${repo}/pulls/${prNumber}/commits`, {
         paginate: true,
@@ -399,6 +476,7 @@ async function fetchPrContextAuto({
       )
     : '';
   if (!headCommittedAt) {
+    markFallback();
     const payload = await fetchJson(`repos/${repo}/commits/${headSha}`);
     headCommittedAt = commitTimestamp(payload ?? {});
   }
@@ -527,6 +605,7 @@ async function fetchAutoCoverContext({
   fetchJson,
   viewPull,
   runGraphql,
+  createGraphqlRunner,
   source,
   concurrency = DEFAULT_CONCURRENCY,
   fixReviewWorkflow = DEFAULT_FIX_REVIEW_WORKFLOW,
@@ -547,7 +626,7 @@ async function fetchAutoCoverContext({
       count: 0,
       // Stable shape: quota monitors can read manifest.graphql on every scan,
       // including empty ones.
-      graphql: { cost: 0, remaining: null },
+      graphql: { cost: 0, remaining: null, fallbackPrs: [] },
     };
     fs.writeFileSync(path.join(outDir, 'prs-to-evaluate.txt'), '');
     fs.writeFileSync(
@@ -561,11 +640,17 @@ async function fetchAutoCoverContext({
   const viewPr = viewPull || createViewPull();
   // Transport selection is explicit: `source` (or PR_FLOW_AUTO_COVER_SOURCE,
   // default `graphql`) picks the shared-lib GraphQL path with per-PR REST
-  // fallback, or the legacy all-REST path. `runGraphql` is injectable for
-  // tests; production uses orchestrate-pr-flow's retrying gh transport.
+  // fallback, or the legacy all-REST path. Tests inject either a plain
+  // `runGraphql` function or a whole `createGraphqlRunner` factory (for the
+  // retry-budget/degraded behaviour); production uses the Auto Cover runner
+  // with its 64 MiB buffer and scan-wide retry budget.
   const resolvedSource = source ?? resolveAutoCoverSource();
-  const gql =
-    resolvedSource === 'graphql' ? runGraphql || runGraphqlQuery : null;
+  let gqlRunner = null;
+  if (resolvedSource === 'graphql') {
+    gqlRunner = runGraphql
+      ? { runQuery: runGraphql, budget: { degraded: false } }
+      : (createGraphqlRunner ?? createAutoCoverGraphqlRunner)();
+  }
   const fixReviewRuns = await fetchFixReviewRuns(
     fetcher,
     repo,
@@ -587,21 +672,28 @@ async function fetchAutoCoverContext({
       // counted for queries that errored mid-fetch.
       const stats = createGraphqlStats();
       try {
-        const ctx = gql
-          ? await fetchPrContextAuto({
-              runGraphql: gql,
-              fetchJson: fetcher,
-              viewPull: viewPr,
-              repo,
-              prNumber,
-              stats,
-            })
-          : await fetchPrContext({
-              fetchJson: fetcher,
-              viewPull: viewPr,
-              repo,
-              prNumber,
-            });
+        let ctx;
+        if (gqlRunner && !gqlRunner.budget.degraded) {
+          ctx = await fetchPrContextAuto({
+            runGraphql: gqlRunner.runQuery,
+            fetchJson: fetcher,
+            viewPull: viewPr,
+            repo,
+            prNumber,
+            stats,
+          });
+        } else {
+          // REST source, or the GraphQL retry budget is spent: go straight to
+          // REST without another GraphQL attempt or any sleeping. A degraded
+          // scan still marks the PR so manifest.graphql.fallbackPrs shows it.
+          if (gqlRunner) stats.fellBack = true;
+          ctx = await fetchPrContext({
+            fetchJson: fetcher,
+            viewPull: viewPr,
+            repo,
+            prNumber,
+          });
+        }
         writeContextFiles(outDir, prNumber, ctx, fixReviewRuns);
         return { pr: prNumber, ok: true, stats };
       } catch (error) {
@@ -620,10 +712,12 @@ async function fetchAutoCoverContext({
     .filter((r) => !r.ok)
     .map(({ pr, error }) => ({ pr, error }));
 
-  // Scan-level GraphQL quota numbers: summed cost, and the minimum finite
+  // Scan-level GraphQL quota numbers: summed cost, the minimum finite
   // `remaining` seen across all workers (the true low-water mark, not
-  // whichever worker happened to finish last). Unknown stays null.
-  const graphql = { cost: 0, remaining: null };
+  // whichever worker happened to finish last; unknown stays null), and the
+  // PRs that needed a REST fallback so a degraded scan is distinguishable
+  // from a healthy one.
+  const graphql = { cost: 0, remaining: null, fallbackPrs: [] };
   for (const result of results) {
     const stats = result?.stats;
     if (!stats) continue;
@@ -634,6 +728,7 @@ async function fetchAutoCoverContext({
           ? stats.remaining
           : Math.min(graphql.remaining, stats.remaining);
     }
+    if (stats.fellBack) graphql.fallbackPrs.push(result.pr);
   }
 
   if (list.length > 0 && ok.length === 0) {
@@ -702,6 +797,9 @@ module.exports = {
   createGraphqlStats,
   recordRateLimit,
   withRateLimitRecording,
+  createAutoCoverGraphqlRunner,
+  GRAPHQL_MAX_BUFFER,
+  DEFAULT_RETRY_BUDGET_MS,
   fetchPrCommitsGraphql,
   mapCommits,
   resolveAutoCoverSource,
