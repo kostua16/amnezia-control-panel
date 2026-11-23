@@ -29,10 +29,9 @@ on:
         type: boolean
 
 permissions:
-  # write: fallback merge credential. When every check (including the
-  # pr-flow/ready aggregate) is already green, `gh pr merge --auto` performs a
-  # direct merge (mergePullRequest) instead of enabling auto-merge, and a
-  # direct merge needs contents: write.
+  # write: fallback merge credential. The apply step performs a direct squash
+  # merge (mergePullRequest), which needs contents: write even though the
+  # merge itself runs on the PAT.
   contents: write
   checks: read
   pull-requests: write
@@ -140,19 +139,19 @@ jobs:
             echo "dry_run=$(jq -r '.dry_run' /tmp/finalizer-decision.json)"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Approve and enable auto-merge
+      - name: Approve and merge
         id: apply
         if: steps.decision.outputs.decision == 'approve_and_enable_automerge' && steps.decision.outputs.dry_run != 'true' && steps.metadata.outputs.same_repo == 'true' && steps.metadata.outputs.head_ref != '' && steps.metadata.outputs.decision_ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Merge uses the PAT: with all checks (incl. the pr-flow/ready
-          # aggregate) already green, `gh pr merge --auto` direct-merges via
-          # the mergePullRequest mutation, which the workflow GITHUB_TOKEN was
-          # denied ("Resource not accessible by integration"). A PAT merge
-          # also lets the resulting push trigger on-push workflows on main,
-          # which GITHUB_TOKEN-driven merges never do. Approval stays on
-          # GITHUB_TOKEN because the PAT owner authors these PRs and GitHub
-          # rejects self-approval.
+          # Merge uses the PAT: the direct squash merge (mergePullRequest
+          # mutation) was denied for the workflow GITHUB_TOKEN ("Resource not
+          # accessible by integration"). A PAT merge also lets the resulting
+          # push trigger on-push workflows on main, which GITHUB_TOKEN-driven
+          # merges never do, and it completes the merge while the pr-flow/*
+          # aggregate statuses (which mirror this very run) are still pending.
+          # Approval stays on GITHUB_TOKEN because the PAT owner authors
+          # these PRs and GitHub rejects self-approval.
           MERGE_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
         run: |
@@ -161,11 +160,17 @@ jobs:
           approve_output=$(gh pr review "$PR_NUMBER" --approve --body "PR finalizer: required validation and review signals passed." 2>&1)
           approve_exit=$?
 
-          merge_output=$(GH_TOKEN="$MERGE_TOKEN" gh pr merge "$PR_NUMBER" --auto --squash 2>&1)
+          # Direct squash merge, never --auto: at finalizer time the PR is
+          # necessarily BLOCKED because the required pr-flow/finalizer and
+          # pr-flow/ready aggregates mirror this run's own outcome, so gh
+          # --auto would fall back to enablePullRequestAutoMerge, which fails
+          # on repos with auto-merge disabled — an apply failure that feeds
+          # the orchestrator retry lane instead of merging.
+          merge_output=$(GH_TOKEN="$MERGE_TOKEN" gh pr merge "$PR_NUMBER" --squash 2>&1)
           merge_exit=$?
 
           status="success"
-          details="Approval submitted and auto-merge enabled."
+          details="Approval submitted and squash merge performed."
 
           if [ "$approve_exit" -ne 0 ] || [ "$merge_exit" -ne 0 ]; then
             status="failed"
@@ -174,7 +179,7 @@ jobs:
               details_parts+=("approve failed: $(printf '%s' "$approve_output" | tail -1)")
             fi
             if [ "$merge_exit" -ne 0 ]; then
-              details_parts+=("auto-merge failed: $(printf '%s' "$merge_output" | tail -1)")
+              details_parts+=("merge failed: $(printf '%s' "$merge_output" | tail -1)")
             fi
             details=$(printf '%s; ' "${details_parts[@]}")
             details=${details%; }
@@ -205,7 +210,7 @@ jobs:
       - name: Fail on finalizer apply error
         if: steps.apply.outputs.status == 'failed'
         run: |
-          echo "::error::PR finalizer could not complete approval or auto-merge. See finalizer status comment for details."
+          echo "::error::PR finalizer could not complete approval or merge. See finalizer status comment for details."
           exit 1
 
   wake-orchestrator:
