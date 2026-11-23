@@ -234,7 +234,13 @@ function runAutoCoverRepairs({
   warn = console.warn,
 }) {
   if (!MODES.includes(mode)) throw new Error(`Unknown mode: ${mode}`);
-  const result = { evaluated: 0, dispatched: 0, handedOff: 0, failed: [] };
+  const result = {
+    evaluated: 0,
+    dispatched: 0,
+    handedOff: 0,
+    failed: [],
+    unrecorded: [],
+  };
   for (const prNumber of readPrList(dir)) {
     // Names the step a failure came from, so a scan warning needs no guessing.
     let stage = 'evaluate';
@@ -281,22 +287,30 @@ function runAutoCoverRepairs({
         },
       });
     } catch (error) {
-      if (mode === 'revalidate') throw error;
       const message = String(error?.message ?? error)
         .replaceAll('%', '%25')
         .replaceAll('\r', '%0D')
         .replaceAll('\n', '%0A');
       warn(`::warning::PR #${prNumber} (${stage}): ${message}`);
-      result.failed.push(prNumber);
+      // A started fix-review is not a failed repair, but its attempt marker is
+      // missing, so the next scan could dispatch the same head again.
+      (stage === 'record attempt' ? result.unrecorded : result.failed).push(
+        prNumber,
+      );
     }
   }
   return result;
 }
 
 function summaryLine(mode, result) {
-  const failed = result.failed.length
-    ? ` ${result.failed.length} PR(s) failed: ${result.failed.map((n) => `#${n}`).join(', ')}.`
-    : '';
+  const list = (numbers) => numbers.map((n) => `#${n}`).join(', ');
+  const failed =
+    (result.failed.length
+      ? ` ${result.failed.length} PR(s) failed: ${list(result.failed)}.`
+      : '') +
+    (result.unrecorded.length
+      ? ` Dispatched but attempt not recorded for: ${list(result.unrecorded)}.`
+      : '');
   if (mode === 'delayed') {
     return `Evaluated ${result.evaluated} PR(s); handed off ${result.handedOff} PR(s) to ${DISPATCH_WORKFLOW} (quiet period before fix-review).${failed}`;
   }
@@ -344,7 +358,9 @@ function main(argv = process.argv, env = process.env) {
     fs.appendFileSync(env.GITHUB_STEP_SUMMARY, `${line}\n`);
   }
   console.log(line);
-  if (result.failed.length > 0) process.exitCode = 1;
+  if (result.failed.length > 0 || result.unrecorded.length > 0) {
+    process.exitCode = 1;
+  }
 }
 
 if (require.main === module) {

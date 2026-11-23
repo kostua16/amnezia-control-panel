@@ -138,6 +138,7 @@ test('delayed mode hands an eligible PR to the quiet-period workflow, nothing el
     dispatched: 0,
     handedOff: 1,
     failed: [],
+    unrecorded: [],
   });
 });
 
@@ -223,6 +224,7 @@ test('direct mode continues after a fix-review dispatch fails', () => {
     dispatched: 2,
     handedOff: 0,
     failed: ['8'],
+    unrecorded: [],
   });
   assert.ok(
     logs.includes(
@@ -244,7 +246,12 @@ test('a failed attempt comment after a started fix-review still counts as dispat
   });
 
   assert.equal(result.dispatched, 2);
-  assert.deepEqual(result.failed, ['7', '8']);
+  assert.deepEqual(result.failed, []);
+  assert.deepEqual(result.unrecorded, ['7', '8']);
+  assert.match(
+    summaryLine('direct', result),
+    /Dispatched but attempt not recorded for: #7, #8\./,
+  );
   assert.ok(
     logs.includes('::warning::PR #7 (record attempt): comment write failed'),
   );
