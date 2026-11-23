@@ -93,11 +93,17 @@ function leavesQuoteOpen(command) {
     const char = text[i];
     if (quote === "'") {
       if (char === "'") quote = null;
+    } else if (quote === "$'") {
+      // ANSI-C quoting: a backslash escapes the next character, even a quote.
+      if (char === '\\') i += 1;
+      else if (char === "'") quote = null;
     } else if (quote === '"') {
       if (char === '\\') i += 1;
       else if (char === '"') quote = null;
     } else if (char === '\\') {
       i += 1;
+    } else if (char === "'" && text[i - 1] === '$') {
+      quote = "$'";
     } else if (char === "'" || char === '"') {
       quote = char;
     } else if (char === '#' && (i === 0 || /\s/.test(text[i - 1]))) {
@@ -158,6 +164,7 @@ test('detector accepts valid run values', () => {
     '- run: npm ci # why this flag',
     '- run: echo "it\'s fine"',
     "- run: echo don\\'t",
+    "- run: echo $'it\\'s fine'",
     '- run: echo "${{ format(\'a {0}\', inputs.x) }}"',
     '- run: echo "${{ fromJSON(\'{"a":"}}"}\').a }}" \'x\'',
   ]) {
