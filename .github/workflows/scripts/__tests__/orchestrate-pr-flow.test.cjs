@@ -22,6 +22,7 @@ const {
   upsertFlowComment,
   usableStatusId,
 } = require('../orchestrate-pr-flow.cjs');
+const { selectStalePrs } = require('../watch-pr-flow.cjs');
 
 const policyPath = path.join(__dirname, '..', '..', 'policy.json');
 
@@ -1823,6 +1824,34 @@ test('Finalizer counts failures and timeouts, excluding cancelled and startup-fa
   assert.doesNotMatch(cancelledOnly.reason, /attempt 0/);
 });
 
+for (const conclusion of ['cancelled', 'startup_failure']) {
+  test(`Finalizer stops dispatching after eight ${conclusion} runs on one head`, () => {
+    const pr = {
+      ...basePr,
+      files: ['src/app/page.tsx'],
+      labels: ['ai-review-passed', 'security-review-passed'],
+    };
+    const finalizer = Array.from({ length: 7 }, (_, index) => ({
+      ...completedWorkerRun(conclusion, `2026-07-01T09:0${index}:00Z`),
+      databaseId: 900 + index,
+    }));
+    const context = finalizerRetryContext(pr, { finalizer, codeReview: [] });
+    assert.equal(makePrFlowDecision(context).dispatch?.key, 'finalizer');
+
+    finalizer.push({
+      ...completedWorkerRun(conclusion, '2026-07-01T09:07:00Z'),
+      databaseId: 907,
+    });
+    const decision = makePrFlowDecision(context);
+    assert.equal(decision.state, 'flow/manual-only');
+    assert.equal(decision.dispatch, null);
+    assert.match(decision.reason, /run limit \(8\)/);
+    const visibility = buildFlowVisibility({ ...context, decision });
+    assert.equal(visibility.aggregate.state, 'success');
+    assert.match(visibility.workers.finalizer.description, /run limit \(8\)/);
+  });
+}
+
 test('legacy Finalizer lookup joins head and recent runs, preferring the fresh head snapshot', () => {
   const { config } = finalizerRetryContext(basePr);
   const calls = [];
@@ -1848,7 +1877,10 @@ test('legacy Finalizer lookup joins head and recent runs, preferring the fresh h
       return JSON.stringify(
         args[0] === 'run'
           ? [stale, baseRun]
-          : [headRun, { ...headRun, id: 901 }],
+          : {
+              total_count: 2,
+              workflow_runs: [headRun, { ...headRun, id: 901 }],
+            },
       );
     },
   });
@@ -1874,7 +1906,7 @@ test('legacy Finalizer lookup joins head and recent runs, preferring the fresh h
     'repos/owner/repo/actions/workflows/pr-finalizer.yml/runs?head_sha=abc%2F123&per_page=50',
   );
   assert.equal(calls[1].args[2], '--jq');
-  assert.match(calls[1].args[3], /\bid\b.*\bdisplay_title\b/);
+  assert.match(calls[1].args[3], /\btotal_count\b.*\bid\b.*\bdisplay_title\b/);
   assert.equal(calls[1].options.allowFailure, false);
   assert.equal(unavailableWorkerRuns.size, 0);
 });
@@ -1897,6 +1929,23 @@ test('legacy Finalizer lookup skips the head read for cross-repository PRs', () 
   assert.equal(unavailableWorkerRuns.size, 0);
 });
 
+test('legacy Finalizer lookup returns recent runs on a head read error without a supplied set', () => {
+  const { config } = finalizerRetryContext(basePr);
+  const recent = [completedWorkerRun('failure')];
+  const warnings = [];
+  const runs = collectLegacyWorkerRuns(config, 'finalizer', basePr, {
+    getRepo: () => 'owner/repo',
+    warn: (message) => warnings.push(message),
+    runCommand: (_command, args) => {
+      if (args[0] === 'run') return JSON.stringify(recent);
+      throw new Error('HTTP 403');
+    },
+  });
+  assert.deepEqual(runs, recent);
+  assert.match(warnings[0], /HTTP 403/);
+  assert.deepEqual(collectLegacyWorkerRuns({}, 'finalizer', basePr), []);
+});
+
 test('legacy Finalizer history errors preserve recent runs and defer only Finalizer dispatch', () => {
   const pr = {
     ...basePr,
@@ -1913,7 +1962,8 @@ test('legacy Finalizer history errors preserve recent runs and defer only Finali
       throw new Error('HTTP 403');
     },
     () => 'invalid JSON',
-    () => '[{}]',
+    () => '{"total_count":1,"workflow_runs":[{}]}',
+    () => '{"total_count":51,"workflow_runs":[]}',
   ]) {
     const unavailableWorkerRuns = new Set();
     const warnings = [];
@@ -1936,14 +1986,44 @@ test('legacy Finalizer history errors preserve recent runs and defer only Finali
     assert.deepEqual(context.workerRuns.finalizer, recent);
     assert.deepEqual([...unavailableWorkerRuns], ['finalizer']);
     assert.equal(warnings.length, 1);
-    assert.match(warnings[0], /could not read finalizer history/i);
+    assert.match(
+      warnings[0],
+      /could not read finalizer history|history is truncated/i,
+    );
     const visibility = buildFlowVisibility({ ...context, decision });
-    assert.equal(visibility.workers.finalizer.state, 'error');
-    assert.equal(visibility.aggregate.state, 'error');
+    assert.equal(visibility.workers.finalizer.state, 'pending');
+    assert.equal(visibility.aggregate.state, 'pending');
     assert.match(
       makeComment({ pr, decision, visibility }),
       /history unavailable\. Dispatch deferred/i,
     );
+    const prForWatchdog = {
+      ...pr,
+      headRefOid: pr.headSha,
+      isDraft: false,
+      labels: [],
+    };
+    const getStatuses = () => [
+      { ...visibility.aggregate, created_at: '2026-07-01T09:00:00Z' },
+    ];
+    assert.deepEqual(
+      selectStalePrs([prForWatchdog], {
+        getStatuses,
+        now: '2026-07-01T09:29:59Z',
+      }),
+      [],
+    );
+    const [stale] = selectStalePrs([prForWatchdog], {
+      getStatuses,
+      now: '2026-07-01T09:30:00Z',
+    });
+    assert.deepEqual(stale.recoveryReasons, ['stale-ready-pending']);
+    const recovered = makePrFlowDecision({
+      ...context,
+      unavailableWorkerRuns: new Set(),
+    });
+    assert.equal(recovered.dispatch?.key, 'finalizer');
+    assert.match(recovered.reason, /attempt 1\/3/);
 
     const reviewDecision = makePrFlowDecision({
       ...context,

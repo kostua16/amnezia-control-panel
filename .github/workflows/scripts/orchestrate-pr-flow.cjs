@@ -459,6 +459,7 @@ function summarizeWorkerRuns(workerRuns, workerName, pr) {
     active,
     latest: runs[0] ?? null,
     failedCount,
+    runCount: runs.length,
   };
 }
 
@@ -480,6 +481,9 @@ function workerRunSucceeded(summary) {
 
 // One initial run and up to three automatic retries per PR head.
 const MAX_FINALIZER_RETRIES = 3;
+// Bound repeated cancellations and startup failures without charging them
+// against the four failed or timed-out attempts allowed above.
+const MAX_FINALIZER_RUNS = 8;
 
 // Maximum automatic re-dispatches of a failed code-review run per head SHA
 // (so at most MAX_CODE_REVIEW_RETRIES + 1 runs happen without a human).
@@ -907,11 +911,11 @@ function buildFlowVisibility({
   if (decision.finalizerRetriesExhausted) {
     statuses.finalizer = failureStatus(
       'finalizer',
-      'Finalizer retry limit reached. Manual merge required.',
+      decision.reason,
       getWorkerTargetUrl(finalizerRuns, currentRunUrl),
     );
   } else if (decision.finalizerHistoryUnavailable) {
-    statuses.finalizer = errorStatus('finalizer', decision.reason);
+    statuses.finalizer = waitingStatus('finalizer', decision.reason);
   } else if (manualOnly) {
     statuses.finalizer = skippedStatus('finalizer', 'N/A: PR is manual-only.');
   } else if (closedOrMerged) {
@@ -1017,8 +1021,7 @@ function buildFlowVisibility({
         decision.reason || 'PR is manual-only; orchestration is complete.';
     }
   } else if (decision.finalizerHistoryUnavailable) {
-    aggregateState = 'error';
-    aggregateDisplayState = 'error';
+    // Keep the aggregate pending so the stale-ready watchdog retries the wake.
     aggregateDescription = statuses.finalizer.description;
   } else if (manualOnly) {
     aggregateState = 'pending';
@@ -1112,7 +1115,9 @@ function buildFlowGuidance({
 
   if (decision.finalizerHistoryUnavailable) {
     addNext('Inspect the PR Orchestrator run for the finalizer history error.');
-    addNext('Rerun PR Orchestrator once GitHub can return the run history.');
+    addNext(
+      'The watchdog retries PR Orchestrator if this status stays pending.',
+    );
     addStopControl();
     return { nextSteps, controls };
   }
@@ -2280,11 +2285,14 @@ function makeDecision(context) {
   }
 
   const failedAttempts = finalizerRuns.failedCount;
-  if (failedAttempts > MAX_FINALIZER_RETRIES) {
+  const retryLimitReached = failedAttempts > MAX_FINALIZER_RETRIES;
+  if (retryLimitReached || finalizerRuns.runCount >= MAX_FINALIZER_RUNS) {
     return {
       ...finish(
         'flow/manual-only',
-        `Finalizer retry limit (${MAX_FINALIZER_RETRIES}) reached without auto-merge; falling back to manual merge.`,
+        retryLimitReached
+          ? `Finalizer retry limit (${MAX_FINALIZER_RETRIES}) reached without auto-merge. Manual merge required.`
+          : `Finalizer run limit (${MAX_FINALIZER_RUNS}) reached without auto-merge. Manual merge required.`,
         null,
         [],
         retryLabels,
@@ -2355,11 +2363,11 @@ function collectLegacyWorkerRuns(
   workerName,
   pr,
   {
-    unavailableWorkerRuns,
+    unavailableWorkerRuns = new Set(),
     runCommand = run,
     getRepo = getRepoSlug,
     warn = console.warn,
-  },
+  } = {},
 ) {
   const recent = collectWorkerRuns(config, workerName, { runCommand });
   if (workerName !== 'finalizer' || pr.isCrossRepository || !pr.headSha) {
@@ -2371,19 +2379,22 @@ function collectLegacyWorkerRuns(
   const workflow = config.workers?.finalizer?.workflow;
   if (!workflow) return recent;
   try {
-    const headRuns = runJson(
+    const headPage = runJson(
       'gh',
       [
         'api',
         `repos/${getRepo()}/actions/workflows/${workflow}/runs?head_sha=${encodeURIComponent(pr.headSha)}&per_page=50`,
         '--jq',
-        '[.workflow_runs[] | {id, status, conclusion, event, display_title, created_at, updated_at, html_url}]',
+        '{total_count, workflow_runs: [.workflow_runs[] | {id, status, conclusion, event, display_title, created_at, updated_at, html_url}]}',
       ],
       undefined,
       { runCommand },
     );
+    const headRuns = headPage?.workflow_runs;
     if (
       !Array.isArray(headRuns) ||
+      !Number.isInteger(headPage.total_count) ||
+      headPage.total_count < headRuns.length ||
       headRuns.some(
         (item) =>
           !Number.isInteger(item?.id) ||
@@ -2393,6 +2404,12 @@ function collectLegacyWorkerRuns(
       )
     ) {
       throw new Error('unexpected finalizer run history response');
+    }
+    if (headPage.total_count > headRuns.length) {
+      // A partial page can prove a limit has been reached, but cannot prove
+      // there is budget left to dispatch another run.
+      warn('orchestrate-pr-flow: finalizer head history is truncated');
+      unavailableWorkerRuns.add(workerName);
     }
     const byId = new Map(
       headRuns.map((item) => [item.id, toRunListShape(item)]),

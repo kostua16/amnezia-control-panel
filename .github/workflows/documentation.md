@@ -232,14 +232,14 @@ a human makes the final decision. Hard blockers such as `do-not-merge`,
 AI/security concern labels, and blocked dependency labels still fail
 `pr-flow/ready`.
 
-If Finalizer fails, PR Orchestrator allows up to three retries after the
-initial attempt. It counts failed Finalizer runs for the PR's current head
-SHA. Failed and timed-out runs consume attempts. Cancelled runs and startup
-failures leave the budget available. If the head history is unavailable,
-Orchestrator defers Finalizer dispatch and still publishes PR flow results.
-After the fourth counted failure, the orchestration comment and statuses
-direct the maintainer to the failed run and manual merge, and Orchestrator
-stops dispatching Finalizer for that head.
+PR Orchestrator stops dispatching Finalizer for the current head after four
+failed or timed-out runs, or eight total runs of any conclusion. At either
+limit, the orchestration comment and statuses direct the maintainer to the
+latest run and manual merge. When unavailable head history prevents a
+dispatch decision, Orchestrator defers Finalizer and publishes
+`pr-flow/ready` and `pr-flow/finalizer` as pending. The existing watchdog
+can wake Orchestrator again after the ready status has been pending for
+30 minutes.
 
 > See [PR Orchestrator Concurrency](#pr-orchestrator-concurrency) for how
 > `pr-flow.yml` groups runs by event class and why a cancelled `orchestrate`
