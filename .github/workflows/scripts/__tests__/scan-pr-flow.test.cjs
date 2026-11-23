@@ -1,0 +1,385 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { planSweep, scanPrFlow } = require('../scan-pr-flow.cjs');
+
+const head = 'a'.repeat(40);
+const now = '2026-10-01T00:30:00.000Z';
+const recovery = '7,22,37,52 * * * *';
+const scanOnly = '2,12,17,27,32,42,47,57 * * * *';
+const status = (
+  state,
+  created_at = '2026-10-01T00:00:00.000Z',
+  context = 'pr-flow/ready',
+) => ({
+  context,
+  state,
+  created_at,
+});
+const observation = (overrides) => ({
+  number: 1,
+  state: 'OPEN',
+  isDraft: false,
+  headVerified: true,
+  headRefOid: head,
+  labels: [],
+  statuses: [],
+  observedRuns: [],
+  ...overrides,
+});
+const node = (number, statuses = [], headRefOid = head) => ({
+  number,
+  state: 'OPEN',
+  isDraft: false,
+  headRefOid,
+  labels: { nodes: [], pageInfo: { hasNextPage: false } },
+  commits: {
+    nodes: [
+      {
+        commit: {
+          oid: headRefOid,
+          statusCheckRollup: {
+            contexts: {
+              pageInfo: { hasNextPage: false },
+              nodes: statuses.map(({ context, state, created_at }) => ({
+                __typename: 'StatusContext',
+                context,
+                state: state.toUpperCase(),
+                createdAt: created_at,
+              })),
+            },
+          },
+        },
+      },
+    ],
+  },
+});
+const page = (nodes, hasNextPage = false, endCursor = null) => ({
+  data: {
+    rateLimit: {
+      cost: 2,
+      remaining: 48,
+      limit: 50,
+      resetAt: '2026-10-01T01:00:00Z',
+    },
+    repository: {
+      pullRequests: { nodes, pageInfo: { hasNextPage, endCursor } },
+    },
+  },
+});
+const call = (options) =>
+  scanPrFlow({
+    mode: 'shadow',
+    repository: 'org/repo',
+    now,
+    log() {},
+    ...options,
+  });
+
+test('uses the watchdog reasons and its exact 30-minute boundary', () => {
+  const pending = status('pending');
+  const failure = status('failure');
+  const inputs = [
+    observation({ labels: ['flow/draft'] }),
+    observation({
+      number: 2,
+      statuses: [
+        pending,
+        status('pending', pending.created_at, 'pr-flow/kilo-review'),
+      ],
+    }),
+    observation({
+      number: 3,
+      statuses: [status('pending', '2026-10-01T00:00:00.001Z')],
+    }),
+    observation({
+      number: 4,
+      labels: ['flow/finalizer-dispatched'],
+      statuses: [failure],
+    }),
+    observation({ number: 5, statuses: [status('success')] }),
+    observation({ number: 6, isDraft: true }),
+    observation({ number: 7, state: 'CLOSED' }),
+  ];
+  const result = planSweep(inputs, {
+    now,
+    recoverySlot: true,
+    getStatusHistory: (pr) =>
+      Array(8).fill(pr.number === 4 ? failure : pending),
+  });
+  assert.deepEqual(
+    result.candidates.map(({ number, reasons }) => [number, reasons]),
+    [
+      [1, ['stale-draft', 'missing-ready-status']],
+      [2, ['expired-kilo-review', 'stale-ready-pending', 'ready-pending-loop']],
+      [3, ['ready-pending-loop']],
+      [4, ['stale-finalizer-failure', 'finalizer-failure-loop']],
+    ],
+  );
+  assert.deepEqual(
+    planSweep(inputs, { now, getStatusHistory: assert.fail }).candidates.map(
+      ({ number }) => number,
+    ),
+    [1, 2, 4],
+  );
+});
+
+test('only complete, unambiguous current-head check evidence supports a shadow check rescue', () => {
+  const requiredChecks = [{ workflow: 'CI', names: ['Test'] }];
+  const run = {
+    workflow: 'CI',
+    suiteId: 'suite',
+    databaseId: 5,
+    attempt: 1,
+    status: 'completed',
+    event: 'pull_request',
+  };
+  const check = {
+    name: 'Test',
+    suiteId: 'suite',
+    status: 'completed',
+    conclusion: 'success',
+    completedAt: '2026-10-01T00:28:00.000Z',
+  };
+  const ready = status('pending', '2026-10-01T00:27:00.000Z');
+  const pr = observation({
+    labels: ['flow/checks-pending'],
+    statuses: [ready],
+    checks: [check],
+    observedRuns: [run],
+    suitesComplete: true,
+  });
+  const reasons = (overrides = {}) =>
+    planSweep([{ ...pr, ...overrides }], {
+      now,
+      requiredChecks,
+    }).candidates.flatMap((item) => item.reasons);
+  assert.deepEqual(reasons(), ['checks-completed-after-ready']);
+  for (const overrides of [
+    { headVerified: false },
+    { suitesComplete: false },
+    { checks: null },
+    { checks: [] },
+    { observedRuns: [run, { ...run, attempt: 2 }] },
+    { observedRuns: [{ ...run, attempt: 2 }] },
+    { observedRuns: [{ ...run, event: 'push' }] },
+    { observedRuns: [{ ...run, workflow: 'Other' }] },
+    { checks: [{ ...check, suiteId: 'stale' }] },
+    { checks: [{ ...check, conclusion: 'cancelled' }] },
+    { checks: [{ ...check, completedAt: ready.created_at }] },
+    { checks: [{ ...check, completedAt: '2026-10-01T00:28:00.001Z' }] },
+    { statuses: [status('pending', '2026-10-01T00:29:00Z')] },
+  ])
+    assert.deepEqual(reasons(overrides), [], JSON.stringify(overrides));
+});
+
+test('off and unimplemented modes perform no work', () => {
+  for (const mode of [
+    '',
+    undefined,
+    'off',
+    'SHADOW',
+    'shdaow',
+    'canary',
+    'active',
+  ]) {
+    assert.deepEqual(
+      call({
+        mode,
+        execGh: assert.fail,
+        runGraphql: assert.fail,
+        log: assert.fail,
+      }),
+      { status: 'off' },
+    );
+  }
+});
+
+test('enumerates and deduplicates pages, discards a moved head, and reports page cost', () => {
+  const responses = [
+    page([node(1), node(2)], true, 'next'),
+    page([node(1), node(2, [], 'b'.repeat(40)), node(3)]),
+  ];
+  const calls = [];
+  const lines = [];
+  const summary = call({
+    schedule: scanOnly,
+    execGh: assert.fail,
+    log: (line) => lines.push(line),
+    runGraphql: (query, variables) => {
+      assert.match(query, /^\s*query OpenPrFlow/);
+      calls.push(variables.after);
+      return responses.shift();
+    },
+  });
+  assert.deepEqual(calls, [null, 'next']);
+  assert.deepEqual(summary.movedHeads, [2]);
+  assert.equal(summary.cost, 4);
+  assert.equal(summary.restReads, 0);
+  assert.equal(summary.comparison, null);
+  assert.deepEqual(
+    lines.slice(0, -1),
+    [1, 3].map(
+      (n) => `would wake PR #${n} because missing-ready-status (head=${head})`,
+    ),
+  );
+});
+
+test('rejects missing and repeated cursors before logging any wake', () => {
+  for (const cursor of [null, 'repeat']) {
+    const lines = [];
+    const result = call({
+      runGraphql: () => page([node(1)], true, cursor),
+      execGh: assert.fail,
+      log: (line) => lines.push(line),
+    });
+    assert.equal(result.status, 'unavailable');
+    assert.match(result.error, /missing or repeated cursor/);
+    assert.equal(lines.length, 1);
+  }
+});
+
+test('shrinks pathological pages, preserving the cursor and cost telemetry', () => {
+  const sizes = [];
+  const result = call({
+    execGh: assert.fail,
+    runGraphql: (_query, { first, after }) => {
+      assert.equal(after, null);
+      sizes.push(first);
+      if (first === 32)
+        return {
+          ...page([]),
+          errors: [
+            { type: 'RESOURCE_LIMITED', message: 'Query could not complete' },
+          ],
+        };
+      return page([node(1)]);
+    },
+  });
+  assert.deepEqual(sizes, [32, 16]);
+  assert.equal(result.cost, 4);
+  assert.equal(result.candidatePrs, 1);
+});
+
+test('low GraphQL quota stops discovery before any recovery comparison reads', () => {
+  const response = page([node(1)], true, 'next');
+  response.data.rateLimit.remaining = 1;
+  const result = call({
+    schedule: recovery,
+    execGh: assert.fail,
+    runGraphql: () => response,
+  });
+  assert.equal(result.status, 'unavailable');
+  assert.match(result.error, /budget is too low/);
+  assert.equal(result.pages.length, 1);
+  assert.equal(result.pages[0].remaining, 1);
+});
+
+test('retains usable GraphQL observations when gh exits with a partial response', () => {
+  const response = page([node(1), node(2)]);
+  response.errors = [
+    {
+      path: [
+        'repository',
+        'pullRequests',
+        'nodes',
+        0,
+        'commits',
+        'nodes',
+        0,
+        'commit',
+        'statusCheckRollup',
+      ],
+    },
+  ];
+  const result = call({
+    execGh() {
+      throw Object.assign(new Error('gh exited nonzero'), {
+        stdout: JSON.stringify(response),
+      });
+    },
+  });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.candidatePrs, 1);
+  assert.deepEqual(result.unknown, [{ number: 1, evidence: ['statuses'] }]);
+});
+
+test('recognizing a head-local finalizer run alone never drives a retry wake', () => {
+  const pr = observation({
+    labels: ['flow/finalizer-dispatched'],
+    statuses: [status('success')],
+    suitesComplete: false,
+    observedRuns: [
+      {
+        workflow: 'PR Finalizer',
+        databaseId: 5,
+        status: 'completed',
+        conclusion: 'failure',
+      },
+    ],
+  });
+  assert.deepEqual(
+    planSweep([pr], { now, recoverySlot: true, getStatusHistory: assert.fail })
+      .candidates,
+    [],
+  );
+});
+
+test('recovery comparison uses one history capture and performs only read calls even with dry_run=false', () => {
+  const pending = status('pending');
+  const argsSeen = [];
+  const lines = [];
+  const result = call({
+    schedule: recovery,
+    dryRun: false,
+    log: (line) => lines.push(line),
+    execGh(command, args, options) {
+      assert.equal(command, 'gh');
+      argsSeen.push(args.slice(0, 4));
+      assert.ok(options.maxBuffer > 0 && options.timeout > 0);
+      if (args[1] === 'graphql') {
+        assert.match(args[3], /^query=\s*query OpenPrFlow/);
+        assert.doesNotMatch(args[3], /\bmutation\b/);
+        return JSON.stringify(page([node(1, [pending]), node(2, [pending])]));
+      }
+      assert.deepEqual(args.slice(0, 3), ['api', '--method', 'GET']);
+      if (args[3] === `repos/org/repo/commits/${head}/statuses?per_page=100`)
+        return JSON.stringify(Array(8).fill(pending));
+      assert.equal(args[3], `repos/org/repo/commits/${head}/status`);
+      return JSON.stringify({ statuses: [pending] });
+    },
+  });
+  assert.equal(argsSeen.length, 3);
+  assert.equal(result.restReads, 2);
+  assert.deepEqual(result.comparison.differences, []);
+  assert.deepEqual(result.comparison.unknown, []);
+  assert.match(lines[1], /would wake PR #1 because ready-pending-loop/);
+});
+
+test('reports real comparator differences and keeps unavailable history distinct from empty', () => {
+  const pending = status('pending');
+  const success = status('success');
+  const common = {
+    schedule: recovery,
+    runGraphql: () => page([node(1, [pending])]),
+  };
+  const result = call({
+    ...common,
+    execGh: (_command, args) =>
+      JSON.stringify(
+        args[3].endsWith('/status') ? { statuses: [success] } : [],
+      ),
+  });
+  assert.deepEqual(result.comparison.differences, [
+    { number: 1, head, shadow: ['stale-ready-pending'], watchdog: [] },
+  ]);
+  const unknown = call({
+    ...common,
+    execGh: () => {
+      throw new Error('HTTP 403');
+    },
+  });
+  assert.deepEqual(unknown.unknown, [{ number: 1, evidence: ['history'] }]);
+  assert.deepEqual(unknown.comparison.unknown, [1]);
+  assert.deepEqual(unknown.comparison.differences, []);
+});

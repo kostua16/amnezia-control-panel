@@ -543,6 +543,20 @@ gh workflow run pr-flow.yml --ref main -f pr_number=<PR> -f dry_run=false
 
 `pr-flow-watchdog.yml` runs every 15 minutes away from the top of the hour and performs the same recovery automatically for open non-draft PRs that still have `flow/draft`.
 
+### PR Flow sweep shadow
+
+Set the repository Actions variable `PR_FLOW_SWEEP_MODE` to `shadow` to log
+candidate wakes and GraphQL cost from current open PR heads. Clear it or set it
+to `off` to stop scanning. Other values, including `canary` and `active`, also
+disable the scan in this rollout.
+
+The shadow job runs with a read-only token. Its scan-only cron adds no per-PR
+REST reads. On the existing recovery cron it compares the GraphQL observations
+with the watchdog's REST status selection for the same captured heads and shares
+one raw status-history read per head across both selections. Unavailable evidence
+is reported as unknown. The watchdog continues to own recovery on the original
+schedule and on manual dispatch.
+
 `project-manager.yml` runs every 10 minutes as the queue manager for open PRs,
 standalone issues, and low-load PR-producing workflows. By default it inspects
 up to 15 PRs or 15 issues in the selected queue route. Its deterministic script

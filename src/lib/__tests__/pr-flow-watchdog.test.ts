@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { describe, it } from 'node:test';
+import { load as loadYaml } from 'js-yaml';
 
 const require = createRequire(import.meta.url);
 const {
@@ -455,6 +456,61 @@ describe('PR flow workflow invariants', () => {
     assert.equal(permissions.get('actions'), 'write');
     // write: the watchdog labels ready-pending-loop PRs with pm-escalation.
     assert.equal(permissions.get('pull-requests'), 'write');
+  });
+
+  it('routes shadow and recovery by cron and gives shadow only read permissions', () => {
+    const workflow = loadYaml(
+      readWorkflow('.github/workflows/pr-flow-watchdog.yml'),
+    ) as {
+      on: { schedule: { cron: string }[]; workflow_dispatch: object };
+      concurrency: { group: string; 'cancel-in-progress': boolean };
+      jobs: {
+        watch: { if: string };
+        shadow: {
+          if: string;
+          permissions: Record<string, string>;
+          steps: object[];
+        };
+      };
+    };
+    const recovery = '7,22,37,52 * * * *';
+    const scanOnly = '2,12,17,27,32,42,47,57 * * * *';
+    assert.deepEqual(
+      workflow.on.schedule.map(({ cron }) => cron),
+      [recovery, scanOnly],
+    );
+    assert.ok(workflow.on.workflow_dispatch);
+    assert.equal(
+      workflow.jobs.watch.if,
+      `github.event_name == 'workflow_dispatch' || github.event.schedule == '${recovery}'`,
+    );
+    assert.equal(workflow.concurrency['cancel-in-progress'], true);
+    assert.equal(
+      workflow.concurrency.group,
+      `\${{ github.event.schedule == '${scanOnly}' && 'pr-flow-sweep-shadow' || 'pr-flow-watchdog' }}`,
+    );
+    const { shadow } = workflow.jobs;
+    assert.equal(
+      shadow.if,
+      `github.event_name == 'schedule' && vars.PR_FLOW_SWEEP_MODE == 'shadow' && (github.event.schedule == '${recovery}' || github.event.schedule == '${scanOnly}')`,
+    );
+    assert.deepEqual(shadow.permissions, {
+      contents: 'read',
+      'pull-requests': 'read',
+      statuses: 'read',
+      checks: 'read',
+      actions: 'read',
+    });
+    assert.ok(
+      shadow.steps.some(
+        (step) =>
+          'uses' in step && step.uses === './.github/actions/setup-environment',
+      ),
+    );
+    assert.deepEqual(
+      shadow.steps.flatMap((step) => ('run' in step ? [step.run] : [])),
+      ['node .github/workflows/scripts/scan-pr-flow.cjs\n'],
+    );
   });
 
   it('keeps orchestrated workers able to wake the orchestrator', () => {
