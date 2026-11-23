@@ -133,9 +133,20 @@ test('only Auto Cover jobs use the reserve gate, after the setup-environment rea
 });
 
 test('Auto Cover jobs stay soft about auth so an exhausted quota defers instead of failing setup', () => {
-  for (const file of ['auto-cover-review.yml', 'auto-cover-dispatch.yml']) {
-    const yaml = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
-    assert.match(yaml, /require-gh-auth: 'false'/, file);
+  const yamlLib = require('js-yaml');
+  const jobsWithSetup = {
+    'auto-cover-review.yml': 'cover',
+    'auto-cover-dispatch.yml': 'dispatch',
+  };
+  for (const [file, jobName] of Object.entries(jobsWithSetup)) {
+    const doc = yamlLib.load(
+      fs.readFileSync(path.join(workflowsDir, file), 'utf8'),
+    );
+    const setup = doc.jobs[jobName].steps.find((step) =>
+      String(step.uses ?? '').endsWith('/setup-environment'),
+    );
+    assert.ok(setup, `${file}: ${jobName} calls setup-environment`);
+    assert.equal(setup.with['require-gh-auth'], 'false', file);
   }
 });
 

@@ -217,13 +217,16 @@ test('HTTP 429 on the list read counts as quota exhaustion', () => {
   assert.deepEqual(gh.writes, []);
 });
 
-test('a bare HTTP 403 (permission or SSO) is not quota and keeps the fallback', () => {
+test('a bare HTTP 403 (permission or SSO) is reported as such, not as quota, and skips the doomed fallback', () => {
   const gh = fakeGh({
     listError: ghError('HTTP 403: Resource not accessible by integration'),
   });
   const result = reconcileLabels(['auto-fix'], POLICY, gh);
-  assert.equal(result.mode, 'legacy');
-  assert.ok(gh.writes.length > 0);
+  assert.equal(result.mode, 'skipped');
+  assert.deepEqual(gh.writes, []);
+  assert.deepEqual(gh.waits, []);
+  assert.match(gh.warnings[0], /lacks permission/);
+  assert.doesNotMatch(gh.warnings[0], /quota/i);
 });
 
 test('a non-quota list failure falls back to per-label --force setup', () => {

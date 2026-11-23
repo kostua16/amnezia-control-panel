@@ -28,6 +28,15 @@ function isQuotaError(error) {
   return /rate limit|HTTP 429\b|\(HTTP 429\)/i.test(errorText(error));
 }
 
+// A 403 that is not a rate limit (missing permission, SSO enforcement) cannot
+// succeed on any retry or per-label fallback either; it is reported as such
+// instead of as quota.
+function isForbiddenError(error) {
+  return (
+    !isQuotaError(error) && /HTTP 403\b|\(HTTP 403\)/i.test(errorText(error))
+  );
+}
+
 // A concurrent reconciler (another PR's run) created the label between our
 // read and our create: the label now exists, which is what we wanted.
 function isAlreadyExistsError(error) {
@@ -182,6 +191,7 @@ module.exports = {
   applyLabelPlan,
   createArgs,
   isAlreadyExistsError,
+  isForbiddenError,
   isNotFoundError,
   isQuotaError,
   listExistingLabels,

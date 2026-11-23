@@ -3,6 +3,7 @@ const fs = require('fs');
 const { execFileSync } = require('child_process');
 const {
   applyLabelPlan,
+  isForbiddenError,
   isQuotaError,
   listExistingLabels,
   planLabelChanges,
@@ -105,6 +106,12 @@ function reconcileLabels(names, labels, options = {}) {
     if (isQuotaError(error)) {
       warn(
         `::warning::Could not read repository labels (${detail}); GitHub API quota exhausted, skipping label setup — labels are idempotent setup, not validation.`,
+      );
+      return { mode: 'skipped', ensured: 0, total: names.length };
+    }
+    if (isForbiddenError(error)) {
+      warn(
+        `::warning::Could not read repository labels (${detail}); the token lacks permission here, so the per-label fallback would fail too — skipping label setup.`,
       );
       return { mode: 'skipped', ensured: 0, total: names.length };
     }
