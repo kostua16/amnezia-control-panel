@@ -82,6 +82,9 @@ auto-cover-review.yml
   -> AUTO_COVER_DELAY_MODE=delayed (default): hands each eligible PR to
      auto-cover-dispatch.yml; `direct` dispatches fix-review.yml itself
   -> dispatches fix-review.yml on `--ref main` with automation_review_loop=true
+  -> per-PR context fetch defaults to GraphQL (lib/review-inputs-graphql.cjs,
+     same adapter as pr-flow); repo variable PR_FLOW_AUTO_COVER_SOURCE=rest
+     is the rollback switch to the legacy all-REST fetch
   -> allows manual-only / needs-review PRs to be repaired, but never approves,
      merges, removes needs-review, or bypasses do-not-merge
 

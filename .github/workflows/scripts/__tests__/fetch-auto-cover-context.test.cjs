@@ -10,14 +10,11 @@ const {
   mapWithConcurrency,
   extractAttempts,
   fetchPrContext,
-  fetchPrContextViaGraphql,
   commitTimestamp,
   fetchAutoCoverContext,
-  assertNoGraphqlErrors,
+  fetchPrCommitsGraphql,
+  mapCommits,
   resolveAutoCoverSource,
-  mapIssueComments,
-  mapStatuses,
-  mapCheckRuns,
   AUTO_COVER_MARKER,
 } = require('../fetch-auto-cover-context.cjs');
 const { evaluateExternalReview } = require('../evaluate-external-review.cjs');
@@ -153,6 +150,7 @@ test('fetchAutoCoverContext treats an empty scan as a clean no-op', async () => 
     repo: 'owner/repo',
     prs: [],
     outDir: dir,
+    source: 'rest',
     fetchJson: async () => {
       fetched = true;
       return null;
@@ -208,6 +206,7 @@ test('fetchAutoCoverContext shares fix-review runs across PRs and writes files',
     repo: 'owner/repo',
     prs: ['1', '2'],
     outDir: dir,
+    source: 'rest',
     fetchJson,
     viewPull,
     concurrency: 2,
@@ -276,6 +275,7 @@ test('fetchAutoCoverContext isolates a per-PR failure so the rest of the scan co
     repo: 'owner/repo',
     prs: ['10', '11'],
     outDir: dir,
+    source: 'rest',
     fetchJson,
     viewPull,
     concurrency: 2,
@@ -321,6 +321,7 @@ test('fetchAutoCoverContext surfaces rate-limit errors instead of masking as emp
       repo: 'owner/repo',
       prs: ['9'],
       outDir: dir,
+      source: 'rest',
       fetchJson,
       viewPull,
     }),
@@ -330,130 +331,168 @@ test('fetchAutoCoverContext surfaces rate-limit errors instead of masking as emp
 });
 
 // ---------------------------------------------------------------------------
-// GraphQL context path: one query per PR replaces seven REST calls, and the
-// written files keep the REST field shapes the consumers read.
+// GraphQL context path: the shared lib/review-inputs-graphql.cjs adapter plus
+// the Auto Cover commits query replace the seven per-PR REST calls. The
+// written files keep the REST shapes; GraphQL doubt falls back to REST per PR
+// and never silently becomes an empty context.
 // ---------------------------------------------------------------------------
 
 const HEAD_SHA = 'headsha';
+const PAGE_INFO_DONE = { hasNextPage: false, endCursor: null };
 
-function graphqlPullPayload(overrides = {}) {
-  return {
-    rateLimit: { cost: 1, remaining: 4999 },
-    repository: {
-      pullRequest: {
-        comments: {
-          pageInfo: { hasNextPage: false },
-          nodes: [
-            {
-              databaseId: 101,
-              body: `${AUTO_COVER_MARKER}\ndispatched`,
-              createdAt: '2026-06-24T10:00:00Z',
-              updatedAt: '2026-06-24T10:00:00Z',
-              author: { login: 'github-actions', __typename: 'Bot' },
-            },
-            {
-              databaseId: 102,
-              body: 'human note',
-              createdAt: '2026-06-24T10:05:00Z',
-              updatedAt: '2026-06-24T10:05:00Z',
-              author: { login: 'octocat', __typename: 'User' },
-            },
-          ],
-        },
-        reviewThreads: {
-          pageInfo: { hasNextPage: false },
-          nodes: [
-            {
-              comments: {
-                pageInfo: { hasNextPage: false },
+function viewPullHead(headRefOid = HEAD_SHA) {
+  return async (prNumber) => ({
+    number: Number(prNumber),
+    headRefOid,
+    state: 'OPEN',
+    mergedAt: null,
+    isDraft: false,
+    headRefName: 'feat-x',
+    baseRefName: 'main',
+    labels: [{ name: 'ai-review-concerns' }],
+    isCrossRepository: false,
+    files: [{ path: 'src/lib/a.ts', additions: 1, deletions: 0 }],
+  });
+}
+
+// Envelope shaped exactly like lib/review-inputs-graphql.cjs expects from
+// `gh api graphql` (its REVIEW_INPUTS_QUERY selection set).
+function reviewInputsResponse(overrides = {}) {
+  const pr = {
+    headRefOid: HEAD_SHA,
+    commits: {
+      nodes: [
+        {
+          commit: {
+            oid: HEAD_SHA,
+            statusCheckRollup: {
+              contexts: {
                 nodes: [
                   {
-                    databaseId: 201,
-                    body: '**WARNING:** missing guard',
-                    path: 'src/lib/a.ts',
-                    originalCommit: { oid: HEAD_SHA },
-                    commit: { oid: HEAD_SHA },
-                    createdAt: '2026-06-24T11:00:00Z',
-                    updatedAt: '2026-06-24T11:00:00Z',
-                    author: { login: 'kilo-code-bot', __typename: 'Bot' },
+                    __typename: 'CheckRun',
+                    name: 'Kilo Code Review',
+                    conclusion: 'SUCCESS',
+                    checkSuite: {
+                      app: { slug: 'kilo-code', name: 'Kilo Code' },
+                    },
+                  },
+                  {
+                    __typename: 'StatusContext',
+                    context: 'pr-flow/kilo-review',
+                    state: 'PENDING',
+                    description: null,
+                    targetUrl: null,
+                    createdAt: '2026-06-24T12:01:00Z',
                   },
                 ],
+                pageInfo: PAGE_INFO_DONE,
               },
             },
-          ],
+          },
         },
-        reviews: {
-          pageInfo: { hasNextPage: false },
-          nodes: [
-            {
-              databaseId: 301,
-              body: 'review body',
-              state: 'COMMENTED',
-              submittedAt: '2026-06-24T11:00:00Z',
-              commit: { oid: HEAD_SHA },
-              author: { login: 'kilo-code-bot', __typename: 'Bot' },
-            },
-          ],
+      ],
+    },
+    comments: {
+      nodes: [
+        {
+          databaseId: 101,
+          author: { __typename: 'Bot', login: 'github-actions' },
+          body: `${AUTO_COVER_MARKER}\ndispatched`,
+          createdAt: '2026-06-24T10:00:00Z',
+          updatedAt: '2026-06-24T10:00:00Z',
         },
-        commits: {
-          pageInfo: { hasNextPage: false },
-          nodes: [
-            {
-              commit: {
-                oid: HEAD_SHA,
-                message: 'feat: thing',
-                authoredDate: '2026-06-24T11:59:00Z',
-                committedDate: '2026-06-24T12:00:00Z',
+        {
+          databaseId: 102,
+          author: { __typename: 'User', login: 'octocat' },
+          body: 'human note',
+          createdAt: '2026-06-24T10:05:00Z',
+          updatedAt: '2026-06-24T10:05:00Z',
+        },
+      ],
+      pageInfo: PAGE_INFO_DONE,
+    },
+    reviews: {
+      nodes: [
+        {
+          databaseId: 11,
+          author: { __typename: 'Bot', login: 'kilo-code-bot' },
+          commit: { oid: HEAD_SHA },
+          submittedAt: '2026-06-24T11:00:00Z',
+          state: 'COMMENTED',
+        },
+      ],
+      pageInfo: PAGE_INFO_DONE,
+    },
+    reviewThreads: {
+      nodes: [
+        {
+          comments: {
+            nodes: [
+              {
+                databaseId: 201,
+                author: { __typename: 'Bot', login: 'kilo-code-bot' },
+                body: '**WARNING:** missing guard',
+                commit: { oid: HEAD_SHA },
+                originalCommit: { oid: HEAD_SHA },
+                createdAt: '2026-06-24T11:00:00Z',
+                updatedAt: '2026-06-24T11:00:00Z',
               },
-            },
-          ],
+            ],
+            pageInfo: PAGE_INFO_DONE,
+          },
         },
-        headCommit: {
-          nodes: [
-            {
-              commit: {
-                oid: HEAD_SHA,
-                committedDate: '2026-06-24T12:00:00Z',
-                status: {
-                  contexts: [
-                    {
-                      context: 'pr-flow/kilo-review',
-                      state: 'PENDING',
-                      createdAt: '2026-06-24T12:01:00Z',
-                      targetUrl: null,
-                      description: null,
-                    },
-                  ],
-                },
-                checkSuites: {
-                  pageInfo: { hasNextPage: false },
-                  nodes: [
-                    {
-                      app: { slug: 'kilo-code', name: 'Kilo Code' },
-                      checkRuns: {
-                        pageInfo: { hasNextPage: false },
-                        nodes: [
-                          {
-                            name: 'Kilo Code Review',
-                            status: 'COMPLETED',
-                            conclusion: 'SUCCESS',
-                          },
-                        ],
-                      },
-                    },
-                  ],
-                },
-              },
-            },
-          ],
-        },
-        ...overrides,
-      },
+      ],
+      pageInfo: PAGE_INFO_DONE,
+    },
+    ...overrides,
+  };
+  return {
+    data: {
+      rateLimit: { cost: 1, remaining: 4999 },
+      repository: { pullRequest: pr },
     },
   };
 }
 
-function legacyFetchJson(recorder, prHeadShas = {}) {
+function commitsResponse(
+  nodes = [
+    {
+      commit: {
+        oid: HEAD_SHA,
+        message: 'feat: thing',
+        authoredDate: '2026-06-24T11:59:00Z',
+        committedDate: '2026-06-24T12:00:00Z',
+      },
+    },
+  ],
+  pageInfo = PAGE_INFO_DONE,
+) {
+  return {
+    data: { repository: { pullRequest: { commits: { nodes, pageInfo } } } },
+  };
+}
+
+// Synchronous fake for the shared gh transport, dispatching on the operation.
+function fakeRunGraphql({
+  reviewInputs = reviewInputsResponse(),
+  commits = commitsResponse(),
+  recorder = null,
+} = {}) {
+  return (query, variables) => {
+    if (recorder) recorder.push({ query, variables });
+    const resolve = (value) => {
+      if (value instanceof Error) throw value;
+      if (typeof value === 'function') return value(variables);
+      return value;
+    };
+    if (String(query).includes('AutoCoverPrCommits')) return resolve(commits);
+    return resolve(reviewInputs);
+  };
+}
+
+// Legacy REST fake covering every endpoint the all-REST path (and the GraphQL
+// fallbacks) read, recording each call for quota assertions.
+function legacyFetchJson(recorder) {
   return async (apiPath, opts = {}) => {
     recorder.push({ apiPath, opts });
     if (apiPath.includes('/actions/workflows/fix-review.yml/runs')) {
@@ -463,7 +502,6 @@ function legacyFetchJson(recorder, prHeadShas = {}) {
       /\/commits\/([^/]+?)(\/status|\/check-runs)?$/,
     );
     if (headMatch) {
-      const sha = headMatch[1];
       const sub = headMatch[2];
       if (!sub)
         return { commit: { committer: { date: '2026-06-24T12:00:00Z' } } };
@@ -476,13 +514,13 @@ function legacyFetchJson(recorder, prHeadShas = {}) {
         check_runs: [{ name: 'Kilo Code Review', conclusion: 'success' }],
       };
     }
-    if (
-      apiPath.includes('/comments') ||
-      apiPath.includes('/reviews') ||
-      apiPath.includes('/commits')
-    ) {
-      return [];
-    }
+    if (apiPath.includes('/issues/') && apiPath.includes('/comments'))
+      return [{ body: 'rest comment', user: { login: 'octocat' } }];
+    if (apiPath.includes('/pulls/') && apiPath.includes('/comments'))
+      return [{ body: 'rest review comment' }];
+    if (apiPath.includes('/reviews')) return [{ body: 'rest review' }];
+    if (apiPath.includes('/commits'))
+      return [{ sha: 'restsha', commit: { message: 'fix(review): via REST' } }];
     return null;
   };
 }
@@ -499,6 +537,7 @@ test('repro: legacy REST path costs 7 REST calls per PR plus 1 shared run list',
     repo: 'owner/repo',
     prs: ['1', '2'],
     outDir: dir,
+    source: 'rest',
     fetchJson: legacyFetchJson(calls),
     viewPull,
     concurrency: 2,
@@ -517,115 +556,77 @@ test('repro: legacy REST path costs 7 REST calls per PR plus 1 shared run list',
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('graphql path: one query per PR, zero per-PR REST calls, REST-shaped files', async () => {
+test('graphql path: lib query + commits query per PR, zero per-PR REST calls, REST-shaped files', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
   const restCalls = [];
   const gqlCalls = [];
-  const viewPull = async (prNumber) => ({
-    number: Number(prNumber),
-    headRefOid: HEAD_SHA,
-    state: 'OPEN',
-    mergedAt: null,
-    isDraft: false,
-    headRefName: 'feat-x',
-    baseRefName: 'main',
-    labels: [{ name: 'ai-review-concerns' }],
-    isCrossRepository: false,
-    files: [{ path: 'src/lib/a.ts', additions: 1, deletions: 0 }],
-  });
-  const graphql = async (query, variables) => {
-    gqlCalls.push({ query, variables });
-    return graphqlPullPayload();
-  };
   const manifest = await fetchAutoCoverContext({
     repo: 'owner/repo',
     prs: ['1', '2'],
     outDir: dir,
+    source: 'graphql',
     fetchJson: legacyFetchJson(restCalls),
-    viewPull,
-    graphql,
+    viewPull: viewPullHead(),
+    runGraphql: fakeRunGraphql({ recorder: gqlCalls }),
     concurrency: 2,
   });
   assert.deepEqual(manifest.ok, ['1', '2']);
-  // one GraphQL query per PR, no per-PR REST calls (only the shared run list)
-  assert.equal(gqlCalls.length, 2);
-  assert.equal(gqlCalls[0].variables.number, 1);
-  assert.equal(gqlCalls[1].variables.number, 2);
-  // the per-query cost from the rateLimit node is accounted in the manifest
-  assert.equal(manifest.graphql.cost, 2);
-  assert.equal(manifest.graphql.remaining, 4999);
-  const perPrRest = restCalls.filter(
-    ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
-  );
-  assert.deepEqual(perPrRest, []);
+  // 2 GraphQL requests per PR (shared review-inputs query + commits query),
+  // and the only REST call in the whole scan is the shared fix-review run list.
+  assert.equal(gqlCalls.length, 4);
   assert.equal(restCalls.length, 1);
+  assert.ok(restCalls[0].apiPath.includes('/actions/workflows/'));
+  const inputsNumbers = gqlCalls
+    .filter(({ query }) => !String(query).includes('AutoCoverPrCommits'))
+    .map(({ variables }) => variables.number)
+    .sort();
+  assert.deepEqual(inputsNumbers, [1, 2]);
 
   for (const pr of ['1', '2']) {
-    const comments = JSON.parse(
-      fs.readFileSync(path.join(dir, `pr-${pr}-comments.json`), 'utf8'),
-    );
-    // bot logins keep the REST `[bot]` suffix consumers match on
+    const read = (name) =>
+      JSON.parse(
+        fs.readFileSync(path.join(dir, `pr-${pr}-${name}.json`), 'utf8'),
+      );
+    const comments = read('comments');
+    // REST ids kept, bot logins keep the `[bot]` suffix consumers match on
+    assert.equal(comments[0].id, 101);
     assert.equal(comments[0].user.login, 'github-actions[bot]');
     assert.equal(comments[1].user.login, 'octocat');
     assert.equal(comments[0].created_at, '2026-06-24T10:00:00Z');
-    // REST `id` (databaseId) is carried through for id-addressed consumers
-    assert.equal(comments[0].id, 101);
-    const attempts = JSON.parse(
-      fs.readFileSync(path.join(dir, `pr-${pr}-attempts.json`), 'utf8'),
-    );
-    assert.equal(attempts.length, 1);
-    const reviewComments = JSON.parse(
-      fs.readFileSync(path.join(dir, `pr-${pr}-review-comments.json`), 'utf8'),
-    );
+    assert.equal(read('attempts').length, 1);
+    const reviewComments = read('review-comments');
     assert.equal(reviewComments.length, 1);
     assert.equal(reviewComments[0].id, 201);
     assert.equal(reviewComments[0].original_commit_id, HEAD_SHA);
     assert.equal(reviewComments[0].commit_id, HEAD_SHA);
     assert.equal(reviewComments[0].user.login, 'kilo-code-bot[bot]');
-    const reviews = JSON.parse(
-      fs.readFileSync(path.join(dir, `pr-${pr}-reviews.json`), 'utf8'),
-    );
-    assert.equal(reviews[0].id, 301);
+    const reviews = read('reviews');
+    assert.equal(reviews[0].id, 11);
     assert.equal(reviews[0].state, 'COMMENTED');
     assert.equal(reviews[0].commit_id, HEAD_SHA);
     assert.equal(reviews[0].submitted_at, '2026-06-24T11:00:00Z');
     assert.equal(reviews[0].user.login, 'kilo-code-bot[bot]');
-    const commits = JSON.parse(
-      fs.readFileSync(path.join(dir, `pr-${pr}-commits.json`), 'utf8'),
-    );
+    const commits = read('commits');
     assert.equal(commits[0].sha, HEAD_SHA);
     assert.equal(commits[0].commit.message, 'feat: thing');
     assert.equal(commits[0].commit.committer.date, '2026-06-24T12:00:00Z');
-    const statuses = JSON.parse(
-      fs.readFileSync(path.join(dir, `pr-${pr}-statuses.json`), 'utf8'),
-    );
-    assert.deepEqual(statuses, [
+    assert.deepEqual(read('statuses'), [
       {
         context: 'pr-flow/kilo-review',
         state: 'pending',
-        created_at: '2026-06-24T12:01:00Z',
-        // StatusContext has no updatedAt in the GraphQL schema; the freshness
-        // fallback prefers created_at anyway.
-        updated_at: null,
-        target_url: null,
         description: null,
+        target_url: null,
+        created_at: '2026-06-24T12:01:00Z',
       },
     ]);
-    const checkRuns = JSON.parse(
-      fs.readFileSync(path.join(dir, `pr-${pr}-check-runs.json`), 'utf8'),
-    );
-    assert.deepEqual(checkRuns, [
+    assert.deepEqual(read('check-runs'), [
       {
         name: 'Kilo Code Review',
-        status: 'completed',
         conclusion: 'success',
         app: { slug: 'kilo-code', name: 'Kilo Code' },
       },
     ]);
-    const prJson = JSON.parse(
-      fs.readFileSync(path.join(dir, `pr-${pr}-pr.json`), 'utf8'),
-    );
-    assert.equal(prJson.headCommittedAt, '2026-06-24T12:00:00Z');
+    assert.equal(read('pr').headCommittedAt, '2026-06-24T12:00:00Z');
     assert.equal(
       fs.readFileSync(path.join(dir, `pr-${pr}-head-sha`), 'utf8'),
       HEAD_SHA,
@@ -636,25 +637,14 @@ test('graphql path: one query per PR, zero per-PR REST calls, REST-shaped files'
 
 test('graphql context files drive the real consumers to the expected verdicts', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
-  const viewPull = async () => ({
-    number: 5,
-    headRefOid: HEAD_SHA,
-    state: 'OPEN',
-    mergedAt: null,
-    isDraft: false,
-    headRefName: 'feat-y',
-    baseRefName: 'main',
-    labels: [{ name: 'ai-review-concerns' }],
-    isCrossRepository: false,
-    files: [{ path: 'src/lib/a.ts', additions: 1, deletions: 0 }],
-  });
   await fetchAutoCoverContext({
     repo: 'owner/repo',
     prs: ['5'],
     outDir: dir,
+    source: 'graphql',
     fetchJson: legacyFetchJson([]),
-    viewPull,
-    graphql: async () => graphqlPullPayload(),
+    viewPull: viewPullHead(),
+    runGraphql: fakeRunGraphql(),
   });
   const read = (name) =>
     JSON.parse(fs.readFileSync(path.join(dir, `pr-5-${name}.json`), 'utf8'));
@@ -668,7 +658,7 @@ test('graphql context files drive the real consumers to the expected verdicts', 
     statuses: read('statuses'),
     now: '2026-06-24T12:05:00Z',
   });
-  // Kilo inline WARNING on the current head blocks, exactly like REST-sourced data.
+  // Kilo inline WARNING on the current head blocks, exactly like REST data.
   assert.equal(external.state, 'blocked');
   const decision = evaluateAutoCoverReview({
     pr,
@@ -685,281 +675,358 @@ test('graphql context files drive the real consumers to the expected verdicts', 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('graphql path falls back to REST when a connection page overflows', async () => {
+test('a 200 response carrying GraphQL errors falls back to REST, never empty context', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
   const restCalls = [];
-  const payload = graphqlPullPayload({
-    comments: { pageInfo: { hasNextPage: true }, nodes: [] },
-  });
-  const fetchJson = async (apiPath, opts = {}) => {
-    restCalls.push({ apiPath, opts });
-    if (apiPath.includes('/actions/workflows/fix-review.yml/runs')) {
-      return { workflow_runs: [] };
-    }
-    if (apiPath.includes('/issues/3/comments')) {
-      return [{ body: 'rest comment', user: { login: 'octocat' } }];
-    }
-    if (apiPath.endsWith(`/commits/${HEAD_SHA}`)) {
-      return { commit: { committer: { date: '2026-06-24T12:00:00Z' } } };
-    }
-    if (apiPath.endsWith(`/commits/${HEAD_SHA}/status`))
-      return { statuses: [] };
-    if (apiPath.endsWith(`/commits/${HEAD_SHA}/check-runs`))
-      return { check_runs: [] };
-    return [];
-  };
   const manifest = await fetchAutoCoverContext({
     repo: 'owner/repo',
-    prs: ['3'],
+    prs: ['6'],
     outDir: dir,
-    fetchJson,
-    viewPull: async () => ({ number: 3, headRefOid: HEAD_SHA, state: 'open' }),
-    graphql: async () => payload,
+    source: 'graphql',
+    fetchJson: legacyFetchJson(restCalls),
+    viewPull: viewPullHead(),
+    runGraphql: fakeRunGraphql({
+      reviewInputs: {
+        data: { repository: { pullRequest: { comments: { nodes: [] } } } },
+        errors: [{ message: 'Something broke server-side' }],
+      },
+    }),
   });
-  assert.deepEqual(manifest.ok, ['3']);
-  // only the overflowed list is refetched through REST
-  const commentCalls = restCalls.filter(({ apiPath }) =>
-    apiPath.includes('/issues/3/comments'),
+  assert.deepEqual(manifest.ok, ['6']);
+  // The lib rejected the errored payload, so the whole PR context came from
+  // REST: 7 per-PR REST calls + the shared run list.
+  const perPr = restCalls.filter(
+    ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
   );
-  assert.equal(commentCalls.length, 1);
-  assert.deepEqual(commentCalls[0].opts, { paginate: true });
-  const reviewCalls = restCalls.filter(({ apiPath }) =>
-    apiPath.includes('/pulls/3/'),
-  );
-  assert.equal(reviewCalls.length, 0);
-  const headCalls = restCalls.filter(({ apiPath }) =>
-    apiPath.includes(`/commits/${HEAD_SHA}`),
-  );
-  assert.equal(headCalls.length, 0);
+  assert.equal(perPr.length, 7);
   const comments = JSON.parse(
-    fs.readFileSync(path.join(dir, 'pr-3-comments.json'), 'utf8'),
+    fs.readFileSync(path.join(dir, 'pr-6-comments.json'), 'utf8'),
   );
   assert.equal(comments[0].body, 'rest comment');
-  // non-overflowed lists still come from GraphQL
-  const reviews = JSON.parse(
-    fs.readFileSync(path.join(dir, 'pr-3-reviews.json'), 'utf8'),
+  const statuses = JSON.parse(
+    fs.readFileSync(path.join(dir, 'pr-6-statuses.json'), 'utf8'),
   );
-  assert.equal(reviews[0].user.login, 'kilo-code-bot[bot]');
+  assert.deepEqual(statuses, [
+    { context: 'pr-flow/kilo-review', state: 'pending' },
+  ]);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('graphql path falls back to the REST head trio when the head SHA moved', async () => {
+test('errors plus a failing REST fallback abort loudly instead of writing empty context', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
-  const restCalls = [];
-  const payload = graphqlPullPayload();
-  // head commit in the query no longer matches `gh pr view`'s headRefOid
-  payload.repository.pullRequest.headCommit.nodes[0].commit.oid = 'movedsha';
-  const fetchJson = async (apiPath, opts = {}) => {
-    restCalls.push({ apiPath, opts });
+  const fetchJson = async (apiPath) => {
     if (apiPath.includes('/actions/workflows/fix-review.yml/runs')) {
       return { workflow_runs: [] };
     }
-    if (apiPath.endsWith(`/commits/${HEAD_SHA}`)) {
-      return { commit: { committer: { date: '2026-06-24T13:00:00Z' } } };
-    }
-    if (apiPath.endsWith(`/commits/${HEAD_SHA}/status`)) {
-      return { statuses: [{ context: 'ci', state: 'success' }] };
-    }
-    if (apiPath.endsWith(`/commits/${HEAD_SHA}/check-runs`)) {
-      return { check_runs: [{ name: 'rest check', conclusion: 'failure' }] };
-    }
-    return [];
+    throw new Error('gh api failed: gh: HTTP 403: rate limit exceeded');
   };
-  const manifest = await fetchAutoCoverContext({
-    repo: 'owner/repo',
-    prs: ['4'],
-    outDir: dir,
-    fetchJson,
-    viewPull: async () => ({ number: 4, headRefOid: HEAD_SHA, state: 'open' }),
-    graphql: async () => payload,
-  });
-  assert.deepEqual(manifest.ok, ['4']);
-  const trio = restCalls.filter(({ apiPath }) =>
-    apiPath.includes(`/commits/${HEAD_SHA}`),
+  // Every PR failing is a systemic failure: the scan aborts loudly (retry
+  // next cycle) and no silently-empty context file is written.
+  await assert.rejects(
+    fetchAutoCoverContext({
+      repo: 'owner/repo',
+      prs: ['7'],
+      outDir: dir,
+      source: 'graphql',
+      fetchJson,
+      viewPull: viewPullHead(),
+      runGraphql: fakeRunGraphql({
+        reviewInputs: { data: null, errors: [{ message: 'abuse detection' }] },
+      }),
+    }),
+    /rate limit/i,
   );
-  assert.equal(trio.length, 3);
-  const statuses = JSON.parse(
-    fs.readFileSync(path.join(dir, 'pr-4-statuses.json'), 'utf8'),
-  );
-  assert.deepEqual(statuses, [{ context: 'ci', state: 'success' }]);
-  const checkRuns = JSON.parse(
-    fs.readFileSync(path.join(dir, 'pr-4-check-runs.json'), 'utf8'),
-  );
-  assert.deepEqual(checkRuns, [{ name: 'rest check', conclusion: 'failure' }]);
-  const pr = JSON.parse(
-    fs.readFileSync(path.join(dir, 'pr-4-pr.json'), 'utf8'),
-  );
-  assert.equal(pr.headCommittedAt, '2026-06-24T13:00:00Z');
+  assert.ok(!fs.existsSync(path.join(dir, 'pr-7-head-sha')));
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('graphql fetch failures isolate per PR like REST failures', async () => {
+test('a GraphQL transport failure isolates per PR when REST still works', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  const restCalls = [];
   const manifest = await fetchAutoCoverContext({
     repo: 'owner/repo',
     prs: ['20', '21'],
     outDir: dir,
-    fetchJson: legacyFetchJson([]),
+    source: 'graphql',
+    fetchJson: legacyFetchJson(restCalls),
     viewPull: async (prNumber) => ({
       number: Number(prNumber),
       headRefOid: HEAD_SHA,
       state: 'open',
     }),
-    graphql: async (query, variables) => {
+    runGraphql: (query, variables) => {
       if (variables.number === 21) {
         throw new Error('gh api graphql failed: HTTP 502: Bad Gateway');
       }
-      return graphqlPullPayload();
+      return fakeRunGraphql()(query, variables);
     },
     concurrency: 2,
   });
-  assert.deepEqual(manifest.ok, ['20']);
-  assert.equal(manifest.failed.length, 1);
-  assert.equal(manifest.failed[0].pr, '21');
-  fs.rmSync(dir, { recursive: true, force: true });
-});
-
-test('bot login restoration is shared with the PR flow adapter (toUser)', () => {
-  // mapIssueComments maps authors through lib/review-inputs-graphql's toUser —
-  // the same [bot]-suffix rule the PR flow trusts, not a divergent copy.
-  const [bot, human] = mapIssueComments([
-    { databaseId: 1, author: { login: 'github-actions', __typename: 'Bot' } },
-    { databaseId: 2, author: { login: 'octocat', __typename: 'User' } },
-  ]);
-  assert.equal(bot.user.login, 'github-actions[bot]');
-  assert.equal(human.user.login, 'octocat');
-});
-
-test('assertNoGraphqlErrors rejects a 200 response carrying errors', () => {
-  assert.throws(
-    () =>
-      assertNoGraphqlErrors({ errors: [{ message: 'Field x is invalid' }] }),
-    /Field x is invalid/,
-  );
-  assert.throws(
-    () => assertNoGraphqlErrors({ data: null, errors: [{ message: 'boom' }] }),
-    /boom/,
-  );
-  assert.doesNotThrow(() => assertNoGraphqlErrors({ data: {} }));
-  assert.doesNotThrow(() => assertNoGraphqlErrors({}));
-});
-
-test('resolveAutoCoverSource defaults to graphql and treats typos as rest', () => {
-  assert.equal(resolveAutoCoverSource(''), 'graphql');
-  assert.equal(resolveAutoCoverSource(undefined), 'graphql');
-  assert.equal(resolveAutoCoverSource('graphql'), 'graphql');
-  assert.equal(resolveAutoCoverSource('GRAPHQL'), 'graphql');
-  assert.equal(resolveAutoCoverSource('rest'), 'rest');
-  assert.equal(resolveAutoCoverSource('grqphql'), 'rest');
-});
-
-test('PR_FLOW_AUTO_COVER_SOURCE=rest forces the all-REST path even with graphql available', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
-  const restCalls = [];
-  let gqlCalls = 0;
-  const manifest = await fetchAutoCoverContext({
-    repo: 'owner/repo',
-    prs: ['7'],
-    outDir: dir,
-    fetchJson: legacyFetchJson(restCalls),
-    viewPull: async () => ({ number: 7, headRefOid: HEAD_SHA, state: 'open' }),
-    graphql: async () => {
-      gqlCalls += 1;
-      return graphqlPullPayload();
-    },
-    source: 'rest',
-  });
-  assert.deepEqual(manifest.ok, ['7']);
-  assert.equal(gqlCalls, 0);
-  // the legacy 7 REST lookups ran instead
+  // PR 21's GraphQL transport failed but REST worked, so it is still ok —
+  // served from the REST fallback (7 per-PR REST calls), while PR 20 stayed
+  // on GraphQL.
+  assert.deepEqual(manifest.ok, ['20', '21']);
   const perPr = restCalls.filter(
     ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
   );
   assert.equal(perPr.length, 7);
-  assert.equal(manifest.graphql.cost, 0);
-  assert.equal(manifest.graphql.remaining, null);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('graphql path rejects malformed repo and non-numeric PR numbers', async () => {
-  const graphql = async () => graphqlPullPayload();
-  const viewPull = async () => ({
-    number: 1,
-    headRefOid: HEAD_SHA,
-    state: 'open',
+test('a null pullRequest (deleted/unknown PR) falls back to REST instead of empty files', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  const restCalls = [];
+  const manifest = await fetchAutoCoverContext({
+    repo: 'owner/repo',
+    prs: ['8'],
+    outDir: dir,
+    source: 'graphql',
+    fetchJson: legacyFetchJson(restCalls),
+    viewPull: viewPullHead(),
+    runGraphql: fakeRunGraphql({
+      reviewInputs: { data: { repository: { pullRequest: null } } },
+    }),
   });
-  const fetchJson = async () => ({});
-  await assert.rejects(
-    fetchPrContextViaGraphql({
-      graphql,
-      fetchJson,
-      viewPull,
-      repo: 'a/b/c',
-      prNumber: '1',
-    }),
-    /owner\/name/,
+  assert.deepEqual(manifest.ok, ['8']);
+  const perPr = restCalls.filter(
+    ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
   );
-  await assert.rejects(
-    fetchPrContextViaGraphql({
-      graphql,
-      fetchJson,
-      viewPull,
-      repo: 'owner/repo',
-      prNumber: 'abc',
-    }),
-    /positive integer/,
-  );
+  assert.equal(perPr.length, 7);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('mapStatuses lowercases GraphQL state enums', () => {
-  assert.deepEqual(
-    mapStatuses({
-      contexts: [{ context: 'ci', state: 'PENDING', createdAt: 'x' }],
+test('a head SHA that moved between view and query falls back to REST', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  const restCalls = [];
+  const manifest = await fetchAutoCoverContext({
+    repo: 'owner/repo',
+    prs: ['9'],
+    outDir: dir,
+    source: 'graphql',
+    fetchJson: legacyFetchJson(restCalls),
+    // gh pr view reports a NEWER head than the (stale) GraphQL envelope
+    viewPull: viewPullHead('movedsha'),
+    runGraphql: fakeRunGraphql(),
+  });
+  assert.deepEqual(manifest.ok, ['9']);
+  const perPr = restCalls.filter(
+    ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
+  );
+  assert.equal(perPr.length, 7);
+  assert.ok(
+    perPr.some(({ apiPath }) => apiPath.endsWith('/commits/movedsha')),
+    'REST head lookup should target the moved head SHA',
+  );
+  assert.equal(
+    fs.readFileSync(path.join(dir, 'pr-9-head-sha'), 'utf8'),
+    'movedsha',
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a failing commits query only refetches commits via REST', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  const restCalls = [];
+  const manifest = await fetchAutoCoverContext({
+    repo: 'owner/repo',
+    prs: ['12'],
+    outDir: dir,
+    source: 'graphql',
+    fetchJson: legacyFetchJson(restCalls),
+    viewPull: viewPullHead(),
+    runGraphql: fakeRunGraphql({
+      commits: { data: null, errors: [{ message: 'commits blew up' }] },
     }),
+  });
+  assert.deepEqual(manifest.ok, ['12']);
+  const perPr = restCalls.filter(
+    ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
+  );
+  // narrow fallback: commits list + head commit date only, not the comment
+  // lists (those came from GraphQL)
+  assert.deepEqual(
+    perPr.map(({ apiPath }) => apiPath),
+    [
+      `repos/owner/repo/pulls/12/commits`,
+      `repos/owner/repo/commits/${HEAD_SHA}`,
+    ],
+  );
+  assert.deepEqual(perPr[0].opts, { paginate: true });
+  const commits = JSON.parse(
+    fs.readFileSync(path.join(dir, 'pr-12-commits.json'), 'utf8'),
+  );
+  assert.equal(commits[0].commit.message, 'fix(review): via REST');
+  const comments = JSON.parse(
+    fs.readFileSync(path.join(dir, 'pr-12-comments.json'), 'utf8'),
+  );
+  assert.equal(comments[0].user.login, 'github-actions[bot]');
+  const pr = JSON.parse(
+    fs.readFileSync(path.join(dir, 'pr-12-pr.json'), 'utf8'),
+  );
+  assert.equal(pr.headCommittedAt, '2026-06-24T12:00:00Z');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('commits pagination overflow beyond the page cap falls back to REST commits', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  const restCalls = [];
+  const gqlCalls = [];
+  let pages = 0;
+  const manifest = await fetchAutoCoverContext({
+    repo: 'owner/repo',
+    prs: ['13'],
+    outDir: dir,
+    source: 'graphql',
+    fetchJson: legacyFetchJson(restCalls),
+    viewPull: viewPullHead(),
+    runGraphql: fakeRunGraphql({
+      recorder: gqlCalls,
+      commits: () => {
+        pages += 1;
+        return commitsResponse(
+          [
+            {
+              commit: {
+                oid: `sha-${pages}`,
+                message: 'chore: page',
+                authoredDate: '2026-06-24T11:00:00Z',
+                committedDate: '2026-06-24T11:00:00Z',
+              },
+            },
+          ],
+          { hasNextPage: true, endCursor: `cursor-${pages}` },
+        );
+      },
+    }),
+  });
+  assert.deepEqual(manifest.ok, ['13']);
+  // 1 review-inputs query + MAX_PAGES_PER_CONNECTION commits pages, then REST
+  const commitsQueries = gqlCalls.filter(({ query }) =>
+    String(query).includes('AutoCoverPrCommits'),
+  );
+  assert.equal(commitsQueries.length, 10);
+  const perPr = restCalls.filter(
+    ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
+  );
+  assert.deepEqual(
+    perPr.map(({ apiPath }) => apiPath),
+    [
+      `repos/owner/repo/pulls/13/commits`,
+      `repos/owner/repo/commits/${HEAD_SHA}`,
+    ],
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('PR_FLOW_AUTO_COVER_SOURCE=rest keeps production on the legacy REST path', async () => {
+  assert.equal(resolveAutoCoverSource(''), 'graphql');
+  assert.equal(resolveAutoCoverSource(undefined), 'graphql');
+  assert.equal(resolveAutoCoverSource('rest'), 'rest');
+  assert.equal(resolveAutoCoverSource('GRAPHQL'), 'graphql');
+  // a typo must never silently keep the newer path
+  assert.equal(resolveAutoCoverSource('graphgl'), 'rest');
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  const restCalls = [];
+  const prev = process.env.PR_FLOW_AUTO_COVER_SOURCE;
+  process.env.PR_FLOW_AUTO_COVER_SOURCE = 'rest';
+  try {
+    const manifest = await fetchAutoCoverContext({
+      repo: 'owner/repo',
+      prs: ['14'],
+      outDir: dir,
+      // no explicit source: the env toggle must select REST
+      fetchJson: legacyFetchJson(restCalls),
+      viewPull: viewPullHead(),
+      runGraphql: () => {
+        throw new Error('GraphQL must not be called with source=rest');
+      },
+    });
+    assert.deepEqual(manifest.ok, ['14']);
+    const perPr = restCalls.filter(
+      ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
+    );
+    assert.equal(perPr.length, 7);
+  } finally {
+    if (prev === undefined) delete process.env.PR_FLOW_AUTO_COVER_SOURCE;
+    else process.env.PR_FLOW_AUTO_COVER_SOURCE = prev;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('fetchPrCommitsGraphql validates repo/prNumber and rejects errored payloads', () => {
+  const neverCalled = () => {
+    throw new Error('must not reach gh');
+  };
+  assert.throws(
+    () =>
+      fetchPrCommitsGraphql({
+        runGraphql: neverCalled,
+        repo: 'bad-repo-slug',
+        prNumber: '1',
+      }),
+    /owner\/name/,
+  );
+  assert.throws(
+    () =>
+      fetchPrCommitsGraphql({
+        runGraphql: neverCalled,
+        repo: 'owner/repo',
+        prNumber: '0',
+      }),
+    /positive integer/,
+  );
+  assert.throws(
+    () =>
+      fetchPrCommitsGraphql({
+        runGraphql: () => ({ data: {}, errors: [{ message: 'nope' }] }),
+        repo: 'owner/repo',
+        prNumber: '1',
+      }),
+    /GraphQL returned errors: nope/,
+  );
+  assert.throws(
+    () =>
+      fetchPrCommitsGraphql({
+        runGraphql: () => ({ data: { repository: { pullRequest: null } } }),
+        repo: 'owner/repo',
+        prNumber: '1',
+      }),
+    /missing the commits connection/,
+  );
+  // happy path returns the raw nodes
+  const nodes = fetchPrCommitsGraphql({
+    runGraphql: () =>
+      commitsResponse().data.repository.pullRequest ? commitsResponse() : null,
+    repo: 'owner/repo',
+    prNumber: '1',
+  });
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0].commit.oid, HEAD_SHA);
+});
+
+test('mapCommits rebuilds the REST pulls/commits item shape', () => {
+  assert.deepEqual(
+    mapCommits([
+      {
+        commit: {
+          oid: 'abc',
+          message: 'fix(review): x',
+          authoredDate: 'a-date',
+          committedDate: 'c-date',
+        },
+      },
+    ]),
     [
       {
-        context: 'ci',
-        state: 'pending',
-        created_at: 'x',
-        updated_at: null,
-        target_url: null,
-        description: null,
+        sha: 'abc',
+        commit: {
+          message: 'fix(review): x',
+          author: { date: 'a-date' },
+          committer: { date: 'c-date' },
+        },
       },
     ],
   );
-  assert.deepEqual(mapStatuses(null), []);
-});
-
-test('mapCheckRuns flattens suites, lowercases enums and carries the app', () => {
-  const mapped = mapCheckRuns([
-    {
-      app: { slug: 'kilo-code', name: 'Kilo Code' },
-      checkRuns: {
-        nodes: [
-          { name: 'a', status: 'IN_PROGRESS', conclusion: null },
-          { name: 'b', status: 'COMPLETED', conclusion: 'FAILURE' },
-        ],
-      },
-    },
-    {
-      app: null,
-      checkRuns: { nodes: [{ name: 'c', status: 'QUEUED', conclusion: null }] },
-    },
-  ]);
-  assert.deepEqual(mapped, [
-    {
-      name: 'a',
-      status: 'in_progress',
-      conclusion: null,
-      app: { slug: 'kilo-code', name: 'Kilo Code' },
-    },
-    {
-      name: 'b',
-      status: 'completed',
-      conclusion: 'failure',
-      app: { slug: 'kilo-code', name: 'Kilo Code' },
-    },
-    { name: 'c', status: 'queued', conclusion: null, app: null },
-  ]);
-  assert.deepEqual(mapCheckRuns([]), []);
+  assert.deepEqual(mapCommits([]), []);
 });
