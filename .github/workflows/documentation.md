@@ -234,9 +234,12 @@ AI/security concern labels, and blocked dependency labels still fail
 
 If Finalizer fails, PR Orchestrator allows up to three retries after the
 initial attempt. It counts failed Finalizer runs for the PR's current head
-SHA. After the fourth failure, the orchestration comment and statuses direct
-the maintainer to the failed run and manual merge, and Orchestrator stops
-dispatching Finalizer for that head.
+SHA. Failed and timed-out runs consume attempts. Cancelled runs and startup
+failures leave the budget available. If the head history is unavailable,
+Orchestrator defers Finalizer dispatch and still publishes PR flow results.
+After the fourth counted failure, the orchestration comment and statuses
+direct the maintainer to the failed run and manual merge, and Orchestrator
+stops dispatching Finalizer for that head.
 
 > See [PR Orchestrator Concurrency](#pr-orchestrator-concurrency) for how
 > `pr-flow.yml` groups runs by event class and why a cancelled `orchestrate`

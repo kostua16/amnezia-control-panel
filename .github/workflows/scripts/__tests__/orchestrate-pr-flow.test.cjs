@@ -7,6 +7,7 @@ const {
   buildFlowGuidance,
   buildFlowVisibility,
   buildGraphqlArgs,
+  collectLegacyWorkerRuns,
   evaluatePolicy,
   getWorkerDispatchRef,
   makeDecision: makePrFlowDecision,
@@ -1786,6 +1787,170 @@ test('finalizer retries ignore legacy counter labels and runs for other PRs or h
   assert.equal(decision.dispatch?.key, 'finalizer');
   assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-3'));
   assert.match(decision.reason, /attempt 1\/3/);
+});
+
+test('Finalizer counts failures and timeouts, excluding cancelled and startup-failure runs', () => {
+  const pr = {
+    ...basePr,
+    files: ['src/app/page.tsx'],
+    labels: [
+      'flow/finalizer-dispatched',
+      'ai-review-passed',
+      'security-review-passed',
+    ],
+  };
+  const finalizer = [
+    'failure',
+    'timed_out',
+    'startup_failure',
+    'cancelled',
+  ].map((conclusion, index) => ({
+    ...completedWorkerRun(conclusion, `2026-07-01T09:0${index}:00Z`),
+    databaseId: 900 + index,
+  }));
+  const context = finalizerRetryContext(pr, { finalizer, codeReview: [] });
+  const decision = makePrFlowDecision(context);
+  assert.equal(decision.dispatch?.key, 'finalizer');
+  assert.match(decision.reason, /attempt 2\/3/);
+  assert.equal(
+    buildFlowVisibility({ ...context, decision }).workers.finalizer.state,
+    'failure',
+  );
+
+  finalizer.splice(0, 3);
+  const cancelledOnly = makePrFlowDecision(context);
+  assert.equal(cancelledOnly.dispatch?.key, 'finalizer');
+  assert.doesNotMatch(cancelledOnly.reason, /attempt 0/);
+});
+
+test('legacy Finalizer lookup joins head and recent runs, preferring the fresh head snapshot', () => {
+  const { config } = finalizerRetryContext(basePr);
+  const calls = [];
+  const stale = { ...completedWorkerRun(''), status: 'in_progress' };
+  const baseRun = { ...completedWorkerRun('failure'), databaseId: 902 };
+  const pr = { ...basePr, headSha: 'abc/123' };
+  const headRun = {
+    id: 900,
+    status: 'completed',
+    conclusion: 'failure',
+    event: 'workflow_dispatch',
+    display_title: 'PR #42 @ abc/123',
+    created_at: '2026-07-01T09:00:00Z',
+    updated_at: '2026-07-01T09:01:00Z',
+    html_url: 'https://example.test/run/900',
+  };
+  const unavailableWorkerRuns = new Set();
+  const runs = collectLegacyWorkerRuns(config, 'finalizer', pr, {
+    unavailableWorkerRuns,
+    getRepo: () => 'owner/repo',
+    runCommand(command, args, options) {
+      calls.push({ command, args, options });
+      return JSON.stringify(
+        args[0] === 'run'
+          ? [stale, baseRun]
+          : [headRun, { ...headRun, id: 901 }],
+      );
+    },
+  });
+
+  assert.deepEqual(
+    runs.map((run) => run.databaseId),
+    [900, 901, 902],
+  );
+  assert.deepEqual(runs[0], {
+    databaseId: 900,
+    status: 'completed',
+    conclusion: 'failure',
+    event: 'workflow_dispatch',
+    displayTitle: headRun.display_title,
+    createdAt: headRun.created_at,
+    updatedAt: headRun.updated_at,
+    url: headRun.html_url,
+  });
+  assert.deepEqual(runs[2], baseRun);
+  assert.equal(calls[0].args[3], 'pr-finalizer.yml');
+  assert.equal(
+    calls[1].args[1],
+    'repos/owner/repo/actions/workflows/pr-finalizer.yml/runs?head_sha=abc%2F123&per_page=50',
+  );
+  assert.equal(calls[1].args[2], '--jq');
+  assert.match(calls[1].args[3], /\bid\b.*\bdisplay_title\b/);
+  assert.equal(calls[1].options.allowFailure, false);
+  assert.equal(unavailableWorkerRuns.size, 0);
+});
+
+test('legacy Finalizer lookup skips the head read for cross-repository PRs', () => {
+  const pr = { ...basePr, isCrossRepository: true };
+  const { config } = finalizerRetryContext(pr);
+  const recent = [completedWorkerRun('failure')];
+  const unavailableWorkerRuns = new Set();
+  const runs = collectLegacyWorkerRuns(config, 'finalizer', pr, {
+    unavailableWorkerRuns,
+    getRepo: () => assert.fail('unexpected head lookup'),
+    runCommand(command, args) {
+      assert.equal(command, 'gh');
+      assert.equal(args[0], 'run');
+      return JSON.stringify(recent);
+    },
+  });
+  assert.deepEqual(runs, recent);
+  assert.equal(unavailableWorkerRuns.size, 0);
+});
+
+test('legacy Finalizer history errors preserve recent runs and defer only Finalizer dispatch', () => {
+  const pr = {
+    ...basePr,
+    files: ['src/app/page.tsx'],
+    labels: [
+      'flow/finalizer-dispatched',
+      'ai-review-passed',
+      'security-review-passed',
+    ],
+  };
+  const recent = [completedWorkerRun('failure')];
+  for (const headLookup of [
+    () => {
+      throw new Error('HTTP 403');
+    },
+    () => 'invalid JSON',
+    () => '[{}]',
+  ]) {
+    const unavailableWorkerRuns = new Set();
+    const warnings = [];
+    const context = {
+      ...finalizerRetryContext(pr, { codeReview: [] }),
+      unavailableWorkerRuns,
+      getWorkerRuns: (workerName) =>
+        collectLegacyWorkerRuns(context.config, workerName, pr, {
+          unavailableWorkerRuns,
+          getRepo: () => 'owner/repo',
+          warn: (message) => warnings.push(message),
+          runCommand: (_command, args) =>
+            args[0] === 'run' ? JSON.stringify(recent) : headLookup(),
+        }),
+    };
+
+    const decision = makePrFlowDecision(context);
+    assert.equal(decision.dispatch, null);
+    assert.deepEqual(decision.desiredLabels, ['flow/finalizer-dispatched']);
+    assert.deepEqual(context.workerRuns.finalizer, recent);
+    assert.deepEqual([...unavailableWorkerRuns], ['finalizer']);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /could not read finalizer history/i);
+    const visibility = buildFlowVisibility({ ...context, decision });
+    assert.equal(visibility.workers.finalizer.state, 'error');
+    assert.equal(visibility.aggregate.state, 'error');
+    assert.match(
+      makeComment({ pr, decision, visibility }),
+      /history unavailable\. Dispatch deferred/i,
+    );
+
+    const reviewDecision = makePrFlowDecision({
+      ...context,
+      pr: { ...pr, labels: [] },
+    });
+    assert.equal(reviewDecision.dispatch?.key, 'codeReview');
+  }
 });
 
 test('cross-repository PR cannot dispatch a privileged worker', () => {
