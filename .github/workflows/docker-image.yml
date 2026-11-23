@@ -139,7 +139,8 @@ jobs:
               }
 
               const { execFileSync } = require('node:child_process');
-              const credential = Buffer.from(`x-access-token:${process.env.GIT_FETCH_TOKEN}`).toString('base64');
+              const token = process.env.GIT_FETCH_TOKEN;
+              const credential = Buffer.from(`x-access-token:${token}`).toString('base64');
               const authHeader = `AUTHORIZATION: basic ${credential}`;
               core.setSecret(credential);
               core.setSecret(authHeader);
@@ -157,9 +158,16 @@ jobs:
                     timeout: 45_000,
                   },
                 );
-              } catch {
+              } catch (error) {
                 // A force-push can leave the previous commit unavailable on origin.
-                throw new Error('unable to fetch the previous main commit from origin');
+                const stderr = String(error.stderr ?? '').trim();
+                const detail = error.code === 'ETIMEDOUT' ? error.message : stderr || error.message;
+                let safeDetail = String(detail);
+                for (const secret of [authHeader, credential, token].filter(Boolean)) {
+                  safeDetail = safeDetail.replaceAll(secret, '[redacted]');
+                }
+                const firstLine = safeDetail.trim().split(/\r?\n/, 1)[0];
+                throw new Error(`unable to fetch the previous main commit from origin: ${firstLine}`);
               }
 
               // Treat renames as delete/add so both paths remain eligible.

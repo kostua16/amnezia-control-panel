@@ -100,14 +100,37 @@ jobs:
           ISSUE_NUM: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
+          if ! command -v gh >/dev/null; then
+            echo '::error::GitHub CLI (gh) is missing from PATH.'
+            exit 1
+          fi
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo '::error::GH_PAT is empty. Cannot check the live issue state.'
+            exit 1
+          fi
           for attempt in 1 2; do
-            if state=$(gh issue view "$ISSUE_NUM" --repo "$GITHUB_REPOSITORY" --json state --jq '.state'); then
+            if state=$(gh issue view "$ISSUE_NUM" --repo "$GITHUB_REPOSITORY" --json state --jq '.state' 2>&1); then
               case "$state" in
                 OPEN) echo 'is_open=true' >> "$GITHUB_OUTPUT"; exit 0 ;;
                 CLOSED) echo 'Issue closed before repair started. Skipping.'; exit 0 ;;
+                *) echo '::error::GitHub CLI returned an unexpected issue state.'; exit 1 ;;
               esac
             fi
-            if [[ "$attempt" == 1 ]]; then sleep 2; fi
+            case "${state,,}" in
+              *'secondary rate limit'*|*'http 429'*) delay=60 ;;
+              *'http 401'*|*'http 403'*|*'bad credentials'*|*'resource not accessible'*|*unauthorized*|*forbidden*)
+                echo '::error::GitHub rejected GH_PAT authentication or issue access.'
+                exit 1 ;;
+              *'http 404'*|*'not found'*|*'could not resolve'*)
+                echo '::notice::Issue no longer resolves in this repository. Skipping repair.'
+                exit 0 ;;
+              *'http 5'[0-9][0-9]*|*timeout*|*'timed out'*|*'deadline exceeded'*|*'connection reset'*|*'connection refused'*|*'network is unreachable'*|*'no such host'*|*'unexpected eof'*)
+                delay=2 ;;
+              *)
+                echo '::error::GitHub CLI could not check the live issue state (unrecognized failure).'
+                exit 1 ;;
+            esac
+            if [[ "$attempt" == 1 ]]; then sleep "$delay"; fi
           done
           echo '::warning::Could not read live issue state after two attempts. Continuing with the authorized repair.'
           echo 'is_open=true' >> "$GITHUB_OUTPUT"

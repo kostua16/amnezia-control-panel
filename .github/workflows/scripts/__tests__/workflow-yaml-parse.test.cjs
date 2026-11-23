@@ -192,6 +192,13 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
   const remote = path.join(rewindRepo, 'origin.git');
   const shallowClone = path.join(rewindRepo, 'shallow');
   git('init', '-q', '--bare', remote);
+  for (const setting of [
+    'allowAnySHA1InWant',
+    'allowReachableSHA1InWant',
+    'allowTipSHA1InWant',
+  ]) {
+    git('--git-dir', remote, 'config', `uploadpack.${setting}`, 'false');
+  }
   git('push', '-q', remote, `${rewindAfter}:refs/heads/main`);
   git(
     'clone',
@@ -213,6 +220,8 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
     ['rename out of source', ['docs/old.md', 'src/old.ts'], true],
     ['unavailable range', [], true, 'diff'],
     ['rewind base unavailable on origin', null, true, 'fetch'],
+    ['fetch authentication detail redacts credentials', [], true, 'fetch-auth'],
+    ['fetch timeout preserves the error code', [], true, 'fetch-timeout'],
     ['failed checkout', [], true, 'checkout'],
     [
       'large diff with a relevant path after the default buffer limit',
@@ -255,6 +264,23 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
               env: { ...process.env, ...options.env },
             });
           }
+          if (failure === 'fetch-auth') {
+            const { GIT_FETCH_AUTH: header, GIT_FETCH_TOKEN: token } =
+              options.env;
+            const encoded = header.split(' ').at(-1);
+            const error = new Error('Command failed: git fetch');
+            error.stderr = Buffer.from(
+              `fatal: Authentication failed for ${token} (${encoded}; ${header})\nsecond line`,
+            );
+            throw error;
+          }
+          if (failure === 'fetch-timeout') {
+            const error = new Error(
+              `spawnSync git ETIMEDOUT ${options.env.GIT_FETCH_TOKEN}\nsecond line`,
+            );
+            error.code = 'ETIMEDOUT';
+            throw error;
+          }
           return '';
         }
         if (failure === 'diff') throw new Error('missing commit');
@@ -291,7 +317,7 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
       const [fetch, diff] = execFileSync.mock.calls;
       assert.equal(
         execFileSync.mock.callCount(),
-        failure === 'checkout' ? 0 : failure === 'fetch' ? 1 : 2,
+        failure === 'checkout' ? 0 : failure?.startsWith('fetch') ? 1 : 2,
       );
       if (fetch) {
         assert.equal(
@@ -310,12 +336,19 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
       assert.equal(outputs.should_publish, String(shouldPublish));
       assert.equal(outputs.should_validate, 'false');
       assert.equal(warnings.length, failure ? 1 : 0);
-      if (failure === 'fetch') {
+      if (failure?.startsWith('fetch')) {
         assert.match(
           warnings[0],
-          /publishing fail-open\. unable to fetch the previous main commit from origin/,
+          /publishing fail-open\. unable to fetch the previous main commit from origin: .+/,
         );
+        assert.ok(!warnings[0].includes('test-token'));
+        assert.ok(masked.every((secret) => !warnings[0].includes(secret)));
+        assert.ok(!warnings[0].includes('second line'));
       }
+      if (failure === 'fetch-auth')
+        assert.match(warnings[0], /Authentication failed for \[redacted\]/);
+      if (failure === 'fetch-timeout')
+        assert.match(warnings[0], /ETIMEDOUT \[redacted\]/);
     });
   }
 });
@@ -393,7 +426,7 @@ test('F6a: Fix Issue checks live state before repair or side effects', () => {
   );
 });
 
-test('F6a: live issue lookup retries once and fails open only when state stays unavailable', async (t) => {
+test('F6a: live issue lookup skips missing issues and retries only transient failures', async (t) => {
   const workflow = yaml.load(
     fs.readFileSync(path.join(workflowsDir, 'fix-issue.yml'), 'utf8'),
   );
@@ -409,43 +442,79 @@ test('F6a: live issue lookup retries once and fails open only when state stays u
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const stub = [
     'gh() {',
-    '  echo "lookup" >&2',
-    '  if [[ -f attempt ]]; then state="$SECOND"; else : > attempt; state="$FIRST"; fi',
-    '  if [[ "$state" == ERROR ]]; then return 1; fi',
-    '  printf "%s\\n" "$state"',
+    '  if [[ -f calls ]]; then state="$SECOND"; else state="$FIRST"; fi',
+    '  echo lookup >> calls',
+    '  case "$state" in OPEN|CLOSED|UNKNOWN) printf "%s\\n" "$state" ;; *) printf "%s\\n" "$state" >&2; return 1 ;; esac',
     '}',
-    'sleep() { :; }',
+    'sleep() { echo "$1" > delay; }',
   ].join('\n');
 
-  for (const [first, second, attempts, shouldRun, shouldWarn] of [
-    ['OPEN', 'ERROR', 1, true, false],
-    ['CLOSED', 'ERROR', 1, false, false],
-    ['ERROR', 'CLOSED', 2, false, false],
-    ['ERROR', 'OPEN', 2, true, false],
-    ['ERROR', 'ERROR', 2, true, true],
-    ['', 'UNKNOWN', 2, true, true],
+  for (const [first, second, attempts, outputExpected, annotation, delay] of [
+    ['OPEN', '', 1, true],
+    ['CLOSED', '', 1, false],
+    ['HTTP 502', 'CLOSED', 2, false, null, '2'],
+    ['connection reset by peer', 'OPEN', 2, true, null, '2'],
+    ['i/o timeout', 'HTTP 503', 2, true, /::warning::/, '2'],
+    [
+      'HTTP 403: secondary rate limit',
+      'HTTP 429',
+      2,
+      true,
+      /::warning::/,
+      '60',
+    ],
+    ['HTTP 404', '', 1, false, /::notice::/],
+    ['GraphQL: Could not resolve to an Issue', '', 1, false, /::notice::/],
+    ['Not Found', '', 1, false, /::notice::/],
+    [
+      'HTTP 401: Bad credentials',
+      '',
+      1,
+      false,
+      /::error::GitHub rejected GH_PAT/,
+    ],
+    ['HTTP 403: Forbidden', '', 1, false, /::error::GitHub rejected GH_PAT/],
+    ['EMPTY_TOKEN', '', 0, false, /::error::GH_PAT is empty/],
+    ['MISSING_CLI', '', 0, false, /::error::GitHub CLI \(gh\) is missing/],
+    ['invalid CLI argument', '', 1, false, /::error::.*unrecognized failure/],
+    ['UNKNOWN', '', 1, false, /::error::.*unexpected issue state/],
   ]) {
-    await t.test(`${first || 'empty'} then ${second}`, () => {
+    await t.test(second ? `${first} then ${second}` : first, () => {
       const cwd = fs.mkdtempSync(path.join(temp, 'case-'));
       const result = spawnSync(bash, ['--noprofile', '--norc', '-s'], {
         cwd,
-        input: `${stub}\n${guard.run}`,
+        input: `${first === 'MISSING_CLI' ? 'PATH=/nonexistent' : stub}\n${guard.run}`,
         encoding: 'utf8',
         env: {
           ...process.env,
           FIRST: first,
           SECOND: second,
+          GH_TOKEN: first === 'EMPTY_TOKEN' ? '' : 'test-token',
           ISSUE_NUM: '1',
           GITHUB_REPOSITORY: 'example/test',
           GITHUB_OUTPUT: 'output',
         },
       });
       assert.ifError(result.error);
-      assert.equal(result.status, 0, result.stderr);
-      assert.equal((result.stderr.match(/lookup/g) ?? []).length, attempts);
-      assert.equal(result.stdout.includes('::warning::'), shouldWarn);
+      assert.equal(
+        result.status,
+        annotation?.source.startsWith('::error::') ? 1 : 0,
+        result.stdout,
+      );
+      if (annotation) assert.match(result.stdout, annotation);
+      else assert.doesNotMatch(result.stdout, /::(?:warning|error|notice)::/);
+      const calls = path.join(cwd, 'calls');
+      assert.equal(
+        fs.existsSync(calls)
+          ? fs.readFileSync(calls, 'utf8').trim().split(/\r?\n/).length
+          : 0,
+        attempts,
+      );
+      const delayFile = path.join(cwd, 'delay');
+      if (delay) assert.equal(fs.readFileSync(delayFile, 'utf8').trim(), delay);
+      else assert.equal(fs.existsSync(delayFile), false);
       const output = path.join(cwd, 'output');
-      if (shouldRun)
+      if (outputExpected)
         assert.equal(fs.readFileSync(output, 'utf8').trim(), 'is_open=true');
       else assert.equal(fs.existsSync(output), false);
     });
