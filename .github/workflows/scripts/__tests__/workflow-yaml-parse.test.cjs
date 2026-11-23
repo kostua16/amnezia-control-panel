@@ -10,8 +10,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const vm = require('node:vm');
-const { execFileSync: runGit } = require('node:child_process');
+const { execFileSync: runGit, spawnSync } = require('node:child_process');
 const yaml = require('js-yaml');
 const {
   evaluateCondition,
@@ -188,6 +189,19 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
   git('add', 'Dockerfile');
   git('commit', '-qm', 'add Dockerfile');
   const rewindBefore = git('rev-parse', 'HEAD').trim();
+  const remote = path.join(rewindRepo, 'origin.git');
+  const shallowClone = path.join(rewindRepo, 'shallow');
+  git('init', '-q', '--bare', remote);
+  git('push', '-q', remote, `${rewindAfter}:refs/heads/main`);
+  git(
+    'clone',
+    '-q',
+    '--depth=1',
+    '--branch',
+    'main',
+    pathToFileURL(remote).href,
+    shallowClone,
+  );
 
   for (const [name, paths, shouldPublish, failure] of [
     [
@@ -198,7 +212,7 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
     ['source change', ['src/app/page.tsx'], true],
     ['rename out of source', ['docs/old.md', 'src/old.ts'], true],
     ['unavailable range', [], true, 'diff'],
-    ['failed fetch', [], true, 'fetch'],
+    ['rewind base unavailable on origin', null, true, 'fetch'],
     ['failed checkout', [], true, 'checkout'],
     [
       'large diff with a relevant path after the default buffer limit',
@@ -218,6 +232,7 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
       const pushAfter = paths === null ? rewindAfter : after;
       const outputs = {};
       const warnings = [];
+      const masked = [];
       const summary = {
         addHeading: () => summary,
         addRaw: () => summary,
@@ -227,7 +242,19 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
       const execFileSync = subtest.mock.fn((command, args, options) => {
         assert.equal(command, 'git');
         if (args[1] === 'fetch') {
-          if (failure === 'fetch') throw new Error('fetch failed');
+          assert.ok(
+            masked.includes(
+              Buffer.from('x-access-token:test-token').toString('base64'),
+            ),
+          );
+          assert.ok(masked.includes(options.env.GIT_FETCH_AUTH));
+          if (failure === 'fetch') {
+            return runGit(command, args, {
+              ...options,
+              cwd: shallowClone,
+              env: { ...process.env, ...options.env },
+            });
+          }
           return '';
         }
         if (failure === 'diff') throw new Error('missing commit');
@@ -253,7 +280,7 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
           setOutput: (key, value) => (outputs[key] = value),
           warning: (message) => warnings.push(message),
           info: () => {},
-          setSecret: () => {},
+          setSecret: (value) => masked.push(value),
           summary,
         },
         require(module) {
@@ -283,6 +310,12 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
       assert.equal(outputs.should_publish, String(shouldPublish));
       assert.equal(outputs.should_validate, 'false');
       assert.equal(warnings.length, failure ? 1 : 0);
+      if (failure === 'fetch') {
+        assert.match(
+          warnings[0],
+          /publishing fail-open\. unable to fetch the previous main commit from origin/,
+        );
+      }
     });
   }
 });
@@ -345,6 +378,77 @@ test('F6a: Fix Issue checks live state before repair or side effects', () => {
       false,
       `${step.name ?? step.uses} must skip on a closed issue`,
     );
+  }
+  const spinOff = repairSteps.find(
+    (step) => step.name === 'Spin off umbrella sub-issues',
+  );
+  assert.equal(
+    evaluateCondition(spinOff.if, {
+      steps: {
+        issue_state: { outputs: {} },
+        tracking: { outputs: { is_tracking: 'true' } },
+      },
+    }),
+    false,
+  );
+});
+
+test('F6a: live issue lookup retries once and fails open only when state stays unavailable', async (t) => {
+  const workflow = yaml.load(
+    fs.readFileSync(path.join(workflowsDir, 'fix-issue.yml'), 'utf8'),
+  );
+  const [guard] = workflow.jobs.fix.steps;
+  const bash =
+    process.platform === 'win32'
+      ? path.resolve(
+          runGit('git', ['--exec-path'], { encoding: 'utf8' }).trim(),
+          '../../../bin/bash.exe',
+        )
+      : 'bash';
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'fix-issue-live-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const stub = [
+    'gh() {',
+    '  echo "lookup" >&2',
+    '  if [[ -f attempt ]]; then state="$SECOND"; else : > attempt; state="$FIRST"; fi',
+    '  if [[ "$state" == ERROR ]]; then return 1; fi',
+    '  printf "%s\\n" "$state"',
+    '}',
+    'sleep() { :; }',
+  ].join('\n');
+
+  for (const [first, second, attempts, shouldRun, shouldWarn] of [
+    ['OPEN', 'ERROR', 1, true, false],
+    ['CLOSED', 'ERROR', 1, false, false],
+    ['ERROR', 'CLOSED', 2, false, false],
+    ['ERROR', 'OPEN', 2, true, false],
+    ['ERROR', 'ERROR', 2, true, true],
+    ['', 'UNKNOWN', 2, true, true],
+  ]) {
+    await t.test(`${first || 'empty'} then ${second}`, () => {
+      const cwd = fs.mkdtempSync(path.join(temp, 'case-'));
+      const result = spawnSync(bash, ['--noprofile', '--norc', '-s'], {
+        cwd,
+        input: `${stub}\n${guard.run}`,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          FIRST: first,
+          SECOND: second,
+          ISSUE_NUM: '1',
+          GITHUB_REPOSITORY: 'example/test',
+          GITHUB_OUTPUT: 'output',
+        },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal((result.stderr.match(/lookup/g) ?? []).length, attempts);
+      assert.equal(result.stdout.includes('::warning::'), shouldWarn);
+      const output = path.join(cwd, 'output');
+      if (shouldRun)
+        assert.equal(fs.readFileSync(output, 'utf8').trim(), 'is_open=true');
+      else assert.equal(fs.existsSync(output), false);
+    });
   }
 });
 

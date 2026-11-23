@@ -141,20 +141,26 @@ jobs:
               const { execFileSync } = require('node:child_process');
               const credential = Buffer.from(`x-access-token:${process.env.GIT_FETCH_TOKEN}`).toString('base64');
               const authHeader = `AUTHORIZATION: basic ${credential}`;
+              core.setSecret(credential);
               core.setSecret(authHeader);
               // Authenticate only this fetch. A shallow checkout already has the after tree.
-              execFileSync(
-                'git',
-                [
-                  `--config-env=http.${process.env.GITHUB_SERVER_URL}/.extraheader=GIT_FETCH_AUTH`,
-                  'fetch', '--no-tags', '--depth=1', 'origin', before,
-                ],
-                {
-                  env: { ...process.env, GIT_FETCH_AUTH: authHeader },
-                  stdio: 'pipe',
-                  timeout: 45_000,
-                },
-              );
+              try {
+                execFileSync(
+                  'git',
+                  [
+                    `--config-env=http.${process.env.GITHUB_SERVER_URL}/.extraheader=GIT_FETCH_AUTH`,
+                    'fetch', '--no-tags', '--depth=1', 'origin', before,
+                  ],
+                  {
+                    env: { ...process.env, GIT_FETCH_AUTH: authHeader },
+                    stdio: 'pipe',
+                    timeout: 45_000,
+                  },
+                );
+              } catch {
+                // A force-push can leave the previous commit unavailable on origin.
+                throw new Error('unable to fetch the previous main commit from origin');
+              }
 
               // Treat renames as delete/add so both paths remain eligible.
               return execFileSync(
