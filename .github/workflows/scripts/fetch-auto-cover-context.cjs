@@ -7,6 +7,16 @@
 // Replaces a sequential bash loop that issued ~8 gh calls per PR. The repo-wide
 // fix-review run list is fetched once and written into every PR's context.
 //
+// Quota: the seven per-PR REST lookups (issue comments, review comments,
+// reviews, commits, head commit, combined status, check-runs) are replaced by
+// ONE `gh api graphql` query per PR. GraphQL has its own rate-limit bucket, so
+// a full scan now costs the shared 5000/h REST quota only the single repo-wide
+// fix-review run listing. Results are mapped back to the REST field shapes the
+// context consumers read, so the written files keep their contract. Narrow
+// REST fallbacks remain for >100-item pages and for a head SHA that moved
+// between `gh pr view` and the GraphQL query (both rare); injecting only
+// `fetchJson` (as the legacy tests do) restores the all-REST path.
+//
 // Error policy: commit status / check-run lookups legitimately return "no data"
 // (HTTP 404) for fresh commits and are mapped to []. Rate-limit (403/429), 5xx,
 // and network failures are rethrown so the workflow fails loudly instead of
@@ -141,6 +151,328 @@ function createViewPull() {
   };
 }
 
+// Single GraphQL query per PR replacing seven REST calls. Nested connections
+// request 100 nodes; when a page overflows (>100 items) the caller falls back
+// to the paginated REST endpoint for that list instead of silently truncating.
+const PULL_REQUEST_CONTEXT_QUERY = `
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      comments(first: 100) {
+        pageInfo { hasNextPage }
+        nodes { body createdAt updatedAt author { login __typename } }
+      }
+      reviewThreads(first: 100) {
+        pageInfo { hasNextPage }
+        nodes {
+          comments(first: 100) {
+            pageInfo { hasNextPage }
+            nodes {
+              body
+              path
+              originalCommit { oid }
+              commit { oid }
+              createdAt
+              updatedAt
+              author { login __typename }
+            }
+          }
+        }
+      }
+      reviews(first: 100) {
+        pageInfo { hasNextPage }
+        nodes {
+          body
+          state
+          submittedAt
+          commit { oid }
+          author { login __typename }
+        }
+      }
+      commits(first: 100) {
+        pageInfo { hasNextPage }
+        nodes { commit { oid message authoredDate committedDate } }
+      }
+      headCommit: commits(last: 1) {
+        nodes {
+          commit {
+            oid
+            committedDate
+            status {
+              contexts {
+                context
+                state
+                createdAt
+                updatedAt
+                targetUrl
+                description
+              }
+            }
+            checkSuites(first: 20) {
+              pageInfo { hasNextPage }
+              nodes {
+                app { slug name }
+                checkRuns(first: 100) {
+                  pageInfo { hasNextPage }
+                  nodes { name status conclusion }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+`;
+
+// GraphQL fetcher: shells out to `gh api graphql` (separate rate-limit bucket
+// from REST). Resolves `data`, rejects with gh stderr on any error so the
+// per-PR isolation / abort policy applies exactly like the REST fetcher.
+function createGraphqlFetcher() {
+  return function graphql(query, variables = {}) {
+    return new Promise((resolve, reject) => {
+      const args = ['api', 'graphql'];
+      for (const [key, value] of Object.entries(variables)) {
+        args.push(typeof value === 'number' ? '-F' : '-f', `${key}=${value}`);
+      }
+      args.push('-f', `query=${query}`);
+      execFile(
+        'gh',
+        args,
+        { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: process.env },
+        (err, stdout, stderr) => {
+          if (err) {
+            const wrapped = new Error(
+              `gh api graphql failed: ${String(stderr || err.message).trim()}`,
+            );
+            wrapped.cause = err;
+            return reject(wrapped);
+          }
+          try {
+            const parsed = JSON.parse(String(stdout ?? '').trim() || '{}');
+            resolve(parsed?.data ?? null);
+          } catch (parseErr) {
+            const wrapped = new Error('gh api graphql returned non-JSON');
+            wrapped.cause = parseErr;
+            reject(wrapped);
+          }
+        },
+      );
+    });
+  };
+}
+
+// REST renders app logins with the `[bot]` suffix (github-actions[bot],
+// kilo-code-bot[bot]); GraphQL Bot nodes return the bare login. Consumers
+// (extractAttempts, isKiloUser) match the REST spelling, so restore it.
+function restLogin(author) {
+  if (!author) return null;
+  const login = String(author.login ?? '');
+  if (author.__typename === 'Bot' && login && !login.endsWith('[bot]')) {
+    return `${login}[bot]`;
+  }
+  return login;
+}
+
+function restUser(author) {
+  return author ? { login: restLogin(author) } : null;
+}
+
+// The mappers below rebuild the REST field names (snake_case, lowercase enums)
+// the context files have always contained, so consumers keep their contract.
+function mapIssueComments(nodes = []) {
+  return nodes.map((node) => ({
+    body: node.body ?? '',
+    user: restUser(node.author),
+    created_at: node.createdAt ?? null,
+    updated_at: node.updatedAt ?? null,
+  }));
+}
+
+function mapReviewComments(threadNodes = []) {
+  const out = [];
+  for (const thread of threadNodes) {
+    for (const node of thread?.comments?.nodes ?? []) {
+      out.push({
+        body: node.body ?? '',
+        path: node.path ?? null,
+        commit_id: node.commit?.oid ?? null,
+        original_commit_id: node.originalCommit?.oid ?? null,
+        user: restUser(node.author),
+        created_at: node.createdAt ?? null,
+        updated_at: node.updatedAt ?? null,
+      });
+    }
+  }
+  return out;
+}
+
+function mapReviews(nodes = []) {
+  return nodes.map((node) => ({
+    body: node.body ?? '',
+    state: node.state ?? null,
+    commit_id: node.commit?.oid ?? null,
+    submitted_at: node.submittedAt ?? null,
+    user: restUser(node.author),
+  }));
+}
+
+function mapCommits(nodes = []) {
+  return nodes.map((node) => ({
+    sha: node.commit?.oid ?? '',
+    commit: {
+      message: node.commit?.message ?? '',
+      author: { date: node.commit?.authoredDate ?? '' },
+      committer: { date: node.commit?.committedDate ?? '' },
+    },
+  }));
+}
+
+function mapStatuses(statusPayload) {
+  return (statusPayload?.contexts ?? []).map((context) => ({
+    context: context.context ?? '',
+    state: String(context.state ?? '').toLowerCase(),
+    created_at: context.createdAt ?? null,
+    updated_at: context.updatedAt ?? null,
+    target_url: context.targetUrl ?? null,
+    description: context.description ?? null,
+  }));
+}
+
+function mapCheckRuns(suiteNodes = []) {
+  const out = [];
+  for (const suite of suiteNodes) {
+    const app = suite?.app
+      ? { slug: suite.app.slug ?? null, name: suite.app.name ?? null }
+      : null;
+    for (const run of suite?.checkRuns?.nodes ?? []) {
+      out.push({
+        name: run.name ?? '',
+        status: run.status ? String(run.status).toLowerCase() : null,
+        conclusion: run.conclusion
+          ? String(run.conclusion).toLowerCase()
+          : null,
+        app,
+      });
+    }
+  }
+  return out;
+}
+
+function checkRunsOverflow(headNode) {
+  const suites = headNode?.checkSuites;
+  return (
+    Boolean(suites?.pageInfo?.hasNextPage) ||
+    (suites?.nodes ?? []).some(
+      (suite) => suite?.checkRuns?.pageInfo?.hasNextPage,
+    )
+  );
+}
+
+// GraphQL-backed replacement for fetchPrContext: one query per PR (plus the
+// existing `gh pr view`, itself GraphQL) instead of seven REST calls. Narrow
+// REST fallbacks keep behavior identical when a connection page overflows or
+// the head SHA moved between `gh pr view` and the query.
+async function fetchPrContextViaGraphql({
+  graphql,
+  fetchJson,
+  viewPull,
+  repo,
+  prNumber,
+}) {
+  const [owner, name] = String(repo).split('/');
+  const [pr, data] = await Promise.all([
+    viewPull(prNumber),
+    graphql(PULL_REQUEST_CONTEXT_QUERY, {
+      owner,
+      name,
+      number: Number(prNumber),
+    }),
+  ]);
+  const pull = data?.repository?.pullRequest ?? null;
+  if (!pull) {
+    throw new Error(`gh api graphql returned no pullRequest for #${prNumber}`);
+  }
+  const headSha = normalizeHeadSha(pr);
+  const threads = pull.reviewThreads?.nodes ?? [];
+  const headNode = pull.headCommit?.nodes?.[0]?.commit ?? null;
+  const headFromQuery = Boolean(headSha) && headNode?.oid === headSha;
+
+  const fallbacks = {
+    comments: Boolean(pull.comments?.pageInfo?.hasNextPage),
+    reviewComments:
+      Boolean(pull.reviewThreads?.pageInfo?.hasNextPage) ||
+      threads.some((thread) => thread?.comments?.pageInfo?.hasNextPage),
+    reviews: Boolean(pull.reviews?.pageInfo?.hasNextPage),
+    commits: Boolean(pull.commits?.pageInfo?.hasNextPage),
+    checkRuns: headFromQuery && checkRunsOverflow(headNode),
+  };
+
+  const restList = (apiPath) =>
+    fetchJson(apiPath, { paginate: true }).then((value) => value ?? []);
+
+  async function resolveHead() {
+    if (!headSha) return { headCommittedAt: '', statuses: [], checkRuns: [] };
+    if (headFromQuery) {
+      const checkRuns = fallbacks.checkRuns
+        ? ((
+            await fetchJson(`repos/${repo}/commits/${headSha}/check-runs`, {
+              paginate: true,
+            })
+          )?.check_runs ?? [])
+        : mapCheckRuns(headNode.checkSuites?.nodes ?? []);
+      return {
+        headCommittedAt: headNode.committedDate ?? '',
+        statuses: mapStatuses(headNode.status),
+        checkRuns,
+      };
+    }
+    // Head moved mid-fetch (or query missed it): legacy REST trio, same as
+    // fetchPrContext, including the 404 -> [] mapping for fresh commits.
+    const [commitPayload, statusPayload, checkPayload] = await Promise.all([
+      fetchJson(`repos/${repo}/commits/${headSha}`),
+      fetchJson(`repos/${repo}/commits/${headSha}/status`),
+      fetchJson(`repos/${repo}/commits/${headSha}/check-runs`, {
+        paginate: true,
+      }),
+    ]);
+    return {
+      headCommittedAt: commitTimestamp(commitPayload ?? {}),
+      statuses: statusPayload?.statuses ?? [],
+      checkRuns: checkPayload?.check_runs ?? [],
+    };
+  }
+
+  const [comments, reviewComments, reviews, commits, head] = await Promise.all([
+    fallbacks.comments
+      ? restList(`repos/${repo}/issues/${prNumber}/comments`)
+      : mapIssueComments(pull.comments?.nodes ?? []),
+    fallbacks.reviewComments
+      ? restList(`repos/${repo}/pulls/${prNumber}/comments`)
+      : mapReviewComments(threads),
+    fallbacks.reviews
+      ? restList(`repos/${repo}/pulls/${prNumber}/reviews`)
+      : mapReviews(pull.reviews?.nodes ?? []),
+    fallbacks.commits
+      ? restList(`repos/${repo}/pulls/${prNumber}/commits`)
+      : mapCommits(pull.commits?.nodes ?? []),
+    resolveHead(),
+  ]);
+
+  return {
+    pr: { ...(pr ?? {}), headCommittedAt: head.headCommittedAt },
+    comments,
+    attempts: extractAttempts(comments),
+    reviewComments,
+    reviews,
+    commits,
+    statuses: head.statuses,
+    checkRuns: head.checkRuns,
+    headSha,
+  };
+}
+
 async function mapWithConcurrency(items, limit, worker) {
   const results = new Array(items.length);
   const cap = Math.max(1, Number(limit) || 1);
@@ -251,6 +583,7 @@ async function fetchAutoCoverContext({
   outDir,
   fetchJson,
   viewPull,
+  graphql,
   concurrency = DEFAULT_CONCURRENCY,
   fixReviewWorkflow = DEFAULT_FIX_REVIEW_WORKFLOW,
   runLimit = DEFAULT_RUN_LIMIT,
@@ -279,6 +612,10 @@ async function fetchAutoCoverContext({
 
   const fetcher = fetchJson || createGhFetcher();
   const viewPr = viewPull || createViewPull();
+  // Production default: one GraphQL query per PR (its own rate-limit bucket),
+  // with narrow REST fallbacks through `fetcher`. Injecting only `fetchJson`
+  // (no `graphql`) keeps the legacy all-REST path used by the existing tests.
+  const gql = graphql || (fetchJson ? null : createGraphqlFetcher());
   const fixReviewRuns = await fetchFixReviewRuns(
     fetcher,
     repo,
@@ -296,12 +633,20 @@ async function fetchAutoCoverContext({
     concurrency,
     async (prNumber) => {
       try {
-        const ctx = await fetchPrContext({
-          fetchJson: fetcher,
-          viewPull: viewPr,
-          repo,
-          prNumber,
-        });
+        const ctx = gql
+          ? await fetchPrContextViaGraphql({
+              graphql: gql,
+              fetchJson: fetcher,
+              viewPull: viewPr,
+              repo,
+              prNumber,
+            })
+          : await fetchPrContext({
+              fetchJson: fetcher,
+              viewPull: viewPr,
+              repo,
+              prNumber,
+            });
         writeContextFiles(outDir, prNumber, ctx, fixReviewRuns);
         return { pr: prNumber, ok: true };
       } catch (error) {
@@ -371,15 +716,25 @@ module.exports = {
   AUTO_COVER_MARKER,
   DEFAULT_CONCURRENCY,
   DEFAULT_FIX_REVIEW_WORKFLOW,
+  PULL_REQUEST_CONTEXT_QUERY,
   createGhFetcher,
+  createGraphqlFetcher,
   createViewPull,
   isMissingResponse,
   mapWithConcurrency,
   extractAttempts,
   normalizeHeadSha,
   commitTimestamp,
+  restLogin,
+  mapIssueComments,
+  mapReviewComments,
+  mapReviews,
+  mapCommits,
+  mapStatuses,
+  mapCheckRuns,
   fetchFixReviewRuns,
   fetchPrContext,
+  fetchPrContextViaGraphql,
   writeContextFiles,
   fetchAutoCoverContext,
 };
