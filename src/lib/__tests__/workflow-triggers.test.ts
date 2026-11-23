@@ -375,6 +375,7 @@ describe('workflow trigger policy', () => {
   it('prefilters issue command workflows before runner checkout', () => {
     expectGuard('fix-issue.yml', [
       /authorize:[\s\S]*?if: >-/,
+      /github\.event\.issue\.state != 'closed'/,
       /github\.event\.issue\.pull_request == null/,
       /contains\(github\.event\.comment\.body, '\/fix'\)/,
       /github\.event\.label\.name == 'auto-fix-approved'/,
