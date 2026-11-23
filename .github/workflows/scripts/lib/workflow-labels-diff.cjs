@@ -36,9 +36,14 @@ function isQuotaError(error) {
 // permission, SSO or SAML enforcement, organization policy, an unexpected
 // body) repeats on every retry and every further label, so it is non-retryable
 // and reported as a permission problem instead of as quota.
+// GraphQL-backed calls (`label list`) print their errors without an HTTP
+// status, so the permission wording counts too.
 function isForbiddenError(error) {
+  const text = errorText(error);
   return (
-    !isQuotaError(error) && /HTTP 403\b|\(HTTP 403\)/i.test(errorText(error))
+    !isQuotaError(error) &&
+    (/HTTP 403\b|\(HTTP 403\)/i.test(text) ||
+      /resource not accessible|\bSSO\b|\bSAML\b|must have admin/i.test(text))
   );
 }
 

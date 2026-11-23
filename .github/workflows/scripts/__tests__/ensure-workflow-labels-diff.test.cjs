@@ -287,6 +287,37 @@ test('an unrecognized 403 never reaches the expensive per-label path or the retr
   assert.deepEqual(onWrite.waits, []);
 });
 
+test('a GraphQL-shaped permission failure (no HTTP status) skips the list read without the fallback', () => {
+  const gh = fakeGh({
+    listError: ghError(
+      'GraphQL: Resource not accessible by integration (repository.labels)',
+    ),
+  });
+  const result = reconcileLabels(['auto-fix', 'area/planning'], POLICY, gh);
+  assert.equal(result.mode, 'skipped');
+  assert.deepEqual(gh.writes, []);
+  assert.deepEqual(gh.waits, []);
+  assert.match(gh.warnings[0], /lacks permission/);
+});
+
+test('an abuse-detection 403 on a write stops the remaining writes without sleeps and names abuse protection', () => {
+  const gh = fakeGh({
+    existing: [],
+    onWrite: () => {
+      throw ghError(
+        'HTTP 403: You have triggered an abuse detection mechanism',
+      );
+    },
+  });
+  const result = reconcileLabels(['auto-fix', 'area/planning'], POLICY, gh);
+  assert.equal(result.mode, 'diff');
+  assert.equal(gh.writes.length, 1);
+  assert.equal(result.skipped, 1);
+  assert.deepEqual(gh.waits, []);
+  assert.match(gh.warnings[0], /rate limit or abuse protection hit/);
+  assert.doesNotMatch(gh.warnings[0], /lacks permission/);
+});
+
 test('abuse detection is reported as rate limit or abuse protection, not as plain quota', () => {
   const gh = fakeGh({
     listError: ghError(
