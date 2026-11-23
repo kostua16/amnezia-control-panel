@@ -143,8 +143,12 @@ inputs:
     description: 'Track progress'
     default: 'false'
   allowed-bots:
-    description: 'Allowed bots'
+    description: 'Explicit allowed-bots override (documented exceptions only)'
     required: false
+  allowed-bots-profile:
+    description: 'Named policy.json allowedBots profile: interactive or orchestrated'
+    required: false
+    default: ''
   allowed-tools:
     description: 'Allowed tools'
     default: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*)'
@@ -209,6 +213,7 @@ runs:
         max-turns: ${{ inputs.max-turns }}
         track-progress: ${{ inputs.track-progress }}
         allowed-bots: ${{ inputs.allowed-bots }}
+        allowed-bots-profile: ${{ inputs.allowed-bots-profile }}
         allowed-tools: ${{ inputs.allowed-tools }}
         system-prompt: ${{ inputs.system-prompt }}
         json-schema: ${{ inputs.json-schema }}
