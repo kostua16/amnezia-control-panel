@@ -222,6 +222,7 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
     ['rewind base unavailable on origin', null, true, 'fetch'],
     ['fetch authentication detail redacts credentials', [], true, 'fetch-auth'],
     ['fetch timeout preserves the error code', [], true, 'fetch-timeout'],
+    ['fetch diagnostic caps a 50 KB line', [], true, 'fetch-long'],
     ['failed checkout', [], true, 'checkout'],
     [
       'large diff with a relevant path after the default buffer limit',
@@ -241,10 +242,14 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
       const pushAfter = paths === null ? rewindAfter : after;
       const outputs = {};
       const warnings = [];
+      const summaryLines = [];
       const masked = [];
       const summary = {
         addHeading: () => summary,
-        addRaw: () => summary,
+        addRaw: (line) => {
+          summaryLines.push(line);
+          return summary;
+        },
         addBreak: () => summary,
         write: async () => {},
       };
@@ -281,6 +286,7 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
             error.code = 'ETIMEDOUT';
             throw error;
           }
+          if (failure === 'fetch-long') throw new Error('x'.repeat(50 * 1024));
           return '';
         }
         if (failure === 'diff') throw new Error('missing commit');
@@ -349,6 +355,11 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
         assert.match(warnings[0], /Authentication failed for \[redacted\]/);
       if (failure === 'fetch-timeout')
         assert.match(warnings[0], /ETIMEDOUT \[redacted\]/);
+      if (failure === 'fetch-long') {
+        const diagnostic = `${'x'.repeat(297)}...`;
+        assert.ok(warnings[0].endsWith(`: ${diagnostic}`));
+        assert.ok(summaryLines[0].endsWith(`: ${diagnostic}`));
+      }
     });
   }
 });
@@ -444,7 +455,10 @@ test('F6a: live issue lookup skips missing issues and retries only transient fai
     'gh() {',
     '  if [[ -f calls ]]; then state="$SECOND"; else state="$FIRST"; fi',
     '  echo lookup >> calls',
-    '  case "$state" in OPEN|CLOSED|UNKNOWN) printf "%s\\n" "$state" ;; *) printf "%s\\n" "$state" >&2; return 1 ;; esac',
+    '  case "$state" in',
+    '    OPEN|CLOSED|UNKNOWN) echo "stderr noise" >&2; printf "%s\\n" "$state" ;;',
+    '    *) echo "OPEN"; printf "%s\\n" "$state" >&2; return 1 ;;',
+    '  esac',
     '}',
     'sleep() { echo "$1" > delay; }',
   ].join('\n');
@@ -458,6 +472,22 @@ test('F6a: live issue lookup skips missing issues and retries only transient fai
     [
       'HTTP 403: secondary rate limit',
       'HTTP 429',
+      2,
+      true,
+      /::warning::/,
+      '60',
+    ],
+    [
+      'HTTP 403: API rate limit exceeded for installation ID 1',
+      'GraphQL: API rate limit already exceeded',
+      2,
+      true,
+      /::warning::/,
+      '60',
+    ],
+    [
+      'HTTP 403: Abuse detection',
+      'HTTP 403: Abuse detection',
       2,
       true,
       /::warning::/,

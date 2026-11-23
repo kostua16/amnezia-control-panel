@@ -167,7 +167,8 @@ jobs:
                   safeDetail = safeDetail.replaceAll(secret, '[redacted]');
                 }
                 const firstLine = safeDetail.trim().split(/\r?\n/, 1)[0];
-                throw new Error(`unable to fetch the previous main commit from origin: ${firstLine}`);
+                const diagnostic = firstLine.length > 300 ? `${firstLine.slice(0, 297)}...` : firstLine;
+                throw new Error(`unable to fetch the previous main commit from origin: ${diagnostic}`);
               }
 
               // Treat renames as delete/add so both paths remain eligible.

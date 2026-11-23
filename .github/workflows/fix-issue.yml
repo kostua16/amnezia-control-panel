@@ -108,16 +108,19 @@ jobs:
             echo '::error::GH_PAT is empty. Cannot check the live issue state.'
             exit 1
           fi
+          lookup_stderr=$(mktemp)
+          trap 'rm -f -- "$lookup_stderr"' EXIT
           for attempt in 1 2; do
-            if state=$(gh issue view "$ISSUE_NUM" --repo "$GITHUB_REPOSITORY" --json state --jq '.state' 2>&1); then
+            if state=$(gh issue view "$ISSUE_NUM" --repo "$GITHUB_REPOSITORY" --json state --jq '.state' 2>"$lookup_stderr"); then
               case "$state" in
                 OPEN) echo 'is_open=true' >> "$GITHUB_OUTPUT"; exit 0 ;;
                 CLOSED) echo 'Issue closed before repair started. Skipping.'; exit 0 ;;
                 *) echo '::error::GitHub CLI returned an unexpected issue state.'; exit 1 ;;
               esac
             fi
-            case "${state,,}" in
-              *'secondary rate limit'*|*'http 429'*) delay=60 ;;
+            failure=$(LC_ALL=C tr '[:upper:]' '[:lower:]' < "$lookup_stderr")
+            case "$failure" in
+              *'rate limit'*|*'abuse detection'*|*'http 429'*) delay=60 ;;
               *'http 401'*|*'http 403'*|*'bad credentials'*|*'resource not accessible'*|*unauthorized*|*forbidden*)
                 echo '::error::GitHub rejected GH_PAT authentication or issue access.'
                 exit 1 ;;
