@@ -79,9 +79,19 @@ auto-cover-review.yml
      kilo-code-bot `<!-- kilo-review -->` comments, workflow_dispatch, and a
      scheduled fallback
   -> evaluates internal review concern labels plus Kilo current-head feedback
+  -> AUTO_COVER_DELAY_MODE=delayed (default): hands each eligible PR to
+     auto-cover-dispatch.yml; `direct` dispatches fix-review.yml itself
   -> dispatches fix-review.yml on `--ref main` with automation_review_loop=true
   -> allows manual-only / needs-review PRs to be repaired, but never approves,
      merges, removes needs-review, or bypasses do-not-merge
+
+auto-cover-dispatch.yml
+  -> workflow_dispatch only, from auto-cover-review.yml (pr_number, head_sha)
+  -> `wait` job: `auto-cover-delay` environment wait timer (quiet period, no
+     runner held); a newer handoff for the same PR cancels the waiting one
+  -> `dispatch` job: serialized per PR, re-reads the PR context, re-runs both
+     evaluators against the handed-off head, then dispatches fix-review.yml
+     (automation_review_loop=true) and records the attempt comment
 
 deepseek.yml
   -> standalone @deepseek trigger (issue_comment, PR review, issues)
@@ -98,15 +108,16 @@ deepseek-code-review.yml
 
 fix-review.yml
   -> maintainer-only /fix-review or /address-review PR comment (issue_comment) or workflow_dispatch
-  -> automation_review_loop=true is reserved for auto-cover-review.yml and may
-     repair same-repo review-blocked/manual-only PRs without changing merge policy
+  -> automation_review_loop=true is reserved for auto-cover-review.yml (direct
+     mode) and auto-cover-dispatch.yml (delayed mode) and may repair same-repo
+     review-blocked/manual-only PRs without changing merge policy
   -> pre-fetches unresolved, non-outdated review threads + reviews + filtered PR comments
   -> applies fixes in place on the SAME PR head branch (never a new branch, never force-pushes)
   -> CI-matching gate (npm run test && npm run build + script tests + Prisma-safe check) must pass before push
   -> disables auto-merge after a fix push so the bot commit is re-reviewed before merge
   -> sticky summary comment: started -> working -> finished (or skipped / no-changes / push-rejected / validation-failed / failed / cancelled); each refresh replaces the old comment so the current summary is latest in the PR timeline
   -> human command path remains standalone; automation_review_loop is dispatched
-     by auto-cover-review.yml
+     by auto-cover-dispatch.yml (or auto-cover-review.yml in direct mode)
 
 dependency-review.yml
   -> dispatch-only worker controlled by pr-flow.yml

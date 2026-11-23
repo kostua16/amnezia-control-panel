@@ -61,12 +61,14 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Ensure workflow labels exist
         uses: ./.github/actions/ensure-workflow-labels
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           policy-file: .github/workflows/policy.json
+          mode: ${{ vars.ENSURE_LABELS_MODE || 'diff' }}
 
       - name: Resolve PR context
         id: resolve
@@ -228,6 +230,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Wake PR Orchestrator
         env:

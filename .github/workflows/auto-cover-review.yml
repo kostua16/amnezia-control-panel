@@ -45,24 +45,74 @@ concurrency:
   # run creation, before job `if:` gates run — routing them to a per-PR noise
   # group with cancel-in-progress=false prevents them from cancelling or
   # displacing a real fix-review wake (same bug class as PR #695 / #715).
+  # Kilo sticky-comment edits get their own per-PR `kiloedit` group with
+  # cancel-in-progress=false: Kilo edits the comment twice per review and the
+  # `classify` job drops the second, history-only edit, so a dropped edit may
+  # only displace another Kilo edit, never a pending Code Review completion or
+  # targeted dispatch, and never cancels the in-flight first edit. Every other
+  # comment that `cover` ignores anyway (human comments, Kilo comments without
+  # the sticky marker) joins the per-PR noise group, so it cannot cancel an
+  # in-flight run either. Only a newly created Kilo sticky comment still
+  # cancels like a Code Review completion. KILO_EDIT_FILTER=off restores the
+  # previous grouping and cancellation.
   group: >-
     auto-cover-review-${{
       (github.event_name == 'issue_comment' && github.event.comment.user.login == 'github-actions[bot]' && format('noise-{0}', github.event.issue.number)) ||
+      (github.event_name == 'issue_comment' && vars.KILO_EDIT_FILTER != 'off' && (github.event.comment.user.login != 'kilo-code-bot[bot]' || !contains(github.event.comment.body, '<!-- kilo-review -->')) && format('noise-{0}', github.event.issue.number)) ||
+      (github.event_name == 'issue_comment' && github.event.action == 'edited' && github.event.comment.user.login == 'kilo-code-bot[bot]' && vars.KILO_EDIT_FILTER != 'off' && format('kiloedit-{0}', github.event.issue.number)) ||
       github.event.issue.number ||
       github.event.inputs.pr_number ||
       github.event.workflow_run.pull_requests[0].number ||
       'scan'
     }}
-  cancel-in-progress: ${{ github.event_name != 'issue_comment' || github.event.comment.user.login != 'github-actions[bot]' }}
+  cancel-in-progress: ${{ github.event_name != 'issue_comment' || (github.event.comment.user.login != 'github-actions[bot]' && (vars.KILO_EDIT_FILTER == 'off' || (github.event.action != 'edited' && github.event.comment.user.login == 'kilo-code-bot[bot]' && contains(github.event.comment.body, '<!-- kilo-review -->')))) }}
 
 jobs:
-  cover:
+  # Cheap gate for Kilo sticky-comment edits: no setup-environment, no API
+  # call. A history-only edit ends here; anything else (and any classifier
+  # failure) lets `cover` run.
+  classify:
     if: >-
-      github.event_name != 'issue_comment' ||
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'edited' &&
+      github.event.issue.pull_request != null &&
+      github.event.comment.user.login == 'kilo-code-bot[bot]' &&
+      contains(github.event.comment.body, '<!-- kilo-review -->') &&
+      vars.KILO_EDIT_FILTER != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      should_run: ${{ steps.classify.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Classify Kilo sticky-comment edit
+        id: classify
+        shell: bash
+        env:
+          KILO_EDIT_FILTER: ${{ vars.KILO_EDIT_FILTER || '' }}
+        run: |
+          if ! node .github/workflows/scripts/classify-kilo-comment-edit.cjs \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --filter "$KILO_EDIT_FILTER" >> "$GITHUB_OUTPUT"; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  cover:
+    needs: classify
+    # `classify` is skipped for every other event; `!cancelled()` lets `cover`
+    # run then, and only an explicit should_run=false stops it.
+    if: >-
+      !cancelled() &&
+      needs.classify.outputs.should_run != 'false' &&
       (
-        github.event.issue.pull_request != null &&
-        github.event.comment.user.login == 'kilo-code-bot[bot]' &&
-        contains(github.event.comment.body, '<!-- kilo-review -->')
+        github.event_name != 'issue_comment' ||
+        (
+          github.event.issue.pull_request != null &&
+          github.event.comment.user.login == 'kilo-code-bot[bot]' &&
+          contains(github.event.comment.body, '<!-- kilo-review -->')
+        )
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -71,12 +121,29 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-environment
+        id: setup
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
+          # Soft on purpose: an exhausted quota must reach the reserve gate below
+          # and defer green instead of failing the job at setup.
+          require-gh-auth: 'false'
           node-version: '24.x'
           install-deps: 'false'
 
+      # Auto Cover is deferrable: below the reserve it stops here (green, with
+      # a notice) and the next trigger or the 3-hourly scan retries. Uses the
+      # quota setup-environment already read at job start; QUOTA_RESERVE=0
+      # disables the gate.
+      - name: Check API quota reserve
+        id: reserve
+        env:
+          CORE_REMAINING: ${{ steps.setup.outputs.core-remaining }}
+          QUOTA_RESERVE: ${{ vars.QUOTA_RESERVE || '600' }}
+        run: node .github/workflows/scripts/check-quota-reserve.cjs
+
       - name: Evaluate and dispatch review repair
+        if: steps.reserve.outputs.proceed != 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -85,6 +152,10 @@ jobs:
           INPUT_PR_NUMBER: ${{ github.event.inputs.pr_number }}
           INPUT_HEAD_SHA: ${{ github.event.inputs.head_sha }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          # Same switch as the PR Orchestrator so both verdict producers agree: empty = `critical,warning`, `all` = every Kilo finding blocks.
+          KILO_BLOCKING_SEVERITIES: ${{ vars.KILO_BLOCKING_SEVERITIES || '' }}
+          # `delayed` (default): eligible PRs wait out the auto-cover-delay environment timer in auto-cover-dispatch.yml; `direct` dispatches fix-review immediately without a commit.
+          AUTO_COVER_DELAY_MODE: ${{ vars.AUTO_COVER_DELAY_MODE || 'delayed' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -137,83 +208,17 @@ jobs:
             --concurrency 4 \
             --fix-review-workflow fix-review.yml
 
-          dispatched=0
-          evaluated=0
-          while IFS= read -r pr_number; do
-            [ -n "$pr_number" ] || continue
-            evaluated=$((evaluated + 1))
-            prefix="$RUNNER_TEMP/auto-cover-review/pr-$pr_number"
-            head_sha="$(cat "$prefix-head-sha")"
-            expected_sha="${INPUT_HEAD_SHA:-$head_sha}"
-
-            node .github/workflows/scripts/evaluate-external-review.cjs \
-              --pr-file "$prefix-pr.json" \
-              --comments-file "$prefix-comments.json" \
-              --review-comments-file "$prefix-review-comments.json" \
-              --reviews-file "$prefix-reviews.json" \
-              --check-runs-file "$prefix-check-runs.json" \
-              --statuses-file "$prefix-statuses.json" \
-              > "$prefix-external-review.json"
-
-            node .github/workflows/scripts/evaluate-auto-cover-review.cjs \
-              --policy-file .github/workflows/policy.json \
-              --pr-file "$prefix-pr.json" \
-              --external-review-file "$prefix-external-review.json" \
-              --comments-file "$prefix-comments.json" \
-              --commits-file "$prefix-commits.json" \
-              --attempts-file "$prefix-attempts.json" \
-              --fix-review-runs-file "$prefix-fix-review-runs.json" \
-              --head-sha "$expected_sha" \
-              > "$prefix-decision.json"
-
-            should_run="$(jq -r '.should_run' "$prefix-decision.json")"
-            reason="$(jq -r '.reason // "eligible"' "$prefix-decision.json")"
-            echo "PR #$pr_number: $reason"
-            if [ "$should_run" = "true" ]; then
-              if [ "$DRY_RUN" = "true" ]; then
-                echo "Dry-run: would dispatch fix-review for PR #$pr_number @ $head_sha"
-              else
-                dispatch_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                fix_review_title="Fix Review PR #${pr_number} @ ${head_sha}"
-                gh workflow run fix-review.yml \
-                  --ref main \
-                  -f pr_number="$pr_number" \
-                  -f head_sha="$head_sha" \
-                  -f automation_review_loop=true
-                fix_review_run_url=""
-                for attempt in $(seq 1 10); do
-                  fix_review_run_url="$(
-                    gh run list \
-                      --workflow fix-review.yml \
-                      --event workflow_dispatch \
-                      --limit 20 \
-                      --json displayTitle,createdAt,url,status,databaseId \
-                      | jq -r \
-                        --arg title "$fix_review_title" \
-                        --arg started "$dispatch_started_at" \
-                        '[.[] | select(.displayTitle == $title and .createdAt >= $started)] | sort_by(.createdAt) | .[0].url // empty'
-                  )" || true
-                  if [ -n "$fix_review_run_url" ]; then
-                    break
-                  fi
-                  if [ "$attempt" -lt 10 ]; then
-                    sleep 2
-                  fi
-                done
-                fix_review_run_url="${fix_review_run_url:-_unavailable_}"
-                comment_body="$prefix-auto-cover-comment.md"
-                {
-                  echo "<!-- auto-cover-review-summary -->"
-                  echo
-                  echo "Auto-cover review dispatched fix-review for \`$head_sha\`."
-                  echo
-                  echo "- Dispatcher run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-                  echo "- Fix-review run: $fix_review_run_url"
-                } > "$comment_body"
-                gh issue comment "$pr_number" --body-file "$comment_body"
-                dispatched=$((dispatched + 1))
-              fi
-            fi
-          done < "$RUNNER_TEMP/auto-cover-review/prs-to-evaluate.txt"
-
-          echo "Evaluated $evaluated PR(s); dispatched $dispatched fix-review run(s)." >> "$GITHUB_STEP_SUMMARY"
+          # Evaluate every fetched PR and act on the eligible ones. `delayed`
+          # hands each eligible PR to auto-cover-dispatch.yml (quiet period,
+          # then re-validation and fix-review dispatch); `direct` dispatches
+          # fix-review right away (previous behavior).
+          mode="delayed"
+          if [ "$AUTO_COVER_DELAY_MODE" = "direct" ]; then
+            mode="direct"
+          fi
+          node .github/workflows/scripts/run-auto-cover-repairs.cjs \
+            --mode "$mode" \
+            --context-dir "$RUNNER_TEMP/auto-cover-review" \
+            --policy-file .github/workflows/policy.json \
+            --head-sha "$INPUT_HEAD_SHA" \
+            --dry-run "$DRY_RUN"

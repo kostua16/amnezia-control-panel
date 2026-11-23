@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 'use strict';
 
+const { appendFileSync } = require('node:fs');
 const { createHash } = require('node:crypto');
 
 const DEFAULT_API_URL = 'https://api.github.com';
@@ -70,9 +71,24 @@ async function fetchRateLimit({ token, apiUrl, fetchImpl }) {
   return body.resources;
 }
 
+// Exposes the remaining core (REST) quota as the step output `core-remaining`
+// so callers can stop a job before side effects when the bucket is already
+// empty, without a second API call. Empty when the reading failed.
+function writeCoreRemainingOutput({ env = process.env, resources } = {}) {
+  if (!env.GITHUB_OUTPUT) return;
+  const remaining = resources?.core?.remaining;
+  const value = Number.isInteger(remaining) ? String(remaining) : '';
+  appendFileSync(
+    env.GITHUB_OUTPUT,
+    `core-remaining=${value}
+`,
+  );
+}
+
 /**
  * Logs one greppable RATE_LIMIT line. GET /rate_limit does not consume quota, and any
  * failure only produces a warning so the diagnostic can never fail a job.
+ * Returns the rate-limit resources, or null when they could not be read.
  */
 async function logRateLimit({
   env = process.env,
@@ -88,10 +104,12 @@ async function logRateLimit({
       fetchImpl,
     });
     log(formatRateLimitLine({ env, phase, label, resources }));
+    return resources ?? null;
   } catch (error) {
     log(
       `::warning::Unable to read the GitHub API rate limit (${label || env.GITHUB_JOB}): ${error.message}`,
     );
+    return null;
   }
 }
 
@@ -100,4 +118,5 @@ module.exports = {
   logRateLimit,
   tokenFingerprint,
   tokenKind,
+  writeCoreRemainingOutput,
 };

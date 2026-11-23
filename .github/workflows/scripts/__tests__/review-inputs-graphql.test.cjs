@@ -24,6 +24,11 @@ const HEAD = 'a'.repeat(40);
 const OTHER = 'b'.repeat(40);
 const KILO_PASSED = `${KILO_MARKER}\n## Code Review Summary\n**No Issues Found**`;
 const KILO_BLOCKED = `${KILO_MARKER}\n## Code Review Summary\n**2 Issues Found**`;
+// Real suggestions-only Kilo summary (PR #1181) with its history section.
+const KILO_SUGGESTIONS =
+  require('./fixtures/kilo-sticky-comment-revisions.json').revisions.find(
+    (rev) => rev.index === 5,
+  ).body;
 
 const done = { hasNextPage: false, endCursor: null };
 const bot = (login) => ({ __typename: 'Bot', login });
@@ -182,6 +187,20 @@ for (const [name, kiloBody, inline, expected, originalCommit] of [
     'blocks original head inline comment',
     KILO_PASSED,
     'new finding',
+    'blocked',
+    HEAD,
+  ],
+  [
+    'suggestions-only summary and suggestion inline pass',
+    KILO_SUGGESTIONS,
+    '**SUGGESTION:** rename',
+    'passed',
+    HEAD,
+  ],
+  [
+    'suggestions-only summary with a warning inline blocks',
+    KILO_SUGGESTIONS,
+    '**WARNING:** guard',
     'blocked',
     HEAD,
   ],

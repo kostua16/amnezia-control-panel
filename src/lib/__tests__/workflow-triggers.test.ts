@@ -161,26 +161,105 @@ describe('workflow trigger policy', () => {
       /contains\(github\.event\.comment\.body, '<!-- kilo-review -->'\)/,
     );
     assert.match(yaml, /group:\s*(?:>-\s*)?auto-cover-review-/);
+    // The repair dispatch lives once, in run-auto-cover-repairs.cjs: `direct`
+    // dispatches fix-review here, `delayed` (default) hands off to
+    // auto-cover-dispatch.yml, which re-validates and dispatches the same way.
     assert.match(
       yaml,
-      /gh workflow run fix-review\.yml\s+\\\n\s+--ref main\s+\\\n\s+-f pr_number="\$pr_number"\s+\\\n\s+-f head_sha="\$head_sha"\s+\\\n\s+-f automation_review_loop=true/,
+      /AUTO_COVER_DELAY_MODE: \$\{\{ vars\.AUTO_COVER_DELAY_MODE \|\| 'delayed' \}\}/,
     );
     assert.match(
       yaml,
-      /fix_review_title="Fix Review PR #\$\{pr_number\} @ \$\{head_sha\}"/,
+      /node \.github\/workflows\/scripts\/run-auto-cover-repairs\.cjs\s+\\\r?\n\s+--mode "\$mode"/,
+    );
+    assert.match(yaml, /--dry-run "\$DRY_RUN"/);
+    const repairScript = fs.readFileSync(
+      path.join(
+        repoRoot,
+        '.github/workflows/scripts/run-auto-cover-repairs.cjs',
+      ),
+      'utf8',
     );
     assert.match(
-      yaml,
-      /gh run list\s+\\\n\s+--workflow fix-review\.yml\s+\\\n\s+--event workflow_dispatch/,
+      repairScript,
+      /'workflow',\s+'run',\s+'fix-review\.yml',\s+'--ref',\s+'main',\s+'-f',\s+`pr_number=\$\{prNumber\}`,\s+'-f',\s+`head_sha=\$\{headSha\}`,\s+'-f',\s+'automation_review_loop=true',/,
     );
-    assert.match(yaml, /\.displayTitle == \$title/);
-    assert.match(yaml, /\.createdAt >= \$started/);
-    assert.match(yaml, /echo "- Dispatcher run:/);
-    assert.match(yaml, /echo "- Fix-review run:/);
+    assert.match(
+      repairScript,
+      /const title = `Fix Review PR #\$\{prNumber\} @ \$\{headSha\}`;/,
+    );
+    assert.match(
+      repairScript,
+      /'run',\s+'list',\s+'--workflow',\s+'fix-review\.yml',\s+'--event',\s+'workflow_dispatch',/,
+    );
+    assert.match(repairScript, /run\.displayTitle === title/);
+    assert.match(repairScript, /run\.createdAt >= startedAt/);
+    assert.match(repairScript, /`- Dispatcher run: \$\{dispatcherUrl\}`/);
+    assert.match(repairScript, /`- Fix-review run: \$\{fixReviewUrl\}`/);
     assert.match(
       fixReviewYaml,
       /ALLOWED_BOTS_PROFILE:\s+\$\{\{\s+github\.event\.inputs\.automation_review_loop == 'true' && 'orchestrated' \|\| ''\s+\}\}/,
     );
+  });
+
+  it('delays Auto Cover repairs through an environment wait, then re-validates and dispatches', () => {
+    type DispatchJob = {
+      needs?: string | string[];
+      environment?: string;
+      concurrency?: { group?: string; 'cancel-in-progress'?: boolean };
+      steps?: Array<{ uses?: string; run?: string }>;
+    };
+    const yaml = readWorkflowText('auto-cover-dispatch.yml');
+    const workflow = loadYaml(yaml) as {
+      'run-name'?: string;
+      on?: Record<string, { inputs?: Record<string, { required?: boolean }> }>;
+      jobs?: Record<string, DispatchJob>;
+    };
+
+    assert.deepEqual(Object.keys(workflow.on ?? {}), ['workflow_dispatch']);
+    const inputs = workflow.on?.workflow_dispatch?.inputs ?? {};
+    assert.equal(inputs.pr_number?.required, true);
+    assert.equal(inputs.head_sha?.required, true);
+    assert.match(
+      workflow['run-name'] ?? '',
+      /PR #\$\{\{ inputs\.pr_number \}\} @ \$\{\{ inputs\.head_sha \}\}/,
+    );
+
+    const wait = workflow.jobs?.wait;
+    const dispatch = workflow.jobs?.dispatch;
+    assert.equal(wait?.environment, 'auto-cover-delay');
+    assert.equal(
+      wait?.concurrency?.group,
+      'auto-cover-wait-${{ inputs.pr_number }}',
+    );
+    assert.equal(wait?.concurrency?.['cancel-in-progress'], true);
+    // The waiting job must stay side-effect free so cancelling it is free.
+    assert.ok(!(wait?.steps ?? []).some((step) => step.uses));
+    assert.ok(
+      !(wait?.steps ?? []).some((step) => /\bgh\b/.test(step.run ?? '')),
+    );
+
+    assert.equal(dispatch?.needs, 'wait');
+    assert.equal(dispatch?.environment, undefined);
+    assert.equal(
+      dispatch?.concurrency?.group,
+      'auto-cover-dispatch-${{ inputs.pr_number }}',
+    );
+    assert.equal(dispatch?.concurrency?.['cancel-in-progress'], false);
+    const dispatchRun = (dispatch?.steps ?? [])
+      .map((step) => step.run ?? '')
+      .join('\n');
+    assert.match(
+      dispatchRun,
+      /fetch-auto-cover-context\.cjs[\s\S]*--pr-number "\$PR_NUMBER"/,
+    );
+    assert.match(
+      dispatchRun,
+      /run-auto-cover-repairs\.cjs[\s\S]*--mode revalidate/,
+    );
+    assert.match(dispatchRun, /--head-sha "\$HEAD_SHA"/);
+    // No polling or sleeping while waiting: the environment timer does it.
+    assert.doesNotMatch(yaml, /\bsleep\b/);
   });
 
   it('wakes PR Flow from created or edited Kilo sticky comments only', () => {
@@ -353,7 +432,18 @@ describe('workflow trigger policy', () => {
     // before job `if:` gates evaluate).
     assert.match(
       workflow,
-      /group: pr-flow-\$\{\{ \(github\.event_name == 'pull_request_target' && 'prt'\) \|\| \(github\.event_name == 'issue_comment' && github\.event\.comment\.user\.login == 'github-actions\[bot\]' && 'noise'\) \|\| 'wake' \}/,
+      /group: pr-flow-\$\{\{ \(github\.event_name == 'pull_request_target' && 'prt'\) \|\| \(github\.event_name == 'issue_comment' && github\.event\.comment\.user\.login == 'github-actions\[bot\]' && 'noise'\) \|\| \(github\.event_name == 'issue_comment' && github\.event\.action == 'edited' && github\.event\.comment\.user\.login == 'kilo-code-bot\[bot\]' && vars\.KILO_EDIT_FILTER != 'off' && 'kiloedit'\) \|\| 'wake' \}/,
+    );
+    // Kilo sticky-comment edits sit in their own group ahead of the `wake`
+    // fallback, so a history-only edit dropped by classify-trigger can only
+    // displace another Kilo edit, never a pending check/worker or command wake.
+    assert.match(
+      workflow,
+      /classify-kilo-comment-edit\.cjs[\s\S]*?--event-path "\$GITHUB_EVENT_PATH"/,
+    );
+    assert.match(
+      workflow,
+      /KILO_EDIT_FILTER: \$\{\{ vars\.KILO_EDIT_FILTER \|\| '' \}\}/,
     );
     // Only prt opened/synchronize/ready_for_review cancel an older prt (a new
     // commit restarts orchestration); prt labeled/unlabeled do NOT
@@ -396,8 +486,20 @@ describe('workflow trigger policy', () => {
     // Noise runs have cancel-in-progress=false so they never cancel anything.
     assert.match(
       workflow,
-      /cancel-in-progress: \$\{\{ github\.event_name != 'issue_comment' \|\| github\.event\.comment\.user\.login != 'github-actions\[bot\]' \}\}/,
+      /cancel-in-progress: \$\{\{ github\.event_name != 'issue_comment' \|\| \(github\.event\.comment\.user\.login != 'github-actions\[bot\]' && \(vars\.KILO_EDIT_FILTER == 'off' \|\| \(github\.event\.action != 'edited' && github\.event\.comment\.user\.login == 'kilo-code-bot\[bot\]' && contains\(github\.event\.comment\.body, '<!-- kilo-review -->'\)\)\)\) \}\}/,
     );
+    // Kilo sticky-comment edits get a per-PR `kiloedit` group and other
+    // ignored comments join the noise group; a cheap `classify` job gates
+    // `cover` for edits.
+    assert.match(
+      workflow,
+      /vars\.KILO_EDIT_FILTER != 'off' && format\('kiloedit-\{0\}', github\.event\.issue\.number\)/,
+    );
+    assert.match(
+      workflow,
+      /\n  classify:\r?\n[\s\S]*?classify-kilo-comment-edit\.cjs[\s\S]*?\n  cover:\r?\n    needs: classify\r?\n/,
+    );
+    assert.match(workflow, /needs\.classify\.outputs\.should_run != 'false'/);
   });
 
   // P0-1b — heavy CI jobs are gated on the `changes` job, so docs-only changes

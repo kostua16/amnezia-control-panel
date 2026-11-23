@@ -54,6 +54,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           node-version: ${{ env.NODE_VERSION }}
           # Runs actions/github-script (a Node action); Bun is unused here.
           setup-bun: 'false'
@@ -141,6 +142,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           node-version: ${{ env.NODE_VERSION }}
           install-deps: 'true'
           install-gsd: 'true'
@@ -378,6 +380,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           node-version: ${{ env.NODE_VERSION }}
           # Only runs `gh workflow run`; Node and Bun are unused here.
           # setup-gh provides gh without Node (verified by pr-policy.yml).
