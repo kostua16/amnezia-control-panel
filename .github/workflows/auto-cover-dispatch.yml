@@ -61,7 +61,8 @@ jobs:
         env:
           PR_NUMBER: ${{ inputs.pr_number }}
           HEAD_SHA: ${{ inputs.head_sha }}
-        run: echo "Quiet period elapsed for PR #${PR_NUMBER} @ ${HEAD_SHA}; re-validating before fix-review."
+        run: |
+          echo "Quiet period elapsed for PR #${PR_NUMBER} @ ${HEAD_SHA}; re-validating before fix-review."
 
   dispatch:
     needs: wait
