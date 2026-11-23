@@ -17,6 +17,20 @@ function errorText(error) {
     .join('\n');
 }
 
+// What gh itself printed. `error.message` of a failed child process carries
+// the full command line (label name and description), which must never be
+// matched against error phrases; it is only the fallback for errors that have
+// no captured output.
+function outputText(error) {
+  const output = [error?.stderr, error?.stdout]
+    .filter((part) => typeof part === 'string' && part.trim())
+    .join('\n');
+  if (output) return output;
+  return [error?.message, error]
+    .filter((part) => typeof part === 'string' && part.trim())
+    .join('\n');
+}
+
 function firstLine(error) {
   return (errorText(error) || String(error)).trim().split('\n')[0];
 }
@@ -28,7 +42,7 @@ function firstLine(error) {
 // job as a rate limit, so it counts here.
 function isQuotaError(error) {
   return /rate limit|abuse detection|HTTP 429\b|\(HTTP 429\)/i.test(
-    errorText(error),
+    outputText(error),
   );
 }
 
@@ -39,7 +53,7 @@ function isQuotaError(error) {
 // GraphQL-backed calls (`label list`) print their errors without an HTTP
 // status, so the permission wording counts too.
 function isForbiddenError(error) {
-  const text = errorText(error);
+  const text = outputText(error);
   return (
     !isQuotaError(error) &&
     (/HTTP 403\b|\(HTTP 403\)/i.test(text) ||
@@ -50,11 +64,11 @@ function isForbiddenError(error) {
 // A concurrent reconciler (another PR's run) created the label between our
 // read and our create: the label now exists, which is what we wanted.
 function isAlreadyExistsError(error) {
-  return /already[ _]exists/i.test(errorText(error));
+  return /already[ _]exists/i.test(outputText(error));
 }
 
 function isNotFoundError(error) {
-  return /HTTP 404\b|\(HTTP 404\)|Not Found/i.test(errorText(error));
+  return /HTTP 404\b|\(HTTP 404\)|Not Found/i.test(outputText(error));
 }
 
 function normalizeColor(color) {

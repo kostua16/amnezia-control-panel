@@ -318,6 +318,18 @@ test('an abuse-detection 403 on a write stops the remaining writes without sleep
   assert.doesNotMatch(gh.warnings[0], /lacks permission/);
 });
 
+test('error phrases are matched against gh output only, never against the command line', () => {
+  const error = new Error(
+    'Command failed: gh label create SSO --description "must have admin resource not accessible"',
+  );
+  error.stderr = 'HTTP 502: Bad Gateway';
+  assert.equal(isForbiddenError(error), false);
+  assert.equal(isQuotaError(error), false);
+  const real = new Error('Command failed: gh label create x');
+  real.stderr = 'GraphQL: Resource not accessible by integration';
+  assert.equal(isForbiddenError(real), true);
+});
+
 test('abuse detection is reported as rate limit or abuse protection, not as plain quota', () => {
   const gh = fakeGh({
     listError: ghError(
