@@ -8,8 +8,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
+const { execFileSync: runGit } = require('node:child_process');
 const yaml = require('js-yaml');
 const {
   evaluateCondition,
@@ -153,27 +155,41 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
     fs.readFileSync(path.join(workflowsDir, 'docker-image.yml'), 'utf8'),
   );
   const { steps } = workflow.jobs.classify;
-  const depth = steps[0].with['fetch-depth'];
+  const checkout = steps[0];
   const script = steps.find((step) => step.id === 'classify').with.script;
   const ref = 'refs/heads/main';
   const before = 'a'.repeat(40);
   const after = 'b'.repeat(40);
+  assert.equal(checkout.with['fetch-depth'], undefined);
+  assert.equal(checkout.with['persist-credentials'], false);
   assert.equal(
-    renderTemplate(depth, { github: { event_name: 'push', ref } }),
-    '0',
+    evaluateCondition(checkout['continue-on-error'], {
+      github: { event_name: 'push', ref },
+    }),
+    true,
   );
   assert.equal(
-    renderTemplate(depth, {
+    evaluateCondition(checkout['continue-on-error'], {
       github: { event_name: 'push', ref: 'refs/tags/v1.2.3' },
     }),
-    '1',
-  );
-  assert.equal(
-    renderTemplate(depth, { github: { event_name: 'pull_request', ref } }),
-    '1',
+    false,
   );
 
-  for (const [name, paths, shouldPublish] of [
+  const rewindRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'docker-rewind-'));
+  t.after(() => fs.rmSync(rewindRepo, { recursive: true, force: true }));
+  const git = (...args) =>
+    runGit('git', args, { cwd: rewindRepo, encoding: 'utf8', stdio: 'pipe' });
+  git('init', '-q');
+  git('config', 'user.name', 'Workflow Test');
+  git('config', 'user.email', 'workflow@example.invalid');
+  git('commit', '--allow-empty', '-qm', 'base');
+  const rewindAfter = git('rev-parse', 'HEAD').trim();
+  fs.writeFileSync(path.join(rewindRepo, 'Dockerfile'), 'FROM scratch\n');
+  git('add', 'Dockerfile');
+  git('commit', '-qm', 'add Dockerfile');
+  const rewindBefore = git('rev-parse', 'HEAD').trim();
+
+  for (const [name, paths, shouldPublish, failure] of [
     [
       'workflow-only change',
       ['.github/workflows/ci.yml', 'docs/workflow.md'],
@@ -181,9 +197,25 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
     ],
     ['source change', ['src/app/page.tsx'], true],
     ['rename out of source', ['docs/old.md', 'src/old.ts'], true],
-    ['unavailable range', null, true],
+    ['unavailable range', [], true, 'diff'],
+    ['failed fetch', [], true, 'fetch'],
+    ['failed checkout', [], true, 'checkout'],
+    [
+      'large diff with a relevant path after the default buffer limit',
+      [
+        ...Array.from(
+          { length: 12_000 },
+          (_, i) => `docs/${i}-${'x'.repeat(100)}`,
+        ),
+        'src/end.ts',
+      ],
+      true,
+    ],
+    ['rewind removes a Docker input', null, true],
   ]) {
-    await t.test(name, async () => {
+    await t.test(name, async (subtest) => {
+      const pushBefore = paths === null ? rewindBefore : before;
+      const pushAfter = paths === null ? rewindAfter : after;
       const outputs = {};
       const warnings = [];
       const summary = {
@@ -192,16 +224,36 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
         addBreak: () => summary,
         write: async () => {},
       };
-      const execFileSync = t.mock.fn(() => {
-        if (!paths) throw new Error('missing commit');
+      const execFileSync = subtest.mock.fn((command, args, options) => {
+        assert.equal(command, 'git');
+        if (args[1] === 'fetch') {
+          if (failure === 'fetch') throw new Error('fetch failed');
+          return '';
+        }
+        if (failure === 'diff') throw new Error('missing commit');
+        if (paths === null)
+          return runGit(command, args, { ...options, cwd: rewindRepo });
         return paths.join('\0') + '\0';
       });
       await vm.runInNewContext(`(async () => { ${script} })()`, {
-        context: { eventName: 'push', ref, payload: { before, after } },
+        context: {
+          eventName: 'push',
+          ref,
+          payload: { before: pushBefore, after: pushAfter },
+        },
+        process: {
+          env: {
+            CHECKOUT_OUTCOME: failure === 'checkout' ? 'failure' : 'success',
+            GITHUB_SERVER_URL: 'https://github.com',
+            GIT_FETCH_TOKEN: 'test-token',
+          },
+        },
+        Buffer,
         core: {
           setOutput: (key, value) => (outputs[key] = value),
           warning: (message) => warnings.push(message),
           info: () => {},
+          setSecret: () => {},
           summary,
         },
         require(module) {
@@ -209,16 +261,28 @@ test('G8d: Docker classifies main pushes from Git and fails open on an unavailab
           return { execFileSync };
         },
       });
-      assert.equal(execFileSync.mock.callCount(), 1);
-      const [command, args] = execFileSync.mock.calls[0].arguments;
-      assert.equal(command, 'git');
+      const [fetch, diff] = execFileSync.mock.calls;
       assert.equal(
-        Array.from(args).join(' '),
-        `diff --no-renames --name-only -z ${before}...${after} --`,
+        execFileSync.mock.callCount(),
+        failure === 'checkout' ? 0 : failure === 'fetch' ? 1 : 2,
       );
+      if (fetch) {
+        assert.equal(
+          Array.from(fetch.arguments[1]).join(' '),
+          `--config-env=http.https://github.com/.extraheader=GIT_FETCH_AUTH fetch --no-tags --depth=1 origin ${pushBefore}`,
+        );
+        assert.equal(fetch.arguments[2].timeout, 45_000);
+      }
+      if (diff) {
+        assert.equal(
+          Array.from(diff.arguments[1]).join(' '),
+          `diff --no-renames --name-only -z ${pushBefore}..${pushAfter} --`,
+        );
+        assert.equal(diff.arguments[2].maxBuffer, 64 * 1024 * 1024);
+      }
       assert.equal(outputs.should_publish, String(shouldPublish));
       assert.equal(outputs.should_validate, 'false');
-      assert.equal(warnings.length, paths ? 0 : 1);
+      assert.equal(warnings.length, failure ? 1 : 0);
     });
   }
 });
@@ -248,6 +312,40 @@ test('F6a: Fix Issue skips authorization for closed issue comments and labels', 
       (step) => step.uses !== './.github/actions/setup-environment',
     ),
   );
+  const snapshot = authorize.steps.find((step) => step.id === 'rate_limit');
+  const gate = authorize.steps.find((step) => step.id === 'gate');
+  assert.equal(snapshot.uses, './.github/actions/log-rate-limit');
+  assert.equal(snapshot.with['report-at-job-end'], 'true');
+  assert.equal(
+    renderTemplate(gate.env.CORE_REMAINING, {
+      steps: { rate_limit: { outputs: { 'core-remaining': '0' } } },
+    }),
+    '0',
+  );
+  assert.match(
+    gate.run,
+    /if \[\[ "\$CORE_REMAINING" == '0' \]\]; then[\s\S]*?exit 1/,
+  );
+});
+
+test('F6a: Fix Issue checks live state before repair or side effects', () => {
+  const workflow = yaml.load(
+    fs.readFileSync(path.join(workflowsDir, 'fix-issue.yml'), 'utf8'),
+  );
+  const [guard, ...repairSteps] = workflow.jobs.fix.steps;
+  assert.equal(guard.id, 'issue_state');
+  assert.equal(guard.env.GH_TOKEN, '${{ secrets.GH_PAT }}');
+  assert.match(guard.run, /gh issue view "\$ISSUE_NUM".*--json state/);
+  assert.match(guard.run, /OPEN\) echo 'is_open=true'/);
+  assert.match(guard.run, /CLOSED\) echo 'Issue closed/);
+  for (const step of repairSteps) {
+    assert.ok(step.if, `${step.name ?? step.uses} must be conditional`);
+    assert.equal(
+      evaluateCondition(step.if, { steps: { issue_state: { outputs: {} } } }),
+      false,
+      `${step.name ?? step.uses} must skip on a closed issue`,
+    );
+  }
 });
 
 test('G8a: governance rejects wider permissions and extra close jobs', () => {

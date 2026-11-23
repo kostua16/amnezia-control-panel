@@ -43,6 +43,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - uses: ./.github/actions/log-rate-limit
+        id: rate_limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: fix-issue-authorize
+          report-at-job-end: 'true'
+
       # The policy reads the event and repository files only.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
@@ -52,7 +59,14 @@ jobs:
       - name: Evaluate fix trigger
         id: gate
         shell: bash
+        env:
+          CORE_REMAINING: ${{ steps.rate_limit.outputs.core-remaining }}
         run: |
+          if [[ "$CORE_REMAINING" == '0' ]]; then
+            echo "::error::GitHub installation REST quota is exhausted."
+            exit 1
+          fi
+
           node .github/workflows/scripts/evaluate-trigger-policy.cjs \
             --mode fix-issue \
             --policy-file .github/workflows/policy.json \
@@ -76,19 +90,37 @@ jobs:
       claude_used_attempt: ${{ steps.claude_run.outputs.claude_used_attempt }}
       claude_metrics_json: ${{ steps.claude_run.outputs.claude_metrics_json }}
     steps:
+      - name: Recheck live issue state
+        id: issue_state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          state=$(gh issue view "$ISSUE_NUM" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')
+          case "$state" in
+            OPEN) echo 'is_open=true' >> "$GITHUB_OUTPUT" ;;
+            CLOSED) echo 'Issue closed before repair started. Skipping.' ;;
+            *) echo '::error::Could not determine whether the issue is open.'; exit 1 ;;
+          esac
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: steps.issue_state.outputs.is_open == 'true'
         with:
           fetch-depth: 1
           token: ${{ secrets.GH_PAT }}
 
       - name: Capture job start time
         id: job_start
+        if: steps.issue_state.outputs.is_open == 'true'
         shell: bash
         run: |
           set -euo pipefail
           echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/setup-environment
+        if: steps.issue_state.outputs.is_open == 'true'
         with:
           github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
@@ -99,6 +131,7 @@ jobs:
           install-uv: 'true'
 
       - name: Ensure labels exist
+        if: steps.issue_state.outputs.is_open == 'true'
         uses: ./.github/actions/ensure-workflow-labels
         with:
           github-token: ${{ secrets.GH_PAT }}
@@ -107,6 +140,7 @@ jobs:
 
       - name: Extract fix message
         id: extract
+        if: steps.issue_state.outputs.is_open == 'true'
         env:
           COMMENT_BODY: ${{ github.event.comment.body || '' }}
         run: |
@@ -115,6 +149,7 @@ jobs:
 
       - name: Detect umbrella/tracking issue
         id: tracking
+        if: steps.issue_state.outputs.is_open == 'true'
         env:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
@@ -150,6 +185,7 @@ jobs:
 
       - name: Prepare fix branch
         id: branch
+        if: steps.issue_state.outputs.is_open == 'true'
         uses: ./.github/actions/prepare-automation-branch
         with:
           branch-name: claude-fix-issue-${{ github.event.issue.number }}-${{ github.run_id }}
@@ -157,6 +193,7 @@ jobs:
 
       - name: Compute STOP_BY deadline
         id: deadline
+        if: steps.issue_state.outputs.is_open == 'true'
         uses: ./.github/actions/compute-stop-by-deadline
         with:
           timeout-minutes: '30'
@@ -165,7 +202,7 @@ jobs:
 
       - id: claude_run
         # Tracking issues are handled by the deterministic spin-off step above.
-        if: steps.tracking.outputs.is_tracking != 'true'
+        if: steps.issue_state.outputs.is_open == 'true' && steps.tracking.outputs.is_tracking != 'true'
         uses: ./.github/actions/run-zai
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
@@ -227,18 +264,18 @@ jobs:
             Operate as the `kos-fix-issue` agent: first read `.claude/agents/kos-fix-issue.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
 
       - name: Fail on Claude soft failure
-        if: always() && steps.claude_run.outputs.claude_failed == 'true'
+        if: always() && steps.issue_state.outputs.is_open == 'true' && steps.claude_run.outputs.claude_failed == 'true'
         run: |
           echo "::error::Claude soft failure: ${{ steps.claude_run.outputs.claude_failure_reason }}"
           exit 1
 
       - name: Restore composite action files (Claude agent may alter working tree)
-        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        if: steps.issue_state.outputs.is_open == 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
         run: git checkout HEAD -- .github/actions/
 
       - name: Detect duplicate or overlapping fix PR
         id: duplicate
-        if: steps.claude_run.outputs.claude_changed_files_list != ''
+        if: steps.issue_state.outputs.is_open == 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -253,7 +290,7 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
       - name: Log duplicate/overlap result
-        if: steps.duplicate.outputs.duplicate_found == 'true' || steps.duplicate.outputs.overlap_found == 'true'
+        if: steps.issue_state.outputs.is_open == 'true' && (steps.duplicate.outputs.duplicate_found == 'true' || steps.duplicate.outputs.overlap_found == 'true')
         run: |
           if [ "${{ steps.duplicate.outputs.duplicate_found }}" = 'true' ]; then
             echo "Skipping duplicate fix PR."
@@ -271,7 +308,7 @@ jobs:
       # creates orphaned helper scripts that are never called (see #1020).
       - name: Validate new scripts are wired into workflows
         id: wiring
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
+        if: steps.issue_state.outputs.is_open == 'true' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != ''
         run: |
           CHANGED="${{ steps.claude_run.outputs.claude_changed_files_list }}"
           # New non-test scripts added under .github/workflows/scripts/
@@ -292,19 +329,19 @@ jobs:
 
       - name: Validate (CI-matching gate)
         id: gate
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != '' && steps.wiring.outputs.wired != 'false'
+        if: steps.issue_state.outputs.is_open == 'true' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.claude_run.outputs.claude_changed_files_list != '' && steps.wiring.outputs.wired != 'false'
         uses: ./.github/actions/validate-pr-gate
 
       - uses: ./.github/actions/commit-and-push
         id: push
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.gate.outputs.gate_passed == 'true' && steps.wiring.outputs.wired != 'false'
+        if: steps.issue_state.outputs.is_open == 'true' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.gate.outputs.gate_passed == 'true' && steps.wiring.outputs.wired != 'false'
         with:
           branch-name: ${{ steps.branch.outputs.branch_name }}
           commit-message: 'fix: resolve #${{ github.event.issue.number }}'
           github-token: ${{ secrets.GH_PAT }}
 
       - name: Build fix PR body
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.push.outputs.pushed == 'true'
+        if: steps.issue_state.outputs.is_open == 'true' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.push.outputs.pushed == 'true'
         id: pr-body
         uses: ./.github/actions/build-automation-pr-body
         with:
@@ -325,7 +362,7 @@ jobs:
           review-notes: 'Created from a maintainer-approved fix trigger. Review the diff against the issue description and conversation before merging.'
 
       - name: Create fix PR
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.push.outputs.pushed == 'true'
+        if: steps.issue_state.outputs.is_open == 'true' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.push.outputs.pushed == 'true'
         id: create_pr
         uses: ./.github/actions/upsert-pull-request
         env:
@@ -343,7 +380,7 @@ jobs:
           require-rich-body: 'true'
 
       - name: Label issue as fixed
-        if: steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.push.outputs.pushed == 'true'
+        if: steps.issue_state.outputs.is_open == 'true' && steps.duplicate.outputs.duplicate_found != 'true' && steps.duplicate.outputs.overlap_found != 'true' && steps.push.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ github.event.issue.number }}
@@ -356,7 +393,7 @@ jobs:
       # spin-off step above handles them and the agent run is skipped.
       # `canceled` on a tracking issue would let the catch-up sweep close it.
       - name: Comment on issue if no changes or deferred
-        if: steps.push.outputs.pushed != 'true' && steps.tracking.outputs.is_tracking != 'true'
+        if: steps.issue_state.outputs.is_open == 'true' && steps.push.outputs.pushed != 'true' && steps.tracking.outputs.is_tracking != 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUM: ${{ github.event.issue.number }}
