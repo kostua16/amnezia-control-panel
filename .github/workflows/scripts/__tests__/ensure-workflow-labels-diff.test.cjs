@@ -319,15 +319,58 @@ test('an abuse-detection 403 on a write stops the remaining writes without sleep
 });
 
 test('error phrases are matched against gh output only, never against the command line', () => {
-  const error = new Error(
-    'Command failed: gh label create SSO --description "must have admin resource not accessible"',
-  );
+  const commandLine =
+    'Command failed: gh label create SSO --description "rate limit must have admin resource not accessible abuse detection HTTP 429"';
+  const error = new Error(commandLine);
   error.stderr = 'HTTP 502: Bad Gateway';
   assert.equal(isForbiddenError(error), false);
   assert.equal(isQuotaError(error), false);
   const real = new Error('Command failed: gh label create x');
   real.stderr = 'GraphQL: Resource not accessible by integration';
   assert.equal(isForbiddenError(real), true);
+});
+
+test('stdout is read too, and the message is the fallback when gh printed nothing', () => {
+  const onStdout = new Error('Command failed: gh');
+  onStdout.stdout = 'GraphQL: API rate limit already exceeded';
+  assert.equal(isQuotaError(onStdout), true);
+  assert.equal(
+    isQuotaError(new Error('GraphQL: API rate limit already exceeded')),
+    true,
+  );
+  assert.equal(
+    isForbiddenError(
+      new Error('GraphQL: Resource not accessible by integration'),
+    ),
+    true,
+  );
+  assert.equal(isQuotaError(new Error('boom')), false);
+});
+
+test('a label named like a permission phrase keeps the retry path on a transient write failure', () => {
+  const policy = {
+    SSO: { color: 'ededed', description: 'must have admin' },
+    other: { color: 'ededed', description: 'x' },
+  };
+  let failuresLeft = 2;
+  const gh = fakeGh({
+    existing: [],
+    onWrite: () => {
+      if (failuresLeft > 0) {
+        failuresLeft -= 1;
+        const error = new Error(
+          'Command failed: gh label create SSO --description "must have admin"',
+        );
+        error.stderr = 'HTTP 502: Bad Gateway';
+        throw error;
+      }
+    },
+  });
+  const result = reconcileLabels(['SSO', 'other'], policy, gh);
+  assert.equal(result.mode, 'diff');
+  assert.equal(result.created, 2);
+  assert.deepEqual(gh.waits, [2000, 4000]);
+  assert.deepEqual(gh.warnings, []);
 });
 
 test('abuse detection is reported as rate limit or abuse protection, not as plain quota', () => {
