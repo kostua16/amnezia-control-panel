@@ -3298,6 +3298,65 @@ function upsertPrStateComment(number, body, options = {}) {
   gh(['pr', 'comment', String(number), '--body', body]);
 }
 
+// mergeStateStatus values GitHub still allows a merge under. BLOCKED, DIRTY,
+// DRAFT, and UNKNOWN mean branch protection rejects the merge right now.
+const MERGE_ALLOWED_STATES = new Set([
+  'CLEAN',
+  'HAS_HOOK',
+  'UNSTABLE',
+  'BEHIND',
+]);
+
+// A policy-blocked merge is a "not now" verdict from branch protection, not a
+// step failure: the queue re-evaluates the PR on the next run. Crashing here
+// would abandon every remaining plan action and file a spurious
+// workflow-failure issue.
+function mergePullRequest(number, options = {}) {
+  const dryRun = options.dryRun ?? false;
+  const runGh = options.runGh ?? gh;
+  const fetchView = options.fetchView ?? ghJson;
+  const mergeArgs = ['pr', 'merge', String(number), '--squash'];
+  if (dryRun) {
+    console.log(`[dry-run] gh ${mergeArgs.join(' ')}`);
+    return false;
+  }
+  const view = fetchView(
+    [
+      'pr',
+      'view',
+      String(number),
+      '--json',
+      'state,mergeable,mergeStateStatus',
+    ],
+    {},
+  );
+  if (
+    view?.state !== 'OPEN' ||
+    view?.mergeable !== 'MERGEABLE' ||
+    !MERGE_ALLOWED_STATES.has(String(view?.mergeStateStatus ?? ''))
+  ) {
+    console.warn(
+      `project-manager: skipping merge of PR #${number}: state=${view?.state ?? 'unknown'} mergeable=${view?.mergeable ?? 'unknown'} mergeStateStatus=${view?.mergeStateStatus ?? 'unknown'}`,
+    );
+    return false;
+  }
+  try {
+    runGh(mergeArgs, { dryRun: false });
+    return true;
+  } catch (error) {
+    // Required statuses can flip between the view above and the merge itself;
+    // any rejection still means "not now", never a crashed plan step.
+    console.warn(
+      `project-manager: merge of PR #${number} rejected: ${
+        String(error?.stderr ?? error?.message ?? error)
+          .trim()
+          .split('\n')[0]
+      }`,
+    );
+    return false;
+  }
+}
+
 function applyAction(action, options = {}) {
   const dryRun = options.dryRun;
   if (action.type === 'comment') {
@@ -3357,12 +3416,12 @@ function applyAction(action, options = {}) {
   }
 
   if (action.type === 'review-approved-merge') {
-    gh(['pr', 'merge', String(action.number), '--squash'], { dryRun });
+    mergePullRequest(action.number, { dryRun });
     return;
   }
 
   if (action.type === 'merge-pr') {
-    gh(['pr', 'merge', String(action.number), '--squash'], { dryRun });
+    mergePullRequest(action.number, { dryRun });
     return;
   }
 
@@ -3388,9 +3447,7 @@ function applyAction(action, options = {}) {
       return;
     }
     if (review?.decision === 'merge') {
-      gh(['pr', 'merge', String(action.number), '--squash'], {
-        dryRun,
-      });
+      mergePullRequest(action.number, { dryRun });
       return;
     }
     console.log(`Project-manager review required for PR #${action.number}.`);
@@ -3536,6 +3593,7 @@ module.exports = {
   parseStateComment,
   pickReviewAction,
   renderStateBody,
+  mergePullRequest,
   registryCoverage,
   reviewSignalsPassed,
   duplicateAutomationPrActions,

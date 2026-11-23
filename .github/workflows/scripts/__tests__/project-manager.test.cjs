@@ -16,6 +16,7 @@ const {
   firstKnownCheckStatus,
   detectPrProducingWorkflows,
   duplicateAutomationPrActions,
+  mergePullRequest,
   parseFixReviewSummaryComment,
   parseRebaseSummaryComment,
   parseReviewJson,
@@ -2302,4 +2303,86 @@ test('PM65b: CI job failures do not trigger the policy rerun lane', () => {
     { now: NOW, workflowRuns: [] },
   );
   assert.equal(action?.actionKey, 'fix');
+});
+
+test('PM66: mergePullRequest skips a policy-blocked PR instead of failing', () => {
+  const merges = [];
+  const result = mergePullRequest(1183, {
+    fetchView: () => ({
+      state: 'OPEN',
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'BLOCKED',
+    }),
+    runGh: (args) => merges.push(args),
+  });
+  assert.equal(result, false);
+  assert.equal(merges.length, 0);
+});
+
+test('PM66: mergePullRequest merges a clean PR with squash', () => {
+  const views = [];
+  const merges = [];
+  const result = mergePullRequest(42, {
+    fetchView: (args) => {
+      views.push(args);
+      return {
+        state: 'OPEN',
+        mergeable: 'MERGEABLE',
+        mergeStateStatus: 'CLEAN',
+      };
+    },
+    runGh: (args) => merges.push(args),
+  });
+  assert.equal(result, true);
+  assert.deepEqual(views[0].slice(0, 3), ['pr', 'view', '42']);
+  assert.deepEqual(merges[0], ['pr', 'merge', '42', '--squash']);
+});
+
+test('PM66: mergePullRequest survives a gh merge rejection after the view', () => {
+  const result = mergePullRequest(7, {
+    fetchView: () => ({
+      state: 'OPEN',
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+    }),
+    runGh: () => {
+      const error = new Error('Command failed: gh pr merge 7 --squash');
+      error.stderr =
+        'X Pull request is not mergeable: the base branch policy prohibits the merge.\n';
+      throw error;
+    },
+  });
+  assert.equal(result, false);
+});
+
+test('PM66: mergePullRequest skips merged or unknown-state PRs', () => {
+  const merges = [];
+  const mergedResult = mergePullRequest(9, {
+    fetchView: () => ({
+      state: 'MERGED',
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+    }),
+    runGh: (args) => merges.push(args),
+  });
+  assert.equal(mergedResult, false);
+  const unknownResult = mergePullRequest(9, {
+    fetchView: () => ({}),
+    runGh: (args) => merges.push(args),
+  });
+  assert.equal(unknownResult, false);
+  assert.equal(merges.length, 0);
+});
+
+test('PM66: mergePullRequest dry-run never reaches gh', () => {
+  const result = mergePullRequest(42, {
+    dryRun: true,
+    fetchView: () => {
+      throw new Error('view must not run in dry-run');
+    },
+    runGh: () => {
+      throw new Error('merge must not run in dry-run');
+    },
+  });
+  assert.equal(result, false);
 });
