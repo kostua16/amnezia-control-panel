@@ -105,7 +105,7 @@ function reconcileLabels(names, labels, options = {}) {
       .split('\n')[0];
     if (isQuotaError(error)) {
       warn(
-        `::warning::Could not read repository labels (${detail}); GitHub API quota exhausted, skipping label setup — labels are idempotent setup, not validation.`,
+        `::warning::Could not read repository labels (${detail}); GitHub API rate limit or abuse protection hit, skipping label setup — labels are idempotent setup, not validation.`,
       );
       return { mode: 'skipped', ensured: 0, total: names.length };
     }

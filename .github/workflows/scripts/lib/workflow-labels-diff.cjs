@@ -32,18 +32,13 @@ function isQuotaError(error) {
   );
 }
 
-// A 403 that names a permission problem (integration lacks access, SSO or SAML
-// enforcement) cannot succeed on any retry or per-label fallback either; it is
-// reported as such instead of as quota. A 403 with any other text is unknown
-// and keeps the normal retry path.
+// Any 403 that is not a rate limit or abuse-detection response (missing
+// permission, SSO or SAML enforcement, organization policy, an unexpected
+// body) repeats on every retry and every further label, so it is non-retryable
+// and reported as a permission problem instead of as quota.
 function isForbiddenError(error) {
-  const text = errorText(error);
   return (
-    !isQuotaError(error) &&
-    /HTTP 403\b|\(HTTP 403\)/i.test(text) &&
-    /resource not accessible|\bSSO\b|\bSAML\b|forbidden|must have admin/i.test(
-      text,
-    )
+    !isQuotaError(error) && /HTTP 403\b|\(HTTP 403\)/i.test(errorText(error))
   );
 }
 
@@ -183,7 +178,7 @@ function applyLabelPlan(plan, { run, wait, warn = console.warn }) {
     if (outcome === 'quota') {
       result.skipped = writes.length - index - 1;
       warn(
-        `::warning::GitHub API quota exhausted while ensuring label "${item.name}" (${firstLine(error)}); skipping ${result.skipped} remaining label write(s) — labels are idempotent setup, not validation.`,
+        `::warning::GitHub API rate limit or abuse protection hit while ensuring label "${item.name}" (${firstLine(error)}); skipping ${result.skipped} remaining label write(s) — labels are idempotent setup, not validation.`,
       );
       break;
     }

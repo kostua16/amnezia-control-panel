@@ -208,7 +208,10 @@ test('an exhausted quota on the list read skips every write and every sleep', ()
   assert.equal(result.mode, 'skipped');
   assert.deepEqual(gh.writes, []);
   assert.deepEqual(gh.waits, []);
-  assert.match(gh.warnings[0], /quota exhausted, skipping label setup/);
+  assert.match(
+    gh.warnings[0],
+    /rate limit or abuse protection hit, skipping label setup/,
+  );
 });
 
 test('HTTP 429 on the list read counts as quota exhaustion', () => {
@@ -234,7 +237,7 @@ test('a write-side permission 403 stops the remaining writes without retrying', 
   assert.equal(result.skipped, 1);
 });
 
-test('a 403 without a permission phrase (e.g. abuse detection or an unknown body) is not a permission failure', () => {
+test('abuse detection is transient quota; every other 403 is non-retryable, even with an unknown body', () => {
   assert.equal(
     isForbiddenError(
       ghError('HTTP 403: You have triggered an abuse detection mechanism'),
@@ -245,7 +248,7 @@ test('a 403 without a permission phrase (e.g. abuse detection or an unknown body
     isQuotaError(ghError('HTTP 403: abuse detection mechanism')),
     true,
   );
-  assert.equal(isForbiddenError(ghError('HTTP 403: something else')), false);
+  assert.equal(isForbiddenError(ghError('HTTP 403: something else')), true);
   assert.equal(
     isForbiddenError(
       ghError('HTTP 403: Resource not accessible by integration'),
@@ -258,6 +261,40 @@ test('a 403 without a permission phrase (e.g. abuse detection or an unknown body
     ),
     true,
   );
+});
+
+test('an unrecognized 403 never reaches the expensive per-label path or the retry sleeps', () => {
+  const onList = fakeGh({
+    listError: ghError('HTTP 403: something unexpected'),
+  });
+  const listResult = reconcileLabels(
+    ['auto-fix', 'area/planning'],
+    POLICY,
+    onList,
+  );
+  assert.equal(listResult.mode, 'skipped');
+  assert.deepEqual(onList.writes, []);
+  assert.deepEqual(onList.waits, []);
+
+  const onWrite = fakeGh({
+    existing: [],
+    onWrite: () => {
+      throw ghError('HTTP 403: something unexpected');
+    },
+  });
+  reconcileLabels(['auto-fix', 'area/planning'], POLICY, onWrite);
+  assert.equal(onWrite.writes.length, 1);
+  assert.deepEqual(onWrite.waits, []);
+});
+
+test('abuse detection is reported as rate limit or abuse protection, not as plain quota', () => {
+  const gh = fakeGh({
+    listError: ghError(
+      'HTTP 403: You have triggered an abuse detection mechanism',
+    ),
+  });
+  assert.equal(reconcileLabels(['auto-fix'], POLICY, gh).mode, 'skipped');
+  assert.match(gh.warnings[0], /rate limit or abuse protection/);
 });
 
 test('a bare HTTP 403 (permission or SSO) is reported as such, not as quota, and skips the doomed fallback', () => {
