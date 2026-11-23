@@ -10,9 +10,12 @@ const {
   mapWithConcurrency,
   extractAttempts,
   fetchPrContext,
+  fetchPrContextViaGraphql,
   commitTimestamp,
   fetchAutoCoverContext,
-  restLogin,
+  assertNoGraphqlErrors,
+  resolveAutoCoverSource,
+  mapIssueComments,
   mapStatuses,
   mapCheckRuns,
   AUTO_COVER_MARKER,
@@ -335,18 +338,21 @@ const HEAD_SHA = 'headsha';
 
 function graphqlPullPayload(overrides = {}) {
   return {
+    rateLimit: { cost: 1, remaining: 4999 },
     repository: {
       pullRequest: {
         comments: {
           pageInfo: { hasNextPage: false },
           nodes: [
             {
+              databaseId: 101,
               body: `${AUTO_COVER_MARKER}\ndispatched`,
               createdAt: '2026-06-24T10:00:00Z',
               updatedAt: '2026-06-24T10:00:00Z',
               author: { login: 'github-actions', __typename: 'Bot' },
             },
             {
+              databaseId: 102,
               body: 'human note',
               createdAt: '2026-06-24T10:05:00Z',
               updatedAt: '2026-06-24T10:05:00Z',
@@ -362,6 +368,7 @@ function graphqlPullPayload(overrides = {}) {
                 pageInfo: { hasNextPage: false },
                 nodes: [
                   {
+                    databaseId: 201,
                     body: '**WARNING:** missing guard',
                     path: 'src/lib/a.ts',
                     originalCommit: { oid: HEAD_SHA },
@@ -379,6 +386,7 @@ function graphqlPullPayload(overrides = {}) {
           pageInfo: { hasNextPage: false },
           nodes: [
             {
+              databaseId: 301,
               body: 'review body',
               state: 'COMMENTED',
               submittedAt: '2026-06-24T11:00:00Z',
@@ -412,7 +420,6 @@ function graphqlPullPayload(overrides = {}) {
                       context: 'pr-flow/kilo-review',
                       state: 'PENDING',
                       createdAt: '2026-06-24T12:01:00Z',
-                      updatedAt: '2026-06-24T12:01:00Z',
                       targetUrl: null,
                       description: null,
                     },
@@ -544,6 +551,9 @@ test('graphql path: one query per PR, zero per-PR REST calls, REST-shaped files'
   assert.equal(gqlCalls.length, 2);
   assert.equal(gqlCalls[0].variables.number, 1);
   assert.equal(gqlCalls[1].variables.number, 2);
+  // the per-query cost from the rateLimit node is accounted in the manifest
+  assert.equal(manifest.graphql.cost, 2);
+  assert.equal(manifest.graphql.remaining, 4999);
   const perPrRest = restCalls.filter(
     ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
   );
@@ -558,6 +568,8 @@ test('graphql path: one query per PR, zero per-PR REST calls, REST-shaped files'
     assert.equal(comments[0].user.login, 'github-actions[bot]');
     assert.equal(comments[1].user.login, 'octocat');
     assert.equal(comments[0].created_at, '2026-06-24T10:00:00Z');
+    // REST `id` (databaseId) is carried through for id-addressed consumers
+    assert.equal(comments[0].id, 101);
     const attempts = JSON.parse(
       fs.readFileSync(path.join(dir, `pr-${pr}-attempts.json`), 'utf8'),
     );
@@ -566,12 +578,14 @@ test('graphql path: one query per PR, zero per-PR REST calls, REST-shaped files'
       fs.readFileSync(path.join(dir, `pr-${pr}-review-comments.json`), 'utf8'),
     );
     assert.equal(reviewComments.length, 1);
+    assert.equal(reviewComments[0].id, 201);
     assert.equal(reviewComments[0].original_commit_id, HEAD_SHA);
     assert.equal(reviewComments[0].commit_id, HEAD_SHA);
     assert.equal(reviewComments[0].user.login, 'kilo-code-bot[bot]');
     const reviews = JSON.parse(
       fs.readFileSync(path.join(dir, `pr-${pr}-reviews.json`), 'utf8'),
     );
+    assert.equal(reviews[0].id, 301);
     assert.equal(reviews[0].state, 'COMMENTED');
     assert.equal(reviews[0].commit_id, HEAD_SHA);
     assert.equal(reviews[0].submitted_at, '2026-06-24T11:00:00Z');
@@ -590,7 +604,9 @@ test('graphql path: one query per PR, zero per-PR REST calls, REST-shaped files'
         context: 'pr-flow/kilo-review',
         state: 'pending',
         created_at: '2026-06-24T12:01:00Z',
-        updated_at: '2026-06-24T12:01:00Z',
+        // StatusContext has no updatedAt in the GraphQL schema; the freshness
+        // fallback prefers created_at anyway.
+        updated_at: null,
         target_url: null,
         description: null,
       },
@@ -803,21 +819,96 @@ test('graphql fetch failures isolate per PR like REST failures', async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('restLogin restores the REST bot suffix and keeps humans untouched', () => {
-  assert.equal(
-    restLogin({ login: 'github-actions', __typename: 'Bot' }),
-    'github-actions[bot]',
+test('bot login restoration is shared with the PR flow adapter (toUser)', () => {
+  // mapIssueComments maps authors through lib/review-inputs-graphql's toUser —
+  // the same [bot]-suffix rule the PR flow trusts, not a divergent copy.
+  const [bot, human] = mapIssueComments([
+    { databaseId: 1, author: { login: 'github-actions', __typename: 'Bot' } },
+    { databaseId: 2, author: { login: 'octocat', __typename: 'User' } },
+  ]);
+  assert.equal(bot.user.login, 'github-actions[bot]');
+  assert.equal(human.user.login, 'octocat');
+});
+
+test('assertNoGraphqlErrors rejects a 200 response carrying errors', () => {
+  assert.throws(
+    () =>
+      assertNoGraphqlErrors({ errors: [{ message: 'Field x is invalid' }] }),
+    /Field x is invalid/,
   );
-  assert.equal(
-    restLogin({ login: 'kilo-code-bot', __typename: 'Bot' }),
-    'kilo-code-bot[bot]',
+  assert.throws(
+    () => assertNoGraphqlErrors({ data: null, errors: [{ message: 'boom' }] }),
+    /boom/,
   );
-  assert.equal(
-    restLogin({ login: 'already[bot]', __typename: 'Bot' }),
-    'already[bot]',
+  assert.doesNotThrow(() => assertNoGraphqlErrors({ data: {} }));
+  assert.doesNotThrow(() => assertNoGraphqlErrors({}));
+});
+
+test('resolveAutoCoverSource defaults to graphql and treats typos as rest', () => {
+  assert.equal(resolveAutoCoverSource(''), 'graphql');
+  assert.equal(resolveAutoCoverSource(undefined), 'graphql');
+  assert.equal(resolveAutoCoverSource('graphql'), 'graphql');
+  assert.equal(resolveAutoCoverSource('GRAPHQL'), 'graphql');
+  assert.equal(resolveAutoCoverSource('rest'), 'rest');
+  assert.equal(resolveAutoCoverSource('grqphql'), 'rest');
+});
+
+test('PR_FLOW_AUTO_COVER_SOURCE=rest forces the all-REST path even with graphql available', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  const restCalls = [];
+  let gqlCalls = 0;
+  const manifest = await fetchAutoCoverContext({
+    repo: 'owner/repo',
+    prs: ['7'],
+    outDir: dir,
+    fetchJson: legacyFetchJson(restCalls),
+    viewPull: async () => ({ number: 7, headRefOid: HEAD_SHA, state: 'open' }),
+    graphql: async () => {
+      gqlCalls += 1;
+      return graphqlPullPayload();
+    },
+    source: 'rest',
+  });
+  assert.deepEqual(manifest.ok, ['7']);
+  assert.equal(gqlCalls, 0);
+  // the legacy 7 REST lookups ran instead
+  const perPr = restCalls.filter(
+    ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
   );
-  assert.equal(restLogin({ login: 'octocat', __typename: 'User' }), 'octocat');
-  assert.equal(restLogin(null), null);
+  assert.equal(perPr.length, 7);
+  assert.equal(manifest.graphql.cost, 0);
+  assert.equal(manifest.graphql.remaining, null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('graphql path rejects malformed repo and non-numeric PR numbers', async () => {
+  const graphql = async () => graphqlPullPayload();
+  const viewPull = async () => ({
+    number: 1,
+    headRefOid: HEAD_SHA,
+    state: 'open',
+  });
+  const fetchJson = async () => ({});
+  await assert.rejects(
+    fetchPrContextViaGraphql({
+      graphql,
+      fetchJson,
+      viewPull,
+      repo: 'a/b/c',
+      prNumber: '1',
+    }),
+    /owner\/name/,
+  );
+  await assert.rejects(
+    fetchPrContextViaGraphql({
+      graphql,
+      fetchJson,
+      viewPull,
+      repo: 'owner/repo',
+      prNumber: 'abc',
+    }),
+    /positive integer/,
+  );
 });
 
 test('mapStatuses lowercases GraphQL state enums', () => {

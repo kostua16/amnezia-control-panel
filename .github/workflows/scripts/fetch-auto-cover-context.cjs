@@ -14,8 +14,10 @@
 // fix-review run listing. Results are mapped back to the REST field shapes the
 // context consumers read, so the written files keep their contract. Narrow
 // REST fallbacks remain for >100-item pages and for a head SHA that moved
-// between `gh pr view` and the GraphQL query (both rare); injecting only
-// `fetchJson` (as the legacy tests do) restores the all-REST path.
+// between `gh pr view` and the GraphQL query (both rare). Ops can force the
+// legacy all-REST path without a revert via PR_FLOW_AUTO_COVER_SOURCE=rest
+// (mirrors PR_FLOW_REVIEW_SOURCE); tests select it by injecting only
+// `fetchJson`.
 //
 // Error policy: commit status / check-run lookups legitimately return "no data"
 // (HTTP 404) for fresh commits and are mapped to []. Rate-limit (403/429), 5xx,
@@ -26,6 +28,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
+
+// Bot-login restoration (the `[bot]` suffix) is shared with the PR flow's
+// GraphQL adapter so the two paths cannot drift on which logins count as apps.
+const { toUser } = require('./lib/review-inputs-graphql.cjs');
 
 const AUTO_COVER_MARKER = '<!-- auto-cover-review-summary -->';
 const DEFAULT_CONCURRENCY = 4;
@@ -156,11 +162,12 @@ function createViewPull() {
 // to the paginated REST endpoint for that list instead of silently truncating.
 const PULL_REQUEST_CONTEXT_QUERY = `
 query($owner: String!, $name: String!, $number: Int!) {
+  rateLimit { cost remaining }
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       comments(first: 100) {
         pageInfo { hasNextPage }
-        nodes { body createdAt updatedAt author { login __typename } }
+        nodes { databaseId body createdAt updatedAt author { login __typename } }
       }
       reviewThreads(first: 100) {
         pageInfo { hasNextPage }
@@ -168,6 +175,7 @@ query($owner: String!, $name: String!, $number: Int!) {
           comments(first: 100) {
             pageInfo { hasNextPage }
             nodes {
+              databaseId
               body
               path
               originalCommit { oid }
@@ -182,6 +190,7 @@ query($owner: String!, $name: String!, $number: Int!) {
       reviews(first: 100) {
         pageInfo { hasNextPage }
         nodes {
+          databaseId
           body
           state
           submittedAt
@@ -198,12 +207,16 @@ query($owner: String!, $name: String!, $number: Int!) {
           commit {
             oid
             committedDate
+            # StatusContext is a plain list (no pageInfo, so it cannot
+            # overflow) and has no updatedAt field in the schema; REST
+            # statuses' updated_at degrades to created_at, which the freshness
+            # fallback already prefers. Check runs come from checkSuites
+            # below, so legacy statuses and check runs never conflate.
             status {
               contexts {
                 context
                 state
                 createdAt
-                updatedAt
                 targetUrl
                 description
               }
@@ -226,9 +239,21 @@ query($owner: String!, $name: String!, $number: Int!) {
 }
 `;
 
+// A 200 response can still carry top-level `errors` (partial data). Resolving
+// it would let missing connections masquerade as [] and skew the coverage
+// decision toward "no blocker" — reject so the per-PR failure policy applies.
+function assertNoGraphqlErrors(response) {
+  const errors = response?.errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    const first = errors[0]?.message ?? 'unknown error';
+    throw new Error(`gh api graphql returned errors: ${first}`);
+  }
+}
+
 // GraphQL fetcher: shells out to `gh api graphql` (separate rate-limit bucket
-// from REST). Resolves `data`, rejects with gh stderr on any error so the
-// per-PR isolation / abort policy applies exactly like the REST fetcher.
+// from REST). Resolves `data`, rejects with gh stderr on any error — including
+// a 200 response carrying `errors` — so the per-PR isolation / abort policy
+// applies exactly like the REST fetcher.
 function createGraphqlFetcher() {
   return function graphql(query, variables = {}) {
     return new Promise((resolve, reject) => {
@@ -249,14 +274,20 @@ function createGraphqlFetcher() {
             wrapped.cause = err;
             return reject(wrapped);
           }
+          let parsed;
           try {
-            const parsed = JSON.parse(String(stdout ?? '').trim() || '{}');
-            resolve(parsed?.data ?? null);
+            parsed = JSON.parse(String(stdout ?? '').trim() || '{}');
           } catch (parseErr) {
             const wrapped = new Error('gh api graphql returned non-JSON');
             wrapped.cause = parseErr;
-            reject(wrapped);
+            return reject(wrapped);
           }
+          try {
+            assertNoGraphqlErrors(parsed);
+          } catch (error) {
+            return reject(error);
+          }
+          resolve(parsed?.data ?? null);
         },
       );
     });
@@ -265,26 +296,17 @@ function createGraphqlFetcher() {
 
 // REST renders app logins with the `[bot]` suffix (github-actions[bot],
 // kilo-code-bot[bot]); GraphQL Bot nodes return the bare login. Consumers
-// (extractAttempts, isKiloUser) match the REST spelling, so restore it.
-function restLogin(author) {
-  if (!author) return null;
-  const login = String(author.login ?? '');
-  if (author.__typename === 'Bot' && login && !login.endsWith('[bot]')) {
-    return `${login}[bot]`;
-  }
-  return login;
-}
-
-function restUser(author) {
-  return author ? { login: restLogin(author) } : null;
-}
+// (extractAttempts, isKiloUser) match the REST spelling, so `toUser` from
+// lib/review-inputs-graphql.cjs restores it — one shared implementation for
+// both GraphQL paths.
 
 // The mappers below rebuild the REST field names (snake_case, lowercase enums)
 // the context files have always contained, so consumers keep their contract.
 function mapIssueComments(nodes = []) {
   return nodes.map((node) => ({
+    id: node.databaseId ?? null,
     body: node.body ?? '',
-    user: restUser(node.author),
+    user: toUser(node.author),
     created_at: node.createdAt ?? null,
     updated_at: node.updatedAt ?? null,
   }));
@@ -295,11 +317,12 @@ function mapReviewComments(threadNodes = []) {
   for (const thread of threadNodes) {
     for (const node of thread?.comments?.nodes ?? []) {
       out.push({
+        id: node.databaseId ?? null,
         body: node.body ?? '',
         path: node.path ?? null,
         commit_id: node.commit?.oid ?? null,
         original_commit_id: node.originalCommit?.oid ?? null,
-        user: restUser(node.author),
+        user: toUser(node.author),
         created_at: node.createdAt ?? null,
         updated_at: node.updatedAt ?? null,
       });
@@ -310,11 +333,12 @@ function mapReviewComments(threadNodes = []) {
 
 function mapReviews(nodes = []) {
   return nodes.map((node) => ({
+    id: node.databaseId ?? null,
     body: node.body ?? '',
     state: node.state ?? null,
     commit_id: node.commit?.oid ?? null,
     submitted_at: node.submittedAt ?? null,
-    user: restUser(node.author),
+    user: toUser(node.author),
   }));
 }
 
@@ -373,7 +397,11 @@ function checkRunsOverflow(headNode) {
 // GraphQL-backed replacement for fetchPrContext: one query per PR (plus the
 // existing `gh pr view`, itself GraphQL) instead of seven REST calls. Narrow
 // REST fallbacks keep behavior identical when a connection page overflows or
-// the head SHA moved between `gh pr view` and the query.
+// the head SHA moved between `gh pr view` and the query. Deliberately a
+// separate query from lib/review-inputs-graphql.cjs (whose gh call must run
+// synchronously and which throws to fall back wholesale): this path stays
+// async for bounded concurrency, also fetches the commit list, and falls back
+// per list.
 async function fetchPrContextViaGraphql({
   graphql,
   fetchJson,
@@ -381,14 +409,20 @@ async function fetchPrContextViaGraphql({
   repo,
   prNumber,
 }) {
-  const [owner, name] = String(repo).split('/');
+  // Same guard as lib/review-inputs-graphql: `a/b/c` must not silently drop
+  // segments, and a non-numeric PR must not reach GitHub as #NaN/#0.
+  const repoParts = String(repo ?? '').split('/');
+  if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
+    throw new Error(`repo must be exactly owner/name, got "${repo}".`);
+  }
+  const [owner, name] = repoParts;
+  const number = Number(prNumber);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error(`prNumber must be a positive integer, got "${prNumber}".`);
+  }
   const [pr, data] = await Promise.all([
     viewPull(prNumber),
-    graphql(PULL_REQUEST_CONTEXT_QUERY, {
-      owner,
-      name,
-      number: Number(prNumber),
-    }),
+    graphql(PULL_REQUEST_CONTEXT_QUERY, { owner, name, number }),
   ]);
   const pull = data?.repository?.pullRequest ?? null;
   if (!pull) {
@@ -470,6 +504,9 @@ async function fetchPrContextViaGraphql({
     statuses: head.statuses,
     checkRuns: head.checkRuns,
     headSha,
+    // Consumed by fetchAutoCoverContext for quota accounting; never written
+    // into the per-PR context files.
+    rateLimit: data?.rateLimit ?? null,
   };
 }
 
@@ -577,6 +614,25 @@ function writeContextFiles(outDir, prNumber, ctx, fixReviewRuns) {
   fs.writeFileSync(`${prefix}-head-sha`, ctx.headSha);
 }
 
+// Which transport fetches per-PR context. GraphQL has its own quota bucket,
+// so it spares the (scarcer) REST one; REST stays the reference path and the
+// fallback. A repository variable overrides the default without a commit:
+// `rest` is the rollback switch, mirroring PR_FLOW_REVIEW_SOURCE.
+const DEFAULT_AUTO_COVER_SOURCE = 'graphql';
+
+function resolveAutoCoverSource(value = process.env.PR_FLOW_AUTO_COVER_SOURCE) {
+  const requested = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (requested === '') return DEFAULT_AUTO_COVER_SOURCE;
+  if (requested === 'graphql' || requested === 'rest') return requested;
+  // A typo must never silently enable the newer path.
+  console.warn(
+    `fetch-auto-cover-context: unknown PR_FLOW_AUTO_COVER_SOURCE "${requested}", using rest.`,
+  );
+  return 'rest';
+}
+
 async function fetchAutoCoverContext({
   repo,
   prs,
@@ -584,6 +640,7 @@ async function fetchAutoCoverContext({
   fetchJson,
   viewPull,
   graphql,
+  source,
   concurrency = DEFAULT_CONCURRENCY,
   fixReviewWorkflow = DEFAULT_FIX_REVIEW_WORKFLOW,
   runLimit = DEFAULT_RUN_LIMIT,
@@ -613,9 +670,15 @@ async function fetchAutoCoverContext({
   const fetcher = fetchJson || createGhFetcher();
   const viewPr = viewPull || createViewPull();
   // Production default: one GraphQL query per PR (its own rate-limit bucket),
-  // with narrow REST fallbacks through `fetcher`. Injecting only `fetchJson`
-  // (no `graphql`) keeps the legacy all-REST path used by the existing tests.
-  const gql = graphql || (fetchJson ? null : createGraphqlFetcher());
+  // with narrow REST fallbacks through `fetcher`. PR_FLOW_AUTO_COVER_SOURCE=rest
+  // forces the legacy all-REST path; injecting only `fetchJson` (no `graphql`)
+  // selects it too, which is how the legacy tests exercise that path.
+  const gql =
+    resolveAutoCoverSource(source) === 'rest' || (fetchJson && !graphql)
+      ? null
+      : graphql || createGraphqlFetcher();
+  let graphqlCost = 0;
+  let graphqlRemaining = null;
   const fixReviewRuns = await fetchFixReviewRuns(
     fetcher,
     repo,
@@ -647,6 +710,10 @@ async function fetchAutoCoverContext({
               repo,
               prNumber,
             });
+        if (ctx.rateLimit) {
+          graphqlCost += Number(ctx.rateLimit.cost ?? 0);
+          graphqlRemaining = Number(ctx.rateLimit.remaining ?? 0);
+        }
         writeContextFiles(outDir, prNumber, ctx, fixReviewRuns);
         return { pr: prNumber, ok: true };
       } catch (error) {
@@ -687,6 +754,9 @@ async function fetchAutoCoverContext({
     ok,
     failed,
     count: list.length,
+    // GraphQL bucket usage for this scan (0 when the REST path ran);
+    // `remaining` is the last observed value, for quota monitoring.
+    graphql: { cost: graphqlCost, remaining: graphqlRemaining },
   };
   fs.writeFileSync(
     path.join(outDir, 'manifest.json'),
@@ -714,9 +784,11 @@ async function main() {
 
 module.exports = {
   AUTO_COVER_MARKER,
+  DEFAULT_AUTO_COVER_SOURCE,
   DEFAULT_CONCURRENCY,
   DEFAULT_FIX_REVIEW_WORKFLOW,
   PULL_REQUEST_CONTEXT_QUERY,
+  assertNoGraphqlErrors,
   createGhFetcher,
   createGraphqlFetcher,
   createViewPull,
@@ -725,7 +797,7 @@ module.exports = {
   extractAttempts,
   normalizeHeadSha,
   commitTimestamp,
-  restLogin,
+  resolveAutoCoverSource,
   mapIssueComments,
   mapReviewComments,
   mapReviews,
