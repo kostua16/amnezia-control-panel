@@ -546,15 +546,13 @@ gh workflow run pr-flow.yml --ref main -f pr_number=<PR> -f dry_run=false
 ### PR Flow sweep shadow
 
 Set the repository Actions variable `PR_FLOW_SWEEP_MODE` to `shadow` to log
-candidate wakes and GraphQL cost from current open PR heads. Clear it or set it
-to `off` to stop scanning. Other values, including `canary` and `active`, also
-disable the scan in this rollout.
+candidate wakes and GraphQL cost from current open PR heads. Delete the variable to disable shadow scanning. Only `shadow` enables it.
 
-Shadow runs on the existing cron slots, after `PR Orchestrator` completes, and on manual dispatch from the default branch. Each scan uses the default-branch commit and a read-only token. GitHub keeps one scan running and one pending in the shared group, replacing older pending scans. Each recovery-cron comparison has its own group so it can run even when the shared queue is busy. For a manual sample without watchdog dispatches, set `dry_run` on the workflow dispatch.
+Shadow samples `PR Orchestrator` completions whose run IDs end in `0` or `5` (roughly 20%). The existing cron slots and default-branch manual dispatches are exempt from sampling. Each scan uses the default-branch commit and a read-only token. GitHub keeps one scan running and one pending per group, replacing older pending scans. Recovery-cron comparisons share a separate group. For a manual sample without watchdog dispatches, set `dry_run` on the workflow dispatch.
 
 Each scan emits one `SHADOW_SWEEP_SUMMARY` JSON line with its trigger, GraphQL
-cost and remaining budget, PR and candidate counts, and comparison differences
-when available. The existing recovery cron is the only trigger that compares
+cost and remaining budget, PR and candidate counts, and a count and up to five comparison differences with a truncation flag when available. The `PR flow shadow` line retains the full comparison.
+The existing recovery cron is the only trigger that compares
 status evidence. Both selections use the same GraphQL heads, labels, state and
 draft flag and share the raw status history per head. A transient REST failure
 gets one retry within the comparison deadline. Unavailable evidence is reported

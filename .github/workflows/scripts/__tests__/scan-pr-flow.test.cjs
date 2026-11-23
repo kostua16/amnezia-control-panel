@@ -5,7 +5,10 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { load } = require('js-yaml');
 const { planSweep, scanPrFlow } = require('../scan-pr-flow.cjs');
-const { renderTemplate } = require('./helpers/github-expression.cjs');
+const {
+  evaluateCondition,
+  renderTemplate,
+} = require('./helpers/github-expression.cjs');
 
 const head = 'a'.repeat(40);
 const now = '2026-10-01T00:30:00.000Z';
@@ -99,8 +102,32 @@ test('shadow listens for orchestrator completions, manual dispatch and the origi
   const { shadow } = workflow.jobs;
   assert.equal(
     shadow.if,
-    "vars.PR_FLOW_SWEEP_MODE == 'shadow' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')",
+    [
+      "vars.PR_FLOW_SWEEP_MODE == 'shadow' &&",
+      "github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&",
+      "(github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&",
+      "(github.event_name != 'workflow_run' ||",
+      "endsWith(format('{0}', github.event.workflow_run.id), '0') ||",
+      "endsWith(format('{0}', github.event.workflow_run.id), '5'))",
+    ].join(' '),
   );
+  const shouldScan = (eventName, upstreamRun) =>
+    evaluateCondition(shadow.if, {
+      vars: { PR_FLOW_SWEEP_MODE: 'shadow' },
+      github: {
+        ref: 'refs/heads/main',
+        event_name: eventName,
+        event: { repository: { default_branch: 'main' }, ...upstreamRun },
+      },
+    });
+  for (let digit = 0; digit < 10; digit += 1) {
+    assert.equal(
+      shouldScan('workflow_run', { workflow_run: { id: 12340 + digit } }),
+      digit === 0 || digit === 5,
+    );
+  }
+  assert.equal(shouldScan('schedule'), true);
+  assert.equal(shouldScan('workflow_dispatch'), true);
   assert.deepEqual(shadow.permissions, {
     contents: 'read',
     'pull-requests': 'read',
@@ -121,9 +148,12 @@ test('shadow listens for orchestrator completions, manual dispatch and the origi
   for (const runId of [1, 2]) {
     assert.equal(
       renderTemplate(group, {
-        github: { event: { schedule: recovery }, run_id: runId },
+        github: {
+          event: { schedule: workflow.on.schedule[0].cron },
+          run_id: runId,
+        },
       }),
-      `pr-flow-sweep-shadow-recovery-${runId}`,
+      'pr-flow-sweep-shadow-recovery',
     );
   }
   assert.equal(workflow.concurrency, undefined);
@@ -137,6 +167,11 @@ test('shadow listens for orchestrator completions, manual dispatch and the origi
   assert.equal(setup.uses, './.github/actions/setup-environment');
   assert.equal(setup.if, undefined);
   assert.equal(scan.if, undefined);
+  assert.deepEqual(scan.env, {
+    GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+    PR_FLOW_SWEEP_MODE: '${{ vars.PR_FLOW_SWEEP_MODE }}',
+    PR_FLOW_SWEEP_SCHEDULE: '${{ github.event.schedule }}',
+  });
   assert.equal(scan.run, 'node .github/workflows/scripts/scan-pr-flow.cjs\n');
 });
 
@@ -524,7 +559,11 @@ test('reports real comparator differences and keeps unavailable history distinct
     lines.at(-1).slice('SHADOW_SWEEP_SUMMARY '.length),
   );
   assert.equal(summary.triggerEvent, 'schedule');
-  assert.deepEqual(summary.comparisonDiffs, result.comparison.differences);
+  assert.deepEqual(summary.comparisonDiffs, {
+    count: 1,
+    entries: result.comparison.differences,
+    truncated: false,
+  });
   const unknown = call({
     ...common,
     execGh: () => {
@@ -534,4 +573,33 @@ test('reports real comparator differences and keeps unavailable history distinct
   assert.deepEqual(unknown.unknown, [{ number: 1, evidence: ['history'] }]);
   assert.deepEqual(unknown.comparison.unknown, [1]);
   assert.deepEqual(unknown.comparison.differences, []);
+});
+
+test('caps summary differences and retains the full structured comparison', () => {
+  const pending = status('pending');
+  const lines = [];
+  call({
+    schedule: recovery,
+    runGraphql: () =>
+      page([1, 2, 3, 4, 5, 6].map((number) => node(number, [pending]))),
+    log: (line) => lines.push(line),
+    execGh: (_command, args) =>
+      JSON.stringify(
+        args[3].endsWith('/status') ? { statuses: [status('success')] } : [],
+      ),
+  });
+
+  const full = JSON.parse(lines.at(-2).slice('PR flow shadow '.length));
+  assert.deepEqual(
+    full.comparison.differences.map(({ number }) => number),
+    [1, 2, 3, 4, 5, 6],
+  );
+  const summary = JSON.parse(
+    lines.at(-1).slice('SHADOW_SWEEP_SUMMARY '.length),
+  );
+  assert.deepEqual(summary.comparisonDiffs, {
+    count: 6,
+    entries: full.comparison.differences.slice(0, 5),
+    truncated: true,
+  });
 });

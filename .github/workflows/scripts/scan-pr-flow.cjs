@@ -23,6 +23,7 @@ const UNREADABLE_STATUSES = [{ context: READY_CONTEXT }];
 const CHECK_RESCUE = 'checks-completed-after-ready';
 const CHECK_COMPLETION_GRACE_MS = 120_000;
 const MIN_GRAPHQL_REMAINING = 5;
+const MAX_SUMMARY_DIFFS = 5;
 
 function completedRequiredChecks(pr, required, nowMs) {
   const ready = pr.statuses?.find((status) => status.context === READY_CONTEXT);
@@ -284,6 +285,7 @@ function scanPrFlow({
       elapsedMs: Math.round(performance.now() - started),
     };
     log(`PR flow shadow ${JSON.stringify(result)}`);
+    const differences = result.comparison?.differences;
     const telemetry = {
       triggerEvent,
       status: result.status,
@@ -292,7 +294,13 @@ function scanPrFlow({
       remaining: pages.at(-1)?.remaining ?? null,
       openPrs: result.openPrs ?? null,
       candidatePrs: result.candidatePrs ?? null,
-      comparisonDiffs: result.comparison?.differences ?? null,
+      comparisonDiffs: differences
+        ? {
+            count: differences.length,
+            entries: differences.slice(0, MAX_SUMMARY_DIFFS),
+            truncated: differences.length > MAX_SUMMARY_DIFFS,
+          }
+        : null,
     };
     log(`SHADOW_SWEEP_SUMMARY ${JSON.stringify(telemetry)}`);
     return result;
