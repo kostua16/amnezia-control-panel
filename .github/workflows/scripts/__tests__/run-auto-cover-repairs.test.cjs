@@ -195,7 +195,9 @@ for (const mode of ['direct', 'delayed']) {
     );
     assert.equal(result.evaluated, 2);
     assert.deepEqual(result.failed, ['8']);
-    assert.ok(logs.some((line) => /^::warning::PR #8: .*JSON/.test(line)));
+    assert.ok(
+      logs.some((line) => /^::warning::PR #8 \(evaluate\): .*JSON/.test(line)),
+    );
     assert.match(summaryLine(mode, result), /1 PR\(s\) failed: #8\./);
   });
 }
@@ -206,7 +208,7 @@ test('direct mode continues after a fix-review dispatch fails', () => {
   const { result, logs } = run(dir, 'direct', {
     gh(args) {
       if (args[2] === 'fix-review.yml' && args.includes('pr_number=8')) {
-        throw new Error('HTTP 500\r\nrequest failed');
+        throw new Error('HTTP 500 (100%)\r\nrequest failed');
       }
       return gh(args);
     },
@@ -222,7 +224,30 @@ test('direct mode continues after a fix-review dispatch fails', () => {
     handedOff: 0,
     failed: ['8'],
   });
-  assert.ok(logs.includes('::warning::PR #8: HTTP 500%0D%0Arequest failed'));
+  assert.ok(
+    logs.includes(
+      '::warning::PR #8 (dispatch): HTTP 500 (100%25)%0D%0Arequest failed',
+    ),
+  );
+});
+
+test('a failed attempt comment after a started fix-review still counts as dispatched', () => {
+  const dir = contextDir([[7], [8]]);
+  const { gh } = fakeGh();
+  const { result, logs } = run(dir, 'direct', {
+    gh(args) {
+      if (args[0] === 'issue' && args[1] === 'comment') {
+        throw new Error('comment write failed');
+      }
+      return gh(args);
+    },
+  });
+
+  assert.equal(result.dispatched, 2);
+  assert.deepEqual(result.failed, ['7', '8']);
+  assert.ok(
+    logs.includes('::warning::PR #7 (record attempt): comment write failed'),
+  );
 });
 
 test('the scan CLI exits nonzero and writes the summary after all PRs are processed', () => {

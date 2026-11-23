@@ -153,6 +153,7 @@ function dispatchFixReview({
   sleep = sleepSync,
   now = () => new Date(),
   recordFirst = false,
+  onDispatched = () => {},
 }) {
   const startedAt = isoSeconds(now());
   const title = `Fix Review PR #${prNumber} @ ${headSha}`;
@@ -169,6 +170,7 @@ function dispatchFixReview({
     '-f',
     'automation_review_loop=true',
   ]);
+  onDispatched();
   const bodyFile = path.join(dir, `pr-${prNumber}-auto-cover-comment.md`);
   const post = (fixReviewUrl) => {
     fs.writeFileSync(
@@ -234,6 +236,8 @@ function runAutoCoverRepairs({
   if (!MODES.includes(mode)) throw new Error(`Unknown mode: ${mode}`);
   const result = { evaluated: 0, dispatched: 0, handedOff: 0, failed: [] };
   for (const prNumber of readPrList(dir)) {
+    // Names the step a failure came from, so a scan warning needs no guessing.
+    let stage = 'evaluate';
     try {
       const { headSha, decision } = evaluatePr({
         dir,
@@ -253,10 +257,12 @@ function runAutoCoverRepairs({
         continue;
       }
       if (mode === 'delayed') {
+        stage = 'handoff';
         handOff({ prNumber, headSha, gh });
         result.handedOff += 1;
         continue;
       }
+      stage = 'dispatch';
       dispatchFixReview({
         prNumber,
         headSha,
@@ -267,15 +273,20 @@ function runAutoCoverRepairs({
         sleep,
         now,
         recordFirst: mode === 'revalidate',
+        // fix-review is already running once the workflow call returns, so a
+        // failed attempt comment afterwards still counts as a dispatch.
+        onDispatched: () => {
+          result.dispatched += 1;
+          stage = 'record attempt';
+        },
       });
-      result.dispatched += 1;
     } catch (error) {
       if (mode === 'revalidate') throw error;
       const message = String(error?.message ?? error)
         .replaceAll('%', '%25')
         .replaceAll('\r', '%0D')
         .replaceAll('\n', '%0A');
-      warn(`::warning::PR #${prNumber}: ${message}`);
+      warn(`::warning::PR #${prNumber} (${stage}): ${message}`);
       result.failed.push(prNumber);
     }
   }
