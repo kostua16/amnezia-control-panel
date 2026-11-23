@@ -153,6 +153,7 @@ function dispatchFixReview({
   sleep = sleepSync,
   now = () => new Date(),
   recordFirst = false,
+  onDispatched = () => {},
 }) {
   const startedAt = isoSeconds(now());
   const title = `Fix Review PR #${prNumber} @ ${headSha}`;
@@ -169,6 +170,7 @@ function dispatchFixReview({
     '-f',
     'automation_review_loop=true',
   ]);
+  onDispatched();
   const bodyFile = path.join(dir, `pr-${prNumber}-auto-cover-comment.md`);
   const post = (fixReviewUrl) => {
     fs.writeFileSync(
@@ -232,58 +234,88 @@ function runAutoCoverRepairs({
   warn = console.warn,
 }) {
   if (!MODES.includes(mode)) throw new Error(`Unknown mode: ${mode}`);
-  const result = { evaluated: 0, dispatched: 0, handedOff: 0, failed: [] };
+  const result = {
+    evaluated: 0,
+    dispatched: 0,
+    handedOff: 0,
+    failed: [],
+    unrecorded: [],
+  };
   for (const prNumber of readPrList(dir)) {
-    result.evaluated += 1;
-    const { headSha, decision } = evaluatePr({
-      dir,
-      prNumber,
-      policy,
-      expectedHeadSha,
-    });
-    log(`PR #${prNumber}: ${decision.reason ?? 'eligible'}`);
-    if (decision.should_run !== true) continue;
-    if (dryRun) {
-      log(
-        mode === 'delayed'
-          ? `Dry-run: would hand off PR #${prNumber} @ ${headSha} to ${DISPATCH_WORKFLOW}`
-          : `Dry-run: would dispatch fix-review for PR #${prNumber} @ ${headSha}`,
-      );
-      continue;
-    }
-    if (mode === 'delayed') {
-      // One failed handoff must not cost the other PRs theirs.
-      try {
+    // Names the step a failure came from, so a scan warning needs no guessing.
+    let stage = 'evaluate';
+    try {
+      const { headSha, decision } = evaluatePr({
+        dir,
+        prNumber,
+        policy,
+        expectedHeadSha,
+      });
+      result.evaluated += 1;
+      log(`PR #${prNumber}: ${decision.reason ?? 'eligible'}`);
+      if (decision.should_run !== true) continue;
+      if (dryRun) {
+        log(
+          mode === 'delayed'
+            ? `Dry-run: would hand off PR #${prNumber} @ ${headSha} to ${DISPATCH_WORKFLOW}`
+            : `Dry-run: would dispatch fix-review for PR #${prNumber} @ ${headSha}`,
+        );
+        continue;
+      }
+      if (mode === 'delayed') {
+        stage = 'handoff';
         handOff({ prNumber, headSha, gh });
         result.handedOff += 1;
-      } catch (error) {
-        warn(`PR #${prNumber}: handoff failed: ${error.message}`);
-        result.failed.push(prNumber);
+        continue;
       }
-      continue;
+      stage = 'dispatch';
+      dispatchFixReview({
+        prNumber,
+        headSha,
+        dispatcherUrl,
+        repo,
+        dir,
+        gh,
+        sleep,
+        now,
+        recordFirst: mode === 'revalidate',
+        // fix-review is already running once the workflow call returns, so a
+        // failed attempt comment afterwards still counts as a dispatch.
+        onDispatched: () => {
+          result.dispatched += 1;
+          stage = 'record attempt';
+        },
+      });
+    } catch (error) {
+      const message = String(error?.message ?? error)
+        .replaceAll('%', '%25')
+        .replaceAll('\r', '%0D')
+        .replaceAll('\n', '%0A');
+      warn(`::warning::PR #${prNumber} (${stage}): ${message}`);
+      // A started fix-review is not a failed repair, but its attempt marker is
+      // missing, so the next scan could dispatch the same head again.
+      (stage === 'record attempt' ? result.unrecorded : result.failed).push(
+        prNumber,
+      );
     }
-    dispatchFixReview({
-      prNumber,
-      headSha,
-      dispatcherUrl,
-      repo,
-      dir,
-      gh,
-      sleep,
-      now,
-      recordFirst: mode === 'revalidate',
-    });
-    result.dispatched += 1;
   }
   return result;
 }
 
 function summaryLine(mode, result) {
+  const list = (numbers) => numbers.map((n) => `#${n}`).join(', ');
+  const failed =
+    (result.failed.length
+      ? ` ${result.failed.length} PR(s) failed: ${list(result.failed)}.`
+      : '') +
+    (result.unrecorded.length
+      ? ` Dispatched but attempt not recorded for: ${list(result.unrecorded)}.`
+      : '');
   if (mode === 'delayed') {
-    const failed = result.failed.length
-      ? ` Handoff failed for PR(s): ${result.failed.map((n) => `#${n}`).join(', ')}.`
-      : '';
     return `Evaluated ${result.evaluated} PR(s); handed off ${result.handedOff} PR(s) to ${DISPATCH_WORKFLOW} (quiet period before fix-review).${failed}`;
+  }
+  if (failed) {
+    return `Evaluated ${result.evaluated} PR(s); completed ${result.dispatched} fix-review dispatch(es).${failed}`;
   }
   return `Evaluated ${result.evaluated} PR(s); dispatched ${result.dispatched} fix-review run(s).`;
 }
@@ -326,7 +358,9 @@ function main(argv = process.argv, env = process.env) {
     fs.appendFileSync(env.GITHUB_STEP_SUMMARY, `${line}\n`);
   }
   console.log(line);
-  if (result.failed.length > 0) process.exitCode = 1;
+  if (result.failed.length > 0 || result.unrecorded.length > 0) {
+    process.exitCode = 1;
+  }
 }
 
 if (require.main === module) {

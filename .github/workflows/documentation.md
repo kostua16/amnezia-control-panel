@@ -81,6 +81,9 @@ auto-cover-review.yml
   -> evaluates internal review concern labels plus Kilo current-head feedback
   -> AUTO_COVER_DELAY_MODE=delayed (default): hands each eligible PR to
      auto-cover-dispatch.yml; `direct` dispatches fix-review.yml itself
+  -> after context collection, a PR evaluation or dispatch error warns with
+     the PR number and lets the scan finish; the summary lists failed PRs and
+     the job fails after processing the batch
   -> dispatches fix-review.yml on `--ref main` with automation_review_loop=true
   -> allows manual-only / needs-review PRs to be repaired, but never approves,
      merges, removes needs-review, or bypasses do-not-merge

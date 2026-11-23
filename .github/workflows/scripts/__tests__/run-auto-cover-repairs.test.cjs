@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const {
   commentIdFromUrl,
@@ -16,9 +17,8 @@ const {
   summaryLine,
 } = require('../run-auto-cover-repairs.cjs');
 
-const policy = JSON.parse(
-  fs.readFileSync(path.join(__dirname, '..', '..', 'policy.json'), 'utf8'),
-);
+const policyFile = path.join(__dirname, '..', '..', 'policy.json');
+const policy = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
 const SHA = 'a'.repeat(40);
 const OTHER_SHA = 'b'.repeat(40);
 const BOT = { login: 'github-actions[bot]' };
@@ -138,6 +138,7 @@ test('delayed mode hands an eligible PR to the quiet-period workflow, nothing el
     dispatched: 0,
     handedOff: 1,
     failed: [],
+    unrecorded: [],
   });
 });
 
@@ -177,10 +178,115 @@ test('one failed handoff does not cost the other PRs theirs', () => {
   assert.equal(calls.length, 2);
   assert.deepEqual(result.failed, ['7']);
   assert.equal(result.handedOff, 1);
-  assert.match(
-    summaryLine('delayed', result),
-    /Handoff failed for PR\(s\): #7\./,
+  assert.match(summaryLine('delayed', result), /1 PR\(s\) failed: #7\./);
+});
+
+for (const mode of ['direct', 'delayed']) {
+  test(`${mode} mode continues after a PR fails evaluation`, () => {
+    const dir = contextDir([[7], [8], [9]]);
+    fs.writeFileSync(path.join(dir, 'pr-8-pr.json'), '{');
+    const { gh, calls } = fakeGh();
+    const { result, logs } = run(dir, mode, { gh });
+
+    assert.deepEqual(
+      calls
+        .filter(([command]) => command === 'workflow')
+        .map((args) => args[6]),
+      ['pr_number=7', 'pr_number=9'],
+    );
+    assert.equal(result.evaluated, 2);
+    assert.deepEqual(result.failed, ['8']);
+    assert.ok(
+      logs.some((line) => /^::warning::PR #8 \(evaluate\): .*JSON/.test(line)),
+    );
+    assert.match(summaryLine(mode, result), /1 PR\(s\) failed: #8\./);
+  });
+}
+
+test('direct mode continues after a fix-review dispatch fails', () => {
+  const dir = contextDir([[7], [8], [9]]);
+  const { gh, calls } = fakeGh();
+  const { result, logs } = run(dir, 'direct', {
+    gh(args) {
+      if (args[2] === 'fix-review.yml' && args.includes('pr_number=8')) {
+        throw new Error('HTTP 500 (100%)\r\nrequest failed');
+      }
+      return gh(args);
+    },
+  });
+
+  assert.deepEqual(
+    calls.filter(([command]) => command === 'workflow').map((args) => args[6]),
+    ['pr_number=7', 'pr_number=9'],
   );
+  assert.deepEqual(result, {
+    evaluated: 3,
+    dispatched: 2,
+    handedOff: 0,
+    failed: ['8'],
+    unrecorded: [],
+  });
+  assert.ok(
+    logs.includes(
+      '::warning::PR #8 (dispatch): HTTP 500 (100%25)%0D%0Arequest failed',
+    ),
+  );
+});
+
+test('a failed attempt comment after a started fix-review still counts as dispatched', () => {
+  const dir = contextDir([[7], [8]]);
+  const { gh } = fakeGh();
+  const { result, logs } = run(dir, 'direct', {
+    gh(args) {
+      if (args[0] === 'issue' && args[1] === 'comment') {
+        throw new Error('comment write failed');
+      }
+      return gh(args);
+    },
+  });
+
+  assert.equal(result.dispatched, 2);
+  assert.deepEqual(result.failed, []);
+  assert.deepEqual(result.unrecorded, ['7', '8']);
+  assert.match(
+    summaryLine('direct', result),
+    /Dispatched but attempt not recorded for: #7, #8\./,
+  );
+  assert.ok(
+    logs.includes('::warning::PR #7 (record attempt): comment write failed'),
+  );
+});
+
+test('the scan CLI exits nonzero and writes the summary after all PRs are processed', () => {
+  const dir = contextDir([[7], [8], [9]]);
+  fs.writeFileSync(path.join(dir, 'pr-8-pr.json'), '{');
+  const summaryFile = path.join(dir, 'summary.md');
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(__dirname, '..', 'run-auto-cover-repairs.cjs'),
+      '--mode',
+      'direct',
+      '--context-dir',
+      dir,
+      '--policy-file',
+      policyFile,
+      '--dry-run',
+      'true',
+    ],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_STEP_SUMMARY: summaryFile },
+    },
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stdout,
+    /Dry-run: would dispatch fix-review for PR #9/,
+    result.stderr,
+  );
+  assert.match(fs.readFileSync(summaryFile, 'utf8'), /1 PR\(s\) failed: #8\./);
 });
 
 test('direct mode keeps the previous dispatch, lookup and comment sequence', () => {
@@ -346,7 +452,6 @@ test('commentIdFromUrl reads the id gh prints for a new comment', () => {
 });
 
 test('revalidate mode refuses a missing or short head SHA', () => {
-  const { spawnSync } = require('node:child_process');
   const script = path.join(__dirname, '..', 'run-auto-cover-repairs.cjs');
   for (const args of [[], ['--head-sha', 'abc123'], ['--head-sha', '']]) {
     const result = spawnSync(
