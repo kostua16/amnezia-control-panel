@@ -1,7 +1,14 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { planSweep, scanPrFlow } = require('../scan-pr-flow.cjs');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const { load } = require('js-yaml');
+const {
+  checkShadowCooldown,
+  planSweep,
+  scanPrFlow,
+} = require('../scan-pr-flow.cjs');
 
 const head = 'a'.repeat(40);
 const now = '2026-10-01T00:30:00.000Z';
@@ -75,6 +82,134 @@ const call = (options) =>
     log() {},
     ...options,
   });
+
+const readWorkflow = (file) =>
+  load(readFileSync(join(__dirname, '../..', file), 'utf8'));
+
+test('shadow listens for orchestrator completions, manual dispatch and the original cron slots', () => {
+  const workflow = readWorkflow('pr-flow-watchdog.yml');
+  const orchestrator = readWorkflow('pr-flow.yml');
+  assert.deepEqual(workflow.on.workflow_run, {
+    workflows: [orchestrator.name],
+    types: ['completed'],
+  });
+  assert.ok(workflow.on.workflow_dispatch);
+  assert.deepEqual(workflow.on.schedule, [
+    { cron: recovery },
+    { cron: scanOnly },
+  ]);
+
+  const { shadow } = workflow.jobs;
+  assert.equal(
+    shadow.if,
+    "vars.PR_FLOW_SWEEP_MODE == 'shadow' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')",
+  );
+  assert.deepEqual(shadow.permissions, {
+    contents: 'read',
+    'pull-requests': 'read',
+    statuses: 'read',
+    checks: 'read',
+    actions: 'read',
+  });
+  assert.deepEqual(shadow.concurrency, {
+    group: 'pr-flow-sweep-shadow',
+    'cancel-in-progress': false,
+  });
+  assert.equal(workflow.concurrency, undefined);
+  const [checkout, cooldown, setup, scan] = shadow.steps;
+  assert.match(checkout.uses, /^actions\/checkout@[0-9a-f]{40}$/);
+  assert.deepEqual(checkout.with, {
+    ref: '${{ github.sha }}',
+    'persist-credentials': false,
+  });
+  assert.equal(cooldown.id, 'cooldown');
+  assert.match(
+    cooldown.run,
+    /scan-pr-flow\.cjs --check-cooldown >> "\$GITHUB_OUTPUT"/,
+  );
+  assert.equal(setup.uses, './.github/actions/setup-environment');
+  assert.equal(setup.if, "steps.cooldown.outputs.scan == 'true'");
+  assert.equal(scan.if, setup.if);
+  assert.equal(scan.run, 'node .github/workflows/scripts/scan-pr-flow.cjs\n');
+});
+
+test('cooldown checks completed shadow runs with one REST read', () => {
+  const title = 'PR Flow Watchdog (shadow enabled)';
+  assert.ok(readWorkflow('pr-flow-watchdog.yml')['run-name'].includes(title));
+  const run = (id, startedAt, fields) => ({
+    id,
+    display_title: title,
+    run_started_at: `2026-10-01T00:${startedAt}Z`,
+    conclusion: 'success',
+    ...fields,
+  });
+  const ignored = [
+    run(10, '29:00'),
+    run(9, '29:00', { display_title: 'PR Flow Watchdog' }),
+    run(8, '29:00', { conclusion: 'cancelled' }),
+  ];
+  const lines = [];
+  let reads = 0;
+  const check = (runs) =>
+    checkShadowCooldown({
+      repository: 'org/repo',
+      branch: 'main',
+      runId: '10',
+      now: Date.parse(now),
+      log: (line) => lines.push(line),
+      execGh(command, args) {
+        reads += 1;
+        assert.equal(command, 'gh');
+        assert.deepEqual(args, [
+          'api',
+          '--method',
+          'GET',
+          'repos/org/repo/actions/workflows/pr-flow-watchdog.yml/runs',
+          '-f',
+          'branch=main',
+          '-f',
+          'status=completed',
+          '-f',
+          'per_page=100',
+        ]);
+        return JSON.stringify({ workflow_runs: [...ignored, ...runs] });
+      },
+    });
+
+  assert.equal(check([]), true);
+  assert.equal(reads, 1);
+  assert.equal(check([run(7, '25:00')]), true);
+  assert.equal(reads, 2);
+  assert.equal(check([run(6, '25:00'), run(7, '25:01')]), false);
+  assert.equal(reads, 3);
+  assert.deepEqual(lines, ['skipped: last shadow run 4 min ago']);
+});
+
+test('emits one machine-readable summary for an orchestrator completion', () => {
+  const lines = [];
+  call({
+    triggerEvent: 'workflow_run',
+    runGraphql: () => page([node(1, [status('pending')])]),
+    execGh: assert.fail,
+    log: (line) => lines.push(line),
+  });
+  assert.ok(lines.some((line) => line.startsWith('PR flow shadow ')));
+  assert.deepEqual(
+    lines.filter((line) => line.startsWith('SHADOW_SWEEP_SUMMARY ')),
+    [
+      `SHADOW_SWEEP_SUMMARY ${JSON.stringify({
+        triggerEvent: 'workflow_run',
+        status: 'ok',
+        recoverySlot: false,
+        cost: 2,
+        remaining: 48,
+        openPrs: 1,
+        candidatePrs: 1,
+        comparisonDiffs: null,
+      })}`,
+    ],
+  );
+});
 
 test('uses the watchdog reasons and its exact 30-minute boundary', () => {
   const pending = status('pending');
@@ -221,7 +356,7 @@ test('enumerates and deduplicates pages, discards a moved head, and reports page
   assert.equal(summary.restReads, 0);
   assert.equal(summary.comparison, null);
   assert.deepEqual(
-    lines.slice(0, -1),
+    lines.filter((line) => line.startsWith('would wake ')),
     [1, 3].map(
       (n) => `would wake PR #${n} because missing-ready-status (head=${head})`,
     ),
@@ -238,7 +373,11 @@ test('rejects missing and repeated cursors before logging any wake', () => {
     });
     assert.equal(result.status, 'unavailable');
     assert.match(result.error, /missing or repeated cursor/);
-    assert.equal(lines.length, 1);
+    assert.ok(lines.every((line) => !line.startsWith('would wake ')));
+    assert.match(
+      lines.at(-1),
+      /^SHADOW_SWEEP_SUMMARY .*"status":"unavailable"/,
+    );
   }
 });
 
@@ -365,7 +504,7 @@ test('recovery comparison uses one history capture and performs only read calls 
   assert.deepEqual(result.comparison.differences, []);
   assert.deepEqual(result.comparison.unknown, []);
   assert.match(lines[1], /would wake PR #1 because ready-pending-loop/);
-  assert.match(lines.at(-1), /"scope":"status-evidence-only"/);
+  assert.match(lines.at(-2), /"scope":"status-evidence-only"/);
 });
 
 test('retries transient REST errors once per endpoint and shares the result across the comparison', () => {
@@ -413,8 +552,11 @@ test('reports real comparator differences and keeps unavailable history distinct
     schedule: recovery,
     runGraphql: () => page([node(1, [pending])]),
   };
+  const lines = [];
   const result = call({
     ...common,
+    triggerEvent: 'schedule',
+    log: (line) => lines.push(line),
     execGh: (_command, args) =>
       JSON.stringify(
         args[3].endsWith('/status') ? { statuses: [success] } : [],
@@ -423,6 +565,11 @@ test('reports real comparator differences and keeps unavailable history distinct
   assert.deepEqual(result.comparison.differences, [
     { number: 1, head, shadow: ['stale-ready-pending'], watchdog: [] },
   ]);
+  const summary = JSON.parse(
+    lines.at(-1).slice('SHADOW_SWEEP_SUMMARY '.length),
+  );
+  assert.equal(summary.triggerEvent, 'schedule');
+  assert.deepEqual(summary.comparisonDiffs, result.comparison.differences);
   const unknown = call({
     ...common,
     execGh: () => {

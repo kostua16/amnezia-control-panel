@@ -550,13 +550,22 @@ candidate wakes and GraphQL cost from current open PR heads. Clear it or set it
 to `off` to stop scanning. Other values, including `canary` and `active`, also
 disable the scan in this rollout.
 
-The shadow job runs with a read-only token. A scan-only run can finish while
-the next one is queued, and it adds no per-PR REST reads. On the existing
-recovery cron, the comparison validates status evidence only. Both selections
-use the same GraphQL heads, labels, state and draft flag and share the raw
-status history per head. A transient REST failure gets one retry within the
-comparison deadline. Unavailable evidence is reported as unknown. The watchdog
-continues to own recovery on the original schedule and on manual dispatch.
+Shadow runs on the existing cron slots, after `PR Orchestrator` completes,
+and on manual dispatch from the default branch. The shadow job checks out the
+default-branch commit, uses a read-only token, and queues behind any active
+shadow job. It makes one REST request to find completed shadow-enabled runs
+and skips the scan if the latest eligible run started less than five minutes
+ago. Skipped scans count toward that cooldown. For a manual sample without
+watchdog dispatches, set `dry_run` on the workflow dispatch.
+
+Each scan emits one `SHADOW_SWEEP_SUMMARY` JSON line with its trigger, GraphQL
+cost and remaining budget, PR and candidate counts, and comparison differences
+when available. The existing recovery cron is the only trigger that compares
+status evidence. Both selections use the same GraphQL heads, labels, state and
+draft flag and share the raw status history per head. A transient REST failure
+gets one retry within the comparison deadline. Unavailable evidence is reported
+as unknown. The watchdog continues to own recovery on the original schedule
+and on manual dispatch.
 
 `project-manager.yml` runs every 10 minutes as the queue manager for open PRs,
 standalone issues, and low-load PR-producing workflows. By default it inspects

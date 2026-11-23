@@ -23,6 +23,52 @@ const UNREADABLE_STATUSES = [{ context: READY_CONTEXT }];
 const CHECK_RESCUE = 'checks-completed-after-ready';
 const CHECK_COMPLETION_GRACE_MS = 120_000;
 const MIN_GRAPHQL_REMAINING = 5;
+const SHADOW_RUN_TITLE = 'PR Flow Watchdog (shadow enabled)';
+const COOLDOWN_MS = 5 * 60_000;
+
+function checkShadowCooldown({
+  repository,
+  branch,
+  runId,
+  now = Date.now(),
+  execGh = execFileSync,
+  log = console.error,
+}) {
+  // Workflow run history is available in one read. Ignore off-mode runs,
+  // queued runs and the current run (including retries with the same ID).
+  const { workflow_runs: runs } = JSON.parse(
+    execGh(
+      'gh',
+      [
+        'api',
+        '--method',
+        'GET',
+        `repos/${repository}/actions/workflows/pr-flow-watchdog.yml/runs`,
+        '-f',
+        `branch=${branch}`,
+        '-f',
+        'status=completed',
+        '-f',
+        'per_page=100',
+      ],
+      { encoding: 'utf8', timeout: 15_000 },
+    ),
+  );
+  const lastStart = runs.reduce((latest, run) => {
+    if (
+      String(run.id) === runId ||
+      run.display_title !== SHADOW_RUN_TITLE ||
+      ['cancelled', 'skipped'].includes(run.conclusion)
+    )
+      return latest;
+    const started = Date.parse(run.run_started_at);
+    return started <= now && started > latest ? started : latest;
+  }, -Infinity);
+  const age = now - lastStart;
+  if (age >= COOLDOWN_MS) return true;
+  log(`skipped: last shadow run ${Math.floor(age / 60_000)} min ago`);
+  return false;
+}
 
 function completedRequiredChecks(pr, required, nowMs) {
   const ready = pr.statuses?.find((status) => status.context === READY_CONTEXT);
@@ -260,6 +306,7 @@ function scanPrFlow({
   mode,
   repository,
   schedule,
+  triggerEvent = null,
   now = new Date().toISOString(),
   execGh = execFileSync,
   runGraphql,
@@ -283,6 +330,17 @@ function scanPrFlow({
       elapsedMs: Math.round(performance.now() - started),
     };
     log(`PR flow shadow ${JSON.stringify(result)}`);
+    const telemetry = {
+      triggerEvent,
+      status: result.status,
+      recoverySlot,
+      cost: result.cost,
+      remaining: pages.at(-1)?.remaining ?? null,
+      openPrs: result.openPrs ?? null,
+      candidatePrs: result.candidatePrs ?? null,
+      comparisonDiffs: result.comparison?.differences ?? null,
+    };
+    log(`SHADOW_SWEEP_SUMMARY ${JSON.stringify(telemetry)}`);
     return result;
   };
   let observations;
@@ -397,11 +455,21 @@ function scanPrFlow({
 }
 
 if (require.main === module) {
-  scanPrFlow({
-    mode: process.env.PR_FLOW_SWEEP_MODE,
-    repository: process.env.GITHUB_REPOSITORY,
-    schedule: process.env.PR_FLOW_SWEEP_SCHEDULE,
-  });
+  if (process.argv[2] === '--check-cooldown') {
+    const scan = checkShadowCooldown({
+      repository: process.env.GITHUB_REPOSITORY,
+      branch: process.env.GITHUB_REF_NAME,
+      runId: process.env.GITHUB_RUN_ID,
+    });
+    console.log(`scan=${scan}`);
+  } else {
+    scanPrFlow({
+      mode: process.env.PR_FLOW_SWEEP_MODE,
+      repository: process.env.GITHUB_REPOSITORY,
+      schedule: process.env.PR_FLOW_SWEEP_SCHEDULE,
+      triggerEvent: process.env.GITHUB_EVENT_NAME,
+    });
+  }
 }
 
-module.exports = { planSweep, scanPrFlow };
+module.exports = { checkShadowCooldown, planSweep, scanPrFlow };
