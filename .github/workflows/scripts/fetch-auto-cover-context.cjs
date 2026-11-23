@@ -340,8 +340,13 @@ function withRateLimitRecording(runGraphql, stats) {
 
 // 64 MiB, matching the REST and `gh pr view` fetchers: a comment-heavy PR can
 // push a GraphQL response past Node's 1 MiB execFileSync default, and an
-// ENOBUFS there would silently degrade every large PR to the 7-call REST path.
+// ENOBUFS there would silently drop the PR to the 7-call REST path.
 const GRAPHQL_MAX_BUFFER = 64 * 1024 * 1024;
+// Per-call kill switch: without it a timeout-class transient (dial/TLS hang,
+// stalled response) can pin execFileSync for the OS network timeout on EVERY
+// attempt — ~20 queries x 3 attempts would eat the `cover` job's 10-minute cap
+// even though the retry-sleep budget below is respected.
+const GRAPHQL_TIMEOUT_MS = 30_000;
 // Cumulative retry-sleep budget for ONE scan. The transport is synchronous
 // and the `cover` job caps at 10 minutes, so during a GraphQL 5xx incident
 // unbounded per-query backoff (MAX_RETRIES per query x up to 100 PRs) could
@@ -349,39 +354,72 @@ const GRAPHQL_MAX_BUFFER = 64 * 1024 * 1024;
 // transport marks itself degraded and every remaining PR goes straight to
 // the REST fallback without sleeping.
 const DEFAULT_RETRY_BUDGET_MS = 60_000;
+// Cumulative WALL-CLOCK budget for the whole GraphQL phase of a scan: sleeps
+// are not the only cost — slow-but-successful queries add up too. Past this
+// the transport degrades to REST for the remaining PRs, keeping the scan
+// inside the job timeout even when every query is merely slow.
+const DEFAULT_WALL_BUDGET_MS = 240_000;
 
-// Cross-platform synchronous sleep (the scan loop is sync inside the worker).
+// Cross-platform synchronous sleep (the lib's runGraphql contract is sync).
+// Trade-off: Atomics.wait blocks the event loop, so other workers' async REST
+// fallbacks stall for the duration of a backoff. Accepted deliberately: the
+// retry budget caps total stall at DEFAULT_RETRY_BUDGET_MS per scan, and an
+// async transport would mean restructuring the shared lib's paging loop.
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+// execFileSync kills the child on `timeout` (SIGTERM, error.killed) and Go's
+// net stack can surface ETIMEDOUT; neither appears in gh's "HTTP 5xx" stderr,
+// so timeout kills get their own transient classification.
+function isTimeoutKill(error) {
+  return (
+    error?.killed === true ||
+    error?.code === 'ETIMEDOUT' ||
+    error?.signal === 'SIGTERM'
+  );
+}
+
 // Auto Cover's gh GraphQL transport: same arg building as orchestrate-pr-flow,
-// but with a large maxBuffer and a scan-wide retry budget. `budget.degraded`
-// flips true once the budget cannot cover the next backoff; callers check it
-// to skip GraphQL entirely for the remaining PRs.
+// but with a large maxBuffer, a per-call timeout, a scan-wide retry-sleep
+// budget and a scan-wide wall-clock budget. `budget.degraded` flips true once
+// any bound is exhausted; callers check it to skip GraphQL entirely for the
+// remaining PRs.
 function createAutoCoverGraphqlRunner({
   execFileSyncImpl = execFileSync,
   sleep = sleepSync,
   retryBudgetMs = DEFAULT_RETRY_BUDGET_MS,
+  wallBudgetMs = DEFAULT_WALL_BUDGET_MS,
+  now = Date.now,
 } = {}) {
   const budget = {
     remainingMs: Number(retryBudgetMs) || 0,
     degraded: false,
   };
+  const startedAt = now();
+  const wallBudget = Number(wallBudgetMs) || 0;
   function runQuery(query, variables) {
+    if (now() - startedAt >= wallBudget) {
+      budget.degraded = true;
+      throw new Error(
+        `GraphQL wall-clock budget (${wallBudget}ms) spent; degrading to REST.`,
+      );
+    }
     const args = buildGraphqlArgs(query, variables);
     for (let attempt = 0; ; attempt++) {
       try {
         const stdout = execFileSyncImpl('gh', args, {
           encoding: 'utf8',
           maxBuffer: GRAPHQL_MAX_BUFFER,
+          timeout: GRAPHQL_TIMEOUT_MS,
           env: process.env,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
         return JSON.parse(String(stdout ?? '').trim() || '{}');
       } catch (error) {
         const stderr = String(error?.stderr ?? '');
-        if (!isTransient(stderr) || attempt >= MAX_RETRIES - 1) throw error;
+        const transient = isTransient(stderr) || isTimeoutKill(error);
+        if (!transient || attempt >= MAX_RETRIES - 1) throw error;
         const delay = RETRY_BASE_MS * 2 ** attempt;
         if (budget.degraded || delay > budget.remainingMs) {
           // Budget spent: no more sleeping; every remaining PR falls back to
@@ -422,15 +460,18 @@ async function fetchPrContextAuto({
   };
   const pr = await viewPull(prNumber);
   const headSha = normalizeHeadSha(pr);
-  // Reuse the already-fetched `gh pr view` payload on the REST path.
-  const restFallback = () => {
-    markFallback();
-    return fetchPrContext({
+  // Reuse the already-fetched `gh pr view` payload on the REST path. The flag
+  // is set only AFTER the REST read succeeded: a PR whose fallback also failed
+  // belongs in `failed` alone, never in `manifest.graphql.fallbackPrs`.
+  const restFallback = async () => {
+    const ctx = await fetchPrContext({
       fetchJson,
       viewPull: async () => pr,
       repo,
       prNumber,
     });
+    markFallback();
+    return ctx;
   };
 
   if (!headSha) return restFallback();
@@ -459,11 +500,11 @@ async function fetchPrContextAuto({
     console.warn(
       `fetch-auto-cover-context: PR #${prNumber} GraphQL commits unavailable, using REST: ${error.message}`,
     );
-    markFallback();
     commits =
       (await fetchJson(`repos/${repo}/pulls/${prNumber}/commits`, {
         paginate: true,
       })) ?? [];
+    markFallback();
   }
 
   // Same precedence as orchestrate-pr-flow (headCommittedAtFromCommits): the
@@ -476,9 +517,9 @@ async function fetchPrContextAuto({
       )
     : '';
   if (!headCommittedAt) {
-    markFallback();
     const payload = await fetchJson(`repos/${repo}/commits/${headSha}`);
     headCommittedAt = commitTimestamp(payload ?? {});
+    markFallback();
   }
 
   return {
@@ -683,16 +724,18 @@ async function fetchAutoCoverContext({
             stats,
           });
         } else {
-          // REST source, or the GraphQL retry budget is spent: go straight to
-          // REST without another GraphQL attempt or any sleeping. A degraded
-          // scan still marks the PR so manifest.graphql.fallbackPrs shows it.
-          if (gqlRunner) stats.fellBack = true;
+          // REST source, or the GraphQL transport degraded (retry-sleep or
+          // wall-clock budget spent): go straight to REST without another
+          // GraphQL attempt or any sleeping. The degraded flag is set only
+          // AFTER the read succeeded, so a failed PR never appears in
+          // manifest.graphql.fallbackPrs.
           ctx = await fetchPrContext({
             fetchJson: fetcher,
             viewPull: viewPr,
             repo,
             prNumber,
           });
+          if (gqlRunner) stats.fellBack = true;
         }
         writeContextFiles(outDir, prNumber, ctx, fixReviewRuns);
         return { pr: prNumber, ok: true, stats };
@@ -799,7 +842,10 @@ module.exports = {
   withRateLimitRecording,
   createAutoCoverGraphqlRunner,
   GRAPHQL_MAX_BUFFER,
+  GRAPHQL_TIMEOUT_MS,
   DEFAULT_RETRY_BUDGET_MS,
+  DEFAULT_WALL_BUDGET_MS,
+  isTimeoutKill,
   fetchPrCommitsGraphql,
   mapCommits,
   resolveAutoCoverSource,

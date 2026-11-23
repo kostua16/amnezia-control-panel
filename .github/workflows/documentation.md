@@ -85,10 +85,11 @@ auto-cover-review.yml
   -> per-PR context fetch defaults to GraphQL (lib/review-inputs-graphql.cjs,
      same adapter as pr-flow); repo variable PR_FLOW_AUTO_COVER_SOURCE=rest
      is the rollback switch to the legacy all-REST fetch
-  -> the GraphQL transport buffers responses up to 64 MiB and caps cumulative
-     transient-error retry sleeps at a 60s per-scan budget; once spent, the
-     remaining PRs fall back to REST without sleeping (degraded PRs are
-     listed in manifest.graphql.fallbackPrs)
+  -> the GraphQL transport buffers responses up to 64 MiB, kills each call
+     after 30s (timeout kills retry as transient), and caps retry sleeps at
+     60s plus the whole GraphQL phase at a 4min per-scan wall-clock budget;
+     once a bound is spent, remaining PRs fall back to REST without sleeping
+     (successfully degraded PRs are listed in manifest.graphql.fallbackPrs)
   -> allows manual-only / needs-review PRs to be repaired, but never approves,
      merges, removes needs-review, or bypasses do-not-merge
 

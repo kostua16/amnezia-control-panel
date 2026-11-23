@@ -19,6 +19,8 @@ const {
   withRateLimitRecording,
   createAutoCoverGraphqlRunner,
   GRAPHQL_MAX_BUFFER,
+  GRAPHQL_TIMEOUT_MS,
+  isTimeoutKill,
   AUTO_COVER_MARKER,
 } = require('../fetch-auto-cover-context.cjs');
 const { evaluateExternalReview } = require('../evaluate-external-review.cjs');
@@ -1235,7 +1237,7 @@ test('mapped GraphQL items match REST-shaped fixtures field-for-field', async ()
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('the Auto Cover GraphQL runner accepts >1 MiB responses via a 64 MiB maxBuffer', () => {
+test('the Auto Cover GraphQL runner accepts >1 MiB responses via a 64 MiB maxBuffer and a 30s per-call timeout', () => {
   const seenOptions = [];
   // > Node's 1 MiB execFileSync default: the transport must not ENOBUFS here
   const bigBody = 'x'.repeat(2 * 1024 * 1024);
@@ -1252,6 +1254,65 @@ test('the Auto Cover GraphQL runner accepts >1 MiB responses via a 64 MiB maxBuf
   assert.equal(seenOptions[0].command, 'gh');
   assert.equal(seenOptions[0].options.maxBuffer, GRAPHQL_MAX_BUFFER);
   assert.equal(GRAPHQL_MAX_BUFFER, 64 * 1024 * 1024);
+  assert.equal(seenOptions[0].options.timeout, GRAPHQL_TIMEOUT_MS);
+  assert.equal(GRAPHQL_TIMEOUT_MS, 30_000);
+});
+
+test('a timeout kill is transient: the runner retries and can still succeed', () => {
+  const sleeps = [];
+  let calls = 0;
+  const runner = createAutoCoverGraphqlRunner({
+    execFileSyncImpl: () => {
+      calls += 1;
+      if (calls === 1) {
+        // execFileSync on `timeout` kills the child: no gh stderr pattern,
+        // only the killed/signal markers
+        const error = new Error('The operation was aborted');
+        error.killed = true;
+        error.signal = 'SIGTERM';
+        error.stderr = '';
+        throw error;
+      }
+      return JSON.stringify({ data: { ok: true } });
+    },
+    sleep: (ms) => sleeps.push(ms),
+    retryBudgetMs: 60000,
+  });
+  assert.deepEqual(runner.runQuery('q', {}), { data: { ok: true } });
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [1000]);
+  assert.equal(runner.budget.degraded, false);
+});
+
+test('isTimeoutKill recognises exec timeout kills only', () => {
+  const timedOut = new Error('dial tcp i/o timeout');
+  timedOut.code = 'ETIMEDOUT';
+  assert.equal(isTimeoutKill(timedOut), true);
+  assert.equal(isTimeoutKill({ killed: true }), true);
+  assert.equal(isTimeoutKill({ signal: 'SIGTERM' }), true);
+  assert.equal(isTimeoutKill(new Error('plain failure')), false);
+  assert.equal(isTimeoutKill(null), false);
+});
+
+test('the wall-clock budget degrades the transport before any exec', () => {
+  const sleeps = [];
+  let execCalls = 0;
+  let clock = 0;
+  const runner = createAutoCoverGraphqlRunner({
+    execFileSyncImpl: () => {
+      execCalls += 1;
+      return '{}';
+    },
+    sleep: (ms) => sleeps.push(ms),
+    retryBudgetMs: 60000,
+    wallBudgetMs: 240000,
+    now: () => clock,
+  });
+  clock = 240000; // the GraphQL phase has already used its 4 minutes
+  assert.throws(() => runner.runQuery('q', {}), /wall-clock budget/);
+  assert.equal(execCalls, 0);
+  assert.deepEqual(sleeps, []);
+  assert.equal(runner.budget.degraded, true);
 });
 
 test('transient GraphQL failures retry under the scan budget, then degrade without sleeping', () => {
@@ -1337,5 +1398,52 @@ test('a spent retry budget sends the remaining PRs straight to REST, unslept', a
     remaining: null,
     fallbackPrs: ['50', '51'],
   });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a failed PR is listed in failed only, never in fallbackPrs', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  const erroredInputs = {
+    data: {
+      rateLimit: { cost: 1, remaining: 77 },
+      repository: { pullRequest: null },
+    },
+    errors: [{ message: 'boom' }],
+  };
+  const fetchJson = async (apiPath, opts = {}) => {
+    if (apiPath.includes('/actions/workflows/fix-review.yml/runs')) {
+      return { workflow_runs: [] };
+    }
+    // PR 60's REST fallback fails too; PR 61's REST fallback works
+    if (apiPath.includes('/60/') || apiPath.includes('/commits/errsha')) {
+      throw new Error('gh api failed: gh: HTTP 503: Service Unavailable');
+    }
+    return legacyFetchJson([])(apiPath, opts);
+  };
+  const manifest = await fetchAutoCoverContext({
+    repo: 'owner/repo',
+    prs: ['60', '61'],
+    outDir: dir,
+    source: 'graphql',
+    fetchJson,
+    viewPull: async (prNumber) => ({
+      number: Number(prNumber),
+      headRefOid: prNumber === '60' ? 'errsha' : HEAD_SHA,
+      state: 'open',
+    }),
+    runGraphql: fakeRunGraphql({ reviewInputs: erroredInputs }),
+    concurrency: 2,
+  });
+  assert.deepEqual(manifest.ok, ['61']);
+  assert.equal(manifest.failed.length, 1);
+  assert.equal(manifest.failed[0].pr, '60');
+  // the flag is set only after a SUCCESSFUL REST fallback: PR 60 (whose
+  // fallback also failed) belongs to `failed` alone
+  assert.deepEqual(manifest.graphql.fallbackPrs, ['61']);
+  // errored-response costs are still accounted for both PRs
+  assert.equal(manifest.graphql.cost, 2);
+  assert.equal(manifest.graphql.remaining, 77);
+  assert.ok(!fs.existsSync(path.join(dir, 'pr-60-head-sha')));
+  assert.ok(fs.existsSync(path.join(dir, 'pr-61-head-sha')));
   fs.rmSync(dir, { recursive: true, force: true });
 });
