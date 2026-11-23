@@ -383,6 +383,8 @@ module.exports = {
   REVIEW_INPUTS_QUERY,
   ReviewInputsUnavailable,
   fetchReviewInputsGraphql,
+  lower,
+  toContext,
   // Shared with fetch-auto-cover-context.cjs so both GraphQL paths apply the
   // same Bot-login restoration rule.
   toUser,
