@@ -14,7 +14,10 @@ const { fetchReviewInputsGraphql } = require('./lib/review-inputs-graphql.cjs');
 // Shared sticky-comment create-or-update helper (single source for the
 // marker-based PR comment upsert used across review/size/orchestration scripts).
 const { upsertComment } = require('./lib/sticky-comment.cjs');
-const { createWorkerRunsLoader } = require('./lib/worker-runs-by-head.cjs');
+const {
+  createWorkerRunsLoader,
+  toRunListShape,
+} = require('./lib/worker-runs-by-head.cjs');
 
 const TIMING_NAMES = [
   'resolve-pr',
@@ -152,11 +155,16 @@ function run(command, args, options = {}) {
   }
 }
 
-function runJson(command, args, fallback, options = {}) {
-  const output = run(command, args, {
+function runJson(
+  command,
+  args,
+  fallback,
+  { allowedFailurePattern, runCommand = run } = {},
+) {
+  const output = runCommand(command, args, {
     retry: true,
     allowFailure: fallback !== undefined,
-    allowedFailurePattern: options.allowedFailurePattern,
+    allowedFailurePattern,
     fallback: fallback === undefined ? undefined : JSON.stringify(fallback),
   });
   return output ? JSON.parse(output) : fallback;
@@ -412,22 +420,17 @@ function pathsMatch(files, paths) {
  *
  * ### Run-name contract
  *
- * Worker workflows dispatched by the orchestrator MUST include both the PR
- * number and the head SHA in their `run-name` YAML field, e.g.:
+ * Worker workflows dispatched by the orchestrator MUST include the exact
+ * `PR #<n> @ <sha>` format in their `run-name` YAML field, e.g.:
  *
  *     run-name: "PR #${{ inputs.pr_number }} @ ${{ inputs.head_sha }}"
  *
- * The orchestrator calls `gh run list` and filters results through this
- * function.  If a worker changes its run-name format and drops either token,
- * the orchestrator will silently stop matching that worker's runs, which can
- * lead to duplicate dispatches or stuck PR states.
- *
- * Consumers of `matchesWorkerTitle` (`summarizeWorkerRuns`,
- * `getWorkerSummary`) rely on this two-token contract — keep it in sync.
+ * Changing the format causes the orchestrator to miss runs, which can lead
+ * to duplicate dispatches or stuck PR states.
  */
 function matchesWorkerTitle(runItem, pr) {
   const title = runItem.displayTitle ?? runItem.display_title ?? '';
-  return title.includes(`PR #${pr.number}`) && title.includes(pr.headSha);
+  return title.includes(`PR #${pr.number} @ ${pr.headSha}`);
 }
 
 function summarizeWorkerRuns(workerRuns, workerName, pr) {
@@ -444,14 +447,19 @@ function summarizeWorkerRuns(workerRuns, workerName, pr) {
     ),
   );
 
-  const failedCount = runs.filter(
-    (runItem) => runItem.conclusion && runItem.conclusion !== 'success',
+  // Finalizer concurrency can cancel a duplicate dispatch before it attempts
+  // to apply changes. Count failed or timed-out runs toward its retry budget.
+  const failedCount = runs.filter(({ conclusion }) =>
+    workerName === 'finalizer'
+      ? conclusion === 'failure' || conclusion === 'timed_out'
+      : conclusion && conclusion !== 'success',
   ).length;
 
   return {
     active,
     latest: runs[0] ?? null,
     failedCount,
+    runCount: runs.length,
   };
 }
 
@@ -471,22 +479,15 @@ function workerRunSucceeded(summary) {
   return summary.latest?.conclusion === 'success';
 }
 
+// One initial run and up to three automatic retries per PR head.
 const MAX_FINALIZER_RETRIES = 3;
+// Bound repeated cancellations and startup failures without charging them
+// against the four failed or timed-out attempts allowed above.
+const MAX_FINALIZER_RUNS = 8;
 
 // Maximum automatic re-dispatches of a failed code-review run per head SHA
 // (so at most MAX_CODE_REVIEW_RETRIES + 1 runs happen without a human).
 const MAX_CODE_REVIEW_RETRIES = 2;
-
-function getFinalizerRetryCount(labels) {
-  let maxRetry = 0;
-  for (const label of labels) {
-    const match = label.match(/^flow\/finalizer-retry-(\d+)$/);
-    if (match) {
-      maxRetry = Math.max(maxRetry, parseInt(match[1], 10));
-    }
-  }
-  return maxRetry;
-}
 
 function getWorkerTargetUrl(summary, fallbackUrl) {
   return summary.active?.url || summary.latest?.url || fallbackUrl;
@@ -907,7 +908,15 @@ function buildFlowVisibility({
   }
 
   const finalizerDispatchError = dispatchErrorFor('finalizer');
-  if (manualOnly) {
+  if (decision.finalizerRetriesExhausted) {
+    statuses.finalizer = failureStatus(
+      'finalizer',
+      decision.reason,
+      getWorkerTargetUrl(finalizerRuns, currentRunUrl),
+    );
+  } else if (decision.finalizerHistoryUnavailable) {
+    statuses.finalizer = waitingStatus('finalizer', decision.reason);
+  } else if (manualOnly) {
     statuses.finalizer = skippedStatus('finalizer', 'N/A: PR is manual-only.');
   } else if (closedOrMerged) {
     statuses.finalizer = skippedStatus(
@@ -943,12 +952,9 @@ function buildFlowVisibility({
       'Finalizer was dispatched.',
     );
   } else if (workerRunSucceeded(finalizerRuns)) {
-    const retries = getFinalizerRetryCount(decision.labelsToAdd);
-    const retryInfo =
-      retries > 0 ? ` (attempt ${retries}/${MAX_FINALIZER_RETRIES})` : '';
     statuses.finalizer = waitingStatus(
       'finalizer',
-      `Finalizer completed without enabling auto-merge; waiting to retry.${retryInfo}`,
+      'Finalizer completed without enabling auto-merge; waiting to retry.',
       getWorkerTargetUrl(finalizerRuns, currentRunUrl),
     );
   } else if (finalizerAlreadyDispatched) {
@@ -1003,13 +1009,20 @@ function buildFlowVisibility({
     // If manual-only PR has completed all advisory review labels, indicate reviews passed.
     // Mirror makeDecision's hasAll(codeReviewWorker.passLabels) so the aggregate cannot
     // report "advisory reviews passed" when only a subset of required reviews completed.
-    if (hasAll(labels, workers.codeReview?.passLabels ?? [])) {
+    if (decision.finalizerRetriesExhausted) {
+      // The required aggregate allows manual merge after the gates pass.
+      // The finalizer worker context records the failed automation.
+      aggregateDescription = statuses.finalizer.description;
+    } else if (hasAll(labels, workers.codeReview?.passLabels ?? [])) {
       aggregateDescription =
         'Manual-only PR: advisory reviews passed. Ready for human merge decision.';
     } else {
       aggregateDescription =
         decision.reason || 'PR is manual-only; orchestration is complete.';
     }
+  } else if (decision.finalizerHistoryUnavailable) {
+    // Keep the aggregate pending so the stale-ready watchdog retries the wake.
+    aggregateDescription = statuses.finalizer.description;
   } else if (manualOnly) {
     aggregateState = 'pending';
     aggregateDisplayState = 'pending';
@@ -1098,6 +1111,15 @@ function buildFlowGuidance({
       `Inspect the failed ${decision.dispatch?.key ?? 'worker'} dispatch, then rerun PR Orchestrator.`,
     );
     addStopControl();
+  }
+
+  if (decision.finalizerHistoryUnavailable) {
+    addNext('Inspect the PR Orchestrator run for the finalizer history error.');
+    addNext(
+      'The watchdog retries PR Orchestrator if this status stays pending.',
+    );
+    addStopControl();
+    return { nextSteps, controls };
   }
 
   switch (state) {
@@ -1197,6 +1219,12 @@ function buildFlowGuidance({
       break;
 
     case 'flow/manual-only':
+      if (decision.finalizerRetriesExhausted) {
+        addNext('Inspect the PR Finalizer run or comment for the failure.');
+        addNext('Review and merge manually when ready.');
+        addStopControl();
+        break;
+      }
       addNext('Human review is required before merge or follow-up automation.');
       addNext(
         'Comment `/approve` to record `maintainer-approved` for this head if PR Flow should continue.',
@@ -1875,6 +1903,7 @@ function makeDecision(context) {
     checks = null,
     workerRuns = {},
     getWorkerRuns,
+    unavailableWorkerRuns,
     eventName,
     event,
     config,
@@ -2211,7 +2240,6 @@ function makeDecision(context) {
   const autoMergeEnabled = Boolean(pr.autoMergeRequest);
   const finalizerSucceeded = workerRunSucceeded(finalizerRuns);
   const finalizerFailed = workerRunFailed(finalizerRuns);
-  const finalizerRetries = getFinalizerRetryCount(currentLabels);
   const retryLabels = currentLabels.filter((l) =>
     /^flow\/finalizer-retry-\d+$/.test(l),
   );
@@ -2240,7 +2268,7 @@ function makeDecision(context) {
   if (
     finalizerRuns.active ||
     (finalizerAlreadyDispatched && autoMergeEnabled) ||
-    (finalizerAlreadyDispatched && finalizerSucceeded)
+    finalizerSucceeded
   ) {
     const reason = finalizerSucceeded
       ? autoMergeEnabled
@@ -2256,38 +2284,46 @@ function makeDecision(context) {
     );
   }
 
-  if (
-    finalizerAlreadyDispatched &&
-    !finalizerSucceeded &&
-    finalizerRetries >= MAX_FINALIZER_RETRIES
-  ) {
-    return finish(
-      'flow/manual-only',
-      `Finalizer retry limit (${MAX_FINALIZER_RETRIES}) reached without auto-merge; falling back to manual merge.`,
-      null,
-      ['flow/manual-only'],
-      retryLabels,
-    );
+  const failedAttempts = finalizerRuns.failedCount;
+  const retryLimitReached = failedAttempts > MAX_FINALIZER_RETRIES;
+  if (retryLimitReached || finalizerRuns.runCount >= MAX_FINALIZER_RUNS) {
+    return {
+      ...finish(
+        'flow/manual-only',
+        retryLimitReached
+          ? `Finalizer retry limit (${MAX_FINALIZER_RETRIES}) reached without auto-merge. Manual merge required.`
+          : `Finalizer run limit (${MAX_FINALIZER_RUNS}) reached without auto-merge. Manual merge required.`,
+        null,
+        [],
+        retryLabels,
+      ),
+      finalizerRetriesExhausted: true,
+    };
   }
 
-  const newRetryCount = finalizerRetries + 1;
-  const retryExtraLabels = finalizerAlreadyDispatched
-    ? [`flow/finalizer-retry-${newRetryCount}`]
-    : [];
+  if (unavailableWorkerRuns?.has('finalizer')) {
+    return {
+      ...finish(
+        finalizerAlreadyDispatched ? 'flow/finalizer-dispatched' : null,
+        'Finalizer history unavailable. Dispatch deferred.',
+      ),
+      finalizerHistoryUnavailable: true,
+    };
+  }
 
   return finish(
     'flow/finalizer-dispatched',
-    finalizerAlreadyDispatched
-      ? finalizerFailed
-        ? `Retrying finalizer after a failed run (attempt ${newRetryCount}/${MAX_FINALIZER_RETRIES}).`
-        : `Dispatching finalizer (attempt ${newRetryCount}/${MAX_FINALIZER_RETRIES}).`
-      : 'Dispatching finalizer.',
+    !finalizerFailed
+      ? 'Dispatching finalizer.'
+      : failedAttempts > 0
+        ? `Retrying finalizer after a failed run (attempt ${failedAttempts}/${MAX_FINALIZER_RETRIES}).`
+        : 'Dispatching finalizer after an unsuccessful run.',
     {
       key: 'finalizer',
       workflow: finalizerWorker.workflow,
       inputs: finalizerWorker.inputs,
     },
-    [...retryExtraLabels, ...manualOnlyLabels],
+    manualOnlyLabels,
     retryLabels,
   );
 }
@@ -2295,7 +2331,11 @@ function makeDecision(context) {
 // `strict` drops the empty-list fallback so a failed `gh run list` throws
 // instead of reading as "no runs" — the parity comparison must not classify a
 // failed read as data.
-function collectWorkerRuns(config, workerName, { strict = false } = {}) {
+function collectWorkerRuns(
+  config,
+  workerName,
+  { strict = false, runCommand = run } = {},
+) {
   const worker = config.workers?.[workerName];
   if (!worker?.workflow) {
     return [];
@@ -2314,7 +2354,77 @@ function collectWorkerRuns(config, workerName, { strict = false } = {}) {
       'databaseId,status,conclusion,event,displayTitle,createdAt,updatedAt,url',
     ],
     strict ? undefined : [],
+    { runCommand },
   );
+}
+
+function collectLegacyWorkerRuns(
+  config,
+  workerName,
+  pr,
+  {
+    unavailableWorkerRuns = new Set(),
+    runCommand = run,
+    getRepo = getRepoSlug,
+    warn = console.warn,
+  } = {},
+) {
+  const recent = collectWorkerRuns(config, workerName, { runCommand });
+  if (workerName !== 'finalizer' || pr.isCrossRepository || !pr.headSha) {
+    return recent;
+  }
+
+  // Keep recent base-ref runs, but also read this head specifically so other
+  // PRs' finalizer runs cannot push its retry history out of the global list.
+  const workflow = config.workers?.finalizer?.workflow;
+  if (!workflow) return recent;
+  try {
+    const headPage = runJson(
+      'gh',
+      [
+        'api',
+        `repos/${getRepo()}/actions/workflows/${workflow}/runs?head_sha=${encodeURIComponent(pr.headSha)}&per_page=50`,
+        '--jq',
+        '{total_count, workflow_runs: [.workflow_runs[] | {id, status, conclusion, event, display_title, created_at, updated_at, html_url}]}',
+      ],
+      undefined,
+      { runCommand },
+    );
+    const headRuns = headPage?.workflow_runs;
+    if (
+      !Array.isArray(headRuns) ||
+      !Number.isInteger(headPage.total_count) ||
+      headPage.total_count < headRuns.length ||
+      headRuns.some(
+        (item) =>
+          !Number.isInteger(item?.id) ||
+          typeof item.display_title !== 'string' ||
+          typeof item.status !== 'string' ||
+          (item.conclusion !== null && typeof item.conclusion !== 'string'),
+      )
+    ) {
+      throw new Error('unexpected finalizer run history response');
+    }
+    if (headPage.total_count > headRuns.length) {
+      // A partial page can prove a limit has been reached, but cannot prove
+      // there is budget left to dispatch another run.
+      warn('orchestrate-pr-flow: finalizer head history is truncated');
+      unavailableWorkerRuns.add(workerName);
+    }
+    const byId = new Map(
+      headRuns.map((item) => [item.id, toRunListShape(item)]),
+    );
+    for (const item of recent) {
+      if (!byId.has(item.databaseId)) byId.set(item.databaseId, item);
+    }
+    return [...byId.values()];
+  } catch (error) {
+    warn(
+      `orchestrate-pr-flow: could not read finalizer history: ${formatCommandError(error)}`,
+    );
+    unavailableWorkerRuns.add(workerName);
+    return recent;
+  }
 }
 
 function ensureLabels(config) {
@@ -2529,12 +2639,16 @@ function main() {
   }
 
   const workerRuns = {};
+  const unavailableWorkerRuns = new Set();
   const loadWorkerRuns = createWorkerRunsLoader({
     config,
     pr,
     getRepo: getRepoSlug,
     run,
-    loadLegacy: (workerName) => collectWorkerRuns(config, workerName),
+    loadLegacy: (workerName) =>
+      collectLegacyWorkerRuns(config, workerName, pr, {
+        unavailableWorkerRuns,
+      }),
   });
   const getWorkerRuns = (workerName) => {
     if (workerRuns[workerName] === undefined) {
@@ -2551,6 +2665,7 @@ function main() {
     policy,
     workerRuns,
     getWorkerRuns,
+    unavailableWorkerRuns,
     eventName,
     event,
     config,
@@ -2693,6 +2808,7 @@ module.exports = {
   buildFlowVisibility,
   collectCheckEvidence,
   collectExternalReview,
+  collectLegacyWorkerRuns,
   COMMENT_MARKER,
   decisionWithDispatchError,
   fetchCheckRuns,
@@ -2702,7 +2818,6 @@ module.exports = {
   fetchPublishSnapshotGraphql,
   fetchPrReviewComments,
   fetchPrReviews,
-  getFinalizerRetryCount,
   getWorkerDispatchRef,
   headCommittedAtFromCommits,
   getWorkerTargetUrl,

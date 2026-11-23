@@ -235,6 +235,15 @@ a human makes the final decision. Hard blockers such as `do-not-merge`,
 AI/security concern labels, and blocked dependency labels still fail
 `pr-flow/ready`.
 
+PR Orchestrator stops dispatching Finalizer for the current head after four
+failed or timed-out runs, or eight total runs of any conclusion. At either
+limit, the orchestration comment and statuses direct the maintainer to the
+latest run and manual merge. When unavailable head history prevents a
+dispatch decision, Orchestrator defers Finalizer and publishes
+`pr-flow/ready` and `pr-flow/finalizer` as pending. The existing watchdog
+can wake Orchestrator again after the ready status has been pending for
+30 minutes.
+
 > See [PR Orchestrator Concurrency](#pr-orchestrator-concurrency) for how
 > `pr-flow.yml` groups runs by event class and why a cancelled `orchestrate`
 > check should no longer appear on PRs.
