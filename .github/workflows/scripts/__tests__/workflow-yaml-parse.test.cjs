@@ -9,7 +9,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const yaml = require('js-yaml');
+const {
+  evaluateCondition,
+  renderTemplate,
+} = require('./helpers/github-expression.cjs');
 
 test('the governance YAML trust pin matches the parser used by tests', () => {
   const installer = fs.readFileSync(
@@ -141,6 +146,108 @@ test('G8b: Docker image publishing jobs use distinct rate-limit labels', () => {
     );
     assert.equal(snapshot?.with.label, label);
   }
+});
+
+test('G8d: Docker classifies main pushes from Git and fails open on an unavailable range', async (t) => {
+  const workflow = yaml.load(
+    fs.readFileSync(path.join(workflowsDir, 'docker-image.yml'), 'utf8'),
+  );
+  const { steps } = workflow.jobs.classify;
+  const depth = steps[0].with['fetch-depth'];
+  const script = steps.find((step) => step.id === 'classify').with.script;
+  const ref = 'refs/heads/main';
+  const before = 'a'.repeat(40);
+  const after = 'b'.repeat(40);
+  assert.equal(
+    renderTemplate(depth, { github: { event_name: 'push', ref } }),
+    '0',
+  );
+  assert.equal(
+    renderTemplate(depth, {
+      github: { event_name: 'push', ref: 'refs/tags/v1.2.3' },
+    }),
+    '1',
+  );
+  assert.equal(
+    renderTemplate(depth, { github: { event_name: 'pull_request', ref } }),
+    '1',
+  );
+
+  for (const [name, paths, shouldPublish] of [
+    [
+      'workflow-only change',
+      ['.github/workflows/ci.yml', 'docs/workflow.md'],
+      false,
+    ],
+    ['source change', ['src/app/page.tsx'], true],
+    ['rename out of source', ['docs/old.md', 'src/old.ts'], true],
+    ['unavailable range', null, true],
+  ]) {
+    await t.test(name, async () => {
+      const outputs = {};
+      const warnings = [];
+      const summary = {
+        addHeading: () => summary,
+        addRaw: () => summary,
+        addBreak: () => summary,
+        write: async () => {},
+      };
+      const execFileSync = t.mock.fn(() => {
+        if (!paths) throw new Error('missing commit');
+        return paths.join('\0') + '\0';
+      });
+      await vm.runInNewContext(`(async () => { ${script} })()`, {
+        context: { eventName: 'push', ref, payload: { before, after } },
+        core: {
+          setOutput: (key, value) => (outputs[key] = value),
+          warning: (message) => warnings.push(message),
+          info: () => {},
+          summary,
+        },
+        require(module) {
+          assert.equal(module, 'node:child_process');
+          return { execFileSync };
+        },
+      });
+      assert.equal(execFileSync.mock.callCount(), 1);
+      const [command, args] = execFileSync.mock.calls[0].arguments;
+      assert.equal(command, 'git');
+      assert.equal(
+        Array.from(args).join(' '),
+        `diff --no-renames --name-only -z ${before}...${after} --`,
+      );
+      assert.equal(outputs.should_publish, String(shouldPublish));
+      assert.equal(outputs.should_validate, 'false');
+      assert.equal(warnings.length, paths ? 0 : 1);
+    });
+  }
+});
+
+test('F6a: Fix Issue skips authorization for closed issue comments and labels', () => {
+  const workflow = yaml.load(
+    fs.readFileSync(path.join(workflowsDir, 'fix-issue.yml'), 'utf8'),
+  );
+  const authorize = workflow.jobs.authorize;
+  for (const [eventName, payload] of [
+    ['issue_comment', { comment: { body: '/fix' } }],
+    ['issues', { label: { name: 'auto-fix-approved' } }],
+  ]) {
+    for (const state of ['open', 'closed']) {
+      const github = {
+        event_name: eventName,
+        event: { ...payload, issue: { state } },
+      };
+      assert.equal(
+        evaluateCondition(authorize.if, { github }),
+        state === 'open',
+      );
+    }
+  }
+  assert.ok(
+    authorize.steps.every(
+      (step) => step.uses !== './.github/actions/setup-environment',
+    ),
+  );
 });
 
 test('G8a: governance rejects wider permissions and extra close jobs', () => {

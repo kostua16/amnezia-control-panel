@@ -35,9 +35,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-
-      - name: Ensure runner disk space
-        uses: ./.github/actions/ensure-docker-disk-space
+          # Main push classification compares the event's commits locally.
+          fetch-depth: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '0' || '1' }}
 
       - uses: ./.github/actions/log-rate-limit
         with:
@@ -124,24 +123,20 @@ jobs:
               return collectFileNames(files);
             }
 
-            async function listMainPushFiles() {
-              const before = context.payload.before;
-              const after = context.payload.after;
-              if (!before || /^0+$/.test(before) || !after) {
+            function listMainPushFiles() {
+              const { before, after } = context.payload;
+              const isCommit = (sha) => /^[0-9a-f]{40}$/.test(sha) && !/^0+$/.test(sha);
+              if (!isCommit(before) || !isCommit(after)) {
                 throw new Error('push payload did not include a comparable before/after range');
               }
 
-              const comparison = await github.rest.repos.compareCommitsWithBasehead({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                basehead: `${before}...${after}`,
-                per_page: 100,
-              });
-              const files = comparison.data.files ?? [];
-              if (files.length >= 300) {
-                throw new Error('compare API returned the maximum file list; changed files may be truncated');
-              }
-              return collectFileNames(files);
+              const { execFileSync } = require('node:child_process');
+              // Treat renames as delete/add so both paths remain eligible.
+              return execFileSync(
+                'git',
+                ['diff', '--no-renames', '--name-only', '-z', `${before}...${after}`, '--'],
+                { encoding: 'utf8' },
+              ).split('\0').filter(Boolean).sort();
             }
 
             let shouldPublish = false;
@@ -166,7 +161,7 @@ jobs:
               reason = 'Version tags always publish Docker images.';
             } else if (eventName === 'push' && ref === 'refs/heads/main') {
               try {
-                changedFiles = await listMainPushFiles();
+                changedFiles = listMainPushFiles();
                 relevantFiles = changedFiles.filter(matchesRelevantPath);
                 shouldPublish = relevantFiles.length > 0;
                 reason = shouldPublish

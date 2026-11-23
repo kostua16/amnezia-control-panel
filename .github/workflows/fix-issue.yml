@@ -23,15 +23,18 @@ permissions:
 jobs:
   authorize:
     if: >-
+      github.event.issue.state != 'closed' &&
       (
-        github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request == null &&
-        contains(github.event.comment.body, '/fix')
-      ) ||
-      (
-        github.event_name == 'issues' &&
-        github.event.issue.pull_request == null &&
-        github.event.label.name == 'auto-fix-approved'
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request == null &&
+          contains(github.event.comment.body, '/fix')
+        ) ||
+        (
+          github.event_name == 'issues' &&
+          github.event.issue.pull_request == null &&
+          github.event.label.name == 'auto-fix-approved'
+        )
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -40,11 +43,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: ./.github/actions/setup-environment
+      # The policy reads the event and repository files only.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
 
       - name: Evaluate fix trigger
         id: gate
