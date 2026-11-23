@@ -1,0 +1,133 @@
+name: Auto Cover Dispatch
+
+# Quiet period between a review and the automatic fix-review run, so local
+# work on the PR does not race with an autofix push. Auto Cover Review hands
+# each eligible PR here (AUTO_COVER_DELAY_MODE=delayed, the default):
+#   wait      holds no runner while the `auto-cover-delay` environment's wait
+#             timer runs (operator-configured, see
+#             docs/workflow-e2e-scenarios.md §10). A newer handoff for the same
+#             PR cancels the waiting one, which restarts the quiet period.
+#   dispatch  serialized per PR and never cancelled mid-dispatch: re-reads the
+#             PR context, re-runs both evaluators against the handed-off head
+#             (green review, draft, labels, attempt cap, fix-review no-op or
+#             skip verdicts, an active fix-review run and a moved head all veto)
+#             and only then dispatches fix-review and records the attempt.
+run-name: 'Auto Cover Dispatch PR #${{ inputs.pr_number }} @ ${{ inputs.head_sha }}'
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number handed off by Auto Cover Review'
+        required: true
+        type: string
+      head_sha:
+        description: 'PR head SHA the repair was evaluated for'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: read
+  actions: write
+  checks: read
+
+jobs:
+  wait:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: auto-cover-delay
+    # GitHub does not count the environment wait timer (the job holds no runner
+    # while it waits) toward timeout-minutes, so this only bounds the echo below.
+    # Keep it above any sane timer anyway: if the wait were ever counted, the
+    # job would be cancelled, `dispatch` skipped and every handoff would die.
+    concurrency:
+      group: auto-cover-wait-${{ inputs.pr_number }}
+      cancel-in-progress: true
+    steps:
+      - name: Validate the handoff
+        shell: bash
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+        run: |
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "::error::pr_number must be a positive integer, got '$PR_NUMBER'"; exit 1; }
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::head_sha must be a full 40-character SHA, got '$HEAD_SHA'"; exit 1; }
+
+      - name: Quiet period elapsed
+        shell: bash
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+        run: |
+          echo "Quiet period elapsed for PR #${PR_NUMBER} @ ${HEAD_SHA}; re-validating before fix-review."
+
+  dispatch:
+    needs: wait
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: auto-cover-dispatch-${{ inputs.pr_number }}
+      cancel-in-progress: false
+    steps:
+      - name: Validate the handoff
+        shell: bash
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+        run: |
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "::error::pr_number must be a positive integer, got '$PR_NUMBER'"; exit 1; }
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::head_sha must be a full 40-character SHA, got '$HEAD_SHA'"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-environment
+        id: setup
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
+          # Soft on purpose: an exhausted quota must reach the reserve gate below
+          # and defer green instead of failing the job at setup.
+          require-gh-auth: 'false'
+          node-version: '24.x'
+          install-deps: 'false'
+
+      # Same reserve gate as Auto Cover Review, checked again after the quiet
+      # period because the quota may have dropped meanwhile. A deferred repair
+      # is retried by the next Auto Cover trigger or its 3-hourly scan.
+      - name: Check API quota reserve
+        id: reserve
+        env:
+          CORE_REMAINING: ${{ steps.setup.outputs.core-remaining }}
+          QUOTA_RESERVE: ${{ vars.QUOTA_RESERVE || '600' }}
+        run: node .github/workflows/scripts/check-quota-reserve.cjs
+
+      - name: Re-validate and dispatch review repair
+        if: steps.reserve.outputs.proceed != 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          KILO_BLOCKING_SEVERITIES: ${{ vars.KILO_BLOCKING_SEVERITIES || '' }}
+          # `rest` rolls the per-PR context fetch back to the legacy all-REST path without a revert (mirrors PR_FLOW_REVIEW_SOURCE); empty = GraphQL.
+          PR_FLOW_AUTO_COVER_SOURCE: ${{ vars.PR_FLOW_AUTO_COVER_SOURCE || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          context_dir="$RUNNER_TEMP/auto-cover-dispatch"
+          node .github/workflows/scripts/fetch-auto-cover-context.cjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --out-dir "$context_dir" \
+            --pr-number "$PR_NUMBER" \
+            --concurrency 1 \
+            --fix-review-workflow fix-review.yml
+          node .github/workflows/scripts/run-auto-cover-repairs.cjs \
+            --mode revalidate \
+            --context-dir "$context_dir" \
+            --policy-file .github/workflows/policy.json \
+            --head-sha "$HEAD_SHA" \
+            --dry-run false

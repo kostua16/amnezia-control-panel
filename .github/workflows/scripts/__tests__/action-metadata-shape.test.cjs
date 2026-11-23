@@ -1,0 +1,104 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+'use strict';
+
+// A composite action whose metadata is misshapen is rejected by the runner
+// ("Unexpected value 'default'") before any step runs, so every job calling it
+// fails at once. YAML parsers accept the misplaced keys, hence this structural
+// check over every local action.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const yaml = require('js-yaml');
+
+const ACTIONS_DIR = path.join(__dirname, '..', '..', '..', 'actions');
+const TOP_LEVEL = new Set([
+  'name',
+  'author',
+  'description',
+  'branding',
+  'inputs',
+  'outputs',
+  'runs',
+]);
+const INPUT_KEYS = new Set([
+  'description',
+  'required',
+  'default',
+  'deprecationMessage',
+]);
+const OUTPUT_KEYS = new Set(['description', 'value']);
+
+function localActions() {
+  return fs
+    .readdirSync(ACTIONS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const dir = path.join(ACTIONS_DIR, entry.name);
+      const file = ['action.yml', 'action.yaml']
+        .map((name) => path.join(dir, name))
+        .find((candidate) => fs.existsSync(candidate));
+      return file ? { name: entry.name, file } : null;
+    })
+    .filter(Boolean);
+}
+
+test('there are local actions to check', () => {
+  assert.ok(localActions().length > 3);
+});
+
+for (const { name, file } of localActions()) {
+  test(`${name} action metadata has the shape the runner accepts`, () => {
+    const doc = yaml.load(fs.readFileSync(file, 'utf8'));
+
+    for (const key of Object.keys(doc)) {
+      assert.ok(TOP_LEVEL.has(key), `unexpected top-level key "${key}"`);
+    }
+    assert.ok(doc.runs, 'runs is required');
+
+    for (const [inputName, input] of Object.entries(doc.inputs ?? {})) {
+      assert.equal(
+        typeof input,
+        'object',
+        `input ${inputName} must be a mapping`,
+      );
+      for (const key of Object.keys(input ?? {})) {
+        assert.ok(
+          INPUT_KEYS.has(key),
+          `input ${inputName} has unexpected key "${key}"`,
+        );
+      }
+    }
+
+    for (const [outputName, output] of Object.entries(doc.outputs ?? {})) {
+      for (const key of Object.keys(output ?? {})) {
+        assert.ok(
+          OUTPUT_KEYS.has(key),
+          `output ${outputName} has unexpected key "${key}"`,
+        );
+      }
+      if (doc.runs?.using === 'composite') {
+        assert.ok(output?.value, `composite output ${outputName} needs value`);
+      }
+    }
+  });
+}
+
+test('setup-environment keeps every documented input and its outputs', () => {
+  const doc = yaml.load(
+    fs.readFileSync(
+      path.join(ACTIONS_DIR, 'setup-environment', 'action.yml'),
+      'utf8',
+    ),
+  );
+  for (const input of [
+    'github-token',
+    'gh-auth-mode',
+    'require-gh-auth',
+    'gsd-version',
+    'actionlint-sha256',
+  ]) {
+    assert.ok(doc.inputs[input], `missing input ${input}`);
+  }
+  assert.deepEqual(Object.keys(doc.outputs), ['core-remaining']);
+});

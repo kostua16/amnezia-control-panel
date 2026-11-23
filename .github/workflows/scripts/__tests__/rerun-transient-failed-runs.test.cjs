@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const yaml = require('js-yaml');
 
 const {
   TRANSIENT_PATTERNS,
@@ -225,6 +226,39 @@ test('monitor workflow runs transient recovery before the ZAI diagnosis step', (
   assert.match(workflow, /structural code-fix candidate/);
   assert.match(workflow, /repeated-transient reliability incident/);
   assert.match(workflow, /absent, invalid, or reports an error/);
+});
+
+test('WHO-E06 passes accepted rerun IDs to the optimizer prompt', () => {
+  const workflow = yaml.load(
+    fs.readFileSync(
+      path.join(__dirname, '..', '..', 'workflow-health-optimize.yml'),
+      'utf8',
+    ),
+  );
+  const steps = workflow.jobs.optimize.steps;
+  const preflight = steps.findIndex((step) => step.id === 'rerun_transient');
+  const optimizer = steps.findIndex((step) => step.id === 'claude_run');
+  assert.ok(preflight >= 0 && optimizer > preflight);
+  const promptBlock = steps[optimizer].with.prompt;
+  assert.match(
+    promptBlock,
+    /\$\{\{ steps\.rerun_transient\.outputs\.rerun_ids \|\| 'none' \}\}/,
+  );
+  assert.match(promptBlock, /Match the list against `run_id`/);
+  assert.match(
+    promptBlock,
+    /Assess each failed job independently, including jobs in listed runs/,
+  );
+  const collect = workflow.jobs['collect-runs'].steps.find(
+    (step) => step.id === 'collect',
+  ).with.script;
+  const summary = collect.match(/const summary = \{([\s\S]*?)^\s*\};/m)?.[1];
+  assert.match(summary, /^\s*run_id: run\.id,/m);
+  assert.match(promptBlock, /supplied evidence links it to a failed step/);
+  assert.match(
+    promptBlock,
+    /Continue analyzing any separately evidenced permanent failure/,
+  );
 });
 
 test('static monitor agent mirrors the runtime MON-E04 recovery contract', () => {

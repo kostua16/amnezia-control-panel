@@ -13,6 +13,13 @@ inputs:
     description: 'Optional comma-separated labels to ensure'
     required: false
     default: ''
+  mode:
+    description: >-
+      diff (default) reads the existing labels once and creates or updates only
+      the labels that differ from the policy; legacy runs `gh label create
+      --force` for every label (rollback switch).
+    required: false
+    default: 'diff'
 runs:
   using: composite
   steps:
@@ -21,10 +28,11 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         POLICY_FILE: ${{ inputs.policy-file }}
         LABEL_NAMES: ${{ inputs.names }}
+        LABEL_MODE: ${{ inputs.mode }}
       run: |
         set -euo pipefail
 
-        args=(node .github/workflows/scripts/ensure-workflow-labels.cjs --policy-file "$POLICY_FILE")
+        args=(node .github/workflows/scripts/ensure-workflow-labels.cjs --policy-file "$POLICY_FILE" --mode "$LABEL_MODE")
         if [[ -n "$LABEL_NAMES" ]]; then
           args+=(--names "$LABEL_NAMES")
         fi

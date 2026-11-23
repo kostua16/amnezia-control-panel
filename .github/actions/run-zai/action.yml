@@ -143,11 +143,18 @@ inputs:
     description: 'Track progress'
     default: 'false'
   allowed-bots:
-    description: 'Allowed bots'
+    description: 'Explicit allowed-bots override (documented exceptions only)'
     required: false
+  allowed-bots-profile:
+    description: 'Named policy.json allowedBots profile: interactive or orchestrated'
+    required: false
+    default: ''
   allowed-tools:
     description: 'Allowed tools'
     default: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(bun:*),Bash(npm:*),Bash(npx:*),Bash(gh:*),Bash(node:*)'
+  user-settings-only:
+    description: 'Load Claude user settings and selected repository guard hooks without repository tool grants.'
+    default: 'false'
   system-prompt:
     description: 'Custom system prompt. When empty, Claude uses its built-in default. Note: literal { and } must be escaped as {{ and }}.'
     required: false
@@ -217,6 +224,8 @@ runs:
         max-turns: ${{ inputs.max-turns }}
         track-progress: ${{ inputs.track-progress }}
         allowed-bots: ${{ inputs.allowed-bots }}
+        allowed-bots-profile: ${{ inputs.allowed-bots-profile }}
+        user-settings-only: ${{ inputs.user-settings-only }}
         allowed-tools: '${{ inputs.allowed-tools }},Agent,TaskCreate,TaskUpdate,TaskGet,TaskList'
         system-prompt: ${{ inputs.system-prompt }}
         json-schema: ${{ inputs.json-schema }}

@@ -1,7 +1,9 @@
 name: Auto PR Branch Cleanup
 
 on:
-  pull_request:
+  # Run the write-capable close jobs from the trusted main branch.
+  pull_request_target:
+    branches: [main]
     types: [closed]
   schedule:
     - cron: '15 3 * * *' # Daily at 03:15 UTC
@@ -24,7 +26,7 @@ jobs:
     # the issue under `in-progress` (excluded from future promotion) with no
     # recovery path. Restore it so the next promotion run can re-select it.
     if: >-
-      github.event_name == 'pull_request' &&
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.merged != true
     runs-on: ubuntu-latest
@@ -33,6 +35,7 @@ jobs:
       # Sparse checkout: only the rate-limit action, so this job stays cheap.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: refs/heads/main
           persist-credentials: false
           sparse-checkout: .github/actions/log-rate-limit
 
@@ -109,6 +112,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
 
       - uses: ./.github/actions/log-rate-limit
         with:
@@ -189,7 +195,7 @@ jobs:
             }
 
   cleanup-orphan-branches:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

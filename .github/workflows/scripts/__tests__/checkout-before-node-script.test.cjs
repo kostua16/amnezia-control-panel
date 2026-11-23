@@ -28,8 +28,17 @@ function parseWorkflowJobs(content) {
     if (!m) continue;
     const name = m[1];
     if (
-      ['on', 'permissions', 'concurrency', 'env', 'name', 'run-name', 'jobs'].includes(name)
-    ) continue;
+      [
+        'on',
+        'permissions',
+        'concurrency',
+        'env',
+        'name',
+        'run-name',
+        'jobs',
+      ].includes(name)
+    )
+      continue;
     // Check next non-empty line is indented >= 4 spaces
     let j = i + 1;
     while (j < lines.length && lines[j].trim() === '') j++;
@@ -41,7 +50,8 @@ function parseWorkflowJobs(content) {
   // For each job, find its end: next top-level "  <key>:" line at 2-indent
   for (let idx = 0; idx < jobRanges.length; idx++) {
     const { name, startLine } = jobRanges[idx];
-    const endLine = idx + 1 < jobRanges.length ? jobRanges[idx + 1].startLine : lines.length;
+    const endLine =
+      idx + 1 < jobRanges.length ? jobRanges[idx + 1].startLine : lines.length;
 
     // Parse steps: lines starting with "      - " (6 spaces + dash)
     const steps = [];
@@ -53,7 +63,8 @@ function parseWorkflowJobs(content) {
     }
     for (let si = 0; si < stepStartIndices.length; si++) {
       const sStart = stepStartIndices[si];
-      const sEnd = si + 1 < stepStartIndices.length ? stepStartIndices[si + 1] : endLine;
+      const sEnd =
+        si + 1 < stepStartIndices.length ? stepStartIndices[si + 1] : endLine;
       const stepBlock = lines.slice(sStart, sEnd).join('\n');
       const usesMatch = stepBlock.match(/uses:\s*(\S+)/);
       // run: can be a block scalar ("run: |" or "run: >") spanning multiple
@@ -66,10 +77,16 @@ function parseWorkflowJobs(content) {
         const runLines = [];
         let inRun = false;
         for (const line of stepBlock.split('\n')) {
-          if (/^        run:\s*[|>]/.test(line)) { inRun = true; continue; }
+          if (/^        run:\s*[|>]/.test(line)) {
+            inRun = true;
+            continue;
+          }
           if (inRun) {
             if (/^        \S/.test(line) && !/^          /.test(line)) break;
-            if (line.trim() === '') { runLines.push(''); continue; }
+            if (line.trim() === '') {
+              runLines.push('');
+              continue;
+            }
             runLines.push(line.replace(/^          /, ''));
           }
         }
@@ -150,19 +167,16 @@ test('every local node script step has a preceding checkout step in the same job
   }
 });
 
-test('fix-review.yml fix job has two checkout steps (default + PR head)', () => {
+test('fix-review.yml fix job keeps the default and PR-head workspace checkouts', () => {
   const content = fs.readFileSync(
     path.join(workflowsDir, 'fix-review.yml'),
     'utf8',
   );
-  const jobs = parseWorkflowJobs(content);
-  const fixJob = jobs['fix'];
-  assert.ok(fixJob, 'fix job should exist');
-
-  const checkouts = fixJob.steps.filter(isCheckoutStep);
-  assert.equal(
-    checkouts.length,
-    2,
-    'fix job should have two checkout steps (default branch + PR head)',
+  const { load } = require('js-yaml');
+  const checkouts = load(content).jobs.fix.steps.filter(
+    (step) => isCheckoutStep(step) && !step.with?.path,
   );
+  assert.equal(checkouts.length, 2);
+  assert.equal(checkouts[0].with?.ref, undefined);
+  assert.equal(checkouts[1].with?.ref, '${{ steps.pr.outputs.head_ref }}');
 });

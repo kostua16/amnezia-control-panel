@@ -32,14 +32,15 @@ jobs:
       should_validate: ${{ steps.classify.outputs.should_validate }}
     steps:
       - name: Check out repository
+        id: checkout
+        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        timeout-minutes: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 3 || 5 }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
-      - name: Ensure runner disk space
-        uses: ./.github/actions/ensure-docker-disk-space
-
       - uses: ./.github/actions/log-rate-limit
+        if: steps.checkout.outcome == 'success'
         with:
           github-token: ${{ github.token }}
           label: docker-classify
@@ -47,6 +48,9 @@ jobs:
 
       - name: Decide Docker image action
         id: classify
+        env:
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          GIT_FETCH_TOKEN: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.token || '' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
@@ -124,24 +128,55 @@ jobs:
               return collectFileNames(files);
             }
 
-            async function listMainPushFiles() {
-              const before = context.payload.before;
-              const after = context.payload.after;
-              if (!before || /^0+$/.test(before) || !after) {
+            function listMainPushFiles() {
+              if (process.env.CHECKOUT_OUTCOME !== 'success') {
+                throw new Error('could not check out the push head');
+              }
+              const { before, after } = context.payload;
+              const isCommit = (sha) => /^[0-9a-f]{40}$/.test(sha) && !/^0+$/.test(sha);
+              if (!isCommit(before) || !isCommit(after)) {
                 throw new Error('push payload did not include a comparable before/after range');
               }
 
-              const comparison = await github.rest.repos.compareCommitsWithBasehead({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                basehead: `${before}...${after}`,
-                per_page: 100,
-              });
-              const files = comparison.data.files ?? [];
-              if (files.length >= 300) {
-                throw new Error('compare API returned the maximum file list; changed files may be truncated');
+              const { execFileSync } = require('node:child_process');
+              const token = process.env.GIT_FETCH_TOKEN;
+              const credential = Buffer.from(`x-access-token:${token}`).toString('base64');
+              const authHeader = `AUTHORIZATION: basic ${credential}`;
+              core.setSecret(credential);
+              core.setSecret(authHeader);
+              // Authenticate only this fetch. A shallow checkout already has the after tree.
+              try {
+                execFileSync(
+                  'git',
+                  [
+                    `--config-env=http.${process.env.GITHUB_SERVER_URL}/.extraheader=GIT_FETCH_AUTH`,
+                    'fetch', '--no-tags', '--depth=1', 'origin', before,
+                  ],
+                  {
+                    env: { ...process.env, GIT_FETCH_AUTH: authHeader },
+                    stdio: 'pipe',
+                    timeout: 45_000,
+                  },
+                );
+              } catch (error) {
+                // A force-push can leave the previous commit unavailable on origin.
+                const stderr = String(error.stderr ?? '').trim();
+                const detail = error.code === 'ETIMEDOUT' ? error.message : stderr || error.message;
+                let safeDetail = String(detail);
+                for (const secret of [authHeader, credential, token].filter(Boolean)) {
+                  safeDetail = safeDetail.replaceAll(secret, '[redacted]');
+                }
+                const firstLine = safeDetail.trim().split(/\r?\n/, 1)[0];
+                const diagnostic = firstLine.length > 300 ? `${firstLine.slice(0, 297)}...` : firstLine;
+                throw new Error(`unable to fetch the previous main commit from origin: ${diagnostic}`);
               }
-              return collectFileNames(files);
+
+              // Treat renames as delete/add so both paths remain eligible.
+              return execFileSync(
+                'git',
+                ['diff', '--no-renames', '--name-only', '-z', `${before}..${after}`, '--'],
+                { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+              ).split('\0').filter(Boolean).sort();
             }
 
             let shouldPublish = false;
@@ -166,7 +201,7 @@ jobs:
               reason = 'Version tags always publish Docker images.';
             } else if (eventName === 'push' && ref === 'refs/heads/main') {
               try {
-                changedFiles = await listMainPushFiles();
+                changedFiles = listMainPushFiles();
                 relevantFiles = changedFiles.filter(matchesRelevantPath);
                 shouldPublish = relevantFiles.length > 0;
                 reason = shouldPublish
@@ -360,7 +395,7 @@ jobs:
       - uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          label: docker-publish
+          label: docker-publish-stack
           report-at-job-end: 'true'
 
       - name: Log in to GHCR

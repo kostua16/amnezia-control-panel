@@ -79,9 +79,30 @@ auto-cover-review.yml
      kilo-code-bot `<!-- kilo-review -->` comments, workflow_dispatch, and a
      scheduled fallback
   -> evaluates internal review concern labels plus Kilo current-head feedback
+  -> AUTO_COVER_DELAY_MODE=delayed (default): hands each eligible PR to
+     auto-cover-dispatch.yml; `direct` dispatches fix-review.yml itself
+  -> after context collection, a PR evaluation or dispatch error warns with
+     the PR number and lets the scan finish; the summary lists failed PRs and
+     the job fails after processing the batch
   -> dispatches fix-review.yml on `--ref main` with automation_review_loop=true
+  -> per-PR context fetch defaults to GraphQL (lib/review-inputs-graphql.cjs,
+     same adapter as pr-flow); repo variable PR_FLOW_AUTO_COVER_SOURCE=rest
+     is the rollback switch to the legacy all-REST fetch
+  -> the GraphQL transport buffers responses up to 64 MiB, kills each call
+     after 30s (timeout kills retry as transient), and caps retry sleeps at
+     60s plus the whole GraphQL phase at a 4min per-scan wall-clock budget;
+     once a bound is spent, remaining PRs fall back to REST without sleeping
+     (successfully degraded PRs are listed in manifest.graphql.fallbackPrs)
   -> allows manual-only / needs-review PRs to be repaired, but never approves,
      merges, removes needs-review, or bypasses do-not-merge
+
+auto-cover-dispatch.yml
+  -> workflow_dispatch only, from auto-cover-review.yml (pr_number, head_sha)
+  -> `wait` job: `auto-cover-delay` environment wait timer (quiet period, no
+     runner held); a newer handoff for the same PR cancels the waiting one
+  -> `dispatch` job: serialized per PR, re-reads the PR context, re-runs both
+     evaluators against the handed-off head, then dispatches fix-review.yml
+     (automation_review_loop=true) and records the attempt comment
 
 deepseek.yml
   -> standalone @deepseek trigger (issue_comment, PR review, issues)
@@ -98,15 +119,16 @@ deepseek-code-review.yml
 
 fix-review.yml
   -> maintainer-only /fix-review or /address-review PR comment (issue_comment) or workflow_dispatch
-  -> automation_review_loop=true is reserved for auto-cover-review.yml and may
-     repair same-repo review-blocked/manual-only PRs without changing merge policy
+  -> automation_review_loop=true is reserved for auto-cover-review.yml (direct
+     mode) and auto-cover-dispatch.yml (delayed mode) and may repair same-repo
+     review-blocked/manual-only PRs without changing merge policy
   -> pre-fetches unresolved, non-outdated review threads + reviews + filtered PR comments
   -> applies fixes in place on the SAME PR head branch (never a new branch, never force-pushes)
   -> CI-matching gate (npm run test && npm run build + script tests + Prisma-safe check) must pass before push
   -> disables auto-merge after a fix push so the bot commit is re-reviewed before merge
   -> sticky summary comment: started -> working -> finished (or skipped / no-changes / push-rejected / validation-failed / failed / cancelled); each refresh replaces the old comment so the current summary is latest in the PR timeline
   -> human command path remains standalone; automation_review_loop is dispatched
-     by auto-cover-review.yml
+     by auto-cover-dispatch.yml (or auto-cover-review.yml in direct mode)
 
 dependency-review.yml
   -> dispatch-only worker controlled by pr-flow.yml
@@ -220,6 +242,15 @@ can pass for branch protection, but PR Finalizer and auto-merge stay disabled so
 a human makes the final decision. Hard blockers such as `do-not-merge`,
 AI/security concern labels, and blocked dependency labels still fail
 `pr-flow/ready`.
+
+PR Orchestrator stops dispatching Finalizer for the current head after four
+failed or timed-out runs, or eight total runs of any conclusion. At either
+limit, the orchestration comment and statuses direct the maintainer to the
+latest run and manual merge. When unavailable head history prevents a
+dispatch decision, Orchestrator defers Finalizer and publishes
+`pr-flow/ready` and `pr-flow/finalizer` as pending. The existing watchdog
+can wake Orchestrator again after the ready status has been pending for
+30 minutes.
 
 > See [PR Orchestrator Concurrency](#pr-orchestrator-concurrency) for how
 > `pr-flow.yml` groups runs by event class and why a cancelled `orchestrate`
@@ -428,7 +459,8 @@ Always manual-only:
 - accepts `claude-full-output`; it defaults to `true` in this private repo but should default to `false` before public reusable workflow extraction
 - modify-capable workflows pass `github-token: ${{ secrets.GH_PAT }}`; read-only workflows use the default
 - workflows or jobs using `run-zai`/`run-claude` must grant at least `actions: read`; orchestrated workers that wake `pr-flow.yml` must grant `actions: write`
-- orchestrator-dispatched `workflow_dispatch` workers run as `github-actions[bot]`, so Claude/ZAI steps must pass `allowed-bots: github-actions,github-actions[bot],claude[bot]` when `orchestrated=true`; do not use wildcard bot allowance
+- orchestrator-dispatched `workflow_dispatch` workers run as `github-actions[bot]` (and sometimes `github-actions` without the suffix — run 31297801788). Pass `allowed-bots-profile: orchestrated` (or the interactive profile for human/scheduled runs). Profiles live in `policy.json` `allowedBots.profiles`. Use literal `allowed-bots` only for documented exceptions (triage + kilo-code-bot, and issue-catch-up's least-privilege `github-actions[bot]`-only PAT agent). Do not use wildcard bot allowance. `github-actions` and `github-actions[bot]` are distinct logins.
+- Workflows that run an agent action from a different checkout resolve the profile from the workflow revision and pass the result as the legacy allowed-bots input. This keeps existing PR branches compatible.
 - accepts `plugin-marketplaces` and `plugins` inputs (forwarded to `claude-code-action`) for installing Claude Code plugins per workflow
 - workflows are grouped into **plugin profiles** based on their purpose and turn budget:
   - **Profile E (Engineer):** `claude`, `fix-issue`, `_auto-fix-ci`, `audit-fix`, `gsd-planning-execute` — code-editing flows with typescript-lsp, serena (read-only), context7, code-review, security-guidance, code-simplifier, frontend-design, superpowers, caveman (+ commit-commands in claude.yml only)
@@ -510,6 +542,22 @@ gh workflow run pr-flow.yml --ref main -f pr_number=<PR> -f dry_run=false
 ```
 
 `pr-flow-watchdog.yml` runs every 15 minutes away from the top of the hour and performs the same recovery automatically for open non-draft PRs that still have `flow/draft`.
+
+### PR Flow sweep shadow
+
+Set the repository Actions variable `PR_FLOW_SWEEP_MODE` to `shadow` to log
+candidate wakes and GraphQL cost from current open PR heads. Delete the variable to disable shadow scanning. Only `shadow` enables it.
+
+Shadow samples `PR Orchestrator` completions whose run IDs end in `0` or `5` (roughly 20%). The existing cron slots and default-branch manual dispatches are exempt from sampling. Each scan uses the default-branch commit and a read-only token. GitHub keeps one scan running and one pending per group, replacing older pending scans. Recovery-cron comparisons share a separate group. For a manual sample without watchdog dispatches, set `dry_run` on the workflow dispatch.
+
+Each scan emits one `SHADOW_SWEEP_SUMMARY` JSON line with its trigger, GraphQL
+cost and remaining budget, PR and candidate counts, and a count and up to five comparison differences with a truncation flag when available. The `PR flow shadow` line retains the full comparison.
+The existing recovery cron is the only trigger that compares
+status evidence. Both selections use the same GraphQL heads, labels, state and
+draft flag and share the raw status history per head. A transient REST failure
+gets one retry within the comparison deadline. Unavailable evidence is reported
+as unknown. The watchdog continues to own recovery on the original schedule
+and on manual dispatch.
 
 `project-manager.yml` runs every 10 minutes as the queue manager for open PRs,
 standalone issues, and low-load PR-producing workflows. By default it inspects

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { describe, it } from 'node:test';
+import { load as loadYaml } from 'js-yaml';
 
 const require = createRequire(import.meta.url);
 const {
@@ -457,6 +458,28 @@ describe('PR flow workflow invariants', () => {
     assert.equal(permissions.get('pull-requests'), 'write');
   });
 
+  it('keeps incumbent recovery on its existing cron and manual trigger', () => {
+    const workflow = loadYaml(
+      readWorkflow('.github/workflows/pr-flow-watchdog.yml'),
+    ) as {
+      jobs: {
+        watch: {
+          if: string;
+          concurrency: { group: string; 'cancel-in-progress': boolean };
+        };
+      };
+    };
+    const recovery = '7,22,37,52 * * * *';
+    assert.equal(
+      workflow.jobs.watch.if,
+      `github.event_name == 'workflow_dispatch' || github.event.schedule == '${recovery}'`,
+    );
+    assert.deepEqual(workflow.jobs.watch.concurrency, {
+      group: 'pr-flow-watchdog',
+      'cancel-in-progress': true,
+    });
+  });
+
   it('keeps orchestrated workers able to wake the orchestrator', () => {
     const unconditionalWorkerWorkflows = [
       'code-review.yml',
@@ -553,7 +576,7 @@ describe('PR flow workflow invariants', () => {
 
       assert.match(
         workflow,
-        /allowed-bots:\s*\$\{\{\s*github\.event\.inputs\.orchestrated == 'true' && 'github-actions,github-actions\[bot\],claude\[bot\]' \|\| ''\s*\}\}/,
+        /ALLOWED_BOTS_PROFILE:\s*\$\{\{\s*github\.event\.inputs\.orchestrated == 'true' && 'orchestrated' \|\| ''\s*\}\}/,
         workflowName,
       );
     }

@@ -57,6 +57,7 @@ jobs:
       summary-path: ${{ steps.collect.outputs.summary_path }}
       queue-telemetry: ${{ steps.collect.outputs.queue_telemetry }}
       starvation-alert: ${{ steps.collect.outputs.starvation_alert }}
+      since-timestamp: ${{ steps.collect.outputs.since_timestamp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
@@ -78,6 +79,7 @@ jobs:
             } = require('./.github/workflows/scripts/workflow-run-timings.cjs');
 
             const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            core.setOutput('since_timestamp', oneHourAgo);
 
             function compactClaudeSummary(metrics) {
               const hasSignal = metrics.actionError ||
@@ -151,6 +153,7 @@ jobs:
               const isSlow = durationSec > 300;
               const summary = {
                 name: run.name,
+                run_id: run.id,
                 status: run.conclusion,
                 runNumber: run.run_number,
                 headSha: run.head_sha,
@@ -398,6 +401,19 @@ jobs:
           install-rtk: 'true'
           generate-prisma: 'true'
 
+      - name: Re-run transient infra failures (WHO-E06)
+        id: rerun_transient
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          node .github/workflows/scripts/rerun-transient-failed-runs.cjs \
+            --repo "${{ github.repository }}" \
+            --since "${{ needs.collect-runs.outputs.since-timestamp }}" \
+            --limit 10 \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Prepare optimization branch
         id: branch
         uses: ./.github/actions/prepare-automation-branch
@@ -419,6 +435,10 @@ jobs:
             ## Task: Analyze Workflow Runs and Optimize Workflow Files
 
             You have completed workflow run data from the past hour AND workflow YAML files in `.github/workflows/`.
+            GitHub accepted requests to rerun failed jobs after transient infrastructure errors for these run IDs (comma-separated): ${{ steps.rerun_transient.outputs.rerun_ids || 'none' }}
+            Match the list against `run_id`. An accepted rerun request records a retry and leaves its outcome unknown.
+            Assess each failed job independently, including jobs in listed runs. Use the failed step names and log tail together. Only attribute a log message to the failure when the supplied evidence links it to a failed step. Job log tails can include output from successful steps.
+            Skip YAML fixes for failures explained by temporary infrastructure errors, such as network timeouts, service outages, or rate limits. Continue analyzing any separately evidenced permanent failure, including one in the same job or run. When logs are capped, missing, or ambiguous, require other supplied evidence of a specific YAML defect before proposing a change.
             The run data may include compact `claudeSummary`, `timingSummary`, and `duplicateSameSha` objects extracted by the workflow itself.
 
             ### Completed Runs Data

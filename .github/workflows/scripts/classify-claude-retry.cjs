@@ -18,7 +18,7 @@ function parseArgs(argv) {
       .slice(2)
       .replace(/-([a-z])/g, (_, char) => char.toUpperCase());
     args[key] =
-      argv[index + 1] && !argv[index + 1].startsWith('--')
+      argv[index + 1] !== undefined && !argv[index + 1].startsWith('--')
         ? argv[++index]
         : 'true';
   }
@@ -43,12 +43,46 @@ function walk(value, visit) {
   }
 }
 
+function isErrorResult(node) {
+  const explicitError = asBoolean(node.is_error);
+  return (
+    explicitError ??
+    (typeof node.subtype === 'string' && node.subtype.startsWith('error_'))
+  );
+}
+
 function hasSuccessfulResult(executionText) {
   for (const value of parseJsonValues(executionText)) {
     let found = false;
     walk(value, (node) => {
       if (found || node.type !== 'result') return;
-      found = asBoolean(node.is_error) !== true;
+      found = !isErrorResult(node);
+    });
+    if (found) return true;
+  }
+  return false;
+}
+
+function hasSocketCloseResult(executionText) {
+  for (const value of parseJsonValues(executionText)) {
+    let found = false;
+    walk(value, (node) => {
+      if (
+        node.type === 'result' &&
+        isErrorResult(node) &&
+        [
+          node.result,
+          node.error,
+          node.message,
+          ...(Array.isArray(node.errors) ? node.errors : []),
+        ].some(
+          (text) =>
+            typeof text === 'string' &&
+            /socket connection was closed unexpectedly/i.test(text),
+        )
+      ) {
+        found = true;
+      }
     });
     if (found) return true;
   }
@@ -92,12 +126,15 @@ function isRateLimitOrOverloadText(value) {
 
 function classifyClaudeRetry({
   httpCode = '',
+  probeExitCode = '0',
   executionText = '',
   logText = '',
   jsonSchemaEnabled = false,
   attempt = '',
 } = {}) {
   const normalizedHttpCode = String(httpCode || '').trim();
+  const probeUnavailable =
+    normalizedHttpCode === '' || normalizedHttpCode === '000';
   const normalizedAttempt = String(attempt || '').trim();
   const finalRetry = normalizedAttempt === '2';
   const retrySuffix = finalRetry
@@ -142,17 +179,21 @@ function classifyClaudeRetry({
     };
   }
 
-  if (normalizedHttpCode === '200' && hasSuccessfulResult(executionText)) {
+  if (
+    (normalizedHttpCode === '200' || probeUnavailable) &&
+    hasSuccessfulResult(executionText)
+  ) {
     return {
       httpCode: normalizedHttpCode,
       isRateLimited: false,
       shouldRetry: false,
       retryReason: 'successful_result_after_action_probe',
       softSuccess: true,
-      softSuccessReason:
-        'Claude completed successfully, but the action API probe returned HTTP 200',
+      softSuccessReason: probeUnavailable
+        ? 'Claude completed successfully before the API probe became unavailable'
+        : 'Claude completed successfully, but the action API probe returned HTTP 200',
       annotation: 'warning',
-      message: `Attempt ${normalizedAttempt} produced a successful execution result, but the action API probe returned HTTP 200. Treating as soft success.`,
+      message: `Attempt ${normalizedAttempt} produced a successful execution result. Treating as soft success.`,
     };
   }
 
@@ -183,6 +224,34 @@ function classifyClaudeRetry({
   // or network blip that cleared before the probe ran a few seconds later —
   // not a real code or prompt error (those leave a result or action_error).
   // Retry once instead of giving up; bounded by the existing 3-attempt cap.
+  const transientProbe =
+    (probeUnavailable && String(probeExitCode) === '0') ||
+    ((probeUnavailable || normalizedHttpCode === '200') &&
+      ['16', '18', '28', '52', '55', '56', '92'].includes(
+        String(probeExitCode),
+      ));
+  const transientExecution =
+    (normalizedHttpCode === '200' || transientProbe) &&
+    hasSocketCloseResult(executionText);
+  if (
+    transientExecution ||
+    (transientProbe && !hasAnyResultNode(executionText))
+  ) {
+    return {
+      httpCode: normalizedHttpCode,
+      isRateLimited: false,
+      shouldRetry: true,
+      retryReason:
+        transientExecution || !probeUnavailable
+          ? 'transient_transport'
+          : 'probe_unreachable',
+      softSuccess: false,
+      softSuccessReason: '',
+      annotation: 'warning',
+      message: `Attempt ${normalizedAttempt} failed with a transient connection error. ${retrySuffix}`,
+    };
+  }
+
   if (normalizedHttpCode === '200' && !hasAnyResultNode(executionText)) {
     return {
       httpCode: normalizedHttpCode,
@@ -230,6 +299,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const result = classifyClaudeRetry({
     httpCode: args.httpCode,
+    probeExitCode: args.probeExitCode,
     executionText: readOptionalFile(args.executionFile),
     logText: readOptionalFile(args.logFile),
     jsonSchemaEnabled: args.jsonSchemaEnabled,

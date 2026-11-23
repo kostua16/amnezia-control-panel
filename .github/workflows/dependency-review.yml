@@ -52,6 +52,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Resolve Dependabot PR context
         id: resolve
@@ -91,6 +92,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           install-deps: 'true'
           install-rtk: 'true'
 
@@ -119,6 +121,27 @@ jobs:
             echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
+      # The agent action may come from an older target branch.
+      - name: Check out workflow bot policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .git/workflow-bot-policy
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/policy.json
+            /.github/workflows/scripts/resolve-allowed-bots.cjs
+
+      - name: Resolve workflow bot policy
+        id: workflow-bot-policy
+        shell: bash
+        env:
+          ALLOWED_BOTS_PROFILE: ${{ github.event.inputs.orchestrated == 'true' && 'orchestrated' || '' }}
+        run: |
+          node .git/workflow-bot-policy/.github/workflows/scripts/resolve-allowed-bots.cjs \
+            --profile "$ALLOWED_BOTS_PROFILE" --github-output "$GITHUB_OUTPUT"
+
       - name: Review dependency update
         id: review
         uses: ./.github/actions/run-zai
@@ -127,7 +150,7 @@ jobs:
           model: 'haiku'
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
-          allowed-bots: ${{ github.event.inputs.orchestrated == 'true' && 'github-actions,github-actions[bot],claude[bot]' || '' }}
+          allowed-bots: ${{ steps.workflow-bot-policy.outputs.allowed_bots }}
           json-schema: '{"type":"object","properties":{"verdict":{"type":"string","enum":["passed","manual","blocked"]},"summary":{"type":"string"},"update_type":{"type":"string","enum":["patch","minor","major","unknown"]},"risk_notes":{"type":"string"}},"required":["verdict","summary","update_type","risk_notes"],"additionalProperties":false}'
           allowed-tools: 'Bash(npm audit:*),Bash(npm ls:*),Bash(cat *),Bash(grep *),Bash(head *),Bash(node *),Bash(rtk:*)'
           prompt: |
@@ -223,6 +246,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
 
       - name: Wake PR Orchestrator
         env:

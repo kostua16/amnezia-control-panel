@@ -7,7 +7,9 @@ const assert = require('node:assert/strict');
 const {
   formatRateLimitLine,
   logRateLimit,
+  tokenFingerprint,
   tokenKind,
+  writeCoreRemainingOutput,
 } = require('../../../actions/log-rate-limit/rate-limit.cjs');
 
 const ENV = {
@@ -45,7 +47,7 @@ test('formats one greppable line with phase, run identity and both quotas', () =
   assert.equal(
     line,
     'RATE_LIMIT phase=job-end workflow="Docker Image" job=classify label=docker-classify run=123.2 ' +
-      'event=pull_request token=unknown core_remaining=17/5000 core_reset=2026-11-21T23:44:34Z graphql=4698/5000',
+      `event=pull_request token=unknown token_id=e6c02a5742ea core_remaining=17/5000 core_reset=2026-11-21T23:44:34Z graphql=4698/5000`,
   );
 });
 
@@ -55,6 +57,16 @@ test('reports only the public token prefix so each token quota can be told apart
   assert.equal(tokenKind('github_pat_abc123'), 'github_pat');
   assert.equal(tokenKind('something-else'), 'unknown');
   assert.equal(tokenKind(undefined), 'unknown');
+});
+
+test('fingerprints the token without exposing it', () => {
+  const id = tokenFingerprint('ghs_secretvalue');
+  assert.match(id, /^[0-9a-f]{12}$/);
+  assert.equal(id, tokenFingerprint('ghs_secretvalue'));
+  assert.notEqual(id, tokenFingerprint('ghs_othervalue'));
+  assert.ok(!id.includes('secret'));
+  assert.equal(tokenFingerprint(undefined), 'none');
+  assert.equal(tokenFingerprint(''), 'none');
 });
 
 test('falls back to n/a and the job id when resources or label are missing', () => {
@@ -121,4 +133,60 @@ test('emits a warning instead of throwing when the request itself fails', async 
   });
 
   assert.match(lines[0], /^::warning::.*network down$/);
+});
+
+test('returns the resources it logged, and null when the reading failed', async () => {
+  const ok = fakeFetch({
+    ok: true,
+    json: async () => ({ resources: RESOURCES }),
+  });
+  assert.deepEqual(
+    await logRateLimit({
+      env: ENV,
+      phase: 'snapshot',
+      fetchImpl: ok.fetchImpl,
+      log: () => {},
+    }),
+    RESOURCES,
+  );
+  const denied = fakeFetch({ ok: false, status: 403 });
+  assert.equal(
+    await logRateLimit({
+      env: ENV,
+      phase: 'snapshot',
+      fetchImpl: denied.fetchImpl,
+      log: () => {},
+    }),
+    null,
+  );
+});
+
+test('writes core-remaining as a step output, empty when unknown', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rate-limit-output-'));
+  const output = path.join(dir, 'output');
+  try {
+    writeCoreRemainingOutput({
+      env: { GITHUB_OUTPUT: output },
+      resources: RESOURCES,
+    });
+    writeCoreRemainingOutput({
+      env: { GITHUB_OUTPUT: output },
+      resources: { core: { remaining: 0, limit: 5000 } },
+    });
+    writeCoreRemainingOutput({
+      env: { GITHUB_OUTPUT: output },
+      resources: null,
+    });
+    assert.equal(
+      fs.readFileSync(output, 'utf8'),
+      'core-remaining=17\ncore-remaining=0\ncore-remaining=\n',
+    );
+    // Outside Actions (no GITHUB_OUTPUT) nothing is written and nothing throws.
+    writeCoreRemainingOutput({ env: {}, resources: RESOURCES });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

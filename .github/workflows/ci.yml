@@ -64,6 +64,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           install-deps: 'true'
           require-gh-auth: 'false'
       - run: npm run lint
@@ -96,6 +97,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           install-deps: 'true'
           generate-prisma: 'true'
           require-gh-auth: 'false'
@@ -114,6 +116,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           install-deps: 'true'
           generate-prisma: 'true'
           require-gh-auth: 'false'
@@ -135,6 +138,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           install-deps: 'true'
           generate-prisma: 'true'
           require-gh-auth: 'false'
@@ -177,6 +181,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           setup-bun: 'false'
           require-gh-auth: 'false'
       - name: npm audit (high+ advisories)

@@ -1,10 +1,14 @@
 name: PR Flow Watchdog
 
-run-name: 'PR Flow Watchdog'
+run-name: ${{ vars.PR_FLOW_SWEEP_MODE == 'shadow' && 'PR Flow Watchdog (shadow enabled)' || 'PR Flow Watchdog' }}
 
 on:
   schedule:
     - cron: '7,22,37,52 * * * *'
+    - cron: '2,12,17,27,32,42,47,57 * * * *'
+  workflow_run:
+    workflows: ['PR Orchestrator']
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -22,12 +26,12 @@ permissions:
   issues: read
   actions: write
 
-concurrency:
-  group: pr-flow-watchdog
-  cancel-in-progress: true
-
 jobs:
   watch:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '7,22,37,52 * * * *'
+    concurrency:
+      group: pr-flow-watchdog
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -37,6 +41,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           install-deps: 'false'
 
       - name: Wake stale PR flow states
@@ -48,3 +53,42 @@ jobs:
             --dry-run "$DRY_RUN" \
             --ref main \
             --workflow pr-flow.yml
+
+  shadow:
+    if: >-
+      vars.PR_FLOW_SWEEP_MODE == 'shadow' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
+      (github.event_name != 'workflow_run' ||
+      endsWith(format('{0}', github.event.workflow_run.id), '0') ||
+      endsWith(format('{0}', github.event.workflow_run.id), '5'))
+    concurrency:
+      # Keep scheduled comparisons in their own queue.
+      group: ${{ github.event.schedule == '7,22,37,52 * * * *' && 'pr-flow-sweep-shadow-recovery' || 'pr-flow-sweep-shadow' }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+      checks: read
+      actions: read
+    steps:
+      # For workflow_run, github.sha is the default-branch commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-environment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
+          install-deps: 'false'
+      - name: Scan open PR heads in read-only mode
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_FLOW_SWEEP_MODE: ${{ vars.PR_FLOW_SWEEP_MODE }}
+          PR_FLOW_SWEEP_SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          node .github/workflows/scripts/scan-pr-flow.cjs

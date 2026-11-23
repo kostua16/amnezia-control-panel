@@ -78,7 +78,7 @@ describe('docker-image workflow', () => {
     assert.equal(isRelevant('prisma/schema.prisma'), true);
     assert.equal(isRelevant('docs/workflow.md'), false);
     assert.match(workflow, /pulls\.listFiles/);
-    assert.match(workflow, /compareCommitsWithBasehead/);
+    assert.doesNotMatch(workflow, /compareCommitsWithBasehead/);
   });
 
   it('skips registry attestations for user-owned private repositories', () => {

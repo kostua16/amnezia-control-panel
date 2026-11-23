@@ -12,10 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  actions: write
-  checks: read
-  statuses: write
+  contents: read
 
 concurrency:
   group: workflow-governance-${{ github.ref }}
@@ -27,12 +24,18 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           setup-bun: 'false'
           require-gh-auth: 'false'
+
+      - name: Install policy checker dependencies
+        run: bash .github/workflows/scripts/install-governance-yaml.sh
 
       - name: Validate workflow governance policy
         run: node .github/workflows/scripts/workflow-governance-check.cjs

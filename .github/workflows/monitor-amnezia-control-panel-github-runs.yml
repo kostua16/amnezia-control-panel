@@ -242,6 +242,27 @@ jobs:
           safety-margin-minutes: '5'
           job-start-epoch: '${{ steps.job_start.outputs.epoch }}'
 
+      # The agent action may come from an older target branch.
+      - name: Check out workflow bot policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .git/workflow-bot-policy
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/policy.json
+            /.github/workflows/scripts/resolve-allowed-bots.cjs
+
+      - name: Resolve workflow bot policy
+        id: workflow-bot-policy
+        shell: bash
+        env:
+          ALLOWED_BOTS_PROFILE: interactive
+        run: |
+          node .git/workflow-bot-policy/.github/workflows/scripts/resolve-allowed-bots.cjs \
+            --profile "$ALLOWED_BOTS_PROFILE" --github-output "$GITHUB_OUTPUT"
+
       - name: Monitor runs and apply narrow fixes
         id: claude_run
         continue-on-error: true
@@ -253,7 +274,7 @@ jobs:
           max-turns: '${{ env.MAX_TURNS }}'
           track-progress: 'true'
           claude-full-output: 'false'
-          allowed-bots: 'claude[bot],github-actions[bot]'
+          allowed-bots: ${{ steps.workflow-bot-policy.outputs.allowed_bots }}
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(rtk:*),Bash(gh:*),Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(actionlint:*),Bash(shellcheck:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(sed:*),Bash(awk:*),Bash(date:*)'
           prompt: |
             /gsd:debug
@@ -347,8 +368,8 @@ jobs:
             ## Verification Requirements
 
             If you change JS/CJS/TS/TSX files, run `npm run lint` and targeted `npx prettier --check <changed files>`.
-            If you change workflow or action YAML, run `actionlint -config-file .github/actionlint.yaml` and targeted `npx prettier --check <changed files>`.
-            If you change shell scripts, run `shellcheck <changed files>`.
+            If you change workflow YAML, action metadata, or shell scripts, run `node .github/workflows/scripts/verify-changed-workflow-files.cjs <changed paths>`. Pass each existing changed workflow YAML, action manifest, or shell script as a separate quoted argument.
+            For changed workflow or action YAML, also run targeted `npx prettier --check <changed files>`.
             Run any additional local verification directly relevant to the fix.
 
             ## Expected Final Output
@@ -397,70 +418,13 @@ jobs:
       # (src/** only)/test/build/script-tests/prisma-safe but does NOT run
       # actionlint or shellcheck, so malformed workflow/action YAML or shell
       # scripts could otherwise pass the gate and surface only at review time.
+      # Pass only changed workflows to actionlint and parse action manifests
+      # separately. A repo-wide scan failed on unrelated fix-review.yml (#881).
       - name: Verify changed workflow/shell files
         shell: bash
         env:
           CHANGED_FILES: ${{ steps.claude_run.outputs.claude_changed_files_list }}
-        run: |
-          set -euo pipefail
-
-          node <<'NODE' > /tmp/monitor-changed-files.txt
-          const raw = process.env.CHANGED_FILES || '';
-          let files = [];
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              files = parsed;
-            }
-          } catch {}
-
-          if (files.length === 0) {
-            files = raw.split(/\r?\n|,/);
-          }
-
-          files = [...new Set(files.map((file) => String(file).trim()).filter(Boolean))];
-          process.stdout.write(files.join('\n'));
-          NODE
-
-          if [ ! -s /tmp/monitor-changed-files.txt ]; then
-            echo "No changed files to verify."
-            exit 0
-          fi
-
-          workflow_yaml_files=()
-          shell_files=()
-
-          # `|| [ -n "$file" ]` catches the final line when the node heredoc
-          # emits no trailing newline, so a single changed file is still
-          # processed instead of silently skipping actionlint/shellcheck.
-          while IFS= read -r file || [ -n "$file" ]; do
-            [ -n "$file" ] || continue
-            [ -f "$file" ] || continue
-            case "$file" in
-              .github/workflows/*.yml|.github/workflows/*.yaml|.github/actions/*.yml|.github/actions/*.yaml)
-                workflow_yaml_files+=("$file")
-                ;;
-              *.sh)
-                shell_files+=("$file")
-                ;;
-            esac
-          done < /tmp/monitor-changed-files.txt
-
-          if [ "${#workflow_yaml_files[@]}" -gt 0 ]; then
-            if ! command -v actionlint >/dev/null 2>&1; then
-              echo "::error::actionlint is required for workflow/action YAML changes"
-              exit 1
-            fi
-            actionlint -config-file .github/actionlint.yaml
-          fi
-
-          if [ "${#shell_files[@]}" -gt 0 ]; then
-            if ! command -v shellcheck >/dev/null 2>&1; then
-              echo "::error::shellcheck is required for shell script changes"
-              exit 1
-            fi
-            shellcheck "${shell_files[@]}"
-          fi
+        run: node .github/workflows/scripts/verify-changed-workflow-files.cjs
 
       - name: Detect exact duplicate monitor PR
         id: duplicate
@@ -560,6 +524,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           node-version: ${{ env.NODE_VERSION }}
 
       - uses: ./.github/actions/report-failure

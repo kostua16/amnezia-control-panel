@@ -128,6 +128,8 @@ Resume file: None
 
 | Date       | Slug / ID    | Summary                                                     |
 | ---------- | ------------ | ----------------------------------------------------------- |
+| 2026-11-23 | 261123-w9f   | Avoid Docker main-push REST comparison and closed-issue authorization |
+| 2026-11-23 | 261123-3on | APR-I09 bot-policy compatibility and retry fixes |
 | 2026-04-30 | 260430-q7v   | Dev default port 3333; override via CLI/PORT                |
 | 2026-04-30 | 260430-r2n   | npm `--port` shorthand support + Next lock behavior         |
 | 2026-05-29 | 260529-geist | Self-host Geist fonts (dev6 gstatic block, CI #26663122321) |

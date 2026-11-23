@@ -219,7 +219,7 @@ Compact one-liners; see clusters above for grouping.
 - `pr-improve.yml` — `workflow_dispatch` ZAI PR improvement→commit; `[self-hosted,big]` 15m; `evaluate-pr-policy.cjs`,`upsert-planning-pr.cjs`; `GH_PAT`.
 - `pr-policy.yml` — **`pull_request_target`** label/status policy; `issues:write,statuses:write`; `pr-policy-{pr}`; self-hosted 10m; metadata-only by design (R3).
 - `pr-size-guard.yml` — `pull_request` size comment; self-hosted 10m; `upsert-pr-size-comment.cjs`. **Move to github-hosted candidate.**
-- `auto-pr-branch-cleanup.yml` — `pull_request` delete merged branches; **`ubuntu-latest`** 5m; same-repo guard. ✓ Right-sized.
+- `auto-pr-branch-cleanup.yml` runs on `pull_request_target: closed` for PRs targeting `main`. Same-repository close jobs load the action and cleanup policy from current `main`. Scheduled and manual runs sweep orphan branches. All jobs run on `ubuntu-latest`.
 - `release-notes.yml` — release-triggered ZAI release notes; self-hosted 10m; `run-zai`; `acp-agent.sh`,`deploy-server.sh` referenced.
 
 **Planning/issues**

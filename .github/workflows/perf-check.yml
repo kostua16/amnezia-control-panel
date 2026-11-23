@@ -27,6 +27,7 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           install-deps: 'true'
           generate-prisma: 'true'
           cache-nextjs: 'true'

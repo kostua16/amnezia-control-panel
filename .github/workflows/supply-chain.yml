@@ -33,8 +33,12 @@ jobs:
       - uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           setup-bun: 'false'
           require-gh-auth: 'false'
+
+      - name: Install policy checker dependencies
+        run: bash .github/workflows/scripts/install-governance-yaml.sh
 
       - name: Verify pinned workflow actions
         run: node .github/workflows/scripts/workflow-governance-check.cjs

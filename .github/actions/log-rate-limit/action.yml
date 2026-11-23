@@ -12,6 +12,10 @@ inputs:
     description: 'When true, also log the quota in the post step at the end of the job (even if the job failed or was cancelled)'
     default: 'false'
 
+outputs:
+  core-remaining:
+    description: 'Remaining core (REST) quota of the token at the time of the reading; empty when it could not be read'
+
 runs:
   using: node24
   main: main.cjs
