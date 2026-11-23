@@ -23,6 +23,7 @@ const UNREADABLE_STATUSES = [{ context: READY_CONTEXT }];
 const CHECK_RESCUE = 'checks-completed-after-ready';
 const CHECK_COMPLETION_GRACE_MS = 120_000;
 const MIN_GRAPHQL_REMAINING = 5;
+const MAX_SUMMARY_DIFFS = 5;
 
 function completedRequiredChecks(pr, required, nowMs) {
   const ready = pr.statuses?.find((status) => status.context === READY_CONTEXT);
@@ -260,6 +261,7 @@ function scanPrFlow({
   mode,
   repository,
   schedule,
+  triggerEvent = null,
   now = new Date().toISOString(),
   execGh = execFileSync,
   runGraphql,
@@ -283,6 +285,24 @@ function scanPrFlow({
       elapsedMs: Math.round(performance.now() - started),
     };
     log(`PR flow shadow ${JSON.stringify(result)}`);
+    const differences = result.comparison?.differences;
+    const telemetry = {
+      triggerEvent,
+      status: result.status,
+      recoverySlot,
+      cost: result.cost,
+      remaining: pages.at(-1)?.remaining ?? null,
+      openPrs: result.openPrs ?? null,
+      candidatePrs: result.candidatePrs ?? null,
+      comparisonDiffs: differences
+        ? {
+            count: differences.length,
+            entries: differences.slice(0, MAX_SUMMARY_DIFFS),
+            truncated: differences.length > MAX_SUMMARY_DIFFS,
+          }
+        : null,
+    };
+    log(`SHADOW_SWEEP_SUMMARY ${JSON.stringify(telemetry)}`);
     return result;
   };
   let observations;
@@ -401,6 +421,7 @@ if (require.main === module) {
     mode: process.env.PR_FLOW_SWEEP_MODE,
     repository: process.env.GITHUB_REPOSITORY,
     schedule: process.env.PR_FLOW_SWEEP_SCHEDULE,
+    triggerEvent: process.env.GITHUB_EVENT_NAME,
   });
 }
 

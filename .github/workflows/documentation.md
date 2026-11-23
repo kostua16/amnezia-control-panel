@@ -546,17 +546,18 @@ gh workflow run pr-flow.yml --ref main -f pr_number=<PR> -f dry_run=false
 ### PR Flow sweep shadow
 
 Set the repository Actions variable `PR_FLOW_SWEEP_MODE` to `shadow` to log
-candidate wakes and GraphQL cost from current open PR heads. Clear it or set it
-to `off` to stop scanning. Other values, including `canary` and `active`, also
-disable the scan in this rollout.
+candidate wakes and GraphQL cost from current open PR heads. Delete the variable to disable shadow scanning. Only `shadow` enables it.
 
-The shadow job runs with a read-only token. A scan-only run can finish while
-the next one is queued, and it adds no per-PR REST reads. On the existing
-recovery cron, the comparison validates status evidence only. Both selections
-use the same GraphQL heads, labels, state and draft flag and share the raw
-status history per head. A transient REST failure gets one retry within the
-comparison deadline. Unavailable evidence is reported as unknown. The watchdog
-continues to own recovery on the original schedule and on manual dispatch.
+Shadow samples `PR Orchestrator` completions whose run IDs end in `0` or `5` (roughly 20%). The existing cron slots and default-branch manual dispatches are exempt from sampling. Each scan uses the default-branch commit and a read-only token. GitHub keeps one scan running and one pending per group, replacing older pending scans. Recovery-cron comparisons share a separate group. For a manual sample without watchdog dispatches, set `dry_run` on the workflow dispatch.
+
+Each scan emits one `SHADOW_SWEEP_SUMMARY` JSON line with its trigger, GraphQL
+cost and remaining budget, PR and candidate counts, and a count and up to five comparison differences with a truncation flag when available. The `PR flow shadow` line retains the full comparison.
+The existing recovery cron is the only trigger that compares
+status evidence. Both selections use the same GraphQL heads, labels, state and
+draft flag and share the raw status history per head. A transient REST failure
+gets one retry within the comparison deadline. Unavailable evidence is reported
+as unknown. The watchdog continues to own recovery on the original schedule
+and on manual dispatch.
 
 `project-manager.yml` runs every 10 minutes as the queue manager for open PRs,
 standalone issues, and low-load PR-producing workflows. By default it inspects

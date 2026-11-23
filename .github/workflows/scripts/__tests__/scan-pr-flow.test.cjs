@@ -1,7 +1,14 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const { load } = require('js-yaml');
 const { planSweep, scanPrFlow } = require('../scan-pr-flow.cjs');
+const {
+  evaluateCondition,
+  renderTemplate,
+} = require('./helpers/github-expression.cjs');
 
 const head = 'a'.repeat(40);
 const now = '2026-10-01T00:30:00.000Z';
@@ -75,6 +82,124 @@ const call = (options) =>
     log() {},
     ...options,
   });
+
+const readWorkflow = (file) =>
+  load(readFileSync(join(__dirname, '../..', file), 'utf8'));
+
+test('shadow listens for orchestrator completions, manual dispatch and the original cron slots', () => {
+  const workflow = readWorkflow('pr-flow-watchdog.yml');
+  const orchestrator = readWorkflow('pr-flow.yml');
+  assert.deepEqual(workflow.on.workflow_run, {
+    workflows: [orchestrator.name],
+    types: ['completed'],
+  });
+  assert.ok(workflow.on.workflow_dispatch);
+  assert.deepEqual(workflow.on.schedule, [
+    { cron: recovery },
+    { cron: scanOnly },
+  ]);
+
+  const { shadow } = workflow.jobs;
+  assert.equal(
+    shadow.if,
+    [
+      "vars.PR_FLOW_SWEEP_MODE == 'shadow' &&",
+      "github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&",
+      "(github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&",
+      "(github.event_name != 'workflow_run' ||",
+      "endsWith(format('{0}', github.event.workflow_run.id), '0') ||",
+      "endsWith(format('{0}', github.event.workflow_run.id), '5'))",
+    ].join(' '),
+  );
+  const shouldScan = (eventName, upstreamRun) =>
+    evaluateCondition(shadow.if, {
+      vars: { PR_FLOW_SWEEP_MODE: 'shadow' },
+      github: {
+        ref: 'refs/heads/main',
+        event_name: eventName,
+        event: { repository: { default_branch: 'main' }, ...upstreamRun },
+      },
+    });
+  for (let digit = 0; digit < 10; digit += 1) {
+    assert.equal(
+      shouldScan('workflow_run', { workflow_run: { id: 12340 + digit } }),
+      digit === 0 || digit === 5,
+    );
+  }
+  assert.equal(shouldScan('schedule'), true);
+  assert.equal(shouldScan('workflow_dispatch'), true);
+  assert.deepEqual(shadow.permissions, {
+    contents: 'read',
+    'pull-requests': 'read',
+    statuses: 'read',
+    checks: 'read',
+    actions: 'read',
+  });
+  const { group, 'cancel-in-progress': cancelInProgress } = shadow.concurrency;
+  assert.equal(cancelInProgress, false);
+  assert.equal(
+    renderTemplate(group, { github: { event: {} } }),
+    'pr-flow-sweep-shadow',
+  );
+  assert.equal(
+    renderTemplate(group, { github: { event: { schedule: scanOnly } } }),
+    'pr-flow-sweep-shadow',
+  );
+  for (const runId of [1, 2]) {
+    assert.equal(
+      renderTemplate(group, {
+        github: {
+          event: { schedule: workflow.on.schedule[0].cron },
+          run_id: runId,
+        },
+      }),
+      'pr-flow-sweep-shadow-recovery',
+    );
+  }
+  assert.equal(workflow.concurrency, undefined);
+  assert.equal(shadow.steps.length, 3);
+  const [checkout, setup, scan] = shadow.steps;
+  assert.match(checkout.uses, /^actions\/checkout@[0-9a-f]{40}$/);
+  assert.deepEqual(checkout.with, {
+    ref: '${{ github.sha }}',
+    'persist-credentials': false,
+  });
+  assert.equal(setup.uses, './.github/actions/setup-environment');
+  assert.equal(setup.if, undefined);
+  assert.equal(scan.if, undefined);
+  assert.deepEqual(scan.env, {
+    GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+    PR_FLOW_SWEEP_MODE: '${{ vars.PR_FLOW_SWEEP_MODE }}',
+    PR_FLOW_SWEEP_SCHEDULE: '${{ github.event.schedule }}',
+  });
+  assert.equal(scan.run, 'node .github/workflows/scripts/scan-pr-flow.cjs\n');
+});
+
+test('emits one machine-readable summary for an orchestrator completion', () => {
+  const lines = [];
+  call({
+    triggerEvent: 'workflow_run',
+    runGraphql: () => page([node(1, [status('pending')])]),
+    execGh: assert.fail,
+    log: (line) => lines.push(line),
+  });
+  assert.ok(lines.some((line) => line.startsWith('PR flow shadow ')));
+  assert.deepEqual(
+    lines.filter((line) => line.startsWith('SHADOW_SWEEP_SUMMARY ')),
+    [
+      `SHADOW_SWEEP_SUMMARY ${JSON.stringify({
+        triggerEvent: 'workflow_run',
+        status: 'ok',
+        recoverySlot: false,
+        cost: 2,
+        remaining: 48,
+        openPrs: 1,
+        candidatePrs: 1,
+        comparisonDiffs: null,
+      })}`,
+    ],
+  );
+});
 
 test('uses the watchdog reasons and its exact 30-minute boundary', () => {
   const pending = status('pending');
@@ -221,7 +346,7 @@ test('enumerates and deduplicates pages, discards a moved head, and reports page
   assert.equal(summary.restReads, 0);
   assert.equal(summary.comparison, null);
   assert.deepEqual(
-    lines.slice(0, -1),
+    lines.filter((line) => line.startsWith('would wake ')),
     [1, 3].map(
       (n) => `would wake PR #${n} because missing-ready-status (head=${head})`,
     ),
@@ -238,7 +363,11 @@ test('rejects missing and repeated cursors before logging any wake', () => {
     });
     assert.equal(result.status, 'unavailable');
     assert.match(result.error, /missing or repeated cursor/);
-    assert.equal(lines.length, 1);
+    assert.ok(lines.every((line) => !line.startsWith('would wake ')));
+    assert.match(
+      lines.at(-1),
+      /^SHADOW_SWEEP_SUMMARY .*"status":"unavailable"/,
+    );
   }
 });
 
@@ -365,7 +494,7 @@ test('recovery comparison uses one history capture and performs only read calls 
   assert.deepEqual(result.comparison.differences, []);
   assert.deepEqual(result.comparison.unknown, []);
   assert.match(lines[1], /would wake PR #1 because ready-pending-loop/);
-  assert.match(lines.at(-1), /"scope":"status-evidence-only"/);
+  assert.match(lines.at(-2), /"scope":"status-evidence-only"/);
 });
 
 test('retries transient REST errors once per endpoint and shares the result across the comparison', () => {
@@ -413,8 +542,11 @@ test('reports real comparator differences and keeps unavailable history distinct
     schedule: recovery,
     runGraphql: () => page([node(1, [pending])]),
   };
+  const lines = [];
   const result = call({
     ...common,
+    triggerEvent: 'schedule',
+    log: (line) => lines.push(line),
     execGh: (_command, args) =>
       JSON.stringify(
         args[3].endsWith('/status') ? { statuses: [success] } : [],
@@ -423,6 +555,15 @@ test('reports real comparator differences and keeps unavailable history distinct
   assert.deepEqual(result.comparison.differences, [
     { number: 1, head, shadow: ['stale-ready-pending'], watchdog: [] },
   ]);
+  const summary = JSON.parse(
+    lines.at(-1).slice('SHADOW_SWEEP_SUMMARY '.length),
+  );
+  assert.equal(summary.triggerEvent, 'schedule');
+  assert.deepEqual(summary.comparisonDiffs, {
+    count: 1,
+    entries: result.comparison.differences,
+    truncated: false,
+  });
   const unknown = call({
     ...common,
     execGh: () => {
@@ -432,4 +573,33 @@ test('reports real comparator differences and keeps unavailable history distinct
   assert.deepEqual(unknown.unknown, [{ number: 1, evidence: ['history'] }]);
   assert.deepEqual(unknown.comparison.unknown, [1]);
   assert.deepEqual(unknown.comparison.differences, []);
+});
+
+test('caps summary differences and retains the full structured comparison', () => {
+  const pending = status('pending');
+  const lines = [];
+  call({
+    schedule: recovery,
+    runGraphql: () =>
+      page([1, 2, 3, 4, 5, 6].map((number) => node(number, [pending]))),
+    log: (line) => lines.push(line),
+    execGh: (_command, args) =>
+      JSON.stringify(
+        args[3].endsWith('/status') ? { statuses: [status('success')] } : [],
+      ),
+  });
+
+  const full = JSON.parse(lines.at(-2).slice('PR flow shadow '.length));
+  assert.deepEqual(
+    full.comparison.differences.map(({ number }) => number),
+    [1, 2, 3, 4, 5, 6],
+  );
+  const summary = JSON.parse(
+    lines.at(-1).slice('SHADOW_SWEEP_SUMMARY '.length),
+  );
+  assert.deepEqual(summary.comparisonDiffs, {
+    count: 6,
+    entries: full.comparison.differences.slice(0, 5),
+    truncated: true,
+  });
 });
