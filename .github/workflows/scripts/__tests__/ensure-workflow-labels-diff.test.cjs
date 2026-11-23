@@ -12,6 +12,8 @@ const {
 } = require('../ensure-workflow-labels.cjs');
 const {
   createArgs,
+  isForbiddenError,
+  isQuotaError,
   planLabelChanges,
   updateArgs,
 } = require('../lib/workflow-labels-diff.cjs');
@@ -230,6 +232,32 @@ test('a write-side permission 403 stops the remaining writes without retrying', 
   assert.deepEqual(gh.waits, []);
   assert.match(gh.warnings[0], /lacks permission to write label/);
   assert.equal(result.skipped, 1);
+});
+
+test('a 403 without a permission phrase (e.g. abuse detection or an unknown body) is not a permission failure', () => {
+  assert.equal(
+    isForbiddenError(
+      ghError('HTTP 403: You have triggered an abuse detection mechanism'),
+    ),
+    false,
+  );
+  assert.equal(
+    isQuotaError(ghError('HTTP 403: abuse detection mechanism')),
+    true,
+  );
+  assert.equal(isForbiddenError(ghError('HTTP 403: something else')), false);
+  assert.equal(
+    isForbiddenError(
+      ghError('HTTP 403: Resource not accessible by integration'),
+    ),
+    true,
+  );
+  assert.equal(
+    isForbiddenError(
+      ghError('HTTP 403: Resource protected by organization SAML enforcement'),
+    ),
+    true,
+  );
 });
 
 test('a bare HTTP 403 (permission or SSO) is reported as such, not as quota, and skips the doomed fallback', () => {

@@ -24,16 +24,26 @@ function firstLine(error) {
 // An exhausted quota is not transient within a job: retrying only sleeps, and
 // every further call fails the same way. A bare 403 is not treated as quota:
 // permission and SSO failures also answer 403 and must keep their own path.
+// GitHub's abuse detection also answers 403 and is just as transient within a
+// job as a rate limit, so it counts here.
 function isQuotaError(error) {
-  return /rate limit|HTTP 429\b|\(HTTP 429\)/i.test(errorText(error));
+  return /rate limit|abuse detection|HTTP 429\b|\(HTTP 429\)/i.test(
+    errorText(error),
+  );
 }
 
-// A 403 that is not a rate limit (missing permission, SSO enforcement) cannot
-// succeed on any retry or per-label fallback either; it is reported as such
-// instead of as quota.
+// A 403 that names a permission problem (integration lacks access, SSO or SAML
+// enforcement) cannot succeed on any retry or per-label fallback either; it is
+// reported as such instead of as quota. A 403 with any other text is unknown
+// and keeps the normal retry path.
 function isForbiddenError(error) {
+  const text = errorText(error);
   return (
-    !isQuotaError(error) && /HTTP 403\b|\(HTTP 403\)/i.test(errorText(error))
+    !isQuotaError(error) &&
+    /HTTP 403\b|\(HTTP 403\)/i.test(text) &&
+    /resource not accessible|\bSSO\b|\bSAML\b|forbidden|must have admin/i.test(
+      text,
+    )
   );
 }
 
