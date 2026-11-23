@@ -1660,34 +1660,67 @@ test('makeDecision retries the finalizer after a failed run instead of parking',
 
   assert.equal(decision.state, 'flow/finalizer-dispatched');
   assert.equal(decision.dispatch?.key, 'finalizer');
-  assert.match(decision.reason, /Retrying finalizer after a failed run/);
-  assert.ok(decision.desiredLabels.includes('flow/finalizer-retry-1'));
+  assert.match(
+    decision.reason,
+    /Retrying finalizer after a failed run \(attempt 1\/3\)/,
+  );
 });
 
-test('makeDecision stops retrying a failed finalizer at the retry cap', () => {
-  const decision = makePrFlowDecision(
-    finalizerRetryContext(
-      {
-        ...basePr,
-        isDraft: false,
-        isCrossRepository: false,
-        baseRefName: 'main',
-        headRefName: 'feature',
-        files: ['src/app/page.tsx'],
-        labels: [
-          'flow/finalizer-dispatched',
-          'flow/finalizer-retry-3',
-          'ai-review-passed',
-          'security-review-passed',
-        ],
-      },
-      { finalizer: [completedWorkerRun('failure')], codeReview: [] },
-    ),
-  );
+test('finalizer failures drive three retries and then stop subsequent wakes on that head', () => {
+  const pr = {
+    ...basePr,
+    isDraft: false,
+    isCrossRepository: false,
+    baseRefName: 'main',
+    headRefName: 'feature',
+    files: ['src/app/page.tsx'],
+    labels: ['ai-review-passed', 'security-review-passed'],
+  };
+  const passLabels = [...pr.labels];
+  const finalizer = [];
+  const context = finalizerRetryContext(pr, { finalizer, codeReview: [] });
+  const initial = makePrFlowDecision(context);
+  assert.equal(initial.dispatch?.key, 'finalizer');
+
+  // Failed run history is available even when the dispatch label was never
+  // written. These runs represent successive finalizer-to-orchestrator wakes.
+  for (let retry = 1; retry <= 3; retry++) {
+    finalizer.push({
+      ...completedWorkerRun('failure', `2026-07-01T09:0${retry}:00Z`),
+      databaseId: 900 + retry,
+    });
+    const decision = makePrFlowDecision(context);
+    assert.equal(decision.dispatch?.key, 'finalizer');
+    assert.match(decision.reason, new RegExp(`attempt ${retry}/3`));
+    assert.deepEqual(decision.desiredLabels, ['flow/finalizer-dispatched']);
+  }
+
+  const latest = {
+    ...completedWorkerRun('failure', '2026-07-01T09:04:00Z'),
+    databaseId: 904,
+    url: 'https://example.test/run/904',
+  };
+  finalizer.push(latest);
+  const decision = makePrFlowDecision(context);
 
   assert.equal(decision.state, 'flow/manual-only');
   assert.equal(decision.dispatch, null);
   assert.match(decision.reason, /retry limit/i);
+  const visibility = buildFlowVisibility({ ...context, decision });
+  assert.equal(visibility.aggregate.state, 'success');
+  assert.match(visibility.aggregate.description, /Manual merge required/);
+  assert.equal(visibility.workers.finalizer.state, 'failure');
+  assert.equal(visibility.workers.finalizer.targetUrl, latest.url);
+  assert.match(makeComment({ pr, decision, visibility }), /retry limit/i);
+  assert.match(makeComment({ pr, decision, visibility }), /merge manually/);
+
+  pr.labels = [...passLabels, ...decision.desiredLabels];
+  assert.equal(makePrFlowDecision(context).dispatch, null);
+  assert.equal(
+    makePrFlowDecision({ ...context, pr: { ...pr, headSha: 'new-head' } })
+      .dispatch?.key,
+    'finalizer',
+  );
 });
 
 test('makeDecision keeps a succeeded finalizer without auto-merge terminal', () => {
@@ -1715,11 +1748,7 @@ test('makeDecision keeps a succeeded finalizer without auto-merge terminal', () 
   assert.match(decision.reason, /completed without enabling auto-merge/);
 });
 
-test('makeDecision advances retry counter when re-dispatched by watchdog', () => {
-  // Simulates the watchdog-sourced wake path: watchdog selects a PR with
-  // flow/finalizer-dispatched + prior retry label + failed finalizer run,
-  // dispatches the orchestrator, which should increment the retry counter
-  // and re-dispatch the finalizer.
+test('finalizer retries ignore legacy counter labels and runs for other PRs or heads', () => {
   const decision = makePrFlowDecision(
     finalizerRetryContext(
       {
@@ -1731,20 +1760,32 @@ test('makeDecision advances retry counter when re-dispatched by watchdog', () =>
         files: ['src/app/page.tsx'],
         labels: [
           'flow/finalizer-dispatched',
-          'flow/finalizer-retry-1',
+          'flow/finalizer-retry-3',
           'ai-review-passed',
           'security-review-passed',
         ],
       },
-      { finalizer: [completedWorkerRun('failure')], codeReview: [] },
+      {
+        finalizer: [
+          completedWorkerRun('failure'),
+          {
+            ...completedWorkerRun('failure'),
+            displayTitle: 'PR #420 @ abc123',
+          },
+          {
+            ...completedWorkerRun('failure'),
+            displayTitle: 'PR #42 @ old-head',
+          },
+        ],
+        codeReview: [],
+      },
     ),
   );
 
   assert.equal(decision.state, 'flow/finalizer-dispatched');
   assert.equal(decision.dispatch?.key, 'finalizer');
-  assert.ok(decision.desiredLabels.includes('flow/finalizer-retry-2'));
-  assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-1'));
-  assert.match(decision.reason, /attempt 2\/3/);
+  assert.ok(decision.labelsToRemove.includes('flow/finalizer-retry-3'));
+  assert.match(decision.reason, /attempt 1\/3/);
 });
 
 test('cross-repository PR cannot dispatch a privileged worker', () => {

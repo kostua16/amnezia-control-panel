@@ -211,7 +211,7 @@ jobs:
   wake-orchestrator:
     needs: [finalize]
     # Wake on a FAILED apply too: the orchestrator owns the bounded retry lane
-    # (flow/finalizer-retry-N, max 3) for apply failures, but it only runs when
+    # (at most three retries per PR head) for apply failures, but it only runs when
     # woken — without this wake a failed merge parked the PR on a failure
     # aggregate that the watchdog's pending-only rescue never saw.
     if: >-

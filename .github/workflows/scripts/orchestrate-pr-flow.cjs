@@ -14,7 +14,10 @@ const { fetchReviewInputsGraphql } = require('./lib/review-inputs-graphql.cjs');
 // Shared sticky-comment create-or-update helper (single source for the
 // marker-based PR comment upsert used across review/size/orchestration scripts).
 const { upsertComment } = require('./lib/sticky-comment.cjs');
-const { createWorkerRunsLoader } = require('./lib/worker-runs-by-head.cjs');
+const {
+  createWorkerRunsLoader,
+  toRunListShape,
+} = require('./lib/worker-runs-by-head.cjs');
 
 const TIMING_NAMES = [
   'resolve-pr',
@@ -427,7 +430,7 @@ function pathsMatch(files, paths) {
  */
 function matchesWorkerTitle(runItem, pr) {
   const title = runItem.displayTitle ?? runItem.display_title ?? '';
-  return title.includes(`PR #${pr.number}`) && title.includes(pr.headSha);
+  return title.includes(`PR #${pr.number} @ ${pr.headSha}`);
 }
 
 function summarizeWorkerRuns(workerRuns, workerName, pr) {
@@ -471,22 +474,12 @@ function workerRunSucceeded(summary) {
   return summary.latest?.conclusion === 'success';
 }
 
+// One initial run and up to three automatic retries per PR head.
 const MAX_FINALIZER_RETRIES = 3;
 
 // Maximum automatic re-dispatches of a failed code-review run per head SHA
 // (so at most MAX_CODE_REVIEW_RETRIES + 1 runs happen without a human).
 const MAX_CODE_REVIEW_RETRIES = 2;
-
-function getFinalizerRetryCount(labels) {
-  let maxRetry = 0;
-  for (const label of labels) {
-    const match = label.match(/^flow\/finalizer-retry-(\d+)$/);
-    if (match) {
-      maxRetry = Math.max(maxRetry, parseInt(match[1], 10));
-    }
-  }
-  return maxRetry;
-}
 
 function getWorkerTargetUrl(summary, fallbackUrl) {
   return summary.active?.url || summary.latest?.url || fallbackUrl;
@@ -907,7 +900,13 @@ function buildFlowVisibility({
   }
 
   const finalizerDispatchError = dispatchErrorFor('finalizer');
-  if (manualOnly) {
+  if (decision.finalizerRetriesExhausted) {
+    statuses.finalizer = failureStatus(
+      'finalizer',
+      'Finalizer retry limit reached. Manual merge required.',
+      getWorkerTargetUrl(finalizerRuns, currentRunUrl),
+    );
+  } else if (manualOnly) {
     statuses.finalizer = skippedStatus('finalizer', 'N/A: PR is manual-only.');
   } else if (closedOrMerged) {
     statuses.finalizer = skippedStatus(
@@ -943,12 +942,9 @@ function buildFlowVisibility({
       'Finalizer was dispatched.',
     );
   } else if (workerRunSucceeded(finalizerRuns)) {
-    const retries = getFinalizerRetryCount(decision.labelsToAdd);
-    const retryInfo =
-      retries > 0 ? ` (attempt ${retries}/${MAX_FINALIZER_RETRIES})` : '';
     statuses.finalizer = waitingStatus(
       'finalizer',
-      `Finalizer completed without enabling auto-merge; waiting to retry.${retryInfo}`,
+      'Finalizer completed without enabling auto-merge; waiting to retry.',
       getWorkerTargetUrl(finalizerRuns, currentRunUrl),
     );
   } else if (finalizerAlreadyDispatched) {
@@ -1003,7 +999,9 @@ function buildFlowVisibility({
     // If manual-only PR has completed all advisory review labels, indicate reviews passed.
     // Mirror makeDecision's hasAll(codeReviewWorker.passLabels) so the aggregate cannot
     // report "advisory reviews passed" when only a subset of required reviews completed.
-    if (hasAll(labels, workers.codeReview?.passLabels ?? [])) {
+    if (decision.finalizerRetriesExhausted) {
+      aggregateDescription = statuses.finalizer.description;
+    } else if (hasAll(labels, workers.codeReview?.passLabels ?? [])) {
       aggregateDescription =
         'Manual-only PR: advisory reviews passed. Ready for human merge decision.';
     } else {
@@ -1197,6 +1195,12 @@ function buildFlowGuidance({
       break;
 
     case 'flow/manual-only':
+      if (decision.finalizerRetriesExhausted) {
+        addNext('Inspect the PR Finalizer run or comment for the failure.');
+        addNext('Review and merge manually when ready.');
+        addStopControl();
+        break;
+      }
       addNext('Human review is required before merge or follow-up automation.');
       addNext(
         'Comment `/approve` to record `maintainer-approved` for this head if PR Flow should continue.',
@@ -2211,7 +2215,6 @@ function makeDecision(context) {
   const autoMergeEnabled = Boolean(pr.autoMergeRequest);
   const finalizerSucceeded = workerRunSucceeded(finalizerRuns);
   const finalizerFailed = workerRunFailed(finalizerRuns);
-  const finalizerRetries = getFinalizerRetryCount(currentLabels);
   const retryLabels = currentLabels.filter((l) =>
     /^flow\/finalizer-retry-\d+$/.test(l),
   );
@@ -2240,7 +2243,7 @@ function makeDecision(context) {
   if (
     finalizerRuns.active ||
     (finalizerAlreadyDispatched && autoMergeEnabled) ||
-    (finalizerAlreadyDispatched && finalizerSucceeded)
+    finalizerSucceeded
   ) {
     const reason = finalizerSucceeded
       ? autoMergeEnabled
@@ -2256,38 +2259,31 @@ function makeDecision(context) {
     );
   }
 
-  if (
-    finalizerAlreadyDispatched &&
-    !finalizerSucceeded &&
-    finalizerRetries >= MAX_FINALIZER_RETRIES
-  ) {
-    return finish(
-      'flow/manual-only',
-      `Finalizer retry limit (${MAX_FINALIZER_RETRIES}) reached without auto-merge; falling back to manual merge.`,
-      null,
-      ['flow/manual-only'],
-      retryLabels,
-    );
+  const failedAttempts = finalizerRuns.failedCount;
+  if (failedAttempts > MAX_FINALIZER_RETRIES) {
+    return {
+      ...finish(
+        'flow/manual-only',
+        `Finalizer retry limit (${MAX_FINALIZER_RETRIES}) reached without auto-merge; falling back to manual merge.`,
+        null,
+        [],
+        retryLabels,
+      ),
+      finalizerRetriesExhausted: true,
+    };
   }
-
-  const newRetryCount = finalizerRetries + 1;
-  const retryExtraLabels = finalizerAlreadyDispatched
-    ? [`flow/finalizer-retry-${newRetryCount}`]
-    : [];
 
   return finish(
     'flow/finalizer-dispatched',
-    finalizerAlreadyDispatched
-      ? finalizerFailed
-        ? `Retrying finalizer after a failed run (attempt ${newRetryCount}/${MAX_FINALIZER_RETRIES}).`
-        : `Dispatching finalizer (attempt ${newRetryCount}/${MAX_FINALIZER_RETRIES}).`
+    finalizerFailed
+      ? `Retrying finalizer after a failed run (attempt ${failedAttempts}/${MAX_FINALIZER_RETRIES}).`
       : 'Dispatching finalizer.',
     {
       key: 'finalizer',
       workflow: finalizerWorker.workflow,
       inputs: finalizerWorker.inputs,
     },
-    [...retryExtraLabels, ...manualOnlyLabels],
+    manualOnlyLabels,
     retryLabels,
   );
 }
@@ -2315,6 +2311,30 @@ function collectWorkerRuns(config, workerName, { strict = false } = {}) {
     ],
     strict ? undefined : [],
   );
+}
+
+function collectLegacyWorkerRuns(config, workerName, pr) {
+  const recent = collectWorkerRuns(config, workerName);
+  if (workerName !== 'finalizer' || pr.isCrossRepository || !pr.headSha) {
+    return recent;
+  }
+
+  // Keep recent base-ref runs, but also read this head specifically so other
+  // PRs' finalizer runs cannot push its retry history out of the global list.
+  // A failed head lookup must stop the wake instead of resetting the budget.
+  const workflow = config.workers?.finalizer?.workflow;
+  if (!workflow) return recent;
+  const headRuns = runJson('gh', [
+    'api',
+    `repos/${getRepoSlug()}/actions/workflows/${workflow}/runs?head_sha=${encodeURIComponent(pr.headSha)}&per_page=50`,
+    '--jq',
+    '[.workflow_runs[] | {id, status, conclusion, event, display_title, created_at, updated_at, html_url}]',
+  ]).map(toRunListShape);
+  return [
+    ...new Map(
+      [...recent, ...headRuns].map((item) => [item.databaseId, item]),
+    ).values(),
+  ];
 }
 
 function ensureLabels(config) {
@@ -2534,7 +2554,7 @@ function main() {
     pr,
     getRepo: getRepoSlug,
     run,
-    loadLegacy: (workerName) => collectWorkerRuns(config, workerName),
+    loadLegacy: (workerName) => collectLegacyWorkerRuns(config, workerName, pr),
   });
   const getWorkerRuns = (workerName) => {
     if (workerRuns[workerName] === undefined) {
@@ -2702,7 +2722,6 @@ module.exports = {
   fetchPublishSnapshotGraphql,
   fetchPrReviewComments,
   fetchPrReviews,
-  getFinalizerRetryCount,
   getWorkerDispatchRef,
   headCommittedAtFromCommits,
   getWorkerTargetUrl,

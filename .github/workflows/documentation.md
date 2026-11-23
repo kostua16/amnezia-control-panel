@@ -232,6 +232,12 @@ a human makes the final decision. Hard blockers such as `do-not-merge`,
 AI/security concern labels, and blocked dependency labels still fail
 `pr-flow/ready`.
 
+If Finalizer fails, PR Orchestrator allows up to three retries after the
+initial attempt. It counts failed Finalizer runs for the PR's current head
+SHA. After the fourth failure, the orchestration comment and statuses direct
+the maintainer to the failed run and manual merge, and Orchestrator stops
+dispatching Finalizer for that head.
+
 > See [PR Orchestrator Concurrency](#pr-orchestrator-concurrency) for how
 > `pr-flow.yml` groups runs by event class and why a cancelled `orchestrate`
 > check should no longer appear on PRs.
