@@ -142,10 +142,12 @@ test('Auto Cover jobs stay soft about auth so an exhausted quota defers instead 
     const doc = yamlLib.load(
       fs.readFileSync(path.join(workflowsDir, file), 'utf8'),
     );
+    assert.ok(doc.jobs?.[jobName], `${file}: job ${jobName} exists`);
     const setup = doc.jobs[jobName].steps.find((step) =>
       String(step.uses ?? '').endsWith('/setup-environment'),
     );
     assert.ok(setup, `${file}: ${jobName} calls setup-environment`);
+    assert.ok(setup.with, `${file}: setup-environment has inputs`);
     assert.equal(setup.with['require-gh-auth'], 'false', file);
   }
 });

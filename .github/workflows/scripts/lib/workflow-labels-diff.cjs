@@ -132,7 +132,7 @@ function updateArgs({ name, label }) {
   ];
 }
 
-// Returns 'ok' | 'exists' | 'missing' | 'quota' | 'failed'. Only unknown
+// Returns 'ok' | 'exists' | 'missing' | 'quota' | 'forbidden' | 'failed'. Only unknown
 // errors are retried; their final failure is a warning, never a job failure.
 function runWrite(args, { run, wait }) {
   let lastError = null;
@@ -142,6 +142,7 @@ function runWrite(args, { run, wait }) {
       return { outcome: 'ok' };
     } catch (error) {
       if (isQuotaError(error)) return { outcome: 'quota', error };
+      if (isForbiddenError(error)) return { outcome: 'forbidden', error };
       if (isAlreadyExistsError(error)) return { outcome: 'exists', error };
       if (isNotFoundError(error)) return { outcome: 'missing', error };
       lastError = error;
@@ -173,6 +174,15 @@ function applyLabelPlan(plan, { run, wait, warn = console.warn }) {
       result.skipped = writes.length - index - 1;
       warn(
         `::warning::GitHub API quota exhausted while ensuring label "${item.name}" (${firstLine(error)}); skipping ${result.skipped} remaining label write(s) — labels are idempotent setup, not validation.`,
+      );
+      break;
+    }
+    if (outcome === 'forbidden') {
+      // A permission failure repeats for every remaining write: stop instead of
+      // retrying each one.
+      result.skipped = writes.length - index - 1;
+      warn(
+        `::warning::The token lacks permission to write label "${item.name}" (${firstLine(error)}); skipping ${result.skipped} remaining label write(s) — labels are idempotent setup, not validation.`,
       );
       break;
     }

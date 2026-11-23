@@ -217,6 +217,21 @@ test('HTTP 429 on the list read counts as quota exhaustion', () => {
   assert.deepEqual(gh.writes, []);
 });
 
+test('a write-side permission 403 stops the remaining writes without retrying', () => {
+  const gh = fakeGh({
+    existing: [],
+    onWrite: () => {
+      throw ghError('HTTP 403: Resource not accessible by integration');
+    },
+  });
+  const result = reconcileLabels(['auto-fix', 'area/planning'], POLICY, gh);
+  assert.equal(result.mode, 'diff');
+  assert.equal(gh.writes.length, 1);
+  assert.deepEqual(gh.waits, []);
+  assert.match(gh.warnings[0], /lacks permission to write label/);
+  assert.equal(result.skipped, 1);
+});
+
 test('a bare HTTP 403 (permission or SSO) is reported as such, not as quota, and skips the doomed fallback', () => {
   const gh = fakeGh({
     listError: ghError('HTTP 403: Resource not accessible by integration'),
