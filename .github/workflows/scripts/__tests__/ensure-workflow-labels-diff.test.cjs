@@ -12,7 +12,9 @@ const {
 } = require('../ensure-workflow-labels.cjs');
 const {
   createArgs,
+  isAlreadyExistsError,
   isForbiddenError,
+  isNotFoundError,
   isQuotaError,
   planLabelChanges,
   updateArgs,
@@ -345,6 +347,22 @@ test('stdout is read too, and the message is the fallback when gh printed nothin
     true,
   );
   assert.equal(isQuotaError(new Error('boom')), false);
+});
+
+test('already-exists and not-found are matched against gh output, not the command line', () => {
+  const commandLine =
+    'Command failed: gh label create "already exists Not Found HTTP 404"';
+  const transient = new Error(commandLine);
+  transient.stderr = 'HTTP 502: Bad Gateway';
+  assert.equal(isAlreadyExistsError(transient), false);
+  assert.equal(isNotFoundError(transient), false);
+
+  const exists = new Error(commandLine);
+  exists.stderr = 'label with name "x" already_exists';
+  assert.equal(isAlreadyExistsError(exists), true);
+  const missing = new Error(commandLine);
+  missing.stderr = 'gh: Not Found (HTTP 404)';
+  assert.equal(isNotFoundError(missing), true);
 });
 
 test('a label named like a permission phrase keeps the retry path on a transient write failure', () => {
