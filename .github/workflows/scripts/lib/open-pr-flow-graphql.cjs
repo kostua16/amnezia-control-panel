@@ -11,15 +11,11 @@ query OpenPrFlow($owner: String!, $name: String!, $after: String, $first: Int!) 
                  orderBy: {field: CREATED_AT, direction: ASC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number state isDraft isCrossRepository headRefOid
+        number state isDraft headRefOid
         labels(first: 32) { nodes { name } pageInfo { hasNextPage } }
-        reviews(last: 8) {
-          nodes { state submittedAt commit { oid } }
-          pageInfo { hasPreviousPage }
-        }
         commits(last: 1) {
           nodes { commit {
-            oid committedDate
+            oid
             statusCheckRollup {
               contexts(first: 64) {
                 pageInfo { hasNextPage }
@@ -27,7 +23,7 @@ query OpenPrFlow($owner: String!, $name: String!, $after: String, $first: Int!) 
                   __typename
                   ... on StatusContext { context state createdAt }
                   ... on CheckRun {
-                    name status conclusion startedAt completedAt checkSuite { id }
+                    name status conclusion completedAt checkSuite { id }
                   }
                 }
               }
@@ -35,7 +31,7 @@ query OpenPrFlow($owner: String!, $name: String!, $after: String, $first: Int!) 
             checkSuites(first: 24) {
               pageInfo { hasNextPage }
               nodes {
-                id status conclusion app { slug }
+                id status conclusion
                 workflowRun { databaseId runAttempt event workflow { name } }
               }
             }
@@ -50,9 +46,9 @@ function startsWithPath(path, prefix) {
   return prefix.every((part, index) => path[index] === part);
 }
 
-function complete(connection, pageFlag = 'hasNextPage') {
+function complete(connection) {
   return (
-    connection?.pageInfo?.[pageFlag] === false &&
+    connection?.pageInfo?.hasNextPage === false &&
     Array.isArray(connection.nodes) &&
     connection.nodes.every(Boolean)
   );
@@ -95,15 +91,6 @@ function normalizeFlowObservation(node, errors = []) {
     node.labels.nodes.every((label) => typeof label.name === 'string')
       ? node.labels.nodes.map((label) => label.name)
       : null;
-  const reviews =
-    !affected('reviews') && complete(node.reviews, 'hasPreviousPage')
-      ? node.reviews.nodes.map((review) => ({
-          state: lower(review.state),
-          submittedAt: review.submittedAt,
-          headSha: review.commit?.oid ?? null,
-        }))
-      : null;
-
   const rollup = commit?.statusCheckRollup;
   const contexts = rollup?.contexts;
   const rollupKnown =
@@ -152,11 +139,9 @@ function normalizeFlowObservation(node, errors = []) {
     number: node.number,
     state: affected('state') ? null : node.state,
     isDraft: affected('isDraft') ? null : node.isDraft,
-    isCrossRepository: node.isCrossRepository,
     headRefOid: node.headRefOid,
     headVerified,
     labels,
-    reviews,
     statuses: contextNodes === null ? null : latestStatuses(contextNodes),
     checks:
       contextNodes?.flatMap((context) =>
@@ -167,7 +152,6 @@ function normalizeFlowObservation(node, errors = []) {
                 suiteId: context.checkSuite?.id,
                 status: lower(context.status),
                 conclusion: lower(context.conclusion),
-                startedAt: context.startedAt,
                 completedAt: context.completedAt,
               },
             ]

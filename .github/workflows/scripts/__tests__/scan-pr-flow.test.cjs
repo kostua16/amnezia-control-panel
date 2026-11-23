@@ -155,6 +155,10 @@ test('only complete, unambiguous current-head check evidence supports a shadow c
       requiredChecks,
     }).candidates.flatMap((item) => item.reasons);
   assert.deepEqual(reasons(), ['checks-completed-after-ready']);
+  assert.deepEqual(
+    reasons({ checks: [{ ...check, conclusion: 'cancelled' }] }),
+    ['checks-completed-after-ready'],
+  );
   for (const overrides of [
     { headVerified: false },
     { suitesComplete: false },
@@ -165,7 +169,6 @@ test('only complete, unambiguous current-head check evidence supports a shadow c
     { observedRuns: [{ ...run, event: 'push' }] },
     { observedRuns: [{ ...run, workflow: 'Other' }] },
     { checks: [{ ...check, suiteId: 'stale' }] },
-    { checks: [{ ...check, conclusion: 'cancelled' }] },
     { checks: [{ ...check, completedAt: ready.created_at }] },
     { checks: [{ ...check, completedAt: '2026-10-01T00:28:00.001Z' }] },
     { statuses: [status('pending', '2026-10-01T00:29:00Z')] },
@@ -275,6 +278,14 @@ test('low GraphQL quota stops discovery before any recovery comparison reads', (
   assert.equal(result.pages[0].remaining, 1);
 });
 
+test('keeps a complete result when the last GraphQL page leaves the quota low', () => {
+  const response = page([node(1)]);
+  response.data.rateLimit.remaining = 1;
+  const result = call({ execGh: assert.fail, runGraphql: () => response });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.candidatePrs, 1);
+});
+
 test('retains usable GraphQL observations when gh exits with a partial response', () => {
   const response = page([node(1), node(2)]);
   response.errors = [
@@ -354,6 +365,45 @@ test('recovery comparison uses one history capture and performs only read calls 
   assert.deepEqual(result.comparison.differences, []);
   assert.deepEqual(result.comparison.unknown, []);
   assert.match(lines[1], /would wake PR #1 because ready-pending-loop/);
+  assert.match(lines.at(-1), /"scope":"status-evidence-only"/);
+});
+
+test('retries transient REST errors once per endpoint and shares the result across the comparison', () => {
+  const pending = status('pending');
+  const attempts = new Map();
+  const result = call({
+    schedule: recovery,
+    runGraphql: () => page([node(1, [pending]), node(2, [pending])]),
+    execGh(_command, args) {
+      const endpoint = args[3];
+      const count = (attempts.get(endpoint) ?? 0) + 1;
+      attempts.set(endpoint, count);
+      if (count === 1) throw new Error('HTTP 503');
+      return JSON.stringify(
+        endpoint.endsWith('/status')
+          ? { statuses: [pending] }
+          : Array(8).fill(pending),
+      );
+    },
+  });
+  assert.deepEqual([...attempts.values()], [2, 2]);
+  assert.equal(result.restReads, 4);
+  assert.deepEqual(result.comparison.unknown, []);
+  assert.deepEqual(result.comparison.differences, []);
+});
+
+test('stops REST reads when throttled and caches the unavailable result', () => {
+  const pending = status('pending');
+  const result = call({
+    schedule: recovery,
+    runGraphql: () => page([node(1, [pending]), node(2, [pending])]),
+    execGh() {
+      throw new Error('HTTP 429');
+    },
+  });
+  assert.equal(result.restReads, 1);
+  assert.equal(result.restThrottled, true);
+  assert.deepEqual(result.comparison.unknown, [1, 2]);
 });
 
 test('reports real comparator differences and keeps unavailable history distinct from empty', () => {

@@ -463,7 +463,7 @@ describe('PR flow workflow invariants', () => {
       readWorkflow('.github/workflows/pr-flow-watchdog.yml'),
     ) as {
       on: { schedule: { cron: string }[]; workflow_dispatch: object };
-      concurrency: { group: string; 'cancel-in-progress': boolean };
+      concurrency: { group: string; 'cancel-in-progress': string };
       jobs: {
         watch: { if: string };
         shadow: {
@@ -484,7 +484,10 @@ describe('PR flow workflow invariants', () => {
       workflow.jobs.watch.if,
       `github.event_name == 'workflow_dispatch' || github.event.schedule == '${recovery}'`,
     );
-    assert.equal(workflow.concurrency['cancel-in-progress'], true);
+    assert.equal(
+      workflow.concurrency['cancel-in-progress'],
+      `\${{ github.event.schedule != '${scanOnly}' }}`,
+    );
     assert.equal(
       workflow.concurrency.group,
       `\${{ github.event.schedule == '${scanOnly}' && 'pr-flow-sweep-shadow' || 'pr-flow-watchdog' }}`,

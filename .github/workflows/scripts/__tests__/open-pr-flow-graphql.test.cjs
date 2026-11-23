@@ -18,7 +18,6 @@ const node = (commit = { oid: head, statusCheckRollup: null }) => ({
   isDraft: false,
   headRefOid: head,
   labels: connection([]),
-  reviews: { nodes: [], pageInfo: { hasPreviousPage: false } },
   commits: { nodes: [{ commit }] },
 });
 const status = (state, createdAt) => ({
@@ -47,7 +46,7 @@ test('verified null rollup is empty, but errored, missing and truncated rollups 
   );
 });
 
-test('normalizes the latest status creation time even when the state repeats and reviews are partial', () => {
+test('normalizes the latest status creation time even when the state repeats and other fields are partial', () => {
   const pr = node({
     oid: head,
     statusCheckRollup: {
@@ -57,13 +56,12 @@ test('normalizes the latest status creation time even when the state repeats and
       ]),
     },
   });
-  pr.reviews.pageInfo.hasPreviousPage = true;
   pr.labels.pageInfo.hasNextPage = true;
   const observation = normalizeFlowObservation(pr, [
-    { path: ['reviews', 'nodes', 0] },
+    { path: ['commits', 'nodes', 0, 'commit', 'checkSuites'] },
   ]);
   assert.equal(observation.labels, null);
-  assert.equal(observation.reviews, null);
+  assert.equal(observation.suitesComplete, false);
   assert.equal(observation.statuses.length, 1);
   assert.equal(observation.statuses[0].state, 'pending');
   assert.equal(observation.statuses[0].created_at, '2026-10-01T00:02:00Z');
@@ -141,7 +139,6 @@ test('fetches a bounded page and scopes partial errors to the matching PR', () =
       for (const selection of [
         'rateLimit { cost remaining limit resetAt }',
         'labels(first: 32)',
-        'reviews(last: 8)',
         'commits(last: 1)',
         'contexts(first: 64)',
         'checkSuites(first: 24)',
@@ -149,6 +146,10 @@ test('fetches a bounded page and scopes partial errors to the matching PR', () =
       ]) {
         assert.ok(query.includes(selection), selection);
       }
+      assert.doesNotMatch(
+        query,
+        /\b(?:reviews|isCrossRepository|committedDate|startedAt|slug)\b/,
+      );
       return {
         data: {
           rateLimit,

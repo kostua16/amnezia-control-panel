@@ -6,6 +6,7 @@ const {
   fetchOpenPrFlowPage,
   PAGE_SIZE,
 } = require('./lib/open-pr-flow-graphql.cjs');
+const { isTransient } = require('./lib/retry.cjs');
 const {
   createAutoCoverGraphqlRunner,
 } = require('./fetch-auto-cover-context.cjs');
@@ -59,7 +60,7 @@ function completedRequiredChecks(pr, required, nowMs) {
       const [job] = matches;
       if (
         matches.length !== 1 ||
-        !['pass', 'fail', 'skip'].includes(job.bucket) ||
+        !['pass', 'fail', 'skip', 'cancel'].includes(job.bucket) ||
         !Number.isFinite(Date.parse(job.completedAt))
       )
         return false;
@@ -165,10 +166,10 @@ function readAllPages({ owner, repo, runGraphql, movedHeads }) {
       continue;
     }
     observations.push(...page.observations);
+    if (!page.pageInfo.hasNextPage) break;
     if (page.rateLimit?.remaining < MIN_GRAPHQL_REMAINING) {
       throw new Error('GraphQL budget is too low for a complete shadow scan.');
     }
-    if (!page.pageInfo.hasNextPage) break;
     after = page.pageInfo.endCursor;
     if (typeof after !== 'string' || !after.trim() || cursors.has(after)) {
       throw new Error(
@@ -242,6 +243,7 @@ function compareWatchdog(
       : [{ number, head: headRefOid, shadow, watchdog }];
   });
   return {
+    scope: 'status-evidence-only',
     differences,
     unknown: [...unknown],
     incumbent: incumbent
@@ -325,26 +327,36 @@ function scanPrFlow({
   let restThrottled = false;
   const statusReadsByEndpoint = new Map();
   const fetchStatuses = (endpoint, kind) => {
-    const remaining = Math.floor(comparisonDeadline - performance.now());
-    if (restThrottled || remaining <= 0) return null;
-    try {
-      restReads += 1;
-      const value = JSON.parse(
-        execGh('gh', ['api', '--method', 'GET', endpoint], {
-          encoding: 'utf8',
-          timeout: Math.min(remaining, 15_000),
-          maxBuffer: 8 * 1024 * 1024,
-        }),
-      );
-      return Array.isArray(kind === 'status' ? value?.statuses : value)
-        ? value
-        : null;
-    } catch (error) {
-      restThrottled = /HTTP 429|rate limit/i.test(
-        String(error.stderr || error.message),
-      );
-      return null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const remaining = Math.floor(comparisonDeadline - performance.now());
+      if (restThrottled || remaining <= 0) return null;
+      try {
+        restReads += 1;
+        const value = JSON.parse(
+          execGh('gh', ['api', '--method', 'GET', endpoint], {
+            encoding: 'utf8',
+            timeout: Math.min(remaining, 15_000),
+            maxBuffer: 8 * 1024 * 1024,
+          }),
+        );
+        return Array.isArray(kind === 'status' ? value?.statuses : value)
+          ? value
+          : null;
+      } catch (error) {
+        const detail = String(error.stderr || error.message);
+        restThrottled = /HTTP 429|rate limit/i.test(detail);
+        if (
+          restThrottled ||
+          !(
+            isTransient(detail) ||
+            error.code === 'ETIMEDOUT' ||
+            error.signal === 'SIGTERM'
+          )
+        )
+          return null;
+      }
     }
+    return null;
   };
   const readStatuses = (pr, kind) => {
     const suffix = kind === 'status' ? 'status' : 'statuses?per_page=100';
