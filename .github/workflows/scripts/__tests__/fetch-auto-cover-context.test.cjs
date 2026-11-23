@@ -15,6 +15,8 @@ const {
   fetchPrCommitsGraphql,
   mapCommits,
   resolveAutoCoverSource,
+  createGraphqlStats,
+  withRateLimitRecording,
   AUTO_COVER_MARKER,
 } = require('../fetch-auto-cover-context.cjs');
 const { evaluateExternalReview } = require('../evaluate-external-review.cjs');
@@ -164,6 +166,8 @@ test('fetchAutoCoverContext treats an empty scan as a clean no-op', async () => 
   assert.equal(fetched, false);
   assert.deepEqual(manifest.prs, []);
   assert.deepEqual(manifest.ok, []);
+  // stable manifest shape: the quota block exists even for empty scans
+  assert.deepEqual(manifest.graphql, { cost: 0, remaining: null });
   assert.equal(
     fs.readFileSync(path.join(dir, 'prs-to-evaluate.txt'), 'utf8'),
     '',
@@ -468,7 +472,10 @@ function commitsResponse(
   pageInfo = PAGE_INFO_DONE,
 ) {
   return {
-    data: { repository: { pullRequest: { commits: { nodes, pageInfo } } } },
+    data: {
+      rateLimit: { cost: 1, remaining: 4998 },
+      repository: { pullRequest: { commits: { nodes, pageInfo } } },
+    },
   };
 }
 
@@ -553,6 +560,8 @@ test('repro: legacy REST path costs 7 REST calls per PR plus 1 shared run list',
   // head commit, combined status, check-runs) + 1 shared fix-review run list.
   assert.equal(perPr.length, 14);
   assert.equal(shared.length, 1);
+  // the quota block keeps its stable shape on the REST path too
+  assert.deepEqual(manifest.graphql, { cost: 0, remaining: null });
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -581,6 +590,8 @@ test('graphql path: lib query + commits query per PR, zero per-PR REST calls, RE
     .map(({ variables }) => variables.number)
     .sort();
   assert.deepEqual(inputsNumbers, [1, 2]);
+  // quota accounting: summed cost (2 queries x 2 PRs), minimum finite remaining
+  assert.deepEqual(manifest.graphql, { cost: 4, remaining: 4998 });
 
   for (const pr of ['1', '2']) {
     const read = (name) =>
@@ -687,7 +698,12 @@ test('a 200 response carrying GraphQL errors falls back to REST, never empty con
     viewPull: viewPullHead(),
     runGraphql: fakeRunGraphql({
       reviewInputs: {
-        data: { repository: { pullRequest: { comments: { nodes: [] } } } },
+        data: {
+          // a 200-with-errors body still carries its rateLimit numbers, and
+          // they must be counted even though the payload is rejected
+          rateLimit: { cost: 1, remaining: 100 },
+          repository: { pullRequest: { comments: { nodes: [] } } },
+        },
         errors: [{ message: 'Something broke server-side' }],
       },
     }),
@@ -699,6 +715,8 @@ test('a 200 response carrying GraphQL errors falls back to REST, never empty con
     ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
   );
   assert.equal(perPr.length, 7);
+  // the failed query's cost is still accounted, not dropped
+  assert.deepEqual(manifest.graphql, { cost: 1, remaining: 100 });
   const comments = JSON.parse(
     fs.readFileSync(path.join(dir, 'pr-6-comments.json'), 'utf8'),
   );
@@ -756,7 +774,15 @@ test('a GraphQL transport failure isolates per PR when REST still works', async 
     }),
     runGraphql: (query, variables) => {
       if (variables.number === 21) {
-        throw new Error('gh api graphql failed: HTTP 502: Bad Gateway');
+        const failure = new Error(
+          'gh api graphql failed: HTTP 502: Bad Gateway',
+        );
+        // execFileSync-style failures keep the body on stdout; its rateLimit
+        // numbers must still reach the accounting
+        failure.stdout = JSON.stringify({
+          data: { rateLimit: { cost: 2, remaining: 50 } },
+        });
+        throw failure;
       }
       return fakeRunGraphql()(query, variables);
     },
@@ -770,6 +796,9 @@ test('a GraphQL transport failure isolates per PR when REST still works', async 
     ({ apiPath }) => !apiPath.includes('/actions/workflows/'),
   );
   assert.equal(perPr.length, 7);
+  // PR 20: cost 1+1, remaining min(4999, 4998); PR 21: cost 2 from the failed
+  // response body, remaining 50 — scan totals sum cost and keep the minimum.
+  assert.deepEqual(manifest.graphql, { cost: 4, remaining: 50 });
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -852,6 +881,9 @@ test('a failing commits query only refetches commits via REST', async () => {
     ],
   );
   assert.deepEqual(perPr[0].opts, { paginate: true });
+  // only the successful lib query is accounted; the errored commits envelope
+  // carried data:null, so there is nothing to count there
+  assert.deepEqual(manifest.graphql, { cost: 1, remaining: 4999 });
   const commits = JSON.parse(
     fs.readFileSync(path.join(dir, 'pr-12-commits.json'), 'utf8'),
   );
@@ -919,12 +951,26 @@ test('commits pagination overflow beyond the page cap falls back to REST commits
 });
 
 test('PR_FLOW_AUTO_COVER_SOURCE=rest keeps production on the legacy REST path', async () => {
+  // explicit values never consult the environment
   assert.equal(resolveAutoCoverSource(''), 'graphql');
-  assert.equal(resolveAutoCoverSource(undefined), 'graphql');
   assert.equal(resolveAutoCoverSource('rest'), 'rest');
   assert.equal(resolveAutoCoverSource('GRAPHQL'), 'graphql');
   // a typo must never silently keep the newer path
   assert.equal(resolveAutoCoverSource('graphgl'), 'rest');
+
+  // The omitted-source default reads the environment: snapshot and restore it
+  // so a rollback value exported in the shell/CI cannot flip these assertions.
+  const prevSource = process.env.PR_FLOW_AUTO_COVER_SOURCE;
+  try {
+    delete process.env.PR_FLOW_AUTO_COVER_SOURCE;
+    assert.equal(resolveAutoCoverSource(), 'graphql');
+    assert.equal(resolveAutoCoverSource(undefined), 'graphql');
+    process.env.PR_FLOW_AUTO_COVER_SOURCE = 'rest';
+    assert.equal(resolveAutoCoverSource(), 'rest');
+  } finally {
+    if (prevSource === undefined) delete process.env.PR_FLOW_AUTO_COVER_SOURCE;
+    else process.env.PR_FLOW_AUTO_COVER_SOURCE = prevSource;
+  }
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
   const restCalls = [];
@@ -1029,4 +1075,68 @@ test('mapCommits rebuilds the REST pulls/commits item shape', () => {
     ],
   );
   assert.deepEqual(mapCommits([]), []);
+});
+
+test('manifest.graphql sums cost and keeps the minimum finite remaining; missing values stay null', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-cover-ctx-'));
+  const withRateLimit = (response, rateLimit) => {
+    const copy = JSON.parse(JSON.stringify(response));
+    if (rateLimit === null) delete copy.data.rateLimit;
+    else copy.data.rateLimit = rateLimit;
+    return copy;
+  };
+  const manifest = await fetchAutoCoverContext({
+    repo: 'owner/repo',
+    prs: ['30', '31'],
+    outDir: dir,
+    source: 'graphql',
+    fetchJson: legacyFetchJson([]),
+    viewPull: viewPullHead(),
+    runGraphql: (query, variables) => {
+      const isCommits = String(query).includes('AutoCoverPrCommits');
+      if (variables.number === 30) {
+        return isCommits
+          ? withRateLimit(commitsResponse(), { cost: 2, remaining: 90 })
+          : withRateLimit(reviewInputsResponse(), { cost: 5, remaining: 100 });
+      }
+      // PR 31: the review-inputs response carries NO rateLimit block at all
+      return isCommits
+        ? withRateLimit(commitsResponse(), { cost: 1, remaining: 200 })
+        : withRateLimit(reviewInputsResponse(), null);
+    },
+    concurrency: 2,
+  });
+  assert.deepEqual(manifest.ok, ['30', '31']);
+  // cost sums across both PRs and both queries; a missing rateLimit block
+  // contributes nothing — it never collapses to a fake "0 remaining"
+  assert.deepEqual(manifest.graphql, { cost: 8, remaining: 90 });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('rate-limit recording guards non-finite values and reads failed response bodies', () => {
+  const stats = createGraphqlStats();
+  const run = withRateLimitRecording((query) => {
+    if (query === 'bad') {
+      const failure = new Error('boom');
+      failure.stdout = JSON.stringify({
+        data: { rateLimit: { cost: 3, remaining: 7 } },
+      });
+      throw failure;
+    }
+    if (query === 'nan') {
+      // Number(null) is 0 and Number('x') is NaN: neither may be recorded
+      return { data: { rateLimit: { cost: 'x', remaining: null } } };
+    }
+    if (query === 'no-body') {
+      throw new Error('boom without body');
+    }
+    return { data: { rateLimit: { cost: 1, remaining: 10 } } };
+  }, stats);
+  run('ok', {});
+  assert.throws(() => run('bad', {}), /boom/);
+  run('nan', {});
+  assert.throws(() => run('no-body', {}), /boom without body/);
+  // the failed body's numbers ARE counted; non-finite values are ignored;
+  // remaining keeps the minimum finite value
+  assert.deepEqual(stats, { cost: 4, remaining: 7 });
 });

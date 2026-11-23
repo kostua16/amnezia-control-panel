@@ -174,6 +174,7 @@ const AUTO_COVER_COMMITS_QUERY = `
 query AutoCoverPrCommits(
   $owner: String!, $name: String!, $number: Int!, $after: String
 ) {
+  rateLimit { cost remaining }
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       commits(first: 100, after: $after) {
@@ -278,19 +279,78 @@ function resolveAutoCoverSource(value = process.env.PR_FLOW_AUTO_COVER_SOURCE) {
   return 'rest';
 }
 
+// Per-scan GraphQL quota accounting. `cost` sums every response seen —
+// including 200-with-errors payloads and transport failures whose body still
+// carries `data.rateLimit` — so usage is never under-reported exactly when
+// queries fail. `remaining` keeps the MINIMUM finite value seen (the low-water
+// mark across the concurrent workers), and an unknown/missing value stays
+// null instead of collapsing to 0, which a monitor would read as "GraphQL
+// quota exhausted".
+function createGraphqlStats() {
+  return { cost: 0, remaining: null };
+}
+
+// Number(null) is 0 and Number('') is 0 — both finite — so a raw Number()
+// guard would turn a missing value into "0 remaining" (reads as exhausted).
+// Only real numeric values pass; anything else is unknown -> null.
+function toFiniteNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function recordRateLimit(stats, payload) {
+  const rateLimit = payload?.data?.rateLimit;
+  if (!rateLimit) return;
+  const cost = toFiniteNumber(rateLimit.cost);
+  if (cost !== null) stats.cost += cost;
+  const remaining = toFiniteNumber(rateLimit.remaining);
+  if (remaining !== null) {
+    stats.remaining =
+      stats.remaining === null
+        ? remaining
+        : Math.min(stats.remaining, remaining);
+  }
+}
+
+// Wraps a runGraphql transport so every response — success, 200-with-errors,
+// or a thrown transport failure — contributes its rateLimit numbers to stats.
+function withRateLimitRecording(runGraphql, stats) {
+  return (query, variables) => {
+    let response;
+    try {
+      response = runGraphql(query, variables);
+    } catch (error) {
+      // execFileSync failures keep the response body on `error.stdout`; a
+      // JSON error response can still carry the real rateLimit numbers.
+      try {
+        recordRateLimit(stats, JSON.parse(String(error?.stdout ?? '')));
+      } catch {
+        // No parseable body: this query's cost is unknowable.
+      }
+      throw error;
+    }
+    recordRateLimit(stats, response);
+    return response;
+  };
+}
+
 // GraphQL-backed replacement for fetchPrContext: the shared lib query covers
 // comments, review threads, reviews, check runs and commit statuses (REST
 // shapes, cursor pagination, loud errors); one small extra query covers the
 // PR commits list. On ANY doubt the lib throws ReviewInputsUnavailable and
 // this function reads REST for the whole PR instead — partial GraphQL data
-// can never silently become an empty context.
+// can never silently become an empty context. `stats` (optional) collects the
+// GraphQL quota numbers for the scan manifest.
 async function fetchPrContextAuto({
   runGraphql,
   fetchJson,
   viewPull,
   repo,
   prNumber,
+  stats = null,
 }) {
+  const gql = stats ? withRateLimitRecording(runGraphql, stats) : runGraphql;
   const pr = await viewPull(prNumber);
   const headSha = normalizeHeadSha(pr);
   // Reuse the already-fetched `gh pr view` payload on the REST path.
@@ -301,7 +361,12 @@ async function fetchPrContextAuto({
 
   let inputs;
   try {
-    inputs = fetchReviewInputsGraphql({ repo, prNumber, headSha, runGraphql });
+    inputs = fetchReviewInputsGraphql({
+      repo,
+      prNumber,
+      headSha,
+      runGraphql: gql,
+    });
   } catch (error) {
     console.warn(
       `fetch-auto-cover-context: PR #${prNumber} GraphQL inputs unavailable, using REST: ${error.message}`,
@@ -312,7 +377,7 @@ async function fetchPrContextAuto({
   let commits;
   let rawCommits = null;
   try {
-    rawCommits = fetchPrCommitsGraphql({ runGraphql, repo, prNumber });
+    rawCommits = fetchPrCommitsGraphql({ runGraphql: gql, repo, prNumber });
     commits = mapCommits(rawCommits);
   } catch (error) {
     console.warn(
@@ -480,6 +545,9 @@ async function fetchAutoCoverContext({
       ok: [],
       failed: [],
       count: 0,
+      // Stable shape: quota monitors can read manifest.graphql on every scan,
+      // including empty ones.
+      graphql: { cost: 0, remaining: null },
     };
     fs.writeFileSync(path.join(outDir, 'prs-to-evaluate.txt'), '');
     fs.writeFileSync(
@@ -514,6 +582,10 @@ async function fetchAutoCoverContext({
     list,
     concurrency,
     async (prNumber) => {
+      // One stats object per PR (no shared mutation between workers); even a
+      // failed PR keeps whatever its GraphQL responses reported, so cost is
+      // counted for queries that errored mid-fetch.
+      const stats = createGraphqlStats();
       try {
         const ctx = gql
           ? await fetchPrContextAuto({
@@ -522,6 +594,7 @@ async function fetchAutoCoverContext({
               viewPull: viewPr,
               repo,
               prNumber,
+              stats,
             })
           : await fetchPrContext({
               fetchJson: fetcher,
@@ -530,12 +603,13 @@ async function fetchAutoCoverContext({
               prNumber,
             });
         writeContextFiles(outDir, prNumber, ctx, fixReviewRuns);
-        return { pr: prNumber, ok: true };
+        return { pr: prNumber, ok: true, stats };
       } catch (error) {
         return {
           pr: prNumber,
           ok: false,
           error: String(error?.message || error),
+          stats,
         };
       }
     },
@@ -545,6 +619,22 @@ async function fetchAutoCoverContext({
   const failed = results
     .filter((r) => !r.ok)
     .map(({ pr, error }) => ({ pr, error }));
+
+  // Scan-level GraphQL quota numbers: summed cost, and the minimum finite
+  // `remaining` seen across all workers (the true low-water mark, not
+  // whichever worker happened to finish last). Unknown stays null.
+  const graphql = { cost: 0, remaining: null };
+  for (const result of results) {
+    const stats = result?.stats;
+    if (!stats) continue;
+    graphql.cost += stats.cost;
+    if (stats.remaining !== null) {
+      graphql.remaining =
+        graphql.remaining === null
+          ? stats.remaining
+          : Math.min(graphql.remaining, stats.remaining);
+    }
+  }
 
   if (list.length > 0 && ok.length === 0) {
     throw new Error(
@@ -569,6 +659,7 @@ async function fetchAutoCoverContext({
     ok,
     failed,
     count: list.length,
+    graphql,
   };
   fs.writeFileSync(
     path.join(outDir, 'manifest.json'),
@@ -608,6 +699,9 @@ module.exports = {
   normalizeHeadSha,
   commitTimestamp,
   assertRepoAndNumber,
+  createGraphqlStats,
+  recordRateLimit,
+  withRateLimitRecording,
   fetchPrCommitsGraphql,
   mapCommits,
   resolveAutoCoverSource,
