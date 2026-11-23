@@ -113,6 +113,8 @@ jobs:
           PR_NUMBER: ${{ inputs.pr_number }}
           HEAD_SHA: ${{ inputs.head_sha }}
           KILO_BLOCKING_SEVERITIES: ${{ vars.KILO_BLOCKING_SEVERITIES || '' }}
+          # `rest` rolls the per-PR context fetch back to the legacy all-REST path without a revert (mirrors PR_FLOW_REVIEW_SOURCE); empty = GraphQL.
+          PR_FLOW_AUTO_COVER_SOURCE: ${{ vars.PR_FLOW_AUTO_COVER_SOURCE || '' }}
         shell: bash
         run: |
           set -euo pipefail

@@ -59,6 +59,7 @@ query ReviewInputs(
                   __typename
                   ... on CheckRun {
                     name
+                    status
                     conclusion
                     checkSuite {
                       app { slug name }
@@ -70,6 +71,7 @@ query ReviewInputs(
                     description
                     targetUrl
                     createdAt
+                    updatedAt
                   }
                 }
                 ${PAGE_INFO}
@@ -83,13 +85,13 @@ query ReviewInputs(
         ${PAGE_INFO}
       }
       reviews(first: ${PAGE_SIZE}, after: $reviewsAfter) @include(if: $wantReviews) {
-        nodes { databaseId ${AUTHOR_FIELDS} commit { oid } submittedAt state }
+        nodes { databaseId ${AUTHOR_FIELDS} body commit { oid } submittedAt state }
         ${PAGE_INFO}
       }
       reviewThreads(first: ${PAGE_SIZE}, after: $threadsAfter) @include(if: $wantThreads) {
         nodes {
           comments(first: ${THREAD_COMMENTS_PAGE_SIZE}) {
-            nodes { databaseId ${AUTHOR_FIELDS} body commit { oid } originalCommit { oid } createdAt updatedAt }
+            nodes { databaseId ${AUTHOR_FIELDS} body path commit { oid } originalCommit { oid } createdAt updatedAt }
             ${PAGE_INFO}
           }
         }
@@ -138,6 +140,7 @@ function toReviewComment(node) {
     id: node.databaseId ?? null,
     user: toUser(node.author),
     body: node.body ?? '',
+    path: node.path ?? null,
     commit_id: node.commit?.oid ?? null,
     original_commit_id: node.originalCommit?.oid ?? null,
     created_at: node.createdAt ?? null,
@@ -146,11 +149,14 @@ function toReviewComment(node) {
 }
 
 // `updatedAt` is deliberately not copied: the REST review object has no such
-// field and the evaluator orders reviews by `submitted_at`.
+// field and the evaluator orders reviews by `submitted_at`. `body` IS part of
+// the REST shape and consumers of the written context files read it, so it is
+// mapped verbatim.
 function toReview(node) {
   return {
     id: node.databaseId ?? null,
     user: toUser(node.author),
+    body: node.body ?? '',
     commit_id: node.commit?.oid ?? null,
     submitted_at: node.submittedAt ?? null,
     state: node.state ?? null,
@@ -163,6 +169,9 @@ function toContext(node) {
       kind: 'checkRun',
       value: {
         name: node.name ?? '',
+        // REST check runs report status/conclusion in lowercase
+        // ('completed', 'success'); GraphQL enums are uppercase.
+        status: lower(node.status),
         conclusion: lower(node.conclusion),
         app: node.checkSuite?.app ?? null,
         // Deliberately no `workflow_name`: the REST check-runs response
@@ -180,6 +189,7 @@ function toContext(node) {
         description: node.description ?? null,
         target_url: node.targetUrl ?? null,
         created_at: node.createdAt ?? null,
+        updated_at: node.updatedAt ?? null,
       },
     };
   }
@@ -373,4 +383,7 @@ module.exports = {
   REVIEW_INPUTS_QUERY,
   ReviewInputsUnavailable,
   fetchReviewInputsGraphql,
+  // Shared with fetch-auto-cover-context.cjs so both GraphQL paths apply the
+  // same Bot-login restoration rule.
+  toUser,
 };
