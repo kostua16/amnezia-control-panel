@@ -8,6 +8,7 @@ const path = require('node:path');
 const {
   LOG_TITLE,
   LOG_SEARCH_MARKER,
+  ESCALATION_LABELS,
   fingerprint,
   extractRecommendations,
   parseStructuredOutput,
@@ -16,6 +17,7 @@ const {
   trimEntries,
   escalationTitle,
   escalationSearchQuery,
+  reconcileEscalationLabels,
   hasMergedFixPr,
   countConsecutive,
   hasRunEntry,
@@ -277,6 +279,56 @@ test('LOG_SEARCH_MARKER scopes the search to issue titles', () => {
   assert.ok(LOG_SEARCH_MARKER.includes('in:title'));
 });
 
+// --- escalation label contract (regression guard) ---
+// `umbrella-sub-issue` marks backlog-owned sub-issues exempt from the stale
+// close and the maintenance 90d review. An escalation has no umbrella and no
+// docs/TODOs-2.md row; reusing that label removed its only exit condition.
+
+test('escalation labels do not include the backlog-owned umbrella-sub-issue label', () => {
+  assert.ok(!ESCALATION_LABELS.includes('umbrella-sub-issue'));
+  assert.ok(ESCALATION_LABELS.includes('escalation'));
+});
+
+// --- reconcileEscalationLabels (pre-split migration) ---
+
+test('reconcileEscalationLabels relabels open escalations still carrying umbrella-sub-issue', () => {
+  const calls = [];
+  reconcileEscalationLabels('o/r', (args) => {
+    calls.push(args);
+    if (args[1] === 'list') {
+      return JSON.stringify([
+        {
+          number: 1080,
+          labels: [{ name: 'auto-fix' }, { name: 'umbrella-sub-issue' }],
+        },
+        { number: 1061, labels: ['auto-fix', 'escalation'] },
+      ]);
+    }
+    return '';
+  });
+  assert.equal(calls.length, 2, 'only the mislabeled issue is edited');
+  assert.deepEqual(calls[1], [
+    'issue',
+    'edit',
+    '1080',
+    '--repo',
+    'o/r',
+    '--remove-label',
+    'umbrella-sub-issue',
+    '--add-label',
+    'escalation',
+  ]);
+});
+
+test('reconcileEscalationLabels edits nothing when no open escalation carries the old label', () => {
+  const calls = [];
+  reconcileEscalationLabels('o/r', (args) => {
+    calls.push(args);
+    return JSON.stringify([{ number: 9, labels: ['escalation'] }]);
+  });
+  assert.equal(calls.length, 1, 'list only — no edit calls');
+});
+
 // --- countConsecutive (streak threshold regression guard) ---
 // The ≥2-consecutive-runs escalation gate (main: count >= 2) depends on this
 // walk. A future refactor could silently change "consecutive" semantics; these
@@ -342,6 +394,7 @@ function createAuditHarness() {
       },
       findEscalationIssue: () => null,
       hasMergedFixPr: () => false,
+      reconcileEscalationLabels: () => {},
       createEscalationIssue: (_repo, fp) => {
         if (failNextCreate) {
           failNextCreate = false;

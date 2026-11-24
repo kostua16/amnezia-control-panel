@@ -33,7 +33,16 @@ const LOG_LABELS = ['auto-fix'];
 // the title, so matching no longer depends on hyphen tokenization.
 const LOG_SEARCH_MARKER = 'recommendation log APR-E10 in:title';
 
-const ESCALATION_LABELS = ['auto-fix', 'needs-review', 'umbrella-sub-issue'];
+// An escalation is NOT a backlog sub-issue: it has no `[todo-backlog]`
+// umbrella and no docs/TODOs-2.md row. stale.yml and maintenance.yml's 90d
+// review exempt `umbrella-sub-issue` from the inactivity close and the
+// disposition sweep, so reusing that label here would leave an unactioned
+// escalation open forever. The distinct `escalation` label keeps the stale
+// close lifecycle as its exit condition.
+const ESCALATION_LABELS = ['auto-fix', 'needs-review', 'escalation'];
+// Matches every escalation title built by escalationTitle() but not the
+// recommendation-log title (LOG_TITLE has no "escalate" token).
+const ESCALATION_LIST_SEARCH = 'APR-E10 escalate in:title';
 const MAX_LOG_ENTRIES = 20;
 
 function getArg(name, argv = process.argv) {
@@ -259,6 +268,48 @@ function findEscalationIssue(repo, fp, state = 'open') {
 }
 
 /**
+ * Migrate escalation issues created before the label split. They carry
+ * `umbrella-sub-issue`, which stale.yml and the maintenance 90d review exempt
+ * — without this relabel they would outlive every lifecycle with no exit
+ * condition. Runs on every audit; a no-op scan once no open escalation has
+ * the old label. The gh runner is injectable for unit tests.
+ */
+function reconcileEscalationLabels(repo, runGhFn = runGh) {
+  const out = runGhFn([
+    'issue',
+    'list',
+    '--repo',
+    repo,
+    '--state',
+    'open',
+    '--search',
+    ESCALATION_LIST_SEARCH,
+    '--json',
+    'number,labels',
+    '--limit',
+    '50',
+  ]);
+  const issues = JSON.parse(out);
+  for (const issue of issues) {
+    const names = (issue.labels || []).map((label) =>
+      typeof label === 'string' ? label : String(label?.name || ''),
+    );
+    if (!names.includes('umbrella-sub-issue')) continue;
+    runGhFn([
+      'issue',
+      'edit',
+      String(issue.number),
+      '--repo',
+      repo,
+      '--remove-label',
+      'umbrella-sub-issue',
+      '--add-label',
+      'escalation',
+    ]);
+  }
+}
+
+/**
  * Check whether a merged PR mentions the recommendation fingerprint or closes
  * the prior escalation issue. This is a best-effort heuristic.
  *
@@ -415,6 +466,7 @@ function runAudit(
     findEscalationIssue,
     hasMergedFixPr,
     createEscalationIssue,
+    reconcileEscalationLabels,
     setOutput,
     now: () => new Date(),
     write: (message) => process.stdout.write(message),
@@ -462,6 +514,15 @@ function runAudit(
     entries = trimEntries(entries);
     api.upsertLogIssue(repo, existingNum, entries, runUrl);
     api.write(`Recommendation log updated (${entries.length} entries).\n`);
+  }
+
+  // Best-effort: relabel pre-split escalations so they regain the stale close
+  // exit. A failure here must not block the audit's own escalation work —
+  // the reconcile simply retries on the next run.
+  try {
+    api.reconcileEscalationLabels(repo);
+  } catch (err) {
+    api.write(`Escalation label reconcile failed: ${err.message}\n`);
   }
 
   if (recommendations.length === 0) {
@@ -545,6 +606,7 @@ function main({ argv = process.argv, apiOverrides = {} } = {}) {
 module.exports = {
   LOG_TITLE,
   LOG_SEARCH_MARKER,
+  ESCALATION_LABELS,
   fingerprint,
   extractRecommendations,
   parseStructuredOutput,
@@ -553,6 +615,7 @@ module.exports = {
   trimEntries,
   escalationTitle,
   escalationSearchQuery,
+  reconcileEscalationLabels,
   hasMergedFixPr,
   countConsecutive,
   hasRunEntry,

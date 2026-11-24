@@ -384,6 +384,13 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Ensure labels exist
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          policy-file: .github/workflows/policy.json
+          names: auto-fix,needs-review,escalation
+
       - name: Publish digest issue
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
