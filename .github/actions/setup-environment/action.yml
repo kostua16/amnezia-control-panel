@@ -109,7 +109,7 @@ runs:
         github-token: ${{ inputs.github-token }}
         label: setup-environment
         report-at-job-end: 'true'
-        rest-counter: ${{ vars.REST_COUNTER != 'false' && inputs.rest-counter == 'true' }}
+        rest-counter: ${{ inputs.rest-counter }}
 
     - if: inputs.setup-node == 'true'
       uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
