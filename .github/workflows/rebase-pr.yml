@@ -689,3 +689,16 @@ jobs:
             --force "$FORCE" \
             --automerge-disabled "$AUTOMERGE_DISABLED" \
             --mode complete
+
+          # Local composite post steps re-read action.yml from the workspace
+          # at job end (actions/runner#2816), but the rebase rewrote
+          # .github/actions from the PR-head revision to the base+PR
+          # revision, so the runner's cached step indexes no longer match
+          # the on-disk manifests and post cleanup dies with
+          # "Index was out of range". The branch was already pushed from
+          # the rebased tree; restore the original head's action manifests
+          # so post cleanup reads what the main phase cached. No-op when no
+          # rebase ran or the path is absent from the original head.
+          if [ -f "$RUNNER_TEMP/original-head.txt" ]; then
+            git checkout "$(cat "$RUNNER_TEMP/original-head.txt")" -- .github/actions || true
+          fi
