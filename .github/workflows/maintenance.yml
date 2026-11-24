@@ -132,7 +132,6 @@ jobs:
             BUDGET: 30 turns, 10-minute timeout. Skip categories with zero findings immediately — do not burn turns on clean sections.
             Operate as the `kos-maintenance` agent: first read `.claude/agents/kos-maintenance.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
             Finish with the structured report matching the JSON schema: `summary` is a one-line sweep verdict; `categories` carries exactly one entry per sweep category (planning-health, security-audit, progress, todo-fixme, stale-issues), each with its `findings_count` and `issue_created` flag — omit `skip_reason` when the category produced findings and you created its issue, set it to `duplicate` when findings existed but an open issue already covers them (still report their `findings_count`), `no-findings` for a clean sweep, or `error` when the check could not run; `issues_created` lists every issue number you created with its sweep category; `critical_pr_comments` lists each dependency-manifest PR you commented on for critical advisories.
-            This structured report supersedes the SWEEP/ISSUES/ESCALATION text output format in `.claude/agents/kos-maintenance.md` and `.claude/skills/kos-daily-maintenance-sweep/SKILL.md` for this run — emit the JSON report, not both.
 
       - name: Record structured sweep report
         if: always()
@@ -151,13 +150,6 @@ jobs:
               echo '````'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-
-      - name: Fail when a successful sweep has no structured report
-        if: steps.claude_run.outcome == 'success' && steps.claude_run.outputs.structured_output == ''
-        shell: bash
-        run: |
-          echo "::error::Maintenance sweep succeeded without producing its required structured report."
-          exit 1
 
       - name: Fail workflow on Claude failure
         if: steps.claude_run.outcome == 'failure' || steps.claude_run.outputs.claude_failed == 'true'
@@ -266,6 +258,13 @@ jobs:
           labels: maintenance,needs-review
           draft: 'false'
           require-rich-body: 'true'
+
+      - name: Fail when a successful sweep has no structured report
+        if: steps.claude_run.outcome == 'success' && steps.claude_run.outputs.claude_failed != 'true' && steps.claude_run.outputs.structured_output == ''
+        shell: bash
+        run: |
+          echo "::error::Maintenance sweep succeeded without producing its required structured report."
+          exit 1
 
   report-failure:
     needs: [maintenance]

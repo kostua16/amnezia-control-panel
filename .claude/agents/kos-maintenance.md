@@ -75,11 +75,7 @@ Use the diagnostic commands listed in the workflow prompt. The workflow runs wit
 
 ## Output Format
 
-```text
-SWEEP: health=h security=s progress=p todo=t stale=u
-ISSUES: created=a skipped-clean=b skipped-dup=c
-ESCALATION: pr-comments=<n|none>
-```
+Emit the structured JSON report defined in the maintenance workflow prompt. Include `summary`, `categories` with per-category `findings_count`, `issue_created` and optional `skip_reason`, plus `issues_created` and `critical_pr_comments`.
 
 ## Skills to Activate and Use
 

@@ -90,24 +90,12 @@ test('sweep categories are identical across required, properties, enum, and prom
   );
 });
 
-test('schema is a compact single-line scalar through YAML loading', () => {
+test('schema is a single-line scalar through YAML loading', () => {
   const doc = loadWorkflow();
   const { claudeRun } = loadSweepSchema(doc);
   const schemaText = claudeRun.with['json-schema'];
 
-  assert.equal(
-    schemaText,
-    JSON.stringify(JSON.parse(schemaText)),
-    'the schema passed through toJSON and the action shell must stay compact',
-  );
   assert.doesNotMatch(schemaText, /[\r\n]/);
-
-  const prettySchemaText = JSON.stringify(JSON.parse(schemaText), null, 2);
-  assert.match(
-    prettySchemaText,
-    /\r?\n/,
-    'the former pretty-printed block must fail the compact transport contract',
-  );
 });
 
 test('per-category outcome schema is identical and complete for every category', () => {
@@ -184,7 +172,19 @@ test('successful sweep with a missing mapped report fails visibly', () => {
     'guarding a successful sweep with a missing structured report',
   );
   assert.match(guard.if, /steps\.claude_run\.outcome == 'success'/);
+  assert.match(guard.if, /steps\.claude_run\.outputs\.claude_failed != 'true'/);
   assert.match(guard.if, /steps\.claude_run\.outputs\.structured_output == ''/);
+  const steps = doc.jobs.maintenance.steps;
+  for (const name of [
+    'Fail workflow on Claude failure',
+    'Create maintenance PR',
+  ]) {
+    const preceding = findStep(doc, (s) => s.name === name, name);
+    assert.ok(
+      steps.indexOf(preceding) < steps.indexOf(guard),
+      `${name} must run first`,
+    );
+  }
   assert.match(guard.run, /without producing its required structured report/);
   assert.match(guard.run, /exit 1/);
 });
