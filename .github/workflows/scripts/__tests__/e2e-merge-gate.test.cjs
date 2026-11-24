@@ -3,9 +3,32 @@
 // char = lock current behavior (green); test.todo = spec for a Phase-2 fix (red today).
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { buildCheck, mergeGateDecision } = require('../lib/e2e-simulator.cjs');
 const { getRequiredCheckStatus } = require('../required-check-evidence.cjs');
+
+test('finalizer apply pins approval, required status, and squash merge to revalidated head', () => {
+  const workflow = fs
+    .readFileSync(path.join(__dirname, '..', '..', 'pr-finalizer.yml'), 'utf8')
+    .replace(/\r\n/g, '\n');
+  const apply = workflow.split('      - name: Approve and merge\n')[1].split(
+    '      - name: Upsert finalizer status comment\n',
+  )[0];
+  const recheck = apply.indexOf('recheck_head=$(jq');
+  const sameShaGuard = apply.indexOf('[ "$recheck_head" != "$check_head" ]');
+  const approve = apply.indexOf('pulls/${PR_NUMBER}/reviews');
+  const readyStatus = apply.indexOf("-f state='success'");
+  const merge = apply.indexOf('--match-head-commit "$check_head"');
+
+  assert.ok(recheck >= 0 && recheck < sameShaGuard);
+  assert.ok(sameShaGuard < approve && approve < readyStatus && readyStatus < merge);
+  assert.match(apply, /-f commit_id=\"\$check_head\"/);
+  assert.match(apply, /if \[ \"\$approve_exit\" -ne 0 \]; then[\s\S]*?else[\s\S]*?aggregate_context=/);
+  assert.match(apply, /if \[ \"\$status_exit\" -ne 0 \]; then[\s\S]*?else[\s\S]*?merge_output=/);
+  assert.match(apply, /details_parts\+=\("merge failed:[\s\S]*?failure revert failed:/);
+});
 
 // Model CI as a single required check named "CI" (decision logic is independent
 // of how many jobs ci.yml has).

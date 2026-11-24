@@ -236,77 +236,65 @@ jobs:
                 --dry-run false \
                 > /tmp/finalizer-recheck.json 2>/dev/null
               recheck_decision=$(jq -r '.decision // ""' /tmp/finalizer-recheck.json)
+              recheck_head=$(jq -r '.headRefOid // ""' /tmp/pr-recheck.json)
 
-              if [ "$recheck_decision" != "approve_and_enable_automerge" ]; then
+              if [ "$recheck_head" != "$check_head" ]; then
+                status="failed"
+                details="Head SHA changed during finalizer re-validation (validated ${check_head}, found ${recheck_head}); aborting before the approval and merge."
+              elif [ "$recheck_decision" != "approve_and_enable_automerge" ]; then
                 status="failed"
                 details="Finalizer re-validation on head ${check_head} returned '${recheck_decision}' ($(jq -r '.summary // "no summary"' /tmp/finalizer-recheck.json)); aborting before the approval and merge."
               else
-                # Approval lands only after the head SHA, mergeability, policy,
-                # and filtered checks were re-validated for this SHA, so the
-                # abort paths above can never leave an approval behind on a
-                # head this run did not evaluate.
-                approve_output=$(gh pr review "$PR_NUMBER" --approve --body "PR finalizer: required validation and review signals passed." 2>&1)
+                # Bind the review to the exact commit whose checks and policy
+                # were revalidated. `gh pr review` cannot set commit_id.
+                approve_output=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+                  -f event='APPROVE' \
+                  -f commit_id="$check_head" \
+                  -f body='PR finalizer: required validation and review signals passed.' 2>&1)
                 approve_exit=$?
-
-                # Make the required-gate transition explicit instead of
-                # relying on the PAT to bypass branch protection. pr-flow/ready
-                # is the only required context and it mirrors this run's
-                # outcome, so it is still pending here; the re-validation above
-                # has accepted every gate, so post the aggregate success for
-                # that accepted decision on the revalidated head SHA and merge
-                # in this follow-up step. The orchestrator's wake re-posts the
-                # aggregate for the merged PR (closedOrMerged), so the handoff
-                # converges.
-                aggregate_context=$(jq -r '.statuses.aggregate.context // "pr-flow/ready"' .github/pr-flow.json)
-                status_output=$(gh api "repos/${GITHUB_REPOSITORY}/statuses/${check_head}" \
-                  -f state='success' \
-                  -f context="$aggregate_context" \
-                  -f description='Finalizer accepted; merging.' \
-                  -f target_url="$RUN_URL" 2>&1)
-                status_exit=$?
-
-                # Direct squash merge, never --auto: auto-merge is disabled in
-                # repository settings, so gh --auto would fall back to
-                # enablePullRequestAutoMerge and fail — an apply failure that
-                # feeds the orchestrator retry lane instead of merging.
-                merge_output=$(GH_TOKEN="$MERGE_TOKEN" gh pr merge "$PR_NUMBER" --squash 2>&1)
-                merge_exit=$?
 
                 raced="false"
                 details_parts=()
-                if [ "$status_exit" -ne 0 ]; then
-                  details_parts+=("pr-flow/ready status post failed: $(printf '%s' "$status_output" | tail -1)")
-                fi
-                if [ "$merge_exit" -ne 0 ]; then
-                  # A concurrent merge surfaces as a merge error; re-read the
-                  # PR so an already-merged PR is recorded as success instead
-                  # of feeding the bounded retry lane.
-                  gh pr view "$PR_NUMBER" --json state,mergedAt > /tmp/pr-merge-recheck.json 2>/dev/null || true
-                  late_merged=$(jq -r '.mergedAt // ""' /tmp/pr-merge-recheck.json 2>/dev/null)
-                  late_state=$(jq -r '.state // ""' /tmp/pr-merge-recheck.json 2>/dev/null)
-                  if [ -n "$late_merged" ] || [ "$late_state" = "MERGED" ]; then
-                    raced="true"
-                    details="Merge raced with another actor; PR is merged."
+                if [ "$approve_exit" -ne 0 ]; then
+                  details_parts+=("approve failed: $(printf '%s' "$approve_output" | tail -1)")
+                else
+                  # Publish the only required context only after approval has
+                  # succeeded; a failed publication must stop before merging.
+                  aggregate_context=$(jq -r '.statuses.aggregate.context // "pr-flow/ready"' .github/pr-flow.json)
+                  status_output=$(gh api "repos/${GITHUB_REPOSITORY}/statuses/${check_head}" \
+                    -f state='success' \
+                    -f context="$aggregate_context" \
+                    -f description='Finalizer accepted; merging.' \
+                    -f target_url="$RUN_URL" 2>&1)
+                  status_exit=$?
+                  if [ "$status_exit" -ne 0 ]; then
+                    details_parts+=("pr-flow/ready status post failed: $(printf '%s' "$status_output" | tail -1)")
                   else
-                    details_parts+=("merge failed: $(printf '%s' "$merge_output" | tail -1)")
-                    # The success posted above is the only required context;
-                    # a failed merge must not leave it green on an open PR,
-                    # where project-manager, a human, or a merge queue could
-                    # merge over the finalizer's own failure report. This
-                    # revert runs here, not in the orchestrated wake, so a
-                    # manual dispatch is covered too.
-                    revert_output=$(gh api "repos/${GITHUB_REPOSITORY}/statuses/${check_head}" \
-                      -f state='failure' \
-                      -f context="$aggregate_context" \
-                      -f description='Finalizer merge failed; required gate reverted.' \
-                      -f target_url="$RUN_URL" 2>&1)
-                    if [ $? -ne 0 ]; then
-                      details_parts+=("pr-flow/ready failure revert failed: $(printf '%s' "$revert_output" | tail -1)")
+                    # Pin the direct squash merge to the validated commit.
+                    merge_output=$(GH_TOKEN="$MERGE_TOKEN" gh pr merge "$PR_NUMBER" --squash --match-head-commit "$check_head" 2>&1)
+                    merge_exit=$?
+                    if [ "$merge_exit" -ne 0 ]; then
+                      # A concurrent merge surfaces as a merge error; re-read
+                      # the PR so an already-merged PR is recorded as success.
+                      gh pr view "$PR_NUMBER" --json state,mergedAt > /tmp/pr-merge-recheck.json 2>/dev/null || true
+                      late_merged=$(jq -r '.mergedAt // ""' /tmp/pr-merge-recheck.json 2>/dev/null)
+                      late_state=$(jq -r '.state // ""' /tmp/pr-merge-recheck.json 2>/dev/null)
+                      if [ -n "$late_merged" ] || [ "$late_state" = "MERGED" ]; then
+                        raced="true"
+                        details="Merge raced with another actor; PR is merged."
+                      else
+                        details_parts+=("merge failed: $(printf '%s' "$merge_output" | tail -1)")
+                        revert_output=$(gh api "repos/${GITHUB_REPOSITORY}/statuses/${check_head}" \
+                          -f state='failure' \
+                          -f context="$aggregate_context" \
+                          -f description='Finalizer merge failed; required gate reverted.' \
+                          -f target_url="$RUN_URL" 2>&1)
+                        if [ $? -ne 0 ]; then
+                          details_parts+=("pr-flow/ready failure revert failed: $(printf '%s' "$revert_output" | tail -1)")
+                        fi
+                      fi
                     fi
                   fi
-                fi
-                if [ "$approve_exit" -ne 0 ] && [ "$raced" != "true" ]; then
-                  details_parts+=("approve failed: $(printf '%s' "$approve_output" | tail -1)")
                 fi
                 if [ "${#details_parts[@]}" -gt 0 ]; then
                   status="failed"
