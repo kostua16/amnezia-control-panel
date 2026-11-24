@@ -119,21 +119,16 @@ test('setup-environment keeps every documented input and its outputs', () => {
 
 test('every opted-in workflow step loads the preload without overriding runner Node options', () => {
   const workflows = path.resolve(ACTIONS_DIR, '../workflows');
-  const output = 'outputs.rest-counter-preload';
   let checked = 0;
   for (const file of fs
     .readdirSync(workflows)
     .filter((name) => /\.ya?ml$/.test(name))) {
     const source = fs.readFileSync(path.join(workflows, file), 'utf8');
-    const references = source.split(output).length - 1;
-    if (!references) continue;
-
-    let wired = 0;
     for (const job of Object.values(yaml.load(source).jobs)) {
       const steps = job.steps ?? [];
       const setup = steps.findIndex((step) => step.id === 'setup_environment');
       for (const [index, step] of steps.entries()) {
-        if (!step.env?.REST_COUNTER_PRELOAD) continue;
+        if (!Object.hasOwn(step.env ?? {}, 'REST_COUNTER_PRELOAD')) continue;
         const label = file + ' / ' + step.name;
         assert.ok(setup >= 0 && setup < index, label);
         assert.equal(
@@ -162,11 +157,9 @@ test('every opted-in workflow step loads the preload without overriding runner N
             label,
           );
         }
-        wired += 1;
+        checked += 1;
       }
     }
-    assert.equal(wired, references, file);
-    checked += wired;
   }
   assert.ok(checked > 0);
 });

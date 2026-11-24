@@ -499,7 +499,8 @@ Pipe concatenated job logs to
 `node .github/workflows/scripts/summarize-rate-limit.cjs` to sum observed
 requests and route counts per workflow and job across run attempts. Provide
 each job log once. Matrix legs count as separate reports. The
-`unavailable_jobs` total includes unavailable and uninstrumented reports.
+`unavailable_jobs` counts each workflow/job once per run ID if any attempt or
+matrix leg reported unavailable or uninstrumented.
 `unreadable_files` shows how many files were skipped in reports with partial data.
 
 ## Composite Action Notes

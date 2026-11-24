@@ -98,7 +98,7 @@ function summarizeRestCounts(lines) {
       job,
       runs: new Set(),
       reports: 0,
-      unavailableJobs: 0,
+      unavailableRuns: new Set(),
       unreadableFiles: 0,
       total: 0,
       graphql: 0,
@@ -108,7 +108,7 @@ function summarizeRestCounts(lines) {
     group.runs.add(run);
     group.reports += 1;
     if (count.status) {
-      group.unavailableJobs += 1;
+      group.unavailableRuns.add(run.split('.', 1)[0]);
     } else {
       group.unreadableFiles += count.unreadable;
       group.total += count.total;
@@ -262,7 +262,7 @@ function format(summary) {
       `REST_COUNT workflow=${JSON.stringify(group.workflow)} job=${group.job} ` +
         `runs=${group.runs.size} reports=${group.reports} total=${group.total} ` +
         `graphql=${group.graphql} by_route=${JSON.stringify(Object.fromEntries([...group.routes].sort()))} ` +
-        `unavailable_jobs=${group.unavailableJobs ?? 0} unreadable_files=${group.unreadableFiles ?? 0}`,
+        `unavailable_jobs=${group.unavailableRuns?.size ?? 0} unreadable_files=${group.unreadableFiles ?? 0}`,
     );
   }
   return out.join('\n');

@@ -431,7 +431,7 @@ Decision basis: `evaluate-pr-policy.cjs` `gsdExecution` (`safeAllowedPathGlobs`,
 | G8b | Docker image and stack image publishing emit rate-limit snapshots | the snapshot labels are `docker-publish` and `docker-publish-stack`, respectively | char |
 | G8c | workflow governance loads its YAML parser in CI | the helper downloads the pinned bundle over HTTPS with bounded retries, verifies its checksum, and parses a sample document before exposing it to the checker. The YAML suite checks the pin against the lockfile | char |
 | G8d | Docker image classifier receives a main push | shallow checkout plus a one-commit fetch supplies both endpoint trees for a two-dot diff, including rewinds and both sides of renames. Workflow-only changes skip publishing, and checkout, fetch, or diff failures publish fail-open | char |
-| G8e | setup-environment enables the request counter | opted-in steps preserve inherited Node options. The post action reports REST routes, GraphQL requests, attachments and skipped files. It distinguishes quiet jobs from uninstrumented jobs and reports unavailable storage, even when the job fails. The summarizer includes unavailable jobs alongside partial or complete totals. The setup input can disable counting | char |
+| G8e | setup-environment enables the request counter | opted-in steps preserve inherited Node options. The post action reports REST routes, GraphQL requests, attachments and skipped files. It distinguishes quiet jobs from uninstrumented jobs and reports unavailable storage, even when the job fails. The summarizer counts unavailable jobs once per workflow, job and run ID. The setup input can disable counting | char |
 
 ## §6c Release → release-notes — `release-notes.yml`
 

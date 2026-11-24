@@ -129,15 +129,23 @@ try {
         // Best-effort telemetry.
       }
     });
-    appendFileSync(file, 'attached\n', { mode: 0o600 });
+    try {
+      appendFileSync(file, 'attached\n', { mode: 0o600 });
+    } catch {
+      // Still propagate the preload to children when the marker cannot be saved.
+    }
   }
 
   function sameDirectory(left, right) {
-    const a = realpathSync(left);
-    const b = realpathSync(right);
-    return process.platform === 'win32'
-      ? a.toLowerCase() === b.toLowerCase()
-      : a === b;
+    try {
+      const a = realpathSync(left);
+      const b = realpathSync(right);
+      return process.platform === 'win32'
+        ? a.toLowerCase() === b.toLowerCase()
+        : a === b;
+    } catch {
+      return false;
+    }
   }
 
   module.exports = { METHODS, ROUTES, classify, apiTarget, sameDirectory };

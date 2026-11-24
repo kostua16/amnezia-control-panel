@@ -116,7 +116,11 @@ test('enabled reporters mark missing, changed or unreadable storage unavailable'
         STATE_rest_counter_dir: join(root, 'missing'),
         REST_COUNTER_DIR: join(root, 'missing'),
       },
-      'read-failed',
+      'directory-changed',
+    ],
+    [
+      { STATE_rest_counter_dir: root, REST_COUNTER_DIR: join(root, 'missing') },
+      'directory-changed',
     ],
   ];
   for (const [state, reason] of counts) {
@@ -304,6 +308,7 @@ test('setup, parallel children and post count HTTP and fetch without changing re
         '-e',
         `require('node:fs').appendFileSync = () => { throw new Error('fixture write error'); };
       require(require('node:path').join(process.env.REST_COUNTER_DIR, 'rest-preload.cjs'));
+      require('node:assert/strict').match(process.env.NODE_OPTIONS, /--require .*rest-preload[.]cjs/);
       ${client}`,
       ],
       { env: { ...env, NODE_OPTIONS: '' } },

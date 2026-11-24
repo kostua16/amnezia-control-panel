@@ -23,6 +23,7 @@ test('reports unavailable and uninstrumented jobs along with partial counts', ()
     prefix + '1.1 status=unavailable reason=read-failed',
     prefix +
       '1.2 status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 by_route={}',
+    prefix + '1.2 status=unavailable reason=directory-changed',
     prefix + '2.1 total=0 graphql=0 instrumented=1 unreadable=0 by_route={}',
     prefix +
       '3.1 total=1 graphql=0 instrumented=1 unreadable=2 by_route={"GET /user":1}',
@@ -30,7 +31,7 @@ test('reports unavailable and uninstrumented jobs along with partial counts', ()
   ]);
   assert.match(
     format(summary),
-    /workflow="Telemetry" job=collect runs=4 reports=4 total=1 graphql=0 by_route=\{"GET \/user":1\} unavailable_jobs=2 unreadable_files=2/,
+    /workflow="Telemetry" job=collect runs=4 reports=5 total=1 graphql=0 by_route=\{"GET \/user":1\} unavailable_jobs=1 unreadable_files=2/,
   );
   assert.match(
     format(summary),

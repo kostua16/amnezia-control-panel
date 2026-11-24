@@ -135,16 +135,12 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
     log(`${prefix} status=unavailable reason=setup-failed`);
     return;
   }
+  if (!sameDirectory?.(env.REST_COUNTER_DIR, dir)) {
+    log(`${prefix} status=unavailable reason=directory-changed`);
+    return;
+  }
   let counts;
   try {
-    if (
-      !env.REST_COUNTER_DIR ||
-      (env.REST_COUNTER_DIR !== dir &&
-        !sameDirectory?.(env.REST_COUNTER_DIR, dir))
-    ) {
-      log(`${prefix} status=unavailable reason=directory-changed`);
-      return;
-    }
     counts = collectRestCounts(dir);
   } catch {
     log(`${prefix} status=unavailable reason=read-failed`);
