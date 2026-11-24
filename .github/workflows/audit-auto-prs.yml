@@ -392,7 +392,7 @@ jobs:
         with:
           github-token: ${{ secrets.GH_PAT }}
           policy-file: .github/workflows/policy.json
-          names: auto-fix,needs-review,escalation,maintenance
+          names: auto-fix,needs-review,escalation
 
       - name: Publish digest issue
         env:

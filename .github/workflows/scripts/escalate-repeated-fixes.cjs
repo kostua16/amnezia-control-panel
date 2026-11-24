@@ -21,7 +21,6 @@
 
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
-const { isTrackingIssue } = require('./lib/tracking-issue.cjs');
 
 const LOG_TITLE = 'Auto PR Audit: systemic-fix recommendation log (APR-E10)';
 const LOG_LABELS = ['auto-fix'];
@@ -291,7 +290,7 @@ function reconcileEscalationLabels(repo, runGhFn = runGh) {
     '--search',
     ESCALATION_LIST_SEARCH,
     '--json',
-    'number,title,body,labels',
+    'number,title,labels',
     // The migration must be provably complete: a match left outside a small
     // result window keeps `umbrella-sub-issue` and stays exempt from every
     // lifecycle — the exact defect this relabel exists to remove. Open
@@ -311,16 +310,6 @@ function reconcileEscalationLabels(repo, runGhFn = runGh) {
       typeof label === 'string' ? label : String(label?.name || ''),
     );
     if (!names.includes('umbrella-sub-issue')) continue;
-    // The shared tracker predicate treats umbrella sub-issues as non-trackers
-    // by design, so evaluate it without that one label to preserve all other
-    // title/label/body safeguards while still selecting actual APR-E10 issues.
-    if (
-      isTrackingIssue({
-        ...issue,
-        labels: names.filter((name) => name !== 'umbrella-sub-issue'),
-      })
-    )
-      continue;
     runGhFn([
       'issue',
       'edit',

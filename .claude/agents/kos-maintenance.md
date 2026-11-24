@@ -42,7 +42,7 @@ Use the diagnostic commands listed in the workflow prompt. The workflow runs wit
 - [ ] Clean category → no issue.
 - [ ] HIGH/CRITICAL security → file an issue and comment only on open PRs changing dependency manifests.
 - [ ] **Umbrella/tracking issues are exempt from stale-issues sweep** — issues with
-      `keep-open`/`backlog`/`in-progress`/`umbrella-sub-issue` labels, or
+      `stale`/`keep-open`/`backlog`/`in-progress`/`umbrella-sub-issue` labels, or
       umbrella/tracking signals (`[todo-backlog]`, `[claude-health]`,
       `[grouped]` title prefixes; `backlog`/`epic`/`umbrella`/`tracking`/
       `keep-open` labels; or body matching "umbrella tracking issue" /
