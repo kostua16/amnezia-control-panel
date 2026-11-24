@@ -160,6 +160,7 @@ Plans:
 <!-- PR-IMPROVE:1142 --> - PR #1142: fix(ci): auto-fix failures from #1136 -- pr1142.1 x1, pr1142.2 x1, pr1142.3 x1. Quick artifact: `.planning/quick/261122-pr1142-workflow-improve/261122-pr1142-PLAN.md`.
 <!-- PR-IMPROVE:1181 --> - PR #1181: ci: add token fingerprint to RATE_LIMIT lines and a quota window summary script -- pr1181.2 x1, pr1181.3 x1, pr1181.4 x1. Quick artifact: `.planning/quick/261122-pr1181-workflow-improve/261122-pr1181-PLAN.md`.
 <!-- PR-IMPROVE:1191 --> - PR #1191: ci: cut GitHub API quota burn (labels, setup-gh, Kilo edits and suggestions, autofix delay) -- pr1191.1 x1, pr1191.2 x1, pr1191.3 x1, pr1191.4 x1. Quick artifact: `.planning/quick/261123-pr1191-workflow-improve/261123-pr1191-PLAN.md`.
+<!-- PR-IMPROVE:1232 --> - PR #1232: ci(code-review): cut REST calls per run -- pr1232.2 x2, pr1232.3 x1, pr1232.4 x1. Quick artifact: `.planning/quick/261124-pr1232-workflow-improve/261124-pr1232-PLAN.md`.
 <!-- PR-IMPROVE:1268 --> - PR #1268: fix(ci): tighten rest-counter reason slug and preload guard -- pr1268.1 x1, pr1268.2 x1. Quick artifact: `.planning/quick/261126-pr1268-workflow-improve/261126-pr1268-PLAN.md`.
 <!-- PR-IMPROVE:182 --> - PR #182: fix(audit): address autonomous audit findings -- 13.2 x2, 13.3 x1, 13.4 x1. Quick artifact: `.planning/quick/260603-pr182-workflow-improve/260603-pr182-PLAN.md`.
 <!-- PR-IMPROVE:237 --> - PR #237: [codex] fix PR finalizer auto-merge stall -- pr237.1 x1, pr237.2 x1, pr237.3 x1, pr237.4 x1. Quick artifact: `.planning/quick/260605-pr237-workflow-improve/260605-pr237-PLAN.md`.
