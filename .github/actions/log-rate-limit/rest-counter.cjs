@@ -12,7 +12,11 @@ const {
   unlinkSync,
 } = require('node:fs');
 const { join } = require('node:path');
-const { METHODS = [], ROUTES = [] } = require('./rest-preload.cjs');
+const {
+  METHODS = [],
+  ROUTES = [],
+  sameDirectory,
+} = require('./rest-preload.cjs');
 
 const ROUTE_KEYS = new Set(
   [...METHODS, 'OTHER'].flatMap((method) =>
@@ -77,13 +81,22 @@ function startRestCounter(env = process.env, log = console.log) {
 function collectRestCounts(dir) {
   let total = 0;
   let graphql = 0;
+  let instrumented = 0;
+  let unreadable = 0;
   const routes = new Map();
   for (const file of readdirSync(dir)) {
     if (!/^requests-[a-f0-9-]+\.log$/.test(file)) continue;
-    const records = readFileSync(join(dir, file), 'utf8').split('\n');
+    let records;
+    try {
+      records = readFileSync(join(dir, file), 'utf8').split('\n');
+    } catch {
+      unreadable += 1;
+      continue;
+    }
     // Ignore incomplete writes. A newer snapshot can know route templates
     // this copy does not. Preserve those counts without emitting unknown text.
     records.pop();
+    if (records[0] === 'attached') instrumented += 1;
     for (const route of records) {
       if (route === 'graphql') {
         graphql += 1;
@@ -98,7 +111,13 @@ function collectRestCounts(dir) {
       routes.set(key, (routes.get(key) ?? 0) + 1);
     }
   }
-  return { total, graphql, by_route: Object.fromEntries([...routes].sort()) };
+  return {
+    total,
+    graphql,
+    instrumented,
+    unreadable,
+    by_route: Object.fromEntries([...routes].sort()),
+  };
 }
 
 function reportRestCounter({ env = process.env, log = console.log } = {}) {
@@ -112,21 +131,32 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
   const run = `${env.GITHUB_RUN_ID ?? ''}.${env.GITHUB_RUN_ATTEMPT ?? ''}`;
   const prefix = `REST_COUNT workflow=${workflow} job=${job} run=${run}`;
   const dir = env.STATE_rest_counter_dir;
-  if (!dir || env.REST_COUNTER_DIR !== dir) {
-    log(
-      `${prefix} status=unavailable reason=${dir ? 'directory-changed' : 'setup-failed'}`,
-    );
+  if (!dir) {
+    log(`${prefix} status=unavailable reason=setup-failed`);
     return;
   }
   let counts;
   try {
+    if (
+      !env.REST_COUNTER_DIR ||
+      (env.REST_COUNTER_DIR !== dir &&
+        !sameDirectory?.(env.REST_COUNTER_DIR, dir))
+    ) {
+      log(`${prefix} status=unavailable reason=directory-changed`);
+      return;
+    }
     counts = collectRestCounts(dir);
   } catch {
     log(`${prefix} status=unavailable reason=read-failed`);
     return;
   }
+  const { total, graphql, instrumented, unreadable, by_route } = counts;
+  const status =
+    total || graphql || instrumented || unreadable
+      ? ''
+      : ' status=uninstrumented';
   log(
-    `${prefix} total=${counts.total} graphql=${counts.graphql} by_route=${JSON.stringify(counts.by_route)}`,
+    `${prefix}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} by_route=${JSON.stringify(by_route)}`,
   );
   try {
     if (env.GITHUB_STEP_SUMMARY) {

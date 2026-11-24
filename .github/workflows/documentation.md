@@ -455,9 +455,20 @@ The opted-in GitHub Script steps load it inside their scripts with a guarded
 path is readable. The preload appends its argument for Node descendants while
 preserving their original options. Follow those existing steps when opting in.
 
+For example, add this step after a setup step with `id: setup_environment`,
+and replace the example Node command with the one the job runs.
+
 ```yaml
-env:
-  REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
+- name: Run Node with GitHub request counting
+  shell: bash
+  env:
+    REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
+  run: |
+    preload=()
+    if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+      preload=(--require "$REST_COUNTER_PRELOAD")
+    fi
+    node "${preload[@]}" -e 'console.log(process.version)'
 ```
 
 The counter observes Node's HTTP(S) and Undici request events, including fetch,
@@ -465,7 +476,10 @@ and includes inherited Node subprocesses. It counts outgoing requests across
 credentials for the public or configured enterprise API. GraphQL has a separate
 count. The existing free `GET /rate_limit` snapshots are excluded. Only fixed
 route templates and counts are stored. A REST total of zero means zero observed
-requests in instrumented processes. A route template newer than the post
+requests recorded by the preload. The `instrumented` field counts attachments
+and `status=uninstrumented` identifies jobs without an attachment or a request
+record. Unreadable files are counted in `unreadable` and the remaining
+records still contribute to the totals. A route template newer than the post
 reporter is counted under `/other`. Coverage starts after setup and covers
 opted-in steps. Third-party setup actions, the GitHub CLI, curl, Bun and the
 Bun-based Claude Code action are outside the count. Instrumentation assumes the
@@ -484,7 +498,9 @@ fleet-wide request fraction remains unknown.
 Pipe concatenated job logs to
 `node .github/workflows/scripts/summarize-rate-limit.cjs` to sum observed
 requests and route counts per workflow and job across run attempts. Provide
-each job log once. Matrix legs count as separate reports.
+each job log once. Matrix legs count as separate reports. The
+`unavailable_jobs` total includes unavailable and uninstrumented reports.
+`unreadable_files` shows how many files were skipped in reports with partial data.
 
 ## Composite Action Notes
 

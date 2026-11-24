@@ -37,23 +37,50 @@ function parseLine(line) {
 
 function parseRestCount(line) {
   const match = line.match(
-    /(?:^|\s)REST_COUNT workflow=("(?:[^"\\]|\\.)*") job=(\S+) run=(\d+\.\d+) total=(\d+) graphql=(\d+) by_route=(\{.*\})\s*$/,
+    /(?:^|\s)REST_COUNT workflow=("(?:[^"\\]|\\.)*") job=(\S+) run=(\d+\.\d+) (.+)$/,
   );
   if (!match) return null;
-  const [, name, job, run, rawTotal, rawGraphql, rawRoutes] = match;
+  const [, name, job, run, body] = match;
   try {
     const workflow = JSON.parse(name);
+    if (/^status=unavailable reason=[a-z-]+\s*$/.test(body)) {
+      return { workflow, job, run, status: 'unavailable' };
+    }
+    const counts = body.match(
+      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))? by_route=(\{.*\})\s*$/,
+    );
+    if (!counts) return null;
+    const [
+      ,
+      status,
+      rawTotal,
+      rawGraphql,
+      rawInstrumented = '0',
+      rawUnreadable = '0',
+      rawRoutes,
+    ] = counts;
     const total = Number(rawTotal);
     const graphql = Number(rawGraphql);
+    const instrumented = Number(rawInstrumented);
+    const unreadable = Number(rawUnreadable);
     const routes = Object.entries(JSON.parse(rawRoutes));
     if (
-      !Number.isSafeInteger(total) ||
-      !Number.isSafeInteger(graphql) ||
+      ![total, graphql, instrumented, unreadable].every(Number.isSafeInteger) ||
       routes.some(([, count]) => !Number.isSafeInteger(count) || count <= 0) ||
       routes.reduce((sum, [, count]) => sum + count, 0) !== total
     )
       return null;
-    return { workflow, job, run, total, graphql, routes };
+    return {
+      workflow,
+      job,
+      run,
+      status,
+      total,
+      graphql,
+      instrumented,
+      unreadable,
+      routes,
+    };
   } catch {
     return null;
   }
@@ -64,13 +91,15 @@ function summarizeRestCounts(lines) {
   for (const line of lines) {
     const count = parseRestCount(line);
     if (!count) continue;
-    const { workflow, job, run, total, graphql, routes } = count;
+    const { workflow, job, run } = count;
     const key = JSON.stringify([workflow, job]);
     const group = groups.get(key) ?? {
       workflow,
       job,
       runs: new Set(),
       reports: 0,
+      unavailableJobs: 0,
+      unreadableFiles: 0,
       total: 0,
       graphql: 0,
       routes: new Map(),
@@ -78,10 +107,15 @@ function summarizeRestCounts(lines) {
     // Matrix jobs share run and job IDs. Each report is a separate execution.
     group.runs.add(run);
     group.reports += 1;
-    group.total += total;
-    group.graphql += graphql;
-    for (const [route, requests] of routes) {
-      group.routes.set(route, (group.routes.get(route) ?? 0) + requests);
+    if (count.status) {
+      group.unavailableJobs += 1;
+    } else {
+      group.unreadableFiles += count.unreadable;
+      group.total += count.total;
+      group.graphql += count.graphql;
+      for (const [route, requests] of count.routes) {
+        group.routes.set(route, (group.routes.get(route) ?? 0) + requests);
+      }
     }
     groups.set(key, group);
   }
@@ -227,7 +261,8 @@ function format(summary) {
     out.push(
       `REST_COUNT workflow=${JSON.stringify(group.workflow)} job=${group.job} ` +
         `runs=${group.runs.size} reports=${group.reports} total=${group.total} ` +
-        `graphql=${group.graphql} by_route=${JSON.stringify(Object.fromEntries([...group.routes].sort()))}`,
+        `graphql=${group.graphql} by_route=${JSON.stringify(Object.fromEntries([...group.routes].sort()))} ` +
+        `unavailable_jobs=${group.unavailableJobs ?? 0} unreadable_files=${group.unreadableFiles ?? 0}`,
     );
   }
   return out.join('\n');

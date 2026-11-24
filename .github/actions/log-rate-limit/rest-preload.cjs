@@ -4,7 +4,7 @@
 try {
   const { channel } = require('node:diagnostics_channel');
   const { randomUUID } = require('node:crypto');
-  const { appendFileSync } = require('node:fs');
+  const { appendFileSync, realpathSync } = require('node:fs');
   const { join } = require('node:path');
 
   const METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
@@ -129,9 +129,22 @@ try {
         // Best-effort telemetry.
       }
     });
+    appendFileSync(file, 'attached\n', { mode: 0o600 });
   }
 
-  if (process.env.REST_COUNTER_DIR === __dirname) {
+  function sameDirectory(left, right) {
+    const a = realpathSync(left);
+    const b = realpathSync(right);
+    return process.platform === 'win32'
+      ? a.toLowerCase() === b.toLowerCase()
+      : a === b;
+  }
+
+  module.exports = { METHODS, ROUTES, classify, apiTarget, sameDirectory };
+  if (
+    process.env.REST_COUNTER_DIR &&
+    sameDirectory(process.env.REST_COUNTER_DIR, __dirname)
+  ) {
     subscribe(__dirname, apiTarget(process.env.GITHUB_API_URL));
     // The current process loaded this file explicitly. Preserve inherited
     // options and add the preload only for any later Node subprocesses.
@@ -141,7 +154,6 @@ try {
       process.env.NODE_OPTIONS = existing ? `${existing} ${option}` : option;
     }
   }
-  module.exports = { METHODS, ROUTES, classify, apiTarget };
 } catch {
   // A failed preload must leave the application running normally.
 }

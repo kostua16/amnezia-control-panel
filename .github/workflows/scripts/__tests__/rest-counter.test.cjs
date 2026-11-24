@@ -6,6 +6,7 @@ const { execFile } = require('node:child_process');
 const { once } = require('node:events');
 const {
   appendFileSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -15,7 +16,7 @@ const {
 } = require('node:fs');
 const { createServer } = require('node:http');
 const { tmpdir } = require('node:os');
-const { join, resolve } = require('node:path');
+const { basename, join, resolve } = require('node:path');
 const test = require('node:test');
 const { promisify } = require('node:util');
 
@@ -127,7 +128,7 @@ test('enabled reporters mark missing, changed or unreadable storage unavailable'
     assert.deepEqual(lines, [
       `REST_COUNT workflow="" job=job run=12.1 status=unavailable reason=${reason}`,
     ]);
-    assert.equal(parseRestCount(lines[0]), null);
+    assert.equal(parseRestCount(lines[0]).status, 'unavailable');
   }
 });
 
@@ -155,8 +156,25 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   });
   assert.match(
     result.stdout,
-    /^REST_COUNT .* job=standalone .* total=0 graphql=0 by_route=\{\}\s*$/,
+    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 by_route=\{\}\s*$/,
   );
+  const preload = join(dir, 'rest-preload.cjs');
+  const postEnv = {
+    ...env,
+    REST_COUNTER_DIR: dir,
+    STATE_rest_counter_dir: dir,
+  };
+  await runNode(process.execPath, ['--require', preload, '-e', ''], {
+    env: postEnv,
+  });
+  const quiet = await runNode(process.execPath, [join(action, 'post.cjs')], {
+    env: postEnv,
+  });
+  assert.match(
+    quiet.stdout,
+    /total=0 graphql=0 instrumented=1 unreadable=0 by_route=\{\}/,
+  );
+  assert.doesNotMatch(quiet.stdout, /status=uninstrumented/);
 });
 
 test('classifies only API hosts and emits no request data beyond fixed templates', () => {
@@ -245,6 +263,7 @@ test('setup, parallel children and post count HTTP and fetch without changing re
   const env = {
     ...process.env,
     ...exported,
+    REST_COUNTER_DIR: join(tempAlias, basename(exported.REST_COUNTER_DIR)),
     GITHUB_API_URL: api,
     REST_COUNTER_PRELOAD: preload,
     NODE_OPTIONS: '--no-warnings',
@@ -301,7 +320,8 @@ test('setup, parallel children and post count HTTP and fetch without changing re
 
   const dir = exported.REST_COUNTER_DIR;
   const files = readdirSync(dir).filter((file) => file.startsWith('requests-'));
-  assert.equal(files.length, 2);
+  assert.equal(files.length, 3);
+  mkdirSync(join(dir, 'requests-deadbeef.log'));
   appendFileSync(
     join(dir, files[0]),
     'GET /private-fixture-token\nGET /repos/:o/:r',
@@ -309,6 +329,8 @@ test('setup, parallel children and post count HTTP and fetch without changing re
   const counts = {
     total: 7,
     graphql: 2,
+    instrumented: 3,
+    unreadable: 1,
     by_route: {
       'GET /other': 1,
       'GET /repos/:o/:r': 2,
@@ -322,6 +344,7 @@ test('setup, parallel children and post count HTTP and fetch without changing re
     env: {
       ...setup,
       ...exported,
+      REST_COUNTER_DIR: env.REST_COUNTER_DIR,
       STATE_rest_counter_dir: dir,
       GITHUB_WORKFLOW: 'Workflow with "quotes"',
       GITHUB_JOB: 'check',

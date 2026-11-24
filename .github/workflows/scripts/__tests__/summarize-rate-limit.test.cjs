@@ -17,6 +17,27 @@ test('formats stored quota summaries that predate REST counts', () => {
   assert.match(format(legacy), /^RATE_LIMIT readings: 0/);
 });
 
+test('reports unavailable and uninstrumented jobs along with partial counts', () => {
+  const prefix = 'REST_COUNT workflow="Telemetry" job=collect run=';
+  const summary = summarize([
+    prefix + '1.1 status=unavailable reason=read-failed',
+    prefix +
+      '1.2 status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 by_route={}',
+    prefix + '2.1 total=0 graphql=0 instrumented=1 unreadable=0 by_route={}',
+    prefix +
+      '3.1 total=1 graphql=0 instrumented=1 unreadable=2 by_route={"GET /user":1}',
+    'REST_COUNT workflow="Other" job=collect run=1.1 status=unavailable reason=setup-failed',
+  ]);
+  assert.match(
+    format(summary),
+    /workflow="Telemetry" job=collect runs=4 reports=4 total=1 graphql=0 by_route=\{"GET \/user":1\} unavailable_jobs=2 unreadable_files=2/,
+  );
+  assert.match(
+    format(summary),
+    /workflow="Other" job=collect runs=1 reports=1 total=0 graphql=0 by_route=\{\} unavailable_jobs=1 unreadable_files=0/,
+  );
+});
+
 test('aggregates REST counts by workflow and job across attempts and matrix reports', () => {
   const count = (workflow, job, run, total, graphql, byRoute) =>
     `2026-11-24T00:00:00Z REST_COUNT workflow=${JSON.stringify(workflow)} job=${job} run=${run} total=${total} graphql=${graphql} by_route=${JSON.stringify(byRoute)}`;
