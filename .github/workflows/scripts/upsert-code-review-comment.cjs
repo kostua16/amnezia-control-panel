@@ -11,8 +11,10 @@ const {
   shortSha,
   findExistingComment: findExistingCommentByMarker,
 } = require('./lib/sticky-comment.cjs');
+const fs = require('node:fs');
 
 const COMMENT_MARKER = '<!-- code-review-summary -->';
+const BOT_LOGIN = 'github-actions[bot]';
 
 const REVIEW_CHECKLIST = [
   'General code review',
@@ -32,6 +34,23 @@ function getArg(name, fallback = null) {
 // the marker is this script's own.
 const findExistingComment = (comments) =>
   findExistingCommentByMarker(comments, COMMENT_MARKER);
+
+// When the caller already knows the sticky comment's id — the started step of
+// the same job recorded it via --emit-id-file — the REST list of the PR's
+// issue comments can be skipped. upsertComment accepts a supplied comment
+// list, so a synthetic entry carrying the id, the bot login and the marker is
+// enough for it to match and address the comment directly. An invalid id
+// yields null, which sends upsertComment back to the marker-scan list. A stale
+// id (comment deleted meanwhile) degrades to the tolerated orphan-delete
+// warning, the same as a concurrent delete on the list path.
+function resolveKnownCommentList(knownCommentId) {
+  if (knownCommentId === null || knownCommentId === undefined) return null;
+  const raw = String(knownCommentId).trim();
+  if (!raw) return null;
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return [{ id, user: { login: BOT_LOGIN }, body: COMMENT_MARKER }];
+}
 
 function verdictIcon(verdict) {
   if (verdict === 'concerns') return '⚠️';
@@ -222,6 +241,8 @@ function main() {
   const headSha = getArg('--head-sha');
   const runUrl = getArg('--run-url');
   const mode = getArg('--mode', 'complete');
+  const knownCommentId = getArg('--known-comment-id');
+  const emitIdFile = getArg('--emit-id-file');
 
   if (!prNumber) {
     throw new Error('--pr (pull request number) is required.');
@@ -265,12 +286,19 @@ function main() {
     }
   }
 
-  upsertComment({
+  const result = upsertComment({
     repo,
     prNumber,
     marker: COMMENT_MARKER,
     body,
+    comments: resolveKnownCommentList(knownCommentId),
   });
+
+  // Hand the new comment's id to a later invocation in the same job (the
+  // workflow's complete step) so it can skip the REST list.
+  if (emitIdFile && Number.isInteger(result?.createdId)) {
+    fs.writeFileSync(emitIdFile, String(result.createdId), 'utf8');
+  }
 }
 
 if (require.main === module) {
@@ -291,4 +319,5 @@ module.exports = {
   renderComplete,
   renderFailureBody,
   findExistingComment,
+  resolveKnownCommentList,
 };

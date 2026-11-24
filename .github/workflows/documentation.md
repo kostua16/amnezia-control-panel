@@ -73,6 +73,13 @@ code-review.yml
   -> pr-flow.yml consumes those signals
 -> when orchestrated, explicitly wakes pr-flow.yml and auto-cover-review.yml
    after completion so repair loops do not depend on workflow_run delivery alone
+-> REST budget: resolve-pr republishes the PR label names its pulls.get already
+   returned, and Apply review signals removes/adds only labels whose presence
+   actually changes (missing or unparsable snapshot falls back to the
+   unconditional writes); the summary comment's complete step reuses the
+   comment id recorded by the started step instead of re-listing issue
+   comments; the claude-health tracker sync writes only when the critical
+   label presence differs from the run's needs
 
 auto-cover-review.yml
   -> event-driven review repair dispatcher: Code Review completion, trusted
