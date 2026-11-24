@@ -29,11 +29,12 @@ on:
         type: boolean
 
 permissions:
-  # write: fallback merge credential. When every check (including the
-  # pr-flow/ready aggregate) is already green, `gh pr merge --auto` performs a
-  # direct merge (mergePullRequest) instead of enabling auto-merge, and a
-  # direct merge needs contents: write.
-  contents: write
+  # read-only for git: actions/checkout needs it to fetch the PR head. The
+  # squash merge itself runs on the PAT (GH_PAT) because the workflow
+  # GITHUB_TOKEN is denied mergePullRequest ("Resource not accessible by
+  # integration"), so no GITHUB_TOKEN contents write is granted here. The
+  # pr-flow/ready success post ahead of that merge uses statuses: write.
+  contents: read
   checks: read
   pull-requests: write
   issues: write
@@ -140,44 +141,161 @@ jobs:
             echo "dry_run=$(jq -r '.dry_run' /tmp/finalizer-decision.json)"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Approve and enable auto-merge
+      - name: Approve and merge
         id: apply
         if: steps.decision.outputs.decision == 'approve_and_enable_automerge' && steps.decision.outputs.dry_run != 'true' && steps.metadata.outputs.same_repo == 'true' && steps.metadata.outputs.head_ref != '' && steps.metadata.outputs.decision_ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Merge uses the PAT: with all checks (incl. the pr-flow/ready
-          # aggregate) already green, `gh pr merge --auto` direct-merges via
-          # the mergePullRequest mutation, which the workflow GITHUB_TOKEN was
-          # denied ("Resource not accessible by integration"). A PAT merge
-          # also lets the resulting push trigger on-push workflows on main,
-          # which GITHUB_TOKEN-driven merges never do. Approval stays on
-          # GITHUB_TOKEN because the PAT owner authors these PRs and GitHub
-          # rejects self-approval.
-          MERGE_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          # Merge uses the PAT: the direct squash merge (mergePullRequest
+          # mutation) was denied for the workflow GITHUB_TOKEN ("Resource not
+          # accessible by integration"). A PAT merge also lets the resulting
+          # push trigger on-push workflows on main, which GITHUB_TOKEN-driven
+          # merges never do. There is deliberately no GITHUB_TOKEN fallback:
+          # a fallback that can never merge would only disguise a missing or
+          # expired PAT as a generic merge failure, so the step fails fast
+          # below instead. Approval stays on GITHUB_TOKEN because the PAT
+          # owner authors these PRs and GitHub rejects self-approval.
+          MERGE_TOKEN: ${{ secrets.GH_PAT }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set +e
 
-          approve_output=$(gh pr review "$PR_NUMBER" --approve --body "PR finalizer: required validation and review signals passed." 2>&1)
-          approve_exit=$?
-
-          merge_output=$(GH_TOKEN="$MERGE_TOKEN" gh pr merge "$PR_NUMBER" --auto --squash 2>&1)
-          merge_exit=$?
-
           status="success"
-          details="Approval submitted and auto-merge enabled."
+          details="Approval submitted and squash merge performed."
 
-          if [ "$approve_exit" -ne 0 ] || [ "$merge_exit" -ne 0 ]; then
+          if [ -z "$MERGE_TOKEN" ]; then
             status="failed"
-            details_parts=()
-            if [ "$approve_exit" -ne 0 ]; then
-              details_parts+=("approve failed: $(printf '%s' "$approve_output" | tail -1)")
+            details="GH_PAT is not configured; the squash merge cannot run on the workflow GITHUB_TOKEN (mergePullRequest is denied for it)."
+          else
+            # Re-read the PR before approving or merging. The metadata above
+            # can be minutes old: a synchronize push (fix-review, rebase-pr)
+            # must never be approved or merged on stale state, GitHub
+            # recomputes mergeable asynchronously (so UNKNOWN needs a short
+            # retry), and a concurrent merge (project-manager, human) is
+            # success here, not an apply failure. Only MERGEABLE proceeds —
+            # CONFLICTING is a definite red light, not an unknown one.
+            merge_precheck="unknown"
+            check_head=""
+            check_mergeable="UNKNOWN"
+            for attempt in 1 2 3 4 5; do
+              if gh pr view "$PR_NUMBER" --json headRefOid,state,mergedAt,mergeable > /tmp/pr-merge-check.json 2>/dev/null && [ -s /tmp/pr-merge-check.json ]; then
+                check_head=$(jq -r '.headRefOid // ""' /tmp/pr-merge-check.json)
+                check_state=$(jq -r '.state // ""' /tmp/pr-merge-check.json)
+                check_merged=$(jq -r '.mergedAt // ""' /tmp/pr-merge-check.json)
+                check_mergeable=$(jq -r '.mergeable // "UNKNOWN"' /tmp/pr-merge-check.json)
+                expected_head=$(jq -r '.headRefOid // ""' /tmp/pr.json)
+                if [ "$check_state" != "OPEN" ] || [ -n "$check_merged" ]; then
+                  merge_precheck="merged-elsewhere"
+                  break
+                fi
+                if [ -n "$expected_head" ] && [ "$check_head" != "$expected_head" ]; then
+                  merge_precheck="head-changed"
+                  break
+                fi
+                if [ "$check_mergeable" = "MERGEABLE" ]; then
+                  merge_precheck="ok"
+                  break
+                fi
+              fi
+              sleep 5
+            done
+
+            if [ "$merge_precheck" = "merged-elsewhere" ]; then
+              details="PR was already merged or closed before the apply; treating as complete."
+            elif [ "$merge_precheck" = "head-changed" ]; then
+              status="failed"
+              details="Head SHA changed before the approval and merge (expected $(jq -r '.headRefOid // ""' /tmp/pr.json), found ${check_head}); aborting."
+            elif [ "$merge_precheck" != "ok" ]; then
+              status="failed"
+              details="PR mergeability was not MERGEABLE after repeated reads (last: ${check_mergeable}); aborting before the approval and merge."
+            else
+              # Re-validate the decision evidence before approval and ready status.
+              # Checks can change again before the merge request reaches GitHub.
+              # The evaluator only reads PR policy and check evidence.
+              gh pr view "$PR_NUMBER" \
+                --json number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \
+                > /tmp/pr-recheck.json 2>/dev/null
+              node .github/workflows/scripts/evaluate-pr-policy.cjs \
+                --policy-file .github/workflows/policy.json \
+                --pr-file /tmp/pr-recheck.json \
+                > /tmp/policy-recheck.json 2>/dev/null
+              node .github/workflows/scripts/evaluate-pr-finalizer-decision.cjs \
+                --config-file .github/pr-flow.json \
+                --policy-file /tmp/policy-recheck.json \
+                --pr-file /tmp/pr-recheck.json \
+                --event-name "${GITHUB_EVENT_NAME}" \
+                --event-path "${GITHUB_EVENT_PATH}" \
+                --dry-run false \
+                > /tmp/finalizer-recheck.json 2>/dev/null
+              recheck_decision=$(jq -r '.decision // ""' /tmp/finalizer-recheck.json)
+              recheck_head=$(jq -r '.headRefOid // ""' /tmp/pr-recheck.json)
+
+              if [ "$recheck_head" != "$check_head" ]; then
+                status="failed"
+                details="Head SHA changed during finalizer re-validation (validated ${check_head}, found ${recheck_head}); aborting before the approval and merge."
+              elif [ "$recheck_decision" != "approve_and_enable_automerge" ]; then
+                status="failed"
+                details="Finalizer re-validation on head ${check_head} returned '${recheck_decision}' ($(jq -r '.summary // "no summary"' /tmp/finalizer-recheck.json)); aborting before the approval and merge."
+              else
+                # Bind the review to the exact commit whose checks and policy
+                # were revalidated. `gh pr review` cannot set commit_id.
+                approve_output=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+                  -f event='APPROVE' \
+                  -f commit_id="$check_head" \
+                  -f body='PR finalizer: required validation and review signals passed.' 2>&1)
+                approve_exit=$?
+
+                raced="false"
+                details_parts=()
+                if [ "$approve_exit" -ne 0 ]; then
+                  details_parts+=("approve failed: $(printf '%s' "$approve_output" | tail -1)")
+                else
+                  # Publish the only required context only after approval has
+                  # succeeded; a failed publication must stop before merging.
+                  aggregate_context=$(jq -r '.statuses.aggregate.context // "pr-flow/ready"' .github/pr-flow.json)
+                  status_output=$(gh api "repos/${GITHUB_REPOSITORY}/statuses/${check_head}" \
+                    -f state='success' \
+                    -f context="$aggregate_context" \
+                    -f description='Finalizer accepted; merging.' \
+                    -f target_url="$RUN_URL" 2>&1)
+                  status_exit=$?
+                  if [ "$status_exit" -ne 0 ]; then
+                    details_parts+=("pr-flow/ready status post failed: $(printf '%s' "$status_output" | tail -1)")
+                  else
+                    # Pin the direct squash merge to the validated commit.
+                    merge_output=$(GH_TOKEN="$MERGE_TOKEN" gh pr merge "$PR_NUMBER" --squash --match-head-commit "$check_head" 2>&1)
+                    merge_exit=$?
+                    if [ "$merge_exit" -ne 0 ]; then
+                      # A concurrent merge surfaces as a merge error; re-read
+                      # the PR so an already-merged PR is recorded as success.
+                      gh pr view "$PR_NUMBER" --json state,mergedAt > /tmp/pr-merge-recheck.json 2>/dev/null || true
+                      late_merged=$(jq -r '.mergedAt // ""' /tmp/pr-merge-recheck.json 2>/dev/null)
+                      late_state=$(jq -r '.state // ""' /tmp/pr-merge-recheck.json 2>/dev/null)
+                      if [ -n "$late_merged" ] || [ "$late_state" = "MERGED" ]; then
+                        raced="true"
+                        details="Merge raced with another actor; PR is merged."
+                      else
+                        details_parts+=("merge failed: $(printf '%s' "$merge_output" | tail -1)")
+                        revert_output=$(gh api "repos/${GITHUB_REPOSITORY}/statuses/${check_head}" \
+                          -f state='failure' \
+                          -f context="$aggregate_context" \
+                          -f description='Finalizer merge failed; required gate reverted.' \
+                          -f target_url="$RUN_URL" 2>&1)
+                        if [ $? -ne 0 ]; then
+                          details_parts+=("pr-flow/ready failure revert failed: $(printf '%s' "$revert_output" | tail -1)")
+                        fi
+                      fi
+                    fi
+                  fi
+                fi
+                if [ "${#details_parts[@]}" -gt 0 ]; then
+                  status="failed"
+                  details=$(printf '%s; ' "${details_parts[@]}")
+                  details=${details%; }
+                fi
+              fi
             fi
-            if [ "$merge_exit" -ne 0 ]; then
-              details_parts+=("auto-merge failed: $(printf '%s' "$merge_output" | tail -1)")
-            fi
-            details=$(printf '%s; ' "${details_parts[@]}")
-            details=${details%; }
           fi
 
           {
@@ -205,7 +323,7 @@ jobs:
       - name: Fail on finalizer apply error
         if: steps.apply.outputs.status == 'failed'
         run: |
-          echo "::error::PR finalizer could not complete approval or auto-merge. See finalizer status comment for details."
+          echo "::error::PR finalizer could not complete approval or merge. See finalizer status comment for details."
           exit 1
 
   wake-orchestrator:

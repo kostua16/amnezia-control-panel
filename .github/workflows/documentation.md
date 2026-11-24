@@ -164,7 +164,7 @@ gsd-planning-execute.yml
 pr-finalizer.yml
   -> dispatch-only worker controlled by pr-flow.yml
   -> revalidates configured CI checks, review labels, policy, and head SHA
-  -> approves and enables auto-merge only for eligible trusted PRs
+  -> approves and performs a squash merge only for eligible trusted PRs
 
 workflow-health-optimize.yml
   -> hourly compact workflow-run collector and workflow YAML optimizer
@@ -246,7 +246,7 @@ sets `pr-flow/ready`.
 Manual-review markers such as `needs-review` and manual-only policy paths still
 run advisory Code Review and Security Review after CI is green. Once those
 review signals pass, PR flow completes as `flow/manual-only`: `pr-flow/ready`
-can pass for branch protection, but PR Finalizer and auto-merge stay disabled so
+can pass for branch protection, but PR Finalizer approval and merge stay disabled so
 a human makes the final decision. Hard blockers such as `do-not-merge`,
 AI/security concern labels, and blocked dependency labels still fail
 `pr-flow/ready`.
@@ -381,9 +381,9 @@ The following labels are enforced or created automatically by the workflow stack
 | `security-review-concerns`    | Security review found significant issues                |
 | `deepseek-review-passed`      | DeepSeek code review found no issues (non-blocking)     |
 | `deepseek-review-concerns`    | DeepSeek code review found concerns (non-blocking)      |
-| `deps-review-passed`          | Dependabot PR remains auto-merge eligible               |
+| `deps-review-passed`          | Dependabot PR remains merge eligible                     |
 | `deps-review-manual`          | Dependency PR needs manual review                       |
-| `deps-review-blocked`         | Dependency PR is blocked from auto-merge                |
+| `deps-review-blocked`         | Dependency PR is blocked from finalizer merge           |
 | `skip-improve`                | Skip the Claude+GSD improvement analysis flow           |
 | `planning-intake-open`        | A planning intake PR exists for follow-up work          |
 | `planning-draft-open`         | Legacy alias for existing planning intake PRs           |
@@ -400,7 +400,7 @@ The following labels are enforced or created automatically by the workflow stack
 | `flow/finalizer-dispatched`   | PR flow dispatched the finalizer for this PR head       |
 | `flow/manual-only`            | PR flow completed reviews but requires human merge      |
 | `pr-flow/kilo-review`         | Diagnostic status for external Kilo review              |
-| `do-not-merge`                | Explicitly block finalizer approval and auto-merge      |
+| `do-not-merge`                | Explicitly block finalizer approval and merge           |
 | `auto-fix-approved`           | Maintainer explicitly approved issue auto-fix execution |
 | `antigravity-review-passed`   | Antigravity AI code review found no blocking issues     |
 | `antigravity-review-concerns` | Antigravity AI code review found blocking concerns      |
@@ -432,19 +432,19 @@ Always manual-only:
 
 | PR shape                                                                                                                                                                                                                                 | Result                                                                       |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `claude-auto-fix-ci-main-12345` touching `src/**`, green checks, `ai-review-passed`, `security-review-passed`                                                                                                                            | Finalizer approves and enables squash auto-merge                             |
+| `claude-auto-fix-ci-main-12345` touching `src/**`, green checks, `ai-review-passed`, `security-review-passed`                                                                                                                            | Finalizer approves and squash-merges                                          |
 | `claude-auto-fix-ci-main-12345` touching `.github/workflows/ci.yml`                                                                                                                                                                      | Reviews run after CI; finalizer leaves it manual-only                        |
 | `claude-fix-issue-*` missing `security-review-passed`                                                                                                                                                                                    | Finalizer waits for review signals                                           |
-| `claude-workflow-optimize-*` touching only `.planning/**`, green checks, `ai-review-passed`, `security-review-passed`                                                                                                                    | Finalizer approves and enables squash auto-merge                             |
-| `claude-gsd-planning-execute-*` touching Phase 999 queue and bounded `src/**` changes                                                                                                                                                    | Finalizer approves and enables squash auto-merge after reviews               |
+| `claude-workflow-optimize-*` touching only `.planning/**`, green checks, `ai-review-passed`, `security-review-passed`                                                                                                                    | Finalizer approves and squash-merges                                          |
+| `claude-gsd-planning-execute-*` touching Phase 999 queue and bounded `src/**` changes                                                                                                                                                    | Finalizer approves and squash-merges after reviews                            |
 | `claude-gsd-planning-execute-*` touching `.github/**` or package manifests                                                                                                                                                               | Reviews run after CI; finalizer leaves it manual-only                        |
-| `claude-audit-safe-fix-*` touching up to 10 files / 400 changed lines under safe `src/components/**`, `src/hooks/**`, `src/lib/**`, `src/types/**`, or `src/app/globals.css`, green checks, `ai-review-passed`, `security-review-passed` | Finalizer approves and enables squash auto-merge                             |
+| `claude-audit-safe-fix-*` touching up to 10 files / 400 changed lines under safe `src/components/**`, `src/hooks/**`, `src/lib/**`, `src/types/**`, or `src/app/globals.css`, green checks, `ai-review-passed`, `security-review-passed` | Finalizer approves and squash-merges                                          |
 | `claude-audit-safe-fix-*` touching `src/app/api/**`, auth/sync/config paths, Prisma, packages, workflows, or more than 10 files / 400 changed lines                                                                                      | Reviews run after CI; finalizer leaves it manual-only                        |
 | `claude-audit-fix-*` from a broad autonomous audit                                                                                                                                                                                       | Reviews run after CI; finalizer leaves it manual-only                        |
 | Broad audit fix touching API route + seed/security-sensitive paths and 7+ files                                                                                                                                                          | Reviews run after CI; finalizer leaves it manual-only                        |
-| `dependabot/npm_and_yarn/react-*` with patch/minor update and `deps-review-passed`                                                                                                                                                       | Finalizer approves and enables squash auto-merge                             |
+| `dependabot/npm_and_yarn/react-*` with patch/minor update and `deps-review-passed`                                                                                                                                                       | Finalizer approves and squash-merges                                          |
 | `dependabot/github_actions/actions-checkout-*`                                                                                                                                                                                           | Dependency/review policy runs after CI; finalizer leaves it manual-only      |
-| Any PR with `do-not-merge` or a concern/block label                                                                                                                                                                                      | Finalizer does not approve or enable auto-merge                              |
+| Any PR with `do-not-merge` or a concern/block label                                                                                                                                                                                      | Finalizer does not approve or merge                                          |
 | Any PR with only `needs-review` after CI passes                                                                                                                                                                                          | Code/security reviews run, then PR flow marks manual-only for human decision |
 
 ## Job-local GitHub API request counts

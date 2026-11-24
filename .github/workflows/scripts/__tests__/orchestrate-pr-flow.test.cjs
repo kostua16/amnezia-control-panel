@@ -1725,7 +1725,7 @@ test('finalizer failures drive three retries and then stop subsequent wakes on t
   );
 });
 
-test('makeDecision keeps a succeeded finalizer without auto-merge terminal', () => {
+test('makeDecision keeps a succeeded finalizer without merge terminal', () => {
   const decision = makePrFlowDecision(
     finalizerRetryContext(
       {
@@ -1747,7 +1747,7 @@ test('makeDecision keeps a succeeded finalizer without auto-merge terminal', () 
 
   assert.equal(decision.state, 'flow/finalizer-dispatched');
   assert.equal(decision.dispatch, null);
-  assert.match(decision.reason, /completed without enabling auto-merge/);
+  assert.match(decision.reason, /completed without merging/);
 });
 
 test('finalizer retries ignore legacy counter labels and runs for other PRs or heads', () => {
