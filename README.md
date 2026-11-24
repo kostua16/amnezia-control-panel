@@ -112,7 +112,7 @@ Databases created with `prisma db push` have no migration history. Baseline them
 
 If a database that already has migration history contains a column that a migration adds (for example `servers.redirectIp` added by hand as a workaround for `GET /api/servers` returning 500, error `P2022`), SQLite has no `ADD COLUMN IF NOT EXISTS` and startup fails with `duplicate column name`, followed by `P3009` on later starts. Mark the migration as applied against the deployment database, then restart.
 
-With Docker Compose, run it in a one-off container that mounts the same volume (the crash-looping container cannot be exec'd into):
+With Docker Compose, run it from the directory of the deployment's compose file and `.env` (same project name, so the same `db-data` volume; `JWT_SECRET` and `ADMIN_PASSWORD` must be set because Compose validates them) in a one-off container, since the crash-looping container cannot be exec'd into:
 
 ```bash
 docker compose run --rm --entrypoint "" app \
@@ -120,7 +120,7 @@ docker compose run --rm --entrypoint "" app \
   --schema /app/prisma/schema.prisma
 ```
 
-From a source checkout, set `DATABASE_URL` to the database file the app actually uses before running `npx prisma migrate resolve --applied 20260927000000_add_server_redirect_ip`; otherwise Prisma resolves `.env` or `file:./prisma/dev.db` and the deployment database stays unchanged.
+From a source checkout, set `DATABASE_URL` (in `.env` or the shell) to the database file the app actually uses before running `npx prisma migrate resolve --applied 20260927000000_add_server_redirect_ip`. Without it the Prisma CLI has no database to target and fails; with a `.env` that points elsewhere, the command updates that other database and the deployment database stays unchanged.
 
 ### Build manually
 
