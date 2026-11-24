@@ -104,6 +104,18 @@ See [Private GHCR deployment](docs/private-ghcr-deploy.md) for CentOS Stream 9 /
 | `geoip-data` | `/app/data/geoip`  | GeoIP database cache        |
 | `log-data`   | `/app/logs`        | Application logs            |
 
+### Database migrations
+
+The container entrypoint and `npm run dev` / `npm start` run `prisma migrate deploy` on every start, so upgrades apply pending migrations automatically.
+
+If a database already contains a column that a migration adds (for example `servers.redirectIp` added by hand as a workaround for `GET /api/servers` returning 500, error `P2022`), SQLite has no `ADD COLUMN IF NOT EXISTS` and startup fails with `duplicate column name`, followed by `P3009` on later starts. Mark the migration as applied and restart:
+
+```bash
+npx prisma migrate resolve --applied 20260927000000_add_server_redirect_ip
+```
+
+Databases created with `prisma db push` have no migration history and must be baselined first; see [Prisma baselining](https://www.prisma.io/docs/orm/prisma-migrate/workflows/baselining).
+
 ### Build manually
 
 ```bash
