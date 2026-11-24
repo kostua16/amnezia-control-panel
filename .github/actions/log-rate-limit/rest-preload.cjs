@@ -122,6 +122,8 @@ try {
         // Best-effort telemetry.
       }
     });
+    // This internal Undici channel may change. If it stops emitting, fetch
+    // goes uncounted while the separate Node HTTP(S) observer still works.
     channel('undici:client:sendHeaders').subscribe((message) => {
       try {
         record(message.request);

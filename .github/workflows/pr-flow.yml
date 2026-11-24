@@ -219,6 +219,7 @@ jobs:
 
       - name: Orchestrate PR flow
         if: github.event_name != 'issue_comment' || steps.comment.outputs.should_run == 'true'
+        shell: bash
         env:
           REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

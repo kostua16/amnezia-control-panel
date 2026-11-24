@@ -128,8 +128,17 @@ test('every opted-in workflow step loads the preload without overriding runner N
       const steps = job.steps ?? [];
       const setup = steps.findIndex((step) => step.id === 'setup_environment');
       for (const [index, step] of steps.entries()) {
-        if (!Object.hasOwn(step.env ?? {}, 'REST_COUNTER_PRELOAD')) continue;
+        const hasPreloadEnv = Object.hasOwn(
+          step.env ?? {},
+          'REST_COUNTER_PRELOAD',
+        );
+        const referencesPreload =
+          /\$\{\{[^}]*\boutputs(?:\.rest-counter-preload(?![\w-])|\['rest-counter-preload'\])/.test(
+            JSON.stringify(step),
+          );
+        if (!hasPreloadEnv && !referencesPreload) continue;
         const label = file + ' / ' + step.name;
+        assert.ok(hasPreloadEnv, `${label} must bind env.REST_COUNTER_PRELOAD`);
         assert.ok(setup >= 0 && setup < index, label);
         assert.equal(
           steps[setup].uses,
@@ -143,6 +152,7 @@ test('every opted-in workflow step loads the preload without overriding runner N
           label,
         );
         if (step.run) {
+          assert.equal(step.shell, 'bash', label);
           assert.match(
             step.run,
             /preload=\(--require "\$REST_COUNTER_PRELOAD"\)/,
