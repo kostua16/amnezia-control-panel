@@ -90,6 +90,26 @@ test('sweep categories are identical across required, properties, enum, and prom
   );
 });
 
+test('schema is a compact single-line scalar through YAML loading', () => {
+  const doc = loadWorkflow();
+  const { claudeRun } = loadSweepSchema(doc);
+  const schemaText = claudeRun.with['json-schema'];
+
+  assert.equal(
+    schemaText,
+    JSON.stringify(JSON.parse(schemaText)),
+    'the schema passed through toJSON and the action shell must stay compact',
+  );
+  assert.doesNotMatch(schemaText, /[\r\n]/);
+
+  const prettySchemaText = JSON.stringify(JSON.parse(schemaText), null, 2);
+  assert.match(
+    prettySchemaText,
+    /\r?\n/,
+    'the former pretty-printed block must fail the compact transport contract',
+  );
+});
+
 test('per-category outcome schema is identical and complete for every category', () => {
   const doc = loadWorkflow();
   const { schema } = loadSweepSchema(doc);
@@ -154,4 +174,17 @@ test('structured sweep report step fences the payload without rewriting it', () 
     /SANITIZED_REPORT/,
     'stripping backticks rewrites the report — escape the fence instead',
   );
+});
+
+test('successful sweep with a missing mapped report fails visibly', () => {
+  const doc = loadWorkflow();
+  const guard = findStep(
+    doc,
+    (s) => s.name === 'Fail when a successful sweep has no structured report',
+    'guarding a successful sweep with a missing structured report',
+  );
+  assert.match(guard.if, /steps\.claude_run\.outcome == 'success'/);
+  assert.match(guard.if, /steps\.claude_run\.outputs\.structured_output == ''/);
+  assert.match(guard.run, /without producing its required structured report/);
+  assert.match(guard.run, /exit 1/);
 });
