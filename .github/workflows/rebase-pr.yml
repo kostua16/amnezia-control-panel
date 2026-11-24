@@ -690,15 +690,34 @@ jobs:
             --automerge-disabled "$AUTOMERGE_DISABLED" \
             --mode complete
 
+      - name: Restore original head action manifests
+        if: always() && steps.pr.outputs.eligible == 'true'
+        run: |
           # Local composite post steps re-read action.yml from the workspace
           # at job end (actions/runner#2816), but the rebase rewrote
           # .github/actions from the PR-head revision to the base+PR
           # revision, so the runner's cached step indexes no longer match
           # the on-disk manifests and post cleanup dies with
           # "Index was out of range". The branch was already pushed from
-          # the rebased tree; restore the original head's action manifests
-          # so post cleanup reads what the main phase cached. No-op when no
-          # rebase ran or the path is absent from the original head.
-          if [ -f "$RUNNER_TEMP/original-head.txt" ]; then
-            git checkout "$(cat "$RUNNER_TEMP/original-head.txt")" -- .github/actions || true
+          # the rebased tree, so restore the original head's action
+          # manifests in a dedicated always() step that still runs when the
+          # summary step failed or the job was cancelled. No-op when no
+          # rebase ran, the recorded head is not a commit, or the path is
+          # absent from the original head; unexpected restore failures fail
+          # this step instead of being swallowed.
+          original_head_file="$RUNNER_TEMP/original-head.txt"
+          if [ ! -f "$original_head_file" ]; then
+            echo "No original head recorded; nothing to restore"
+            exit 0
           fi
+          original_head="$(cat "$original_head_file")"
+          if ! git rev-parse -q --verify "$original_head^{commit}" >/dev/null; then
+            echo "::warning::original-head.txt holds '$original_head', not a commit; skipping restore"
+            exit 0
+          fi
+          if ! git rev-parse -q --verify "$original_head:.github/actions" >/dev/null; then
+            echo "::warning::.github/actions absent from original head $original_head; skipping restore"
+            exit 0
+          fi
+          # Worktree-only restore: keep the index clean for any later step.
+          git restore --source="$original_head" -- .github/actions

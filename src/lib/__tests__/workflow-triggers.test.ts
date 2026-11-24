@@ -301,6 +301,30 @@ describe('workflow trigger policy', () => {
     assert.match(yaml, /--reason "\$REASON"/);
   });
 
+  it('rebase-pr restores original head action manifests in a dedicated always() step', () => {
+    // Local composite post steps re-read .github/actions manifests from the
+    // workspace at job end (actions/runner#2816), but the rebase rewrites
+    // them to the rebased revision. The restore must be its own always()
+    // step after the summary so it still runs when the summary script
+    // fails or the job is cancelled, and it must neither stage files nor
+    // swallow restore failures.
+    const yaml = readWorkflowText('rebase-pr.yml');
+
+    assert.match(
+      yaml,
+      /--mode complete[\s\S]*name: Restore original head action manifests/,
+    );
+    assert.match(
+      yaml,
+      /name: Restore original head action manifests\s+if: always\(\) && steps\.pr\.outputs\.eligible == 'true'\s+run: \|/,
+    );
+    assert.match(
+      yaml,
+      /git restore --source="\$original_head" -- \.github\/actions/,
+    );
+    assert.doesNotMatch(yaml, /-- \.github\/actions \|\| true/);
+  });
+
   it('rebase-pr auto-resolves trivial conflicts before invoking ZAI', () => {
     const yaml = readWorkflowText('rebase-pr.yml');
 
