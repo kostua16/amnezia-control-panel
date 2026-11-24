@@ -44,7 +44,7 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 2. **Security** — `npm audit --json` HIGH/CRITICAL.
 3. **Progress** — stale or blocked phases in `.planning/STATE.md` and `.planning/ROADMAP.md`.
 4. **TODO/FIXME** — in commits from the last 12h.
-5. **Stale issues** — open >90 days.
+5. **Stale issues** — open >90 days AND actively worked or recently triaged but unresolved. Skip `stale` and `keep-open`/`backlog`/`in-progress`/`umbrella-sub-issue` labels, plus umbrella/tracking title, label, and body signals (`[todo-backlog]`, `[claude-health]`, `[grouped]`; `backlog`/`epic`/`umbrella`/`tracking`/`keep-open`; “umbrella tracking issue”/“rolling issue”). Keep `deferred` eligible.
 
 ## Your Approach
 
@@ -68,6 +68,8 @@ YAGNI / KISS / DRY. Issue only if findings exist AND no open duplicate. Critical
 3. create labeled issues only for real, non-duplicate findings.
 4. comment on critical security findings only in open PRs changing dependency manifests.
 5. report totals; clean = success.
+
+For stale-issue disposition, follow the exemptions and the age-plus-active-or-recently-triaged condition in `maintenance.yml`; the `umbrella-sub-issue` label is explicitly exempt and `deferred` is not.
 
 ## Output Format
 

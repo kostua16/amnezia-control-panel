@@ -299,9 +299,22 @@ test('reconcileEscalationLabels relabels open escalations still carrying umbrell
       return JSON.stringify([
         {
           number: 1080,
+          title: 'APR-E10 escalate [abcdef012345]: generated recommendation',
+          body: 'Automatically escalated systemic recommendation.',
           labels: [{ name: 'auto-fix' }, { name: 'umbrella-sub-issue' }],
         },
-        { number: 1061, labels: ['auto-fix', 'escalation'] },
+        {
+          number: 1061,
+          title: 'APR-E10 escalate [fedcba987654]: other',
+          body: '',
+          labels: ['auto-fix', 'escalation'],
+        },
+        {
+          number: 1062,
+          title: 'APR-E10 escalate ordinary backlog cleanup',
+          body: 'Backlog issue, not generated.',
+          labels: ['umbrella-sub-issue'],
+        },
       ]);
     }
     return '';
@@ -315,7 +328,7 @@ test('reconcileEscalationLabels relabels open escalations still carrying umbrell
     'migration scan is not capped small',
   );
   assert.equal(relabeled, 1, 'reports the relabeled count');
-  assert.equal(calls.length, 2, 'only the mislabeled issue is edited');
+  assert.equal(calls.length, 2, 'only the generated APR-E10 issue is edited');
   assert.deepEqual(calls[1], [
     'issue',
     'edit',
@@ -337,6 +350,31 @@ test('reconcileEscalationLabels edits nothing when no open escalation carries th
   });
   assert.equal(relabeled, 0, 'nothing relabeled');
   assert.equal(calls.length, 1, 'list only — no edit calls');
+});
+
+test('reconcileEscalationLabels preserves tracker exemptions on generated titles', () => {
+  const calls = [];
+  const relabeled = reconcileEscalationLabels('o/r', (args) => {
+    calls.push(args);
+    if (args[1] === 'list')
+      return JSON.stringify([
+        {
+          number: 1,
+          title: 'APR-E10 escalate [012345abcdef]: generated',
+          body: 'umbrella tracking issue',
+          labels: ['umbrella-sub-issue'],
+        },
+        {
+          number: 2,
+          title: 'APR-E10 escalate [012345abcdef]: generated',
+          body: '',
+          labels: ['umbrella-sub-issue', 'claude-health'],
+        },
+      ]);
+    return '';
+  });
+  assert.equal(relabeled, 0);
+  assert.equal(calls.length, 1);
 });
 
 // --- countConsecutive (streak threshold regression guard) ---

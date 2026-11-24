@@ -384,6 +384,16 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
 
+      # Label setup is best-effort repository maintenance. Run it before both
+      # consumers; either consumer must still run if this action fails.
+      - name: Ensure labels exist
+        continue-on-error: true
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          policy-file: .github/workflows/policy.json
+          names: auto-fix,needs-review,escalation,maintenance
+
       - name: Publish digest issue
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -394,18 +404,6 @@ jobs:
             --repo "${{ github.repository }}" \
             --structured-output "$STRUCTURED_OUTPUT" \
             --run-url "$RUN_URL"
-
-      # Sits directly before its only consumer: the escalation step creates
-      # issues with the `escalation` label. Keeping digest publication above
-      # and independent of this step means a label-sync error — rate limit,
-      # PAT scope change, transient 5xx — skips escalation for one run but
-      # never silently drops the human-disposition digest.
-      - name: Ensure labels exist
-        uses: ./.github/actions/ensure-workflow-labels
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          policy-file: .github/workflows/policy.json
-          names: auto-fix,needs-review,escalation
 
       - name: Escalate repeated systemic fixes (APR-E10)
         env:
