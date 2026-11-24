@@ -210,16 +210,9 @@ jobs:
               status="failed"
               details="PR mergeability was not MERGEABLE after repeated reads (last: ${check_mergeable}); aborting before the approval and merge."
             else
-              # Re-validate the exact evidence the decision step used before
-              # self-certifying the required gate. pr-flow/ready is the only
-              # required context, so once its success lands, branch protection
-              # can no longer stop the merge over a finalizer-filtered check
-              # that turned red after the decision snapshot — and gh pr merge
-              # does not consider those checks either (a failing non-required
-              # check only yields UNSTABLE, which merges). A red, pending, or
-              # otherwise non-approve re-decision aborts before anything is
-              # approved or posted. Re-runs are read-only evaluators: they
-              # print a decision JSON and never mutate the PR.
+              # Re-validate the decision evidence before approval and ready status.
+              # Checks can change again before the merge request reaches GitHub.
+              # The evaluator only reads PR policy and check evidence.
               gh pr view "$PR_NUMBER" \
                 --json number,title,url,state,mergedAt,isDraft,headRefName,headRefOid,baseRefName,author,labels,files,isCrossRepository \
                 > /tmp/pr-recheck.json 2>/dev/null
