@@ -954,7 +954,7 @@ function buildFlowVisibility({
   } else if (workerRunSucceeded(finalizerRuns)) {
     statuses.finalizer = waitingStatus(
       'finalizer',
-      'Finalizer completed without enabling auto-merge; waiting to retry.',
+      'Finalizer completed without merging; waiting to retry.',
       getWorkerTargetUrl(finalizerRuns, currentRunUrl),
     );
   } else if (finalizerAlreadyDispatched) {
@@ -1097,7 +1097,7 @@ function buildFlowGuidance({
   const addNext = (item) => pushUnique(nextSteps, item);
   const addControl = (item) => pushUnique(controls, item);
   const addStopControl = () =>
-    addControl('Add `do-not-merge` to block PR Finalizer and auto-merge.');
+    addControl('Add `do-not-merge` to block PR Finalizer merges.');
 
   if (String(pr.state).toUpperCase() !== 'OPEN' || pr.mergedAt) {
     addNext(
@@ -2237,7 +2237,6 @@ function makeDecision(context) {
   const finalizerAlreadyDispatched = labels.includes(
     'flow/finalizer-dispatched',
   );
-  const autoMergeEnabled = Boolean(pr.autoMergeRequest);
   const finalizerSucceeded = workerRunSucceeded(finalizerRuns);
   const finalizerFailed = workerRunFailed(finalizerRuns);
   const retryLabels = currentLabels.filter((l) =>
@@ -2267,13 +2266,10 @@ function makeDecision(context) {
   // (token permissions, transient API error) rather than a policy decision.
   if (
     finalizerRuns.active ||
-    (finalizerAlreadyDispatched && autoMergeEnabled) ||
-    finalizerSucceeded
+    (finalizerAlreadyDispatched && finalizerSucceeded)
   ) {
     const reason = finalizerSucceeded
-      ? autoMergeEnabled
-        ? 'Finalizer completed and auto-merge is enabled.'
-        : 'Finalizer completed without enabling auto-merge; manual merge required.'
+      ? 'Finalizer completed without merging; manual merge required.'
       : 'Finalizer already dispatched for this head SHA.';
     return finish(
       'flow/finalizer-dispatched',
@@ -2291,8 +2287,8 @@ function makeDecision(context) {
       ...finish(
         'flow/manual-only',
         retryLimitReached
-          ? `Finalizer retry limit (${MAX_FINALIZER_RETRIES}) reached without auto-merge. Manual merge required.`
-          : `Finalizer run limit (${MAX_FINALIZER_RUNS}) reached without auto-merge. Manual merge required.`,
+          ? `Finalizer retry limit (${MAX_FINALIZER_RETRIES}) reached without merging. Manual merge required.`
+          : `Finalizer run limit (${MAX_FINALIZER_RUNS}) reached without merging. Manual merge required.`,
         null,
         [],
         retryLabels,

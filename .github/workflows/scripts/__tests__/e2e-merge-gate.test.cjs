@@ -198,6 +198,6 @@ test('maintainer-approved does NOT bypass pending required checks', () => {
 
 // ---------- out of scope for the decision function (documented in the catalog) ----------
 // M6/M8 feed the same manual_only branch as M5 (upstream evaluate-pr-policy sets manual_only).
-// M16 auto-merge ENABLEMENT failure is a shell step (pr-finalizer.yml:146), not a decision output.
-// M18 a later check going red after auto-merge is armed is a GitHub-side temporal event.
+// M16 apply failure is a shell step (pr-finalizer.yml:144), not a decision output.
+// M18 a later check going red after the finalizer's pr-flow/ready success post is a GitHub-side temporal event.
 // M19 dry_run is a main() arg suppressing the action; the decision is unchanged.

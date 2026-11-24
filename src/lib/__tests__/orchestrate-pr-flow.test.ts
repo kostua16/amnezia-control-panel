@@ -785,7 +785,7 @@ describe('makeDecision', () => {
     assert.equal(decision.dispatch?.key, 'finalizer');
   });
 
-  it('does not re-dispatch finalizer when a prior success did not enable auto-merge', () => {
+  it('does not re-dispatch finalizer when a prior success did not merge', () => {
     // The finalizer already completed. Re-dispatching would cycle: each
     // completed finalizer re-wakes this orchestrator via workflow_run, so the
     // orchestrator must stop once the finalizer has run for the head SHA.
@@ -813,11 +813,11 @@ describe('makeDecision', () => {
     assert.equal(decision.dispatch, null);
     assert.equal(
       decision.reason,
-      'Finalizer completed without enabling auto-merge; manual merge required.',
+      'Finalizer completed without merging; manual merge required.',
     );
   });
 
-  it('does not re-dispatch finalizer after auto-merge is enabled', () => {
+  it('does not re-dispatch finalizer when a stray autoMergeRequest is present', () => {
     const decision = decide({
       pr: prFixture({
         labels: [
@@ -1300,7 +1300,7 @@ describe('buildFlowVisibility', () => {
     );
   });
 
-  it('keeps aggregate pending when finalizer finished without auto-merge', () => {
+  it('keeps aggregate pending when finalizer finished without merging', () => {
     const pr = prFixture({
       labels: [
         'ai-review-passed',
@@ -1335,7 +1335,7 @@ describe('buildFlowVisibility', () => {
     assert.equal(visibility.workers.finalizer.state, 'pending');
     assert.equal(
       visibility.workers.finalizer.description,
-      'Finalizer completed without enabling auto-merge; waiting to retry.',
+      'Finalizer completed without merging; waiting to retry.',
     );
   });
 
@@ -1611,7 +1611,7 @@ describe('finalizer retry guard', () => {
     assert.match(decision.reason, /Finalizer already dispatched/);
   });
 
-  it('does not re-dispatch when finalizer succeeded with auto-merge', () => {
+  it('does not re-dispatch when finalizer succeeded', () => {
     const decision = decideFinalizer({
       pr: prFixture({
         labels: [
@@ -1634,7 +1634,7 @@ describe('finalizer retry guard', () => {
     });
     assert.equal(decision.state, 'flow/finalizer-dispatched');
     assert.equal(decision.dispatch, null);
-    assert.match(decision.reason, /auto-merge is enabled/);
+    assert.match(decision.reason, /Finalizer completed without merging/);
   });
 
   it('re-dispatches through the retry lane when the finalizer run failed', () => {
