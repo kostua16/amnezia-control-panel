@@ -927,24 +927,34 @@ runs:
             }
           }
 
-          // Find existing rolling issue
+          // Find existing rolling issue. The listForRepo response already
+          // carries each issue's labels, so remember whether the tracker wears
+          // claude-health-critical: the sync below then writes only when the
+          // label presence actually differs, instead of paying a no-op
+          // removeLabel (usually a 404) on every clean run.
           let issueNumber = null;
+          let trackerHasCritical = false;
           try {
             const issues = await github.rest.issues.listForRepo({
               owner, repo, state: 'open', labels: 'claude-health', per_page: 10
             });
             const tracker = issues.data.find(i => i.title === '[claude-health] CI Claude Issue Tracker');
-            if (tracker) issueNumber = tracker.number;
+            if (tracker) {
+              issueNumber = tracker.number;
+              trackerHasCritical = (tracker.labels || []).some(
+                l => (l && l.name ? l.name : l) === 'claude-health-critical'
+              );
+            }
           } catch (e) {
             core.warning(`Failed to search for tracker issue: ${e.message}`);
           }
 
           if (!hasFindings) {
-            if (issueNumber) {
+            if (issueNumber && trackerHasCritical) {
               await syncCriticalLabel(issueNumber, false);
               core.info(`Cleared stale critical label on tracker issue #${issueNumber}.`);
             } else {
-              core.info('No findings and no tracker issue — skipping report.');
+              core.info('No findings and no stale critical label — skipping report.');
             }
             return;
           }
@@ -1025,7 +1035,11 @@ runs:
             core.warning(`Failed to post comment: ${e.message}`);
           }
 
-          await syncCriticalLabel(issueNumber, hasError);
+          // A tracker issue created by this run starts without the critical
+          // label, so trackerHasCritical=false is accurate for it too.
+          if (hasError !== trackerHasCritical) {
+            await syncCriticalLabel(issueNumber, hasError);
+          }
 
           // Clean up temp file
           try { fs.unlinkSync(issuesFile); } catch (_) {}

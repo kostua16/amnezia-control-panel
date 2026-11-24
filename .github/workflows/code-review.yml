@@ -325,7 +325,75 @@ jobs:
               labelsToRemove.push(passed ? pair.concerns : pair.passed);
             }
 
-            for (const name of labelsToRemove) {
+            // Read the PR's current labels fresh. The read goes through the
+            // GraphQL API, which is metered against the installation token's
+            // GraphQL points budget (the separate `graphql` resource of
+            // /rate_limit) instead of the REST `core` request budget that the
+            // removeLabel/addLabels writes below — and this workflow's per-run
+            // REST accounting — spend; the label read in
+            // scripts/lib/workflow-labels-diff.cjs relies on the same split.
+            // Reading at apply time (not reusing a resolve-pr snapshot) keeps
+            // the gate correct even when labels changed during the review
+            // (which can run 20+ minutes) or this job is a re-run reusing
+            // stored outputs: the old unconditional remove+add self-healed
+            // those, so this must too. Any read failure, truncated label page,
+            // or unexpected shape (e.g. a null node) fails open to the
+            // unconditional writes, which always reach the correct final
+            // state. On the common path this skips no-op writes: removeLabel
+            // on an absent label is a guaranteed-404 REST call, and addLabels
+            // for already-set labels changes nothing and fires no label event.
+            let currentLabels = null;
+            try {
+              const data = await github.graphql(
+                `query ($owner: String!, $name: String!, $number: Int!) {
+                   repository(owner: $owner, name: $name) {
+                     pullRequest(number: $number) {
+                       labels(first: 100) {
+                         pageInfo { hasNextPage }
+                         nodes { name }
+                       }
+                     }
+                   }
+                 }`,
+                {
+                  owner: context.repo.owner,
+                  name: context.repo.repo,
+                  number: issueNumber
+                }
+              );
+              const labels = data?.repository?.pullRequest?.labels;
+              const nodes = labels?.nodes;
+              // Only an explicitly complete page of string-named nodes is
+              // trusted: a truncated page — or a missing/unexpected pageInfo —
+              // could hide a review label, so it fails open like a read error,
+              // with a warning because the fallback is otherwise invisible.
+              if (
+                labels?.pageInfo?.hasNextPage === false &&
+                Array.isArray(nodes) &&
+                nodes.every((n) => n && typeof n.name === 'string')
+              ) {
+                currentLabels = nodes.map((n) => n.name);
+              } else {
+                core.warning(
+                  'Current-label read was truncated or malformed; applying review signals unconditionally.'
+                );
+              }
+            } catch (error) {
+              core.warning(
+                `Could not read current labels (${error?.message || String(error)}); applying review signals unconditionally.`
+              );
+            }
+
+            const removals =
+              currentLabels === null
+                ? labelsToRemove
+                : labelsToRemove.filter((name) => currentLabels.includes(name));
+            const additions =
+              currentLabels === null
+                ? labelsToAdd
+                : labelsToAdd.filter((name) => !currentLabels.includes(name));
+
+            for (const name of removals) {
               try {
                 await github.rest.issues.removeLabel({
                   owner: context.repo.owner,
@@ -338,12 +406,14 @@ jobs:
               }
             }
 
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              labels: labelsToAdd
-            });
+            if (additions.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: additions
+              });
+            }
 
       - name: Post review summary
         if: always()
