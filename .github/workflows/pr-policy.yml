@@ -27,6 +27,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-environment
+        id: setup_environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
@@ -42,8 +43,15 @@ jobs:
 
       - name: Apply PR labels and policy status
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             const fs = require('fs');
             const pr = context.payload.pull_request;
             if (!pr) {

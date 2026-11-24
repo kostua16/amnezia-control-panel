@@ -100,5 +100,88 @@ test('setup-environment keeps every documented input and its outputs', () => {
   ]) {
     assert.ok(doc.inputs[input], `missing input ${input}`);
   }
-  assert.deepEqual(Object.keys(doc.outputs), ['core-remaining']);
+  assert.deepEqual(Object.keys(doc.outputs), [
+    'core-remaining',
+    'rest-counter-preload',
+  ]);
+  assert.equal(doc.inputs['rest-counter'].default, 'true');
+  const rateLimit = doc.runs.steps.find((step) => step.id === 'rate_limit');
+  assert.equal(rateLimit.with['report-at-job-end'], 'true');
+  assert.equal(rateLimit.with['rest-counter'], '${{ inputs.rest-counter }}');
+  assert.equal(
+    doc.outputs['rest-counter-preload'].value,
+    '${{ steps.rate_limit.outputs.rest-counter-preload }}',
+  );
+  assert.ok(
+    doc.runs.steps.every((step) => step.env?.NODE_OPTIONS === undefined),
+  );
+});
+
+function checkRestCounterWiring(steps, file) {
+  const setup = steps.findIndex((step) => step.id === 'setup_environment');
+  let checked = 0;
+  for (const [index, step] of steps.entries()) {
+    const label = file + ' / ' + (step.name ?? step.id ?? index);
+    const { env, ...fields } = step;
+    const { REST_COUNTER_PRELOAD: preload, ...otherEnv } = env ?? {};
+    assert.ok(
+      !JSON.stringify({ ...fields, env: otherEnv }).includes(
+        'rest-counter-preload',
+      ),
+      label +
+        ' must reference rest-counter-preload only in env.REST_COUNTER_PRELOAD',
+    );
+    if (!Object.hasOwn(env ?? {}, 'REST_COUNTER_PRELOAD')) continue;
+
+    assert.ok(setup >= 0 && setup < index, label);
+    assert.equal(
+      steps[setup].uses,
+      './.github/actions/setup-environment',
+      label,
+    );
+    assert.equal(otherEnv.NODE_OPTIONS, undefined, label);
+    assert.equal(
+      preload,
+      '${{ steps.setup_environment.outputs.rest-counter-preload }}',
+      label,
+    );
+    if (step.run) {
+      assert.equal(step.shell, 'bash', label);
+      assert.match(
+        step.run,
+        /preload=\(--require "\$REST_COUNTER_PRELOAD"\)/,
+        label,
+      );
+      assert.match(step.run, /node "\$\{preload\[@\]\}"/, label);
+    } else {
+      assert.match(step.uses, /^actions\/github-script@/, label);
+      assert.match(
+        step.with.script,
+        /try \{\s+if \(process.env.REST_COUNTER_PRELOAD\) require\(process.env.REST_COUNTER_PRELOAD\);\s+\} catch/,
+        label,
+      );
+    }
+    checked += 1;
+  }
+  return checked;
+}
+
+test('every opted-in step loads the preload without overriding runner Node options', () => {
+  const workflows = path.resolve(ACTIONS_DIR, '../workflows');
+  let checked = 0;
+  for (const file of fs
+    .readdirSync(workflows)
+    .filter((name) => /[.]ya?ml$/.test(name))) {
+    const doc = yaml.load(fs.readFileSync(path.join(workflows, file), 'utf8'));
+    for (const [job, config] of Object.entries(doc.jobs)) {
+      checked += checkRestCounterWiring(config.steps ?? [], file + ' / ' + job);
+    }
+  }
+  for (const { name, file } of localActions()) {
+    const doc = yaml.load(fs.readFileSync(file, 'utf8'));
+    if (doc.runs.using === 'composite') {
+      checked += checkRestCounterWiring(doc.runs.steps, 'action ' + name);
+    }
+  }
+  assert.ok(checked > 0);
 });

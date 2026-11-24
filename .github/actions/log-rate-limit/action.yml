@@ -11,10 +11,15 @@ inputs:
   report-at-job-end:
     description: 'When true, also log the quota in the post step at the end of the job (even if the job failed or was cancelled)'
     default: 'false'
+  rest-counter:
+    description: 'Prepare a REST request preload for opted-in Node steps and report its counts at job end'
+    default: 'false'
 
 outputs:
   core-remaining:
     description: 'Remaining core (REST) quota of the token at the time of the reading; empty when it could not be read'
+  rest-counter-preload:
+    description: 'Path to the job-local preload, or empty when disabled'
 
 runs:
   using: node24

@@ -4,7 +4,73 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { format, parseLine, summarize } = require('../summarize-rate-limit.cjs');
+const {
+  format,
+  parseLine,
+  parseRestCount,
+  summarize,
+} = require('../summarize-rate-limit.cjs');
+
+test('formats stored quota summaries that predate REST counts', () => {
+  const legacy = summarize([]);
+  delete legacy.restCounts;
+  assert.match(format(legacy), /^RATE_LIMIT readings: 0/);
+});
+
+test('reports unavailable and uninstrumented jobs along with partial counts', () => {
+  const prefix = 'REST_COUNT workflow="Telemetry" job=collect run=';
+  const summary = summarize([
+    prefix + '1.1 status=unavailable reason=read-failed',
+    prefix +
+      '1.2 status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 by_route={}',
+    prefix + '1.2 status=unavailable reason=directory-changed',
+    prefix + '2.1 total=0 graphql=0 instrumented=1 unreadable=0 by_route={}',
+    prefix +
+      '3.1 total=1 graphql=0 instrumented=1 unreadable=2 by_route={"GET /user":1}',
+    'REST_COUNT workflow="Other" job=collect run=1.1 status=unavailable reason=setup-failed',
+  ]);
+  assert.match(
+    format(summary),
+    /workflow="Telemetry" job=collect runs=4 reports=5 total=1 graphql=0 by_route=\{"GET \/user":1\} unavailable_jobs=1 unreadable_files=2/,
+  );
+  assert.match(
+    format(summary),
+    /workflow="Other" job=collect runs=1 reports=1 total=0 graphql=0 by_route=\{\} unavailable_jobs=1 unreadable_files=0/,
+  );
+});
+
+test('aggregates REST counts by workflow and job across attempts and matrix reports', () => {
+  const count = (workflow, job, run, total, graphql, byRoute) =>
+    `2026-11-24T00:00:00Z REST_COUNT workflow=${JSON.stringify(workflow)} job=${job} run=${run} total=${total} graphql=${graphql} by_route=${JSON.stringify(byRoute)}`;
+  const pull = 'GET /repos/:o/:r/pulls/:n';
+  const issue = 'POST /repos/:o/:r/issues';
+  const summary = summarize([
+    count('Workflow "test"', 'check', '12.1', 2, 1, { [pull]: 2 }),
+    count('Workflow "test"', 'check', '12.1', 1, 0, { [issue]: 1 }),
+    count('Workflow "test"', 'check', '12.2', 1, 2, { [pull]: 1 }),
+    count('Workflow "test"', 'other', '12.2', 0, 2, {}),
+    count('Another workflow', 'check', '13.1', 1, 0, { [pull]: 1 }),
+    count('Another workflow', 'check', '14.1', 9, 0, { [pull]: 1 }),
+    'REST_COUNT workflow="truncated" job=job run=12.1 total=1 graphql=0 by_route={',
+  ]);
+  assert.equal(summary.restCounts.length, 3);
+  const group = summary.restCounts.find(
+    (row) => row.workflow === 'Workflow "test"' && row.job === 'check',
+  );
+  assert.equal(group.runs.size, 2);
+  assert.equal(group.reports, 3);
+  assert.equal(group.total, 4);
+  assert.equal(group.graphql, 3);
+  assert.deepEqual(Object.fromEntries(group.routes), { [pull]: 3, [issue]: 1 });
+  assert.match(
+    format(summary),
+    /job=check runs=2 reports=3 total=4 graphql=3 by_route=/,
+  );
+  assert.equal(
+    parseRestCount(count('Workflow', 'job', '1.1', 0, 0, {})).total,
+    0,
+  );
+});
 
 function line({
   phase,

@@ -104,6 +104,7 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-environment
+        id: setup_environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
@@ -154,10 +155,16 @@ jobs:
       - name: Post Review Comment
         if: steps.check-secrets.outputs.missing != 'true'
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             const output = process.env.REVIEW_OUTPUT;
             const prNum = parseInt(`${{ steps.pr-info.outputs.pr_num }}`);
             github.rest.issues.createComment({
@@ -170,10 +177,16 @@ jobs:
       - name: Apply Review Label
         if: steps.check-secrets.outputs.missing != 'true'
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             const prNum = parseInt(`${{ steps.pr-info.outputs.pr_num }}`);
             const output = (process.env.REVIEW_OUTPUT || "");
             const label = output.includes("[VERDICT: CONCERNS]") ? "antigravity-review-concerns" : "antigravity-review-passed";

@@ -3,7 +3,7 @@
 
 const readline = require('node:readline');
 
-// Summarises RATE_LIMIT lines (see .github/actions/log-rate-limit) read from stdin.
+// Summarises RATE_LIMIT and REST_COUNT lines read from stdin.
 //
 //   for id in $(gh run list --limit 50 --json databaseId --jq '.[].databaseId'); do
 //     gh run view "$id" --log
@@ -33,6 +33,96 @@ function parseLine(line) {
     ? NO_WINDOW
     : fields.core_reset;
   return { ...fields, core_reset: reset, remaining, limit };
+}
+
+function parseRestCount(line) {
+  const match = line.match(
+    /(?:^|\s)REST_COUNT workflow=("(?:[^"\\]|\\.)*") job=(\S+) run=(\d+\.\d+) (.+)$/,
+  );
+  if (!match) return null;
+  const [, name, job, run, body] = match;
+  try {
+    const workflow = JSON.parse(name);
+    if (/^status=unavailable reason=[a-z-]+\s*$/.test(body)) {
+      return { workflow, job, run, status: 'unavailable' };
+    }
+    const counts = body.match(
+      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))? by_route=(\{.*\})\s*$/,
+    );
+    if (!counts) return null;
+    const [
+      ,
+      status,
+      rawTotal,
+      rawGraphql,
+      rawInstrumented = '0',
+      rawUnreadable = '0',
+      rawRoutes,
+    ] = counts;
+    const total = Number(rawTotal);
+    const graphql = Number(rawGraphql);
+    const instrumented = Number(rawInstrumented);
+    const unreadable = Number(rawUnreadable);
+    const routes = Object.entries(JSON.parse(rawRoutes));
+    if (
+      ![total, graphql, instrumented, unreadable].every(Number.isSafeInteger) ||
+      routes.some(([, count]) => !Number.isSafeInteger(count) || count <= 0) ||
+      routes.reduce((sum, [, count]) => sum + count, 0) !== total
+    )
+      return null;
+    return {
+      workflow,
+      job,
+      run,
+      status,
+      total,
+      graphql,
+      instrumented,
+      unreadable,
+      routes,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function summarizeRestCounts(lines) {
+  const groups = new Map();
+  for (const line of lines) {
+    const count = parseRestCount(line);
+    if (!count) continue;
+    const { workflow, job, run } = count;
+    const key = JSON.stringify([workflow, job]);
+    const group = groups.get(key) ?? {
+      workflow,
+      job,
+      runs: new Set(),
+      reports: 0,
+      unavailableRuns: new Set(),
+      unreadableFiles: 0,
+      total: 0,
+      graphql: 0,
+      routes: new Map(),
+    };
+    // Matrix jobs share run and job IDs. Each report is a separate execution.
+    group.runs.add(run);
+    group.reports += 1;
+    if (count.status) {
+      group.unavailableRuns.add(run.split('.', 1)[0]);
+    } else {
+      group.unreadableFiles += count.unreadable;
+      group.total += count.total;
+      group.graphql += count.graphql;
+      for (const [route, requests] of count.routes) {
+        group.routes.set(route, (group.routes.get(route) ?? 0) + requests);
+      }
+    }
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort(
+    (a, b) =>
+      a.workflow.localeCompare(b.workflow) || a.job.localeCompare(b.job),
+  );
 }
 
 function summarize(lines) {
@@ -123,6 +213,7 @@ function summarize(lines) {
   });
 
   return {
+    restCounts: summarizeRestCounts(lines),
     readings: entries.length,
     withoutWindow,
     ambiguous: skipped.length,
@@ -166,18 +257,26 @@ function format(summary) {
         ` -> end reset=${end.core_reset} token_id=${end.token_id ?? '-'}`,
     );
   }
+  for (const group of summary.restCounts ?? []) {
+    out.push(
+      `REST_COUNT workflow=${JSON.stringify(group.workflow)} job=${group.job} ` +
+        `runs=${group.runs.size} reports=${group.reports} total=${group.total} ` +
+        `graphql=${group.graphql} by_route=${JSON.stringify(Object.fromEntries([...group.routes].sort()))} ` +
+        `unavailable_jobs=${group.unavailableRuns?.size ?? 0} unreadable_files=${group.unreadableFiles ?? 0}`,
+    );
+  }
   return out.join('\n');
 }
 
 if (require.main === module) {
-  // Only RATE_LIMIT lines are kept, so memory stays proportional to the
-  // readings and not to the size of the logs piped in.
+  // Keep only the telemetry lines to bound memory on large log collections.
   const lines = [];
   const reader = readline.createInterface({ input: process.stdin });
   reader.on('line', (line) => {
-    if (line.includes('RATE_LIMIT ')) lines.push(line);
+    if (line.includes('RATE_LIMIT ') || line.includes('REST_COUNT '))
+      lines.push(line);
   });
   reader.on('close', () => console.log(format(summarize(lines))));
 }
 
-module.exports = { format, parseLine, summarize };
+module.exports = { format, parseLine, parseRestCount, summarize };

@@ -439,6 +439,70 @@ Always manual-only:
 | Any PR with `do-not-merge` or a concern/block label                                                                                                                                                                                      | Finalizer does not approve or enable auto-merge                              |
 | Any PR with only `needs-review` after CI passes                                                                                                                                                                                          | Code/security reviews run, then PR flow marks manual-only for human decision |
 
+## Job-local GitHub API request counts
+
+`setup-environment` enables the counter by default. Pass `rest-counter: 'false'`
+to disable it for a setup invocation. The `log-rate-limit` post action emits one
+`REST_COUNT` log line per enabled job, independently of its quota snapshot
+setting. The post includes a step summary when available and prints
+`status=unavailable` if counting could not be set up or the records could not be read.
+
+GitHub [blocks `NODE_OPTIONS` in `GITHUB_ENV`](https://github.blog/changelog/2023-10-05-github-actions-node_options-is-now-restricted-from-github_env/).
+Setup publishes the preload path as its `rest-counter-preload` output. A step
+can pass that path without replacing the Node options inherited from the runner.
+The opted-in GitHub Script steps load it inside their scripts with a guarded
+`require`. The PR flow orchestration step passes `--require` to Node when the
+path is readable. The preload appends its argument for Node descendants while
+preserving their original options. Follow those existing steps when opting in.
+
+For example, add this step after a setup step with `id: setup_environment`,
+and replace the example Node command with the one the job runs.
+
+```yaml
+- name: Run Node with GitHub request counting
+  shell: bash
+  env:
+    REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
+  run: |
+    preload=()
+    if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+      preload=(--require "$REST_COUNTER_PRELOAD")
+    fi
+    node "${preload[@]}" -e 'console.log(process.version)'
+```
+
+The counter observes Node's HTTP(S) and Undici request events, including fetch,
+and includes inherited Node subprocesses. It counts outgoing requests across
+credentials for the public or configured enterprise API. GraphQL has a separate
+count. The existing free `GET /rate_limit` snapshots are excluded. Only fixed
+route templates and counts are stored. A REST total of zero means zero observed
+requests recorded by the preload. The `instrumented` field counts attachments
+and `status=uninstrumented` identifies jobs without an attachment or a request
+record. Unreadable files are counted in `unreadable` and the remaining
+records still contribute to the totals. A route template newer than the post
+reporter is counted under `/other`. Coverage starts after setup and covers
+opted-in steps. Third-party setup actions, the GitHub CLI, curl, Bun and the
+Bun-based Claude Code action are outside the count. Instrumentation assumes the
+same job trust boundary as other runner-user-writable files. Keep untrusted
+processes out of jobs that later run secret-bearing steps.
+
+The `gh` CLI is a Go binary. A PATH shim that delegates with the original
+arguments and streams can count invocations, but one invocation can produce
+multiple HTTP requests through pagination, retries or subcommands. The CLI's
+HTTP debug mode changes stderr. A shim therefore cannot supply a transparent
+request count with the observed interfaces. A source scan found about 250
+`gh` command mentions and 60 direct `github.rest` mentions in workflow and
+action code. This suggests `gh` traffic can dominate shell-heavy jobs. The
+fleet-wide request fraction remains unknown.
+
+Pipe concatenated job logs to
+`node .github/workflows/scripts/summarize-rate-limit.cjs` to sum observed
+requests and route counts per workflow and job across run attempts. Provide
+each job log once. Matrix legs count as separate reports. The
+`unavailable_jobs` counts each workflow/job once per run ID if any attempt or
+matrix leg reported unavailable or uninstrumented.
+`unreadable_files` shows how many files were skipped in reports with partial data.
+
 ## Composite Action Notes
 
 `setup-environment`:

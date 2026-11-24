@@ -58,6 +58,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-environment
+        id: setup_environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
@@ -66,8 +67,15 @@ jobs:
       - name: Resolve PR context
         id: resolve
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             const eventName = context.eventName;
             let pr = null;
 
@@ -170,6 +178,7 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-environment
+        id: setup_environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
@@ -236,10 +245,16 @@ jobs:
       - name: Apply review signal
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
           STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             const review = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
             const issueNumber = Number(process.env.PR_NUMBER);
             const addLabel = review.verdict === 'passed' ? 'deepseek-review-passed' : 'deepseek-review-concerns';
