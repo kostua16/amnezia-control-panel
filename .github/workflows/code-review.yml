@@ -327,13 +327,20 @@ jobs:
               }
             ];
 
-            // Label names captured by the resolve-pr pulls.get. The four review
-            // labels are written only by this workflow and its concurrency group
-            // keeps a single run per PR, so the snapshot is fresh enough to skip
-            // no-op writes: removeLabel on an absent label is a guaranteed-404
-            // REST call, and addLabels for already-set labels changes nothing and
-            // fires no label event. A missing or malformed snapshot falls back to
-            // the unconditional writes.
+            // Label names captured by the resolve-pr pulls.get. The only other
+            // writer of these four review labels is the pr-flow orchestrator's
+            // resetOnHeadChange (see pr-flow.json), which strips them on a head
+            // change — and a head change also cancels this run (concurrency
+            // group code-review-<pr>, cancel-in-progress) and re-dispatches a
+            // fresh review for the new head. So within a live run that remover
+            // cannot invalidate the snapshot; even if a reset raced, the worst
+            // case is a transiently missing label that the next dispatch
+            // re-stamps (re-stamping this head's verdict after a head change
+            // would be wrong anyway). That makes the snapshot fresh enough to
+            // skip no-op writes: removeLabel on an absent label is a guaranteed
+            // 404 REST call, and addLabels for already-set labels changes
+            // nothing and fires no label event. A missing or malformed snapshot
+            // falls back to the unconditional writes.
             let currentLabels = null;
             try {
               const parsed = JSON.parse(process.env.PR_LABELS || '');
