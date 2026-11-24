@@ -1,15 +1,18 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 // E2E structural invariant: the maintenance sweep's category list must stay
 // identical everywhere it appears — the JSON schema's categories.required,
-// categories.properties keys, the $defs.category-name enum, and the prompt's
-// category list. A partial edit (e.g. adding a category to required but not
-// the enum) still validates as JSON Schema, yet silently drops created issues
-// from aggregation or mislabels per-category outcomes. The same file also
-// pins the two hardening rules of the structured-report step: the sweep's
-// run-zai call must not pass an inert track-progress input (resolve-track-progress
-// forces false for schedule/workflow_dispatch events), and the step-summary
-// writer must strip backticks so model-authored JSON cannot break out of the
-// markdown fence.
+// categories.properties keys, the issues_created[].category enum, and the
+// prompt's category list. A partial edit (e.g. adding a category to required
+// but not the enum) still validates as JSON Schema, yet silently drops created
+// issues from aggregation or mislabels per-category outcomes. The schema is
+// kept fully inline (no $defs/$ref) like every other json-schema in the fleet,
+// so the per-category outcome block is deliberately duplicated and this file
+// asserts the copies stay identical. It also pins the two hardening rules of
+// the structured-report step: the sweep's run-zai call must not pass an inert
+// track-progress input (resolve-track-progress forces false for
+// schedule/workflow_dispatch events), and the step-summary writer must fence
+// the payload with four backticks so model-authored JSON can neither break
+// out of the markdown fence nor be rewritten on the way to the summary.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -47,7 +50,8 @@ test('sweep categories are identical across required, properties, enum, and prom
 
   const required = schema.properties.categories.required;
   const propertyKeys = Object.keys(schema.properties.categories.properties);
-  const enumNames = schema.$defs['category-name'].enum;
+  const enumNames =
+    schema.properties.issues_created.items.properties.category.enum;
   const promptMatch = claudeRun.with.prompt.match(
     /exactly one entry per sweep category \(([^)]+)\)/,
   );
@@ -77,7 +81,7 @@ test('sweep categories are identical across required, properties, enum, and prom
   assert.deepEqual(
     [...enumNames].sort(),
     [...expected].sort(),
-    '$defs.category-name enum must match required',
+    'issues_created[].category enum must match required',
   );
   assert.deepEqual(
     [...promptNames].sort(),
@@ -86,32 +90,33 @@ test('sweep categories are identical across required, properties, enum, and prom
   );
 });
 
-test('per-category schema is shared via $defs, not duplicated per category', () => {
+test('per-category outcome schema is identical and complete for every category', () => {
   const doc = loadWorkflow();
   const { schema } = loadSweepSchema(doc);
 
+  const expectedOutcome = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['findings_count', 'issue_created'],
+    properties: {
+      findings_count: { type: 'integer', minimum: 0 },
+      issue_created: { type: 'boolean' },
+      skip_reason: {
+        type: 'string',
+        enum: ['no-findings', 'duplicate', 'error'],
+      },
+    },
+  };
   for (const [name, def] of Object.entries(
     schema.properties.categories.properties,
   )) {
     assert.deepEqual(
       def,
-      { $ref: '#/$defs/category-outcome' },
-      `category "${name}" must reference the shared outcome definition`,
+      expectedOutcome,
+      `category "${name}" must carry the full inline outcome schema ` +
+        '(a drifted copy silently mislabels that category outcome)',
     );
   }
-  assert.deepEqual(
-    schema.properties.issues_created.items.properties.category,
-    { $ref: '#/$defs/category-name' },
-    'issues_created[].category must reference the shared name enum',
-  );
-
-  const outcome = schema.$defs['category-outcome'];
-  assert.deepEqual(outcome.required, ['findings_count', 'issue_created']);
-  assert.deepEqual(outcome.properties.skip_reason.enum, [
-    'no-findings',
-    'duplicate',
-    'error',
-  ]);
 });
 
 test('sweep run-zai call does not pass the inert track-progress input', () => {
@@ -125,7 +130,7 @@ test('sweep run-zai call does not pass the inert track-progress input', () => {
   );
 });
 
-test('structured sweep report step strips backticks before writing the summary', () => {
+test('structured sweep report step fences the payload without rewriting it', () => {
   const doc = loadWorkflow();
   const reportStep = findStep(
     doc,
@@ -133,7 +138,20 @@ test('structured sweep report step strips backticks before writing the summary',
     'named "Record structured sweep report"',
   );
   const run = reportStep.run;
-  assert.match(run, /SANITIZED_REPORT="\$\{STRUCTURED_REPORT\/\/\\`\/\}"/);
-  assert.match(run, /echo "\$SANITIZED_REPORT"/);
-  assert.doesNotMatch(run, /echo "\$STRUCTURED_REPORT"/);
+  assert.match(
+    run,
+    /echo '````json'/,
+    'the summary fence must use four backticks so a triple backtick in the payload cannot close it',
+  );
+  assert.match(run, /echo '````'/);
+  assert.match(
+    run,
+    /echo "\$STRUCTURED_REPORT"/,
+    'the payload must be echoed verbatim',
+  );
+  assert.doesNotMatch(
+    run,
+    /SANITIZED_REPORT/,
+    'stripping backticks rewrites the report — escape the fence instead',
+  );
 });

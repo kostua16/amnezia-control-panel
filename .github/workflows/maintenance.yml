@@ -129,11 +129,96 @@ jobs:
                     "stale-issues"
                   ],
                   "properties": {
-                    "planning-health": { "$ref": "#/$defs/category-outcome" },
-                    "security-audit": { "$ref": "#/$defs/category-outcome" },
-                    "progress": { "$ref": "#/$defs/category-outcome" },
-                    "todo-fixme": { "$ref": "#/$defs/category-outcome" },
-                    "stale-issues": { "$ref": "#/$defs/category-outcome" }
+                    "planning-health": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["findings_count", "issue_created"],
+                      "properties": {
+                        "findings_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "issue_created": {
+                          "type": "boolean"
+                        },
+                        "skip_reason": {
+                          "type": "string",
+                          "enum": ["no-findings", "duplicate", "error"]
+                        }
+                      }
+                    },
+                    "security-audit": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["findings_count", "issue_created"],
+                      "properties": {
+                        "findings_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "issue_created": {
+                          "type": "boolean"
+                        },
+                        "skip_reason": {
+                          "type": "string",
+                          "enum": ["no-findings", "duplicate", "error"]
+                        }
+                      }
+                    },
+                    "progress": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["findings_count", "issue_created"],
+                      "properties": {
+                        "findings_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "issue_created": {
+                          "type": "boolean"
+                        },
+                        "skip_reason": {
+                          "type": "string",
+                          "enum": ["no-findings", "duplicate", "error"]
+                        }
+                      }
+                    },
+                    "todo-fixme": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["findings_count", "issue_created"],
+                      "properties": {
+                        "findings_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "issue_created": {
+                          "type": "boolean"
+                        },
+                        "skip_reason": {
+                          "type": "string",
+                          "enum": ["no-findings", "duplicate", "error"]
+                        }
+                      }
+                    },
+                    "stale-issues": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["findings_count", "issue_created"],
+                      "properties": {
+                        "findings_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "issue_created": {
+                          "type": "boolean"
+                        },
+                        "skip_reason": {
+                          "type": "string",
+                          "enum": ["no-findings", "duplicate", "error"]
+                        }
+                      }
+                    }
                   }
                 },
                 "issues_created": {
@@ -147,7 +232,14 @@ jobs:
                         "type": "integer"
                       },
                       "category": {
-                        "$ref": "#/$defs/category-name"
+                        "type": "string",
+                        "enum": [
+                          "planning-health",
+                          "security-audit",
+                          "progress",
+                          "todo-fixme",
+                          "stale-issues"
+                        ]
                       }
                     }
                   }
@@ -165,36 +257,6 @@ jobs:
                       "reason": {
                         "type": "string"
                       }
-                    }
-                  }
-                }
-              },
-              "$defs": {
-                "category-name": {
-                  "type": "string",
-                  "enum": [
-                    "planning-health",
-                    "security-audit",
-                    "progress",
-                    "todo-fixme",
-                    "stale-issues"
-                  ]
-                },
-                "category-outcome": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": ["findings_count", "issue_created"],
-                  "properties": {
-                    "findings_count": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "issue_created": {
-                      "type": "boolean"
-                    },
-                    "skip_reason": {
-                      "type": "string",
-                      "enum": ["no-findings", "duplicate", "error"]
                     }
                   }
                 }
@@ -231,14 +293,14 @@ jobs:
         run: |
           if [ -n "$STRUCTURED_REPORT" ]; then
             # Model-authored JSON can contain a triple backtick that would
-            # terminate the fence and render the rest as workflow-authored
-            # Markdown; backticks carry no meaning in JSON, so strip them.
-            SANITIZED_REPORT="${STRUCTURED_REPORT//\`/}"
+            # terminate a standard fence and render the rest as
+            # workflow-authored Markdown; a four-backtick fence cannot be
+            # closed by it, so the payload reaches the summary verbatim.
             {
               echo '### Maintenance sweep structured report'
-              echo '```json'
-              echo "$SANITIZED_REPORT"
-              echo '```'
+              echo '````json'
+              echo "$STRUCTURED_REPORT"
+              echo '````'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
