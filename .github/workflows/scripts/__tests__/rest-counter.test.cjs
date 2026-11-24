@@ -136,6 +136,8 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   const env = {
     ...process.env,
     ...setupEnv(root),
+    REST_COUNTER_DIR: '',
+    STATE_rest_counter_skip: '',
     'INPUT_REPORT-AT-JOB-END': 'false',
     GITHUB_JOB: 'standalone',
     GITHUB_RUN_ID: '12',
