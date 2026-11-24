@@ -293,7 +293,7 @@ test('escalation labels do not include the backlog-owned umbrella-sub-issue labe
 
 test('reconcileEscalationLabels relabels open escalations still carrying umbrella-sub-issue', () => {
   const calls = [];
-  reconcileEscalationLabels('o/r', (args) => {
+  const relabeled = reconcileEscalationLabels('o/r', (args) => {
     calls.push(args);
     if (args[1] === 'list') {
       return JSON.stringify([
@@ -306,6 +306,15 @@ test('reconcileEscalationLabels relabels open escalations still carrying umbrell
     }
     return '';
   });
+  // The scan limit must be large enough that the one-shot migration cannot
+  // silently skip matches outside the result window.
+  const limitIdx = calls[0].indexOf('--limit');
+  assert.equal(
+    calls[0][limitIdx + 1],
+    '500',
+    'migration scan is not capped small',
+  );
+  assert.equal(relabeled, 1, 'reports the relabeled count');
   assert.equal(calls.length, 2, 'only the mislabeled issue is edited');
   assert.deepEqual(calls[1], [
     'issue',
@@ -322,10 +331,11 @@ test('reconcileEscalationLabels relabels open escalations still carrying umbrell
 
 test('reconcileEscalationLabels edits nothing when no open escalation carries the old label', () => {
   const calls = [];
-  reconcileEscalationLabels('o/r', (args) => {
+  const relabeled = reconcileEscalationLabels('o/r', (args) => {
     calls.push(args);
     return JSON.stringify([{ number: 9, labels: ['escalation'] }]);
   });
+  assert.equal(relabeled, 0, 'nothing relabeled');
   assert.equal(calls.length, 1, 'list only — no edit calls');
 });
 
@@ -383,8 +393,11 @@ test('hasRunEntry prevents one workflow retry from counting as another audit', (
 function createAuditHarness() {
   let entries = [];
   let failNextCreate = false;
+  let failNextReconcile = false;
   const created = [];
   const outputs = {};
+  const reconcileCalls = [];
+  const logs = [];
   return {
     api: {
       findLogIssue: () => (entries.length > 0 ? 10 : null),
@@ -394,7 +407,14 @@ function createAuditHarness() {
       },
       findEscalationIssue: () => null,
       hasMergedFixPr: () => false,
-      reconcileEscalationLabels: () => {},
+      reconcileEscalationLabels: (repo) => {
+        reconcileCalls.push(repo);
+        if (failNextReconcile) {
+          failNextReconcile = false;
+          throw new Error('reconcile failed');
+        }
+        return 0;
+      },
       createEscalationIssue: (_repo, fp) => {
         if (failNextCreate) {
           failNextCreate = false;
@@ -406,12 +426,17 @@ function createAuditHarness() {
         outputs[name] = value;
       },
       now: () => new Date('2026-08-08T00:00:00Z'),
-      write: () => {},
+      write: (message) => logs.push(String(message)),
     },
     created,
+    reconcileCalls,
+    logs,
     entries: () => entries,
     failCreateOnce: () => {
       failNextCreate = true;
+    },
+    failReconcileOnce: () => {
+      failNextReconcile = true;
     },
     outputs,
   };
@@ -492,6 +517,71 @@ test('runAudit resumes escalation when a retry finds its persisted run entry', (
   assert.equal(harness.entries().length, 2);
   assert.deepEqual(harness.created, [fingerprint(recommendation)]);
   assert.equal(harness.outputs.escalated_count, '1');
+});
+
+test('runAudit reconciles pre-split escalation labels on the clean-audit path', () => {
+  const harness = createAuditHarness();
+  const result = runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/1',
+      rawOutput: auditOutput(null),
+    },
+    harness.api,
+  );
+  assert.equal(result.status, 'no-recommendations');
+  assert.deepEqual(
+    harness.reconcileCalls,
+    ['o/r'],
+    'the common clean-audit path still runs the label migration',
+  );
+});
+
+test('runAudit reconciles pre-split escalation labels on the escalation path', () => {
+  const harness = createAuditHarness();
+  const recommendation = 'Add a shared retry helper';
+  for (const runId of [1, 2]) {
+    runAudit(
+      {
+        repo: 'o/r',
+        runUrl: `https://github.com/o/r/actions/runs/${runId}`,
+        rawOutput: auditOutput(recommendation),
+      },
+      harness.api,
+    );
+  }
+  assert.deepEqual(harness.reconcileCalls, ['o/r', 'o/r']);
+  assert.deepEqual(harness.created, [fingerprint(recommendation)]);
+});
+
+test('runAudit survives a label reconcile failure and still escalates', () => {
+  const harness = createAuditHarness();
+  const recommendation = 'Add a shared retry helper';
+  runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/1',
+      rawOutput: auditOutput(recommendation),
+    },
+    harness.api,
+  );
+  harness.failReconcileOnce();
+  const result = runAudit(
+    {
+      repo: 'o/r',
+      runUrl: 'https://github.com/o/r/actions/runs/2',
+      rawOutput: auditOutput(recommendation),
+    },
+    harness.api,
+  );
+  assert.equal(result.status, 'complete');
+  assert.equal(result.escalated, 1);
+  assert.ok(
+    harness.logs.some((line) =>
+      line.includes('Escalation label reconcile failed'),
+    ),
+    'the reconcile failure is logged, not swallowed silently',
+  );
 });
 
 test('main binds CLI arguments and escalates the second consecutive audit', () => {

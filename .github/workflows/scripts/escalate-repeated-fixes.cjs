@@ -38,7 +38,11 @@ const LOG_SEARCH_MARKER = 'recommendation log APR-E10 in:title';
 // review exempt `umbrella-sub-issue` from the inactivity close and the
 // disposition sweep, so reusing that label here would leave an unactioned
 // escalation open forever. The distinct `escalation` label keeps the stale
-// close lifecycle as its exit condition.
+// close lifecycle as its exit condition. That exit re-arms by design: while
+// the fingerprint keeps a ≥2-run streak with no merged fix PR, a stale-closed
+// escalation is recreated by the next audit, so an unaddressed systemic fix
+// keeps exactly one open escalation and resurfaces once per ~90-day stale
+// cycle instead of being retired after a single reminder.
 const ESCALATION_LABELS = ['auto-fix', 'needs-review', 'escalation'];
 // Matches every escalation title built by escalationTitle() but not the
 // recommendation-log title (LOG_TITLE has no "escalate" token).
@@ -272,7 +276,8 @@ function findEscalationIssue(repo, fp, state = 'open') {
  * `umbrella-sub-issue`, which stale.yml and the maintenance 90d review exempt
  * — without this relabel they would outlive every lifecycle with no exit
  * condition. Runs on every audit; a no-op scan once no open escalation has
- * the old label. The gh runner is injectable for unit tests.
+ * the old label. The gh runner is injectable for unit tests. Returns the
+ * number of issues relabeled so callers can log migration progress.
  */
 function reconcileEscalationLabels(repo, runGhFn = runGh) {
   const out = runGhFn([
@@ -286,10 +291,16 @@ function reconcileEscalationLabels(repo, runGhFn = runGh) {
     ESCALATION_LIST_SEARCH,
     '--json',
     'number,labels',
+    // The migration must be provably complete: a match left outside a small
+    // result window keeps `umbrella-sub-issue` and stays exempt from every
+    // lifecycle — the exact defect this relabel exists to remove. Open
+    // escalations number in the singles digits; 500 sits far beyond that
+    // while staying under gh's 1000 hard cap.
     '--limit',
-    '50',
+    '500',
   ]);
   const issues = JSON.parse(out);
+  let relabeled = 0;
   for (const issue of issues) {
     const names = (issue.labels || []).map((label) =>
       typeof label === 'string' ? label : String(label?.name || ''),
@@ -306,7 +317,9 @@ function reconcileEscalationLabels(repo, runGhFn = runGh) {
       '--add-label',
       'escalation',
     ]);
+    relabeled++;
   }
+  return relabeled;
 }
 
 /**
@@ -520,7 +533,10 @@ function runAudit(
   // exit. A failure here must not block the audit's own escalation work —
   // the reconcile simply retries on the next run.
   try {
-    api.reconcileEscalationLabels(repo);
+    const relabeled = api.reconcileEscalationLabels(repo);
+    api.write(
+      `Escalation label reconcile: ${relabeled} pre-split issue(s) relabeled.\n`,
+    );
   } catch (err) {
     api.write(`Escalation label reconcile failed: ${err.message}\n`);
   }

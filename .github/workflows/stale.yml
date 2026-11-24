@@ -9,7 +9,13 @@
 # `umbrella-sub-issue` is exempt because a spun-off sub-issue tracks
 # exactly one backlog item whose disposition lives in the
 # `[todo-backlog]` umbrella and docs/TODOs-2.md — closing it for
-# inactivity would untrack that work.  `deferred` is deliberately NOT
+# inactivity would untrack that work.  issue-catch-up.yml deliberately
+# does NOT add the label to its exempt list: sub-issues are the backlog
+# items that must keep reaching /fix and the priority nudges, and no
+# catch-up bucket closes them (close buckets fire only on
+# duplicate/canceled labels; the title-group close needs ≥2 identical
+# titles).  With the stale close off, catch-up re-engagement is the only
+# nudge an inactive sub-issue gets.  `deferred` is deliberately NOT
 # exempt: fix-issue.yml applies it as a transient same-file-overlap
 # marker and nothing removes it afterwards, so exempting it here would
 # hide those issues from every lifecycle with no exit condition.
