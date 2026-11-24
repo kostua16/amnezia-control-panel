@@ -316,6 +316,8 @@ test('APR-E10e: reconcile relabels legacy escalations and skips broad title matc
     }
     return '';
   });
+  const jsonFields = calls[0][calls[0].indexOf('--json') + 1].split(',');
+  assert.ok(jsonFields.includes('title'), 'migration fetches the issue title');
   // The scan limit must be large enough that the one-shot migration cannot
   // silently skip matches outside the result window.
   const limitIdx = calls[0].indexOf('--limit');
@@ -343,10 +345,30 @@ test('reconcileEscalationLabels edits nothing when no open escalation carries th
   const calls = [];
   const relabeled = reconcileEscalationLabels('o/r', (args) => {
     calls.push(args);
-    return JSON.stringify([{ number: 9, labels: ['escalation'] }]);
+    return JSON.stringify([
+      {
+        number: 9,
+        title: escalationTitle('abcdef012345', 'Already migrated'),
+        labels: ['escalation'],
+      },
+    ]);
   });
   assert.equal(relabeled, 0, 'nothing relabeled');
   assert.equal(calls.length, 1, 'list only — no edit calls');
+});
+
+test('reconcileEscalationLabels migrates a generated title with an empty description', () => {
+  const relabeled = reconcileEscalationLabels('o/r', (args) => {
+    if (args[1] !== 'list') return '';
+    return JSON.stringify([
+      {
+        number: 9,
+        title: escalationTitle('abcdef012345', '').trimEnd(),
+        labels: ['umbrella-sub-issue'],
+      },
+    ]);
+  });
+  assert.equal(relabeled, 1);
 });
 
 // --- countConsecutive (streak threshold regression guard) ---

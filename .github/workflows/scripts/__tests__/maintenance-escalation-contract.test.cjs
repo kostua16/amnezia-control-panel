@@ -69,7 +69,12 @@ test('APR-E10f: best-effort label setup precedes both issue consumers', () => {
       ensureIndex < escalationIndex,
   );
   assert.equal(steps[ensureIndex]['continue-on-error'], true);
-  const labels = steps[ensureIndex].with.names.split(',');
-  assert.deepEqual(labels, ['auto-fix', 'needs-review', 'escalation']);
+  const labels = steps[ensureIndex].with.names
+    .split(',')
+    .map((name) => name.trim());
+  assert.deepEqual(
+    new Set(labels),
+    new Set(['auto-fix', 'needs-review', 'escalation']),
+  );
   for (const label of labels) assert.ok(policy.labels[label]);
 });

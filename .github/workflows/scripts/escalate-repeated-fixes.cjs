@@ -305,7 +305,7 @@ function reconcileEscalationLabels(repo, runGhFn = runGh) {
     const title = String(issue.title || '');
     // GitHub's token search is broad; require the exact generated APR-E10
     // fingerprint title before considering the legacy label for migration.
-    if (!/^APR-E10 escalate \[[a-f0-9]{12}\]: .+/.test(title)) continue;
+    if (!/^APR-E10 escalate \[[a-f0-9]{12}\]:(?: |$)/.test(title)) continue;
     const names = (issue.labels || []).map((label) =>
       typeof label === 'string' ? label : String(label?.name || ''),
     );
