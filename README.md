@@ -104,6 +104,37 @@ See [Private GHCR deployment](docs/private-ghcr-deploy.md) for CentOS Stream 9 /
 | `geoip-data` | `/app/data/geoip`  | GeoIP database cache        |
 | `log-data`   | `/app/logs`        | Application logs            |
 
+### Database migrations
+
+The container entrypoint and `npm run dev` / `npm start` run `prisma migrate deploy` on every start, so upgrades apply pending migrations automatically.
+
+Databases created with `prisma db push` have no migration history. Baseline them first (see [Prisma baselining](https://www.prisma.io/docs/orm/prisma-migrate/workflows/baselining)); do **not** run the recovery command below on them, because it would record only one migration and make later `migrate deploy` runs fail with `table already exists`.
+
+If a database that already has migration history contains a column that a migration adds (for example `servers.redirectIp` added by hand as a workaround for `GET /api/servers` returning 500, error `P2022`), SQLite has no `ADD COLUMN IF NOT EXISTS` and startup fails with `duplicate column name`, followed by `P3009` on later starts. Mark the migration as applied against the deployment database, then restart.
+
+With Docker Compose, run it from the directory of the deployment's compose file and `.env` (same project name, so the same `db-data` volume; `JWT_SECRET` and `ADMIN_PASSWORD` must be set because Compose validates them) in a one-off container, since the crash-looping container cannot be exec'd into:
+
+```bash
+docker compose run --rm --entrypoint "" app \
+  npx prisma migrate resolve --applied 20260927000000_add_server_redirect_ip \
+  --schema /app/prisma/schema.prisma
+```
+
+For the bundled stack add `-f docker-compose.stack.yml` right after `docker compose`.
+
+For a plain `docker run` deployment, run the same command in a one-off container that mounts the database volume:
+
+```bash
+docker run --rm --entrypoint "" \
+  -e DATABASE_URL="file:/app/data/prisma/dev.db" \
+  -v amnezia-db:/app/data/prisma \
+  amnezia-control-panel \
+  npx prisma migrate resolve --applied 20260927000000_add_server_redirect_ip \
+  --schema /app/prisma/schema.prisma
+```
+
+From a source checkout, set `DATABASE_URL` in the shell for that one command (rather than editing `.env`, which would also change the database used by local development) so it points at the database file the app actually uses, then run `npx prisma migrate resolve --applied 20260927000000_add_server_redirect_ip`. Without it the Prisma CLI has no database to target and fails; with a `.env` that points elsewhere, the command updates that other database and the deployment database stays unchanged.
+
 ### Build manually
 
 ```bash

@@ -28,7 +28,7 @@ progress:
 Phase: 999 (gh-planning-execution-queue) — EXECUTING
 Plan: 1 of 30
 Status: Executing Phase 999
-Last activity: 2026-11-24 - Completed quick task 261124-v61 for PR #1223
+Last activity: 2026-11-25 - Completed quick task 261125-0l9: add missing migration for Server.redirectIp
 
 Progress: [██████████] 100% (v1.1 COMPLETE & ARCHIVED)
 
@@ -128,6 +128,7 @@ Resume file: None
 
 | Date       | Slug / ID    | Summary                                                     |
 | ---------- | ------------ | ----------------------------------------------------------- |
+| 2026-11-25 | 261125-0l9   | Add missing Prisma migration for Server.redirectIp (fixes GET /api/servers 500 on fresh DB) |
 | 2026-11-24 | 261124-v61   | Address PR #1223 maintenance review findings |
 | 2026-11-23 | 261123-w9f   | Avoid Docker main-push REST comparison and closed-issue authorization |
 | 2026-11-23 | 261123-3on | APR-I09 bot-policy compatibility and retry fixes |
