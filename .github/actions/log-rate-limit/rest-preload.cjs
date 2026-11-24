@@ -56,12 +56,13 @@ const ROUTES = [
   '/user',
   '/users/:login',
 ];
-const MATCHERS = ROUTES.map((route) => [
-  route,
-  new RegExp(
-    `^${route.replace(/:path|:ref(?=$)|:refs/g, '.+').replace(/:\w+/g, '[^/]+')}$`,
-  ),
-]);
+const MATCHERS = ROUTES.map((route) => {
+  const pattern = route
+    .replace(/\/git\/refs\/:ref$/, '/git/refs/.+')
+    .replace(/:(?:path|refs)\b/g, '.+')
+    .replace(/:\w+/g, '[^/]+');
+  return [route, new RegExp(`^${pattern}$`)];
+});
 
 function apiTarget(apiUrl) {
   try {

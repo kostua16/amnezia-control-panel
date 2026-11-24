@@ -471,9 +471,10 @@ The `gh` CLI is a Go binary. A PATH shim that delegates with the original
 arguments and streams can count invocations, but one invocation can produce
 multiple HTTP requests through pagination, retries or subcommands. The CLI's
 HTTP debug mode changes stderr. A shim therefore cannot supply a transparent
-request count with the observed interfaces. Static usage suggests `gh` is
-likely a substantial share and can dominate shell-heavy jobs. The fleet-wide
-fraction is unknown.
+request count with the observed interfaces. A source scan found about 250
+`gh` command mentions and 60 direct `github.rest` mentions in workflow and
+action code. This suggests `gh` traffic can dominate shell-heavy jobs. The
+fleet-wide request fraction remains unknown.
 
 Pipe concatenated job logs to
 `node .github/workflows/scripts/summarize-rate-limit.cjs` to sum observed

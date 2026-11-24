@@ -10,6 +10,7 @@ const {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
 } = require('node:fs');
 const { createServer } = require('node:http');
 const { tmpdir } = require('node:os');
@@ -53,6 +54,10 @@ test('classifies only API hosts and emits no request data beyond fixed templates
     'DELETE /repos/:o/:r/git/refs/:ref',
   );
   assert.equal(route('/private/sensitive'), 'GET /other');
+  assert.equal(
+    route('/repos/o/r/commits/031d111/check-runs'),
+    'GET /repos/:o/:r/commits/:ref/check-runs',
+  );
   assert.equal(route('/graphql?secret=value', undefined, 'POST'), 'graphql');
   assert.equal(route('/rate_limit'), null);
   assert.equal(
@@ -69,9 +74,12 @@ test('classifies only API hosts and emits no request data beyond fixed templates
 
 test('setup, parallel children and post count HTTP and fetch without changing requests', async (t) => {
   const root = temp(t);
+  const runnerTemp = temp(t);
+  const tempAlias = join(root, 'runner-temp');
+  symlinkSync(runnerTemp, tempAlias, 'junction');
   const setup = {
     'INPUT_REST-COUNTER': 'true',
-    RUNNER_TEMP: root,
+    RUNNER_TEMP: tempAlias,
     GITHUB_ENV: join(root, 'environment'),
     GITHUB_OUTPUT: join(root, 'output'),
     GITHUB_STATE: join(root, 'state'),

@@ -7,6 +7,7 @@ const {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
 } = require('node:fs');
 const { join } = require('node:path');
 const { METHODS, ROUTES } = require('./rest-preload.cjs');
@@ -29,7 +30,9 @@ function startRestCounter(env = process.env) {
     return;
 
   try {
-    const dir = mkdtempSync(join(env.RUNNER_TEMP, 'rest-counter-'));
+    const dir = realpathSync(
+      mkdtempSync(join(env.RUNNER_TEMP, 'rest-counter-')),
+    );
     const preload = join(dir, 'rest-preload.cjs');
     // Keep the preload available when later checkout steps replace the workspace.
     copyFileSync(join(__dirname, 'rest-preload.cjs'), preload);
