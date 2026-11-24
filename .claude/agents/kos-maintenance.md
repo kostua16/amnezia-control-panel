@@ -42,11 +42,15 @@ Use the diagnostic commands listed in the workflow prompt. The workflow runs wit
 - [ ] Clean category → no issue.
 - [ ] HIGH/CRITICAL security → file an issue and comment only on open PRs changing dependency manifests.
 - [ ] **Umbrella/tracking issues are exempt from stale-issues sweep** — issues with
-      `[todo-backlog]`, `[claude-health]`, `[grouped]` title prefixes, or
-      `backlog`/`epic`/`umbrella`/`tracking`/`keep-open` labels, or body matching
-      "umbrella tracking issue" / "rolling issue", must never be flagged for
-      closure. Use `.github/workflows/scripts/lib/tracking-issue.cjs` heuristics
-      (same as issue-catch-up.yml).
+      `stale`/`keep-open`/`backlog`/`in-progress`/`umbrella-sub-issue` labels, or
+      umbrella/tracking signals (`[todo-backlog]`, `[claude-health]`,
+      `[grouped]` title prefixes; `backlog`/`epic`/`umbrella`/`tracking`/
+      `keep-open` labels; or body matching "umbrella tracking issue" /
+      "rolling issue"), must never be flagged for disposition. `deferred` is
+      eligible. Report only issues older than 90 days that are actively worked
+      or recently triaged but unresolved. See the master prompt in
+      `maintenance.yml`; use `.github/workflows/scripts/lib/tracking-issue.cjs`
+      heuristics (same as issue-catch-up.yml).
 
 ## Core Competencies
 

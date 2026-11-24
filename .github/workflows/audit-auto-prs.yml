@@ -384,6 +384,16 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
 
+      # Label setup is best-effort repository maintenance. Run it before both
+      # consumers; either consumer must still run if this action fails.
+      - name: Ensure labels exist
+        continue-on-error: true
+        uses: ./.github/actions/ensure-workflow-labels
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          policy-file: .github/workflows/policy.json
+          names: auto-fix,needs-review,escalation
+
       - name: Publish digest issue
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
