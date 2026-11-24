@@ -107,7 +107,6 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           model: 'sonnet'
           max-turns: '${{ env.MAX_TURNS }}'
-          track-progress: 'false'
           user-settings-only: 'true'
           allowed-tools: 'Read,Glob,Grep,Bash(node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health),Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm audit --json),Bash(git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline),Bash(rtk gh issue create:*),Bash(rtk gh issue list:*),Bash(rtk gh issue view:*),Bash(rtk gh pr comment:*),Bash(rtk gh pr list:*),Bash(rtk gh pr view:*),Bash(rtk npm audit --json),Bash(rtk git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline)'
           json-schema: |
@@ -130,96 +129,11 @@ jobs:
                     "stale-issues"
                   ],
                   "properties": {
-                    "planning-health": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "required": ["findings_count", "issue_created"],
-                      "properties": {
-                        "findings_count": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "issue_created": {
-                          "type": "boolean"
-                        },
-                        "skip_reason": {
-                          "type": "string",
-                          "enum": ["no-findings", "duplicate", "error"]
-                        }
-                      }
-                    },
-                    "security-audit": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "required": ["findings_count", "issue_created"],
-                      "properties": {
-                        "findings_count": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "issue_created": {
-                          "type": "boolean"
-                        },
-                        "skip_reason": {
-                          "type": "string",
-                          "enum": ["no-findings", "duplicate", "error"]
-                        }
-                      }
-                    },
-                    "progress": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "required": ["findings_count", "issue_created"],
-                      "properties": {
-                        "findings_count": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "issue_created": {
-                          "type": "boolean"
-                        },
-                        "skip_reason": {
-                          "type": "string",
-                          "enum": ["no-findings", "duplicate", "error"]
-                        }
-                      }
-                    },
-                    "todo-fixme": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "required": ["findings_count", "issue_created"],
-                      "properties": {
-                        "findings_count": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "issue_created": {
-                          "type": "boolean"
-                        },
-                        "skip_reason": {
-                          "type": "string",
-                          "enum": ["no-findings", "duplicate", "error"]
-                        }
-                      }
-                    },
-                    "stale-issues": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "required": ["findings_count", "issue_created"],
-                      "properties": {
-                        "findings_count": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "issue_created": {
-                          "type": "boolean"
-                        },
-                        "skip_reason": {
-                          "type": "string",
-                          "enum": ["no-findings", "duplicate", "error"]
-                        }
-                      }
-                    }
+                    "planning-health": { "$ref": "#/$defs/category-outcome" },
+                    "security-audit": { "$ref": "#/$defs/category-outcome" },
+                    "progress": { "$ref": "#/$defs/category-outcome" },
+                    "todo-fixme": { "$ref": "#/$defs/category-outcome" },
+                    "stale-issues": { "$ref": "#/$defs/category-outcome" }
                   }
                 },
                 "issues_created": {
@@ -233,14 +147,7 @@ jobs:
                         "type": "integer"
                       },
                       "category": {
-                        "type": "string",
-                        "enum": [
-                          "planning-health",
-                          "security-audit",
-                          "progress",
-                          "todo-fixme",
-                          "stale-issues"
-                        ]
+                        "$ref": "#/$defs/category-name"
                       }
                     }
                   }
@@ -258,6 +165,36 @@ jobs:
                       "reason": {
                         "type": "string"
                       }
+                    }
+                  }
+                }
+              },
+              "$defs": {
+                "category-name": {
+                  "type": "string",
+                  "enum": [
+                    "planning-health",
+                    "security-audit",
+                    "progress",
+                    "todo-fixme",
+                    "stale-issues"
+                  ]
+                },
+                "category-outcome": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["findings_count", "issue_created"],
+                  "properties": {
+                    "findings_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "issue_created": {
+                      "type": "boolean"
+                    },
+                    "skip_reason": {
+                      "type": "string",
+                      "enum": ["no-findings", "duplicate", "error"]
                     }
                   }
                 }
@@ -284,7 +221,7 @@ jobs:
             Do NOT push or open a PR. The workflow persists any maintenance changes by validating the prepared branch, pushing it, and opening a review PR.
             BUDGET: 30 turns, 10-minute timeout. Skip categories with zero findings immediately — do not burn turns on clean sections.
             Operate as the `kos-maintenance` agent: first read `.claude/agents/kos-maintenance.md` and follow it as your operating contract (it enforces this prompt's rules and adds run-mined failure knowledge), then perform the task.
-            Finish with the structured report matching the JSON schema: `summary` is a one-line sweep verdict; `categories` carries exactly one entry per sweep category (planning-health, security-audit, progress, todo-fixme, stale-issues), each with its `findings_count` and `issue_created` flag — set `skip_reason` to `no-findings` for a clean sweep, `duplicate` when an open issue already covers the finding, or `error` when the check could not run, and omit it when the category produced findings; `issues_created` lists every issue number you created with its sweep category; `critical_pr_comments` lists each dependency-manifest PR you commented on for critical advisories.
+            Finish with the structured report matching the JSON schema: `summary` is a one-line sweep verdict; `categories` carries exactly one entry per sweep category (planning-health, security-audit, progress, todo-fixme, stale-issues), each with its `findings_count` and `issue_created` flag — omit `skip_reason` when the category produced findings and you created its issue, set it to `duplicate` when findings existed but an open issue already covers them (still report their `findings_count`), `no-findings` for a clean sweep, or `error` when the check could not run; `issues_created` lists every issue number you created with its sweep category; `critical_pr_comments` lists each dependency-manifest PR you commented on for critical advisories.
             This structured report supersedes the SWEEP/ISSUES/ESCALATION text output format in `.claude/agents/kos-maintenance.md` and `.claude/skills/kos-daily-maintenance-sweep/SKILL.md` for this run — emit the JSON report, not both.
 
       - name: Record structured sweep report
@@ -293,10 +230,14 @@ jobs:
           STRUCTURED_REPORT: ${{ steps.claude_run.outputs.structured_output }}
         run: |
           if [ -n "$STRUCTURED_REPORT" ]; then
+            # Model-authored JSON can contain a triple backtick that would
+            # terminate the fence and render the rest as workflow-authored
+            # Markdown; backticks carry no meaning in JSON, so strip them.
+            SANITIZED_REPORT="${STRUCTURED_REPORT//\`/}"
             {
               echo '### Maintenance sweep structured report'
               echo '```json'
-              echo "$STRUCTURED_REPORT"
+              echo "$SANITIZED_REPORT"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
