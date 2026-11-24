@@ -123,12 +123,6 @@ function findExistingComment(
 // because the comment found in it is the one that gets replaced. A match
 // without a usable integer id falls back to the REST list rather than writing
 // against `issues/comments/undefined`. Without the list the REST read runs here.
-//
-// Returns `{ createdId, replacedId }`: the id of the comment now carrying the
-// body (POST response for the replace/create paths, the existing id for the
-// PATCH path, null when nothing was written or the response was unparsable)
-// and the id that was replaced, so a later step can address the sticky
-// comment directly instead of listing again.
 function upsertComment({
   repo,
   prNumber,
@@ -155,7 +149,7 @@ function upsertComment({
     existing &&
     sameBody(String(existing.body ?? ''), body)
   ) {
-    return { createdId: null, replacedId: existing.id };
+    return;
   }
   const payloadPath = writeTempJson('sticky-comment', { body });
 
@@ -169,12 +163,12 @@ function upsertComment({
         '--input',
         payloadPath,
       ]);
-      return { createdId: existing.id, replacedId: null };
+      return;
     }
 
     // Create the replacement before deleting the prior comment so the marker
     // is never absent if the create fails (delete-then-create would lose it).
-    const createdRaw = run('gh', [
+    run('gh', [
       'api',
       '-X',
       'POST',
@@ -182,15 +176,6 @@ function upsertComment({
       '--input',
       payloadPath,
     ]);
-
-    // Surface the new comment's id so a later step in the same job can address
-    // it directly instead of paying for another REST list. An unparsable
-    // response is not a post failure — the comment is live either way.
-    let createdId = null;
-    try {
-      const created = JSON.parse(createdRaw);
-      if (Number.isInteger(created?.id)) createdId = created.id;
-    } catch {}
 
     if (existing) {
       try {
@@ -209,7 +194,6 @@ function upsertComment({
         );
       }
     }
-    return { createdId, replacedId: existing ? existing.id : null };
   } finally {
     fs.rmSync(payloadPath, { force: true });
   }

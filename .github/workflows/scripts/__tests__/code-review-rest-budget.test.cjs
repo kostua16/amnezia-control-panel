@@ -2,14 +2,13 @@
 // Pins the REST-budget cuts in the Code Review chain (Code Review is the most
 // quota-expensive PR-flow workflow; every call here is shared installation
 // quota). Each cut must keep the observable end state identical:
-// - resolve-pr republishes the PR's current labels from the pulls.get it
-//   already makes, and Apply review signals writes only real label deltas
-//   (no guaranteed-404 removeLabel, no no-op addLabels, no label events that
-//   did not fire before). A missing or malformed snapshot falls back to the
-//   historical unconditional writes.
-// - The complete summary upsert reuses the comment id recorded by the started
-//   step instead of re-listing the PR's issue comments; an absent or empty id
-//   file keeps the marker-scan fallback.
+// - Apply review signals reads the PR's current labels fresh via GraphQL (a
+//   separate quota pool from the REST core, so the read costs no REST) and
+//   writes only real label deltas — no guaranteed-404 removeLabel, no no-op
+//   addLabels, no label events that did not fire before. Reading fresh (not
+//   from a resolve-pr snapshot) keeps the gate correct when labels change
+//   mid-run or a job re-run reuses stored outputs; any read failure or
+//   unexpected shape fails open to the historical unconditional writes.
 // - The claude-health tracker syncs its critical label only when the label
 //   presence actually differs from the run's needs (listForRepo already
 //   returned the current labels).
@@ -28,47 +27,54 @@ const runClaudeParamsYml = fs.readFileSync(
   'utf8',
 );
 
-test('resolve-pr publishes the label snapshot from its existing pulls.get', () => {
-  assert.match(
-    codeReviewYml,
-    /pr-labels: \$\{\{ steps\.resolve\.outputs\.pr_labels \}\}/,
-    'resolve-pr job must expose a pr-labels output',
-  );
-  assert.match(
-    codeReviewYml,
-    /core\.setOutput\(\s*'pr_labels',/,
-    'the resolve script must emit pr_labels from the pulls.get response',
-  );
-  // The snapshot must come from the PR object already fetched — a separate
-  // labels read would defeat the cut.
-  assert.doesNotMatch(
-    codeReviewYml,
-    /rest\.issues\.listLabelsOnIssue/,
-    'label snapshot must not add a separate REST read',
-  );
-});
-
-test('Apply review signals writes only real label deltas', () => {
+function applySignalsStep() {
   const step = codeReviewYml.match(
     /- name: Apply review signals[\s\S]*?(?=\n {6}- name: Post review summary)/,
   );
   assert.ok(step, 'Apply review signals step not found');
-  const script = step[0];
+  return step[0];
+}
 
-  // Snapshot arrives through the PR_LABELS env bound to the resolve-pr output.
+test('Apply review signals reads current labels fresh via GraphQL, not a snapshot', () => {
+  const script = applySignalsStep();
+
+  // Fresh read at apply time through GraphQL (separate quota pool, no REST)…
+  assert.match(script, /await github\.graphql\(/);
+  assert.match(script, /labels\(first: 100\) \{ nodes \{ name \} \}/);
+  // …and NOT a reused resolve-pr snapshot output (which could be stale on a
+  // re-run or after a mid-run label change).
+  assert.doesNotMatch(script, /PR_LABELS/);
+  assert.doesNotMatch(
+    codeReviewYml,
+    /pr-labels: \$\{\{ steps\.resolve\.outputs\.pr_labels \}\}/,
+    'resolve-pr must not publish a label snapshot the signal step reuses',
+  );
+  // The read must not add a REST call either.
+  assert.doesNotMatch(script, /rest\.issues\.listLabelsOnIssue/);
+});
+
+test('Apply review signals fails open and validates the label shape', () => {
+  const script = applySignalsStep();
+
+  // A weak Array.isArray check would let [null] through and silently invert the
+  // gate; every node must carry a string name or the snapshot is rejected.
   assert.match(
     script,
-    /PR_LABELS: \$\{\{ needs\.resolve-pr\.outputs\.pr-labels \}\}/,
+    /Array\.isArray\(nodes\) &&\s*nodes\.every\(\(n\) => n && typeof n\.name === 'string'\)/,
   );
-
-  // Fail-open: an unparsable or missing snapshot restores the unconditional
-  // write path rather than silently skipping label signals.
+  // Any read error or unexpected shape leaves currentLabels null and restores
+  // the historical unconditional writes rather than skipping label signals.
+  assert.match(script, /let currentLabels = null;/);
   assert.match(script, /currentLabels === null\s*\?\s*labelsToRemove/);
   assert.match(script, /currentLabels === null\s*\?\s*labelsToAdd/);
+  assert.match(script, /catch \(error\) \{\s*core\.warning\(/);
+});
 
-  // Only remove labels the snapshot says are present, and only add labels it
-  // says are missing; the addLabels call is skipped entirely when nothing
-  // would change.
+test('Apply review signals writes only real label deltas', () => {
+  const script = applySignalsStep();
+
+  // Only remove labels the fresh read shows present, and only add labels it
+  // shows missing; the addLabels call is skipped entirely when nothing changes.
   assert.match(
     script,
     /labelsToRemove\.filter\(\(name\) => currentLabels\.includes\(name\)\)/,
@@ -78,27 +84,8 @@ test('Apply review signals writes only real label deltas', () => {
     /labelsToAdd\.filter\(\(name\) => !currentLabels\.includes\(name\)\)/,
   );
   assert.match(script, /if \(additions\.length > 0\)/);
-});
-
-test('complete summary upsert reuses the id recorded by the started step', () => {
-  // The started step records the created comment id on the runner…
-  assert.match(
-    codeReviewYml,
-    /--emit-id-file "\$RUNNER_TEMP\/code-review-summary-comment-id"/,
-    'started step must emit the sticky comment id',
-  );
-  // …and the complete step only passes it when the file exists and is
-  // non-empty, so the marker-scan list stays as the fallback.
-  assert.match(
-    codeReviewYml,
-    /if \[\[ -s "\$comment_id_file" \]\]; then/,
-    'complete step must guard the known-id reuse with a non-empty file check',
-  );
-  assert.match(
-    codeReviewYml,
-    /--known-comment-id "\$\(cat "\$comment_id_file"\)"/,
-    'complete step must forward the recorded comment id',
-  );
+  // A removeLabel that still 404s (raced) is tolerated, not fatal.
+  assert.match(script, /if \(error\.status !== 404\) throw error;/);
 });
 
 test('claude-health critical label is synced only when its presence changes', () => {

@@ -47,7 +47,6 @@ jobs:
       head-sha: ${{ steps.resolve.outputs.head_sha }}
       base-ref: ${{ steps.resolve.outputs.base_ref }}
       skip-reason: ${{ steps.resolve.outputs.skip_reason }}
-      pr-labels: ${{ steps.resolve.outputs.pr_labels }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -109,13 +108,6 @@ jobs:
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('base_ref', context.payload.inputs?.base_ref || pr.base.ref);
-            // Snapshot of the PR's current label names, already carried by the
-            // pulls.get response above. The review-signal step uses it to write
-            // only real label deltas instead of paying for no-op remove/add calls.
-            core.setOutput(
-              'pr_labels',
-              JSON.stringify((pr.labels || []).map((label) => label.name))
-            );
 
   report-skip:
     needs: [resolve-pr]
@@ -176,8 +168,7 @@ jobs:
             --pr "$PR_NUMBER" \
             --head-sha "$HEAD_SHA" \
             --run-url "$RUN_URL" \
-            --mode started \
-            --emit-id-file "$RUNNER_TEMP/code-review-summary-comment-id"
+            --mode started
 
       # The agent action may come from an older target branch.
       - name: Check out workflow bot policy
@@ -308,7 +299,6 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
-          PR_LABELS: ${{ needs.resolve-pr.outputs.pr-labels }}
           STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
         with:
           script: |
@@ -327,32 +317,53 @@ jobs:
               }
             ];
 
-            // Label names captured by the resolve-pr pulls.get. The only other
-            // writer of these four review labels is the pr-flow orchestrator's
-            // resetOnHeadChange (see pr-flow.json), which strips them on a head
-            // change — and a head change also cancels this run (concurrency
-            // group code-review-<pr>, cancel-in-progress) and re-dispatches a
-            // fresh review for the new head. So within a live run that remover
-            // cannot invalidate the snapshot; even if a reset raced, the worst
-            // case is a transiently missing label that the next dispatch
-            // re-stamps (re-stamping this head's verdict after a head change
-            // would be wrong anyway). That makes the snapshot fresh enough to
-            // skip no-op writes: removeLabel on an absent label is a guaranteed
-            // 404 REST call, and addLabels for already-set labels changes
-            // nothing and fires no label event. A missing or malformed snapshot
-            // falls back to the unconditional writes.
-            let currentLabels = null;
-            try {
-              const parsed = JSON.parse(process.env.PR_LABELS || '');
-              if (Array.isArray(parsed)) currentLabels = parsed;
-            } catch {}
-
             const labelsToAdd = [];
             const labelsToRemove = [];
             for (const pair of labelPairs) {
               const passed = pair.review.verdict === 'passed';
               labelsToAdd.push(passed ? pair.passed : pair.concerns);
               labelsToRemove.push(passed ? pair.concerns : pair.passed);
+            }
+
+            // Read the PR's current labels fresh, via GraphQL — a separate quota
+            // pool from the REST core these writes spend, so the read costs no
+            // REST. Reading at apply time (not reusing a resolve-pr snapshot)
+            // keeps the gate correct even when labels changed during the review
+            // (which can run 20+ minutes) or this job is a re-run reusing stored
+            // outputs: the old unconditional remove+add self-healed those, so
+            // this must too. Any read failure or unexpected shape (e.g. a null
+            // node) fails open to the unconditional writes, which always reach
+            // the correct final state. On the common path this skips no-op
+            // writes: removeLabel on an absent label is a guaranteed-404 REST
+            // call, and addLabels for already-set labels changes nothing and
+            // fires no label event.
+            let currentLabels = null;
+            try {
+              const data = await github.graphql(
+                `query ($owner: String!, $name: String!, $number: Int!) {
+                   repository(owner: $owner, name: $name) {
+                     pullRequest(number: $number) {
+                       labels(first: 100) { nodes { name } }
+                     }
+                   }
+                 }`,
+                {
+                  owner: context.repo.owner,
+                  name: context.repo.repo,
+                  number: issueNumber
+                }
+              );
+              const nodes = data?.repository?.pullRequest?.labels?.nodes;
+              if (
+                Array.isArray(nodes) &&
+                nodes.every((n) => n && typeof n.name === 'string')
+              ) {
+                currentLabels = nodes.map((n) => n.name);
+              }
+            } catch (error) {
+              core.warning(
+                `Could not read current labels (${error.message}); applying review signals unconditionally.`
+              );
             }
 
             const removals =
@@ -399,25 +410,15 @@ jobs:
           CLAUDE_FAILURE_REASON: ${{ steps.review.outputs.claude_failure_reason }}
           OUTCOME: ${{ steps.review.outcome }}
         run: |
-          comment_id_file="$RUNNER_TEMP/code-review-summary-comment-id"
-          args=(
-            node .github/workflows/scripts/upsert-code-review-comment.cjs
-            --pr "$PR_NUMBER"
-            --head-sha "$HEAD_SHA"
-            --run-url "$RUN_URL"
-            --num-turns "$NUM_TURNS"
-            --failed "$CLAUDE_FAILED"
-            --fail-reason "$CLAUDE_FAILURE_REASON"
-            --outcome "$OUTCOME"
+          node .github/workflows/scripts/upsert-code-review-comment.cjs \
+            --pr "$PR_NUMBER" \
+            --head-sha "$HEAD_SHA" \
+            --run-url "$RUN_URL" \
+            --num-turns "$NUM_TURNS" \
+            --failed "$CLAUDE_FAILED" \
+            --fail-reason "$CLAUDE_FAILURE_REASON" \
+            --outcome "$OUTCOME" \
             --mode complete
-          )
-          # Reuse the comment id recorded by the started step to skip re-listing
-          # the PR's issue comments; fall back to the marker scan when the file
-          # is absent (started step failed or did not record an id).
-          if [[ -s "$comment_id_file" ]]; then
-            args+=(--known-comment-id "$(cat "$comment_id_file")")
-          fi
-          "${args[@]}"
 
   wake-orchestrator:
     needs: [resolve-pr, claude-combined-review]

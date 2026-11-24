@@ -16,7 +16,6 @@ const {
   renderComplete,
   renderFailureBody,
   findExistingComment,
-  resolveKnownCommentList,
 } = require('../upsert-code-review-comment.cjs');
 
 test('renderStarted prefixes the sticky marker, head SHA and unchecked checklist', () => {
@@ -259,25 +258,4 @@ test('isSkippedOutcome treats only skipped review action as skipped', () => {
   assert.equal(isSkippedOutcome('cancelled'), false);
   assert.equal(isSkippedOutcome('success'), false);
   assert.equal(isSkippedOutcome('failure'), false);
-});
-
-test('resolveKnownCommentList builds a marker-matching entry for a valid id', () => {
-  const comments = resolveKnownCommentList('123');
-
-  assert.ok(Array.isArray(comments));
-  assert.equal(comments.length, 1);
-  // The synthetic entry must satisfy both match criteria upsertComment uses
-  // (bot author + marker in body) so the REST list is skipped.
-  assert.equal(findExistingComment(comments)?.id, 123);
-  assert.equal(comments[0].user.login, 'github-actions[bot]');
-  assert.ok(comments[0].body.includes(COMMENT_MARKER));
-});
-
-test('resolveKnownCommentList rejects ids that cannot address a comment', () => {
-  // Anything that is not a positive integer must fall back to the marker scan
-  // (null keeps upsertComment on its REST list path) instead of writing
-  // against a bogus id.
-  for (const invalid of [null, undefined, '', '  ', 'abc', '-5', '0', '1.5']) {
-    assert.equal(resolveKnownCommentList(invalid), null, String(invalid));
-  }
 });
