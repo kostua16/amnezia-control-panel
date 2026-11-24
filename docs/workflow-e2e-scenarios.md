@@ -431,6 +431,7 @@ Decision basis: `evaluate-pr-policy.cjs` `gsdExecution` (`safeAllowedPathGlobs`,
 | G8b | Docker image and stack image publishing emit rate-limit snapshots | the snapshot labels are `docker-publish` and `docker-publish-stack`, respectively | char |
 | G8c | workflow governance loads its YAML parser in CI | the helper downloads the pinned bundle over HTTPS with bounded retries, verifies its checksum, and parses a sample document before exposing it to the checker. The YAML suite checks the pin against the lockfile | char |
 | G8d | Docker image classifier receives a main push | shallow checkout plus a one-commit fetch supplies both endpoint trees for a two-dot diff, including rewinds and both sides of renames. Workflow-only changes skip publishing, and checkout, fetch, or diff failures publish fail-open | char |
+| G8e | setup-environment enables the request counter and opted-in Node steps make GitHub API requests | the post action emits one REST_COUNT line with a route breakdown and separate GraphQL count, even when the job fails. The summarizer aggregates reports by workflow and job. Counter I/O failures leave the requests and job result alone. The repository variable or setup input can disable counting | char |
 
 ## §6c Release → release-notes — `release-notes.yml`
 

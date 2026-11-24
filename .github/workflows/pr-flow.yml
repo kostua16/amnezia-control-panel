@@ -175,6 +175,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-environment
+        id: setup_environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
@@ -219,6 +220,7 @@ jobs:
       - name: Orchestrate PR flow
         if: github.event_name != 'issue_comment' || steps.comment.outputs.should_run == 'true'
         env:
+          NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.comment.outputs.pr_number || github.event.inputs.pr_number || '' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}

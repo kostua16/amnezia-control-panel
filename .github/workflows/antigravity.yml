@@ -108,6 +108,7 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-environment
+        id: setup_environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
@@ -140,6 +141,7 @@ jobs:
       - name: Post Comment
         if: steps.check-secrets.outputs.missing != 'true'
         env:
+          NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
           REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:

@@ -439,6 +439,47 @@ Always manual-only:
 | Any PR with `do-not-merge` or a concern/block label                                                                                                                                                                                      | Finalizer does not approve or enable auto-merge                              |
 | Any PR with only `needs-review` after CI passes                                                                                                                                                                                          | Code/security reviews run, then PR flow marks manual-only for human decision |
 
+## Job-local GitHub API request counts
+
+`setup-environment` enables the counter by default. Set the repository variable
+`REST_COUNTER=false` or pass `rest-counter: 'false'` to disable it. The
+`log-rate-limit` post action emits one `REST_COUNT` log line per enabled job
+and includes the counts in its step summary when available.
+
+GitHub [blocks `NODE_OPTIONS` in `GITHUB_ENV`](https://github.blog/changelog/2023-10-05-github-actions-node_options-is-now-restricted-from-github_env/).
+Setup publishes the preload argument as its `rest-counter-preload` output. The Node action
+steps in setup, the opted-in GitHub Script steps, and the PR flow orchestration
+step apply it through explicit step environment configuration. Add the same
+configuration on any Node action or shell step running Node after setup with
+`id: setup_environment`:
+
+```yaml
+env:
+  NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
+```
+
+The counter observes Node's HTTP(S) and Undici request events, including fetch,
+and includes inherited Node subprocesses. It counts outgoing requests across
+credentials for the public or configured enterprise API. GraphQL has a separate
+count. The existing free `GET /rate_limit` snapshots are excluded. Only fixed
+route templates and counts are stored. A REST total of zero means zero observed
+requests in instrumented processes. Coverage starts after setup and covers only
+opted-in steps. The GitHub CLI, curl, Bun and Bun-based Claude Code action
+traffic are outside the count.
+
+The `gh` CLI is a Go binary. A PATH shim that delegates with the original
+arguments and streams can count invocations, but one invocation can produce
+multiple HTTP requests through pagination, retries or subcommands. The CLI's
+HTTP debug mode changes stderr. A shim therefore cannot supply a transparent
+request count with the observed interfaces. Static usage suggests `gh` is
+likely a substantial share and can dominate shell-heavy jobs. The fleet-wide
+fraction is unknown.
+
+Pipe concatenated job logs to
+`node .github/workflows/scripts/summarize-rate-limit.cjs` to sum observed
+requests and route counts per workflow and job across run attempts. Provide
+each job log once. Matrix legs count as separate reports.
+
 ## Composite Action Notes
 
 `setup-environment`:

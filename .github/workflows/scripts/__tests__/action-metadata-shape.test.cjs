@@ -100,5 +100,19 @@ test('setup-environment keeps every documented input and its outputs', () => {
   ]) {
     assert.ok(doc.inputs[input], `missing input ${input}`);
   }
-  assert.deepEqual(Object.keys(doc.outputs), ['core-remaining']);
+  assert.deepEqual(Object.keys(doc.outputs), [
+    'core-remaining',
+    'rest-counter-preload',
+  ]);
+  assert.equal(doc.inputs['rest-counter'].default, 'true');
+  const rateLimit = doc.runs.steps.find((step) => step.id === 'rate_limit');
+  assert.equal(rateLimit.with['report-at-job-end'], 'true');
+  assert.equal(
+    rateLimit.with['rest-counter'],
+    "\${{ vars.REST_COUNTER != 'false' && inputs.rest-counter == 'true' }}",
+  );
+  assert.equal(
+    doc.outputs['rest-counter-preload'].value,
+    '${{ steps.rate_limit.outputs.rest-counter-preload }}',
+  );
 });
