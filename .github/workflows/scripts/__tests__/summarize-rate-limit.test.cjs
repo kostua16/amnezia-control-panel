@@ -11,6 +11,12 @@ const {
   summarize,
 } = require('../summarize-rate-limit.cjs');
 
+test('formats stored quota summaries that predate REST counts', () => {
+  const legacy = summarize([]);
+  delete legacy.restCounts;
+  assert.match(format(legacy), /^RATE_LIMIT readings: 0/);
+});
+
 test('aggregates REST counts by workflow and job across attempts and matrix reports', () => {
   const count = (workflow, job, run, total, graphql, byRoute) =>
     `2026-11-24T00:00:00Z REST_COUNT workflow=${JSON.stringify(workflow)} job=${job} run=${run} total=${total} graphql=${graphql} by_route=${JSON.stringify(byRoute)}`;

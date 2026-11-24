@@ -223,7 +223,7 @@ function format(summary) {
         ` -> end reset=${end.core_reset} token_id=${end.token_id ?? '-'}`,
     );
   }
-  for (const group of summary.restCounts) {
+  for (const group of summary.restCounts ?? []) {
     out.push(
       `REST_COUNT workflow=${JSON.stringify(group.workflow)} job=${group.job} ` +
         `runs=${group.runs.size} reports=${group.reports} total=${group.total} ` +

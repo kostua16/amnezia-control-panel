@@ -141,11 +141,16 @@ jobs:
       - name: Post Comment
         if: steps.check-secrets.outputs.missing != 'true'
         env:
-          NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           REVIEW_OUTPUT: ${{ steps.run-gemini.outputs.summary }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             const output = process.env.REVIEW_OUTPUT;
             if (context.eventName === 'issues' || context.eventName === 'issue_comment') {
               github.rest.issues.createComment({

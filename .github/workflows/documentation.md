@@ -442,20 +442,22 @@ Always manual-only:
 ## Job-local GitHub API request counts
 
 `setup-environment` enables the counter by default. Pass `rest-counter: 'false'`
-to disable it for a setup invocation. The
-`log-rate-limit` post action emits one `REST_COUNT` log line per enabled job
-and includes the counts in its step summary when available.
+to disable it for a setup invocation. The `log-rate-limit` post action emits one
+`REST_COUNT` log line per enabled job, independently of its quota snapshot
+setting. The post includes a step summary when available and prints
+`status=unavailable` if counting could not be set up or the records could not be read.
 
 GitHub [blocks `NODE_OPTIONS` in `GITHUB_ENV`](https://github.blog/changelog/2023-10-05-github-actions-node_options-is-now-restricted-from-github_env/).
-Setup publishes the preload argument as its `rest-counter-preload` output. The Node action
-steps in setup, the opted-in GitHub Script steps, and the PR flow orchestration
-step apply it through explicit step environment configuration. Add the same
-configuration on any Node action or shell step running Node after setup with
-`id: setup_environment`:
+Setup publishes the preload path as its `rest-counter-preload` output. A step
+can pass that path without replacing the Node options inherited from the runner.
+The opted-in GitHub Script steps load it inside their scripts with a guarded
+`require`. The PR flow orchestration step passes `--require` to Node when the
+path is readable. The preload appends its argument for Node descendants while
+preserving their original options. Follow those existing steps when opting in.
 
 ```yaml
 env:
-  NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
+  REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
 ```
 
 The counter observes Node's HTTP(S) and Undici request events, including fetch,
@@ -463,9 +465,12 @@ and includes inherited Node subprocesses. It counts outgoing requests across
 credentials for the public or configured enterprise API. GraphQL has a separate
 count. The existing free `GET /rate_limit` snapshots are excluded. Only fixed
 route templates and counts are stored. A REST total of zero means zero observed
-requests in instrumented processes. Coverage starts after setup and covers only
-opted-in steps. The GitHub CLI, curl, Bun and Bun-based Claude Code action
-traffic are outside the count.
+requests in instrumented processes. A route template newer than the post
+reporter is counted under `/other`. Coverage starts after setup and covers
+opted-in steps. Third-party setup actions, the GitHub CLI, curl, Bun and the
+Bun-based Claude Code action are outside the count. Instrumentation assumes the
+same job trust boundary as other runner-user-writable files. Keep untrusted
+processes out of jobs that later run secret-bearing steps.
 
 The `gh` CLI is a Go binary. A PATH shim that delegates with the original
 arguments and streams can count invocations, but one invocation can produce

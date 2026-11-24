@@ -93,7 +93,7 @@ outputs:
     description: 'Remaining core (REST) quota of github-token at job start; empty when it could not be read'
     value: ${{ steps.rate_limit.outputs.core-remaining }}
   rest-counter-preload:
-    description: 'NODE_OPTIONS argument for the job-local preload, or empty when disabled'
+    description: 'Path to the job-local preload, or empty when disabled'
     value: ${{ steps.rate_limit.outputs.rest-counter-preload }}
 
 runs:
@@ -113,8 +113,6 @@ runs:
 
     - if: inputs.setup-node == 'true'
       uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
-      env:
-        NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.rate_limit.outputs.rest-counter-preload) }}
       with:
         node-version: ${{ inputs.node-version }}
         # node_modules is cached directly below (keyed on package-lock.json), so a
@@ -123,8 +121,6 @@ runs:
 
     - if: inputs.setup-bun == 'true'
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
-      env:
-        NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.rate_limit.outputs.rest-counter-preload) }}
       with:
         bun-version: ${{ inputs.bun-version }}
 
@@ -132,8 +128,6 @@ runs:
       # astral-sh/setup-uv v6 tag pinned to commit SHA (Node.js 24 runtime; v4 triggers
       # the June-16-2026 Node.js 20 deprecation and the SHA-pin governance check)
       uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
-      env:
-        NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.rate_limit.outputs.rest-counter-preload) }}
       with:
         version: ${{ inputs.uv-version }}
 
@@ -154,8 +148,6 @@ runs:
     - id: setup_gh
       if: inputs.gh-auth-mode != 'env'
       uses: kostua16/setup-gh@55cc7662a66e327280ca51930c27d09e4f7113db
-      env:
-        NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.rate_limit.outputs.rest-counter-preload) }}
       continue-on-error: true
       with:
         gh-version: ${{ inputs.gh-version }}
@@ -180,8 +172,6 @@ runs:
       name: Retry setup-gh (transient network)
       if: steps.setup_gh.outcome == 'failure'
       uses: kostua16/setup-gh@55cc7662a66e327280ca51930c27d09e4f7113db
-      env:
-        NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.rate_limit.outputs.rest-counter-preload) }}
       continue-on-error: ${{ inputs.require-gh-auth != 'true' }}
       with:
         # Composite actions cannot share a step-input block, so these inputs are
@@ -273,8 +263,6 @@ runs:
     - if: inputs.install-deps == 'true'
       id: npm-deps-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      env:
-        NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.rate_limit.outputs.rest-counter-preload) }}
       with:
         path: node_modules
         key: node-modules-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('package-lock.json') }}
@@ -292,8 +280,6 @@ runs:
     - if: inputs.cache-nextjs == 'true'
       name: Cache Next.js
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      env:
-        NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.rate_limit.outputs.rest-counter-preload) }}
       with:
         path: ${{ github.workspace }}/.next/cache
         key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
@@ -316,8 +302,6 @@ runs:
     - if: inputs.install-rtk == 'true'
       id: rtk-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      env:
-        NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.rate_limit.outputs.rest-counter-preload) }}
       with:
         path: ~/.local/bin
         key: rtk-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rtk-version }}-${{ inputs.rtk-install-sha256 }}

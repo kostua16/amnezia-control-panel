@@ -11,10 +11,11 @@ const {
   readdirSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } = require('node:fs');
 const { createServer } = require('node:http');
 const { tmpdir } = require('node:os');
-const { join } = require('node:path');
+const { join, resolve } = require('node:path');
 const test = require('node:test');
 const { promisify } = require('node:util');
 
@@ -30,12 +31,131 @@ const {
 const { parseRestCount } = require('../summarize-rate-limit.cjs');
 
 const runNode = promisify(execFile);
+const action = resolve(__dirname, '../../../actions/log-rate-limit');
 
 function temp(t) {
   const dir = mkdtempSync(join(tmpdir(), 'rest counter '));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
+
+function setupEnv(root, runnerTemp = root) {
+  return {
+    'INPUT_REST-COUNTER': 'true',
+    RUNNER_TEMP: runnerTemp,
+    GITHUB_ENV: join(root, 'environment'),
+    GITHUB_OUTPUT: join(root, 'output'),
+    GITHUB_STATE: join(root, 'state'),
+  };
+}
+
+test('a preload dependency failure never aborts Node startup', async (t) => {
+  const fault = join(temp(t), 'fault.cjs');
+  writeFileSync(
+    fault,
+    `
+    const Module = require('node:module');
+    const load = Module._load;
+    Module._load = function (id, ...args) {
+      if (id === 'node:diagnostics_channel') throw new Error('fixture load error');
+      return load.call(this, id, ...args);
+    };
+  `,
+  );
+  const result = await runNode(process.execPath, [
+    '--require',
+    fault,
+    '--require',
+    join(action, 'rest-preload.cjs'),
+    '-e',
+    'console.log("started")',
+  ]);
+  assert.equal(result.stdout.trim(), 'started');
+  assert.equal(result.stderr, '');
+});
+
+test('disabled and invalid setup do not create files, and partial setup is cleaned up', (t) => {
+  const root = temp(t);
+  const setup = setupEnv(root);
+  const warnings = [];
+  const log = (line) => warnings.push(line);
+  startRestCounter({ ...setup, 'INPUT_REST-COUNTER': 'false' }, log);
+  assert.deepEqual(readdirSync(root), []);
+  assert.deepEqual(warnings, []);
+  startRestCounter({ ...setup, RUNNER_TEMP: `${root}\n` }, log);
+  assert.deepEqual(readdirSync(root), []);
+  assert.match(warnings[0], /invalid-runner-path/);
+  startRestCounter(
+    { ...setup, GITHUB_STATE: join(root, 'missing', 'state') },
+    log,
+  );
+  assert.deepEqual(readdirSync(root), []);
+  assert.match(warnings[1], /setup-io/);
+});
+
+test('enabled reporters mark missing, changed or unreadable storage unavailable', (t) => {
+  const root = temp(t);
+  const file = join(root, 'not-a-directory');
+  writeFileSync(file, '');
+  const env = {
+    ...setupEnv(root),
+    GITHUB_JOB: 'job',
+    GITHUB_RUN_ID: '12',
+    GITHUB_RUN_ATTEMPT: '1',
+  };
+  const counts = [
+    [{}, 'setup-failed'],
+    [
+      { STATE_rest_counter_dir: root, REST_COUNTER_DIR: file },
+      'directory-changed',
+    ],
+    [{ STATE_rest_counter_dir: file, REST_COUNTER_DIR: file }, 'read-failed'],
+    [
+      {
+        STATE_rest_counter_dir: join(root, 'missing'),
+        REST_COUNTER_DIR: join(root, 'missing'),
+      },
+      'read-failed',
+    ],
+  ];
+  for (const [state, reason] of counts) {
+    const lines = [];
+    reportRestCounter({
+      env: { ...env, ...state },
+      log: (line) => lines.push(line),
+    });
+    assert.deepEqual(lines, [
+      `REST_COUNT workflow="" job=job run=12.1 status=unavailable reason=${reason}`,
+    ]);
+    assert.equal(parseRestCount(lines[0]), null);
+  }
+});
+
+test('the action reports REST counts even with its quota post snapshot disabled', async (t) => {
+  const root = temp(t);
+  const env = {
+    ...process.env,
+    ...setupEnv(root),
+    'INPUT_REPORT-AT-JOB-END': 'false',
+    GITHUB_JOB: 'standalone',
+    GITHUB_RUN_ID: '12',
+    GITHUB_RUN_ATTEMPT: '1',
+  };
+  const main = `global.fetch = async () => ({ ok: true, json: async () => ({ resources: {} }) }); require(${JSON.stringify(join(action, 'main.cjs'))});`;
+  const started = await runNode(process.execPath, ['-e', main], { env });
+  assert.match(started.stdout, /RATE_LIMIT phase=snapshot/);
+  const dir = readFileSync(env.GITHUB_STATE, 'utf8')
+    .trimEnd()
+    .slice('rest_counter_dir='.length);
+  assert.ok(dir);
+  const result = await runNode(process.execPath, [join(action, 'post.cjs')], {
+    env: { ...env, REST_COUNTER_DIR: dir, STATE_rest_counter_dir: dir },
+  });
+  assert.match(
+    result.stdout,
+    /^REST_COUNT .* job=standalone .* total=0 graphql=0 by_route=\{\}\s*$/,
+  );
+});
 
 test('classifies only API hosts and emits no request data beyond fixed templates', () => {
   const target = apiTarget('https://enterprise.example/api/v3');
@@ -77,16 +197,7 @@ test('setup, parallel children and post count HTTP and fetch without changing re
   const runnerTemp = temp(t);
   const tempAlias = join(root, 'runner-temp');
   symlinkSync(runnerTemp, tempAlias, 'junction');
-  const setup = {
-    'INPUT_REST-COUNTER': 'true',
-    RUNNER_TEMP: tempAlias,
-    GITHUB_ENV: join(root, 'environment'),
-    GITHUB_OUTPUT: join(root, 'output'),
-    GITHUB_STATE: join(root, 'state'),
-  };
-  startRestCounter({ ...setup, 'INPUT_REST-COUNTER': 'false' });
-  startRestCounter({ ...setup, GITHUB_STATE: join(root, 'missing', 'state') });
-  assert.ok(!readdirSync(root).includes('environment'));
+  const setup = setupEnv(root, tempAlias);
   startRestCounter(setup);
   const exported = Object.fromEntries(
     readFileSync(setup.GITHUB_ENV, 'utf8')
@@ -94,7 +205,17 @@ test('setup, parallel children and post count HTTP and fetch without changing re
       .split('\n')
       .map((line) => line.split(/=(.*)/s).slice(0, 2)),
   );
-  startRestCounter({ ...setup, ...exported });
+  const duplicateState = join(root, 'duplicate');
+  startRestCounter({ ...setup, ...exported, GITHUB_STATE: duplicateState });
+  assert.equal(
+    readFileSync(duplicateState, 'utf8'),
+    'rest_counter_skip=true\n',
+  );
+  reportRestCounter({
+    env: { ...setup, ...exported, STATE_rest_counter_skip: 'true' },
+    log: () =>
+      assert.fail('duplicate must leave reporting to the first invocation'),
+  });
   assert.match(
     readFileSync(setup.GITHUB_STATE, 'utf8'),
     /^rest_counter_dir=[^\n]+\n$/,
@@ -123,7 +244,8 @@ test('setup, parallel children and post count HTTP and fetch without changing re
     ...process.env,
     ...exported,
     GITHUB_API_URL: api,
-    NODE_OPTIONS: preload,
+    REST_COUNTER_PRELOAD: preload,
+    NODE_OPTIONS: '--no-warnings',
   };
   const client = `
     const http = require('node:http');
@@ -141,8 +263,20 @@ test('setup, parallel children and post count HTTP and fetch without changing re
     ]).then(() => console.log('unchanged'));
   `;
   const results = await Promise.all([
-    runNode(process.execPath, ['-e', client], { env }),
-    runNode(process.execPath, ['-e', client], { env }),
+    runNode(process.execPath, ['--require', preload, '-e', client], { env }),
+    runNode(
+      process.execPath,
+      [
+        '-e',
+        `
+      require(process.env.REST_COUNTER_PRELOAD);
+      if (!process.env.NODE_OPTIONS.startsWith('--no-warnings --require "')) process.exit(2);
+      const child = require('node:child_process').spawnSync(process.execPath, ['-e', ${JSON.stringify(client)}], {stdio: 'inherit'});
+      process.exitCode = child.status ?? 3;
+    `,
+      ],
+      { env },
+    ),
     runNode(
       process.execPath,
       [
@@ -171,15 +305,20 @@ test('setup, parallel children and post count HTTP and fetch without changing re
     'GET /private-fixture-token\nGET /repos/:o/:r',
   );
   const counts = {
-    total: 6,
+    total: 7,
     graphql: 2,
-    by_route: { 'GET /repos/:o/:r': 2, 'GET /repos/:o/:r/pulls/:n': 4 },
+    by_route: {
+      'GET /other': 1,
+      'GET /repos/:o/:r': 2,
+      'GET /repos/:o/:r/pulls/:n': 4,
+    },
   };
   assert.deepEqual(collectRestCounts(dir), counts);
   const logs = [];
   const summary = join(root, 'summary');
   reportRestCounter({
     env: {
+      ...setup,
       ...exported,
       STATE_rest_counter_dir: dir,
       GITHUB_WORKFLOW: 'Workflow with "quotes"',

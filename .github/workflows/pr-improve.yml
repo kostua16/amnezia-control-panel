@@ -61,9 +61,14 @@ jobs:
         id: collect
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
-          NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             let targets = [];
 
             targets = [Number(context.payload.inputs.pr_number)];

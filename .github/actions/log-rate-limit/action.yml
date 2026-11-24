@@ -19,7 +19,7 @@ outputs:
   core-remaining:
     description: 'Remaining core (REST) quota of the token at the time of the reading; empty when it could not be read'
   rest-counter-preload:
-    description: 'NODE_OPTIONS argument for the job-local preload, or empty when disabled'
+    description: 'Path to the job-local preload, or empty when disabled'
 
 runs:
   using: node24

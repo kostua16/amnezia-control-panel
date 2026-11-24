@@ -68,9 +68,14 @@ jobs:
         id: categorize
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
-          NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             // Labels that remove an issue from catch-up processing entirely.
             // 'stale' is intentionally NOT exempt here: stale.yml owns the
             // inactivity close, but a stale issue that is also duplicate or
@@ -646,12 +651,17 @@ jobs:
       - name: Dispatch re-triage and park triage dead letters
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
-          NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           CATEGORIZED: ${{ steps.categorize.outputs.categorized }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         with:
           github-token: ${{ secrets.GH_PAT }}
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             const buckets = JSON.parse(process.env.CATEGORIZED || '{}');
             const dryRun = process.env.DRY_RUN === 'true';
             const MAX_DISPATCHES = 10;
@@ -782,12 +792,17 @@ jobs:
       - name: Report issue-pipeline invariant findings
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
-          NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           CATEGORIZED: ${{ steps.categorize.outputs.categorized }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         with:
           github-token: ${{ secrets.GH_PAT }}
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Telemetry setup is best-effort.
+            }
             const crypto = require('crypto');
             const buckets = JSON.parse(process.env.CATEGORIZED || '{}');
             const findings = buckets.invariant_findings || [];

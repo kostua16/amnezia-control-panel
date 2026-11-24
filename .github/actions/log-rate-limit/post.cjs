@@ -4,7 +4,7 @@
 const { logRateLimit } = require('./rate-limit.cjs');
 const { reportRestCounter } = require('./rest-counter.cjs');
 
+reportRestCounter();
 if (process.env['INPUT_REPORT-AT-JOB-END'] === 'true') {
-  reportRestCounter();
   logRateLimit({ phase: 'job-end' });
 }

@@ -112,4 +112,34 @@ test('setup-environment keeps every documented input and its outputs', () => {
     doc.outputs['rest-counter-preload'].value,
     '${{ steps.rate_limit.outputs.rest-counter-preload }}',
   );
+  assert.ok(
+    doc.runs.steps.every((step) => step.env?.NODE_OPTIONS === undefined),
+  );
+});
+
+test('opted-in workflow steps load the preload without overriding runner Node options', () => {
+  for (const file of ['pr-policy.yml', 'pr-flow.yml']) {
+    const workflow = yaml.load(
+      fs.readFileSync(path.resolve(ACTIONS_DIR, '../workflows', file), 'utf8'),
+    );
+    const steps = Object.values(workflow.jobs).flatMap(
+      (job) => job.steps ?? [],
+    );
+    const step = steps.find((step) => step.env?.REST_COUNTER_PRELOAD);
+    assert.ok(step, file);
+    assert.equal(step.env.NODE_OPTIONS, undefined, file);
+    assert.equal(
+      step.env.REST_COUNTER_PRELOAD,
+      '${{ steps.setup_environment.outputs.rest-counter-preload }}',
+    );
+    if (step.run) {
+      assert.match(step.run, /-r "\$REST_COUNTER_PRELOAD"/);
+      assert.match(step.run, /node "\$\{preload\[@\]\}"/);
+    } else {
+      assert.match(
+        step.with.script,
+        /try \{\s+if \(process.env.REST_COUNTER_PRELOAD\) require\(process.env.REST_COUNTER_PRELOAD\);\s+\} catch/,
+      );
+    }
+  }
 });

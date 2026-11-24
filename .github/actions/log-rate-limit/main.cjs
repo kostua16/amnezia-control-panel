@@ -6,7 +6,7 @@ const { startRestCounter } = require('./rest-counter.cjs');
 
 const reportAtJobEnd = process.env['INPUT_REPORT-AT-JOB-END'] === 'true';
 
-if (reportAtJobEnd) startRestCounter();
+startRestCounter();
 
 logRateLimit({ phase: reportAtJobEnd ? 'job-start' : 'snapshot' }).then(
   (resources) => {

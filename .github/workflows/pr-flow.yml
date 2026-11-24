@@ -220,7 +220,7 @@ jobs:
       - name: Orchestrate PR flow
         if: github.event_name != 'issue_comment' || steps.comment.outputs.should_run == 'true'
         env:
-          NODE_OPTIONS: ${{ format('{0} {1}', env.NODE_OPTIONS, steps.setup_environment.outputs.rest-counter-preload) }}
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.comment.outputs.pr_number || github.event.inputs.pr_number || '' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
@@ -231,7 +231,11 @@ jobs:
           # Kilo severities that block pr-flow/kilo-review (comma-separated). Empty keeps the script default `critical,warning` (SUGGESTION-only reviews pass); set the repository variable to `all` to make every finding block again without a commit. Auto Cover Review passes the same variable.
           KILO_BLOCKING_SEVERITIES: ${{ vars.KILO_BLOCKING_SEVERITIES || '' }}
         run: |
-          node .github/workflows/scripts/orchestrate-pr-flow.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/orchestrate-pr-flow.cjs \
             --event-name "$GITHUB_EVENT_NAME" \
             --event-path "$GITHUB_EVENT_PATH" \
             --config-file .github/pr-flow.json \
