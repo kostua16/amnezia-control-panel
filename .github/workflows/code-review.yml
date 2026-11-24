@@ -363,14 +363,20 @@ jobs:
               );
               const labels = data?.repository?.pullRequest?.labels;
               const nodes = labels?.nodes;
-              // A truncated page is a valid-looking response that could hide a
-              // review label, so treat it like a failed read and fail open.
+              // Only an explicitly complete page of string-named nodes is
+              // trusted: a truncated page — or a missing/unexpected pageInfo —
+              // could hide a review label, so it fails open like a read error,
+              // with a warning because the fallback is otherwise invisible.
               if (
-                labels?.pageInfo?.hasNextPage !== true &&
+                labels?.pageInfo?.hasNextPage === false &&
                 Array.isArray(nodes) &&
                 nodes.every((n) => n && typeof n.name === 'string')
               ) {
                 currentLabels = nodes.map((n) => n.name);
+              } else {
+                core.warning(
+                  'Current-label read was truncated or malformed; applying review signals unconditionally.'
+                );
               }
             } catch (error) {
               core.warning(

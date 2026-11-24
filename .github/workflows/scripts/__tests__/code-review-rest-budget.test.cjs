@@ -68,8 +68,13 @@ test('Apply review signals fails open and validates the label shape', () => {
     script,
     /Array\.isArray\(nodes\) &&\s*nodes\.every\(\(n\) => n && typeof n\.name === 'string'\)/,
   );
-  // A truncated page could hide a review label, so it must fail open too.
-  assert.match(script, /labels\?\.pageInfo\?\.hasNextPage !== true &&/);
+  // A truncated page could hide a review label, so only an explicitly
+  // complete page is trusted — and the rejection must be visible.
+  assert.match(script, /labels\?\.pageInfo\?\.hasNextPage === false &&/);
+  assert.match(
+    script,
+    /core\.warning\(\s*'Current-label read was truncated or malformed; applying review signals unconditionally\.'\s*\);/,
+  );
   // Any read error or unexpected shape leaves currentLabels null and restores
   // the historical unconditional writes rather than skipping label signals.
   assert.match(script, /let currentLabels = null;/);
