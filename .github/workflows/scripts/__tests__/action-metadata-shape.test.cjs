@@ -117,58 +117,70 @@ test('setup-environment keeps every documented input and its outputs', () => {
   );
 });
 
-test('every opted-in workflow step loads the preload without overriding runner Node options', () => {
+function checkRestCounterWiring(steps, file) {
+  const setup = steps.findIndex((step) => step.id === 'setup_environment');
+  let checked = 0;
+  for (const [index, step] of steps.entries()) {
+    const label = file + ' / ' + (step.name ?? step.id ?? index);
+    const { env, ...fields } = step;
+    const { REST_COUNTER_PRELOAD: preload, ...otherEnv } = env ?? {};
+    assert.ok(
+      !JSON.stringify({ ...fields, env: otherEnv }).includes(
+        'rest-counter-preload',
+      ),
+      label +
+        ' must reference rest-counter-preload only in env.REST_COUNTER_PRELOAD',
+    );
+    if (!Object.hasOwn(env ?? {}, 'REST_COUNTER_PRELOAD')) continue;
+
+    assert.ok(setup >= 0 && setup < index, label);
+    assert.equal(
+      steps[setup].uses,
+      './.github/actions/setup-environment',
+      label,
+    );
+    assert.equal(otherEnv.NODE_OPTIONS, undefined, label);
+    assert.equal(
+      preload,
+      '${{ steps.setup_environment.outputs.rest-counter-preload }}',
+      label,
+    );
+    if (step.run) {
+      assert.equal(step.shell, 'bash', label);
+      assert.match(
+        step.run,
+        /preload=\(--require "\$REST_COUNTER_PRELOAD"\)/,
+        label,
+      );
+      assert.match(step.run, /node "\$\{preload\[@\]\}"/, label);
+    } else {
+      assert.match(step.uses, /^actions\/github-script@/, label);
+      assert.match(
+        step.with.script,
+        /try \{\s+if \(process.env.REST_COUNTER_PRELOAD\) require\(process.env.REST_COUNTER_PRELOAD\);\s+\} catch/,
+        label,
+      );
+    }
+    checked += 1;
+  }
+  return checked;
+}
+
+test('every opted-in step loads the preload without overriding runner Node options', () => {
   const workflows = path.resolve(ACTIONS_DIR, '../workflows');
   let checked = 0;
   for (const file of fs
     .readdirSync(workflows)
-    .filter((name) => /\.ya?ml$/.test(name))) {
-    const source = fs.readFileSync(path.join(workflows, file), 'utf8');
-    for (const job of Object.values(yaml.load(source).jobs)) {
-      const steps = job.steps ?? [];
-      const setup = steps.findIndex((step) => step.id === 'setup_environment');
-      for (const [index, step] of steps.entries()) {
-        const hasPreloadEnv = Object.hasOwn(
-          step.env ?? {},
-          'REST_COUNTER_PRELOAD',
-        );
-        const referencesPreload =
-          /\$\{\{[^}]*\boutputs(?:\.rest-counter-preload(?![\w-])|\['rest-counter-preload'\])/.test(
-            JSON.stringify(step),
-          );
-        if (!hasPreloadEnv && !referencesPreload) continue;
-        const label = file + ' / ' + step.name;
-        assert.ok(hasPreloadEnv, `${label} must bind env.REST_COUNTER_PRELOAD`);
-        assert.ok(setup >= 0 && setup < index, label);
-        assert.equal(
-          steps[setup].uses,
-          './.github/actions/setup-environment',
-          label,
-        );
-        assert.equal(step.env.NODE_OPTIONS, undefined, label);
-        assert.equal(
-          step.env.REST_COUNTER_PRELOAD,
-          '${{ steps.setup_environment.outputs.rest-counter-preload }}',
-          label,
-        );
-        if (step.run) {
-          assert.equal(step.shell, 'bash', label);
-          assert.match(
-            step.run,
-            /preload=\(--require "\$REST_COUNTER_PRELOAD"\)/,
-            label,
-          );
-          assert.match(step.run, /node "\$\{preload\[@\]\}"/, label);
-        } else {
-          assert.match(step.uses, /^actions\/github-script@/, label);
-          assert.match(
-            step.with.script,
-            /try \{\s+if \(process.env.REST_COUNTER_PRELOAD\) require\(process.env.REST_COUNTER_PRELOAD\);\s+\} catch/,
-            label,
-          );
-        }
-        checked += 1;
-      }
+    .filter((name) => /[.]ya?ml$/.test(name))) {
+    const doc = yaml.load(fs.readFileSync(path.join(workflows, file), 'utf8'));
+    for (const [job, config] of Object.entries(doc.jobs)) {
+      checked += checkRestCounterWiring(config.steps ?? [], file + ' / ' + job);
+    }
+  }
+  for (const { name, file } of localActions()) {
+    const doc = yaml.load(fs.readFileSync(file, 'utf8'));
+    if (doc.runs.using === 'composite') {
+      checked += checkRestCounterWiring(doc.runs.steps, 'action ' + name);
     }
   }
   assert.ok(checked > 0);
