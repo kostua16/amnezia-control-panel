@@ -74,11 +74,13 @@ code-review.yml
 -> when orchestrated, explicitly wakes pr-flow.yml and auto-cover-review.yml
    after completion so repair loops do not depend on workflow_run delivery alone
 -> REST budget: Apply review signals reads the PR's current labels fresh via
-   GraphQL (a separate quota pool from the REST core, so the read costs no
-   REST) and removes/adds only labels whose presence actually changes, failing
-   open to the unconditional writes on a read error or unexpected shape; the
-   claude-health tracker sync writes only when the critical label presence
-   differs from the run's needs (listForRepo already returned current labels)
+   GraphQL (metered against the token's separate GraphQL points budget — the
+   `graphql` resource of /rate_limit — not the REST `core` request budget the
+   label writes spend) and removes/adds only labels whose presence actually
+   changes, failing open to the unconditional writes on a read error,
+   truncated label page, or unexpected shape; the claude-health tracker sync
+   writes only when the critical label presence differs from the run's needs
+   (listForRepo already returned current labels)
 
 auto-cover-review.yml
   -> event-driven review repair dispatcher: Code Review completion, trusted

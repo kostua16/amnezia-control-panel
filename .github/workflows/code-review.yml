@@ -325,25 +325,33 @@ jobs:
               labelsToRemove.push(passed ? pair.concerns : pair.passed);
             }
 
-            // Read the PR's current labels fresh, via GraphQL — a separate quota
-            // pool from the REST core these writes spend, so the read costs no
-            // REST. Reading at apply time (not reusing a resolve-pr snapshot)
-            // keeps the gate correct even when labels changed during the review
-            // (which can run 20+ minutes) or this job is a re-run reusing stored
-            // outputs: the old unconditional remove+add self-healed those, so
-            // this must too. Any read failure or unexpected shape (e.g. a null
-            // node) fails open to the unconditional writes, which always reach
-            // the correct final state. On the common path this skips no-op
-            // writes: removeLabel on an absent label is a guaranteed-404 REST
-            // call, and addLabels for already-set labels changes nothing and
-            // fires no label event.
+            // Read the PR's current labels fresh. The read goes through the
+            // GraphQL API, which is metered against the installation token's
+            // GraphQL points budget (the separate `graphql` resource of
+            // /rate_limit) instead of the REST `core` request budget that the
+            // removeLabel/addLabels writes below — and this workflow's per-run
+            // REST accounting — spend; the label read in
+            // scripts/lib/workflow-labels-diff.cjs relies on the same split.
+            // Reading at apply time (not reusing a resolve-pr snapshot) keeps
+            // the gate correct even when labels changed during the review
+            // (which can run 20+ minutes) or this job is a re-run reusing
+            // stored outputs: the old unconditional remove+add self-healed
+            // those, so this must too. Any read failure, truncated label page,
+            // or unexpected shape (e.g. a null node) fails open to the
+            // unconditional writes, which always reach the correct final
+            // state. On the common path this skips no-op writes: removeLabel
+            // on an absent label is a guaranteed-404 REST call, and addLabels
+            // for already-set labels changes nothing and fires no label event.
             let currentLabels = null;
             try {
               const data = await github.graphql(
                 `query ($owner: String!, $name: String!, $number: Int!) {
                    repository(owner: $owner, name: $name) {
                      pullRequest(number: $number) {
-                       labels(first: 100) { nodes { name } }
+                       labels(first: 100) {
+                         pageInfo { hasNextPage }
+                         nodes { name }
+                       }
                      }
                    }
                  }`,
@@ -353,8 +361,12 @@ jobs:
                   number: issueNumber
                 }
               );
-              const nodes = data?.repository?.pullRequest?.labels?.nodes;
+              const labels = data?.repository?.pullRequest?.labels;
+              const nodes = labels?.nodes;
+              // A truncated page is a valid-looking response that could hide a
+              // review label, so treat it like a failed read and fail open.
               if (
+                labels?.pageInfo?.hasNextPage !== true &&
                 Array.isArray(nodes) &&
                 nodes.every((n) => n && typeof n.name === 'string')
               ) {
@@ -362,7 +374,7 @@ jobs:
               }
             } catch (error) {
               core.warning(
-                `Could not read current labels (${error.message}); applying review signals unconditionally.`
+                `Could not read current labels (${error?.message || String(error)}); applying review signals unconditionally.`
               );
             }
 
