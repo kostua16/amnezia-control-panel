@@ -137,6 +137,8 @@ From a source checkout, set `DATABASE_URL` in the shell for that one command (ra
 
 If startup already failed with `P3018` on migration `20260617_schema_hygiene_indexes_enums_timestamps` (`Cannot add a column with non-constant default` on a database whose `admins` or `user_quotas` table had rows), the failed attempt stays recorded and later starts stop with `P3009`. Nothing from that migration was applied, so mark it rolled back with the same one-off container or shell as above, replacing `--applied <name>` with `--rolled-back 20260617_schema_hygiene_indexes_enums_timestamps`, then upgrade to a release that contains the corrected migration (pull the new image or update the checkout) and restart. Restarting the same pre-fix image would run the original failing statement again and end in `P3018` / `P3009` once more.
 
+Databases that applied the original `20260617_schema_hygiene_indexes_enums_timestamps` while `admins` and `user_quotas` were empty keep `DEFAULT CURRENT_TIMESTAMP` on their `updatedAt` columns, whereas databases created or repaired with the corrected migration have no database default. This is intentional and has no runtime effect, because Prisma sets `updatedAt` itself and `migrate deploy` does not compare applied migrations; `prisma migrate dev` or `migrate diff` may report it as drift.
+
 ### Build manually
 
 ```bash

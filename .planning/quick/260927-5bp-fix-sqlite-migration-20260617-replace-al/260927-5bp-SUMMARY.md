@@ -32,7 +32,7 @@ SQLite 3.53.4 before the fix.
 
 ## What changed
 
-### Task 1 — `20260617_schema_hygiene_indexes_enums_timestamps/migration.sql` (ff8b144)
+### Task 1 — `20260617_schema_hygiene_indexes_enums_timestamps/migration.sql` (09ff2a40)
 
 Both `ALTER`s replaced, in place, with the table-redefine pattern the same file already
 used for `alerts` / `routing_rules` / `servers` / `services` / `user_protocols`:
@@ -56,7 +56,7 @@ verify migration checksums in `migrate status` or `migrate deploy` (empirically 
 and the migration was *unapplied and failed* on the only database that had it.
 `prisma migrate dev` checksum behaviour was **not** tested and was not run.
 
-### Task 2 — Second bug found by the drift gate (251908d)
+### Task 2 — Second bug found by the drift gate (landed on `main` as 28267566)
 
 > Landed separately: the `servers.redirectIp` migration reached `main` through PR #1238
 > (`28267566`), so it is **not** part of the PR that carries this summary. The section is kept
@@ -149,5 +149,6 @@ pre-`20260617` migrations and *before* it.
   therefore planned and executed inline by the orchestrator; all quick-mode artifacts
   (PLAN.md, SUMMARY.md, STATE.md row, atomic code commits, separate docs commit) are
   present as the workflow requires.
-- Nothing was pushed. `main` is ahead of `origin/main` by 3 commits
-  (`1156796`, `ff8b144`, `251908d`).
+- Nothing was pushed at the time of execution. The commits were later rebased onto `origin/main`:
+  `ff8b144` became `09ff2a40`, `251908d` was dropped because the same migration landed via
+  PR #1238 (`28267566`), and `1156796` was dropped because its patch was already upstream.
