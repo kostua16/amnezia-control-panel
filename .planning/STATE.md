@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: post-v1.1
-milestone_name: milestone
+milestone_name: Developer automation governance
 status: executing
 stopped_at: null
-last_updated: "2026-07-20T22:10:15.559Z"
-last_activity: 2026-07-20 -- Completed quick task 260721-4ej
+last_updated: "2026-11-25T05:47:36.442Z"
+last_activity: 2026-11-25 -- Completed quick task 261125-0l9
 progress:
-  total_phases: 28
+  total_phases: 20
   completed_phases: 12
-  total_plans: 58
-  completed_plans: 46
-  percent: 43
+  total_plans: 142
+  completed_plans: 73
+  percent: 51
 ---
 
 # Amnezia Control Panel - Project State
@@ -26,17 +26,17 @@ progress:
 ## Current Position
 
 Phase: 999 (gh-planning-execution-queue) — EXECUTING
-Plan: 1 of 30
+Plans: 50 of 114 executed (next queued plan picked by scheduled executor)
 Status: Executing Phase 999
-Last activity: 2026-11-25 - Completed quick task 261125-0l9: add missing migration for Server.redirectIp
+Last activity: 2026-11-25
 
-Progress: [██████████] 100% (v1.1 COMPLETE & ARCHIVED)
+Progress: [█████░░░░░] 51%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 26 (v1.1 + audit)
+- Total plans completed: 26 (v1.1 + audit) — plus 50 Phase 999 queue plans executed (of 114 queued); counts above reflect the v1.1 execution window
 - Average duration: 4min
 - Total execution time: 102min
 

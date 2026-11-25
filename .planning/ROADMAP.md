@@ -4,7 +4,7 @@
 
 - **v1.0** -- Phases 1.1-10.4 (shipped 2026-04-29)
 - **v1.1 Multi-Panel Chain Routing + Audit Remediation** -- Phases 11.1-12.15 (shipped 2026-06-11) [archive](.planning/milestones/v1.1-ROADMAP.md)
-- **Developer automation governance** -- Phases 13.1-13.4 (planned)
+- 🚧 **post-v1.1 Developer automation governance** -- Phases 13.1-13.4 (planned) + Phase 999 planning execution queue (executing)
 
 ## Phases
 
@@ -137,7 +137,7 @@ Plans:
 **Gap closure:** Closes WARNING-1 (middleware matcher), FLOW-6 (verification closure), and REQUIREMENTS.md checkbox debt
 **Plans:** Verified against codebase (2026-06-11)
 
-### Next Milestone: Developer automation governance (Phases 13.1-13.4)
+### Next Milestone: post-v1.1 Developer automation governance (Phases 13.1-13.4)
 
 - [ ] **Phase 13.1: Workflow governance hardening** -- central policy, maintainer-only triggers, explicit manual-only workflow/planning paths
 - [ ] **Phase 13.2: CI and supply-chain correctness** -- deterministic release notes, pinned bootstrap tooling, hard failures for push/build regressions
@@ -241,7 +241,7 @@ Plans:
 **Goal:** Store canonical execution plans imported from merged `.planning/quick/**` artifacts.
 **Depends on:** Phase 13.4
 **Requirements:** One imported artifact per wave so the scheduled executor can process up to four plans per day.
-**Plans:** 28/35 plans executed
+**Plans:** 50/114 plans executed
 
 ## Phase Details
 
