@@ -108,6 +108,14 @@ test('setup-environment keeps every documented input and its outputs', () => {
   const rateLimit = doc.runs.steps.find((step) => step.id === 'rate_limit');
   assert.equal(rateLimit.with['report-at-job-end'], 'true');
   assert.equal(rateLimit.with['rest-counter'], '${{ inputs.rest-counter }}');
+  assert.equal(rateLimit.with['defer-gh-counter'], 'true');
+  const ghCounter = doc.runs.steps.find(
+    (step) => step.name === 'Count GitHub CLI requests',
+  );
+  assert.equal(
+    ghCounter.if,
+    "inputs.rest-counter == 'true' && runner.os == 'Linux'",
+  );
   assert.equal(
     doc.outputs['rest-counter-preload'].value,
     '${{ steps.rate_limit.outputs.rest-counter-preload }}',
@@ -117,8 +125,7 @@ test('setup-environment keeps every documented input and its outputs', () => {
   );
 });
 
-function checkRestCounterWiring(steps, file) {
-  const setup = steps.findIndex((step) => step.id === 'setup_environment');
+function checkRestCounterWiring(steps, file, composite = false) {
   let checked = 0;
   for (const [index, step] of steps.entries()) {
     const label = file + ' / ' + (step.name ?? step.id ?? index);
@@ -131,20 +138,32 @@ function checkRestCounterWiring(steps, file) {
       label +
         ' must reference rest-counter-preload only in env.REST_COUNTER_PRELOAD',
     );
-    if (!Object.hasOwn(env ?? {}, 'REST_COUNTER_PRELOAD')) continue;
-
-    assert.ok(setup >= 0 && setup < index, label);
-    assert.equal(
-      steps[setup].uses,
-      './.github/actions/setup-environment',
-      label,
-    );
+    const githubScript = step.uses?.startsWith('actions/github-script@');
+    if (githubScript) assert.ok(preload, label);
+    if (preload === undefined) continue;
     assert.equal(otherEnv.NODE_OPTIONS, undefined, label);
-    assert.equal(
-      preload,
-      '${{ steps.setup_environment.outputs.rest-counter-preload }}',
-      label,
-    );
+    if (composite) {
+      assert.equal(
+        preload,
+        "${{ env.REST_COUNTER_DIR && format('{0}/rest-preload.cjs', env.REST_COUNTER_DIR) || '' }}",
+        label,
+      );
+    } else {
+      const source =
+        /^\$\{\{ steps\.([\w-]+)\.outputs\.rest-counter-preload \}\}$/.exec(
+          preload,
+        )?.[1];
+      const setup = steps.findIndex((step) => step.id === source);
+      assert.ok(source && setup >= 0 && setup < index, label);
+      assert.match(
+        steps[setup].uses,
+        /^\.\/\.github\/actions\/(setup-environment|log-rate-limit)$/,
+        label,
+      );
+      if (steps[setup].uses.endsWith('/log-rate-limit')) {
+        assert.equal(steps[setup].with['rest-counter'], 'true', label);
+      }
+    }
     if (step.run) {
       assert.equal(step.shell, 'bash', label);
       assert.match(
@@ -180,7 +199,7 @@ test('every opted-in step loads the preload without overriding runner Node optio
   for (const { name, file } of localActions()) {
     const doc = yaml.load(fs.readFileSync(file, 'utf8'));
     if (doc.runs.using === 'composite') {
-      checked += checkRestCounterWiring(doc.runs.steps, 'action ' + name);
+      checked += checkRestCounterWiring(doc.runs.steps, 'action ' + name, true);
     }
   }
   assert.ok(checked > 0);

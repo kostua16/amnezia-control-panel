@@ -60,6 +60,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: review-approved-record-approval
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Ensure maintainer-approved label exists
         uses: ./.github/actions/ensure-workflow-labels

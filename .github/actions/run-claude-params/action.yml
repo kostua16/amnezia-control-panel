@@ -896,11 +896,18 @@ runs:
       if: always()
       uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
       env:
+        REST_COUNTER_PRELOAD: ${{ env.REST_COUNTER_DIR && format('{0}/rest-preload.cjs', env.REST_COUNTER_DIR) || '' }}
         ISSUES_FILE: ${{ steps.scan-logs.outputs.claude_issues_file }}
         HAS_FINDINGS: ${{ steps.scan-logs.outputs.has_findings }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
+          try {
+            if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+          } catch {
+            // Counting is best-effort.
+          }
+
           const fs = require('fs');
           const { renderClaudeExecutionSection } = require('./.github/workflows/scripts/render-claude-report.cjs');
           const issuesFile = process.env.ISSUES_FILE;

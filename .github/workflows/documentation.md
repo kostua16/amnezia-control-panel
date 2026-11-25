@@ -456,12 +456,13 @@ setting. The post includes a step summary when available and prints
 `status=unavailable` if counting could not be set up or the records could not be read.
 
 GitHub [blocks `NODE_OPTIONS` in `GITHUB_ENV`](https://github.blog/changelog/2023-10-05-github-actions-node_options-is-now-restricted-from-github_env/).
-Setup publishes the preload path as its `rest-counter-preload` output. A step
-can pass that path without replacing the Node options inherited from the runner.
-The opted-in GitHub Script steps load it inside their scripts with a guarded
-`require`. The PR flow orchestration step passes `--require` to Node when the
-path is readable. The preload appends its argument for Node descendants while
-preserving their original options. Follow those existing steps when opting in.
+Setup publishes the preload path as its `rest-counter-preload` output. GitHub
+Script steps load it with a guarded `require`. Composite actions that use
+GitHub Script can derive the same path from the job's `REST_COUNTER_DIR`.
+Shell steps can pass `--require` to Node when the path is readable. The preload
+preserves the runner's Node options and adds its own argument for Node
+descendants. Code Review, Fix Review, Auto Cover Review and Auto Cover Dispatch
+use this wiring alongside PR Flow and the other review jobs.
 
 For example, add this step after a setup step with `id: setup_environment`,
 and replace the example Node command with the one the job runs.
@@ -479,33 +480,43 @@ and replace the example Node command with the one the job runs.
     node "${preload[@]}" -e 'console.log(process.version)'
 ```
 
-The counter observes Node's HTTP(S) and Undici request events, including fetch,
-and includes inherited Node subprocesses. It counts outgoing requests across
-credentials for the public or configured enterprise API. GraphQL has a separate
-count. The existing free `GET /rate_limit` snapshots are excluded. Only fixed
-route templates and counts are stored. A REST total of zero means zero observed
-requests recorded by the preload. The `instrumented` field counts attachments
-and `status=uninstrumented` identifies jobs without an attachment or a request
-record. Unreadable files are counted in `unreadable` and the remaining
-records still contribute to the totals. A route template newer than the post
-reporter is counted under `/other`. Coverage starts after setup and covers
-opted-in steps. Third-party setup actions, the GitHub CLI, curl, Bun and the
-Bun-based Claude Code action are outside the count. Instrumentation assumes the
-same job trust boundary as other runner-user-writable files. Keep untrusted
-processes out of jobs that later run secret-bearing steps.
+The Node preload observes HTTP(S) and Undici request events, including fetch.
+On Linux, setup installs a `gh` launcher on `PATH` after configuring the CLI.
+A standalone `log-rate-limit` invocation can also enable both collectors
+with `rest-counter: 'true'`. Fix Review does this before its eligibility
+steps. Commands in composite actions use the same launcher even when they
+provide their own token.
 
-The `gh` CLI is a Go binary. A PATH shim that delegates with the original
-arguments and streams can count invocations, but one invocation can produce
-multiple HTTP requests through pagination, retries or subcommands. The CLI's
-HTTP debug mode changes stderr. A shim therefore cannot supply a transparent
-request count with the observed interfaces. A source scan found about 250
-`gh` command mentions and 60 direct `github.rest` mentions in workflow and
-action code. This suggests `gh` traffic can dominate shell-heavy jobs. The
-fleet-wide request fraction remains unknown.
+The launcher passes the original arguments, stdin, stdout, and exit status
+through to `gh`. It uses request URL tracing (`GH_DEBUG=1`), which omits
+HTTP headers and bodies, and strips the injected diagnostics from stderr.
+Each observed URL, including pagination, goes through the same fixed route
+classifier as Node. The CLI trace omits the HTTP method, so its REST records
+use `OTHER` with the corresponding route template. Counts can include CLI
+cache lookups when `gh` emits a trace for them. Only normalized records are
+written to disk. If the observer cannot start, the launcher runs `gh`
+without tracing.
+
+Counts cover the public or configured enterprise API across credentials.
+Free quota probes are excluded. `total` and `by_route` cover REST, `graphql`
+covers GraphQL, and `via` and `graphql_via` show the Node and CLI contributions.
+`instrumented` counts attached Node and CLI processes. A zero total means
+zero recorded REST requests. `status=uninstrumented` identifies jobs with
+neither an attachment nor a request record. Unreadable files are counted in
+`unreadable`. Unknown route templates are counted under `/other`.
+
+Coverage starts at the first enabled collector. Blind spots include requests
+before setup, third-party setup internals, curl, native Bun and Claude Code
+action requests, and direct calls to the real `gh` binary that bypass
+`PATH`. The shim also bypasses interactive stderr, explicit CLI debug or
+verbose modes, and unsupported commands such as extensions. GitHub CLI
+requests launched by Bun still count when they use the shim. Instrumentation
+assumes the same job trust boundary as other runner-user-writable files.
 
 Pipe concatenated job logs to
 `node .github/workflows/scripts/summarize-rate-limit.cjs` to sum observed
-requests and route counts per workflow and job across run attempts. Provide
+requests, sources, and route counts per workflow and job across run attempts.
+Older logs without a source field contribute to the Node column. Provide
 each job log once. Matrix legs count as separate reports. The
 `unavailable_jobs` counts each workflow/job once per run ID if any attempt or
 matrix leg reported unavailable or uninstrumented.

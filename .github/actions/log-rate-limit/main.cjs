@@ -3,10 +3,12 @@
 
 const { logRateLimit, writeCoreRemainingOutput } = require('./rate-limit.cjs');
 const { startRestCounter } = require('./rest-counter.cjs');
+const { installGhCounter } = require('./gh-counter.cjs');
 
 const reportAtJobEnd = process.env['INPUT_REPORT-AT-JOB-END'] === 'true';
 
-startRestCounter();
+const dir = startRestCounter();
+if (process.env['INPUT_DEFER-GH-COUNTER'] !== 'true') installGhCounter(dir);
 
 logRateLimit({ phase: reportAtJobEnd ? 'job-start' : 'snapshot' }).then(
   (resources) => {

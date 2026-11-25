@@ -39,15 +39,25 @@ jobs:
           persist-credentials: false
           sparse-checkout: .github/actions/log-rate-limit
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: branch-cleanup-restore-deferred-proposal
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Counting is best-effort.
+            }
+
             const pr = context.payload.pull_request;
             if (!pr) {
               core.setFailed('pull_request payload missing');
@@ -116,16 +126,26 @@ jobs:
           ref: refs/heads/main
           persist-credentials: false
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: branch-cleanup-delete-generated-branch
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Delete closed automation branch
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Counting is best-effort.
+            }
+
             const fs = require('fs');
             const path = require('path');
 
@@ -206,6 +226,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: branch-cleanup-orphan-sweep
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Sweep orphan automation branches
         env:

@@ -3,7 +3,7 @@ description: 'Setup Node.js, GitHub CLI, Bun, optionally install deps and GSD'
 
 inputs:
   rest-counter:
-    description: 'Enable REST request counting for instrumented Node steps'
+    description: 'Enable REST request counting for instrumented Node steps and gh on PATH'
     default: 'true'
   github-token:
     description: 'GitHub token for gh authentication'
@@ -110,6 +110,7 @@ runs:
         label: setup-environment
         report-at-job-end: 'true'
         rest-counter: ${{ inputs.rest-counter }}
+        defer-gh-counter: 'true'
 
     - if: inputs.setup-node == 'true'
       uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
@@ -259,6 +260,12 @@ runs:
         else
           fail_or_warn "gh is not on PATH (env mode does not install it); later steps that call gh will fail."
         fi
+
+    - name: Count GitHub CLI requests
+      if: inputs.rest-counter == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        node "$GITHUB_ACTION_PATH/../log-rate-limit/gh-counter.cjs" --install || true
 
     - if: inputs.install-deps == 'true'
       id: npm-deps-cache

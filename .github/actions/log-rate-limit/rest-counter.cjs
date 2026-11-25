@@ -12,11 +12,7 @@ const {
   unlinkSync,
 } = require('node:fs');
 const { join } = require('node:path');
-const {
-  METHODS = [],
-  ROUTES = [],
-  sameDirectory,
-} = require('./rest-preload.cjs');
+const { METHODS, ROUTES, sameDirectory } = require('./rest-routes.cjs');
 
 const ROUTE_KEYS = new Set(
   [...METHODS, 'OTHER'].flatMap((method) =>
@@ -31,7 +27,7 @@ function startRestCounter(env = process.env, log = console.log) {
   try {
     if (env.REST_COUNTER_DIR) {
       appendFileSync(env.GITHUB_STATE, 'rest_counter_skip=true\n');
-      return;
+      return env.REST_COUNTER_DIR;
     }
     if (
       !env.RUNNER_TEMP ||
@@ -58,13 +54,23 @@ function startRestCounter(env = process.env, log = console.log) {
     preload = join(dir, 'rest-preload.cjs');
     // Keep the preload available when later checkout steps replace the workspace.
     copyFileSync(join(__dirname, 'rest-preload.cjs'), preload);
+    copyFileSync(
+      join(__dirname, 'rest-routes.cjs'),
+      join(dir, 'rest-routes.cjs'),
+    );
     appendFileSync(env.GITHUB_STATE, `rest_counter_dir=${dir}\n`);
     appendFileSync(env.GITHUB_ENV, `REST_COUNTER_DIR=${dir}\n`);
     appendFileSync(env.GITHUB_OUTPUT, `rest-counter-preload=${preload}\n`);
+    return dir;
   } catch {
     if (dir) {
       try {
         unlinkSync(preload);
+      } catch {
+        /* The copy may never have completed. */
+      }
+      try {
+        unlinkSync(join(dir, 'rest-routes.cjs'));
       } catch {
         /* The copy may never have completed. */
       }
@@ -83,9 +89,13 @@ function collectRestCounts(dir) {
   let graphql = 0;
   let instrumented = 0;
   let unreadable = 0;
+  const via = { node: 0, gh: 0 };
+  const graphql_via = { node: 0, gh: 0 };
   const routes = new Map();
   for (const file of readdirSync(dir)) {
-    if (!/^requests-[a-f0-9-]+\.log$/.test(file)) continue;
+    const match = /^(gh-)?requests-[a-f0-9-]+\.log$/.exec(file);
+    if (!match) continue;
+    const source = match[1] ? 'gh' : 'node';
     let records;
     try {
       records = readFileSync(join(dir, file), 'utf8').split('\n');
@@ -100,6 +110,7 @@ function collectRestCounts(dir) {
     for (const route of records) {
       if (route === 'graphql') {
         graphql += 1;
+        graphql_via[source] += 1;
         continue;
       }
       const method = /^([A-Z]+) \/\S+$/.exec(route)?.[1];
@@ -108,6 +119,7 @@ function collectRestCounts(dir) {
         ? route
         : `${METHODS.includes(method) ? method : 'OTHER'} /other`;
       total += 1;
+      via[source] += 1;
       routes.set(key, (routes.get(key) ?? 0) + 1);
     }
   }
@@ -116,6 +128,8 @@ function collectRestCounts(dir) {
     graphql,
     instrumented,
     unreadable,
+    via,
+    graphql_via,
     by_route: Object.fromEntries([...routes].sort()),
   };
 }
@@ -146,19 +160,27 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
     log(`${prefix} status=unavailable reason=read-failed`);
     return;
   }
-  const { total, graphql, instrumented, unreadable, by_route } = counts;
+  const {
+    total,
+    graphql,
+    instrumented,
+    unreadable,
+    via,
+    graphql_via,
+    by_route,
+  } = counts;
   const status =
     total || graphql || instrumented || unreadable
       ? ''
       : ' status=uninstrumented';
   log(
-    `${prefix}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} by_route=${JSON.stringify(by_route)}`,
+    `${prefix}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphql_via)} by_route=${JSON.stringify(by_route)}`,
   );
   try {
     if (env.GITHUB_STEP_SUMMARY) {
       appendFileSync(
         env.GITHUB_STEP_SUMMARY,
-        `\nGitHub API requests (instrumented Node steps)\n\n` +
+        `\nGitHub API requests (instrumented Node and gh)\n\n` +
           `\`\`\`json\n${JSON.stringify(counts)}\n\`\`\`\n`,
       );
     }

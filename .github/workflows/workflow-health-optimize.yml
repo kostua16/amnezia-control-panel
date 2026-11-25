@@ -61,17 +61,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: workflow-health-collect-runs
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Collect workflow runs from past hour
         id: collect
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Counting is best-effort.
+            }
+
             const { parseClaudeExecution } = require('./.github/workflows/scripts/parse-claude-execution.cjs');
             const {
               duplicateSameSha,
@@ -331,6 +341,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           label: workflow-health-detect-flaky
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Detect flaky workflows across hours (WHO-E04)
         id: flaky
@@ -358,6 +369,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           label: workflow-health-queue-starvation
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: File queue starvation alert (WHO-E03)
         shell: bash
@@ -580,6 +592,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           label: workflow-health-blocked-gate
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Track blocked optimization gate
         env:
@@ -616,6 +629,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: workflow-health-report-failure
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Report workflow health check failure
         uses: ./.github/actions/report-failure

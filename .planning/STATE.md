@@ -128,6 +128,7 @@ Resume file: None
 
 | Date       | Slug / ID    | Summary                                                     |
 | ---------- | ------------ | ----------------------------------------------------------- |
+| 2026-11-25 | 261125-o4p   | Count GitHub CLI requests and wire the remaining GitHub Script steps |
 | 2026-11-25 | 261125-0l9   | Add missing Prisma migration for Server.redirectIp (fixes GET /api/servers 500 on fresh DB) |
 | 2026-11-24 | 261124-v61   | Address PR #1223 maintenance review findings |
 | 2026-11-23 | 261123-w9f   | Avoid Docker main-push REST comparison and closed-issue authorization |

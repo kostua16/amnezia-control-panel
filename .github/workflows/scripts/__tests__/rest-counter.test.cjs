@@ -23,7 +23,7 @@ const { promisify } = require('node:util');
 const {
   apiTarget,
   classify,
-} = require('../../../actions/log-rate-limit/rest-preload.cjs');
+} = require('../../../actions/log-rate-limit/rest-routes.cjs');
 const {
   collectRestCounts,
   reportRestCounter,
@@ -160,7 +160,7 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   });
   assert.match(
     result.stdout,
-    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 by_route=\{\}\s*$/,
+    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} by_route=\{\}\s*$/,
   );
   const preload = join(dir, 'rest-preload.cjs');
   const postEnv = {
@@ -176,7 +176,7 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   });
   assert.match(
     quiet.stdout,
-    /total=0 graphql=0 instrumented=1 unreadable=0 by_route=\{\}/,
+    /total=0 graphql=0 instrumented=1 unreadable=0 via=.* by_route=\{\}/,
   );
   assert.doesNotMatch(quiet.stdout, /status=uninstrumented/);
 });
@@ -336,6 +336,8 @@ test('setup, parallel children and post count HTTP and fetch without changing re
     graphql: 2,
     instrumented: 3,
     unreadable: 1,
+    via: { node: 7, gh: 0 },
+    graphql_via: { node: 2, gh: 0 },
     by_route: {
       'GET /other': 1,
       'GET /repos/:o/:r': 2,

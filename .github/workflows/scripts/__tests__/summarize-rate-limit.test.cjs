@@ -72,6 +72,25 @@ test('aggregates REST counts by workflow and job across attempts and matrix repo
   );
 });
 
+test('aggregates source splits alongside legacy Node-only reports', () => {
+  const prefix = 'REST_COUNT workflow="Mixed" job=check run=';
+  const mixed =
+    prefix +
+    '1.2 total=2 graphql=3 instrumented=2 unreadable=0 via={"node":1,"gh":1} graphql_via={"node":1,"gh":2} by_route={"GET /user":1,"OTHER /user":1}';
+  const summary = summarize([
+    prefix + '1.1 total=1 graphql=1 by_route={"GET /user":1}',
+    mixed,
+    mixed.replace('"gh":1', '"gh":9'),
+  ]);
+  assert.equal(summary.restCounts[0].reports, 2);
+  assert.deepEqual(summary.restCounts[0].via, { node: 2, gh: 1 });
+  assert.deepEqual(summary.restCounts[0].graphqlVia, { node: 2, gh: 2 });
+  assert.match(
+    format(summary),
+    /via=\{"node":2,"gh":1\} graphql_via=\{"node":2,"gh":2\}/,
+  );
+});
+
 function line({
   phase,
   job = 'orchestrate',
