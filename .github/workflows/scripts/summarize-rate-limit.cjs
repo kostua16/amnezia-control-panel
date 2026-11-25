@@ -17,6 +17,22 @@ const readline = require('node:readline');
 
 const FIELD = /(\w+)=("[^"]*"|\S+)/g;
 const NO_WINDOW = 'n/a';
+const GH_UNAVAILABLE_REASONS = new Set([
+  'io',
+  'launcher-shadowed',
+  'launcher-unusable',
+  'no-counter-directory',
+  'no-gh',
+  'no-github-path',
+  'node-not-on-path',
+  'node-unusable',
+  'not-installed',
+  'observer-unusable',
+  'setup-failed',
+  'unknown-platform',
+  'unsupported-platform',
+  'unwritable-dir',
+]);
 
 function parseLine(line) {
   const at = line.indexOf('RATE_LIMIT ');
@@ -43,11 +59,15 @@ function parseRestCount(line) {
   const [, name, job, run, body] = match;
   try {
     const workflow = JSON.parse(name);
-    if (/^status=unavailable reason=[a-z-]+\s*$/.test(body)) {
+    if (
+      /^status=unavailable reason=[a-z-]+(?: total=0 graphql=0 by_route=\{\})?\s*$/.test(
+        body,
+      )
+    ) {
       return { workflow, job, run, status: 'unavailable' };
     }
     const counts = body.match(
-      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?(?: (?:gh_status=(ok|unavailable)|(gh=unavailable))(?: gh_reason=([a-z][a-z0-9-]{0,39}))?)? by_route=(\{.*\})\s*$/,
+      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?(?: (?:gh_status=(ok|unavailable)|(gh=unavailable))(?: gh_reason=(.*?))?)? by_route=(\{.*\})\s*$/,
     );
     if (!counts) return null;
     const [
@@ -61,7 +81,7 @@ function parseRestCount(line) {
       rawGraphqlVia,
       ghStatus,
       legacyGhUnavailable,
-      ghUnavailableReason,
+      rawGhReason,
       rawRoutes,
     ] = counts;
     const total = Number(rawTotal);
@@ -92,7 +112,10 @@ function parseRestCount(line) {
       graphqlVia,
       ghStatus: legacyGhUnavailable ? 'unavailable' : ghStatus,
       ghUnavailable: ghStatus === 'unavailable' || Boolean(legacyGhUnavailable),
-      ghUnavailableReason,
+      ghUnavailableReason:
+        rawGhReason === undefined || GH_UNAVAILABLE_REASONS.has(rawGhReason)
+          ? rawGhReason
+          : 'unclassified',
       routes,
     };
   } catch {

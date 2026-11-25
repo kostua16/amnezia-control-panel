@@ -201,10 +201,7 @@ function reportGhInstallFailure(dir, reason, log = console.log) {
 
 function readGhSetupFailure(dir) {
   try {
-    const reason = readFileSync(join(dir, GH_SETUP_FAILURE), 'utf8').replace(
-      /\r?\n$/,
-      '',
-    );
+    const reason = readFileSync(join(dir, GH_SETUP_FAILURE), 'utf8').trim();
     if (GH_SETUP_REASON.test(reason)) return reason;
   } catch {
     // The install step may have been skipped.
@@ -256,7 +253,9 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
     ghReason =
       env.RUNNER_OS === 'Linux'
         ? ghLauncherIssue(dir, env.PATH)
-        : 'unsupported-platform';
+        : ['Windows', 'macOS'].includes(env.RUNNER_OS)
+          ? 'unsupported-platform'
+          : 'unknown-platform';
   }
   const ghStatus = ghReason ? 'unavailable' : 'ok';
   log(

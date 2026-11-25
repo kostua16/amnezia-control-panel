@@ -31,7 +31,7 @@ const {
   reportRestCounter,
   startRestCounter,
 } = require('../../../actions/log-rate-limit/rest-counter.cjs');
-const { parseRestCount } = require('../summarize-rate-limit.cjs');
+const { parseRestCount, summarize } = require('../summarize-rate-limit.cjs');
 
 const runNode = promisify(execFile);
 const action = resolve(__dirname, '../../../actions/log-rate-limit');
@@ -144,11 +144,23 @@ test('post action contains unexpected report failures', async () => {
     require(${JSON.stringify(join(action, 'post.cjs'))});
   `;
   const result = await runNode(process.execPath, ['-e', code], {
-    env: { ...process.env, 'INPUT_REPORT-AT-JOB-END': 'false' },
+    env: {
+      ...process.env,
+      'INPUT_REPORT-AT-JOB-END': 'false',
+      GITHUB_WORKFLOW: 'Workflow "test"',
+      GITHUB_JOB: 'check',
+      GITHUB_RUN_ID: '12',
+      GITHUB_RUN_ATTEMPT: '2',
+    },
   });
+  assert.match(
+    result.stdout,
+    /status=unavailable reason=report-failed total=0 graphql=0 by_route=\{\}/,
+  );
+  assert.doesNotMatch(result.stdout, /private-fixture-data/);
   assert.equal(
-    result.stdout.trimEnd(),
-    '::warning::REST counter post report unavailable',
+    summarize([result.stdout.trimEnd()]).restCounts[0].unavailableRuns.size,
+    1,
   );
   assert.equal(result.stderr, '');
 });
@@ -239,7 +251,7 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   });
   assert.match(
     result.stdout,
-    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} gh_status=unavailable gh_reason=unsupported-platform by_route=\{\}\s*$/,
+    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} gh_status=unavailable gh_reason=unknown-platform by_route=\{\}\s*$/,
   );
   const preload = join(dir, 'rest-preload.cjs');
   const postEnv = {
@@ -295,20 +307,41 @@ test('post reports missing gh coverage until a launcher or observed requests are
     assert.deepEqual(annotations, [
       `::warning::GitHub CLI request counting unavailable (${reason})`,
     ]);
-    assert.equal(report().ghUnavailableReason, reason);
+    assert.equal(
+      report().ghUnavailableReason,
+      reason === 'future-failure2' ? 'unclassified' : reason,
+    );
   }
   writeFileSync(
     join(dir, 'gh-setup-failure'),
     'unexpected https://private.invalid\n',
   );
   assert.equal(report().ghUnavailableReason, 'not-installed');
+  for (const value of ['no-gh \n', 'no-gh\r\n\r\n']) {
+    writeFileSync(join(dir, 'gh-setup-failure'), value);
+    assert.equal(report().ghUnavailableReason, 'no-gh');
+  }
   const firstSummary = JSON.parse(
     readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8').split('\n')[4],
+  );
+  assert.match(
+    readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8'),
+    /"gh_reason":"future-failure2"/,
   );
   assert.equal(firstSummary.gh_status, 'unavailable');
   assert.equal(firstSummary.gh_reason, 'not-installed');
   assert.equal(firstSummary.via.gh, 0);
   assert.equal(Object.hasOwn(firstSummary, 'gh'), false);
+  for (const [platform, reason] of [
+    ['Windows', 'unsupported-platform'],
+    ['macOS', 'unsupported-platform'],
+    [undefined, 'unknown-platform'],
+    ['unexpected', 'unknown-platform'],
+  ]) {
+    env.RUNNER_OS = platform;
+    assert.equal(report().ghUnavailableReason, reason);
+  }
+  env.RUNNER_OS = 'Linux';
   reportGhInstallFailure(dir, 'no-gh', () => {});
   const bin = join(dir, 'gh-bin');
   mkdirSync(bin);
@@ -536,6 +569,6 @@ test('setup, parallel children and post count HTTP and fetch without changing re
   assert.deepEqual(stepReport, {
     ...counts,
     gh_status: 'unavailable',
-    gh_reason: 'unsupported-platform',
+    gh_reason: 'unknown-platform',
   });
 });
