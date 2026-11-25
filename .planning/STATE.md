@@ -128,6 +128,7 @@ Resume file: None
 
 | Date       | Slug / ID    | Summary                                                     |
 | ---------- | ------------ | ----------------------------------------------------------- |
+| 2026-11-25 | 261125-pb9   | Address the second CLI counter review for PR #1252 |
 | 2026-11-25 | 261125-ow0   | Address counter review feedback for PR #1252 |
 | 2026-11-25 | 261125-o4p   | Count GitHub CLI requests and wire the remaining GitHub Script steps |
 | 2026-11-25 | 261125-0l9   | Add missing Prisma migration for Server.redirectIp (fixes GET /api/servers 500 on fresh DB) |

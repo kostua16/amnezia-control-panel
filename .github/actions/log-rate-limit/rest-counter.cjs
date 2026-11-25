@@ -2,16 +2,19 @@
 'use strict';
 
 const {
+  accessSync,
   appendFileSync,
+  constants,
   copyFileSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
   rmdirSync,
+  statSync,
   unlinkSync,
 } = require('node:fs');
-const { join } = require('node:path');
+const { delimiter, join } = require('node:path');
 const { METHODS, ROUTES, sameDirectory } = require('./rest-routes.cjs');
 
 const ROUTE_KEYS = new Set(
@@ -134,6 +137,20 @@ function collectRestCounts(dir) {
   };
 }
 
+function hasGhLauncher(dir, path) {
+  const bin = join(dir, 'gh-bin');
+  if (!path?.split(delimiter).includes(bin)) return false;
+  try {
+    const launcher = join(bin, 'gh');
+    const observer = join(bin, 'gh-counter.cjs');
+    accessSync(launcher, constants.X_OK);
+    accessSync(observer, constants.R_OK);
+    return statSync(launcher).isFile() && statSync(observer).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function reportRestCounter({ env = process.env, log = console.log } = {}) {
   if (
     env['INPUT_REST-COUNTER'] !== 'true' ||
@@ -173,7 +190,11 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
     total || graphql || instrumented || unreadable
       ? ''
       : ' status=uninstrumented';
-  const ghUnavailable = env.REST_COUNTER_GH_UNAVAILABLE === 'true';
+  const ghUnavailable =
+    env.RUNNER_OS === 'Linux' &&
+    via.gh === 0 &&
+    graphql_via.gh === 0 &&
+    !hasGhLauncher(dir, env.PATH);
   log(
     `${prefix}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphql_via)}${ghUnavailable ? ' gh=unavailable' : ''} by_route=${JSON.stringify(by_route)}`,
   );

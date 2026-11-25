@@ -846,8 +846,8 @@ Every job that uses the installation token shares one REST bucket. `pr-policy.ym
 | --- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | RC1 | GitHub Script and an instrumented Node child call GitHub               | Both contribute sanitized route templates to the Node source, with GraphQL counted separately.                                 |
 | RC2 | A CLI command paginates, a composite uses its own token, or a job calls `gh cache` | Each traced request contributes to the CLI source. Stdin, stdout, ordinary stderr and exit status pass through. |
-| RC3 | CLI tracing sees a private path, query, proxy URL or a trace header without timing markers | Only normalized request data is recorded. Injected debug lines are suppressed. |
-| RC4 | The counter is disabled, Node is missing from PATH, or a write fails | Disabled setup preserves PATH. Missing Node emits a warning and `gh=unavailable` without stopping the job. A CLI invocation still executes once and returns its exit status. |
+| RC3 | A trace header or URL-bearing request, response, or HTTP diagnostic arrives without timing markers | The debug line is suppressed. Ordinary starred stderr retains its original bytes. |
+| RC4 | The counter is disabled, Node is missing from PATH, or an install attempt fails | Disabled setup exits successfully and preserves PATH. Failed setup warns and the post reports `gh=unavailable` when no shim or CLI requests are present. A successful retry restores coverage. |
 | RC5 | Logs mix legacy Node reports and newer Node and CLI reports            | The post and summarizer preserve REST and GraphQL totals and aggregate the source counts across attempts.                      |
 
 Coverage lives in `rest-counter.test.cjs`, `gh-counter.test.cjs`,

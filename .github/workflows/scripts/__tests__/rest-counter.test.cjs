@@ -143,6 +143,7 @@ test('the action reports REST counts even with its quota post snapshot disabled'
     ...process.env,
     ...setupEnv(root),
     REST_COUNTER_DIR: '',
+    RUNNER_OS: '',
     STATE_rest_counter_skip: '',
     'INPUT_REPORT-AT-JOB-END': 'false',
     GITHUB_JOB: 'standalone',
@@ -182,26 +183,37 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   assert.doesNotMatch(quiet.stdout, /status=uninstrumented/);
 });
 
-test('post reports unavailable gh coverage without dropping Node counts', (t) => {
+test('post reports missing gh coverage until a launcher or observed requests are present', (t) => {
   const setup = setupEnv(temp(t));
   const dir = startRestCounter(setup);
   writeFileSync(join(dir, 'requests-abcd.log'), 'attached\nGET /user\n');
-  const lines = [];
-  reportRestCounter({
-    env: {
-      ...setup,
-      GITHUB_JOB: 'review',
-      GITHUB_RUN_ID: '42',
-      GITHUB_RUN_ATTEMPT: '1',
-      STATE_rest_counter_dir: dir,
-      REST_COUNTER_DIR: dir,
-      REST_COUNTER_GH_UNAVAILABLE: 'true',
-    },
-    log: (line) => lines.push(line),
-  });
-  assert.match(lines[0], / gh=unavailable /);
-  assert.equal(parseRestCount(lines[0]).ghUnavailable, true);
-  assert.deepEqual(parseRestCount(lines[0]).via, { node: 1, gh: 0 });
+  const env = {
+    ...setup,
+    GITHUB_JOB: 'review',
+    GITHUB_RUN_ID: '42',
+    GITHUB_RUN_ATTEMPT: '1',
+    STATE_rest_counter_dir: dir,
+    REST_COUNTER_DIR: dir,
+    RUNNER_OS: 'Linux',
+  };
+  const report = () => {
+    let count;
+    reportRestCounter({ env, log: (line) => (count = parseRestCount(line)) });
+    return count;
+  };
+  assert.equal(report().ghUnavailable, true);
+  assert.deepEqual(report().via, { node: 1, gh: 0 });
+  const bin = join(dir, 'gh-bin');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'gh'), '#!/bin/bash\n', { mode: 0o700 });
+  writeFileSync(join(bin, 'gh-counter.cjs'), '');
+  assert.equal(report().ghUnavailable, true);
+  env.PATH = bin;
+  assert.equal(report().ghUnavailable, false);
+  env.PATH = '';
+  writeFileSync(join(dir, 'gh-requests-abcd.log'), 'attached\ngraphql\n');
+  assert.equal(report().ghUnavailable, false);
+  assert.deepEqual(report().graphqlVia, { node: 0, gh: 1 });
 });
 
 test('classifies only API hosts and emits no request data beyond fixed templates', () => {

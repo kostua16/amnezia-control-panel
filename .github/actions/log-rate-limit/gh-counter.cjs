@@ -17,6 +17,7 @@ const { delimiter, dirname, join, resolve } = require('node:path');
 
 // Restrict debug injection to known built-ins. Unknown names can run extensions
 // or shell aliases with a different stderr format.
+// agent-task is registered by the CLI itself starting with v2.80.0.
 const TRACED_COMMANDS = new Set([
   'agent-task',
   'api',
@@ -44,12 +45,12 @@ const TRACED_COMMANDS = new Set([
 ]);
 
 function installGhCounter(dir, enabled, env = process.env) {
-  if (!enabled || process.platform !== 'linux' || !dir || !env.GITHUB_PATH)
-    return false;
+  if (!enabled) return 'disabled';
+  if (process.platform !== 'linux' || !dir || !env.GITHUB_PATH) return 'failed';
 
   try {
     dir = realpathSync(dir);
-    if (/[\r\n]/.test(dir)) return false;
+    if (/[\r\n]/.test(dir)) return 'failed';
     const bin = join(dir, 'gh-bin');
     const launcher = join(bin, 'gh');
     const realGh = (env.PATH ?? '')
@@ -65,7 +66,7 @@ function installGhCounter(dir, enabled, env = process.env) {
           return false;
         }
       });
-    if (!realGh) return false;
+    if (!realGh) return 'failed';
 
     mkdirSync(bin, { recursive: true });
     const observer = join(bin, 'gh-counter.cjs');
@@ -91,10 +92,10 @@ exec "$node_bin" "$observer" "$real_gh" "$@"
       { mode: 0o700 },
     );
     appendFileSync(env.GITHUB_PATH, `${bin}\n`);
-    return true;
+    return 'installed';
   } catch {
     // PATH is only updated after the launcher and observer are ready.
-    return false;
+    return 'failed';
   }
 }
 
@@ -143,6 +144,8 @@ function prepareObserver(dir, env, writeStderr) {
     if (
       /^[<>] /.test(line) ||
       (inFlight && line.startsWith('* ')) ||
+      (/^\* (?:Request(?:ing)?|Response|HTTP)\b/i.test(line) &&
+        line.includes('://')) ||
       /^\[(?:\S*[/\\])?git(?:[.]exe)?(?: |\])/.test(line)
     )
       return;
@@ -215,7 +218,10 @@ function runGh(realGh, args) {
 if (require.main === module) {
   const [command, ...args] = process.argv.slice(2);
   if (command === '--install') {
-    if (!installGhCounter(process.env.REST_COUNTER_DIR, args[0] === 'true'))
+    if (
+      installGhCounter(process.env.REST_COUNTER_DIR, args[0] === 'true') ===
+      'failed'
+    )
       process.exitCode = 1;
   } else {
     runGh(command, args);
