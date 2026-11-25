@@ -1,0 +1,477 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const {
+  TRACKER_LABELS,
+  ISSUE_SWEEP_LIMIT,
+  parseArgs,
+  extractAdvisoryIds,
+  advisoryIdsFromAudit,
+  classifyTracker,
+  reconcileTrackers,
+  renderMatrix,
+  fetchCandidateIssues,
+  main,
+} = require('../reconcile-security-trackers.cjs');
+
+function issue(overrides = {}) {
+  return {
+    number: overrides.number ?? 100,
+    title: overrides.title ?? 'Security: something',
+    body: overrides.body ?? '',
+    state: overrides.state ?? 'OPEN',
+    labels: overrides.labels ?? ['security', 'triaged'],
+  };
+}
+
+// ── extractAdvisoryIds: normalization ─────────────────────────────────
+
+test('extractAdvisoryIds canonicalizes case and dedupes', () => {
+  const ids = extractAdvisoryIds(
+    'fixed ghsa-2v37-7h3g-55p8 and GHSA-2V37-7H3G-55P8 plus CVE-2026-33327 and cve-2026-33327',
+  );
+  assert.deepEqual(ids, {
+    ghsa: ['GHSA-2V37-7H3G-55P8'],
+    cve: ['CVE-2026-33327'],
+  });
+});
+
+test('extractAdvisoryIds returns empty shapes for no-id text', () => {
+  assert.deepEqual(extractAdvisoryIds('no advisories here'), {
+    ghsa: [],
+    cve: [],
+  });
+  assert.deepEqual(extractAdvisoryIds(''), { ghsa: [], cve: [] });
+});
+
+// ── advisoryIdsFromAudit ──────────────────────────────────────────────
+
+test('advisoryIdsFromAudit collects ids from via[] advisory objects only', () => {
+  const audit = {
+    vulnerabilities: {
+      postcss: {
+        via: [
+          {
+            url: 'https://github.com/advisories/GHSA-r28c-9q8g-f849',
+            title: 'postcss path traversal',
+          },
+        ],
+      },
+      'brace-expansion': {
+        via: [
+          { title: 'ReDoS CVE-2025-12345', url: '' },
+          'eslint', // transitive chain entry — no id, must be skipped
+        ],
+      },
+    },
+  };
+  assert.deepEqual(advisoryIdsFromAudit(audit), [
+    'CVE-2025-12345',
+    'GHSA-R28C-9Q8G-F849',
+  ]);
+});
+
+test('advisoryIdsFromAudit on a zero-vulnerability audit returns []', () => {
+  assert.deepEqual(
+    advisoryIdsFromAudit({
+      metadata: { vulnerabilities: { total: 0 } },
+    }),
+    [],
+  );
+  assert.deepEqual(advisoryIdsFromAudit({}), []);
+});
+
+// ── classifyTracker ───────────────────────────────────────────────────
+
+test('classifyTracker: security label + advisory id = security-tracker', () => {
+  assert.equal(
+    classifyTracker(issue({ body: 'tracked GHSA-mh99-v99m-4gvg' })),
+    'security-tracker',
+  );
+});
+
+test('classifyTracker accepts gh-style label objects ({name}) as well as strings', () => {
+  assert.equal(
+    classifyTracker(
+      issue({
+        labels: [{ name: 'security' }, { name: 'high' }],
+        body: 'GHSA-2v37-7h3g-55p8',
+      }),
+    ),
+    'security-tracker',
+  );
+  assert.equal(
+    classifyTracker(
+      issue({ labels: [{ name: 'bug' }], body: 'GHSA-2v37-7h3g-55p8' }),
+    ),
+    'unrelated',
+  );
+});
+
+test('classifyTracker: dependencies label also marks a tracker', () => {
+  assert.equal(
+    classifyTracker(
+      issue({ labels: ['dependencies'], body: 'CVE-2026-33327 chain' }),
+    ),
+    'security-tracker',
+  );
+  assert.deepEqual(TRACKER_LABELS, ['security', 'dependencies']);
+});
+
+test('classifyTracker: security label without any advisory id = no-advisory-id', () => {
+  assert.equal(
+    classifyTracker(
+      issue({ title: 'Security: vague concern', body: 'no ids' }),
+    ),
+    'no-advisory-id',
+  );
+});
+
+test('classifyTracker: issue without security/dependencies labels = unrelated', () => {
+  assert.equal(
+    classifyTracker(
+      issue({
+        labels: ['bug'],
+        body: 'mentions GHSA-2v37-7h3g-55p8 in passing',
+      }),
+    ),
+    'unrelated',
+  );
+  assert.equal(classifyTracker(issue({ labels: [] })), 'unrelated');
+});
+
+// ── reconcileTrackers ────────────────────────────────────────────────
+
+test('reconcileTrackers marks fixed only when every referenced id is absent', () => {
+  const rows = reconcileTrackers({
+    trackers: [
+      issue({ number: 967, body: 'GHSA-mh99-v99m-4gvg' }),
+      issue({ number: 1036, body: 'GHSA-2v37-7h3g-55p8' }),
+    ],
+    presentIds: [], // zero-vulnerability audit
+  });
+  assert.deepEqual(
+    rows.map((r) => [r.number, r.verdict]),
+    [
+      [967, 'fixed'],
+      [1036, 'fixed'],
+    ],
+  );
+  assert.deepEqual(rows[0].matched_ids, []);
+});
+
+test('reconcileTrackers keeps a partially-affected tracker open with matched ids', () => {
+  const rows = reconcileTrackers({
+    trackers: [
+      issue({ number: 1, body: 'GHSA-a111-aaaa-aaaa and CVE-2026-11111' }),
+    ],
+    presentIds: ['GHSA-A111-AAAA-AAAA'],
+  });
+  assert.equal(rows[0].verdict, 'open-vulnerable');
+  assert.deepEqual(rows[0].matched_ids, ['GHSA-A111-AAAA-AAAA']);
+});
+
+test('reconcileTrackers is case-insensitive across tracker text and audit ids', () => {
+  const rows = reconcileTrackers({
+    trackers: [issue({ body: 'ghsa-b222-bbbb-bbbb' })],
+    presentIds: ['GHSA-B222-BBBB-BBBB'],
+  });
+  assert.equal(rows[0].verdict, 'open-vulnerable');
+});
+
+test('reconcileTrackers normalizes lowercase presentIds instead of marking a tracker fixed', () => {
+  const rows = reconcileTrackers({
+    trackers: [issue({ body: 'GHSA-C333-CCCC-CCCC' })],
+    presentIds: ['ghsa-c333-cccc-cccc'],
+  });
+  assert.equal(rows[0].verdict, 'open-vulnerable');
+  assert.deepEqual(rows[0].matched_ids, ['GHSA-C333-CCCC-CCCC']);
+});
+
+test('reconcileTrackers sorts rows by issue number for stable output', () => {
+  const rows = reconcileTrackers({
+    trackers: [
+      issue({ number: 30 }),
+      issue({ number: 10 }),
+      issue({ number: 20 }),
+    ],
+    presentIds: [],
+  });
+  assert.deepEqual(
+    rows.map((r) => r.number),
+    [10, 20, 30],
+  );
+});
+
+// ── renderMatrix ─────────────────────────────────────────────────────
+
+test('renderMatrix renders the canonical matrix with audit summary', () => {
+  const rows = reconcileTrackers({
+    trackers: [
+      issue({
+        number: 967,
+        title: 'brace-expansion DoS',
+        body: 'GHSA-mh99-v99m-4gvg',
+      }),
+    ],
+    presentIds: [],
+  });
+  const matrix = renderMatrix({
+    auditIds: [],
+    rows,
+    ignored: {
+      unrelated: [],
+      'no-advisory-id': [
+        issue({ number: 952, title: 'common', labels: ['security'] }),
+      ],
+    },
+  });
+  assert.match(matrix, /#967/);
+  assert.match(matrix, /GHSA-MH99-V99M-4GVG/);
+  assert.match(matrix, /\| fixed \|/);
+  assert.match(matrix, /none \(0 vulnerabilities\)/);
+  assert.match(matrix, /#952/);
+});
+
+test('renderMatrix tolerates an ignored map missing the no-advisory-id key', () => {
+  const matrix = renderMatrix({ auditIds: [], rows: [], ignored: {} });
+  assert.match(matrix, /none \(0 vulnerabilities\)/);
+  assert.doesNotMatch(matrix, /No-advisory-id/);
+});
+
+// ── fetchCandidateIssues (injected gh runner) ────────────────────────
+
+test('fetchCandidateIssues sweeps both labels, dedupes, and streams via --jq .[]', () => {
+  const calls = [];
+  const shared = issue({ number: 922, title: '[GROUPED] consolidation' });
+  const runner = (args) => {
+    calls.push(args);
+    if (args.includes('security')) {
+      return {
+        ok: true,
+        stdout: [
+          JSON.stringify(shared),
+          JSON.stringify(issue({ number: 967, body: 'GHSA-mh99-v99m-4gvg' })),
+        ].join('\n'),
+      };
+    }
+    return {
+      ok: true,
+      stdout: JSON.stringify(
+        issue({
+          number: 1036,
+          labels: ['dependencies'],
+          body: 'GHSA-2v37-7h3g-55p8',
+        }),
+      ).concat('\n'),
+    };
+  };
+  const { issues, failedLabels, truncatedLabels } = fetchCandidateIssues(
+    'owner/repo',
+    runner,
+  );
+
+  assert.equal(issues.length, 3); // 922 counted once despite both labels
+  assert.deepEqual(
+    issues.map((i) => i.number),
+    [922, 967, 1036],
+  );
+  assert.deepEqual(failedLabels, []);
+  assert.deepEqual(truncatedLabels, []);
+  for (const call of calls) {
+    const jqIndex = call.indexOf('--jq');
+    assert.equal(call[jqIndex + 1], '.[]');
+    assert.ok(call.includes('--state'), 'scans closed trackers too');
+    assert.ok(!call.includes('--paginate'), 'gh issue list rejects --paginate');
+  }
+});
+
+test('fetchCandidateIssues reports a total sweep failure instead of a silent empty list', () => {
+  const { issues, failedLabels } = fetchCandidateIssues('owner/repo', () => ({
+    ok: false,
+    stdout: '',
+    error: 'HTTP 502',
+  }));
+  assert.deepEqual(issues, []);
+  assert.deepEqual(
+    failedLabels.map((failure) => failure.label),
+    TRACKER_LABELS,
+  );
+  assert.ok(
+    failedLabels.every((failure) => failure.error.includes('HTTP 502')),
+  );
+});
+
+test('fetchCandidateIssues keeps partial results and reports the failed label', () => {
+  const { issues, failedLabels } = fetchCandidateIssues('owner/repo', (args) =>
+    args.includes('security')
+      ? {
+          ok: true,
+          stdout: JSON.stringify(
+            issue({ number: 7, body: 'GHSA-mh99-v99m-4gvg' }),
+          ),
+        }
+      : { ok: false, stdout: '', error: 'HTTP 502' },
+  );
+  assert.deepEqual(
+    issues.map((i) => i.number),
+    [7],
+  );
+  assert.deepEqual(
+    failedLabels.map((failure) => failure.label),
+    ['dependencies'],
+  );
+});
+
+test('fetchCandidateIssues flags a label sweep that hits the issue limit', () => {
+  const fullPage = Array.from({ length: ISSUE_SWEEP_LIMIT }, (_, i) =>
+    JSON.stringify(issue({ number: i + 1 })),
+  ).join('\n');
+  const { truncatedLabels } = fetchCandidateIssues('owner/repo', () => ({
+    ok: true,
+    stdout: fullPage,
+  }));
+  assert.deepEqual(truncatedLabels, TRACKER_LABELS);
+});
+
+// ── CLI-facing helpers ────────────────────────────────────────────────
+
+test('parseArgs maps kebab flags and keeps bare flags as true', () => {
+  const args = parseArgs(['--audit-file', 'a.json', '--repo', 'o/r', '--json']);
+  assert.equal(args.auditFile, 'a.json');
+  assert.equal(args.repo, 'o/r');
+  assert.equal(args.json, 'true');
+});
+
+test('script file exists and exports the reconciliation contract', () => {
+  const scriptPath = path.join(
+    __dirname,
+    '..',
+    'reconcile-security-trackers.cjs',
+  );
+  assert.ok(fs.existsSync(scriptPath));
+  const { spawnSync } = require('node:child_process');
+  const run = spawnSync(process.execPath, [scriptPath], { encoding: 'utf8' });
+  assert.equal(run.status, 1, 'missing --audit-file must exit 1');
+  assert.match(run.stderr, /Error: missing --audit-file/);
+});
+
+// ── main() exit paths and coverage reporting ─────────────────────────
+
+// main() writes reports via process.stdout/stderr and returns an exit code
+// instead of calling process.exit — capture both to assert on them.
+function runMainCaptured(argv, ghRunner) {
+  const captured = { stdout: '', stderr: '' };
+  const originalStdout = process.stdout.write;
+  const originalStderr = process.stderr.write;
+  process.stdout.write = (chunk) => {
+    captured.stdout += String(chunk);
+    return true;
+  };
+  process.stderr.write = (chunk) => {
+    captured.stderr += String(chunk);
+    return true;
+  };
+  try {
+    captured.exitCode = main(argv, ghRunner);
+  } finally {
+    process.stdout.write = originalStdout;
+    process.stderr.write = originalStderr;
+  }
+  return captured;
+}
+
+function withTempAudit(auditJson, run) {
+  const auditPath = path.join(
+    os.tmpdir(),
+    `reconcile-audit-${process.pid}-${Math.floor(performance.now())}.json`,
+  );
+  fs.writeFileSync(auditPath, JSON.stringify(auditJson));
+  try {
+    return run(auditPath);
+  } finally {
+    fs.unlinkSync(auditPath);
+  }
+}
+
+test('main exits 1 with per-label errors when every label sweep fails', () => {
+  withTempAudit({}, (auditPath) => {
+    const captured = runMainCaptured(
+      ['--audit-file', auditPath, '--repo', 'owner/repo', '--json'],
+      () => ({ ok: false, stdout: '', error: 'HTTP 502' }),
+    );
+    assert.equal(captured.exitCode, 1);
+    assert.match(captured.stderr, /Error: every tracker-label sweep failed/);
+    assert.match(captured.stderr, /security: HTTP 502/);
+    assert.match(captured.stderr, /dependencies: HTTP 502/);
+    assert.equal(captured.stdout, '', 'total failure must emit no report');
+  });
+});
+
+test('main exits 0 on a partial failure but reports it in stderr and --json', () => {
+  withTempAudit({}, (auditPath) => {
+    const captured = runMainCaptured(
+      ['--audit-file', auditPath, '--repo', 'owner/repo', '--json'],
+      (args) =>
+        args.includes('security')
+          ? {
+              ok: true,
+              stdout: JSON.stringify(
+                issue({ number: 7, body: 'GHSA-mh99-v99m-4gvg' }),
+              ),
+            }
+          : { ok: false, stdout: '', error: 'HTTP 502' },
+    );
+    assert.equal(captured.exitCode, 0);
+    assert.match(
+      captured.stderr,
+      /Warning: tracker-label sweep failed \(dependencies: HTTP 502\)/,
+    );
+    const result = JSON.parse(captured.stdout);
+    assert.deepEqual(result.failed_labels, [
+      { label: 'dependencies', error: 'HTTP 502' },
+    ]);
+    assert.deepEqual(result.truncated_labels, []);
+    // The successful label's tracker still lands in the partial report.
+    assert.deepEqual(
+      result.trackers.map((row) => row.number),
+      [7],
+    );
+  });
+});
+
+test('main surfaces sweep-limit truncation in stderr and --json', () => {
+  withTempAudit({}, (auditPath) => {
+    const fullPage = Array.from({ length: ISSUE_SWEEP_LIMIT }, (_, i) =>
+      JSON.stringify(issue({ number: i + 1 })),
+    ).join('\n');
+    const captured = runMainCaptured(
+      ['--audit-file', auditPath, '--repo', 'owner/repo', '--json'],
+      () => ({ ok: true, stdout: fullPage }),
+    );
+    assert.equal(captured.exitCode, 0);
+    assert.match(
+      captured.stderr,
+      new RegExp(
+        `Warning: label "security" returned ${ISSUE_SWEEP_LIMIT} issues \\(sweep limit\\)`,
+      ),
+    );
+    const result = JSON.parse(captured.stdout);
+    assert.deepEqual(result.truncated_labels, TRACKER_LABELS);
+    assert.deepEqual(result.failed_labels, []);
+  });
+});
+
+test('main without --repo reports empty coverage gaps in --json', () => {
+  withTempAudit({}, (auditPath) => {
+    const captured = runMainCaptured(['--audit-file', auditPath, '--json']);
+    assert.equal(captured.exitCode, 0);
+    const result = JSON.parse(captured.stdout);
+    assert.deepEqual(result.failed_labels, []);
+    assert.deepEqual(result.truncated_labels, []);
+  });
+});
