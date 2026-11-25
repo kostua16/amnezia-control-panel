@@ -135,6 +135,8 @@ docker run --rm --entrypoint "" \
 
 From a source checkout, set `DATABASE_URL` in the shell for that one command (rather than editing `.env`, which would also change the database used by local development) so it points at the database file the app actually uses, then run `npx prisma migrate resolve --applied 20260927000000_add_server_redirect_ip`. Without it the Prisma CLI has no database to target and fails; with a `.env` that points elsewhere, the command updates that other database and the deployment database stays unchanged.
 
+If startup already failed with `P3018` on migration `20260617_schema_hygiene_indexes_enums_timestamps` (`Cannot add a column with non-constant default` on a database whose `admins` or `user_quotas` table had rows), the failed attempt stays recorded and later starts stop with `P3009`. Nothing from that migration was applied, so mark it rolled back with the same one-off container or shell as above, replacing `--applied <name>` with `--rolled-back 20260617_schema_hygiene_indexes_enums_timestamps`, then restart; the corrected migration applies on the next start.
+
 ### Build manually
 
 ```bash

@@ -5,7 +5,7 @@ type: execute
 completed: 2026-09-27
 commits:
   - ff8b144 fix(prisma): make migration 20260617 apply to non-empty SQLite tables
-  - 251908d fix(prisma): add the missing migration for servers.redirectIp
+  - 251908d fix(prisma): add the missing migration for servers.redirectIp (not part of the branch that carries this summary; the same migration landed on main separately via PR #1238 as 28267566)
 ---
 
 # Quick Task 260927-5bp: Fix migration 20260617 for non-empty SQLite tables (+ the missing `servers.redirectIp` migration)
@@ -57,6 +57,10 @@ and the migration was *unapplied and failed* on the only database that had it.
 `prisma migrate dev` checksum behaviour was **not** tested and was not run.
 
 ### Task 2 — Second bug found by the drift gate (251908d)
+
+> Landed separately: the `servers.redirectIp` migration reached `main` through PR #1238
+> (`28267566`), so it is **not** part of the PR that carries this summary. The section is kept
+> as the record of how the problem was found.
 
 The plan's Task 2 gate ("stop if `migrate diff` emits SQL") fired on something unrelated
 to the redefine blocks:
