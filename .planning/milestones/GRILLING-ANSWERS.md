@@ -10,7 +10,7 @@ Q9 - it is related only to skills, if the skills are with same name or with same
 Q10 - yes, only after all per-workflow loops are finished
 Q11 - "the agent+skills would have prevented each of the repeated failure modes seen in the extracted runs, prevent failed tool calls and uses, all lacked knowledge is gathered into new agents and skills"
 Q12 - we cant check them locally, so we will check it only after merging PR and first real runs, so only subjective criteria
-Q13 - skill template @.planning/SKILL-TEMPLATE.md, agent template @.planning/AGENT-TEMPLATE.md
+Q13 - skill template @.planning/milestones/SKILL-TEMPLATE.md, agent template @.planning/milestones/AGENT-TEMPLATE.md
 
 R1 - i updated agent template, check it
 R2 - a

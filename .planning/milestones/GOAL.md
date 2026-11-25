@@ -9,8 +9,8 @@ Improve the repo's workflows by extracting knowledge from each workflow's latest
 - **workflow** — one of the named automated processes listed in "Workflows to improve". The names in that list ARE the GitHub workflow filenames (e.g. `.github/workflows/<name>.yml`).
 - **run** — one execution of a workflow. Read from GitHub Actions.
 - **knowledge** — reusable information distilled from runs: (a) repeated issues that can be encoded once and reused, (b) missing knowledge the runtime re-derives every run (wasted time), (c) incorrect behavior that can be corrected, (d) lacked knowledge that blocked a task, (e) failed tool calls / misuse patterns to avoid.
-- **agent** (`.claude/agents/kos-<workflow-name>.md`) — the role that **drives** a workflow. One per workflow. Built from `@.planning/AGENT-TEMPLATE.md`.
-- **skill** (`.claude/skills/kos-<capability>/SKILL.md`) — a **reusable procedure** an agent calls. Many per workflow; may be shared across workflows. `@.planning/SKILL-TEMPLATE.md` is the content of the `SKILL.md` file inside the skill's directory.
+- **agent** (`.claude/agents/kos-<workflow-name>.md`) — the role that **drives** a workflow. One per workflow. Built from `@.planning/milestones/AGENT-TEMPLATE.md`.
+- **skill** (`.claude/skills/kos-<capability>/SKILL.md`) — a **reusable procedure** an agent calls. Many per workflow; may be shared across workflows. `@.planning/milestones/SKILL-TEMPLATE.md` is the content of the `SKILL.md` file inside the skill's directory.
 - **zai** — the agent runtime that executes these workflows (the thing whose runs we are mining).
 - **orchestrator** — the session that aligns all agents/skills after every per-workflow loop finishes.
 - **review session** — a session that critiques one agent file + its skills and emits an APPROVED/REJECTED verdict.
@@ -19,8 +19,8 @@ Improve the repo's workflows by extracting knowledge from each workflow's latest
 ## Conventions
 
 - **Agent vs skill:** agent = the role that drives a workflow; skill = a reusable procedure that agent calls. If it is about *doing the workflow*, it is the agent; if it is a *reusable step*, it is a skill.
-- **Agent file:** `.claude/agents/kos-<workflow-name>.md`, from `@.planning/AGENT-TEMPLATE.md`. One per workflow.
-- **Skill file:** `.claude/skills/kos-<capability>/SKILL.md` — each skill is a **directory** containing a `SKILL.md` file (`@.planning/SKILL-TEMPLATE.md` is that file's content). Capability-named (kebab), not workflow-named — skills are shareable.
+- **Agent file:** `.claude/agents/kos-<workflow-name>.md`, from `@.planning/milestones/AGENT-TEMPLATE.md`. One per workflow.
+- **Skill file:** `.claude/skills/kos-<capability>/SKILL.md` — each skill is a **directory** containing a `SKILL.md` file (`@.planning/milestones/SKILL-TEMPLATE.md` is that file's content). Capability-named (kebab), not workflow-named — skills are shareable.
 - **`kos-` prefix (grouping):** all agents and skills from this effort are grouped with a `kos-` name prefix (e.g. `kos-code-review`, `kos-run-log-extraction`). Claude Code does **not** support extra grouping subfolders under `.claude/agents/` (flat files) or `.claude/skills/` (discovery is one level: `.claude/skills/*/SKILL.md`), so grouping is done by name prefix, not a `kos/` subfolder. The frontmatter `name:` field of each agent/skill uses the same `kos-` prefixed value.
 - **Skills referenced both ways:** every agent file MUST list its skills in BOTH (1) the frontmatter `skills:` field (as a list, e.g. `skills: [kos-skill-a, kos-skill-b]`) AND (2) the body `## Skills to Activate and Use` section.
 

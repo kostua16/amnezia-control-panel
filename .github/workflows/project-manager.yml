@@ -137,7 +137,7 @@ jobs:
 
             Read `.claude/agents/kos-project-manager.md` first and follow it as the operating contract.
 
-            Judge whether merging this PR improves, fixes, or evolves the project — or would regress it, duplicate existing behavior, or drift from the documented design. Alignment sources: `.planning/ROADMAP.md`, `.planning/PROJECT.md`, `.planning/STATE.md`, `.planning/GOAL.md`, `docs/code-standards.md`, `docs/TODOs-2.md`, `docs/workflow-e2e-scenarios.md`, plus any issue or plan the PR references.
+            Judge whether merging this PR improves, fixes, or evolves the project — or would regress it, duplicate existing behavior, or drift from the documented design. Alignment sources: `.planning/ROADMAP.md`, `.planning/PROJECT.md`, `.planning/STATE.md`, `.planning/milestones/GOAL.md`, `docs/code-standards.md`, `docs/TODOs-2.md`, `docs/workflow-e2e-scenarios.md`, plus any issue or plan the PR references.
 
             Class-specific focus:
             - gsd-execution: the diff matches the referenced plan/phase scope with no scope creep.
