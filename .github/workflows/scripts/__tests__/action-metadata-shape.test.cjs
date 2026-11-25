@@ -201,21 +201,28 @@ test('every opted-in step loads the preload without overriding runner Node optio
     },
   };
   let checked = 0;
-  for (const file of fs
+  const files = fs
     .readdirSync(workflows)
-    .filter((name) => /[.]ya?ml$/.test(name))) {
+    .filter((name) => /[.]ya?ml$/.test(name));
+  for (const file of Object.keys(required)) {
+    assert.ok(files.includes(file), file + ' must exist for preload checks');
+  }
+  for (const file of files) {
     const doc = yaml.load(fs.readFileSync(path.join(workflows, file), 'utf8'));
+    for (const [job, script] of Object.entries(required[file] ?? {})) {
+      assert.ok(
+        Object.hasOwn(doc.jobs, job),
+        file + ' / ' + job + ' must exist for preload checks',
+      );
+      assert.ok(
+        doc.jobs[job].steps?.some(
+          (step) =>
+            step.run?.includes(script) && step.env?.REST_COUNTER_PRELOAD,
+        ),
+        file + ' / ' + job + ' must preload ' + script,
+      );
+    }
     for (const [job, config] of Object.entries(doc.jobs)) {
-      const script = required[file]?.[job];
-      if (script) {
-        assert.ok(
-          config.steps?.some(
-            (step) =>
-              step.run?.includes(script) && step.env?.REST_COUNTER_PRELOAD,
-          ),
-          file + ' / ' + job + ' must preload ' + script,
-        );
-      }
       checked += checkRestCounterWiring(config.steps ?? [], file + ' / ' + job);
     }
   }

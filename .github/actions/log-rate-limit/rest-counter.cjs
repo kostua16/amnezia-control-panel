@@ -23,7 +23,7 @@ const {
 } = require('./gh-counter.cjs');
 const { METHODS, ROUTES, sameDirectory } = require('./rest-routes.cjs');
 const GH_SETUP_FAILURE = 'gh-setup-failure';
-const GH_SETUP_REASON = /^[a-z][a-z0-9-]{0,39}$/;
+const REASON_CODE = /^[a-z][a-z0-9-]{0,39}$/;
 
 function writeCounterOutputs(file, dir) {
   if (!file || /["\r\n]/.test(dir)) return;
@@ -188,7 +188,7 @@ function ghLauncherIssue(dir, path) {
 
 function reportGhInstallFailure(dir, reason, log = console.log) {
   const code =
-    typeof reason === 'string' && GH_SETUP_REASON.test(reason)
+    typeof reason === 'string' && REASON_CODE.test(reason)
       ? reason
       : 'setup-failed';
   log(`::warning::GitHub CLI request counting unavailable (${code})`);
@@ -202,7 +202,7 @@ function reportGhInstallFailure(dir, reason, log = console.log) {
 function readGhSetupFailure(dir) {
   try {
     const reason = readFileSync(join(dir, GH_SETUP_FAILURE), 'utf8').trim();
-    if (GH_SETUP_REASON.test(reason)) return reason;
+    if (REASON_CODE.test(reason)) return reason;
   } catch {
     // The install step may have been skipped.
   }
@@ -217,7 +217,11 @@ function restCountPrefix({ workflow, job, runId, attempt }) {
 }
 
 function formatUnavailableLine({ reason, ...identity }) {
-  return `${restCountPrefix(identity)} status=unavailable reason=${reason} total=0 graphql=0 by_route={}`;
+  const code =
+    typeof reason === 'string' && REASON_CODE.test(reason)
+      ? reason
+      : 'invalid-reason';
+  return `${restCountPrefix(identity)} status=unavailable reason=${code} total=0 graphql=0 by_route={}`;
 }
 
 function reportRestCounter({

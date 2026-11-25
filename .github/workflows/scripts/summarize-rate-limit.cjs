@@ -44,7 +44,7 @@ function parseRestCount(line) {
   try {
     const workflow = JSON.parse(name);
     const unavailable =
-      /^status=unavailable reason=([a-z-]+)(?: total=0 graphql=0 by_route=\{\})?\s*$/.exec(
+      /^status=unavailable reason=([a-z][a-z0-9-]*)(?: total=0 graphql=0 by_route=\{\})?\s*$/.exec(
         body,
       );
     if (unavailable)

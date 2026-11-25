@@ -27,6 +27,7 @@ const {
 } = require('../../../actions/log-rate-limit/rest-routes.cjs');
 const {
   collectRestCounts,
+  formatUnavailableLine,
   reportGhInstallFailure,
   reportRestCounter,
   startRestCounter,
@@ -233,6 +234,17 @@ test('enabled reporters mark missing, changed or unreadable storage unavailable'
   }
 });
 
+test('unavailable reports use a safe, parseable reason code', () => {
+  for (const reason of ['Error: boom', '', 'a'.repeat(80), 'UPPERCASE']) {
+    const line = formatUnavailableLine({ reason });
+    assert.match(line, /reason=invalid-reason total=0/);
+    assert.equal(parseRestCount(line)?.status, 'unavailable');
+  }
+  const line = formatUnavailableLine({ reason: 'future-failure2' });
+  assert.match(line, /reason=future-failure2 total=0/);
+  assert.equal(parseRestCount(line)?.status, 'unavailable');
+});
+
 test('the action reports REST counts even with its quota post snapshot disabled', async (t) => {
   const root = temp(t);
   const env = {
@@ -253,19 +265,30 @@ test('the action reports REST counts even with its quota post snapshot disabled'
     .trimEnd()
     .slice('rest_counter_dir='.length);
   assert.ok(dir);
-  const result = await runNode(process.execPath, [join(action, 'post.cjs')], {
-    env: { ...env, REST_COUNTER_DIR: dir, STATE_rest_counter_dir: dir },
-  });
-  assert.match(
-    result.stdout,
-    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} gh_status=unavailable gh_reason=[a-z-]+ by_route=\{\}\s*$/,
-  );
   const preload = join(dir, 'rest-preload.cjs');
   const postEnv = {
     ...env,
     REST_COUNTER_DIR: dir,
     STATE_rest_counter_dir: dir,
   };
+  for (const [platform, reason] of [
+    ['linux', 'not-installed'],
+    ['win32', 'unsupported-platform'],
+    ['darwin', 'unsupported-platform'],
+  ]) {
+    const script = `Object.defineProperty(process, 'platform', { value: ${JSON.stringify(platform)} }); require(${JSON.stringify(join(action, 'post.cjs'))});`;
+    const result = await runNode(process.execPath, ['-e', script], {
+      env: postEnv,
+    });
+    assert.match(
+      result.stdout,
+      /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} gh_status=unavailable gh_reason=[a-z-]+ by_route=\{\}\s*$/,
+    );
+    assert.equal(
+      parseRestCount(result.stdout.trimEnd()).ghUnavailableReason,
+      reason,
+    );
+  }
   await runNode(process.execPath, ['--require', preload, '-e', ''], {
     env: postEnv,
   });
