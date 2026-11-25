@@ -1,7 +1,7 @@
 ---
 description: Review a change/PR with several models via delegate_task, consolidate into one plan, then delegate implementation
 argument-hint: '<PR/commit/branch> [models: reviewer1, reviewer2, ...] [planner] [implementers]'
-allowed-tools: Bash, Read, Grep, Glob, ToolSearch, mcp__t3-code__orchestrator_capabilities, mcp__t3-code__delegate_task, mcp__t3-code__task_status, mcp__t3-code__task_cancel
+allowed-tools: Bash, Read, Edit, Grep, Glob, ToolSearch, mcp__t3-code__orchestrator_capabilities, mcp__t3-code__delegate_task, mcp__t3-code__task_status, mcp__t3-code__task_cancel
 ---
 
 ## Context

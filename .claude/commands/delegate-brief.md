@@ -10,7 +10,7 @@ Request: $ARGUMENTS. Parent thread delegates one bounded task to a sub-agent. Th
 
 ## Your Task
 
-Produce the brief text (and pass it to `delegate_task` if the user asked to start the run). Pick the template by kind, fill the placeholders from real facts (PR head SHA, issue number, paths) after checking them, and keep it under ~40 lines.
+Produce the brief text (and pass it to `delegate_task` if the user asked to start the run). `delegate_task` and `orchestrator_capabilities` are T3 MCP tools provided by the operator runtime, not by this repo: resolve them with `ToolSearch` first; if they are unavailable, print the brief for the user to dispatch manually and stop, without substituting another tool. Pick the template by kind, fill the placeholders from real facts (PR head SHA, issue number, paths) after checking them, and keep it under ~40 lines.
 
 ### Common header (all kinds)
 
@@ -33,7 +33,7 @@ Report back to the parent only, in the format: Status (DONE | DONE_WITH_CONCERNS
 ### implementation
 
 - Work in a fresh git worktree off `origin/main`; one branch, one PR; Conventional Commits; no plan/finding codes in code comments.
-- Verify before reporting: lint, Prettier on changed `.js/.cjs/.ts/.tsx`, `npm run test-only`; for `.github/**` changes also `cd .github/workflows && node --test scripts/__tests__/*.test.cjs` and `docs/workflow-e2e-scenarios.md`.
+- Verify before reporting: lint, Prettier on changed `.js/.cjs/.ts/.tsx`, `npm run test-only`; for `.github/**` changes also `cd .github/workflows && node --test scripts/__tests__/*.test.cjs`, and update `docs/workflow-e2e-scenarios.md` if behavior changed.
 - State merge policy explicitly: "do not merge, do not watch" unless the user said otherwise.
 - Never commit `.qwen/`, `prisma/*.broken*`, `prisma/dev.db.backup-*`, `graphify-out/`, dotenv files.
 

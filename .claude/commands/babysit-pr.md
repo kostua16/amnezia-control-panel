@@ -20,7 +20,7 @@ Watch the PR until every required gate is green, fixing real failures. Stop when
    - **Non-blocking noise** → note and skip (see Guardrails).
 3. Fix the root cause (not the symptom). Keep commits small, conventional-commit format, no plan/finding codes in code comments.
 4. Verify before pushing: lint, Prettier on every changed `.js/.cjs/.ts/.tsx`, `npm run test-only`; for `.github/workflows/**` changes also `cd .github/workflows && node --test scripts/__tests__/*.test.cjs` and update `docs/workflow-e2e-scenarios.md` if behavior changed.
-5. Push, then wait for the next CI/review event instead of polling: where the T3 tools exist, start the watch once with `watch_pull_request` and end your turn (it wakes you on changes); otherwise re-check with `rtk gh pr checks`. Re-check that results are for the **current head SHA**.
+5. Push, then wait for the next CI/review event instead of polling: resolve the T3 tools with `ToolSearch`, and if `watch_pull_request` is available, start the watch once and end your turn (it wakes you on changes); otherwise re-check with `rtk gh pr checks`. Re-check that results are for the **current head SHA**.
 6. Repeat until all required checks and `pr-flow/ready` pass. Then, if you started a watch, call `unwatch_pull_request`, and report the final state (head SHA, check counts).
 
 ### Guardrails
