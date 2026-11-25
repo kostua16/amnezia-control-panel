@@ -47,7 +47,7 @@ function parseRestCount(line) {
       return { workflow, job, run, status: 'unavailable' };
     }
     const counts = body.match(
-      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?(?: (?:gh_status=(ok|unavailable)|(gh=unavailable))(?: gh_reason=([a-z-]+))?)? by_route=(\{.*\})\s*$/,
+      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?(?: (?:gh_status=(ok|unavailable)|(gh=unavailable))(?: gh_reason=([a-z][a-z0-9-]{0,39}))?)? by_route=(\{.*\})\s*$/,
     );
     if (!counts) return null;
     const [
@@ -138,7 +138,11 @@ function summarizeRestCounts(lines) {
     // Matrix jobs share run and job IDs. Each report is a separate execution.
     group.runs.add(run);
     group.reports += 1;
-    if (count.ghUnavailable) group.ghUnavailableReports += 1;
+    if (
+      count.ghUnavailable &&
+      count.ghUnavailableReason !== 'unsupported-platform'
+    )
+      group.ghUnavailableReports += 1;
     if (count.status) {
       group.unavailableRuns.add(run.split('.', 1)[0]);
     } else {

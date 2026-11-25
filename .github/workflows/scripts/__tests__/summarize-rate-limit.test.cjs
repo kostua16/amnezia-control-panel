@@ -127,6 +127,21 @@ function line({
   );
 }
 
+test('unsupported runner reports retain Node totals without inflating CLI failures', () => {
+  const prefix = 'REST_COUNT workflow="Matrix" job=check run=1.1 ';
+  const suffix = ' by_route={"GET /user":1}';
+  const [group] = summarize([
+    prefix +
+      'total=1 graphql=0 gh_status=unavailable gh_reason=unsupported-platform' +
+      suffix,
+    prefix +
+      'total=1 graphql=0 gh_status=unavailable gh_reason=future-failure2' +
+      suffix,
+  ]).restCounts;
+  assert.equal(group.ghUnavailableReports, 1);
+  assert.deepEqual(group.via, { node: 2, gh: 0 });
+});
+
 test('parses a RATE_LIMIT line behind a log prefix and ignores other lines', () => {
   const parsed = parseLine(
     line({

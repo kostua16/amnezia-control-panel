@@ -23,16 +23,15 @@ const {
 } = require('./gh-counter.cjs');
 const { METHODS, ROUTES, sameDirectory } = require('./rest-routes.cjs');
 const GH_SETUP_FAILURE = 'gh-setup-failure';
-const GH_SETUP_REASONS = new Set([
-  'no-gh',
-  'no-github-path',
-  'no-counter-directory',
-  'unsupported-platform',
-  'unwritable-dir',
-  'io',
-  'node-not-on-path',
-  'setup-failed',
-]);
+const GH_SETUP_REASON = /^[a-z][a-z0-9-]{0,39}$/;
+
+function writeCounterOutputs(file, dir) {
+  if (!file || /["\r\n]/.test(dir)) return;
+  appendFileSync(
+    file,
+    `rest-counter-preload=${join(dir, 'rest-preload.cjs')}\nrest-counter-enabled=true\n`,
+  );
+}
 
 const ROUTE_KEYS = new Set(
   [...METHODS, 'OTHER'].flatMap((method) =>
@@ -46,8 +45,9 @@ function startRestCounter(env = process.env, log = console.log) {
   let preload;
   try {
     if (env.REST_COUNTER_DIR) {
-      appendFileSync(env.GITHUB_STATE, 'rest_counter_skip=true\n');
-      appendFileSync(env.GITHUB_OUTPUT, 'rest-counter-enabled=true\n');
+      if (env.GITHUB_STATE)
+        appendFileSync(env.GITHUB_STATE, 'rest_counter_skip=true\n');
+      writeCounterOutputs(env.GITHUB_OUTPUT, env.REST_COUNTER_DIR);
       return env.REST_COUNTER_DIR;
     }
     if (
@@ -81,10 +81,7 @@ function startRestCounter(env = process.env, log = console.log) {
     );
     appendFileSync(env.GITHUB_STATE, `rest_counter_dir=${dir}\n`);
     appendFileSync(env.GITHUB_ENV, `REST_COUNTER_DIR=${dir}\n`);
-    appendFileSync(
-      env.GITHUB_OUTPUT,
-      `rest-counter-preload=${preload}\nrest-counter-enabled=true\n`,
-    );
+    writeCounterOutputs(env.GITHUB_OUTPUT, dir);
     return dir;
   } catch {
     if (dir) {
@@ -190,7 +187,10 @@ function ghLauncherIssue(dir, path) {
 }
 
 function reportGhInstallFailure(dir, reason, log = console.log) {
-  const code = GH_SETUP_REASONS.has(reason) ? reason : 'setup-failed';
+  const code =
+    typeof reason === 'string' && GH_SETUP_REASON.test(reason)
+      ? reason
+      : 'setup-failed';
   log(`::warning::GitHub CLI request counting unavailable (${code})`);
   try {
     writeFileSync(join(dir, GH_SETUP_FAILURE), `${code}\n`, { mode: 0o600 });
@@ -201,8 +201,11 @@ function reportGhInstallFailure(dir, reason, log = console.log) {
 
 function readGhSetupFailure(dir) {
   try {
-    const reason = readFileSync(join(dir, GH_SETUP_FAILURE), 'utf8').trim();
-    if (GH_SETUP_REASONS.has(reason)) return reason;
+    const reason = readFileSync(join(dir, GH_SETUP_FAILURE), 'utf8').replace(
+      /\r?\n$/,
+      '',
+    );
+    if (GH_SETUP_REASON.test(reason)) return reason;
   } catch {
     // The install step may have been skipped.
   }

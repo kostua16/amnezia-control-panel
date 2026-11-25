@@ -135,7 +135,6 @@ process.exitCode = 7;
 test('traces added API built-ins while leaving extensions and aliases alone', (t) => {
   const { dir, root, run } = fixture(t);
   const traced = [
-    'agent-task',
     'attestation',
     'cache',
     'codespace',
@@ -147,7 +146,13 @@ test('traces added API built-ins while leaving extensions and aliases alone', (t
     'status',
     'variable',
   ];
-  for (const command of [...traced, 'extension', 'copilot', 'custom-alias']) {
+  for (const command of [
+    ...traced,
+    'agent-task',
+    'extension',
+    'copilot',
+    'custom-alias',
+  ]) {
     copyFileSync(join(root, 'api'), join(root, command));
     const result = run({}, command);
     assert.equal(result.status, 7, command);
@@ -155,6 +160,41 @@ test('traces added API built-ins while leaving extensions and aliases alone', (t
     assert.deepEqual(result.stderr, warning);
   }
   assert.equal(collectRestCounts(dir).via.gh, traced.length * 2);
+});
+
+test('PATH lookup skips an executable that disappears during realpath resolution', (t) => {
+  const { root } = fixture(t);
+  const first = join(root, 'first');
+  const second = join(root, 'second');
+  for (const dir of [first, second]) {
+    mkdirSync(dir);
+    writeFileSync(join(dir, 'gh'), '#!/bin/bash\nexit 0\n', { mode: 0o700 });
+  }
+  const code = `
+    const fs = require('node:fs');
+    const { join } = require('node:path');
+    const [modulePath, path, first, second] = process.argv.slice(1);
+    const realpath = fs.realpathSync;
+    fs.realpathSync = (file) => {
+      if (file === join(first, 'gh')) fs.unlinkSync(file);
+      return realpath(file);
+    };
+    const { findGhOnPath } = require(modulePath);
+    require('node:assert/strict').equal(findGhOnPath(path, 'skip'), join(second, 'gh'));
+  `;
+  const result = spawnSync(
+    process.execPath,
+    [
+      '-e',
+      code,
+      join(action, 'gh-counter.cjs'),
+      `${first}${delimiter}${second}`,
+      first,
+      second,
+    ],
+    { encoding: 'utf8' },
+  );
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test('excludes public quota probes without a valid enterprise API URL', (t) => {
@@ -305,6 +345,32 @@ test(
       assert.equal(
         readFileSync(join(dir, 'gh-setup-failure'), 'utf8'),
         `${reason}\n`,
+      );
+    }
+    rmSync(join(tools, 'node'));
+    writeFileSync(
+      join(tools, 'node'),
+      '#!/bin/bash\nprintf "%s\\n" "$FIXTURE_REASON"\nexit 1\n',
+      { mode: 0o700 },
+    );
+    for (const [input, expected] of [
+      ['future-failure2', 'future-failure2'],
+      ['a'.repeat(41), 'setup-failed'],
+      ['bad https://example.invalid', 'setup-failed'],
+    ]) {
+      const result = runInstallerStep({
+        ...env,
+        FIXTURE_REASON: input,
+        GITHUB_PATH: setup.GITHUB_PATH,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(
+        result.stdout,
+        `::warning::GitHub CLI request counting unavailable (${expected})\n`,
+      );
+      assert.equal(
+        readFileSync(join(dir, 'gh-setup-failure'), 'utf8'),
+        `${expected}\n`,
       );
     }
   },

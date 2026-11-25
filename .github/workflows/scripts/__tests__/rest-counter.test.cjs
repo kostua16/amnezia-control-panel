@@ -108,6 +108,51 @@ test('a preload dependency failure never aborts Node startup', async (t) => {
   assert.equal(result.stderr, '');
 });
 
+test('reused collector returns its directory with or without an output file', (t) => {
+  const root = temp(t);
+  const setup = setupEnv(root);
+  const dir = startRestCounter(setup);
+  const output = join(root, 'reuse-output');
+  const state = join(root, 'reuse-state');
+  for (const file of [output, undefined]) {
+    const warnings = [];
+    const reused = startRestCounter(
+      {
+        ...setup,
+        REST_COUNTER_DIR: dir,
+        GITHUB_STATE: state,
+        GITHUB_OUTPUT: file,
+      },
+      (line) => warnings.push(line),
+    );
+    assert.equal(reused, dir);
+    assert.deepEqual(warnings, []);
+  }
+  assert.equal(
+    readFileSync(output, 'utf8'),
+    `rest-counter-preload=${join(dir, 'rest-preload.cjs')}\nrest-counter-enabled=true\n`,
+  );
+  assert.equal(
+    readFileSync(state, 'utf8'),
+    'rest_counter_skip=true\n'.repeat(2),
+  );
+});
+
+test('post action contains unexpected report failures', async () => {
+  const code = `
+    require(${JSON.stringify(join(action, 'rest-counter.cjs'))}).reportRestCounter = () => { throw new Error('private-fixture-data'); };
+    require(${JSON.stringify(join(action, 'post.cjs'))});
+  `;
+  const result = await runNode(process.execPath, ['-e', code], {
+    env: { ...process.env, 'INPUT_REPORT-AT-JOB-END': 'false' },
+  });
+  assert.equal(
+    result.stdout.trimEnd(),
+    '::warning::REST counter post report unavailable',
+  );
+  assert.equal(result.stderr, '');
+});
+
 test('disabled and invalid setup do not create files, and partial setup is cleaned up', (t) => {
   const root = temp(t);
   const setup = setupEnv(root);
@@ -243,6 +288,7 @@ test('post reports missing gh coverage until a launcher or observed requests are
     'unwritable-dir',
     'io',
     'node-not-on-path',
+    'future-failure2',
   ]) {
     const annotations = [];
     reportGhInstallFailure(dir, reason, (line) => annotations.push(line));

@@ -510,7 +510,7 @@ neither an attachment nor a request record. Unreadable files are counted in
 Coverage starts at the first enabled collector. Blind spots include requests
 before setup, third-party setup internals, curl, native Bun and Claude Code
 action requests, and direct calls to the real `gh` binary that bypass
-`PATH`. The traced top-level commands are `agent-task`, `api`, `attestation`,
+`PATH`. The traced top-level commands are `api`, `attestation`,
 `auth`, `cache`, `codespace`, `gist`, `gpg-key`, `issue`, `label`, `org`,
 `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `search`, `secret`,
 `ssh-key`, `status`, `variable`, and `workflow`. Other commands, aliases,
@@ -519,12 +519,17 @@ stderr, and explicit debug or verbose modes pass through without tracing.
 GitHub CLI requests launched by Bun still count when they use the shim.
 
 When CLI setup fails, its warning identifies the reason, such as
-`node-not-on-path`, `no-gh`, `no-github-path`, `unwritable-dir`, or `io`.
+`node-not-on-path`, `no-gh`, `no-github-path`, `no-counter-directory`,
+`unwritable-dir`, `io`, or `setup-failed`.
 The post report keeps `via.gh` numeric and reports CLI availability separately
-as `gh_status=ok` or `gh_status=unavailable`. With no observed CLI requests,
+as `gh_status=ok` or `gh_status=unavailable`. Tracing runs on Linux.
+Windows and macOS report `gh_status=unavailable gh_reason=unsupported-platform`.
+With no observed CLI requests on Linux,
 the shim must be executable and the first `gh` on `PATH`, with an executable
-Node binary and a readable, nonempty observer. When any check fails, the
-report includes a fixed `gh_reason` code. A later successful setup clears
+Node binary and a readable, nonempty observer. The post-time reason codes are
+`not-installed`, `launcher-unusable`, `node-unusable`, `observer-unusable`,
+and `launcher-shadowed`. A recorded setup failure can supply the reason when
+the shim never reached `PATH`. A later successful setup clears
 the unavailable condition. Jobs that skip Node installation rely on the
 runner's Node executable. A disabled installer exits successfully without
 adding a shim.
@@ -547,7 +552,8 @@ each job log once. Matrix legs count as separate reports. The
 `unavailable_jobs` counts each workflow/job once per run ID if any attempt or
 matrix leg reported unavailable or uninstrumented.
 `unreadable_files` shows how many files were skipped in reports with partial data.
-`gh_unavailable_reports` shows how many reports flagged unavailable CLI coverage.
+`gh_unavailable_reports` counts unavailable CLI reports except those marked
+`unsupported-platform`.
 
 ## Composite Action Notes
 

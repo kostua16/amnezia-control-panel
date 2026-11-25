@@ -18,9 +18,7 @@ const { delimiter, dirname, join, resolve } = require('node:path');
 
 // Restrict debug injection to known built-ins. Unknown names can run extensions
 // or shell aliases with a different stderr format.
-// agent-task is registered by the CLI itself starting with v2.80.0.
 const TRACED_COMMANDS = new Set([
-  'agent-task',
   'api',
   'attestation',
   'auth',
@@ -60,12 +58,16 @@ function isExecutableFile(path) {
 
 function findGhOnPath(path, skip) {
   for (const entry of path?.split(delimiter) ?? []) {
-    const candidate = resolve(entry, 'gh');
-    if (
-      isExecutableFile(candidate) &&
-      (!skip || realpathSync(candidate) !== skip)
-    )
-      return candidate;
+    try {
+      const candidate = resolve(entry, 'gh');
+      if (
+        isExecutableFile(candidate) &&
+        (!skip || realpathSync(candidate) !== skip)
+      )
+        return candidate;
+    } catch {
+      // The executable may disappear between checking and resolving it.
+    }
   }
   return undefined;
 }

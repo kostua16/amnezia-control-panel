@@ -276,10 +276,9 @@ runs:
         if ! node_bin="$(command -v node)"; then
           warn_gh_counter node-not-on-path
         elif ! reason="$("$node_bin" "$GITHUB_ACTION_PATH/../log-rate-limit/gh-counter.cjs" --install "$REST_COUNTER_ENABLED" 2>/dev/null)"; then
-          case "$reason" in
-            no-gh|no-github-path|no-counter-directory|unsupported-platform|unwritable-dir|io) ;;
-            *) reason=setup-failed ;;
-          esac
+          if [[ ! "$reason" =~ ^[a-z][a-z0-9-]{0,39}$ ]]; then
+            reason=setup-failed
+          fi
           warn_gh_counter "$reason"
         fi
 
