@@ -306,13 +306,15 @@ describe('workflow trigger policy', () => {
     // workspace at job end (actions/runner#2816), but the rebase rewrites
     // them to the rebased revision. Two invariants keep the on-disk
     // manifests matching the original head: the successful-push path
-    // restores right after the push (the last step that needs the rebased
-    // worktree) so a hard termination cannot leave rebased manifests on
-    // disk, and the always() restore is the FINAL step of the rebase job —
-    // a step appended after it that rewrites .github/actions would
-    // reintroduce the crash while these assertions still pass. Restore
-    // failures must not be swallowed and the index must move with the
-    // worktree so they do not end up split across revisions.
+    // restores once every post-push git/gh step has run, so a restore
+    // failure cannot skip the head capture, auto-merge disable or
+    // orchestrator wake, while a hard termination still lands only a few
+    // fast steps past the push; and the always() restore is the FINAL step
+    // of the rebase job — any step appended after it that rewrites
+    // .github/actions would reintroduce the crash, which is why the
+    // assertion below rejects every appended step, whatever key it starts
+    // with. Restore failures must not be swallowed and the index must move
+    // with the worktree so they do not end up split across revisions.
     const yaml = readWorkflowText('rebase-pr.yml');
     const jobStart = yaml.indexOf('\n  rebase:\n');
     assert.ok(jobStart !== -1, 'expected a rebase job');
@@ -322,10 +324,11 @@ describe('workflow trigger policy', () => {
         ? yaml.slice(jobStart)
         : yaml.slice(jobStart, jobStart + 1 + nextJobAt);
 
-    // Restore runs immediately after the push, before the head capture.
+    // Restore runs after the last post-push step (only git rev-parse / gh
+    // steps in between) and before the summary.
     assert.match(
       job,
-      /- name: Push rebased branch[\s\S]*?- name: Restore original head action manifests after push[\s\S]*?- name: Capture new head SHA/,
+      /- name: Push rebased branch[\s\S]*?- name: Wake the PR orchestrator[\s\S]*?- name: Restore original head action manifests after push[\s\S]*?- name: Post summary/,
     );
     assert.match(
       job,
@@ -345,9 +348,12 @@ describe('workflow trigger policy', () => {
       'expected the always() restore step in the rebase job',
     );
     const afterFinalRestore = job.slice(finalRestoreAt);
+    // Match any step list entry, not just steps that start with name:/uses:,
+    // so an appended `- run:`/`- if:` step cannot slip past the guard. Run
+    // block content is indented deeper, so `^ {6}- ` only matches steps.
     assert.doesNotMatch(
       afterFinalRestore.slice(afterFinalRestore.indexOf('\n') + 1),
-      /^ {6}- (?:name|uses):/m,
+      /^ {6}- /m,
       'no step may follow the always() restore in the rebase job',
     );
 
