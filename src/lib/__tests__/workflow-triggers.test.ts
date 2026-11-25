@@ -301,28 +301,70 @@ describe('workflow trigger policy', () => {
     assert.match(yaml, /--reason "\$REASON"/);
   });
 
-  it('rebase-pr restores original head action manifests in a dedicated always() step', () => {
+  it('rebase-pr restores original head action manifests after push and as the final rebase job step', () => {
     // Local composite post steps re-read .github/actions manifests from the
     // workspace at job end (actions/runner#2816), but the rebase rewrites
-    // them to the rebased revision. The restore must be its own always()
-    // step after the summary so it still runs when the summary script
-    // fails or the job is cancelled, and it must neither stage files nor
-    // swallow restore failures.
+    // them to the rebased revision. Two invariants keep the on-disk
+    // manifests matching the original head: the successful-push path
+    // restores right after the push (the last step that needs the rebased
+    // worktree) so a hard termination cannot leave rebased manifests on
+    // disk, and the always() restore is the FINAL step of the rebase job —
+    // a step appended after it that rewrites .github/actions would
+    // reintroduce the crash while these assertions still pass. Restore
+    // failures must not be swallowed and the index must move with the
+    // worktree so they do not end up split across revisions.
     const yaml = readWorkflowText('rebase-pr.yml');
+    const jobStart = yaml.indexOf('\n  rebase:\n');
+    assert.ok(jobStart !== -1, 'expected a rebase job');
+    const nextJobAt = yaml.slice(jobStart + 1).search(/\n  \S/);
+    const job =
+      nextJobAt === -1
+        ? yaml.slice(jobStart)
+        : yaml.slice(jobStart, jobStart + 1 + nextJobAt);
 
+    // Restore runs immediately after the push, before the head capture.
     assert.match(
-      yaml,
-      /--mode complete[\s\S]*name: Restore original head action manifests/,
+      job,
+      /- name: Push rebased branch[\s\S]*?- name: Restore original head action manifests after push[\s\S]*?- name: Capture new head SHA/,
     );
     assert.match(
-      yaml,
+      job,
+      /name: Restore original head action manifests after push\s+if: steps\.pr\.outputs\.eligible == 'true' && steps\.ancestry\.outputs\.ok == 'true' && steps\.push\.outputs\.pushed == 'true'\s+run: \|/,
+    );
+
+    // The always() restore still exists and must be the job's last step.
+    assert.match(
+      job,
       /name: Restore original head action manifests\s+if: always\(\) && steps\.pr\.outputs\.eligible == 'true'\s+run: \|/,
     );
-    assert.match(
-      yaml,
-      /git restore --source="\$original_head" -- \.github\/actions/,
+    const finalRestoreAt = job.search(
+      /^ {6}- name: Restore original head action manifests$/m,
     );
-    assert.doesNotMatch(yaml, /-- \.github\/actions \|\| true/);
+    assert.ok(
+      finalRestoreAt !== -1,
+      'expected the always() restore step in the rebase job',
+    );
+    const afterFinalRestore = job.slice(finalRestoreAt);
+    assert.doesNotMatch(
+      afterFinalRestore.slice(afterFinalRestore.indexOf('\n') + 1),
+      /^ {6}- (?:name|uses):/m,
+      'no step may follow the always() restore in the rebase job',
+    );
+
+    // No-op guards and a failure mode that is reported, not swallowed.
+    assert.match(
+      job,
+      /git rev-parse -q --verify "\$original_head\^\{commit\}"/,
+    );
+    assert.match(
+      job,
+      /git rev-parse -q --verify "\$original_head:\.github\/actions"/,
+    );
+    assert.match(
+      job,
+      /git restore --source="\$original_head" --staged --worktree -- \.github\/actions/,
+    );
+    assert.doesNotMatch(job, /-- \.github\/actions \|\| true/);
   });
 
   it('rebase-pr auto-resolves trivial conflicts before invoking ZAI', () => {
