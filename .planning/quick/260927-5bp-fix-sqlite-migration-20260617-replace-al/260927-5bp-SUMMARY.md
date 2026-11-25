@@ -4,8 +4,8 @@ status: complete
 type: execute
 completed: 2026-09-27
 commits:
-  - ff8b144 fix(prisma): make migration 20260617 apply to non-empty SQLite tables
-  - 251908d fix(prisma): add the missing migration for servers.redirectIp (not part of the branch that carries this summary; the same migration landed on main separately via PR #1238 as 28267566)
+  - 09ff2a40 fix(prisma): make migration 20260617 apply to non-empty SQLite tables
+  - "251908d fix(prisma): add the missing migration for servers.redirectIp (historical local commit, not part of the branch that carries this summary; the migration landed on main via PR #1238 as 28267566)"
 ---
 
 # Quick Task 260927-5bp: Fix migration 20260617 for non-empty SQLite tables (+ the missing `servers.redirectIp` migration)
