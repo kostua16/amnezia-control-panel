@@ -47,7 +47,7 @@ test('prunes only top-level resolved docs strictly older than 30 days', (t) => {
   pruneStaleDebugDocs(path.join(directory, 'missing-directory'));
 });
 
-test('maintenance runs pruning before change detection and pins the explicit tool grants', () => {
+test('maintenance runs pruning before change detection and pins the scoped tool grants', () => {
   const { load } = require('js-yaml');
   const workflow = load(
     fs.readFileSync(path.join(__dirname, '../../maintenance.yml'), 'utf8'),
@@ -66,23 +66,68 @@ test('maintenance runs pruning before change detection and pins the explicit too
   assert.equal(steps[prune + 1].id, 'detect_changes');
   const agent = steps.find((step) => step.id === 'claude_run');
   assert.equal(agent.with['user-settings-only'], 'true');
-  const families = ['node', 'gh issue', 'gh pr', 'npm audit', 'git log'];
+  // Single source of truth for the sweep's Bash grants: the allowed-tools
+  // line and the prompt's TOOL GRANTS sentence are both derived from it, so
+  // the two cannot drift apart. This unattended job reads public issue and
+  // PR content, so grants stay scoped to exact commands — no command
+  // families, no secret-disclosure primitives.
+  const commands = [
+    'node .claude/get-shit-done/bin/gsd-tools.cjs',
+    'gh issue create',
+    'gh issue list',
+    'gh issue view',
+    'gh pr comment',
+    'gh pr list',
+    'gh pr view',
+    'npm audit --json',
+    'git log',
+    'df',
+  ];
   const expected = [
     'Read',
     'Glob',
     'Grep',
-    ...families.flatMap((command) => [
-      `Bash(${command}:*)`,
-      `Bash(rtk ${command}:*)`,
-    ]),
-    ...['df', 'cat', 'head', 'tail', 'wc', 'echo'].map(
-      (command) => `Bash(${command}:*)`,
+    ...commands.flatMap((command) =>
+      command === 'df'
+        ? [`Bash(${command}:*)`]
+        : [`Bash(${command}:*)`, `Bash(rtk ${command}:*)`],
     ),
   ];
   assert.deepEqual(
     agent.with['allowed-tools'].split(',').sort(),
     expected.sort(),
   );
+
+  const toolGrants = agent.with.prompt
+    .split('\n')
+    .find((line) => line.trim().startsWith('TOOL GRANTS:'));
+  assert.ok(
+    toolGrants,
+    'maintenance prompt must document its TOOL GRANTS line',
+  );
+  for (const command of commands) {
+    assert.ok(
+      toolGrants.includes(`\`${command}\``),
+      `TOOL GRANTS line must document \`${command}\``,
+    );
+  }
+  for (const forbidden of [
+    'node -e',
+    '`echo`',
+    '`cat`',
+    '`head`',
+    '`tail`',
+    '`wc`',
+    'node:*',
+    'gh issue:*',
+    'gh pr:*',
+    'npm audit:*',
+  ]) {
+    assert.ok(
+      !toolGrants.includes(forbidden),
+      `TOOL GRANTS line must not mention ${forbidden}`,
+    );
+  }
 });
 
 test('run-zai forwards settings isolation to every Claude attempt', (t) => {
