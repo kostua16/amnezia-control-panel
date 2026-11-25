@@ -66,27 +66,18 @@ test('maintenance runs pruning before change detection and pins the explicit too
   assert.equal(steps[prune + 1].id, 'detect_changes');
   const agent = steps.find((step) => step.id === 'claude_run');
   assert.equal(agent.with['user-settings-only'], 'true');
-  const commands = [
-    'gh issue create',
-    'gh issue list',
-    'gh issue view',
-    'gh pr comment',
-    'gh pr list',
-    'gh pr view',
-  ];
+  const families = ['node', 'gh issue', 'gh pr', 'npm audit', 'git log'];
   const expected = [
     'Read',
     'Glob',
     'Grep',
-    'Bash(node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health)',
-    ...[
-      'npm audit --json',
-      String.raw`git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`,
-    ].flatMap((command) => [`Bash(${command})`, `Bash(rtk ${command})`]),
-    ...commands.flatMap((command) => [
+    ...families.flatMap((command) => [
       `Bash(${command}:*)`,
       `Bash(rtk ${command}:*)`,
     ]),
+    ...['df', 'cat', 'head', 'tail', 'wc', 'echo'].map(
+      (command) => `Bash(${command}:*)`,
+    ),
   ];
   assert.deepEqual(
     agent.with['allowed-tools'].split(',').sort(),
