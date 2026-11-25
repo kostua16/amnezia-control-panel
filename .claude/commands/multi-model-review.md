@@ -1,12 +1,12 @@
 ---
 description: Review a change/PR with several models via delegate_task, consolidate into one plan, then delegate implementation
-argument-hint: <PR/commit/branch> [models: reviewer1, reviewer2, ...] [planner] [implementers]
+argument-hint: '<PR/commit/branch> [models: reviewer1, reviewer2, ...] [planner] [implementers]'
 allowed-tools: Bash, Read, Grep, Glob, ToolSearch, mcp__t3-code__orchestrator_capabilities, mcp__t3-code__delegate_task, mcp__t3-code__task_status, mcp__t3-code__task_cancel
 ---
 
 ## Context
 
-Target: $ARGUMENTS. The user names the models explicitly (e.g. codex sol-6.2, gemini argon, claude opus, qwen, glm); use exactly those.
+Target: $ARGUMENTS. The user names the models explicitly (e.g. codex sol-6.2, gemini argon, claude opus, qwen, glm); use exactly those. This command depends on the T3 MCP tools (`delegate_task`, `orchestrator_capabilities`), which are provided by the operator runtime, not by this repo; if they are unavailable, say so and stop instead of falling back to other tools.
 
 ## Your Task
 
