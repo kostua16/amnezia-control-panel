@@ -2,10 +2,30 @@
 -- Generated: 2026-06-17
 -- Scope: covers drift from 20260428191601_init + 20260611000000_add_audit_logs + 20260614000000_add_traffic_log_user_timestamp_index
 
--- AddColumn: Admin.updatedAt — the "admins" table is kept in place (no rename),
--- so existing admin credentials are preserved. The @unique(username) index
--- admins_username_key from the init migration already covers the model.
-ALTER TABLE "admins" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+-- AddColumn: Admin.updatedAt. SQLite rejects ALTER TABLE ... ADD COLUMN with a
+-- non-constant default (CURRENT_TIMESTAMP) as soon as the table holds rows
+-- ("Cannot add a column with non-constant default"), so the column is added by
+-- redefining the table instead, matching the RedefineTables block below.
+-- Existing admin credentials are carried over by the INSERT ... SELECT, with
+-- updatedAt seeded from createdAt. DROP TABLE also drops the @unique(username)
+-- index admins_username_key created by the init migration, so it is recreated.
+PRAGMA defer_foreign_keys=ON;
+PRAGMA foreign_keys=OFF;
+
+CREATE TABLE "new_admins" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "username" TEXT NOT NULL,
+    "password" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+INSERT INTO "new_admins" ("createdAt", "id", "password", "username", "updatedAt") SELECT "createdAt", "id", "password", "username", "createdAt" FROM "admins";
+DROP TABLE "admins";
+ALTER TABLE "new_admins" RENAME TO "admins";
+CREATE UNIQUE INDEX "admins_username_key" ON "admins"("username");
+
+PRAGMA foreign_keys=ON;
+PRAGMA defer_foreign_keys=OFF;
 
 -- CreateTable: ConfigTemplate
 CREATE TABLE "config_templates" (
@@ -66,10 +86,33 @@ CREATE TABLE "chain_presets" (
     "updatedAt" DATETIME NOT NULL
 );
 
--- AddColumn: UserQuota.updatedAt — the "user_quotas" table is kept in place
--- (no rename), preserving existing quota rows and the user_quotas_userId_key
--- unique index from the init migration.
-ALTER TABLE "user_quotas" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+-- AddColumn: UserQuota.updatedAt. Same SQLite restriction as "admins" above:
+-- ADD COLUMN with a non-constant default fails once the table holds rows, so the
+-- table is redefined instead. Unlike alerts/routing_rules/servers/services, the
+-- source "user_quotas" table has no "createdAt" column, so seed "updatedAt" with
+-- CURRENT_TIMESTAMP — referencing a nonexistent column here aborts the migration
+-- at parse time, after earlier tables were already dropped/renamed. DROP TABLE
+-- also drops the user_quotas_userId_key unique index from the init migration, so
+-- it is recreated, and the user_quotas_userId_fkey constraint is carried over.
+PRAGMA defer_foreign_keys=ON;
+PRAGMA foreign_keys=OFF;
+
+CREATE TABLE "new_user_quotas" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "quotaBytes" INTEGER NOT NULL DEFAULT 0,
+    "period" TEXT NOT NULL DEFAULT 'MONTHLY',
+    "resetAt" DATETIME,
+    "updatedAt" DATETIME NOT NULL,
+    "userId" INTEGER NOT NULL,
+    CONSTRAINT "user_quotas_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+INSERT INTO "new_user_quotas" ("id", "period", "quotaBytes", "resetAt", "updatedAt", "userId") SELECT "id", "period", "quotaBytes", "resetAt", CURRENT_TIMESTAMP, "userId" FROM "user_quotas";
+DROP TABLE "user_quotas";
+ALTER TABLE "new_user_quotas" RENAME TO "user_quotas";
+CREATE UNIQUE INDEX "user_quotas_userId_key" ON "user_quotas"("userId");
+
+PRAGMA foreign_keys=ON;
+PRAGMA defer_foreign_keys=OFF;
 
 -- CreateTable: RemotePanel
 CREATE TABLE "remote_panels" (
