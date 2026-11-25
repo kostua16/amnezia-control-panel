@@ -108,6 +108,7 @@ jobs:
       - name: Re-validate and dispatch review repair
         if: steps.reserve.outputs.proceed != 'false'
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ inputs.pr_number }}
@@ -119,13 +120,17 @@ jobs:
         run: |
           set -euo pipefail
           context_dir="$RUNNER_TEMP/auto-cover-dispatch"
-          node .github/workflows/scripts/fetch-auto-cover-context.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/fetch-auto-cover-context.cjs \
             --repo "$GITHUB_REPOSITORY" \
             --out-dir "$context_dir" \
             --pr-number "$PR_NUMBER" \
             --concurrency 1 \
             --fix-review-workflow fix-review.yml
-          node .github/workflows/scripts/run-auto-cover-repairs.cjs \
+          node "${preload[@]}" .github/workflows/scripts/run-auto-cover-repairs.cjs \
             --mode revalidate \
             --context-dir "$context_dir" \
             --policy-file .github/workflows/policy.json \

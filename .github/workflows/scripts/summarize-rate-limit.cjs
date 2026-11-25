@@ -37,17 +37,26 @@ function parseLine(line) {
 
 function parseRestCount(line) {
   const match = line.match(
-    /(?:^|\s)REST_COUNT workflow=("(?:[^"\\]|\\.)*") job=(\S+) run=(\d+\.\d+) (.+)$/,
+    /(?:^|\s)REST_COUNT workflow=("(?:[^"\\]|\\.)*") job=(\S+) run=((?:\d+|unknown)\.(?:\d+|unknown)) (.+)$/,
   );
   if (!match) return null;
   const [, name, job, run, body] = match;
   try {
     const workflow = JSON.parse(name);
-    if (/^status=unavailable reason=[a-z-]+\s*$/.test(body)) {
-      return { workflow, job, run, status: 'unavailable' };
-    }
+    if (
+      /^status=unavailable reason=[a-z][a-z0-9-]*(?: total=0 graphql=0 by_route=\{\})?\s*$/.test(
+        body,
+      )
+    )
+      return {
+        workflow,
+        job,
+        run,
+        status: 'unavailable',
+        ghUnavailable: false,
+      };
     const counts = body.match(
-      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))? by_route=(\{.*\})\s*$/,
+      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?(?: (?:gh_status=(ok|unavailable)|(gh=unavailable))(?: gh_reason=(.*?))?)? by_route=(\{.*\})\s*$/,
     );
     if (!counts) return null;
     const [
@@ -57,6 +66,11 @@ function parseRestCount(line) {
       rawGraphql,
       rawInstrumented = '0',
       rawUnreadable = '0',
+      rawVia,
+      rawGraphqlVia,
+      ghStatus,
+      legacyGhUnavailable,
+      ghUnavailableReason,
       rawRoutes,
     ] = counts;
     const total = Number(rawTotal);
@@ -64,7 +78,11 @@ function parseRestCount(line) {
     const instrumented = Number(rawInstrumented);
     const unreadable = Number(rawUnreadable);
     const routes = Object.entries(JSON.parse(rawRoutes));
+    const via = parseSources(rawVia, total);
+    const graphqlVia = parseSources(rawGraphqlVia, graphql);
     if (
+      !via ||
+      !graphqlVia ||
       ![total, graphql, instrumented, unreadable].every(Number.isSafeInteger) ||
       routes.some(([, count]) => !Number.isSafeInteger(count) || count <= 0) ||
       routes.reduce((sum, [, count]) => sum + count, 0) !== total
@@ -79,11 +97,30 @@ function parseRestCount(line) {
       graphql,
       instrumented,
       unreadable,
+      via,
+      graphqlVia,
+      ghStatus: legacyGhUnavailable ? 'unavailable' : ghStatus,
+      ghUnavailable: ghStatus === 'unavailable' || Boolean(legacyGhUnavailable),
+      ghUnavailableReason,
       routes,
     };
   } catch {
     return null;
   }
+}
+
+function parseSources(raw, total) {
+  if (raw === undefined) return { node: total, gh: 0 };
+  const { node, gh } = JSON.parse(raw);
+  if (
+    Number.isSafeInteger(node) &&
+    Number.isSafeInteger(gh) &&
+    node >= 0 &&
+    gh >= 0 &&
+    node + gh === total
+  )
+    return { node, gh };
+  return null;
 }
 
 function summarizeRestCounts(lines) {
@@ -100,19 +137,31 @@ function summarizeRestCounts(lines) {
       reports: 0,
       unavailableRuns: new Set(),
       unreadableFiles: 0,
+      ghUnavailableReports: 0,
       total: 0,
       graphql: 0,
+      via: { node: 0, gh: 0 },
+      graphqlVia: { node: 0, gh: 0 },
       routes: new Map(),
     };
     // Matrix jobs share run and job IDs. Each report is a separate execution.
     group.runs.add(run);
     group.reports += 1;
+    if (
+      count.ghUnavailable &&
+      count.ghUnavailableReason !== 'unsupported-platform'
+    )
+      group.ghUnavailableReports += 1;
     if (count.status) {
       group.unavailableRuns.add(run.split('.', 1)[0]);
     } else {
       group.unreadableFiles += count.unreadable;
       group.total += count.total;
       group.graphql += count.graphql;
+      for (const source of ['node', 'gh']) {
+        group.via[source] += count.via[source];
+        group.graphqlVia[source] += count.graphqlVia[source];
+      }
       for (const [route, requests] of count.routes) {
         group.routes.set(route, (group.routes.get(route) ?? 0) + requests);
       }
@@ -258,11 +307,15 @@ function format(summary) {
     );
   }
   for (const group of summary.restCounts ?? []) {
+    const via = group.via ?? { node: group.total, gh: 0 };
+    const graphqlVia = group.graphqlVia ?? { node: group.graphql, gh: 0 };
     out.push(
       `REST_COUNT workflow=${JSON.stringify(group.workflow)} job=${group.job} ` +
         `runs=${group.runs.size} reports=${group.reports} total=${group.total} ` +
         `graphql=${group.graphql} by_route=${JSON.stringify(Object.fromEntries([...group.routes].sort()))} ` +
-        `unavailable_jobs=${group.unavailableRuns?.size ?? 0} unreadable_files=${group.unreadableFiles ?? 0}`,
+        `unavailable_jobs=${group.unavailableRuns?.size ?? 0} unreadable_files=${group.unreadableFiles ?? 0} ` +
+        `via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphqlVia)} ` +
+        `gh_unavailable_reports=${group.ghUnavailableReports ?? 0}`,
     );
   }
   return out.join('\n');

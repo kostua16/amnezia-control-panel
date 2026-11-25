@@ -128,6 +128,16 @@ Resume file: None
 
 | Date       | Slug / ID    | Summary                                                     |
 | ---------- | ------------ | ----------------------------------------------------------- |
+| 2026-11-25 | 261125-rla   | Address the eighth CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-r45   | Address the seventh CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-qoy   | Address the sixth CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-qgc   | Address the fifth CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-q7t   | Address the fourth CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-puv   | Normalize the CLI counter input and test composite PATH updates for PR #1252 |
+| 2026-11-25 | 261125-pnc   | Address the third CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-pb9   | Address the second CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-ow0   | Address counter review feedback for PR #1252 |
+| 2026-11-25 | 261125-o4p   | Count GitHub CLI requests and wire the remaining GitHub Script steps |
 | 2026-11-25 | 261125-0l9   | Add missing Prisma migration for Server.redirectIp (fixes GET /api/servers 500 on fresh DB) |
 | 2026-11-24 | 261124-v61   | Address PR #1223 maintenance review findings |
 | 2026-11-23 | 261123-w9f   | Avoid Docker main-push REST comparison and closed-issue authorization |

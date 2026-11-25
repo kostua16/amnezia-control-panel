@@ -39,21 +39,30 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         if: steps.checkout.outcome == 'success'
         with:
           github-token: ${{ github.token }}
           label: docker-classify
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Decide Docker image action
         id: classify
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
           GIT_FETCH_TOKEN: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.token || '' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Counting is best-effort.
+            }
+
             const relevantGlobs = [
               'Dockerfile',
               'Dockerfile.stack',
