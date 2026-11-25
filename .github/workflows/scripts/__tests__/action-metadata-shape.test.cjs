@@ -114,7 +114,11 @@ test('setup-environment keeps every documented input and its outputs', () => {
   );
   assert.equal(
     ghCounter.if,
-    "inputs.rest-counter == 'true' && runner.os == 'Linux'",
+    "steps.rate_limit.outputs.rest-counter-enabled == 'true' && runner.os == 'Linux'",
+  );
+  assert.equal(
+    ghCounter.env.REST_COUNTER_ENABLED,
+    '${{ steps.rate_limit.outputs.rest-counter-enabled }}',
   );
   assert.equal(
     doc.outputs['rest-counter-preload'].value,

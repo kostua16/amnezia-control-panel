@@ -11,6 +11,7 @@ const {
   readdirSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } = require('node:fs');
 const { tmpdir } = require('node:os');
@@ -19,6 +20,10 @@ const test = require('node:test');
 const yaml = require('js-yaml');
 
 const action = resolve(__dirname, '../../../actions/log-rate-limit');
+const setupAction = resolve(action, '../setup-environment');
+const installerStep = yaml
+  .load(readFileSync(join(setupAction, 'action.yml'), 'utf8'))
+  .runs.steps.find((step) => step.name === 'Count GitHub CLI requests');
 const { installGhCounter } = require(join(action, 'gh-counter.cjs'));
 const { collectRestCounts, reportRestCounter, startRestCounter } = require(
   join(action, 'rest-counter.cjs'),
@@ -27,6 +32,18 @@ const { collectRestCounts, reportRestCounter, startRestCounter } = require(
 const args = ['api', '--paginate', '--jq', '.[].name', 'arg with spaces'];
 const stdin = Buffer.from([0, 255, 32, 10]);
 const warning = Buffer.from([0x2a, 0x20, 0xff, 0x0d, 0x0a, 0x21]);
+
+function runInstallerStep(env) {
+  return spawnSync('/bin/bash', ['-euo', 'pipefail', '-c', installerStep.run], {
+    env: {
+      ...process.env,
+      ...env,
+      REST_COUNTER_ENABLED: 'true',
+      GITHUB_ACTION_PATH: setupAction,
+    },
+    encoding: 'utf8',
+  });
+}
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "gh counter ' "));
@@ -223,21 +240,12 @@ test(
   },
   (t) => {
     const { dir, root, setup } = fixture(t);
-    const metadata = yaml.load(
-      readFileSync(join(action, '../setup-environment/action.yml'), 'utf8'),
-    );
-    const { run } = metadata.runs.steps.find(
-      (step) => step.name === 'Count GitHub CLI requests',
-    );
     const originalEnv = readFileSync(setup.GITHUB_ENV);
-    const result = spawnSync('/bin/bash', ['-euo', 'pipefail', '-c', run], {
-      env: {
-        ...process.env,
-        GITHUB_ENV: setup.GITHUB_ENV,
-        PATH: root,
-        REST_COUNTER_DIR: dir,
-      },
-      encoding: 'utf8',
+    const result = runInstallerStep({
+      GITHUB_ENV: setup.GITHUB_ENV,
+      GITHUB_PATH: setup.GITHUB_PATH,
+      PATH: root,
+      REST_COUNTER_DIR: dir,
     });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /::warning::.*node-not-on-path/);
@@ -268,6 +276,40 @@ test(
   },
 );
 
+test(
+  'composite installer publishes PATH and reports PATH write failures without failing',
+  {
+    skip: process.platform !== 'linux',
+  },
+  (t) => {
+    const { dir, root, setup } = fixture(t);
+    const tools = join(root, 'tools');
+    mkdirSync(tools);
+    symlinkSync(process.execPath, join(tools, 'node'));
+    writeFileSync(join(tools, 'gh'), '#!/bin/bash\nexit 0\n', { mode: 0o700 });
+    const env = { REST_COUNTER_DIR: dir, PATH: tools };
+    const ok = runInstallerStep({ ...env, GITHUB_PATH: setup.GITHUB_PATH });
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(ok.stdout, '');
+    assert.equal(
+      readFileSync(setup.GITHUB_PATH, 'utf8'),
+      `${join(dir, 'gh-bin')}\n`,
+    );
+    for (const [file, reason] of [
+      ['', 'no-github-path'],
+      [root, 'io'],
+    ]) {
+      const failed = runInstallerStep({ ...env, GITHUB_PATH: file });
+      assert.equal(failed.status, 0, failed.stderr);
+      assert.match(failed.stdout, new RegExp(`::warning::.*\\(${reason}\\)`));
+      assert.equal(
+        readFileSync(join(dir, 'gh-setup-failure'), 'utf8'),
+        `${reason}\n`,
+      );
+    }
+  },
+);
+
 test('installer CLI distinguishes disabled counting from failed setup', (t) => {
   const { dir, root, setup } = fixture(t);
   const env = {
@@ -287,9 +329,14 @@ test('installer CLI distinguishes disabled counting from failed setup', (t) => {
     process.platform === 'linux' ? 'no-gh' : 'unsupported-platform';
   assert.equal(installGhCounter(dir, true, env), `failed:${reason}`);
   assert.equal(runInstall('false').status, 0);
-  const failed = runInstall('true');
-  assert.equal(failed.status, 1);
-  assert.equal(failed.stdout.toString(), `${reason}\n`);
+  for (const input of ['true', 'True', 'TRUE', ' true ']) {
+    const failed = runInstall(input);
+    assert.equal(failed.status, 1, JSON.stringify(input));
+    assert.equal(failed.stdout.toString(), `${reason}\n`);
+  }
+  for (const input of ['False', '', 'invalid']) {
+    assert.equal(runInstall(input).status, 0, JSON.stringify(input));
+  }
   assert.ok(!readdirSync(root).includes('path'));
 });
 

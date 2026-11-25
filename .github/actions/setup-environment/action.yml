@@ -262,10 +262,10 @@ runs:
         fi
 
     - name: Count GitHub CLI requests
-      if: inputs.rest-counter == 'true' && runner.os == 'Linux'
+      if: steps.rate_limit.outputs.rest-counter-enabled == 'true' && runner.os == 'Linux'
       shell: bash
       env:
-        REST_COUNTER_ENABLED: ${{ inputs.rest-counter }}
+        REST_COUNTER_ENABLED: ${{ steps.rate_limit.outputs.rest-counter-enabled }}
       run: |
         warn_gh_counter() {
           echo "::warning::GitHub CLI request counting unavailable ($1)"

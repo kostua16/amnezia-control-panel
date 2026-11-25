@@ -16,7 +16,11 @@ const {
   writeFileSync,
 } = require('node:fs');
 const { delimiter, isAbsolute, join, resolve } = require('node:path');
-const { findGhOnPath, isExecutableFile } = require('./gh-counter.cjs');
+const {
+  findGhOnPath,
+  isExecutableFile,
+  restCounterEnabled,
+} = require('./gh-counter.cjs');
 const { METHODS, ROUTES, sameDirectory } = require('./rest-routes.cjs');
 const GH_SETUP_FAILURE = 'gh-setup-failure';
 const GH_SETUP_REASONS = new Set([
@@ -37,12 +41,13 @@ const ROUTE_KEYS = new Set(
 );
 
 function startRestCounter(env = process.env, log = console.log) {
-  if (env['INPUT_REST-COUNTER'] !== 'true') return;
+  if (!restCounterEnabled(env['INPUT_REST-COUNTER'])) return;
   let dir;
   let preload;
   try {
     if (env.REST_COUNTER_DIR) {
       appendFileSync(env.GITHUB_STATE, 'rest_counter_skip=true\n');
+      appendFileSync(env.GITHUB_OUTPUT, 'rest-counter-enabled=true\n');
       return env.REST_COUNTER_DIR;
     }
     if (
@@ -76,7 +81,10 @@ function startRestCounter(env = process.env, log = console.log) {
     );
     appendFileSync(env.GITHUB_STATE, `rest_counter_dir=${dir}\n`);
     appendFileSync(env.GITHUB_ENV, `REST_COUNTER_DIR=${dir}\n`);
-    appendFileSync(env.GITHUB_OUTPUT, `rest-counter-preload=${preload}\n`);
+    appendFileSync(
+      env.GITHUB_OUTPUT,
+      `rest-counter-preload=${preload}\nrest-counter-enabled=true\n`,
+    );
     return dir;
   } catch {
     if (dir) {
@@ -203,7 +211,7 @@ function readGhSetupFailure(dir) {
 
 function reportRestCounter({ env = process.env, log = console.log } = {}) {
   if (
-    env['INPUT_REST-COUNTER'] !== 'true' ||
+    !restCounterEnabled(env['INPUT_REST-COUNTER']) ||
     env.STATE_rest_counter_skip === 'true'
   )
     return;

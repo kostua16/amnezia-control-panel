@@ -53,6 +53,36 @@ function setupEnv(root, runnerTemp = root) {
   };
 }
 
+test('counter startup and post accept the same normalized request', (t) => {
+  for (const [input, enabled] of [
+    ['True', true],
+    ['TRUE', true],
+    [' true ', true],
+    ['false', false],
+    ['False', false],
+    ['', false],
+    ['invalid', false],
+  ]) {
+    const setup = { ...setupEnv(temp(t)), 'INPUT_REST-COUNTER': input };
+    const dir = startRestCounter(setup);
+    assert.equal(Boolean(dir), enabled, JSON.stringify(input));
+    if (enabled) {
+      assert.match(
+        readFileSync(setup.GITHUB_OUTPUT, 'utf8'),
+        /^rest-counter-enabled=true$/m,
+      );
+    } else {
+      assert.deepEqual(readdirSync(setup.RUNNER_TEMP), []);
+    }
+    const lines = [];
+    reportRestCounter({
+      env: { ...setup, STATE_rest_counter_dir: dir, REST_COUNTER_DIR: dir },
+      log: (line) => lines.push(line),
+    });
+    assert.equal(lines.length, enabled ? 1 : 0, JSON.stringify(input));
+  }
+});
+
 test('a preload dependency failure never aborts Node startup', async (t) => {
   const fault = join(temp(t), 'fault.cjs');
   writeFileSync(
@@ -337,7 +367,8 @@ test('setup, parallel children and post count HTTP and fetch without changing re
   );
   assert.deepEqual(Object.keys(exported), ['REST_COUNTER_DIR']);
   const preload = readFileSync(setup.GITHUB_OUTPUT, 'utf8')
-    .trimEnd()
+    .split('\n')
+    .find((line) => line.startsWith('rest-counter-preload='))
     .slice('rest-counter-preload='.length);
 
   const requests = [];

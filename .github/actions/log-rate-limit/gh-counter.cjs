@@ -45,6 +45,10 @@ const TRACED_COMMANDS = new Set([
   'workflow',
 ]);
 
+function restCounterEnabled(input) {
+  return input?.trim().toLowerCase() === 'true';
+}
+
 function isExecutableFile(path) {
   try {
     accessSync(path, constants.X_OK);
@@ -240,7 +244,7 @@ if (require.main === module) {
   if (command === '--install') {
     const outcome = installGhCounter(
       process.env.REST_COUNTER_DIR,
-      args[0] === 'true',
+      restCounterEnabled(args[0]),
     );
     if (outcome.startsWith('failed:')) {
       console.log(outcome.slice('failed:'.length));
@@ -251,4 +255,9 @@ if (require.main === module) {
   }
 }
 
-module.exports = { findGhOnPath, installGhCounter, isExecutableFile };
+module.exports = {
+  findGhOnPath,
+  installGhCounter,
+  isExecutableFile,
+  restCounterEnabled,
+};

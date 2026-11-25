@@ -450,7 +450,9 @@ Always manual-only:
 ## Job-local GitHub API request counts
 
 `setup-environment` enables the counter by default. Pass `rest-counter: 'false'`
-to disable it for a setup invocation. The `log-rate-limit` post action emits one
+to disable it for a setup invocation. Both collectors trim surrounding
+whitespace and accept any case of `true` or `false`. An explicitly empty
+or unrecognized value disables counting. The `log-rate-limit` post action emits one
 `REST_COUNT` log line per enabled job, independently of its quota snapshot
 setting. The post includes a step summary when available and prints
 `status=unavailable` if counting could not be set up or the records could not be read.
