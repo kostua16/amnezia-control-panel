@@ -516,16 +516,21 @@ extensions, invocations with global flags before the command, interactive
 stderr, and explicit debug or verbose modes pass through without tracing.
 GitHub CLI requests launched by Bun still count when they use the shim.
 
-When CLI setup cannot find Node on `PATH` or install the shim, it emits a
-warning. On Linux the post report includes `gh=unavailable` when no usable
-shim is on `PATH` and no CLI requests were recorded. A later successful
-setup clears the unavailable condition. Jobs that skip Node installation
-rely on the runner's Node executable for the CLI observer. A disabled
-installer exits successfully without adding a shim.
+When CLI setup fails, its warning identifies the reason, such as
+`node-not-on-path`, `no-gh`, `no-github-path`, `unwritable-dir`, or `io`.
+The post report keeps `via.gh` numeric and reports CLI availability separately
+as `gh_status=ok` or `gh_status=unavailable`. With no observed CLI requests,
+the shim must be executable and the first `gh` on `PATH`, with an executable
+Node binary and a readable, nonempty observer. When any check fails, the
+report includes a fixed `gh_reason` code. A later successful setup clears
+the unavailable condition. Jobs that skip Node installation rely on the
+runner's Node executable. A disabled installer exits successfully without
+adding a shim.
 
-URL-bearing lines shaped like request, response, or HTTP debug output are
-filtered even when the trace omits its timing markers. Other starred
-application output keeps its original bytes.
+The shim filters starred transport diagnostics, including proxy lines and
+any starred line containing a URL or mentioning a proxy, even when timing
+markers are absent. Ordinary starred output such as `* note` keeps its
+original bytes.
 
 Instrumentation assumes the same job trust boundary as other runner-user-writable
 files. The shim adds a runner-user-writable executable to `PATH` and runs

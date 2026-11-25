@@ -74,6 +74,11 @@ if (process.env.GH_DEBUG === '1') {
     '* Request URL https://api.github.com/user?signature=drifted-request',
     '* Response from https://api.github.com/user?signature=drifted-response',
     '* HTTP/2 https://api.github.com/user?signature=drifted-http',
+    '* Using proxy: http://user:pass@host:3128',
+    '* Selected PrOxY user:pass@host:3128',
+    '* New transport headline https://example.invalid/?signature=unknown',
+    '* dial tcp host:3128: connection refused',
+    '* TLS connection using TLS 1.3',
     '> Authorization: Bearer header-without-timing-marker',
     '< Set-Cookie: response-without-timing-marker',
     '',
@@ -81,8 +86,8 @@ if (process.env.GH_DEBUG === '1') {
 } else if (process.env.GH_DEBUG) {
   process.stderr.write('caller diagnostics\\n');
 }
-if (process.env.APPLICATION_URL) {
-  process.stderr.write('* See https://example.invalid/docs\\n');
+if (process.env.APPLICATION_NOTE) {
+  process.stderr.write('* note\\n');
 }
 process.stdout.write(fs.readFileSync(0));
 process.stderr.write(Buffer.from(${JSON.stringify([...warning])}));
@@ -145,17 +150,14 @@ test('excludes public quota probes without a valid enterprise API URL', (t) => {
   assert.deepEqual(counts.by_route, { 'OTHER /repos/:o/:r/pulls/:n': 6 });
 });
 
-test('suppresses drifted trace URLs and passes ordinary starred URLs through', (t) => {
+test('suppresses proxy credentials and drifted transport lines while preserving ordinary starred output', (t) => {
   const { dir, run } = fixture(t);
-  const result = run({ APPLICATION_URL: 'true' });
+  const result = run({ APPLICATION_NOTE: 'true' });
   assert.equal(result.status, 7);
   assert.deepEqual(result.stdout, stdin);
   assert.deepEqual(
     result.stderr,
-    Buffer.concat([
-      Buffer.from('* See https://example.invalid/docs\n'),
-      warning,
-    ]),
+    Buffer.concat([Buffer.from('* note\n'), warning]),
   );
   assert.equal(collectRestCounts(dir).via.gh, 2);
 });
@@ -220,21 +222,49 @@ test(
     skip: process.platform !== 'linux',
   },
   (t) => {
-    const { root, setup } = fixture(t);
+    const { dir, root, setup } = fixture(t);
     const metadata = yaml.load(
       readFileSync(join(action, '../setup-environment/action.yml'), 'utf8'),
     );
     const { run } = metadata.runs.steps.find(
       (step) => step.name === 'Count GitHub CLI requests',
     );
+    const originalEnv = readFileSync(setup.GITHUB_ENV);
     const result = spawnSync('/bin/bash', ['-euo', 'pipefail', '-c', run], {
-      env: { ...process.env, GITHUB_ENV: setup.GITHUB_ENV, PATH: root },
+      env: {
+        ...process.env,
+        GITHUB_ENV: setup.GITHUB_ENV,
+        PATH: root,
+        REST_COUNTER_DIR: dir,
+      },
       encoding: 'utf8',
     });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /::warning::.*node-not-on-path/);
-    assert.doesNotMatch(readFileSync(setup.GITHUB_ENV, 'utf8'), /UNAVAILABLE/);
+    assert.deepEqual(readFileSync(setup.GITHUB_ENV), originalEnv);
+    assert.equal(
+      readFileSync(join(dir, 'gh-setup-failure'), 'utf8'),
+      'node-not-on-path\n',
+    );
     assert.ok(!readdirSync(root).includes('path'));
+    const lines = [];
+    reportRestCounter({
+      env: {
+        ...setup,
+        RUNNER_OS: 'Linux',
+        GITHUB_JOB: 'test',
+        GITHUB_RUN_ID: '1',
+        GITHUB_RUN_ATTEMPT: '1',
+        REST_COUNTER_DIR: dir,
+        STATE_rest_counter_dir: dir,
+        PATH: root,
+      },
+      log: (line) => lines.push(line),
+    });
+    assert.match(
+      lines[0],
+      / gh_status=unavailable gh_reason=node-not-on-path /,
+    );
   },
 );
 
@@ -253,9 +283,13 @@ test('installer CLI distinguishes disabled counting from failed setup', (t) => {
       { env },
     );
   assert.equal(installGhCounter(dir, false, env), 'disabled');
-  assert.equal(installGhCounter(dir, true, env), 'failed');
+  const reason =
+    process.platform === 'linux' ? 'no-gh' : 'unsupported-platform';
+  assert.equal(installGhCounter(dir, true, env), `failed:${reason}`);
   assert.equal(runInstall('false').status, 0);
-  assert.equal(runInstall('true').status, 1);
+  const failed = runInstall('true');
+  assert.equal(failed.status, 1);
+  assert.equal(failed.stdout.toString(), `${reason}\n`);
   assert.ok(!readdirSync(root).includes('path'));
 });
 
@@ -293,8 +327,30 @@ test(
     };
     const original = `${realBin}\n`;
     writeFileSync(env.GITHUB_PATH, original);
-    assert.equal(installGhCounter(dir, true, { ...env, PATH: root }), 'failed');
-    assert.match(report(), / gh=unavailable /);
+    const blocked = join(root, 'unwritable');
+    mkdirSync(blocked);
+    writeFileSync(join(blocked, 'gh-bin'), 'blocks directory creation');
+    for (const [reason, failedEnv] of [
+      ['no-gh', { ...env, PATH: root }],
+      ['no-github-path', { ...env, GITHUB_PATH: '' }],
+      ['no-counter-directory', { ...env, REST_COUNTER_DIR: '' }],
+      ['io', { ...env, GITHUB_PATH: root }],
+      ['unwritable-dir', { ...env, REST_COUNTER_DIR: blocked }],
+    ]) {
+      assert.equal(
+        installGhCounter(failedEnv.REST_COUNTER_DIR, true, failedEnv),
+        `failed:${reason}`,
+      );
+      const result = spawnSync(
+        process.execPath,
+        [join(action, 'gh-counter.cjs'), '--install', 'true'],
+        { env: failedEnv, encoding: 'utf8' },
+      );
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, `${reason}\n`);
+      assert.equal(result.stderr, '');
+    }
+    assert.match(report(), / gh_status=unavailable /);
     assert.equal(installGhCounter(dir, false, env), 'disabled');
     assert.equal(readFileSync(env.GITHUB_PATH, 'utf8'), original);
     assert.equal(installGhCounter(dir, true, env), 'installed');
@@ -304,7 +360,7 @@ test(
       `${original}${shimBin}\n`,
     );
     env.PATH = `${shimBin}${delimiter}${env.PATH}`;
-    assert.doesNotMatch(report(), / gh=unavailable /);
+    assert.match(report(), / gh_status=ok /);
     // Composite setup may install again without wrapping the previous shim.
     const retry = spawnSync(
       process.execPath,

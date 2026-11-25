@@ -83,6 +83,27 @@ test('aggregates source splits alongside legacy Node-only reports', () => {
     mixed.replace('"gh":1', '"gh":9'),
   ]);
   assert.equal(summary.restCounts[0].reports, 2);
+  assert.equal(
+    parseRestCount(mixed.replace(' by_route=', ' gh_status=ok by_route='))
+      .ghStatus,
+    'ok',
+  );
+  assert.equal(
+    parseRestCount(
+      mixed.replace(
+        ' by_route=',
+        ' gh_status=unavailable gh_reason=launcher-shadowed by_route=',
+      ),
+    ).ghUnavailableReason,
+    'launcher-shadowed',
+  );
+  assert.equal(
+    parseRestCount(
+      prefix +
+        '1.1 total=1 graphql=1 gh=unavailable gh_reason=no-gh by_route={"GET /user":1}',
+    ).ghUnavailableReason,
+    'no-gh',
+  );
   assert.deepEqual(summary.restCounts[0].via, { node: 2, gh: 1 });
   assert.deepEqual(summary.restCounts[0].graphqlVia, { node: 2, gh: 2 });
   assert.match(

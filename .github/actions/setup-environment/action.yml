@@ -269,11 +269,18 @@ runs:
       run: |
         warn_gh_counter() {
           echo "::warning::GitHub CLI request counting unavailable ($1)"
+          if [[ -d "${REST_COUNTER_DIR:-}" ]]; then
+            printf '%s\n' "$1" 2>/dev/null > "$REST_COUNTER_DIR/gh-setup-failure" || true
+          fi
         }
         if ! node_bin="$(command -v node)"; then
           warn_gh_counter node-not-on-path
-        elif ! "$node_bin" "$GITHUB_ACTION_PATH/../log-rate-limit/gh-counter.cjs" --install "$REST_COUNTER_ENABLED"; then
-          warn_gh_counter setup-failed
+        elif ! reason="$("$node_bin" "$GITHUB_ACTION_PATH/../log-rate-limit/gh-counter.cjs" --install "$REST_COUNTER_ENABLED" 2>/dev/null)"; then
+          case "$reason" in
+            no-gh|no-github-path|no-counter-directory|unsupported-platform|unwritable-dir|io) ;;
+            *) reason=setup-failed ;;
+          esac
+          warn_gh_counter "$reason"
         fi
 
     - if: inputs.install-deps == 'true'

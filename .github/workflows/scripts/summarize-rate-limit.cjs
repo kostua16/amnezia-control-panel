@@ -47,7 +47,7 @@ function parseRestCount(line) {
       return { workflow, job, run, status: 'unavailable' };
     }
     const counts = body.match(
-      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?( gh=unavailable)? by_route=(\{.*\})\s*$/,
+      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?(?: (?:gh_status=(ok|unavailable)|(gh=unavailable))(?: gh_reason=([a-z-]+))?)? by_route=(\{.*\})\s*$/,
     );
     if (!counts) return null;
     const [
@@ -59,7 +59,9 @@ function parseRestCount(line) {
       rawUnreadable = '0',
       rawVia,
       rawGraphqlVia,
-      ghUnavailable,
+      ghStatus,
+      legacyGhUnavailable,
+      ghUnavailableReason,
       rawRoutes,
     ] = counts;
     const total = Number(rawTotal);
@@ -88,7 +90,9 @@ function parseRestCount(line) {
       unreadable,
       via,
       graphqlVia,
-      ghUnavailable: Boolean(ghUnavailable),
+      ghStatus: legacyGhUnavailable ? 'unavailable' : ghStatus,
+      ghUnavailable: ghStatus === 'unavailable' || Boolean(legacyGhUnavailable),
+      ghUnavailableReason,
       routes,
     };
   } catch {

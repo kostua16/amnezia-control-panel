@@ -13,9 +13,22 @@ const {
   rmdirSync,
   statSync,
   unlinkSync,
+  writeFileSync,
 } = require('node:fs');
-const { delimiter, join } = require('node:path');
+const { delimiter, isAbsolute, join, resolve } = require('node:path');
+const { findGhOnPath, isExecutableFile } = require('./gh-counter.cjs');
 const { METHODS, ROUTES, sameDirectory } = require('./rest-routes.cjs');
+const GH_SETUP_FAILURE = 'gh-setup-failure';
+const GH_SETUP_REASONS = new Set([
+  'no-gh',
+  'no-github-path',
+  'no-counter-directory',
+  'unsupported-platform',
+  'unwritable-dir',
+  'io',
+  'node-not-on-path',
+  'setup-failed',
+]);
 
 const ROUTE_KEYS = new Set(
   [...METHODS, 'OTHER'].flatMap((method) =>
@@ -137,18 +150,55 @@ function collectRestCounts(dir) {
   };
 }
 
-function hasGhLauncher(dir, path) {
+function ghLauncherIssue(dir, path) {
   const bin = join(dir, 'gh-bin');
-  if (!path?.split(delimiter).includes(bin)) return false;
+  if (!path?.split(delimiter).some((entry) => resolve(entry) === bin))
+    return readGhSetupFailure(dir);
+
+  const launcher = join(bin, 'gh');
+  if (!isExecutableFile(launcher)) return 'launcher-unusable';
+  let node;
   try {
-    const launcher = join(bin, 'gh');
-    const observer = join(bin, 'gh-counter.cjs');
-    accessSync(launcher, constants.X_OK);
-    accessSync(observer, constants.R_OK);
-    return statSync(launcher).isFile() && statSync(observer).isFile();
+    const quotedNode = /^node_bin='([^\r\n]*)'\r?$/m.exec(
+      readFileSync(launcher, 'utf8'),
+    )?.[1];
+    node = quotedNode?.replaceAll("'\\''", "'");
   } catch {
-    return false;
+    return 'launcher-unusable';
   }
+  if (!node || !isAbsolute(node) || !isExecutableFile(node))
+    return 'node-unusable';
+
+  const observer = join(bin, 'gh-counter.cjs');
+  try {
+    accessSync(observer, constants.R_OK);
+    const stat = statSync(observer);
+    if (!stat.isFile() || stat.size === 0) return 'observer-unusable';
+  } catch {
+    return 'observer-unusable';
+  }
+  if (findGhOnPath(path) !== launcher) return 'launcher-shadowed';
+  return undefined;
+}
+
+function reportGhInstallFailure(dir, reason, log = console.log) {
+  const code = GH_SETUP_REASONS.has(reason) ? reason : 'setup-failed';
+  log(`::warning::GitHub CLI request counting unavailable (${code})`);
+  try {
+    writeFileSync(join(dir, GH_SETUP_FAILURE), `${code}\n`, { mode: 0o600 });
+  } catch {
+    // The post report can still detect the missing launcher.
+  }
+}
+
+function readGhSetupFailure(dir) {
+  try {
+    const reason = readFileSync(join(dir, GH_SETUP_FAILURE), 'utf8').trim();
+    if (GH_SETUP_REASONS.has(reason)) return reason;
+  } catch {
+    // The install step may have been skipped.
+  }
+  return 'not-installed';
 }
 
 function reportRestCounter({ env = process.env, log = console.log } = {}) {
@@ -190,20 +240,23 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
     total || graphql || instrumented || unreadable
       ? ''
       : ' status=uninstrumented';
-  const ghUnavailable =
-    env.RUNNER_OS === 'Linux' &&
-    via.gh === 0 &&
-    graphql_via.gh === 0 &&
-    !hasGhLauncher(dir, env.PATH);
+  let ghReason;
+  if (via.gh === 0 && graphql_via.gh === 0) {
+    ghReason =
+      env.RUNNER_OS === 'Linux'
+        ? ghLauncherIssue(dir, env.PATH)
+        : 'unsupported-platform';
+  }
+  const ghStatus = ghReason ? 'unavailable' : 'ok';
   log(
-    `${prefix}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphql_via)}${ghUnavailable ? ' gh=unavailable' : ''} by_route=${JSON.stringify(by_route)}`,
+    `${prefix}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphql_via)} gh_status=${ghStatus}${ghReason ? ` gh_reason=${ghReason}` : ''} by_route=${JSON.stringify(by_route)}`,
   );
   try {
     if (env.GITHUB_STEP_SUMMARY) {
       appendFileSync(
         env.GITHUB_STEP_SUMMARY,
         `\nGitHub API requests (instrumented Node and gh)\n\n` +
-          `\`\`\`json\n${JSON.stringify(ghUnavailable ? { ...counts, gh: 'unavailable' } : counts)}\n\`\`\`\n`,
+          `\`\`\`json\n${JSON.stringify({ ...counts, gh_status: ghStatus, gh_reason: ghReason })}\n\`\`\`\n`,
       );
     }
   } catch {
@@ -211,4 +264,9 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
   }
 }
 
-module.exports = { startRestCounter, collectRestCounts, reportRestCounter };
+module.exports = {
+  startRestCounter,
+  collectRestCounts,
+  reportGhInstallFailure,
+  reportRestCounter,
+};

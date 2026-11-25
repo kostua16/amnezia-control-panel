@@ -6,6 +6,7 @@ const { execFile } = require('node:child_process');
 const { once } = require('node:events');
 const {
   appendFileSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -16,7 +17,7 @@ const {
 } = require('node:fs');
 const { createServer } = require('node:http');
 const { tmpdir } = require('node:os');
-const { basename, join, resolve } = require('node:path');
+const { basename, delimiter, join, resolve } = require('node:path');
 const test = require('node:test');
 const { promisify } = require('node:util');
 
@@ -26,6 +27,7 @@ const {
 } = require('../../../actions/log-rate-limit/rest-routes.cjs');
 const {
   collectRestCounts,
+  reportGhInstallFailure,
   reportRestCounter,
   startRestCounter,
 } = require('../../../actions/log-rate-limit/rest-counter.cjs');
@@ -162,7 +164,7 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   });
   assert.match(
     result.stdout,
-    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} by_route=\{\}\s*$/,
+    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} gh_status=unavailable gh_reason=unsupported-platform by_route=\{\}\s*$/,
   );
   const preload = join(dir, 'rest-preload.cjs');
   const postEnv = {
@@ -195,6 +197,7 @@ test('post reports missing gh coverage until a launcher or observed requests are
     STATE_rest_counter_dir: dir,
     REST_COUNTER_DIR: dir,
     RUNNER_OS: 'Linux',
+    GITHUB_STEP_SUMMARY: join(dir, 'summary'),
   };
   const report = () => {
     let count;
@@ -202,14 +205,66 @@ test('post reports missing gh coverage until a launcher or observed requests are
     return count;
   };
   assert.equal(report().ghUnavailable, true);
+  assert.equal(report().ghUnavailableReason, 'not-installed');
   assert.deepEqual(report().via, { node: 1, gh: 0 });
+  for (const reason of [
+    'no-gh',
+    'no-github-path',
+    'unwritable-dir',
+    'io',
+    'node-not-on-path',
+  ]) {
+    const annotations = [];
+    reportGhInstallFailure(dir, reason, (line) => annotations.push(line));
+    assert.deepEqual(annotations, [
+      `::warning::GitHub CLI request counting unavailable (${reason})`,
+    ]);
+    assert.equal(report().ghUnavailableReason, reason);
+  }
+  writeFileSync(
+    join(dir, 'gh-setup-failure'),
+    'unexpected https://private.invalid\n',
+  );
+  assert.equal(report().ghUnavailableReason, 'not-installed');
+  const firstSummary = JSON.parse(
+    readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8').split('\n')[4],
+  );
+  assert.equal(firstSummary.gh_status, 'unavailable');
+  assert.equal(firstSummary.gh_reason, 'not-installed');
+  assert.equal(firstSummary.via.gh, 0);
+  assert.equal(Object.hasOwn(firstSummary, 'gh'), false);
+  reportGhInstallFailure(dir, 'no-gh', () => {});
   const bin = join(dir, 'gh-bin');
   mkdirSync(bin);
-  writeFileSync(join(bin, 'gh'), '#!/bin/bash\n', { mode: 0o700 });
-  writeFileSync(join(bin, 'gh-counter.cjs'), '');
+  const launcher = join(bin, 'gh');
+  const observer = join(bin, 'gh-counter.cjs');
+  const node = process.execPath.replaceAll("'", "'\\''");
   assert.equal(report().ghUnavailable, true);
   env.PATH = bin;
+  assert.equal(report().ghUnavailableReason, 'launcher-unusable');
+  writeFileSync(
+    launcher,
+    `#!/bin/bash\nnode_bin='${join(bin, 'missing-node')}'\n`,
+    { mode: 0o700 },
+  );
+  assert.equal(report().ghUnavailableReason, 'node-unusable');
+  writeFileSync(launcher, `#!/bin/bash\nnode_bin='${node}'\n`);
+  writeFileSync(observer, '');
+  assert.equal(report().ghUnavailableReason, 'observer-unusable');
+  writeFileSync(observer, "'use strict';\n");
+  if (process.platform === 'linux') {
+    chmodSync(launcher, 0o600);
+    assert.equal(report().ghUnavailableReason, 'launcher-unusable');
+    chmodSync(launcher, 0o700);
+  }
+  const shadow = join(dir, 'shadow');
+  mkdirSync(shadow);
+  writeFileSync(join(shadow, 'gh'), '#!/bin/bash\n', { mode: 0o700 });
+  env.PATH = `${shadow}${delimiter}${bin}`;
+  assert.equal(report().ghUnavailableReason, 'launcher-shadowed');
+  env.PATH = bin;
   assert.equal(report().ghUnavailable, false);
+  assert.equal(report().ghUnavailableReason, undefined);
   env.PATH = '';
   writeFileSync(join(dir, 'gh-requests-abcd.log'), 'attached\ngraphql\n');
   assert.equal(report().ghUnavailable, false);
@@ -400,5 +455,10 @@ test('setup, parallel children and post count HTTP and fetch without changing re
   assert.equal(logs.length, 1);
   assert.equal(parseRestCount(logs[0]).total, counts.total);
   assert.ok(!logs[0].includes('private-fixture-token'));
-  assert.ok(readFileSync(summary, 'utf8').includes(JSON.stringify(counts)));
+  const stepReport = JSON.parse(readFileSync(summary, 'utf8').split('\n')[4]);
+  assert.deepEqual(stepReport, {
+    ...counts,
+    gh_status: 'unavailable',
+    gh_reason: 'unsupported-platform',
+  });
 });

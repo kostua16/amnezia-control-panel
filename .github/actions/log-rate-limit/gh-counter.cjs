@@ -6,6 +6,7 @@ const { randomUUID } = require('node:crypto');
 const {
   accessSync,
   appendFileSync,
+  chmodSync,
   constants,
   copyFileSync,
   mkdirSync,
@@ -44,30 +45,43 @@ const TRACED_COMMANDS = new Set([
   'workflow',
 ]);
 
+function isExecutableFile(path) {
+  try {
+    accessSync(path, constants.X_OK);
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function findGhOnPath(path, skip) {
+  for (const entry of path?.split(delimiter) ?? []) {
+    const candidate = resolve(entry, 'gh');
+    if (
+      isExecutableFile(candidate) &&
+      (!skip || realpathSync(candidate) !== skip)
+    )
+      return candidate;
+  }
+  return undefined;
+}
+
 function installGhCounter(dir, enabled, env = process.env) {
   if (!enabled) return 'disabled';
-  if (process.platform !== 'linux' || !dir || !env.GITHUB_PATH) return 'failed';
+  if (process.platform !== 'linux') return 'failed:unsupported-platform';
+  if (!dir) return 'failed:no-counter-directory';
+  if (!env.GITHUB_PATH) return 'failed:no-github-path';
 
+  let failure = 'io';
   try {
     dir = realpathSync(dir);
-    if (/[\r\n]/.test(dir)) return 'failed';
+    if (/[\r\n]/.test(dir)) return 'failed:io';
     const bin = join(dir, 'gh-bin');
     const launcher = join(bin, 'gh');
-    const realGh = (env.PATH ?? '')
-      .split(delimiter)
-      .filter(Boolean)
-      .map((entry) => resolve(entry, 'gh'))
-      .find((candidate) => {
-        try {
-          accessSync(candidate, constants.X_OK);
-          const real = realpathSync(candidate);
-          return real !== launcher && statSync(real).isFile();
-        } catch {
-          return false;
-        }
-      });
-    if (!realGh) return 'failed';
+    const realGh = findGhOnPath(env.PATH, launcher);
+    if (!realGh) return 'failed:no-gh';
 
+    failure = 'unwritable-dir';
     mkdirSync(bin, { recursive: true });
     const observer = join(bin, 'gh-counter.cjs');
     copyFileSync(__filename, observer);
@@ -78,7 +92,7 @@ function installGhCounter(dir, enabled, env = process.env) {
 real_gh=${quote(realGh)}
 observer=${quote(observer)}
 node_bin=${quote(process.execPath)}
-if [[ -t 2 || ! -x "$node_bin" || ! -r "$observer" ]]; then
+if [[ -t 2 || ! -x "$node_bin" || ! -r "$observer" || ! -s "$observer" ]]; then
   exec "$real_gh" "$@"
 fi
 # Keep application preloads out of the observer and restore them for gh.
@@ -91,11 +105,13 @@ exec "$node_bin" "$observer" "$real_gh" "$@"
 `,
       { mode: 0o700 },
     );
+    chmodSync(launcher, 0o700);
+    failure = 'io';
     appendFileSync(env.GITHUB_PATH, `${bin}\n`);
     return 'installed';
   } catch {
     // PATH is only updated after the launcher and observer are ready.
-    return 'failed';
+    return `failed:${failure}`;
   }
 }
 
@@ -139,13 +155,17 @@ function prepareObserver(dir, env, writeStderr) {
       inFlight = Math.max(0, inFlight - 1);
       return;
     }
-    // httppretty prefixes injected metadata with "* ", including proxy
-    // addresses and transport errors. The CLI reports those errors itself.
+    // httppretty prints transport diagnostics, including proxy addresses, as
+    // starred lines. Timing markers may be missing or interleaved.
     if (
       /^[<>] /.test(line) ||
-      (inFlight && line.startsWith('* ')) ||
-      (/^\* (?:Request(?:ing)?|Response|HTTP)\b/i.test(line) &&
-        line.includes('://')) ||
+      (line.startsWith('* ') &&
+        (inFlight ||
+          line.includes('://') ||
+          /proxy/i.test(line) ||
+          /^\* +(?:Request(?:ing)?|Response|HTTP|Connected|TLS|dial|ALPN|Skipping TLS|(?:Client|Server) certificate|cannot filter request|subject|start date|expire date|issuer)\b/i.test(
+            line,
+          ))) ||
       /^\[(?:\S*[/\\])?git(?:[.]exe)?(?: |\])/.test(line)
     )
       return;
@@ -218,14 +238,17 @@ function runGh(realGh, args) {
 if (require.main === module) {
   const [command, ...args] = process.argv.slice(2);
   if (command === '--install') {
-    if (
-      installGhCounter(process.env.REST_COUNTER_DIR, args[0] === 'true') ===
-      'failed'
-    )
+    const outcome = installGhCounter(
+      process.env.REST_COUNTER_DIR,
+      args[0] === 'true',
+    );
+    if (outcome.startsWith('failed:')) {
+      console.log(outcome.slice('failed:'.length));
       process.exitCode = 1;
+    }
   } else {
     runGh(command, args);
   }
 }
 
-module.exports = { installGhCounter };
+module.exports = { findGhOnPath, installGhCounter, isExecutableFile };
