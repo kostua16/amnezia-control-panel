@@ -851,7 +851,7 @@ Every job that uses the installation token shares one REST bucket. `pr-policy.ym
 | RC5 | Logs mix legacy Node reports and newer Node and CLI reports            | The post and summarizer preserve REST and GraphQL totals and aggregate the source counts across attempts.                      |
 | RC6 | The setup input uses mixed case, surrounding whitespace, or an empty value | Both collectors use the same normalized input. The composite writes the shim to `GITHUB_PATH` on enabled setup and warns without failing if the file is missing or unwritable. |
 | RC7 | Setup reuses the job counter, a PATH executable disappears, or CLI tracing is unsupported | Reused setup returns the existing directory and publishes both outputs when available. A disappearing PATH entry does not fail collection. Unsupported runner reports retain their Node counts without increasing `gh_unavailable_reports`. |
-| RC8 | The post report fails, or the summarizer receives an unfamiliar CLI reason | A failed report stays visible as unavailable, even without runner identity metadata. An unfamiliar reason stays opaque and the job keeps its recorded counts. |
+| RC8 | The post report fails, or the summarizer receives an unfamiliar CLI reason | A failed report counts toward `unavailable_jobs` only, even without runner identity metadata. An unfamiliar CLI reason stays opaque and the job keeps its recorded counts. |
 
 Coverage lives in `rest-counter.test.cjs`, `gh-counter.test.cjs`,
 `summarize-rate-limit.test.cjs` and `action-metadata-shape.test.cjs`. The

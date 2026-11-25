@@ -43,17 +43,17 @@ function parseRestCount(line) {
   const [, name, job, run, body] = match;
   try {
     const workflow = JSON.parse(name);
-    const unavailable =
-      /^status=unavailable reason=([a-z][a-z0-9-]*)(?: total=0 graphql=0 by_route=\{\})?\s*$/.exec(
+    if (
+      /^status=unavailable reason=[a-z][a-z0-9-]*(?: total=0 graphql=0 by_route=\{\})?\s*$/.test(
         body,
-      );
-    if (unavailable)
+      )
+    )
       return {
         workflow,
         job,
         run,
         status: 'unavailable',
-        ghUnavailable: unavailable[1] === 'report-failed',
+        ghUnavailable: false,
       };
     const counts = body.match(
       /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?(?: (?:gh_status=(ok|unavailable)|(gh=unavailable))(?: gh_reason=(.*?))?)? by_route=(\{.*\})\s*$/,

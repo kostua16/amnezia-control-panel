@@ -218,9 +218,11 @@ function restCountPrefix({ workflow, job, runId, attempt }) {
 
 function formatUnavailableLine({ reason, ...identity }) {
   const code =
-    typeof reason === 'string' && REASON_CODE.test(reason)
-      ? reason
-      : 'invalid-reason';
+    (typeof reason === 'string' ? reason : '')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^[^a-z]+|-+$/g, '')
+      .slice(0, 40) || 'invalid-reason';
   return `${restCountPrefix(identity)} status=unavailable reason=${code} total=0 graphql=0 by_route={}`;
 }
 

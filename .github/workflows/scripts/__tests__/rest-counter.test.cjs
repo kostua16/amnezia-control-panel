@@ -170,7 +170,8 @@ test('post action contains unexpected report failures', async () => {
   assert.equal(group.job, 'unknown');
   assert.ok(group.runs.has('unknown.unknown'));
   assert.equal(group.unavailableRuns.size, 1);
-  assert.equal(group.ghUnavailableReports, 1);
+  assert.equal(parseRestCount(empty.stdout.trimEnd())?.ghUnavailable, false);
+  assert.equal(group.ghUnavailableReports, 0);
 });
 
 test('disabled and invalid setup do not create files, and partial setup is cleaned up', (t) => {
@@ -235,14 +236,20 @@ test('enabled reporters mark missing, changed or unreadable storage unavailable'
 });
 
 test('unavailable reports use a safe, parseable reason code', () => {
-  for (const reason of ['Error: boom', '', 'a'.repeat(80), 'UPPERCASE']) {
+  const longCode = 'report-'.repeat(8) + 'fail';
+  for (const [reason, expected] of [
+    ['Error: boom', 'error-boom'],
+    ['', 'invalid-reason'],
+    ['---123---', 'invalid-reason'],
+    ['123 Error: boom', 'error-boom'],
+    ['UPPERCASE', 'uppercase'],
+    [longCode, longCode.slice(0, 40)],
+    ['future-failure2', 'future-failure2'],
+  ]) {
     const line = formatUnavailableLine({ reason });
-    assert.match(line, /reason=invalid-reason total=0/);
+    assert.ok(line.includes('reason=' + expected + ' total=0'), line);
     assert.equal(parseRestCount(line)?.status, 'unavailable');
   }
-  const line = formatUnavailableLine({ reason: 'future-failure2' });
-  assert.match(line, /reason=future-failure2 total=0/);
-  assert.equal(parseRestCount(line)?.status, 'unavailable');
 });
 
 test('the action reports REST counts even with its quota post snapshot disabled', async (t) => {
@@ -253,6 +260,7 @@ test('the action reports REST counts even with its quota post snapshot disabled'
     REST_COUNTER_DIR: '',
     RUNNER_OS: '',
     STATE_rest_counter_skip: '',
+    'INPUT_DEFER-GH-COUNTER': 'true',
     'INPUT_REPORT-AT-JOB-END': 'false',
     GITHUB_JOB: 'standalone',
     GITHUB_RUN_ID: '12',

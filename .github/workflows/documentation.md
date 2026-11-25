@@ -514,8 +514,8 @@ action requests, and direct calls to the real `gh` binary that bypass
 `auth`, `cache`, `codespace`, `gist`, `gpg-key`, `issue`, `label`, `org`,
 `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `search`, `secret`,
 `ssh-key`, `status`, `variable`, and `workflow`. Other commands, aliases,
-extensions, invocations with global flags before the command, interactive
-stderr, and explicit debug or verbose modes pass through without tracing.
+extensions, invocations with global flags before the subcommand (such as `gh --repo o/r pr list`),
+interactive stderr, and explicit debug or verbose modes pass through without tracing.
 GitHub CLI requests launched by Bun still count when they use the shim.
 
 When CLI setup fails, its warning identifies the reason, such as
@@ -554,11 +554,13 @@ each job log once. Matrix legs count as separate reports. The
 `unavailable_jobs` counts each workflow/job once per run ID if any attempt or
 matrix leg reported unavailable or uninstrumented.
 `unreadable_files` shows how many files were skipped in reports with partial data.
-`gh_unavailable_reports` counts unavailable CLI reports except those marked
-`unsupported-platform`. The summarizer accepts unfamiliar reason values
-and preserves the observed counts. If the post action
-cannot build its normal report, `reason=report-failed` keeps the job visible
-in the summary.
+`gh_unavailable_reports` counts reports with unavailable CLI coverage,
+excluding `unsupported-platform`. The summarizer accepts unfamiliar reason
+values and preserves the observed counts. Whole-report failures use
+`setup-failed`, `directory-changed`, `read-failed`, or `report-failed`.
+The formatter normalizes reason codes to at most 40 characters and uses
+`invalid-reason` when no usable code remains. Whole-report failures count
+toward `unavailable_jobs` only.
 
 ## Composite Action Notes
 

@@ -192,13 +192,8 @@ function checkRestCounterWiring(steps, file, composite = false) {
 test('every opted-in step loads the preload without overriding runner Node options', () => {
   const workflows = path.resolve(ACTIONS_DIR, '../workflows');
   const required = {
-    'auto-pr-branch-cleanup.yml': {
-      'cleanup-orphan-branches': 'cleanup-orphan-branches.cjs',
-    },
-    'workflow-health-optimize.yml': {
-      'detect-flaky': 'detect-flaky-workflows.cjs',
-      'report-queue-starvation': 'file-queue-starvation-alert.cjs',
-    },
+    'auto-pr-branch-cleanup.yml': ['cleanup-orphan-branches'],
+    'workflow-health-optimize.yml': ['detect-flaky', 'report-queue-starvation'],
   };
   let checked = 0;
   const files = fs
@@ -209,18 +204,23 @@ test('every opted-in step loads the preload without overriding runner Node optio
   }
   for (const file of files) {
     const doc = yaml.load(fs.readFileSync(path.join(workflows, file), 'utf8'));
-    for (const [job, script] of Object.entries(required[file] ?? {})) {
+    for (const job of required[file] ?? []) {
+      const label = file + ' / ' + job;
       assert.ok(
         Object.hasOwn(doc.jobs, job),
-        file + ' / ' + job + ' must exist for preload checks',
+        label + ' must exist for preload checks',
       );
-      assert.ok(
-        doc.jobs[job].steps?.some(
-          (step) =>
-            step.run?.includes(script) && step.env?.REST_COUNTER_PRELOAD,
-        ),
-        file + ' / ' + job + ' must preload ' + script,
-      );
+      for (const [index, step] of (doc.jobs[job].steps ?? []).entries()) {
+        if (/(?:^|[\s;&|()])node[ \t]/.test(step.run ?? '')) {
+          assert.ok(
+            step.env?.REST_COUNTER_PRELOAD,
+            label +
+              ' / ' +
+              (step.name ?? 'step ' + (index + 1)) +
+              ' must set REST_COUNTER_PRELOAD',
+          );
+        }
+      }
     }
     for (const [job, config] of Object.entries(doc.jobs)) {
       checked += checkRestCounterWiring(config.steps ?? [], file + ' / ' + job);
