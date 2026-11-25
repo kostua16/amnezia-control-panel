@@ -88,6 +88,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - For any change to `.js`, `.cjs`, `.ts`, or `.tsx` files, including workflow helper scripts under `.github`, verify both lint and Prettier pass before finishing. If the repo scripts do not cover the changed workflow files, run a targeted Prettier check on the changed JS/CJS/TS files.
 - When explaining dense or number/ID-heavy topics (architecture, multi-step plans, review passes, big backlogs), lead with a single annotated ASCII/diagram + a plain-language "read it like this" before granular tables; keep IDs/counts out of the main picture, and offer a richer Mermaid/HTML render as a follow-up.
 - Backlog TODOs live in `docs/TODOs-2.md` with stable IDs (e.g. `AFX-I01`); before implementing any TODO, open (or claim) its GitHub issue — spun off from the workflow's umbrella tracking issue — and reference the TODO ID in the issue, commits, and PR.
+- Before proposing optimizations or fixes based on bot or API behavior (Kilo, Mergify, GitHub rate limits), verify each claim against real runs or logs; the user rejects unverified proposals (e.g. Kilo edits a single comment on every review instead of posting a new one).
 
 ## Learned Workspace Facts
 
