@@ -90,7 +90,9 @@ function classify({ origin, method, path }, target) {
     pathname = pathname.slice(target.prefix.length);
   }
   if (pathname === '/graphql') return 'graphql';
-  if (pathname === '/rate_limit' && method === 'GET') return null;
+  // gh headline diagnostics omit the verb for quota probes.
+  if (pathname === '/rate_limit' && (method === 'GET' || method === undefined))
+    return null;
   const verb = METHODS.includes(method) ? method : 'OTHER';
   const route =
     MATCHERS.find(([, pattern]) => pattern.test(pathname))?.[0] ?? '/other';

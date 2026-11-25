@@ -508,10 +508,23 @@ neither an attachment nor a request record. Unreadable files are counted in
 Coverage starts at the first enabled collector. Blind spots include requests
 before setup, third-party setup internals, curl, native Bun and Claude Code
 action requests, and direct calls to the real `gh` binary that bypass
-`PATH`. The shim also bypasses interactive stderr, explicit CLI debug or
-verbose modes, and unsupported commands such as extensions. GitHub CLI
-requests launched by Bun still count when they use the shim. Instrumentation
-assumes the same job trust boundary as other runner-user-writable files.
+`PATH`. The traced top-level commands are `agent-task`, `api`, `attestation`,
+`auth`, `cache`, `codespace`, `gist`, `gpg-key`, `issue`, `label`, `org`,
+`pr`, `project`, `release`, `repo`, `ruleset`, `run`, `search`, `secret`,
+`ssh-key`, `status`, `variable`, and `workflow`. Other commands, aliases,
+extensions, invocations with global flags before the command, interactive
+stderr, and explicit debug or verbose modes pass through without tracing.
+GitHub CLI requests launched by Bun still count when they use the shim.
+
+When CLI setup cannot find Node on `PATH` or install the shim, it emits a
+warning and the post report includes `gh=unavailable`. Observed counts remain
+in the report. Jobs that skip Node installation rely on the runner's Node
+executable for the CLI observer.
+
+Instrumentation assumes the same job trust boundary as other runner-user-writable
+files. The shim adds a runner-user-writable executable to `PATH` and runs
+with the caller's `GH_TOKEN`. Keep untrusted processes out of jobs that later
+run secret-bearing steps.
 
 Pipe concatenated job logs to
 `node .github/workflows/scripts/summarize-rate-limit.cjs` to sum observed
@@ -521,6 +534,7 @@ each job log once. Matrix legs count as separate reports. The
 `unavailable_jobs` counts each workflow/job once per run ID if any attempt or
 matrix leg reported unavailable or uninstrumented.
 `unreadable_files` shows how many files were skipped in reports with partial data.
+`gh_unavailable_reports` shows how many reports flagged unavailable CLI coverage.
 
 ## Composite Action Notes
 

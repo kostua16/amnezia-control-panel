@@ -47,6 +47,7 @@ function setupEnv(root, runnerTemp = root) {
     GITHUB_ENV: join(root, 'environment'),
     GITHUB_OUTPUT: join(root, 'output'),
     GITHUB_STATE: join(root, 'state'),
+    GITHUB_PATH: join(root, 'path'),
   };
 }
 
@@ -181,6 +182,28 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   assert.doesNotMatch(quiet.stdout, /status=uninstrumented/);
 });
 
+test('post reports unavailable gh coverage without dropping Node counts', (t) => {
+  const setup = setupEnv(temp(t));
+  const dir = startRestCounter(setup);
+  writeFileSync(join(dir, 'requests-abcd.log'), 'attached\nGET /user\n');
+  const lines = [];
+  reportRestCounter({
+    env: {
+      ...setup,
+      GITHUB_JOB: 'review',
+      GITHUB_RUN_ID: '42',
+      GITHUB_RUN_ATTEMPT: '1',
+      STATE_rest_counter_dir: dir,
+      REST_COUNTER_DIR: dir,
+      REST_COUNTER_GH_UNAVAILABLE: 'true',
+    },
+    log: (line) => lines.push(line),
+  });
+  assert.match(lines[0], / gh=unavailable /);
+  assert.equal(parseRestCount(lines[0]).ghUnavailable, true);
+  assert.deepEqual(parseRestCount(lines[0]).via, { node: 1, gh: 0 });
+});
+
 test('classifies only API hosts and emits no request data beyond fixed templates', () => {
   const target = apiTarget('https://enterprise.example/api/v3');
   const route = (path, origin = 'https://api.github.com', method = 'GET') =>
@@ -204,6 +227,7 @@ test('classifies only API hosts and emits no request data beyond fixed templates
   );
   assert.equal(route('/graphql?secret=value', undefined, 'POST'), 'graphql');
   assert.equal(route('/rate_limit'), null);
+  assert.equal(route('/rate_limit', undefined, 'POST'), 'POST /other');
   assert.equal(
     route(
       '/api/v3/repos/o/r/issues/1/comments',

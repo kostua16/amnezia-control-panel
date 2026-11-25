@@ -16,6 +16,7 @@ const {
 const { tmpdir } = require('node:os');
 const { delimiter, join, resolve } = require('node:path');
 const test = require('node:test');
+const yaml = require('js-yaml');
 
 const action = resolve(__dirname, '../../../actions/log-rate-limit');
 const { installGhCounter } = require(join(action, 'gh-counter.cjs'));
@@ -70,6 +71,8 @@ if (process.env.GH_DEBUG === '1') {
     '* Request to https://api.github.com/rate_limit',
     '* Request to https://enterprise.invalid/api/v3/rate_limit',
     '* Request to https://elsewhere.invalid/token-fixture',
+    '> Authorization: Bearer header-without-timing-marker',
+    '< Set-Cookie: response-without-timing-marker',
     '',
   ].join('\\n'));
 } else if (process.env.GH_DEBUG) {
@@ -89,13 +92,52 @@ process.exitCode = 7;
     GITHUB_API_URL: 'https://enterprise.invalid/api/v3',
   };
   const options = { cwd: root, env, input: stdin };
-  const run = (overrides = {}) =>
-    spawnSync(process.execPath, [observer, process.execPath, ...args], {
-      ...options,
-      env: { ...env, ...overrides },
-    });
+  const run = (overrides = {}, command = args[0]) =>
+    spawnSync(
+      process.execPath,
+      [observer, process.execPath, command, ...args.slice(1)],
+      {
+        ...options,
+        env: { ...env, ...overrides },
+      },
+    );
   return { dir, root, setup, options, run };
 }
+
+test('traces added API built-ins while leaving extensions and aliases alone', (t) => {
+  const { dir, root, run } = fixture(t);
+  const traced = [
+    'agent-task',
+    'attestation',
+    'cache',
+    'codespace',
+    'gpg-key',
+    'org',
+    'ruleset',
+    'secret',
+    'ssh-key',
+    'status',
+    'variable',
+  ];
+  for (const command of [...traced, 'extension', 'copilot', 'custom-alias']) {
+    copyFileSync(join(root, 'api'), join(root, command));
+    const result = run({}, command);
+    assert.equal(result.status, 7, command);
+    assert.deepEqual(result.stdout, stdin);
+    assert.deepEqual(result.stderr, warning);
+  }
+  assert.equal(collectRestCounts(dir).via.gh, traced.length * 2);
+});
+
+test('excludes public quota probes without a valid enterprise API URL', (t) => {
+  const { dir, run } = fixture(t);
+  for (const apiUrl of [undefined, 'invalid-url', 'ftp://enterprise.invalid']) {
+    assert.equal(run({ GITHUB_API_URL: apiUrl }).status, 7);
+  }
+  const counts = collectRestCounts(dir);
+  assert.equal(counts.via.gh, 6);
+  assert.deepEqual(counts.by_route, { 'OTHER /repos/:o/:r/pulls/:n': 6 });
+});
 
 test('gh counter preserves bytes and status, counts pages and GraphQL, and stores only templates', (t) => {
   const { dir, run } = fixture(t);
@@ -151,18 +193,34 @@ test('gh counter fails open before or during recording and preserves caller diag
   assert.deepEqual(noClassifier.stderr, warning);
 });
 
-test('disabled counter initializes neither the preload nor the shim', (t) => {
-  const { setup, root } = fixture(t);
-  assert.equal(
-    startRestCounter({ ...setup, 'INPUT_REST-COUNTER': 'false' }),
-    undefined,
-  );
-  installGhCounter(undefined, setup);
-  assert.ok(!readdirSync(root).includes('path'));
-});
+test(
+  'missing Node reports unavailable without failing the setup step',
+  {
+    skip: process.platform !== 'linux',
+  },
+  (t) => {
+    const { root, setup } = fixture(t);
+    const metadata = yaml.load(
+      readFileSync(join(action, '../setup-environment/action.yml'), 'utf8'),
+    );
+    const { run } = metadata.runs.steps.find(
+      (step) => step.name === 'Count GitHub CLI requests',
+    );
+    const result = spawnSync('/bin/bash', ['-euo', 'pipefail', '-c', run], {
+      env: { ...process.env, GITHUB_ENV: setup.GITHUB_ENV, PATH: root },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /::warning::.*node-not-on-path/);
+    assert.match(
+      readFileSync(setup.GITHUB_ENV, 'utf8'),
+      /\nREST_COUNTER_GH_UNAVAILABLE=true\n$/,
+    );
+  },
+);
 
 test(
-  'Linux PATH launcher runs under strict Bash and tolerates a missing observer',
+  'Linux PATH launcher honors the kill switch, runs under strict Bash, and tolerates a missing observer',
   {
     skip: process.platform !== 'linux',
   },
@@ -178,12 +236,21 @@ test(
     const env = {
       ...options.env,
       PATH: `${realBin}${delimiter}${process.env.PATH}`,
+      GITHUB_PATH: setup.GITHUB_PATH,
     };
-    installGhCounter(dir, { ...env, GITHUB_PATH: setup.GITHUB_PATH });
-    const shimBin = readFileSync(setup.GITHUB_PATH, 'utf8').trimEnd();
+    const original = `${realBin}\n`;
+    writeFileSync(env.GITHUB_PATH, original);
+    assert.equal(installGhCounter(dir, false, env), false);
+    assert.equal(readFileSync(env.GITHUB_PATH, 'utf8'), original);
+    assert.equal(installGhCounter(dir, true, env), true);
+    const shimBin = join(dir, 'gh-bin');
+    assert.equal(
+      readFileSync(env.GITHUB_PATH, 'utf8'),
+      `${original}${shimBin}\n`,
+    );
     env.PATH = `${shimBin}${delimiter}${env.PATH}`;
     // Composite setup may install again without wrapping the previous shim.
-    installGhCounter(dir, { ...env, GITHUB_PATH: setup.GITHUB_PATH });
+    assert.equal(installGhCounter(dir, true, env), true);
     const run = () =>
       spawnSync(
         '/bin/bash',

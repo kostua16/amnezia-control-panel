@@ -47,7 +47,7 @@ function parseRestCount(line) {
       return { workflow, job, run, status: 'unavailable' };
     }
     const counts = body.match(
-      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))? by_route=(\{.*\})\s*$/,
+      /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?( gh=unavailable)? by_route=(\{.*\})\s*$/,
     );
     if (!counts) return null;
     const [
@@ -59,6 +59,7 @@ function parseRestCount(line) {
       rawUnreadable = '0',
       rawVia,
       rawGraphqlVia,
+      ghUnavailable,
       rawRoutes,
     ] = counts;
     const total = Number(rawTotal);
@@ -87,6 +88,7 @@ function parseRestCount(line) {
       unreadable,
       via,
       graphqlVia,
+      ghUnavailable: Boolean(ghUnavailable),
       routes,
     };
   } catch {
@@ -122,6 +124,7 @@ function summarizeRestCounts(lines) {
       reports: 0,
       unavailableRuns: new Set(),
       unreadableFiles: 0,
+      ghUnavailableReports: 0,
       total: 0,
       graphql: 0,
       via: { node: 0, gh: 0 },
@@ -131,6 +134,7 @@ function summarizeRestCounts(lines) {
     // Matrix jobs share run and job IDs. Each report is a separate execution.
     group.runs.add(run);
     group.reports += 1;
+    if (count.ghUnavailable) group.ghUnavailableReports += 1;
     if (count.status) {
       group.unavailableRuns.add(run.split('.', 1)[0]);
     } else {
@@ -293,7 +297,8 @@ function format(summary) {
         `runs=${group.runs.size} reports=${group.reports} total=${group.total} ` +
         `graphql=${group.graphql} by_route=${JSON.stringify(Object.fromEntries([...group.routes].sort()))} ` +
         `unavailable_jobs=${group.unavailableRuns?.size ?? 0} unreadable_files=${group.unreadableFiles ?? 0} ` +
-        `via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphqlVia)}`,
+        `via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphqlVia)} ` +
+        `gh_unavailable_reports=${group.ghUnavailableReports ?? 0}`,
     );
   }
   return out.join('\n');

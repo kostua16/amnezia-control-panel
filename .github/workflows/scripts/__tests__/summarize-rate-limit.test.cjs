@@ -78,7 +78,7 @@ test('aggregates source splits alongside legacy Node-only reports', () => {
     prefix +
     '1.2 total=2 graphql=3 instrumented=2 unreadable=0 via={"node":1,"gh":1} graphql_via={"node":1,"gh":2} by_route={"GET /user":1,"OTHER /user":1}';
   const summary = summarize([
-    prefix + '1.1 total=1 graphql=1 by_route={"GET /user":1}',
+    prefix + '1.1 total=1 graphql=1 gh=unavailable by_route={"GET /user":1}',
     mixed,
     mixed.replace('"gh":1', '"gh":9'),
   ]);
@@ -87,7 +87,7 @@ test('aggregates source splits alongside legacy Node-only reports', () => {
   assert.deepEqual(summary.restCounts[0].graphqlVia, { node: 2, gh: 2 });
   assert.match(
     format(summary),
-    /via=\{"node":2,"gh":1\} graphql_via=\{"node":2,"gh":2\}/,
+    /via=\{"node":2,"gh":1\} graphql_via=\{"node":2,"gh":2\} gh_unavailable_reports=1/,
   );
 });
 

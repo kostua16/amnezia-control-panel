@@ -15,12 +15,41 @@ const {
 } = require('node:fs');
 const { delimiter, dirname, join, resolve } = require('node:path');
 
-function installGhCounter(dir, env = process.env) {
-  if (process.platform !== 'linux' || !dir || !env.GITHUB_PATH) return;
+// Restrict debug injection to known built-ins. Unknown names can run extensions
+// or shell aliases with a different stderr format.
+const TRACED_COMMANDS = new Set([
+  'agent-task',
+  'api',
+  'attestation',
+  'auth',
+  'cache',
+  'codespace',
+  'gist',
+  'gpg-key',
+  'issue',
+  'label',
+  'org',
+  'pr',
+  'project',
+  'release',
+  'repo',
+  'ruleset',
+  'run',
+  'search',
+  'secret',
+  'ssh-key',
+  'status',
+  'variable',
+  'workflow',
+]);
+
+function installGhCounter(dir, enabled, env = process.env) {
+  if (!enabled || process.platform !== 'linux' || !dir || !env.GITHUB_PATH)
+    return false;
 
   try {
     dir = realpathSync(dir);
-    if (/[\r\n]/.test(dir)) return;
+    if (/[\r\n]/.test(dir)) return false;
     const bin = join(dir, 'gh-bin');
     const launcher = join(bin, 'gh');
     const realGh = (env.PATH ?? '')
@@ -36,7 +65,7 @@ function installGhCounter(dir, env = process.env) {
           return false;
         }
       });
-    if (!realGh) return;
+    if (!realGh) return false;
 
     mkdirSync(bin, { recursive: true });
     const observer = join(bin, 'gh-counter.cjs');
@@ -62,8 +91,10 @@ exec "$node_bin" "$observer" "$real_gh" "$@"
       { mode: 0o700 },
     );
     appendFileSync(env.GITHUB_PATH, `${bin}\n`);
+    return true;
   } catch {
     // PATH is only updated after the launcher and observer are ready.
+    return false;
   }
 }
 
@@ -72,17 +103,7 @@ function requestRoute(line, target, classify) {
   if (!address) return null;
   try {
     const url = new URL(address);
-    const pathname = url.pathname.replace(/\/+$/, '');
-    const prefix = url.hostname === 'api.github.com' ? '' : target.prefix;
-    return classify(
-      {
-        origin: url.origin,
-        // Headline diagnostics have no HTTP method. Exclude the quota probe.
-        method: pathname === `${prefix}/rate_limit` ? 'GET' : 'OTHER',
-        path: url.pathname,
-      },
-      target,
-    );
+    return classify({ origin: url.origin, path: url.pathname }, target);
   } catch {
     return null;
   }
@@ -120,7 +141,8 @@ function prepareObserver(dir, env, writeStderr) {
     // httppretty prefixes injected metadata with "* ", including proxy
     // addresses and transport errors. The CLI reports those errors itself.
     if (
-      (inFlight && /^(?:\* |[<>] )/.test(line)) ||
+      /^[<>] /.test(line) ||
+      (inFlight && line.startsWith('* ')) ||
       /^\[(?:\S*[/\\])?git(?:[.]exe)?(?: |\])/.test(line)
     )
       return;
@@ -141,9 +163,7 @@ function runGh(realGh, args) {
   if (
     env.GH_DEBUG === undefined &&
     !env.DEBUG &&
-    /^(?:api|auth|gist|issue|label|pr|project|release|repo|run|search|workflow)$/.test(
-      args[0] ?? '',
-    ) &&
+    TRACED_COMMANDS.has(args[0]) &&
     !args.some((arg) => /^--verbose(?:=|$)/.test(arg))
   ) {
     try {
@@ -194,8 +214,12 @@ function runGh(realGh, args) {
 
 if (require.main === module) {
   const [command, ...args] = process.argv.slice(2);
-  if (command === '--install') installGhCounter(process.env.REST_COUNTER_DIR);
-  else runGh(command, args);
+  if (command === '--install') {
+    if (!installGhCounter(process.env.REST_COUNTER_DIR, args[0] === 'true'))
+      process.exitCode = 1;
+  } else {
+    runGh(command, args);
+  }
 }
 
 module.exports = { installGhCounter };

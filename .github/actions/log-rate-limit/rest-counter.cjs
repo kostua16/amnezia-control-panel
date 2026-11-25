@@ -173,15 +173,16 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
     total || graphql || instrumented || unreadable
       ? ''
       : ' status=uninstrumented';
+  const ghUnavailable = env.REST_COUNTER_GH_UNAVAILABLE === 'true';
   log(
-    `${prefix}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphql_via)} by_route=${JSON.stringify(by_route)}`,
+    `${prefix}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphql_via)}${ghUnavailable ? ' gh=unavailable' : ''} by_route=${JSON.stringify(by_route)}`,
   );
   try {
     if (env.GITHUB_STEP_SUMMARY) {
       appendFileSync(
         env.GITHUB_STEP_SUMMARY,
         `\nGitHub API requests (instrumented Node and gh)\n\n` +
-          `\`\`\`json\n${JSON.stringify(counts)}\n\`\`\`\n`,
+          `\`\`\`json\n${JSON.stringify(ghUnavailable ? { ...counts, gh: 'unavailable' } : counts)}\n\`\`\`\n`,
       );
     }
   } catch {

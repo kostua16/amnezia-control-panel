@@ -264,8 +264,20 @@ runs:
     - name: Count GitHub CLI requests
       if: inputs.rest-counter == 'true' && runner.os == 'Linux'
       shell: bash
+      env:
+        REST_COUNTER_ENABLED: ${{ inputs.rest-counter }}
       run: |
-        node "$GITHUB_ACTION_PATH/../log-rate-limit/gh-counter.cjs" --install || true
+        warn_gh_counter() {
+          echo "::warning::GitHub CLI request counting unavailable ($1)"
+          if [[ -n "${GITHUB_ENV:-}" ]]; then
+            printf '%s\n' 'REST_COUNTER_GH_UNAVAILABLE=true' >> "$GITHUB_ENV" || true
+          fi
+        }
+        if ! node_bin="$(command -v node)"; then
+          warn_gh_counter node-not-on-path
+        elif ! "$node_bin" "$GITHUB_ACTION_PATH/../log-rate-limit/gh-counter.cjs" --install "$REST_COUNTER_ENABLED"; then
+          warn_gh_counter setup-failed
+        fi
 
     - if: inputs.install-deps == 'true'
       id: npm-deps-cache
