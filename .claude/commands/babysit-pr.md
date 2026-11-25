@@ -1,7 +1,7 @@
 ---
 description: Babysit a PR until CI and review gates pass; fix failures and actionable review findings
 argument-hint: <PR number or URL>
-allowed-tools: Bash, Read, Edit, Grep, Glob, ToolSearch, mcp__t3-code__watch_pull_request, mcp__t3-code__unwatch_pull_request
+allowed-tools: Bash, Read, Edit, Grep, Glob, ToolSearch, mcp__t3-code__pull_request_read, mcp__t3-code__watch_pull_request, mcp__t3-code__unwatch_pull_request
 ---
 
 ## Context
@@ -14,7 +14,7 @@ Watch the PR until every required gate is green, fixing real failures. Stop when
 
 ### Steps
 
-1. Read PR state: checks, review comments, `pr-flow/ready` status (use `rtk gh pr checks`, `rtk gh pr view`, or the `pull_request_*` tools when listed).
+1. Read PR state: checks, review comments, `pr-flow/ready` status (use `rtk gh pr checks`, `rtk gh pr view`, or `pull_request_read` when the T3 tools are available).
 2. Classify each red check / comment:
    - **Real failure** (CI, Test, Build, Security Audit, Kilo inline findings on the current head SHA) → fix.
    - **Non-blocking noise** → note and skip (see Guardrails).

@@ -12,7 +12,7 @@ Many agent worktrees accumulate under `~/.t3/worktrees/amnezia-control-panel/` a
 
 ### Steps
 
-1. `rtk git fetch --prune origin`, then fast-forward only local `main` if it is checked out clean (`git pull --ff-only`); never switch another worktree's branch.
+1. `rtk git fetch --prune origin`, then fast-forward local `main` only in the worktree where `main` is checked out and clean (`git -C <that-worktree> pull --ff-only`, found via `git worktree list`). If `main` is not checked out anywhere, or you are in another worktree, skip the pull; never run it on a PR branch or switch another worktree's branch.
 2. List worktrees: `rtk git worktree list --porcelain`. For each one report: path, branch, last commit date, ahead/behind of `origin/main`, uncommitted changes (`git status --short`), and whether its branch is merged or has an open/closed PR (`rtk gh pr list --head <branch> --state all`).
 3. Classify:
    - **Stale**: branch merged or PR closed, clean tree, nothing unpushed.
