@@ -4,14 +4,14 @@ milestone: post-v1.1
 milestone_name: Developer automation governance
 status: executing
 stopped_at: null
-last_updated: "2026-11-25T05:47:36.442Z"
-last_activity: 2026-11-25 -- Completed quick task 261125-0l9
+last_updated: "2026-11-25T07:16:21.687Z"
+last_activity: 2026-11-25 - Completed quick task 261125-0l9: add missing migration for Server.redirectIp
 progress:
-  total_phases: 20
-  completed_phases: 12
-  total_plans: 142
-  completed_plans: 73
-  percent: 51
+  total_phases: 5
+  completed_phases: 0
+  total_plans: 118
+  completed_plans: 50
+  percent: 0
 ---
 
 # Amnezia Control Panel - Project State
@@ -30,13 +30,13 @@ Plan: 50 of 114
 Status: Executing Phase 999
 Last activity: 2026-11-25 - Completed quick task 261125-0l9: add missing migration for Server.redirectIp
 
-Progress: [█████░░░░░] 51%
+Progress: [░░░░░░░░░░] 0% (post-v1.1 milestone: 0 of 5 phases complete, 50 of 118 plans executed)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 73 (28 plans / 23 summaries outside the Phase 999 queue; 50 of 114 queue plans executed)
+- Total plans completed: 50 in the post-v1.1 milestone (50 of 114 Phase 999 queue plans executed; 13.1-13.4 seed plans not started); project-wide incl. archived v1.0/v1.1: 73 completed plans (23 of 28 non-queue plans completed + 50 queue plans)
 - Average duration: 4min
 - Total execution time: 102min
 
