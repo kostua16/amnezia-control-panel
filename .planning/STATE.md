@@ -20,15 +20,15 @@ progress:
 
 **Project**: Amnezia Control Panel
 **Core Value**: One panel, both VPN systems -- users synchronized between Amnezia AWG and 3x-ui, no context switching
-**Current Focus**: v1.1 COMPLETED — Next: Developer automation governance (Phases 13.1-13.4)
-**Current Position**: Milestone v1.1 archived
+**Current Focus**: post-v1.1 Developer automation governance (Phases 13.1-13.4 planned; Phase 999 execution queue active)
+**Current Position**: Milestone post-v1.1 executing (Phase 999 planning execution queue)
 
 ## Current Position
 
 Phase: 999 (gh-planning-execution-queue) — EXECUTING
-Plans: 50 of 114 executed (next queued plan picked by scheduled executor)
+Plan: 50 of 114
 Status: Executing Phase 999
-Last activity: 2026-11-25
+Last activity: 2026-11-25 - Completed quick task 261125-0l9: add missing migration for Server.redirectIp
 
 Progress: [█████░░░░░] 51%
 
@@ -36,7 +36,7 @@ Progress: [█████░░░░░] 51%
 
 **Velocity:**
 
-- Total plans completed: 26 (v1.1 + audit) — plus 50 Phase 999 queue plans executed (of 114 queued); counts above reflect the v1.1 execution window
+- Total plans completed: 73 (28 plans / 23 summaries outside the Phase 999 queue; 50 of 114 queue plans executed)
 - Average duration: 4min
 - Total execution time: 102min
 

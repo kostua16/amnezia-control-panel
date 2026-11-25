@@ -208,6 +208,8 @@ Plans:
 <!-- PR-IMPROVE:979 --> - PR #979: fix: resolve #978 - MNT-E02: Schedule-drift detector (maintenance) -- pr979.1 x1, pr979.2 x1. Quick artifact: `.planning/quick/260804-pr979-workflow-improve/260804-pr979-PLAN.md`.
 <!-- AUTO-PR-IMPROVE-INTAKE-END -->
 
+## 🚧 Milestone phase details
+
 ### Phase 13.1: Workflow governance hardening
 
 **Goal:** Centralize workflow trust policy, maintainer-only triggers, and manual-only file/path rules so write-capable automation has one authoritative policy surface.
