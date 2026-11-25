@@ -67,45 +67,52 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
   const agent = steps.find((step) => step.id === 'claude_run');
   assert.equal(agent.with['user-settings-only'], 'true');
   // Single source of truth for the sweep's Bash grants: the allowed-tools
-  // line and the prompt's TOOL GRANTS sentence are both derived from it, so
-  // the two cannot drift apart. This unattended job reads public issue and
-  // PR content, so grants stay scoped to exact commands — no command
-  // families, no secret-disclosure primitives.
-  const commands = [
-    'node .claude/get-shit-done/bin/gsd-tools.cjs',
-    'gh issue create',
-    'gh issue list',
-    'gh issue view',
-    'gh pr comment',
-    'gh pr list',
-    'gh pr view',
-    'npm audit --json',
-    'git log',
-    'df',
+  // line, the prompt's TOOL GRANTS sentence, and the command-coverage check
+  // below are all derived from it, so they cannot drift apart. This
+  // unattended job reads public issue and PR content, so every grant names
+  // an exact command path or subcommand — never a bare tool family — and
+  // commands that can mutate the repo or lockfile stay exact or
+  // subcommand-scoped instead of accepting arbitrary arguments.
+  const grants = [
+    {
+      command:
+        'node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health',
+      exact: false,
+      rtk: true,
+    },
+    { command: 'gh issue create', exact: false, rtk: true },
+    { command: 'gh issue list', exact: false, rtk: true },
+    { command: 'gh issue view', exact: false, rtk: true },
+    { command: 'gh pr comment', exact: false, rtk: true },
+    { command: 'gh pr list', exact: false, rtk: true },
+    { command: 'gh pr view', exact: false, rtk: true },
+    { command: 'npm audit --json', exact: true, rtk: true },
+    { command: 'git log', exact: false, rtk: true },
+    { command: 'df', exact: false, rtk: false },
   ];
   const expected = [
     'Read',
     'Glob',
     'Grep',
-    ...commands.flatMap((command) =>
-      command === 'df'
-        ? [`Bash(${command}:*)`]
-        : [`Bash(${command}:*)`, `Bash(rtk ${command}:*)`],
-    ),
+    ...grants.flatMap(({ command, exact, rtk }) => {
+      const spec = `${command}${exact ? '' : ':*'}`;
+      return rtk ? [`Bash(${spec})`, `Bash(rtk ${spec})`] : [`Bash(${spec})`];
+    }),
   ];
   assert.deepEqual(
     agent.with['allowed-tools'].split(',').sort(),
     expected.sort(),
   );
 
-  const toolGrants = agent.with.prompt
+  const prompt = agent.with.prompt;
+  const toolGrants = prompt
     .split('\n')
     .find((line) => line.trim().startsWith('TOOL GRANTS:'));
   assert.ok(
     toolGrants,
     'maintenance prompt must document its TOOL GRANTS line',
   );
-  for (const command of commands) {
+  for (const { command } of grants) {
     assert.ok(
       toolGrants.includes(`\`${command}\``),
       `TOOL GRANTS line must document \`${command}\``,
@@ -126,6 +133,37 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
     assert.ok(
       !toolGrants.includes(forbidden),
       `TOOL GRANTS line must not mention ${forbidden}`,
+    );
+  }
+
+  // The allowlist must also cover every command the prompt itself
+  // instructs the agent to run: a backticked span that starts with a bare
+  // command word and takes arguments is a shell command, and an ungranted
+  // one would reproduce the DISALLOWED_TOOLS denial class on the next
+  // run. File paths, labels, and single words carry no arguments and are
+  // skipped by the pattern.
+  const bashGrants = agent.with['allowed-tools']
+    .split(',')
+    .filter((tool) => tool.startsWith('Bash('))
+    .map((tool) => tool.slice(5, -1));
+  const covers = (command) =>
+    bashGrants.some((grant) =>
+      grant.endsWith(':*')
+        ? command === grant.slice(0, -2) ||
+          command.startsWith(`${grant.slice(0, -2)} `)
+        : command === grant,
+    );
+  const promptCommands = [
+    ...prompt.matchAll(/`([a-z][a-z0-9-]*(?: [^`\n]+)+)`/g),
+  ].map((match) => match[1]);
+  assert.ok(
+    promptCommands.length > 0,
+    'expected the maintenance prompt to list its commands in backticks',
+  );
+  for (const command of promptCommands) {
+    assert.ok(
+      covers(command),
+      `maintenance prompt command \`${command}\` is not granted in allowed-tools`,
     );
   }
 });
