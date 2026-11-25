@@ -147,7 +147,7 @@ test('unfamiliar CLI reasons preserve the reported counts and routes', () => {
     const count = parseRestCount(
       `REST_COUNT workflow="Matrix" job=check run=1.1 total=2 graphql=1 via={"node":1,"gh":1} graphql_via={"node":0,"gh":1} gh_status=unavailable gh_reason=${reason} by_route={"GET /user":2}`,
     );
-    assert.equal(count.ghUnavailableReason, 'unclassified');
+    assert.equal(count.ghUnavailableReason, reason);
     assert.equal(count.total, 2);
     assert.equal(count.graphql, 1);
     assert.deepEqual(count.via, { node: 1, gh: 1 });

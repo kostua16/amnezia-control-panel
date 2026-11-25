@@ -163,6 +163,13 @@ test('post action contains unexpected report failures', async () => {
     1,
   );
   assert.equal(result.stderr, '');
+  const empty = await runNode(process.execPath, ['-e', code], { env: {} });
+  const [group] = summarize([empty.stdout.trimEnd()]).restCounts;
+  assert.equal(group.workflow, 'unknown');
+  assert.equal(group.job, 'unknown');
+  assert.ok(group.runs.has('unknown.unknown'));
+  assert.equal(group.unavailableRuns.size, 1);
+  assert.equal(group.ghUnavailableReports, 1);
 });
 
 test('disabled and invalid setup do not create files, and partial setup is cleaned up', (t) => {
@@ -220,7 +227,7 @@ test('enabled reporters mark missing, changed or unreadable storage unavailable'
       log: (line) => lines.push(line),
     });
     assert.deepEqual(lines, [
-      `REST_COUNT workflow="" job=job run=12.1 status=unavailable reason=${reason}`,
+      `REST_COUNT workflow="unknown" job=job run=12.1 status=unavailable reason=${reason} total=0 graphql=0 by_route={}`,
     ]);
     assert.equal(parseRestCount(lines[0]).status, 'unavailable');
   }
@@ -251,7 +258,7 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   });
   assert.match(
     result.stdout,
-    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} gh_status=unavailable gh_reason=unknown-platform by_route=\{\}\s*$/,
+    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} gh_status=unavailable gh_reason=[a-z-]+ by_route=\{\}\s*$/,
   );
   const preload = join(dir, 'rest-preload.cjs');
   const postEnv = {
@@ -283,12 +290,15 @@ test('post reports missing gh coverage until a launcher or observed requests are
     GITHUB_RUN_ATTEMPT: '1',
     STATE_rest_counter_dir: dir,
     REST_COUNTER_DIR: dir,
-    RUNNER_OS: 'Linux',
     GITHUB_STEP_SUMMARY: join(dir, 'summary'),
   };
-  const report = () => {
+  const report = (platform = 'linux') => {
     let count;
-    reportRestCounter({ env, log: (line) => (count = parseRestCount(line)) });
+    reportRestCounter({
+      env,
+      platform,
+      log: (line) => (count = parseRestCount(line)),
+    });
     return count;
   };
   assert.equal(report().ghUnavailable, true);
@@ -307,10 +317,7 @@ test('post reports missing gh coverage until a launcher or observed requests are
     assert.deepEqual(annotations, [
       `::warning::GitHub CLI request counting unavailable (${reason})`,
     ]);
-    assert.equal(
-      report().ghUnavailableReason,
-      reason === 'future-failure2' ? 'unclassified' : reason,
-    );
+    assert.equal(report().ghUnavailableReason, reason);
   }
   writeFileSync(
     join(dir, 'gh-setup-failure'),
@@ -333,15 +340,14 @@ test('post reports missing gh coverage until a launcher or observed requests are
   assert.equal(firstSummary.via.gh, 0);
   assert.equal(Object.hasOwn(firstSummary, 'gh'), false);
   for (const [platform, reason] of [
-    ['Windows', 'unsupported-platform'],
-    ['macOS', 'unsupported-platform'],
-    [undefined, 'unknown-platform'],
-    ['unexpected', 'unknown-platform'],
+    ['win32', 'unsupported-platform'],
+    ['darwin', 'unsupported-platform'],
+    ['freebsd', 'unknown-platform'],
   ]) {
-    env.RUNNER_OS = platform;
-    assert.equal(report().ghUnavailableReason, reason);
+    assert.equal(report(platform).ghUnavailableReason, reason);
   }
-  env.RUNNER_OS = 'Linux';
+  env.RUNNER_OS = 'Windows';
+  assert.equal(report('linux').ghUnavailableReason, 'no-gh');
   reportGhInstallFailure(dir, 'no-gh', () => {});
   const bin = join(dir, 'gh-bin');
   mkdirSync(bin);
@@ -560,6 +566,7 @@ test('setup, parallel children and post count HTTP and fetch without changing re
       GITHUB_RUN_ATTEMPT: '2',
       GITHUB_STEP_SUMMARY: summary,
     },
+    platform: 'win32',
     log: (line) => logs.push(line),
   });
   assert.equal(logs.length, 1);
@@ -569,6 +576,6 @@ test('setup, parallel children and post count HTTP and fetch without changing re
   assert.deepEqual(stepReport, {
     ...counts,
     gh_status: 'unavailable',
-    gh_reason: 'unknown-platform',
+    gh_reason: 'unsupported-platform',
   });
 });

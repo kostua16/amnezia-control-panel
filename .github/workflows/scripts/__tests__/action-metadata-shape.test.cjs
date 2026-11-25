@@ -191,12 +191,31 @@ function checkRestCounterWiring(steps, file, composite = false) {
 
 test('every opted-in step loads the preload without overriding runner Node options', () => {
   const workflows = path.resolve(ACTIONS_DIR, '../workflows');
+  const required = {
+    'auto-pr-branch-cleanup.yml': {
+      'cleanup-orphan-branches': 'cleanup-orphan-branches.cjs',
+    },
+    'workflow-health-optimize.yml': {
+      'detect-flaky': 'detect-flaky-workflows.cjs',
+      'report-queue-starvation': 'file-queue-starvation-alert.cjs',
+    },
+  };
   let checked = 0;
   for (const file of fs
     .readdirSync(workflows)
     .filter((name) => /[.]ya?ml$/.test(name))) {
     const doc = yaml.load(fs.readFileSync(path.join(workflows, file), 'utf8'));
     for (const [job, config] of Object.entries(doc.jobs)) {
+      const script = required[file]?.[job];
+      if (script) {
+        assert.ok(
+          config.steps?.some(
+            (step) =>
+              step.run?.includes(script) && step.env?.REST_COUNTER_PRELOAD,
+          ),
+          file + ' / ' + job + ' must preload ' + script,
+        );
+      }
       checked += checkRestCounterWiring(config.steps ?? [], file + ' / ' + job);
     }
   }

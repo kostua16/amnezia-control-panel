@@ -336,7 +336,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GH_PAT }}
           label: workflow-health-detect-flaky
@@ -347,10 +348,15 @@ jobs:
         id: flaky
         shell: bash
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           RUNS_DATA: ${{ needs.collect-runs.outputs.runs-data }}
         run: |
-          node .github/workflows/scripts/detect-flaky-workflows.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/detect-flaky-workflows.cjs \
             --repo "${{ github.repository }}" \
             --runs-data "$RUNS_DATA" \
             --lookback-hours 6
@@ -364,7 +370,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GH_PAT }}
           label: workflow-health-queue-starvation
@@ -374,11 +381,16 @@ jobs:
       - name: File queue starvation alert (WHO-E03)
         shell: bash
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           QUEUE_TELEMETRY: ${{ needs.collect-runs.outputs.queue-telemetry }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node .github/workflows/scripts/file-queue-starvation-alert.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/file-queue-starvation-alert.cjs \
             --repo "${{ github.repository }}" \
             --telemetry "$QUEUE_TELEMETRY" \
             --run-url "$RUN_URL"

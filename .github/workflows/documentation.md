@@ -524,7 +524,8 @@ When CLI setup fails, its warning identifies the reason, such as
 The post report keeps `via.gh` numeric and reports CLI availability separately
 as `gh_status=ok` or `gh_status=unavailable`. Tracing runs on Linux.
 Windows and macOS report `gh_status=unavailable gh_reason=unsupported-platform`.
-An absent or unexpected runner platform reports `gh_reason=unknown-platform`.
+The observer and post action both use Node's runtime platform. A runtime
+platform other than Linux, Windows, or macOS reports `gh_reason=unknown-platform`.
 With no observed CLI requests on Linux,
 the shim must be executable and the first `gh` on `PATH`, with an executable
 Node binary and a readable, nonempty observer. The post-time reason codes are
@@ -554,8 +555,8 @@ each job log once. Matrix legs count as separate reports. The
 matrix leg reported unavailable or uninstrumented.
 `unreadable_files` shows how many files were skipped in reports with partial data.
 `gh_unavailable_reports` counts unavailable CLI reports except those marked
-`unsupported-platform`. Unrecognized reason values are classified as
-`unclassified` while preserving the observed counts. If the post action
+`unsupported-platform`. The summarizer accepts unfamiliar reason values
+and preserves the observed counts. If the post action
 cannot build its normal report, `reason=report-failed` keeps the job visible
 in the summary.
 

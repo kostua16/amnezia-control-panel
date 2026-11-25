@@ -209,30 +209,47 @@ function readGhSetupFailure(dir) {
   return 'not-installed';
 }
 
-function reportRestCounter({ env = process.env, log = console.log } = {}) {
+function restCountPrefix({ workflow, job, runId, attempt }) {
+  const safeJob = job && /^[\w-]+$/.test(job) ? job : 'unknown';
+  const id = runId && /^\d+$/.test(runId) ? runId : 'unknown';
+  const number = attempt && /^\d+$/.test(attempt) ? attempt : 'unknown';
+  return `REST_COUNT workflow=${JSON.stringify(workflow || 'unknown')} job=${safeJob} run=${id}.${number}`;
+}
+
+function formatUnavailableLine({ reason, ...identity }) {
+  return `${restCountPrefix(identity)} status=unavailable reason=${reason} total=0 graphql=0 by_route={}`;
+}
+
+function reportRestCounter({
+  env = process.env,
+  log = console.log,
+  platform = process.platform,
+} = {}) {
   if (
     !restCounterEnabled(env['INPUT_REST-COUNTER']) ||
     env.STATE_rest_counter_skip === 'true'
   )
     return;
-  const workflow = JSON.stringify(env.GITHUB_WORKFLOW ?? '');
-  const job = env.GITHUB_JOB ?? '';
-  const run = `${env.GITHUB_RUN_ID ?? ''}.${env.GITHUB_RUN_ATTEMPT ?? ''}`;
-  const prefix = `REST_COUNT workflow=${workflow} job=${job} run=${run}`;
+  const identity = {
+    workflow: env.GITHUB_WORKFLOW,
+    job: env.GITHUB_JOB,
+    runId: env.GITHUB_RUN_ID,
+    attempt: env.GITHUB_RUN_ATTEMPT,
+  };
   const dir = env.STATE_rest_counter_dir;
   if (!dir) {
-    log(`${prefix} status=unavailable reason=setup-failed`);
+    log(formatUnavailableLine({ ...identity, reason: 'setup-failed' }));
     return;
   }
   if (!sameDirectory?.(env.REST_COUNTER_DIR, dir)) {
-    log(`${prefix} status=unavailable reason=directory-changed`);
+    log(formatUnavailableLine({ ...identity, reason: 'directory-changed' }));
     return;
   }
   let counts;
   try {
     counts = collectRestCounts(dir);
   } catch {
-    log(`${prefix} status=unavailable reason=read-failed`);
+    log(formatUnavailableLine({ ...identity, reason: 'read-failed' }));
     return;
   }
   const {
@@ -251,15 +268,15 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
   let ghReason;
   if (via.gh === 0 && graphql_via.gh === 0) {
     ghReason =
-      env.RUNNER_OS === 'Linux'
+      platform === 'linux'
         ? ghLauncherIssue(dir, env.PATH)
-        : ['Windows', 'macOS'].includes(env.RUNNER_OS)
+        : ['win32', 'darwin'].includes(platform)
           ? 'unsupported-platform'
           : 'unknown-platform';
   }
   const ghStatus = ghReason ? 'unavailable' : 'ok';
   log(
-    `${prefix}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphql_via)} gh_status=${ghStatus}${ghReason ? ` gh_reason=${ghReason}` : ''} by_route=${JSON.stringify(by_route)}`,
+    `${restCountPrefix(identity)}${status} total=${total} graphql=${graphql} instrumented=${instrumented} unreadable=${unreadable} via=${JSON.stringify(via)} graphql_via=${JSON.stringify(graphql_via)} gh_status=${ghStatus}${ghReason ? ` gh_reason=${ghReason}` : ''} by_route=${JSON.stringify(by_route)}`,
   );
   try {
     if (env.GITHUB_STEP_SUMMARY) {
@@ -277,6 +294,7 @@ function reportRestCounter({ env = process.env, log = console.log } = {}) {
 module.exports = {
   startRestCounter,
   collectRestCounts,
+  formatUnavailableLine,
   reportGhInstallFailure,
   reportRestCounter,
 };

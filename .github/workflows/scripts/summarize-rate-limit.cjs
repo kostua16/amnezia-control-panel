@@ -17,22 +17,6 @@ const readline = require('node:readline');
 
 const FIELD = /(\w+)=("[^"]*"|\S+)/g;
 const NO_WINDOW = 'n/a';
-const GH_UNAVAILABLE_REASONS = new Set([
-  'io',
-  'launcher-shadowed',
-  'launcher-unusable',
-  'no-counter-directory',
-  'no-gh',
-  'no-github-path',
-  'node-not-on-path',
-  'node-unusable',
-  'not-installed',
-  'observer-unusable',
-  'setup-failed',
-  'unknown-platform',
-  'unsupported-platform',
-  'unwritable-dir',
-]);
 
 function parseLine(line) {
   const at = line.indexOf('RATE_LIMIT ');
@@ -53,19 +37,24 @@ function parseLine(line) {
 
 function parseRestCount(line) {
   const match = line.match(
-    /(?:^|\s)REST_COUNT workflow=("(?:[^"\\]|\\.)*") job=(\S+) run=(\d+\.\d+) (.+)$/,
+    /(?:^|\s)REST_COUNT workflow=("(?:[^"\\]|\\.)*") job=(\S+) run=((?:\d+|unknown)\.(?:\d+|unknown)) (.+)$/,
   );
   if (!match) return null;
   const [, name, job, run, body] = match;
   try {
     const workflow = JSON.parse(name);
-    if (
-      /^status=unavailable reason=[a-z-]+(?: total=0 graphql=0 by_route=\{\})?\s*$/.test(
+    const unavailable =
+      /^status=unavailable reason=([a-z-]+)(?: total=0 graphql=0 by_route=\{\})?\s*$/.exec(
         body,
-      )
-    ) {
-      return { workflow, job, run, status: 'unavailable' };
-    }
+      );
+    if (unavailable)
+      return {
+        workflow,
+        job,
+        run,
+        status: 'unavailable',
+        ghUnavailable: unavailable[1] === 'report-failed',
+      };
     const counts = body.match(
       /^(?:status=(uninstrumented) )?total=(\d+) graphql=(\d+)(?: instrumented=(\d+) unreadable=(\d+))?(?: via=(\{\S+?\}) graphql_via=(\{\S+?\}))?(?: (?:gh_status=(ok|unavailable)|(gh=unavailable))(?: gh_reason=(.*?))?)? by_route=(\{.*\})\s*$/,
     );
@@ -81,7 +70,7 @@ function parseRestCount(line) {
       rawGraphqlVia,
       ghStatus,
       legacyGhUnavailable,
-      rawGhReason,
+      ghUnavailableReason,
       rawRoutes,
     ] = counts;
     const total = Number(rawTotal);
@@ -112,10 +101,7 @@ function parseRestCount(line) {
       graphqlVia,
       ghStatus: legacyGhUnavailable ? 'unavailable' : ghStatus,
       ghUnavailable: ghStatus === 'unavailable' || Boolean(legacyGhUnavailable),
-      ghUnavailableReason:
-        rawGhReason === undefined || GH_UNAVAILABLE_REASONS.has(rawGhReason)
-          ? rawGhReason
-          : 'unclassified',
+      ghUnavailableReason,
       routes,
     };
   } catch {

@@ -221,7 +221,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: branch-cleanup-orphan-sweep
@@ -229,10 +230,16 @@ jobs:
           rest-counter: 'true'
 
       - name: Sweep orphan automation branches
+        shell: bash
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          node .github/workflows/scripts/cleanup-orphan-branches.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/cleanup-orphan-branches.cjs \
             --repo "${{ github.repository }}" \
             --policy-path .github/workflows/policy.json \
             --max-age-days 7 \

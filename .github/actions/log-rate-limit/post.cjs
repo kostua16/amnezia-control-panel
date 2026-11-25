@@ -2,18 +2,24 @@
 'use strict';
 
 const { logRateLimit } = require('./rate-limit.cjs');
-const { reportRestCounter } = require('./rest-counter.cjs');
+const {
+  formatUnavailableLine,
+  reportRestCounter,
+} = require('./rest-counter.cjs');
 
 try {
   reportRestCounter();
 } catch {
   try {
     const env = process.env;
-    const workflow = JSON.stringify(env.GITHUB_WORKFLOW ?? '');
-    const job = env.GITHUB_JOB ?? '';
-    const run = `${env.GITHUB_RUN_ID ?? ''}.${env.GITHUB_RUN_ATTEMPT ?? ''}`;
     console.log(
-      `REST_COUNT workflow=${workflow} job=${job} run=${run} status=unavailable reason=report-failed total=0 graphql=0 by_route={}`,
+      formatUnavailableLine({
+        workflow: env.GITHUB_WORKFLOW,
+        job: env.GITHUB_JOB,
+        runId: env.GITHUB_RUN_ID,
+        attempt: env.GITHUB_RUN_ATTEMPT,
+        reason: 'report-failed',
+      }),
     );
   } catch {
     // Reporting remains best effort if the log itself is unavailable.
