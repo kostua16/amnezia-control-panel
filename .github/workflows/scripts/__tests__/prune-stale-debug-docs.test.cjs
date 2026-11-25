@@ -72,14 +72,16 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
   // unattended job reads public issue and PR content, so every grant names
   // an exact command path or subcommand — never a bare tool family — and
   // commands that can mutate the repo or lockfile stay exact or
-  // subcommand-scoped instead of accepting arbitrary arguments.
+  // subcommand-scoped instead of accepting arbitrary arguments:
+  // validate.health's --repair/--backfill flags rewrite .planning/
+  // state, and git log's --output=<file> writes a workspace file —
+  // either artifact ships in the maintenance PR via the persist step's
+  // git add -A, so both grants pin the exact step invocations.
+  const gsdToolsHealth =
+    'node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health';
+  const gitLogSweep = String.raw`git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`;
   const grants = [
-    {
-      command:
-        'node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health',
-      exact: false,
-      rtk: true,
-    },
+    { command: gsdToolsHealth, exact: true, rtk: true },
     { command: 'gh issue create', exact: false, rtk: true },
     { command: 'gh issue list', exact: false, rtk: true },
     { command: 'gh issue view', exact: false, rtk: true },
@@ -87,7 +89,7 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
     { command: 'gh pr list', exact: false, rtk: true },
     { command: 'gh pr view', exact: false, rtk: true },
     { command: 'npm audit --json', exact: true, rtk: true },
-    { command: 'git log', exact: false, rtk: true },
+    { command: gitLogSweep, exact: true, rtk: true },
     { command: 'df', exact: false, rtk: false },
   ];
   const expected = [
@@ -129,6 +131,9 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
     'gh issue:*',
     'gh pr:*',
     'npm audit:*',
+    'validate.health:*',
+    'git log:*',
+    '`git log`',
   ]) {
     assert.ok(
       !toolGrants.includes(forbidden),
@@ -141,7 +146,11 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
   // command word and takes arguments is a shell command, and an ungranted
   // one would reproduce the DISALLOWED_TOOLS denial class on the next
   // run. File paths, labels, and single words carry no arguments and are
-  // skipped by the pattern.
+  // skipped by the pattern — and so are ./script.cjs, $VAR, and
+  // fenced-block shapes — so the extracted set is pinned exactly rather
+  // than checked for mere presence: any prompt edit that adds, removes,
+  // or rewrites a backticked command must fail here and force this list
+  // to be re-audited.
   const bashGrants = agent.with['allowed-tools']
     .split(',')
     .filter((tool) => tool.startsWith('Bash('))
@@ -156,10 +165,24 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
   const promptCommands = [
     ...prompt.matchAll(/`([a-z][a-z0-9-]*(?: [^`\n]+)+)`/g),
   ].map((match) => match[1]);
-  assert.ok(
-    promptCommands.length > 0,
-    'expected the maintenance prompt to list its commands in backticks',
-  );
+  assert.deepEqual(promptCommands, [
+    gsdToolsHealth,
+    'npm audit --json',
+    gitLogSweep,
+    'gh issue list',
+    'gh issue create --title "Security: [summary of vulnerabilities]" --label "security" --body "[detailed findings]"',
+    'gh issue create --title "Maintenance: stale issues review" --label "maintenance" --body "[list of stale issues]"',
+    'gh issue create --title "Maintenance: unresolved TODOs" --label "maintenance" --body "[list of TODOs with commit references]"',
+    gsdToolsHealth,
+    'gh issue create',
+    'gh issue list',
+    'gh issue view',
+    'gh pr comment',
+    'gh pr list',
+    'gh pr view',
+    'npm audit --json',
+    gitLogSweep,
+  ]);
   for (const command of promptCommands) {
     assert.ok(
       covers(command),
