@@ -244,6 +244,7 @@ test('unavailable reports use a safe, parseable reason code', () => {
     ['123 Error: boom', 'error-boom'],
     ['UPPERCASE', 'uppercase'],
     [longCode, longCode.slice(0, 40)],
+    [`${'a'.repeat(39)}-failure`, 'a'.repeat(39)],
     ['future-failure2', 'future-failure2'],
   ]) {
     const line = formatUnavailableLine({ reason });

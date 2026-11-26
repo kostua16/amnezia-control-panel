@@ -221,8 +221,8 @@ function formatUnavailableLine({ reason, ...identity }) {
     (typeof reason === 'string' ? reason : '')
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, '-')
-      .replace(/^[^a-z]+|-+$/g, '')
-      .slice(0, 40) || 'invalid-reason';
+      .slice(0, 40)
+      .replace(/^[^a-z]+|-+$/g, '') || 'invalid-reason';
   return `${restCountPrefix(identity)} status=unavailable reason=${code} total=0 graphql=0 by_route={}`;
 }
 

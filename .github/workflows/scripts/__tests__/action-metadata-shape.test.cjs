@@ -210,17 +210,19 @@ test('every opted-in step loads the preload without overriding runner Node optio
         Object.hasOwn(doc.jobs, job),
         label + ' must exist for preload checks',
       );
+      let nodeSteps = 0;
       for (const [index, step] of (doc.jobs[job].steps ?? []).entries()) {
-        if (/(?:^|[\s;&|()])node[ \t]/.test(step.run ?? '')) {
-          assert.ok(
-            step.env?.REST_COUNTER_PRELOAD,
-            label +
-              ' / ' +
-              (step.name ?? 'step ' + (index + 1)) +
-              ' must set REST_COUNTER_PRELOAD',
-          );
-        }
+        if (!/(?:^|[\s;&|()])node[ \t]/.test(step.run ?? '')) continue;
+        assert.ok(
+          step.env?.REST_COUNTER_PRELOAD,
+          label +
+            ' / ' +
+            (step.name ?? 'step ' + (index + 1)) +
+            ' must set REST_COUNTER_PRELOAD',
+        );
+        nodeSteps += 1;
       }
+      assert.ok(nodeSteps > 0, label + ' must have a preload-wired Node step');
     }
     for (const [job, config] of Object.entries(doc.jobs)) {
       checked += checkRestCounterWiring(config.steps ?? [], file + ' / ' + job);
