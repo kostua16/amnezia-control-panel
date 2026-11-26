@@ -6405,9 +6405,11 @@ function cmdStateSync(cwd, options, raw) {
     // getMilestonePhaseFilter. Cache that owner's bracket result as a set and
     // compose it with this scan, rather than restoring the retired direct
     // parser dependency. Legacy retains this scan's prior pass-all behavior.
-    const syncMilestonePhaseDirs = syncConvention === 'bracket'
-        ? new Set(listMilestonePhaseDirs(phasesDir, { cwd, phaseIdConvention: syncConvention }).value)
-        : null;
+    // amnezia-control-panel local patch: scope the sync scan to the current
+    // milestone for every phase-id convention, matching the read path.
+    // Without it, legacy repos with archived phase dirs or a Phase 999 queue
+    // get a whole-disk body Progress percent that disagrees with `state json`.
+    const syncMilestonePhaseDirs = new Set(listMilestonePhaseDirs(phasesDir, { cwd, phaseIdConvention: syncConvention }).value);
     // Scan all phases
     let entries;
     try {
@@ -6482,7 +6484,7 @@ function cmdStateSync(cwd, options, raw) {
     // pre-existing legacy sync behavior while #3185 remains the read-path owner.
     let syncTotalPhases = null;
     const roadmapPhaseCount = syncRoadmapScope !== null
-        ? countRoadmapPhaseHeadings(syncRoadmapScope, syncConvention, syncRetiredPhaseNums, syncConvention === 'bracket', directoryContext)
+        ? countRoadmapPhaseHeadings(syncRoadmapScope, syncConvention, syncRetiredPhaseNums, true /* local patch: exclude sentinel phases for every convention */, directoryContext)
         : 0;
     if (roadmapPhaseCount > 0) {
         syncTotalPhases = Math.max(entries.length, roadmapPhaseCount);

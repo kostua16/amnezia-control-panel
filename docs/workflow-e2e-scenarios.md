@@ -866,3 +866,13 @@ Every job that uses the installation token shares one REST bucket. `pr-policy.ym
 - Credential hygiene checks progress tracking against checkout settings in the same job. Read-only authorization jobs can disable checkout credential persistence independently.
 
 - A denied triage dispatch skips the credentialed agent step and follow-up issue mutations. Review skip jobs specify the repository explicitly for GitHub CLI.
+
+## GSD runtime compatibility
+
+The setup action recognizes the checked-in `@opengsd/gsd-core` runtime at `.claude/gsd-core` and pins `1.23.0` for the fallback install. Planning and maintenance use that CLI path, and Claude workflow prompts use `/gsd-*` commands. Verify that the Phase 999 workflow can validate a queue plan and resolve the wave execution command with the vendored runtime.
+
+Phase 999 is a reserved GSD queue phase. It stays outside milestone progress: `state json`, `state sync`, `state update-progress`, and `state advance-plan` report the governance milestone (Phases 13.1-13.4), while the queue tally lives on its own `Execution queue:` line in `STATE.md` and the Phase 999 `Plans:` line in `ROADMAP.md`. No state writer refreshes that tally, so the workflow or maintainer that records a queue completion updates both lines.
+
+`.claude/gsd-core/bin/lib/state.cjs` carries one local patch: `cmdStateSync` scopes its phase-directory scan through `listMilestonePhaseDirs` and excludes sentinel phase headings for every phase-id convention, not only `bracket`. Without it, `state sync` computes the body `Progress:` percent from every directory under `.planning/phases/` (archived 12.x phases and Phase 999 included) and disagrees with `state json`. The manifest keeps the upstream hash, so `/gsd-update` backs the file up to `gsd-local-patches/` and `/gsd-update --reapply` restores the patch; reapply it by hand if the upstream sync scan changes shape.
+
+GSD 1.23.0 no longer reads `--no-transition` in `execute-phase`. Per-wave Phase 999 runs are unaffected because phase completion and the transition workflow run only after the last incomplete plan finishes.
