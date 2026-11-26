@@ -4,14 +4,15 @@ milestone: post-v1.1
 milestone_name: Developer automation governance
 status: executing
 stopped_at: null
-last_updated: "2026-11-25T08:00:58.979Z"
-last_activity: 2026-11-25 - Completed quick task 261125-0l9: add missing migration for Server.redirectIp
+last_updated: "2026-11-26T16:00:00.000Z"
+last_activity: 2026-11-26
+last_activity_desc: "Completed quick task 261125-pte: PR #1251 review fixes (GSD 1.23.0, Phase 999 tracked separately)"
 progress:
-  total_phases: 5
+  total_phases: 4
   completed_phases: 4
-  total_plans: 118
-  completed_plans: 54
-  percent: 46
+  total_plans: 4
+  completed_plans: 4
+  percent: 100
 ---
 
 # Amnezia Control Panel - Project State
@@ -28,37 +29,42 @@ progress:
 Phase: 999 (gh-planning-execution-queue) — EXECUTING
 Plan: 50 of 114
 Status: Executing Phase 999
-Last activity: 2026-11-25 - Completed quick task 261125-0l9: add missing migration for Server.redirectIp
+Last activity: 2026-11-26
+Last Activity Description: Completed quick task 261125-pte: PR #1251 review fixes (GSD 1.23.0, Phase 999 tracked separately)
 
-Progress: [█████░░░░░] 46% (post-v1.1 milestone: 4 of 5 phases complete, 54 of 118 plans executed)
+Progress: [██████████] 100%
+
+Milestone scope: post-v1.1 governance Phases 13.1-13.4 — 4 of 4 phases, 4 of 4 plans complete.
+Execution queue: Phase 999 is a reserved queue phase tracked separately from milestone progress — 50 of 114 plans executed.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 54 in the post-v1.1 milestone (4 of 4 13.1-13.4 seed plans delivered and verified, recorded in phase SUMMARY/VERIFICATION files; 50 of 114 Phase 999 queue plans executed); project-wide incl. archived v1.0/v1.1: 77 completed plans (27 of 28 non-queue plans completed + 50 queue plans)
-- Average duration: 4min
-- Total execution time: 102min
+- Total plans completed: 4 of 4 in the post-v1.1 milestone (Phases 13.1-13.4, recorded in phase SUMMARY/VERIFICATION files)
+- Phase 999 execution queue (tracked separately): 50 of 114 plans executed
+- Average duration: 4min (historical, v1.1-era plans only; not recorded for post-v1.1 work)
+- Total execution time: 102min (historical, v1.1-era plans only; not recorded for post-v1.1 work)
 
-**By Phase:**
+**By Phase (historical, v1.1):**
 
-| Phase     | Plans | Total | Avg/Plan |
-| --------- | ----- | ----- | -------- | --------------------------- |
-| 11.1      | 1     | 7min  | 7min     |
-| 11.2      | 3     | 25min | 8min     |
-| 11.3      | 3     | 12min | 4min     |
-| 11.4-11.8 | --    | --    | --       |
-| 12.1      | 1     | 3min  | 3min     |
-| 12.2      | 1     | 4min  | 4min     |
-| 12.3      | 1     | 7min  | 7min     |
-| 12.4      | 1     | 5min  | 5min     |
-| 12.5      | 1     | 4min  | 4min     |
-| 12.6      | 1     | 5min  | 5min     |
-| 12.7      | 1     | 4min  | 4min     |
-| 12.8      | 2     | --    | --       | (planned, not yet executed) |
-| 12.9      | 1     | 3min  | 3min     |
+| Phase     | Plans | Total | Avg/Plan | Notes |
+| --------- | ----- | ----- | -------- | ----- |
+| 11.1      | 1     | 7min  | 7min     |       |
+| 11.2      | 3     | 25min | 8min     |       |
+| 11.3      | 3     | 12min | 4min     |       |
+| 11.4-11.8 | --    | --    | --       |       |
+| 12.1      | 1     | 3min  | 3min     |       |
+| 12.2      | 1     | 4min  | 4min     |       |
+| 12.3      | 1     | 7min  | 7min     |       |
+| 12.4      | 1     | 5min  | 5min     |       |
+| 12.5      | 1     | 4min  | 4min     |       |
+| 12.6      | 1     | 5min  | 5min     |       |
+| 12.7      | 1     | 4min  | 4min     |       |
+| 12.8      | 2     | --    | --       | shipped 2026-05-02; durations not recorded |
+| 12.9      | 1     | 3min  | 3min     |       |
 
-- Last 5 plans: 12.9-01 (3min), 12.7-01 (4min), 12.6-01 (5min), 12.5-01 (4min), 12.4-01 (5min)
+- Last 5 plans (historical, v1.1): 12.9-01 (3min), 12.7-01 (4min), 12.6-01 (5min), 12.5-01 (4min), 12.4-01 (5min)
 - Trend: stable
 
 _Updated after each plan completion_
@@ -128,6 +134,7 @@ Resume file: None
 
 | Date       | Slug / ID    | Summary                                                     |
 | ---------- | ------------ | ----------------------------------------------------------- |
+| 2026-11-26 | 261125-pte   | PR #1251 review fixes: GSD 1.23.0 upgrade, Phase 999 tracked outside milestone progress, 13.1-13.4 records normalized |
 | 2026-11-25 | 261125-0l9   | Add missing Prisma migration for Server.redirectIp (fixes GET /api/servers 500 on fresh DB) |
 | 2026-11-24 | 261124-v61   | Address PR #1223 maintenance review findings |
 | 2026-11-23 | 261123-w9f   | Avoid Docker main-push REST comparison and closed-issue authorization |
@@ -171,4 +178,3 @@ Resume file: None
 ---
 
 _State initialized: 2026-04-27_
-_Last updated: 2026-11-22 - Completed quick task 261122-2df_
