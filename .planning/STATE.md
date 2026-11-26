@@ -35,7 +35,7 @@ Last Activity Description: Completed quick task 261125-pte: PR #1251 review fixe
 Progress: [██████████] 100%
 
 Milestone scope: post-v1.1 governance Phases 13.1-13.4 — 4 of 4 phases, 4 of 4 plans complete.
-Execution queue: Phase 999 is a reserved queue phase tracked separately from milestone progress. Its tally is the machine-maintained `Plan:` line above (`state advance-plan`) and the Phase 999 `Plans:` line in ROADMAP.md (`roadmap update-plan-progress`).
+Execution queue: Phase 999 is a reserved queue phase tracked separately from milestone progress. Its tally is the `Plan:` line above (refreshed from disk by `gsd-planning-execute.yml` after each import, then advanced by `state advance-plan`) and the Phase 999 `Plans:` line in ROADMAP.md (`roadmap update-plan-progress`).
 
 ## Performance Metrics
 

@@ -32,6 +32,20 @@ describe('GSD planning workflow automation', () => {
     assert.match(workflow, /<!-- gsd-planning-source-sha256:/);
   });
 
+  it('refreshes the STATE queue tally from disk between import and execution', () => {
+    const workflow = readRepoFile('.github/workflows/gsd-planning-execute.yml');
+    const importAt = workflow.indexOf('- name: Import merged planning artifact');
+    const refreshAt = workflow.indexOf('- name: Refresh Phase 999 queue tally');
+    const executeAt = workflow.indexOf('- name: Execute imported GSD plan');
+
+    assert.ok(importAt !== -1 && refreshAt !== -1 && executeAt !== -1);
+    assert.ok(importAt < refreshAt && refreshAt < executeAt);
+    assert.match(
+      workflow.slice(refreshAt, executeAt),
+      /gsd-tools\.cjs state update Plan "\$\{summaries\} of \$\{plans\}"/,
+    );
+  });
+
   it('accepts only the bare /gsd-plan comment trigger, not /gsd-plan-* commands', () => {
     const workflow = readRepoFile('.github/workflows/gsd-planning.yml');
     const triggerMatch = workflow.match(

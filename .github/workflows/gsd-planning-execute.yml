@@ -236,6 +236,18 @@ jobs:
           node .claude/gsd-core/bin/gsd-tools.cjs frontmatter validate "$PLAN_PATH" --schema plan
           node .claude/gsd-core/bin/gsd-tools.cjs verify plan-structure "$PLAN_PATH"
 
+      # state advance-plan only bumps the numerator of `Plan: N of M`, so the
+      # total goes stale as soon as an import adds a queue plan. Recompute both
+      # numbers from disk so STATE matches ROADMAP's update-plan-progress tally.
+      - name: Refresh Phase 999 queue tally
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        run: |
+          set -euo pipefail
+          queue_dir=.planning/phases/999-gh-planning-execution-queue
+          plans=$(find "$queue_dir" -maxdepth 1 -name '999-*-PLAN.md' | wc -l | tr -d ' ')
+          summaries=$(find "$queue_dir" -maxdepth 1 -name '999-*-SUMMARY.md' | wc -l | tr -d ' ')
+          node .claude/gsd-core/bin/gsd-tools.cjs state update Plan "${summaries} of ${plans}"
+
       - name: Execute imported GSD plan
         id: gsd
         if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
