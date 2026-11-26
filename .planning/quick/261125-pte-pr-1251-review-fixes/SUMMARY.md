@@ -4,7 +4,7 @@ Completed 2026-11-26. Plan: [PLAN.md](PLAN.md).
 
 ## Decisions
 
-- **Phase 999 scope.** Phase 999 stays a reserved queue phase outside milestone progress, matching how GSD 1.23.0 treats the `999` sentinel. Milestone progress covers Phases 13.1-13.4 (4 of 4 phases, 4 of 4 plans, 100%). The queue tally (50 of 114) lives on the `Execution queue:` line in `STATE.md` and the Phase 999 `Plans:` line in `ROADMAP.md`.
+- **Phase 999 scope.** Phase 999 stays a reserved queue phase outside milestone progress, matching how GSD 1.23.0 treats the `999` sentinel. Milestone progress covers Phases 13.1-13.4 (4 of 4 phases, 4 of 4 plans, 100%). The queue tally (50 of 114) is machine-maintained by `state advance-plan` (`Plan: N of M` in `STATE.md`) and `roadmap update-plan-progress` (Phase 999 `Plans:` in `ROADMAP.md`).
 - **Runtime patch.** On the 1.23.0 baseline, `state sync` scanned every directory under `.planning/phases/` for the legacy phase-id convention and proposed 50% (80% with only the directory filter). A two-line local patch in `.claude/gsd-core/bin/lib/state.cjs` scopes the sync scan to the milestone and excludes sentinel headings for every convention. Reapply notes: `docs/workflow-e2e-scenarios.md` → GSD runtime compatibility.
 - **Activity fields.** Frontmatter uses `last_activity` plus `last_activity_desc`; the body uses `Last activity:` plus `Last Activity Description:`, so sync can refresh the date without dropping the narrative.
 - **13.2 glob rewrite dropped.** `verify-summary` passes on 1.23.0 without it.
@@ -25,6 +25,6 @@ Completed 2026-11-26. Plan: [PLAN.md](PLAN.md).
 
 ## Residual limitations
 
-- No state writer refreshes the Phase 999 queue tally. The executor PR or maintainer that records a queue completion updates the `Execution queue:` and `Plans:` lines.
+- The historical By Phase table and the velocity bullet are kept out of reach of `phase complete` (`Plan count` column, `Milestone plans completed:` label); post-v1.1 durations are not recorded.
 - GSD 1.23.0 ignores `--no-transition`. Per-wave Phase 999 runs are unaffected; the transition workflow runs only after the last queue plan completes.
 - Archived 12.x phase directories still sit under `.planning/phases/`; `/gsd-cleanup` can move them later.

@@ -32,6 +32,22 @@ describe('GSD planning workflow automation', () => {
     assert.match(workflow, /<!-- gsd-planning-source-sha256:/);
   });
 
+  it('accepts only the bare /gsd-plan comment trigger, not /gsd-plan-* commands', () => {
+    const workflow = readRepoFile('.github/workflows/gsd-planning.yml');
+    const triggerMatch = workflow.match(
+      /\| grep -Eq '(\^\/gsd-plan[^']*)'; then/,
+    );
+    assert.ok(triggerMatch, 'gsd-planning.yml comment trigger grep not found');
+    const trigger = new RegExp(
+      triggerMatch[1].replaceAll('[[:space:]]', '\\s'),
+    );
+
+    assert.match('/gsd-plan', trigger);
+    assert.match('/gsd-plan 13.5', trigger);
+    assert.doesNotMatch('/gsd-plan-phase 13.5', trigger);
+    assert.doesNotMatch('/gsd-plan-review-convergence 13', trigger);
+  });
+
   it('creates planning intake PRs as non-drafts with the intake label', () => {
     for (const workflowPath of [
       '.github/workflows/gsd-planning.yml',

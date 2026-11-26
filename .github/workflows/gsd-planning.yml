@@ -64,7 +64,7 @@ jobs:
           phase="$INPUT_PHASE"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             should_run=true
-          elif printf '%s' "$COMMENT_BODY" | grep -Eq '^/gsd-plan([[:space:]]+[0-9]+(\.[0-9]+)?)?'; then
+          elif printf '%s' "$COMMENT_BODY" | grep -Eq '^/gsd-plan([[:space:]]|$)'; then
             case "$AUTHOR_ASSOCIATION" in OWNER|MEMBER|COLLABORATOR) should_run=true ;; esac
             phase=$(printf '%s' "$COMMENT_BODY" | sed -nE 's|^/gsd-plan[[:space:]]+([0-9]+(\.[0-9]+)?).*|\1|p' | head -1)
           fi

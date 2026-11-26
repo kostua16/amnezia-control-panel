@@ -35,21 +35,21 @@ Last Activity Description: Completed quick task 261125-pte: PR #1251 review fixe
 Progress: [██████████] 100%
 
 Milestone scope: post-v1.1 governance Phases 13.1-13.4 — 4 of 4 phases, 4 of 4 plans complete.
-Execution queue: Phase 999 is a reserved queue phase tracked separately from milestone progress — 50 of 114 plans executed.
+Execution queue: Phase 999 is a reserved queue phase tracked separately from milestone progress. Its tally is the machine-maintained `Plan:` line above (`state advance-plan`) and the Phase 999 `Plans:` line in ROADMAP.md (`roadmap update-plan-progress`).
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 4 of 4 in the post-v1.1 milestone (Phases 13.1-13.4, recorded in phase SUMMARY/VERIFICATION files)
-- Phase 999 execution queue (tracked separately): 50 of 114 plans executed
+- Milestone plans completed: 4 of 4 in the post-v1.1 milestone (Phases 13.1-13.4, recorded in phase SUMMARY/VERIFICATION files)
+- Phase 999 execution queue: tracked separately; see `Plan:` under Current Position
 - Average duration: 4min (historical, v1.1-era plans only; not recorded for post-v1.1 work)
 - Total execution time: 102min (historical, v1.1-era plans only; not recorded for post-v1.1 work)
 
 **By Phase (historical, v1.1):**
 
-| Phase     | Plans | Total | Avg/Plan | Notes |
-| --------- | ----- | ----- | -------- | ----- |
+| Phase     | Plan count | Total | Avg/Plan | Notes |
+| --------- | ---------- | ----- | -------- | ----- |
 | 11.1      | 1     | 7min  | 7min     |       |
 | 11.2      | 3     | 25min | 8min     |       |
 | 11.3      | 3     | 12min | 4min     |       |

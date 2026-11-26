@@ -6409,10 +6409,11 @@ function cmdStateSync(cwd, options, raw) {
     // is removed. The sync scan is scoped to the current milestone for every
     // phase-id convention, matching the read path; without it, legacy repos
     // with archived phase dirs or a Phase 999 queue get a whole-disk body
-    // Progress percent that disagrees with `state json`. A non-array result
-    // keeps the pass-all fallback instead of filtering every directory out.
-    const syncMilestoneDirList = listMilestonePhaseDirs(phasesDir, { cwd, phaseIdConvention: syncConvention }).value;
-    const syncMilestonePhaseDirs = Array.isArray(syncMilestoneDirList) ? new Set(syncMilestoneDirList) : null;
+    // Progress percent that disagrees with `state json`. An UNREADABLE
+    // listing is a non-answer, so it keeps the pass-all fallback instead of
+    // filtering every directory out.
+    const syncMilestoneListing = listMilestonePhaseDirs(phasesDir, { cwd, phaseIdConvention: syncConvention });
+    const syncMilestonePhaseDirs = syncMilestoneListing.scope === SCOPE.UNREADABLE ? null : new Set(syncMilestoneListing.value);
     // Scan all phases
     let entries;
     try {
