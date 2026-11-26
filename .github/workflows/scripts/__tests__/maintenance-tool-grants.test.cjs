@@ -1,17 +1,21 @@
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { load } = require('js-yaml');
+const { evaluateExpression } = require('./helpers/github-expression.cjs');
+
+const workflow = load(
+  fs.readFileSync(path.join(__dirname, '../../maintenance.yml'), 'utf8'),
+);
+const steps = workflow.jobs.maintenance.steps;
+const agent = steps.find((step) => step.id === 'claude_run');
+const cutoff = steps.find((step) => step.id === 'stale_issue_cutoff');
 
 test('maintenance pins the scoped tool grants and prompt commands', () => {
-  const { load } = require('js-yaml');
-  const workflow = load(
-    fs.readFileSync(path.join(__dirname, '../../maintenance.yml'), 'utf8'),
-  );
-  const steps = workflow.jobs.maintenance.steps;
-  const agent = steps.find((step) => step.id === 'claude_run');
   assert.equal(agent.with['user-settings-only'], 'true');
-  const cutoff = steps.find((step) => step.id === 'stale_issue_cutoff');
   assert.ok(cutoff && steps.indexOf(cutoff) < steps.indexOf(agent));
   assert.equal(cutoff.if, undefined);
   assert.match(cutoff.run, /date -u -d '90 days ago'/);
@@ -133,3 +137,61 @@ test('maintenance pins the scoped tool grants and prompt commands', () => {
     );
   }
 });
+
+const bashAvailable = spawnSync('bash', ['-c', 'true']).status === 0;
+
+test(
+  'maintenance rejects malformed cutoffs and renders a dated issue search',
+  { skip: !bashAvailable },
+  (t) => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'maintenance-cutoff-'),
+    );
+    const output = path.join(directory, 'output');
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const runBash = (script, env = {}) =>
+      spawnSync(
+        'bash',
+        ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', script],
+        {
+          env: { ...process.env, GITHUB_OUTPUT: output, ...env },
+          encoding: 'utf8',
+        },
+      );
+    const script =
+      'date() { printf "%s" "$MAINTENANCE_TEST_DATE"; }\n' + cutoff.run;
+    for (const malformed of ['', '2026-08-28T17:00:00', 'invalid']) {
+      const result = runBash(script, { MAINTENANCE_TEST_DATE: malformed });
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stdout, /Invalid stale issue UTC cutoff/);
+      assert.equal(fs.existsSync(output), false);
+    }
+
+    const utc = '2026-08-28T17:00:00Z';
+    const result = runBash(script, { MAINTENANCE_TEST_DATE: utc });
+    assert.equal(result.status, 0, result.stderr);
+    const outputs = Object.fromEntries([
+      fs.readFileSync(output, 'utf8').trim().split('='),
+    ]);
+    assert.deepEqual(outputs, { utc });
+    const [, search] =
+      /\x60(gh issue list --state open --search [^\x60]+)\x60/.exec(
+        agent.with.prompt,
+      );
+    const rendered = search.replace(/\$\{\{\s*(.*?)\s*\}\}/g, (_, expression) =>
+      evaluateExpression(expression, { steps: { [cutoff.id]: { outputs } } }),
+    );
+    const query = runBash('gh() { printf "%s\\n" "$@"; }\n' + rendered);
+    assert.equal(query.status, 0, query.stderr);
+    assert.deepEqual(query.stdout.trim().split(/\r?\n/), [
+      'issue',
+      'list',
+      '--state',
+      'open',
+      '--search',
+      'created:<' + utc + ' sort:updated-desc',
+      '--limit',
+      '100',
+    ]);
+  },
+);
