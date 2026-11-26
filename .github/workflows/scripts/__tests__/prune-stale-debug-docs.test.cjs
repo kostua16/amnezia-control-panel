@@ -66,17 +66,11 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
   assert.equal(steps[prune + 1].id, 'detect_changes');
   const agent = steps.find((step) => step.id === 'claude_run');
   assert.equal(agent.with['user-settings-only'], 'true');
-  // Single source of truth for the sweep's Bash grants: the allowed-tools
-  // line, the prompt's TOOL GRANTS sentence, and the command-coverage check
-  // below are all derived from it, so they cannot drift apart. This
-  // unattended job reads public issue and PR content, so every grant names
-  // an exact command path or subcommand — never a bare tool family — and
-  // commands that can mutate the repo or lockfile stay exact or
-  // subcommand-scoped instead of accepting arbitrary arguments:
-  // validate.health's --repair/--backfill flags rewrite .planning/
-  // state, and git log's --output=<file> writes a workspace file —
-  // either artifact ships in the maintenance PR via the persist step's
-  // git add -A, so both grants pin the exact step invocations.
+  // Pin the workflow allowlist and check that the TOOL GRANTS line describes
+  // the allowed commands. The unattended sweep reads public issue and PR
+  // content. Exact grants for planning health, npm audit, and git log keep
+  // their write-capable variants outside the allowlist. GitHub CLI grants
+  // allow arguments for the listed subcommands, and df accepts disk usage flags.
   const gsdToolsHealth =
     'node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health';
   const gitLogSweep = String.raw`git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`;
@@ -141,16 +135,10 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
     );
   }
 
-  // The allowlist must also cover every command the prompt itself
-  // instructs the agent to run: a backticked span that starts with a bare
-  // command word and takes arguments is a shell command, and an ungranted
-  // one would reproduce the DISALLOWED_TOOLS denial class on the next
-  // run. File paths, labels, and single words carry no arguments and are
-  // skipped by the pattern — and so are ./script.cjs, $VAR, and
-  // fenced-block shapes — so the extracted set is pinned exactly rather
-  // than checked for mere presence: any prompt edit that adds, removes,
-  // or rewrites a backticked command must fail here and force this list
-  // to be re-audited.
+  // Pin every single-line backticked span in the workflow prompt that
+  // begins with a lowercase command word followed by arguments, and check
+  // each captured span against the Bash grants. Commands written in other
+  // forms or in the maintenance agent contract or skills need separate review.
   const bashGrants = agent.with['allowed-tools']
     .split(',')
     .filter((tool) => tool.startsWith('Bash('))
