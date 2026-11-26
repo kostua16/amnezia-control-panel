@@ -9,7 +9,7 @@ keywords: [monitor, runs, github-actions, detect, diagnose, rtk-gh, narrow-fix, 
 related: [kos-zai-agent-runtime-contract, kos-run-log-mining, kos-gh-automation-tooling, kos-zai-run-failure-prevention, kos-claude-turn-budget]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from monitor-amnezia-control-panel-github-runs.yml (/gsd:debug) prompt + 30/30 success runs
+  attribution: distilled from monitor-amnezia-control-panel-github-runs.yml (/gsd-debug) prompt + 30/30 success runs
   license: repo
   version: "1.1"
 ---
@@ -23,7 +23,7 @@ metadata:
 - Detecting + diagnosing a batch of recent failures.
 
 ## References
-- `monitor-amnezia-control-panel-github-runs.yml` prompt (`/gsd:debug`; `rtk gh run list/view`; `rtk proxy gh run view --log-failed`; narrow evidence-backed fixes only; **do not commit/push/merge/PR**; do not migrate `$CODEX_HOME` memory; uses GitHub run history as memory).
+- `monitor-amnezia-control-panel-github-runs.yml` prompt (`/gsd-debug`; `rtk gh run list/view`; `rtk proxy gh run view --log-failed`; narrow evidence-backed fixes only; **do not commit/push/merge/PR**; do not migrate `$CODEX_HOME` memory; uses GitHub run history as memory).
 - [[kos-run-log-mining]] — layered diagnosis (rollup → reason → surgical grep).
 - `.github/workflows/scripts/analyze-claude-runs.sh` + `scan-claude-logs.cjs`.
 - [[kos-zai-agent-runtime-contract]].

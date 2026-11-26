@@ -233,8 +233,8 @@ jobs:
         env:
           PLAN_PATH: ${{ steps.intake.outputs.plan_path }}
         run: |
-          node .claude/get-shit-done/bin/gsd-tools.cjs frontmatter validate "$PLAN_PATH" --schema plan
-          node .claude/get-shit-done/bin/gsd-tools.cjs verify plan-structure "$PLAN_PATH"
+          node .claude/gsd-core/bin/gsd-tools.cjs frontmatter validate "$PLAN_PATH" --schema plan
+          node .claude/gsd-core/bin/gsd-tools.cjs verify plan-structure "$PLAN_PATH"
 
       - name: Execute imported GSD plan
         id: gsd
@@ -262,7 +262,7 @@ jobs:
             superpowers@claude-plugins-official
             caveman@caveman
           prompt: |
-            /gsd:execute-phase 999 --wave ${{ steps.intake.outputs.wave }} --no-transition
+            /gsd-execute-phase 999 --wave ${{ steps.intake.outputs.wave }} --no-transition
 
             Execute exactly the imported GSD planning queue plan:
             - Plan: `${{ steps.intake.outputs.plan_path }}`

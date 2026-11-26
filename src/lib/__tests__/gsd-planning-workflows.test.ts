@@ -26,7 +26,7 @@ describe('GSD planning workflow automation', () => {
       workflow,
       /collect-gsd-planning-intake\.cjs[\s\S]*--max-plans "\$max_plans"/,
     );
-    assert.match(workflow, /\/gsd:execute-phase 999 --wave/);
+    assert.match(workflow, /\/gsd-execute-phase 999 --wave/);
     assert.match(workflow, /labels: auto-fix,gsd-plan-execution,skip-improve/);
     assert.match(workflow, /draft: 'false'/);
     assert.match(workflow, /<!-- gsd-planning-source-sha256:/);

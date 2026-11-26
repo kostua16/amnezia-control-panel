@@ -119,7 +119,7 @@ jobs:
             serena@claude-plugins-official
             caveman@caveman
           prompt: |
-            /gsd:plan-phase
+            /gsd-plan-phase
             Refresh planning artifacts for phase `${{ needs.authorize.outputs.phase }}`.
 
             Scope:

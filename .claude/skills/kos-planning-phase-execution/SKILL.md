@@ -17,8 +17,8 @@ metadata:
 # Idea
 
 Two workflows serve `.planning/`:
-- **gsd-planning** (`/gsd:plan-phase`) — refresh a phase's planning artifacts; edit only `.planning/**`; preserve intake markers; don't push.
-- **gsd-planning-execute** (`/gsd:execute-phase 999 --wave N --no-transition`) — execute exactly the imported wave; `npm test` gate; include a `### Proposals deferred` section; don't push/PR.
+- **gsd-planning** (`/gsd-plan-phase`) — refresh a phase's planning artifacts; edit only `.planning/**`; preserve intake markers; don't push.
+- **gsd-planning-execute** (`/gsd-execute-phase 999 --wave N --no-transition`) — execute exactly the imported wave; `npm test` gate; include a `### Proposals deferred` section; don't push/PR.
 
 Both depend on correct **intake**. Neither pushes/PRs (the workflow handles branch push + PR).
 
@@ -28,7 +28,7 @@ Both depend on correct **intake**. Neither pushes/PRs (the workflow handles bran
 - Intake is empty/broken.
 
 ## References
-- `gsd-planning.yml` (`/gsd:plan-phase`; edit only `.planning/**`; preserve intake markers; keep planning PRs limited to planning artifacts for auto-merge; don't modify app source/manifests/workflow logic; don't push).
+- `gsd-planning.yml` (`/gsd-plan-phase`; edit only `.planning/**`; preserve intake markers; keep planning PRs limited to planning artifacts for auto-merge; don't modify app source/manifests/workflow logic; don't push).
 - `gsd-planning-execute.yml` (`--wave N --no-transition`; execute only that wave; don't process other waves; don't open/approve/merge/comment PRs; don't push; `npm test` gate; `### Proposals deferred` section).
 - `.github/workflows/scripts/collect-gsd-planning-intake.cjs`, `repair-planning-intake.cjs` (workflow steps).
 - [[kos-zai-agent-runtime-contract]].

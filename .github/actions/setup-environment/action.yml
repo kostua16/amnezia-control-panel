@@ -57,7 +57,7 @@ inputs:
 
   gsd-version:
     description: 'Pinned @opengsd/gsd-core version used when project-local GSD assets are missing'
-    default: '1.2.0'
+    default: '1.23.0'
   gsd-global:
     description: 'Install GSD (@opengsd/gsd-core) globally'
     default: 'false'
@@ -288,7 +288,7 @@ runs:
 
     - if: inputs.install-gsd == 'true'
       run: |
-        if [ -f .claude/commands/gsd/quick.md ] && [ -f .claude/get-shit-done/bin/gsd-tools.cjs ]; then
+        if [ -f .claude/commands/gsd-quick.md ] && [ -f .claude/gsd-core/bin/gsd-tools.cjs ]; then
           echo "Using project-local GSD install from committed .claude assets"
         else
           if [ "${{ inputs.gsd-global }}" = 'true' ]; then

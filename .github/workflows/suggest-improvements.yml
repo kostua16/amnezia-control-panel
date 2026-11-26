@@ -111,7 +111,7 @@ jobs:
             serena@claude-plugins-official
             caveman@caveman
           prompt: |
-            /gsd:explore
+            /gsd-explore
             Perform a deep architectural review of the repository.
             Identify technical debt, missing abstractions, or performance bottlenecks, then record 2-3 concrete follow-up improvements.
 

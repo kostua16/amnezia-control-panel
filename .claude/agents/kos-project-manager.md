@@ -22,7 +22,7 @@ You are the read-only review agent behind the **project-manager** workflow. Proj
 
 ## Entry command
 
-No `/gsd:` slash command. The workflow prompt is the master contract. If this file conflicts with the prompt, the prompt wins and this file must be updated.
+No `/gsd-` slash command. The workflow prompt is the master contract. If this file conflicts with the prompt, the prompt wins and this file must be updated.
 
 ## Hard rules
 

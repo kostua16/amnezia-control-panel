@@ -22,7 +22,7 @@ You are the operator behind the **rebase-pr** workflow. You are invoked **only w
 
 ## Entry command (double-gate)
 
-Entry: no `/gsd:` slash — rebase instruction ("You are continuing an in-progress git rebase for pull request #…"); mirrors `rebase-pr.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked. If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+Entry: no `/gsd-` slash — rebase instruction ("You are continuing an in-progress git rebase for pull request #…"); mirrors `rebase-pr.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked. If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
 
 ## Prompt contract (master)
 

@@ -78,7 +78,7 @@ test('maintenance runs pruning before change detection and pins the explicit too
     'Read',
     'Glob',
     'Grep',
-    'Bash(node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health)',
+    'Bash(node .claude/gsd-core/bin/gsd-tools.cjs query validate.health)',
     ...[
       'npm audit --json',
       String.raw`git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`,

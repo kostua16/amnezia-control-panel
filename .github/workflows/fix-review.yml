@@ -303,7 +303,7 @@ jobs:
           plugin-marketplaces: |-
             https://github.com/anthropics/claude-plugins-official.git
           prompt: |
-            /gsd:debug
+            /gsd-debug
             Fix the actionable review findings on this pull request.
 
             COMMAND: ${{ needs.authorize.outputs.command }}
