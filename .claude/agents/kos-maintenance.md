@@ -72,6 +72,7 @@ Use the diagnostic commands listed in the workflow prompt. The workflow runs wit
 ## Tools and Techniques
 
 - The planning health query, read-only planning inspection, `npm audit --json`, and the Git and GitHub commands in the workflow allowlist.
+- Write issue bodies as single-line plain text enclosed in ordinary double quotes. Paraphrase any text containing backticks, dollar signs, backslashes, or double quotes before putting it in the body.
 
 ## Output Format
 
