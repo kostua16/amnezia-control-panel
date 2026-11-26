@@ -68,9 +68,11 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
   assert.equal(agent.with['user-settings-only'], 'true');
   // Pin the workflow allowlist and check that the TOOL GRANTS line describes
   // the allowed commands. The unattended sweep reads public issue and PR
-  // content. Exact grants for planning health, npm audit, and git log keep
-  // their write-capable variants outside the allowlist. GitHub CLI grants
-  // allow arguments for the listed subcommands, and df accepts disk usage flags.
+  // content. Pin the planning health query, npm audit, and git log exactly:
+  // --repair/--backfill can change .planning/, npm audit fix can rewrite the
+  // lockfile, and git log --output=<file> can write a file. The maintenance
+  // persist step stages working-tree changes with git add -A. GitHub CLI
+  // grants allow arguments for the listed subcommands, and df accepts flags.
   const gsdToolsHealth =
     'node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health';
   const gitLogSweep = String.raw`git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`;

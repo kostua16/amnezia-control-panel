@@ -115,7 +115,7 @@ jobs:
 
             Perform daily repository maintenance:
 
-            For steps 1, 2, and 4, copy each command character for character, including flag order, quoting, and escaping. If you use the optional `rtk` prefix, copy the rest of the command exactly as written.
+            Copy the planning health query, dependency audit, and TODO/FIXME git log commands character for character, including flag order, quoting, and escaping. If you use the optional `rtk` prefix, copy the rest of the command exactly as written.
 
             1. Diagnose planning directory status with `node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health`.
             2. Run `npm audit --json` and inspect its output for dependency vulnerabilities.
