@@ -26,10 +26,66 @@ describe('GSD planning workflow automation', () => {
       workflow,
       /collect-gsd-planning-intake\.cjs[\s\S]*--max-plans "\$max_plans"/,
     );
-    assert.match(workflow, /\/gsd:execute-phase 999 --wave/);
+    assert.match(workflow, /\/gsd-execute-phase 999 --wave/);
     assert.match(workflow, /labels: auto-fix,gsd-plan-execution,skip-improve/);
     assert.match(workflow, /draft: 'false'/);
     assert.match(workflow, /<!-- gsd-planning-source-sha256:/);
+  });
+
+  it('refreshes the STATE queue tally from disk between import and execution', () => {
+    const workflow = readRepoFile('.github/workflows/gsd-planning-execute.yml');
+    const importAt = workflow.indexOf(
+      '- name: Import merged planning artifact',
+    );
+    const refreshAt = workflow.indexOf('- name: Refresh Phase 999 queue tally');
+    const executeAt = workflow.indexOf('- name: Execute imported GSD plan');
+
+    assert.ok(importAt !== -1 && refreshAt !== -1 && executeAt !== -1);
+    assert.ok(importAt < refreshAt && refreshAt < executeAt);
+    const refreshStep = workflow.slice(refreshAt, executeAt);
+    assert.match(
+      refreshStep,
+      /gsd-tools\.cjs roadmap update-plan-progress 999/,
+    );
+    assert.match(
+      refreshStep,
+      /gsd-tools\.cjs state update Plan "\$\{summaries\} of \$\{plans\}"/,
+    );
+    assert.match(
+      refreshStep,
+      /progress=\$\(node \.claude\/gsd-core\/bin\/gsd-tools\.cjs roadmap update-plan-progress 999\)/,
+    );
+    assert.match(
+      refreshStep,
+      /plans=\$\(jq -er '\.plan_count' <<<"\$progress"\)/,
+    );
+    assert.match(
+      refreshStep,
+      /summaries=\$\(jq -er '\.summary_count' <<<"\$progress"\)/,
+    );
+    assert.doesNotMatch(refreshStep, /\bfind\b|\bwc -l\b/);
+    assert.match(
+      refreshStep,
+      /startswith\("no changes were needed"\)[\s\S]*exit 1/,
+    );
+    assert.match(refreshStep, /\.plan_count > 0[\s\S]*exit 1/);
+    assert.match(refreshStep, /jq -r '\.updated' <<<"\$update"[\s\S]*exit 1/);
+  });
+
+  it('accepts only the bare /gsd-plan comment trigger, not /gsd-plan-* commands', () => {
+    const workflow = readRepoFile('.github/workflows/gsd-planning.yml');
+    const triggerMatch = workflow.match(
+      /\| grep -Eq '(\^\/gsd-plan[^']*)'; then/,
+    );
+    assert.ok(triggerMatch, 'gsd-planning.yml comment trigger grep not found');
+    const trigger = new RegExp(
+      triggerMatch[1].replaceAll('[[:space:]]', '\\s'),
+    );
+
+    assert.match('/gsd-plan', trigger);
+    assert.match('/gsd-plan 13.5', trigger);
+    assert.doesNotMatch('/gsd-plan-phase 13.5', trigger);
+    assert.doesNotMatch('/gsd-plan-review-convergence 13', trigger);
   });
 
   it('creates planning intake PRs as non-drafts with the intake label', () => {

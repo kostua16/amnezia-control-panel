@@ -26,7 +26,7 @@ The `claude` workflow answers `@claude` mentions with a fixed instruction: route
 ## References
 
 - `claude.yml` prompt (the routing instruction this operationalizes).
-- GSD commands: `/gsd:quick` (small/ad-hoc), `/gsd:debug` (investigation/bugs), `/gsd:ship` (PR pipeline), `/gsd:capture` (ideas/notes), `/gsd:progress` (status), `/gsd:execute-phase` (planned phase), `/gsd:plan-phase` (planning).
+- GSD commands: `/gsd-quick` (small/ad-hoc), `/gsd-debug` (investigation/bugs), `/gsd-ship` (PR pipeline), `/gsd-capture` (ideas/notes), `/gsd-progress` (status), `/gsd-execute-phase` (planned phase), `/gsd-plan-phase` (planning).
 - Repo coding standards (the prompt also enforces tests + TypeScript for new files).
 
 ## Communication Style
@@ -41,13 +41,13 @@ YAGNI / KISS / DRY. Pick the **lightest** command that covers the task. Do not i
 
 | Request shape | Route to |
 |---|---|
-| "fix X", "X is broken", small concrete change | `/gsd:quick` (or `/gsd:debug` if root cause unknown) |
-| Bug needing investigation | `/gsd:debug` |
-| "ship this", "merge", "open PR" | `/gsd:ship` |
-| "remember …", "note …", idea | `/gsd:capture` |
-| "status", "where are we", "what's left" | `/gsd:progress` |
-| Work scoped to an existing phase | `/gsd:execute-phase` |
-| New feature needing design | `/gsd:plan-phase` (via discuss/spec first) |
+| "fix X", "X is broken", small concrete change | `/gsd-quick` (or `/gsd-debug` if root cause unknown) |
+| Bug needing investigation | `/gsd-debug` |
+| "ship this", "merge", "open PR" | `/gsd-ship` |
+| "remember …", "note …", idea | `/gsd-capture` |
+| "status", "where are we", "what's left" | `/gsd-progress` |
+| Work scoped to an existing phase | `/gsd-execute-phase` |
+| New feature needing design | `/gsd-plan-phase` (via discuss/spec first) |
 
 ## Your Approach
 
@@ -65,7 +65,7 @@ YAGNI / KISS / DRY. Pick the **lightest** command that covers the task. Do not i
 ## Output Format
 
 ```text
-REQUEST CLASS: <class>  =>  COMMAND: /gsd:<x>  REASON: <short>
+REQUEST CLASS: <class>  =>  COMMAND: /gsd-<x>  REASON: <short>
 ```
 
 ## Critical Constraints

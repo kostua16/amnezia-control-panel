@@ -568,8 +568,8 @@ toward `unavailable_jobs` only.
 
 - installs or reuses GitHub CLI through `kostua16/setup-gh@v1.0.4`; its `auth` output is true only when `gh auth status --hostname` succeeds for the configured host
 - switches later `gh` commands to the provided `github-token`, so callers can move between `GITHUB_TOKEN` bot/comment identity and `GH_PAT` commit/PR/workflow-trigger identity
-- skips GSD install when `.claude/gsd-install-state.json` is present
-- falls back to pinned `@opengsd/get-shit-done-redux` version `1.1.0` only if that file is missing
+- skips GSD install when `.claude/commands/gsd-quick.md` and `.claude/gsd-core/bin/gsd-tools.cjs` are present
+- falls back to pinned `@opengsd/gsd-core` version `1.23.0` when either file is missing
 - installs pinned RTK version `0.35.0`
 - caches `node_modules`, `.next/cache`, and the RTK binary through SHA-pinned `actions/cache` (no repo-local cache and no disk pruning: each hosted job starts on a fresh VM)
 - optionally installs a pinned, sha256-verified `actionlint` via `install-actionlint: 'true'`, because `ubuntu-latest` does not preinstall it (used by the run monitor and `audit-auto-prs`)
@@ -720,13 +720,7 @@ as a required PR check. The preferred merge path remains `pr-finalizer.yml`.
 
 ## GSD Slash Command Format
 
-All GSD slash commands in workflow prompts **must** use the colon namespace format (`/gsd:xxx`), not the hyphenated form (`/gsd-xxx`). Claude Code's CLI parser only recognizes `/gsd:xxx` as a valid skill invocation. The hyphenated form is a display alias that the local skill router resolves interactively but the CLI rejects when used as the first token in a prompt — the entire run fails with `Unknown command` at turn 0.
-
-| Use           | Avoid         |
-| ------------- | ------------- |
-| `/gsd:health` | `/gsd-health` |
-| `/gsd:debug`  | `/gsd-debug`  |
-| `/gsd:quick`  | `/gsd-quick`  |
+GSD Core 1.23.0 installs flat Claude Code commands under `.claude/commands/`. Use the installed names in workflow prompts, such as `/gsd-health`, `/gsd-debug`, and `/gsd-quick`.
 
 ## Syntax Gate
 
@@ -766,7 +760,7 @@ Each workflow's `run-zai` agent run is **driven by the workflow `prompt:` (the m
 | `gsd-planning-execute`                      | `kos-gsd-planning-execute`                      | `kos-planning-phase-execution`                                                                                                        |
 | `project-manager`                           | `kos-project-manager`                           | `kos-project-manager-pr-queue`, `kos-project-manager-issue-queue`, `kos-project-manager-low-load`, `kos-project-manager-direct-merge` |
 
-These `kos-` agents/skills are **knowledge/docs** (not workflow YAML). They reuse the `/gsd:xxx` colon form and must stay aligned with the prompts and the e2e catalog — see `docs/code-standards.md` → Workflow knowledge layer. Prompt-vs-agent compatibility is governed by the review in `.planning/reports/kos-prompt-compatibility-review.md`.
+These `kos-` agents and skills use the installed `/gsd-xxx` command names. Keep them aligned with the prompts and the e2e catalog. See the workflow knowledge layer in `docs/code-standards.md` and the compatibility review in `.planning/reports/kos-prompt-compatibility-review.md`.
 
 **Invocation (how prompts reach the agent).** Each workflow `prompt:` ends with a one-line wiring: _"Operate as the `kos-<workflow>` agent: first read `.claude/agents/kos-<workflow>.md` and follow it as your operating contract, then perform the task."_ So the main `run-zai` agent loads the agent file's contract + run knowledge before doing the task. Each agent file also has a `## Entry command (double-gate)` section restating its `/gsd:*` (or phase-based entry) so the canonical command is anchored in both the prompt and the agent file (a drift detector).
 

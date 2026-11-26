@@ -23,7 +23,7 @@ metadata:
 - A docs-drift run soft-failed and you are rescoping.
 
 ## References
-- `docs-drift.yml` prompt (`/gsd:docs-update`; allowed scope; do NOT run git/gh; do NOT push; if no drift → no changes).
+- `docs-drift.yml` prompt (`/gsd-docs-update`; allowed scope; do NOT run git/gh; do NOT push; if no drift → no changes).
 - Allowed edit scope: `README.md`, `docs/**`, `.planning/**`, `.github/workflows/documentation.md`.
 - [[kos-zai-agent-runtime-contract]]; repo fact: whole-file `prettier --write` on docs pads every table — avoid it.
 

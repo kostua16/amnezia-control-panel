@@ -9,7 +9,7 @@ keywords: [triage, inbox, issue-catch-up, phases, dry-run, rate-limited, priorit
 related: [kos-zai-agent-runtime-contract, kos-gh-automation-tooling, kos-zai-run-failure-prevention, kos-claude-turn-budget]
 metadata:
   author: kos-workflow-improvement
-  attribution: distilled from triage.yml (/gsd:inbox) + issue-catch-up.yml (6-phase) prompts
+  attribution: distilled from triage.yml (/gsd-inbox) + issue-catch-up.yml (6-phase) prompts
   license: repo
   version: "1.1"
 ---
@@ -17,7 +17,7 @@ metadata:
 # Idea
 
 Two workflows share issue-handling with **different** contracts:
-- **triage** (`/gsd:inbox`) — TRIAGE-ONLY on one new issue: classify, set **exactly one** priority label, dedup, add `triaged`, post the summary. Do NOT fix/read source/suggest code/create PRs.
+- **triage** (`/gsd-inbox`) — TRIAGE-ONLY on one new issue: classify, set **exactly one** priority label, dedup, add `triaged`, post the summary. Do NOT fix/read source/suggest code/create PRs.
 - **issue-catch-up** — act on **categorized** orphaned/stale issues across **6 phases**, honoring **DRY-RUN** and **RATE-LIMITED** modes, with exact `gh` commands per phase.
 
 Both execute `gh issue …` mutations (these workflows permit it). Neither fixes code.

@@ -103,7 +103,7 @@ jobs:
             security-guidance@claude-plugins-official
             code-simplifier@claude-plugins-official
           prompt: |
-            /gsd:audit-fix
+            /gsd-audit-fix
 
             Audit the open GitHub pull requests for the amnezia-control-panel repository, focusing on PRs created automatically by repository workflows, bots, Codex/Claude automation, or generated branches.
 

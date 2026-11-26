@@ -93,7 +93,7 @@ jobs:
             serena@claude-plugins-official
             caveman@caveman
           prompt: |
-            /gsd:docs-update
+            /gsd-docs-update
             Review the codebase against `.planning/` artifacts and standard documentation files.
             Identify any documentation drift between implementation and docs, then update only documentation files to reflect reality.
 

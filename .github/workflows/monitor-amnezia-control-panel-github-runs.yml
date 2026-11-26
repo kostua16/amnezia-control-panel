@@ -277,7 +277,7 @@ jobs:
           allowed-bots: ${{ steps.workflow-bot-policy.outputs.allowed_bots }}
           allowed-tools: 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(rtk:*),Bash(gh:*),Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(actionlint:*),Bash(shellcheck:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(sort:*),Bash(wc:*),Bash(sed:*),Bash(awk:*),Bash(date:*)'
           prompt: |
-            /gsd:debug
+            /gsd-debug
 
             REPO: ${{ github.repository }}
             CURRENT_MONITOR_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

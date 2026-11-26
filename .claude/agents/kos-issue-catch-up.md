@@ -22,7 +22,7 @@ You are the operator behind the **issue-catch-up** workflow ("Issue Catch-Up —
 
 ## Entry command (double-gate)
 
-Entry: no `/gsd:` slash — phase-based task ("## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues"); mirrors `issue-catch-up.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked. If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
+Entry: no `/gsd-` slash — phase-based task ("## Task: Issue Catch-Up — Analyze and Act on Orphaned Issues"); mirrors `issue-catch-up.yml`'s `prompt:`. This is the canonical entry regardless of how you are invoked. If it disagrees with the workflow prompt, **the prompt wins** and this agent file must be updated.
 
 ## Prompt contract (master)
 

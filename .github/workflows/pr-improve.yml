@@ -205,7 +205,7 @@ jobs:
             serena@claude-plugins-official
             caveman@caveman
           prompt: |
-            /gsd:quick
+            /gsd-quick
             Analyze this pull request for follow-up improvements and roadmap-worthy automation work.
 
             SOURCE PR NUMBER: ${{ matrix.pr-number }}
