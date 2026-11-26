@@ -6404,12 +6404,15 @@ function cmdStateSync(cwd, options, raw) {
     // enumeration owner; it delegates window membership to
     // getMilestonePhaseFilter. Cache that owner's bracket result as a set and
     // compose it with this scan, rather than restoring the retired direct
-    // parser dependency. Legacy retains this scan's prior pass-all behavior.
-    // amnezia-control-panel local patch: scope the sync scan to the current
-    // milestone for every phase-id convention, matching the read path.
-    // Without it, legacy repos with archived phase dirs or a Phase 999 queue
-    // get a whole-disk body Progress percent that disagrees with `state json`.
-    const syncMilestonePhaseDirs = new Set(listMilestonePhaseDirs(phasesDir, { cwd, phaseIdConvention: syncConvention }).value);
+    // parser dependency.
+    // amnezia-control-panel local patch: the bracket-only gate described above
+    // is removed. The sync scan is scoped to the current milestone for every
+    // phase-id convention, matching the read path; without it, legacy repos
+    // with archived phase dirs or a Phase 999 queue get a whole-disk body
+    // Progress percent that disagrees with `state json`. A non-array result
+    // keeps the pass-all fallback instead of filtering every directory out.
+    const syncMilestoneDirList = listMilestonePhaseDirs(phasesDir, { cwd, phaseIdConvention: syncConvention }).value;
+    const syncMilestonePhaseDirs = Array.isArray(syncMilestoneDirList) ? new Set(syncMilestoneDirList) : null;
     // Scan all phases
     let entries;
     try {
@@ -6480,8 +6483,8 @@ function cmdStateSync(cwd, options, raw) {
     // maintained copies (#3242 Bug B).
     // #612 round-5: bracket sync enables the same bare-token 999 exclusion as
     // the read path and getMilestonePhaseFilter, preventing frontmatter/body
-    // disagreement. Non-bracket conventions still pass false, preserving the
-    // pre-existing legacy sync behavior while #3185 remains the read-path owner.
+    // disagreement. amnezia-control-panel local patch: every convention now
+    // passes true, matching buildStateFrontmatter's read path.
     let syncTotalPhases = null;
     const roadmapPhaseCount = syncRoadmapScope !== null
         ? countRoadmapPhaseHeadings(syncRoadmapScope, syncConvention, syncRetiredPhaseNums, true /* local patch: exclude sentinel phases for every convention */, directoryContext)
