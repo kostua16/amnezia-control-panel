@@ -19,6 +19,7 @@ test('maintenance pins the scoped tool grants and prompt commands', () => {
   assert.ok(cutoff && steps.indexOf(cutoff) < steps.indexOf(agent));
   assert.equal(cutoff.if, undefined);
   assert.match(cutoff.run, /date -u -d '90 days ago'/);
+  assert.match(cutoff.run, /'\+%Y-%m-%dT%H:%M:%SZ'/);
   assert.match(
     cutoff.run,
     /^\s*printf 'utc=%s\\n' "\$cutoff" >> "\$GITHUB_OUTPUT"$/m,
