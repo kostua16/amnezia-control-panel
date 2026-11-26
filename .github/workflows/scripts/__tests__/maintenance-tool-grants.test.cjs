@@ -13,7 +13,12 @@ test('maintenance pins the scoped tool grants and prompt commands', () => {
   assert.equal(agent.with['user-settings-only'], 'true');
   const cutoff = steps.find((step) => step.id === 'stale_issue_cutoff');
   assert.ok(cutoff && steps.indexOf(cutoff) < steps.indexOf(agent));
+  assert.equal(cutoff.if, undefined);
   assert.match(cutoff.run, /date -u -d '90 days ago'/);
+  assert.match(
+    cutoff.run,
+    /^\s*printf 'utc=%s\\n' "\$cutoff" >> "\$GITHUB_OUTPUT"$/m,
+  );
   // Pin the workflow allowlist and check that the TOOL GRANTS line describes
   // the allowed commands. The unattended sweep reads public issue and PR
   // content. Pin the planning health query, npm audit, and git log exactly:
