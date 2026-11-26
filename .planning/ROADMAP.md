@@ -4,7 +4,7 @@
 
 - **v1.0** -- Phases 1.1-10.4 (shipped 2026-04-29)
 - **v1.1 Multi-Panel Chain Routing + Audit Remediation** -- Phases 11.1-12.15 (shipped 2026-06-11) [archive](.planning/milestones/v1.1-ROADMAP.md)
-- **Developer automation governance** -- Phases 13.1-13.4 (planned)
+- 🚧 **post-v1.1 Developer automation governance** -- Phases 13.1-13.4 (complete, verified 2026-06-11); Phase 999 planning execution queue tracked separately (executing)
 
 ## Phases
 
@@ -137,13 +137,13 @@ Plans:
 **Gap closure:** Closes WARNING-1 (middleware matcher), FLOW-6 (verification closure), and REQUIREMENTS.md checkbox debt
 **Plans:** Verified against codebase (2026-06-11)
 
-### Next Milestone: Developer automation governance (Phases 13.1-13.4)
+### Current Milestone: post-v1.1 Developer automation governance (Phases 13.1-13.4)
 
-- [ ] **Phase 13.1: Workflow governance hardening** -- central policy, maintainer-only triggers, explicit manual-only workflow/planning paths
-- [ ] **Phase 13.2: CI and supply-chain correctness** -- deterministic release notes, pinned bootstrap tooling, hard failures for push/build regressions
-- [ ] **Phase 13.3: PR finalizer and approval policy** -- signal-only reviews, trusted auto-approval, and controlled auto-merge
-- [ ] **Phase 13.4: Claude+GSD planning automation** -- trusted improvement analysis, auto-merged planning intake PRs, and GSD execution queue artifacts
-- [ ] **Phase 999: GH planning execution queue** -- imported merged planning artifacts executed by scheduled GSD automation
+- [x] **Phase 13.1: Workflow governance hardening** -- central policy, maintainer-only triggers, explicit manual-only workflow/planning paths
+- [x] **Phase 13.2: CI and supply-chain correctness** -- deterministic release notes, pinned bootstrap tooling, hard failures for push/build regressions
+- [x] **Phase 13.3: PR finalizer and approval policy** -- signal-only reviews, trusted auto-approval, and controlled auto-merge
+- [x] **Phase 13.4: Claude+GSD planning automation** -- trusted improvement analysis, auto-merged planning intake PRs, and GSD execution queue artifacts
+- [ ] **Phase 999: GH planning execution queue** -- imported merged planning artifacts executed by scheduled GSD automation (reserved queue phase; tracked separately from milestone progress)
 
 **Improvement intake from PR automation**
 <!-- AUTO-PR-IMPROVE-INTAKE-START -->
@@ -160,6 +160,7 @@ Plans:
 <!-- PR-IMPROVE:1142 --> - PR #1142: fix(ci): auto-fix failures from #1136 -- pr1142.1 x1, pr1142.2 x1, pr1142.3 x1. Quick artifact: `.planning/quick/261122-pr1142-workflow-improve/261122-pr1142-PLAN.md`.
 <!-- PR-IMPROVE:1181 --> - PR #1181: ci: add token fingerprint to RATE_LIMIT lines and a quota window summary script -- pr1181.2 x1, pr1181.3 x1, pr1181.4 x1. Quick artifact: `.planning/quick/261122-pr1181-workflow-improve/261122-pr1181-PLAN.md`.
 <!-- PR-IMPROVE:1191 --> - PR #1191: ci: cut GitHub API quota burn (labels, setup-gh, Kilo edits and suggestions, autofix delay) -- pr1191.1 x1, pr1191.2 x1, pr1191.3 x1, pr1191.4 x1. Quick artifact: `.planning/quick/261123-pr1191-workflow-improve/261123-pr1191-PLAN.md`.
+<!-- PR-IMPROVE:1268 --> - PR #1268: fix(ci): tighten rest-counter reason slug and preload guard -- pr1268.1 x1, pr1268.2 x1. Quick artifact: `.planning/quick/261126-pr1268-workflow-improve/261126-pr1268-PLAN.md`.
 <!-- PR-IMPROVE:182 --> - PR #182: fix(audit): address autonomous audit findings -- 13.2 x2, 13.3 x1, 13.4 x1. Quick artifact: `.planning/quick/260603-pr182-workflow-improve/260603-pr182-PLAN.md`.
 <!-- PR-IMPROVE:237 --> - PR #237: [codex] fix PR finalizer auto-merge stall -- pr237.1 x1, pr237.2 x1, pr237.3 x1, pr237.4 x1. Quick artifact: `.planning/quick/260605-pr237-workflow-improve/260605-pr237-PLAN.md`.
 <!-- PR-IMPROVE:352 --> - PR #352: fix: resolve #347 - Security: esbuild RCE + arbitrary file read (HIGH) and postcss XSS (moderate) -- pr352.1 x1, pr352.2 x1, pr352.3 x1, pr352.4 x1. Quick artifact: `.planning/quick/260612-pr352-workflow-improve/260612-pr352-PLAN.md`.
@@ -241,9 +242,10 @@ Plans:
 **Goal:** Store canonical execution plans imported from merged `.planning/quick/**` artifacts.
 **Depends on:** Phase 13.4
 **Requirements:** One imported artifact per wave so the scheduled executor can process up to four plans per day.
-**Plans:** 28/35 plans executed
+**Tracking:** Reserved queue phase (GSD backlog sentinel); its tally is tracked separately and excluded from milestone progress.
+**Plans:** 50/114 plans executed
 
-## Phase Details
+## ✅ Shipped milestone phase details (v1.0, v1.1)
 
 ### Phase 11.1: Tailscale Foundation
 

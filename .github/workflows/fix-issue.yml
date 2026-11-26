@@ -259,7 +259,7 @@ jobs:
             superpowers@claude-plugins-official
             caveman@caveman
           prompt: |
-            /gsd:debug
+            /gsd-debug
             Fix the following GitHub issue.
 
             ISSUE NUMBER: #${{ github.event.issue.number }}

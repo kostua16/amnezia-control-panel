@@ -26,7 +26,7 @@ metadata:
 ## References
 
 - `maintenance.yml` prompt (the 5 categories + create-issue rules).
-- `node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health`, `npm audit --json`, planning state and roadmap reads, and `gh issue list`.
+- `node .claude/gsd-core/bin/gsd-tools.cjs query validate.health`, `npm audit --json`, planning state and roadmap reads, and `gh issue list`.
 - `ensure-workflow-labels` (labels: `maintenance`, `security`, `ci-failure`).
 - `report-failure` (only if the sweep itself fails).
 

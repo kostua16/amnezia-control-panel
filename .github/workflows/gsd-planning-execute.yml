@@ -233,8 +233,36 @@ jobs:
         env:
           PLAN_PATH: ${{ steps.intake.outputs.plan_path }}
         run: |
-          node .claude/get-shit-done/bin/gsd-tools.cjs frontmatter validate "$PLAN_PATH" --schema plan
-          node .claude/get-shit-done/bin/gsd-tools.cjs verify plan-structure "$PLAN_PATH"
+          node .claude/gsd-core/bin/gsd-tools.cjs frontmatter validate "$PLAN_PATH" --schema plan
+          node .claude/gsd-core/bin/gsd-tools.cjs verify plan-structure "$PLAN_PATH"
+
+      # state advance-plan only bumps the numerator of `Plan: N of M`, so the
+      # total goes stale as soon as an import adds a queue plan. Recompute both
+      # numbers with GSD's own plan scan (the same counts ROADMAP's Plans line
+      # uses). Fail the step when ROADMAP was not refreshed (any decline other
+      # than "no changes were needed"), when the scan found no plans, or when
+      # STATE's Plan line was not rewritten.
+      - name: Refresh Phase 999 queue tally
+        if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
+        run: |
+          set -euo pipefail
+          progress=$(node .claude/gsd-core/bin/gsd-tools.cjs roadmap update-plan-progress 999)
+          if ! jq -e '.updated == true or ((.reason // "") | startswith("no changes were needed"))' <<<"$progress" >/dev/null; then
+            echo "::error::ROADMAP.md Phase 999 progress was not refreshed: $progress"
+            exit 1
+          fi
+          if ! jq -e '.plan_count > 0' <<<"$progress" >/dev/null; then
+            echo "::error::GSD plan scan found no Phase 999 queue plans: $progress"
+            exit 1
+          fi
+          plans=$(jq -er '.plan_count' <<<"$progress")
+          summaries=$(jq -er '.summary_count' <<<"$progress")
+          update=$(node .claude/gsd-core/bin/gsd-tools.cjs state update Plan "${summaries} of ${plans}")
+          if [ "$(jq -r '.updated' <<<"$update")" != 'true' ]; then
+            echo "::error::STATE.md Plan line was not refreshed: $update"
+            exit 1
+          fi
+          echo "Phase 999 queue tally: ${summaries} of ${plans}"
 
       - name: Execute imported GSD plan
         id: gsd
@@ -262,7 +290,7 @@ jobs:
             superpowers@claude-plugins-official
             caveman@caveman
           prompt: |
-            /gsd:execute-phase 999 --wave ${{ steps.intake.outputs.wave }} --no-transition
+            /gsd-execute-phase 999 --wave ${{ steps.intake.outputs.wave }} --no-transition
 
             Execute exactly the imported GSD planning queue plan:
             - Plan: `${{ steps.intake.outputs.plan_path }}`

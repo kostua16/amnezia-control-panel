@@ -231,7 +231,7 @@ jobs:
             security-guidance@claude-plugins-official
             code-simplifier@claude-plugins-official
           prompt: |
-            /gsd:code-review
+            /gsd-code-review
             REPO: ${{ github.repository }}
             PR NUMBER: '${{ needs.resolve-pr.outputs.pr-number }}'
 

@@ -20,7 +20,7 @@ These repos run Claude Code inside GitHub Actions through the `run-zai` action (
 
 ## When to invoke this skill directly
 
-- You are operating inside a workflow run (the prompt told you a `/gsd:*` command + a task) — apply prevention up front.
+- You are operating inside a workflow run (the prompt told you a `/gsd-*` command + a task) — apply prevention up front.
 - You are diagnosing a red run before re-dispatching it.
 - You are editing a workflow YAML / prompt / `allowed-tools` list and want to avoid reintroducing a known mode.
 

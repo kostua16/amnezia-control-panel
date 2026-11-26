@@ -16,14 +16,14 @@ metadata:
 
 # Idea
 
-`audit-fix` runs `/gsd:audit-fix`: audit the repo for debt/smells/missing tests, implement **targeted** fixes, verify, stop when findings are addressed. The agent **edits files only** — it does **NOT** run git or gh, does **NOT** push/commit/open a PR (the workflow handles commit/PR/reconcile). Run knowledge: the one hard failure observed was runner disk exhaustion during setup (a workflow/runner concern, not the agent's logic). Note: this skill is for `audit-fix` (code audit). `audit-auto-prs` is a different workflow — it audits automation **PRs**, not code.
+`audit-fix` runs `/gsd-audit-fix`: audit the repo for debt/smells/missing tests, implement **targeted** fixes, verify, stop when findings are addressed. The agent **edits files only** — it does **NOT** run git or gh, does **NOT** push/commit/open a PR (the workflow handles commit/PR/reconcile). Run knowledge: the one hard failure observed was runner disk exhaustion during setup (a workflow/runner concern, not the agent's logic). Note: this skill is for `audit-fix` (code audit). `audit-auto-prs` is a different workflow — it audits automation **PRs**, not code.
 
 ## When to invoke this skill directly
 - Running the `audit-fix` autonomous code audit-and-fix cycle.
 - An audit-fix run failed on disk / produced an over-broad diff / omitted the findings output.
 
 ## References
-- `audit-fix.yml` prompt (`/gsd:audit-fix`; do NOT run git or gh; never `node_modules` paths; don't search `node_modules`/`.next`/`src/generated`/coverage).
+- `audit-fix.yml` prompt (`/gsd-audit-fix`; do NOT run git or gh; never `node_modules` paths; don't search `node_modules`/`.next`/`src/generated`/coverage).
 - `.github/workflows/scripts/classify-audit-fix.cjs`, `reconcile-audit-issues.sh` (workflow steps, not agent actions).
 - Disk exhaustion on a runner is a workflow concern, not an agent action — see [[kos-runner-disk-hygiene]].
 - [[kos-zai-agent-runtime-contract]].

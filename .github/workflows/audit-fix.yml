@@ -188,7 +188,7 @@ jobs:
             code-review@claude-plugins-official
             security-guidance@claude-plugins-official
           prompt: |
-            /gsd:audit-fix
+            /gsd-audit-fix
             Run a full repository audit for technical debt, code smells, and missing tests.
             Implement targeted fixes, run the most relevant verification you can, and stop once the audit findings are addressed.
 

@@ -22,7 +22,7 @@ test('maintenance pins the scoped tool grants and prompt commands', () => {
   // persist step stages working-tree changes with git add -A. GitHub CLI
   // grants allow arguments for the listed subcommands, and df accepts flags.
   const gsdToolsHealth =
-    'node .claude/get-shit-done/bin/gsd-tools.cjs query validate.health';
+    'node .claude/gsd-core/bin/gsd-tools.cjs query validate.health';
   const gitLogSweep = String.raw`git log --since="12 hours ago" --grep="TODO\|FIXME" --oneline`;
   const grants = [
     { command: gsdToolsHealth, exact: true, rtk: true },

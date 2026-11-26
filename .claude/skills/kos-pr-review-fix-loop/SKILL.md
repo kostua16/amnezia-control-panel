@@ -17,8 +17,8 @@ metadata:
 # Idea
 
 Two PR-focused workflows share review-evidence handling but have **different jobs and output contracts**:
-- **code-review** (`/gsd:code-review`) — **review only**. Produce a combined general + STRIDE/OWASP security review; return JSON verdict; **do not fix, do not approve/request-changes/edit labels** (the workflow applies `ai-review-*`/`security-review-*` labels).
-- **fix-review** (`/gsd:debug`) — **fix only actionable findings**; iterate `tsc`; run the prompt's gate (`npm run format` then `npm run test && npm run build`); **do not push** (the workflow `commit-and-push` step pushes, gated by `validate-pr-gate`); return JSON.
+- **code-review** (`/gsd-code-review`) — **review only**. Produce a combined general + STRIDE/OWASP security review; return JSON verdict; **do not fix, do not approve/request-changes/edit labels** (the workflow applies `ai-review-*`/`security-review-*` labels).
+- **fix-review** (`/gsd-debug`) — **fix only actionable findings**; iterate `tsc`; run the prompt's gate (`npm run format` then `npm run test && npm run build`); **do not push** (the workflow `commit-and-push` step pushes, gated by `validate-pr-gate`); return JSON.
 
 Both read pre-fetched review feedback. Neither pushes. Observed failures: code-review at the `wake-orchestrator` step (often a tolerated non-zero exit); fix-review at the workflow's commit-and-push/gate step.
 
