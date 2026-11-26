@@ -239,12 +239,22 @@ jobs:
       # state advance-plan only bumps the numerator of `Plan: N of M`, so the
       # total goes stale as soon as an import adds a queue plan. Recompute both
       # numbers with GSD's own plan scan (the same counts ROADMAP's Plans line
-      # uses) and fail the step if STATE's Plan line was not rewritten.
+      # uses). Fail the step when ROADMAP was not refreshed (any decline other
+      # than "no changes were needed"), when the scan found no plans, or when
+      # STATE's Plan line was not rewritten.
       - name: Refresh Phase 999 queue tally
         if: steps.intake.outputs.has_candidate == 'true' && (github.event.inputs.dry_run || 'false') != 'true'
         run: |
           set -euo pipefail
           progress=$(node .claude/gsd-core/bin/gsd-tools.cjs roadmap update-plan-progress 999)
+          if ! jq -e '.updated == true or ((.reason // "") | startswith("no changes were needed"))' <<<"$progress" >/dev/null; then
+            echo "::error::ROADMAP.md Phase 999 progress was not refreshed: $progress"
+            exit 1
+          fi
+          if ! jq -e '.plan_count > 0' <<<"$progress" >/dev/null; then
+            echo "::error::GSD plan scan found no Phase 999 queue plans: $progress"
+            exit 1
+          fi
           plans=$(jq -er '.plan_count' <<<"$progress")
           summaries=$(jq -er '.summary_count' <<<"$progress")
           update=$(node .claude/gsd-core/bin/gsd-tools.cjs state update Plan "${summaries} of ${plans}")

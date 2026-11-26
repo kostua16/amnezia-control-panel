@@ -51,7 +51,25 @@ describe('GSD planning workflow automation', () => {
       refreshStep,
       /gsd-tools\.cjs state update Plan "\$\{summaries\} of \$\{plans\}"/,
     );
-    assert.match(refreshStep, /jq -r '\.updated'[\s\S]*exit 1/);
+    assert.match(
+      refreshStep,
+      /progress=\$\(node \.claude\/gsd-core\/bin\/gsd-tools\.cjs roadmap update-plan-progress 999\)/,
+    );
+    assert.match(
+      refreshStep,
+      /plans=\$\(jq -er '\.plan_count' <<<"\$progress"\)/,
+    );
+    assert.match(
+      refreshStep,
+      /summaries=\$\(jq -er '\.summary_count' <<<"\$progress"\)/,
+    );
+    assert.doesNotMatch(refreshStep, /\bfind\b|\bwc -l\b/);
+    assert.match(
+      refreshStep,
+      /startswith\("no changes were needed"\)[\s\S]*exit 1/,
+    );
+    assert.match(refreshStep, /\.plan_count > 0[\s\S]*exit 1/);
+    assert.match(refreshStep, /jq -r '\.updated' <<<"\$update"[\s\S]*exit 1/);
   });
 
   it('accepts only the bare /gsd-plan comment trigger, not /gsd-plan-* commands', () => {
