@@ -145,6 +145,7 @@ jobs:
       - name: Evaluate and dispatch review repair
         if: steps.reserve.outputs.proceed != 'false'
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
@@ -203,7 +204,11 @@ jobs:
           # 5xx / network errors fail the job loudly; a fresh commit with no
           # statuses/check-runs yet (HTTP 404) is treated as an empty list. The
           # repo-wide fix-review run list is fetched once and shared across PRs.
-          node .github/workflows/scripts/fetch-auto-cover-context.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/fetch-auto-cover-context.cjs \
             --repo "$GITHUB_REPOSITORY" \
             --out-dir "$RUNNER_TEMP/auto-cover-review" \
             --prs-file "$prs_file" \
@@ -218,7 +223,7 @@ jobs:
           if [ "$AUTO_COVER_DELAY_MODE" = "direct" ]; then
             mode="direct"
           fi
-          node .github/workflows/scripts/run-auto-cover-repairs.cjs \
+          node "${preload[@]}" .github/workflows/scripts/run-auto-cover-repairs.cjs \
             --mode "$mode" \
             --context-dir "$RUNNER_TEMP/auto-cover-review" \
             --policy-file .github/workflows/policy.json \

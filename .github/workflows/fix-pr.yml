@@ -67,18 +67,28 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: fix-pr-evaluate
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Read source PR metadata
         id: source-pr
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Counting is best-effort.
+            }
+
             const prNumber = Number(
               context.payload.workflow_run?.pull_requests?.[0]?.number ??
                 (context.payload.issue?.pull_request ? context.payload.issue.number : 0),

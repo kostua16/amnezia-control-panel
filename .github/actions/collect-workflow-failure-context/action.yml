@@ -43,8 +43,16 @@ runs:
     - name: Collect workflow failure details
       id: collect
       uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+      env:
+        REST_COUNTER_PRELOAD: ${{ env.REST_COUNTER_DIR && format('{0}/rest-preload.cjs', env.REST_COUNTER_DIR) || '' }}
       with:
         script: |
+          try {
+            if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+          } catch {
+            // Counting is best-effort.
+          }
+
           const run = await github.rest.actions.getWorkflowRun({
             owner: context.repo.owner,
             repo: context.repo.repo,

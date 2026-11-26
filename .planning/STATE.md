@@ -135,6 +135,16 @@ Resume file: None
 | Date       | Slug / ID    | Summary                                                     |
 | ---------- | ------------ | ----------------------------------------------------------- |
 | 2026-11-26 | 261125-pte   | PR #1251 review fixes: GSD 1.23.0 upgrade, Phase 999 tracked outside milestone progress, 13.1-13.4 records normalized |
+| 2026-11-25 | 261125-rla   | Address the eighth CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-r45   | Address the seventh CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-qoy   | Address the sixth CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-qgc   | Address the fifth CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-q7t   | Address the fourth CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-puv   | Normalize the CLI counter input and test composite PATH updates for PR #1252 |
+| 2026-11-25 | 261125-pnc   | Address the third CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-pb9   | Address the second CLI counter review for PR #1252 |
+| 2026-11-25 | 261125-ow0   | Address counter review feedback for PR #1252 |
+| 2026-11-25 | 261125-o4p   | Count GitHub CLI requests and wire the remaining GitHub Script steps |
 | 2026-11-25 | 261125-0l9   | Add missing Prisma migration for Server.redirectIp (fixes GET /api/servers 500 on fresh DB) |
 | 2026-11-24 | 261124-v61   | Address PR #1223 maintenance review findings |
 | 2026-11-23 | 261123-w9f   | Avoid Docker main-push REST comparison and closed-issue authorization |
@@ -174,6 +184,7 @@ Resume file: None
 | 2026-08-15 | 260815-r3p | Harden ledger: schema validation, metadata refresh, --validate gate (AFX-E02 review fixes, PR #1085) |
 | 2026-11-22 | 261122-2df | Migrate all workflows from self-hosted to ubuntu-latest, rollback runbook (RUN-M01, #1128) |
 | 2026-11-22 | 261122-3zh   | Fix npm audit high+ (next 16.4.6, audit fix, effect/brace-expansion overrides, #1130) |
+| 2026-09-27 | 260927-5bp | Migration 20260617 redefines admins/user_quotas (SQLite non-constant-default); the servers.redirectIp migration found along the way landed separately via #1238 |
 
 ---
 

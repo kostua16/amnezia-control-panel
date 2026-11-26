@@ -61,17 +61,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: workflow-health-collect-runs
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Collect workflow runs from past hour
         id: collect
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Counting is best-effort.
+            }
+
             const { parseClaudeExecution } = require('./.github/workflows/scripts/parse-claude-execution.cjs');
             const {
               duplicateSameSha,
@@ -326,20 +336,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GH_PAT }}
           label: workflow-health-detect-flaky
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Detect flaky workflows across hours (WHO-E04)
         id: flaky
         shell: bash
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           RUNS_DATA: ${{ needs.collect-runs.outputs.runs-data }}
         run: |
-          node .github/workflows/scripts/detect-flaky-workflows.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/detect-flaky-workflows.cjs \
             --repo "${{ github.repository }}" \
             --runs-data "$RUNS_DATA" \
             --lookback-hours 6
@@ -353,20 +370,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: ./.github/actions/log-rate-limit
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
         with:
           github-token: ${{ secrets.GH_PAT }}
           label: workflow-health-queue-starvation
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: File queue starvation alert (WHO-E03)
         shell: bash
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           QUEUE_TELEMETRY: ${{ needs.collect-runs.outputs.queue-telemetry }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node .github/workflows/scripts/file-queue-starvation-alert.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/file-queue-starvation-alert.cjs \
             --repo "${{ github.repository }}" \
             --telemetry "$QUEUE_TELEMETRY" \
             --run-url "$RUN_URL"
@@ -580,6 +604,7 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           label: workflow-health-blocked-gate
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Track blocked optimization gate
         env:
@@ -616,6 +641,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: workflow-health-report-failure
           report-at-job-end: 'true'
+          rest-counter: 'true'
 
       - name: Report workflow health check failure
         uses: ./.github/actions/report-failure

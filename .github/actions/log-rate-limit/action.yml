@@ -12,7 +12,10 @@ inputs:
     description: 'When true, also log the quota in the post step at the end of the job (even if the job failed or was cancelled)'
     default: 'false'
   rest-counter:
-    description: 'Prepare a REST request preload for opted-in Node steps and report its counts at job end'
+    description: 'Count GitHub API requests from opted-in Node steps and gh on PATH'
+    default: 'false'
+  defer-gh-counter:
+    description: 'Let setup-environment install the CLI observer after gh is configured'
     default: 'false'
 
 outputs:
@@ -20,6 +23,8 @@ outputs:
     description: 'Remaining core (REST) quota of the token at the time of the reading; empty when it could not be read'
   rest-counter-preload:
     description: 'Path to the job-local preload, or empty when disabled'
+  rest-counter-enabled:
+    description: 'True when requested and job-local counter storage is available'
 
 runs:
   using: node24

@@ -51,7 +51,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-environment
+      - id: setup_environment
+        uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
@@ -62,8 +63,16 @@ jobs:
       - name: Resolve PR context
         id: resolve
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Counting is best-effort.
+            }
+
             const eventName = context.eventName;
             let pr = null;
 
@@ -139,7 +148,8 @@ jobs:
           ref: ${{ needs.resolve-pr.outputs.head-sha }}
           fetch-depth: 0
 
-      - uses: ./.github/actions/setup-environment
+      - id: setup_environment
+        uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
@@ -159,12 +169,18 @@ jobs:
       - name: Post review started
         if: always()
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
           HEAD_SHA: ${{ needs.resolve-pr.outputs.head-sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
         run: |
-          node .github/workflows/scripts/upsert-code-review-comment.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/upsert-code-review-comment.cjs \
             --pr "$PR_NUMBER" \
             --head-sha "$HEAD_SHA" \
             --run-url "$RUN_URL" \
@@ -298,10 +314,17 @@ jobs:
       - name: Apply review signals
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
           STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
         with:
           script: |
+            try {
+              if (process.env.REST_COUNTER_PRELOAD) require(process.env.REST_COUNTER_PRELOAD);
+            } catch {
+              // Counting is best-effort.
+            }
+
             const review = JSON.parse(process.env.STRUCTURED_OUTPUT || '{}');
             const issueNumber = Number(process.env.PR_NUMBER);
             const labelPairs = [
@@ -418,6 +441,7 @@ jobs:
       - name: Post review summary
         if: always()
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr-number }}
           HEAD_SHA: ${{ needs.resolve-pr.outputs.head-sha }}
@@ -427,8 +451,13 @@ jobs:
           CLAUDE_FAILED: ${{ steps.review.outputs.claude_failed }}
           CLAUDE_FAILURE_REASON: ${{ steps.review.outputs.claude_failure_reason }}
           OUTCOME: ${{ steps.review.outcome }}
+        shell: bash
         run: |
-          node .github/workflows/scripts/upsert-code-review-comment.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/upsert-code-review-comment.cjs \
             --pr "$PR_NUMBER" \
             --head-sha "$HEAD_SHA" \
             --run-url "$RUN_URL" \
@@ -452,8 +481,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-auth-mode: ${{ vars.GH_AUTH_MODE || 'env' }}
           node-version: ${{ env.NODE_VERSION }}
-          # Only runs `gh workflow run`; Node and Bun are unused here.
-          # setup-gh provides gh without Node (verified by pr-policy.yml).
+          # This job uses the hosted Node runtime for the gh counter.
           setup-node: 'false'
           setup-bun: 'false'
 

@@ -72,6 +72,46 @@ test('aggregates REST counts by workflow and job across attempts and matrix repo
   );
 });
 
+test('aggregates source splits alongside legacy Node-only reports', () => {
+  const prefix = 'REST_COUNT workflow="Mixed" job=check run=';
+  const mixed =
+    prefix +
+    '1.2 total=2 graphql=3 instrumented=2 unreadable=0 via={"node":1,"gh":1} graphql_via={"node":1,"gh":2} by_route={"GET /user":1,"OTHER /user":1}';
+  const summary = summarize([
+    prefix + '1.1 total=1 graphql=1 gh=unavailable by_route={"GET /user":1}',
+    mixed,
+    mixed.replace('"gh":1', '"gh":9'),
+  ]);
+  assert.equal(summary.restCounts[0].reports, 2);
+  assert.equal(
+    parseRestCount(mixed.replace(' by_route=', ' gh_status=ok by_route='))
+      .ghStatus,
+    'ok',
+  );
+  assert.equal(
+    parseRestCount(
+      mixed.replace(
+        ' by_route=',
+        ' gh_status=unavailable gh_reason=launcher-shadowed by_route=',
+      ),
+    ).ghUnavailableReason,
+    'launcher-shadowed',
+  );
+  assert.equal(
+    parseRestCount(
+      prefix +
+        '1.1 total=1 graphql=1 gh=unavailable gh_reason=no-gh by_route={"GET /user":1}',
+    ).ghUnavailableReason,
+    'no-gh',
+  );
+  assert.deepEqual(summary.restCounts[0].via, { node: 2, gh: 1 });
+  assert.deepEqual(summary.restCounts[0].graphqlVia, { node: 2, gh: 2 });
+  assert.match(
+    format(summary),
+    /via=\{"node":2,"gh":1\} graphql_via=\{"node":2,"gh":2\} gh_unavailable_reports=1/,
+  );
+});
+
 function line({
   phase,
   job = 'orchestrate',
@@ -86,6 +126,34 @@ function line({
     `core_remaining=${remaining}/5000 core_reset=${reset} graphql=4919/5000`
   );
 }
+
+test('unsupported runner reports retain Node totals without inflating CLI failures', () => {
+  const prefix = 'REST_COUNT workflow="Matrix" job=check run=1.1 ';
+  const suffix = ' by_route={"GET /user":1}';
+  const [group] = summarize([
+    prefix +
+      'total=1 graphql=0 gh_status=unavailable gh_reason=unsupported-platform' +
+      suffix,
+    prefix +
+      'total=1 graphql=0 gh_status=unavailable gh_reason=unknown-platform' +
+      suffix,
+  ]).restCounts;
+  assert.equal(group.ghUnavailableReports, 1);
+  assert.deepEqual(group.via, { node: 2, gh: 0 });
+});
+
+test('unfamiliar CLI reasons preserve the reported counts and routes', () => {
+  for (const reason of ['a'.repeat(60), 'NO-GH', 'future-failure2']) {
+    const count = parseRestCount(
+      `REST_COUNT workflow="Matrix" job=check run=1.1 total=2 graphql=1 via={"node":1,"gh":1} graphql_via={"node":0,"gh":1} gh_status=unavailable gh_reason=${reason} by_route={"GET /user":2}`,
+    );
+    assert.equal(count.ghUnavailableReason, reason);
+    assert.equal(count.total, 2);
+    assert.equal(count.graphql, 1);
+    assert.deepEqual(count.via, { node: 1, gh: 1 });
+    assert.deepEqual(count.routes, [['GET /user', 2]]);
+  }
+});
 
 test('parses a RATE_LIMIT line behind a log prefix and ignores other lines', () => {
   const parsed = parseLine(

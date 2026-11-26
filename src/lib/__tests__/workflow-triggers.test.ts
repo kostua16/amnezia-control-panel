@@ -170,7 +170,7 @@ describe('workflow trigger policy', () => {
     );
     assert.match(
       yaml,
-      /node \.github\/workflows\/scripts\/run-auto-cover-repairs\.cjs\s+\\\r?\n\s+--mode "\$mode"/,
+      /node "\$\{preload\[@\]\}" \.github\/workflows\/scripts\/run-auto-cover-repairs\.cjs\s+\\\r?\n\s+--mode "\$mode"/,
     );
     assert.match(yaml, /--dry-run "\$DRY_RUN"/);
     const repairScript = fs.readFileSync(

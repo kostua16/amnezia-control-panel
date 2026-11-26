@@ -112,6 +112,13 @@ jobs:
       - name: Checkout (default branch — scripts and policy)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - id: rest_counter
+        uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          label: fix-review-eligibility
+          rest-counter: 'true'
+
       - name: Ensure protected-edits label exists
         uses: ./.github/actions/ensure-workflow-labels
         with:
@@ -154,6 +161,7 @@ jobs:
       - name: React and post skipped (ineligible)
         if: steps.pr.outputs.eligible != 'true'
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
@@ -163,6 +171,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SKIP_REASON: ${{ steps.pr.outputs.skip_reason }}
           SKIP_REASON_CODE: ${{ steps.pr.outputs.skip_reason_code }}
+        shell: bash
         run: |
           if [ -n "$COMMENT_ID" ]; then
             gh api -X POST "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" -f content=eyes || true
@@ -176,7 +185,11 @@ jobs:
           if [ "$SKIP_REASON_CODE" = "stale" ] && [ -n "$EXPECTED_HEAD_SHA" ]; then
             STAMP_SHA="$EXPECTED_HEAD_SHA"
           fi
-          node .github/workflows/scripts/upsert-fix-review-comment.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/upsert-fix-review-comment.cjs \
             --pr "$PR_NUMBER" --head-sha "$STAMP_SHA" --run-url "$RUN_URL" \
             --reason "$SKIP_REASON" --skip-reason-code "$SKIP_REASON_CODE" --mode skipped
           exit 0
@@ -192,14 +205,20 @@ jobs:
       - name: Post started
         if: steps.pr.outputs.eligible == 'true'
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
           COMMAND: ${{ needs.authorize.outputs.command }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
         run: |
-          node .github/workflows/scripts/upsert-fix-review-comment.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/upsert-fix-review-comment.cjs \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" --mode started
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -234,26 +253,38 @@ jobs:
         if: steps.pr.outputs.eligible == 'true'
         id: feedback
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
+        shell: bash
         run: |
           out="$RUNNER_TEMP/review-feedback.md"
-          node .github/workflows/scripts/collect-review-feedback.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/collect-review-feedback.cjs \
             --pr "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --out "$out"
           echo "path=$out" >> "$GITHUB_OUTPUT"
 
       - name: Post working
         if: steps.pr.outputs.eligible == 'true'
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
           COMMAND: ${{ needs.authorize.outputs.command }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
         run: |
-          node .github/workflows/scripts/upsert-fix-review-comment.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/upsert-fix-review-comment.cjs \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" --mode working
 
       # The agent action may come from an older target branch.
@@ -476,6 +507,7 @@ jobs:
       - name: Post finished summary
         if: always() && steps.pr.outputs.eligible == 'true'
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.rest_counter.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr-number }}
@@ -503,8 +535,13 @@ jobs:
           PUSH_FAILURE_REASON: ${{ steps.push.outputs.failure-reason }}
           COMMIT_SHA: ${{ steps.sha.outputs.commit_sha }}
           AUTOMERGE_DISABLED: ${{ steps.automerge.outputs.disabled }}
+        shell: bash
         run: |
-          node .github/workflows/scripts/upsert-fix-review-comment.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/upsert-fix-review-comment.cjs \
             --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL" --command "$COMMAND" \
             --num-turns "$NUM_TURNS" --failed "$CLAUDE_FAILED" --fail-reason "$CLAUDE_FAILURE_REASON" \
             --outcome "$OUTCOME" --has-changes "$HAS_CHANGES" --restored-only "$RESTORED_ONLY" \

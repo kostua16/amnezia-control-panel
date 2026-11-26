@@ -6,6 +6,7 @@ const { execFile } = require('node:child_process');
 const { once } = require('node:events');
 const {
   appendFileSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -16,20 +17,22 @@ const {
 } = require('node:fs');
 const { createServer } = require('node:http');
 const { tmpdir } = require('node:os');
-const { basename, join, resolve } = require('node:path');
+const { basename, delimiter, join, resolve } = require('node:path');
 const test = require('node:test');
 const { promisify } = require('node:util');
 
 const {
   apiTarget,
   classify,
-} = require('../../../actions/log-rate-limit/rest-preload.cjs');
+} = require('../../../actions/log-rate-limit/rest-routes.cjs');
 const {
   collectRestCounts,
+  formatUnavailableLine,
+  reportGhInstallFailure,
   reportRestCounter,
   startRestCounter,
 } = require('../../../actions/log-rate-limit/rest-counter.cjs');
-const { parseRestCount } = require('../summarize-rate-limit.cjs');
+const { parseRestCount, summarize } = require('../summarize-rate-limit.cjs');
 
 const runNode = promisify(execFile);
 const action = resolve(__dirname, '../../../actions/log-rate-limit');
@@ -47,8 +50,39 @@ function setupEnv(root, runnerTemp = root) {
     GITHUB_ENV: join(root, 'environment'),
     GITHUB_OUTPUT: join(root, 'output'),
     GITHUB_STATE: join(root, 'state'),
+    GITHUB_PATH: join(root, 'path'),
   };
 }
+
+test('counter startup and post accept the same normalized request', (t) => {
+  for (const [input, enabled] of [
+    ['True', true],
+    ['TRUE', true],
+    [' true ', true],
+    ['false', false],
+    ['False', false],
+    ['', false],
+    ['invalid', false],
+  ]) {
+    const setup = { ...setupEnv(temp(t)), 'INPUT_REST-COUNTER': input };
+    const dir = startRestCounter(setup);
+    assert.equal(Boolean(dir), enabled, JSON.stringify(input));
+    if (enabled) {
+      assert.match(
+        readFileSync(setup.GITHUB_OUTPUT, 'utf8'),
+        /^rest-counter-enabled=true$/m,
+      );
+    } else {
+      assert.deepEqual(readdirSync(setup.RUNNER_TEMP), []);
+    }
+    const lines = [];
+    reportRestCounter({
+      env: { ...setup, STATE_rest_counter_dir: dir, REST_COUNTER_DIR: dir },
+      log: (line) => lines.push(line),
+    });
+    assert.equal(lines.length, enabled ? 1 : 0, JSON.stringify(input));
+  }
+});
 
 test('a preload dependency failure never aborts Node startup', async (t) => {
   const fault = join(temp(t), 'fault.cjs');
@@ -73,6 +107,71 @@ test('a preload dependency failure never aborts Node startup', async (t) => {
   ]);
   assert.equal(result.stdout.trim(), 'started');
   assert.equal(result.stderr, '');
+});
+
+test('reused collector returns its directory with or without an output file', (t) => {
+  const root = temp(t);
+  const setup = setupEnv(root);
+  const dir = startRestCounter(setup);
+  const output = join(root, 'reuse-output');
+  const state = join(root, 'reuse-state');
+  for (const file of [output, undefined]) {
+    const warnings = [];
+    const reused = startRestCounter(
+      {
+        ...setup,
+        REST_COUNTER_DIR: dir,
+        GITHUB_STATE: state,
+        GITHUB_OUTPUT: file,
+      },
+      (line) => warnings.push(line),
+    );
+    assert.equal(reused, dir);
+    assert.deepEqual(warnings, []);
+  }
+  assert.equal(
+    readFileSync(output, 'utf8'),
+    `rest-counter-preload=${join(dir, 'rest-preload.cjs')}\nrest-counter-enabled=true\n`,
+  );
+  assert.equal(
+    readFileSync(state, 'utf8'),
+    'rest_counter_skip=true\n'.repeat(2),
+  );
+});
+
+test('post action contains unexpected report failures', async () => {
+  const code = `
+    require(${JSON.stringify(join(action, 'rest-counter.cjs'))}).reportRestCounter = () => { throw new Error('private-fixture-data'); };
+    require(${JSON.stringify(join(action, 'post.cjs'))});
+  `;
+  const result = await runNode(process.execPath, ['-e', code], {
+    env: {
+      ...process.env,
+      'INPUT_REPORT-AT-JOB-END': 'false',
+      GITHUB_WORKFLOW: 'Workflow "test"',
+      GITHUB_JOB: 'check',
+      GITHUB_RUN_ID: '12',
+      GITHUB_RUN_ATTEMPT: '2',
+    },
+  });
+  assert.match(
+    result.stdout,
+    /status=unavailable reason=report-failed total=0 graphql=0 by_route=\{\}/,
+  );
+  assert.doesNotMatch(result.stdout, /private-fixture-data/);
+  assert.equal(
+    summarize([result.stdout.trimEnd()]).restCounts[0].unavailableRuns.size,
+    1,
+  );
+  assert.equal(result.stderr, '');
+  const empty = await runNode(process.execPath, ['-e', code], { env: {} });
+  const [group] = summarize([empty.stdout.trimEnd()]).restCounts;
+  assert.equal(group.workflow, 'unknown');
+  assert.equal(group.job, 'unknown');
+  assert.ok(group.runs.has('unknown.unknown'));
+  assert.equal(group.unavailableRuns.size, 1);
+  assert.equal(parseRestCount(empty.stdout.trimEnd())?.ghUnavailable, false);
+  assert.equal(group.ghUnavailableReports, 0);
 });
 
 test('disabled and invalid setup do not create files, and partial setup is cleaned up', (t) => {
@@ -130,9 +229,26 @@ test('enabled reporters mark missing, changed or unreadable storage unavailable'
       log: (line) => lines.push(line),
     });
     assert.deepEqual(lines, [
-      `REST_COUNT workflow="" job=job run=12.1 status=unavailable reason=${reason}`,
+      `REST_COUNT workflow="unknown" job=job run=12.1 status=unavailable reason=${reason} total=0 graphql=0 by_route={}`,
     ]);
     assert.equal(parseRestCount(lines[0]).status, 'unavailable');
+  }
+});
+
+test('unavailable reports use a safe, parseable reason code', () => {
+  const longCode = 'report-'.repeat(8) + 'fail';
+  for (const [reason, expected] of [
+    ['Error: boom', 'error-boom'],
+    ['', 'invalid-reason'],
+    ['---123---', 'invalid-reason'],
+    ['123 Error: boom', 'error-boom'],
+    ['UPPERCASE', 'uppercase'],
+    [longCode, longCode.slice(0, 40)],
+    ['future-failure2', 'future-failure2'],
+  ]) {
+    const line = formatUnavailableLine({ reason });
+    assert.ok(line.includes('reason=' + expected + ' total=0'), line);
+    assert.equal(parseRestCount(line)?.status, 'unavailable');
   }
 });
 
@@ -142,7 +258,9 @@ test('the action reports REST counts even with its quota post snapshot disabled'
     ...process.env,
     ...setupEnv(root),
     REST_COUNTER_DIR: '',
+    RUNNER_OS: '',
     STATE_rest_counter_skip: '',
+    'INPUT_DEFER-GH-COUNTER': 'true',
     'INPUT_REPORT-AT-JOB-END': 'false',
     GITHUB_JOB: 'standalone',
     GITHUB_RUN_ID: '12',
@@ -155,19 +273,30 @@ test('the action reports REST counts even with its quota post snapshot disabled'
     .trimEnd()
     .slice('rest_counter_dir='.length);
   assert.ok(dir);
-  const result = await runNode(process.execPath, [join(action, 'post.cjs')], {
-    env: { ...env, REST_COUNTER_DIR: dir, STATE_rest_counter_dir: dir },
-  });
-  assert.match(
-    result.stdout,
-    /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 by_route=\{\}\s*$/,
-  );
   const preload = join(dir, 'rest-preload.cjs');
   const postEnv = {
     ...env,
     REST_COUNTER_DIR: dir,
     STATE_rest_counter_dir: dir,
   };
+  for (const [platform, reason] of [
+    ['linux', 'not-installed'],
+    ['win32', 'unsupported-platform'],
+    ['darwin', 'unsupported-platform'],
+  ]) {
+    const script = `Object.defineProperty(process, 'platform', { value: ${JSON.stringify(platform)} }); require(${JSON.stringify(join(action, 'post.cjs'))});`;
+    const result = await runNode(process.execPath, ['-e', script], {
+      env: postEnv,
+    });
+    assert.match(
+      result.stdout,
+      /^REST_COUNT .* job=standalone .* status=uninstrumented total=0 graphql=0 instrumented=0 unreadable=0 via=\{"node":0,"gh":0\} graphql_via=\{"node":0,"gh":0\} gh_status=unavailable gh_reason=[a-z-]+ by_route=\{\}\s*$/,
+    );
+    assert.equal(
+      parseRestCount(result.stdout.trimEnd()).ghUnavailableReason,
+      reason,
+    );
+  }
   await runNode(process.execPath, ['--require', preload, '-e', ''], {
     env: postEnv,
   });
@@ -176,9 +305,116 @@ test('the action reports REST counts even with its quota post snapshot disabled'
   });
   assert.match(
     quiet.stdout,
-    /total=0 graphql=0 instrumented=1 unreadable=0 by_route=\{\}/,
+    /total=0 graphql=0 instrumented=1 unreadable=0 via=.* by_route=\{\}/,
   );
   assert.doesNotMatch(quiet.stdout, /status=uninstrumented/);
+});
+
+test('post reports missing gh coverage until a launcher or observed requests are present', (t) => {
+  const setup = setupEnv(temp(t));
+  const dir = startRestCounter(setup);
+  writeFileSync(join(dir, 'requests-abcd.log'), 'attached\nGET /user\n');
+  const env = {
+    ...setup,
+    GITHUB_JOB: 'review',
+    GITHUB_RUN_ID: '42',
+    GITHUB_RUN_ATTEMPT: '1',
+    STATE_rest_counter_dir: dir,
+    REST_COUNTER_DIR: dir,
+    GITHUB_STEP_SUMMARY: join(dir, 'summary'),
+  };
+  const report = (platform = 'linux') => {
+    let count;
+    reportRestCounter({
+      env,
+      platform,
+      log: (line) => (count = parseRestCount(line)),
+    });
+    return count;
+  };
+  assert.equal(report().ghUnavailable, true);
+  assert.equal(report().ghUnavailableReason, 'not-installed');
+  assert.deepEqual(report().via, { node: 1, gh: 0 });
+  for (const reason of [
+    'no-gh',
+    'no-github-path',
+    'unwritable-dir',
+    'io',
+    'node-not-on-path',
+    'future-failure2',
+  ]) {
+    const annotations = [];
+    reportGhInstallFailure(dir, reason, (line) => annotations.push(line));
+    assert.deepEqual(annotations, [
+      `::warning::GitHub CLI request counting unavailable (${reason})`,
+    ]);
+    assert.equal(report().ghUnavailableReason, reason);
+  }
+  writeFileSync(
+    join(dir, 'gh-setup-failure'),
+    'unexpected https://private.invalid\n',
+  );
+  assert.equal(report().ghUnavailableReason, 'not-installed');
+  for (const value of ['no-gh \n', 'no-gh\r\n\r\n']) {
+    writeFileSync(join(dir, 'gh-setup-failure'), value);
+    assert.equal(report().ghUnavailableReason, 'no-gh');
+  }
+  const firstSummary = JSON.parse(
+    readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8').split('\n')[4],
+  );
+  assert.match(
+    readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8'),
+    /"gh_reason":"future-failure2"/,
+  );
+  assert.equal(firstSummary.gh_status, 'unavailable');
+  assert.equal(firstSummary.gh_reason, 'not-installed');
+  assert.equal(firstSummary.via.gh, 0);
+  assert.equal(Object.hasOwn(firstSummary, 'gh'), false);
+  for (const [platform, reason] of [
+    ['win32', 'unsupported-platform'],
+    ['darwin', 'unsupported-platform'],
+    ['freebsd', 'unknown-platform'],
+  ]) {
+    assert.equal(report(platform).ghUnavailableReason, reason);
+  }
+  env.RUNNER_OS = 'Windows';
+  assert.equal(report('linux').ghUnavailableReason, 'no-gh');
+  reportGhInstallFailure(dir, 'no-gh', () => {});
+  const bin = join(dir, 'gh-bin');
+  mkdirSync(bin);
+  const launcher = join(bin, 'gh');
+  const observer = join(bin, 'gh-counter.cjs');
+  const node = process.execPath.replaceAll("'", "'\\''");
+  assert.equal(report().ghUnavailable, true);
+  env.PATH = bin;
+  assert.equal(report().ghUnavailableReason, 'launcher-unusable');
+  writeFileSync(
+    launcher,
+    `#!/bin/bash\nnode_bin='${join(bin, 'missing-node')}'\n`,
+    { mode: 0o700 },
+  );
+  assert.equal(report().ghUnavailableReason, 'node-unusable');
+  writeFileSync(launcher, `#!/bin/bash\nnode_bin='${node}'\n`);
+  writeFileSync(observer, '');
+  assert.equal(report().ghUnavailableReason, 'observer-unusable');
+  writeFileSync(observer, "'use strict';\n");
+  if (process.platform === 'linux') {
+    chmodSync(launcher, 0o600);
+    assert.equal(report().ghUnavailableReason, 'launcher-unusable');
+    chmodSync(launcher, 0o700);
+  }
+  const shadow = join(dir, 'shadow');
+  mkdirSync(shadow);
+  writeFileSync(join(shadow, 'gh'), '#!/bin/bash\n', { mode: 0o700 });
+  env.PATH = `${shadow}${delimiter}${bin}`;
+  assert.equal(report().ghUnavailableReason, 'launcher-shadowed');
+  env.PATH = bin;
+  assert.equal(report().ghUnavailable, false);
+  assert.equal(report().ghUnavailableReason, undefined);
+  env.PATH = '';
+  writeFileSync(join(dir, 'gh-requests-abcd.log'), 'attached\ngraphql\n');
+  assert.equal(report().ghUnavailable, false);
+  assert.deepEqual(report().graphqlVia, { node: 0, gh: 1 });
 });
 
 test('classifies only API hosts and emits no request data beyond fixed templates', () => {
@@ -204,6 +440,7 @@ test('classifies only API hosts and emits no request data beyond fixed templates
   );
   assert.equal(route('/graphql?secret=value', undefined, 'POST'), 'graphql');
   assert.equal(route('/rate_limit'), null);
+  assert.equal(route('/rate_limit', undefined, 'POST'), 'POST /other');
   assert.equal(
     route(
       '/api/v3/repos/o/r/issues/1/comments',
@@ -246,7 +483,8 @@ test('setup, parallel children and post count HTTP and fetch without changing re
   );
   assert.deepEqual(Object.keys(exported), ['REST_COUNTER_DIR']);
   const preload = readFileSync(setup.GITHUB_OUTPUT, 'utf8')
-    .trimEnd()
+    .split('\n')
+    .find((line) => line.startsWith('rest-counter-preload='))
     .slice('rest-counter-preload='.length);
 
   const requests = [];
@@ -336,6 +574,8 @@ test('setup, parallel children and post count HTTP and fetch without changing re
     graphql: 2,
     instrumented: 3,
     unreadable: 1,
+    via: { node: 7, gh: 0 },
+    graphql_via: { node: 2, gh: 0 },
     by_route: {
       'GET /other': 1,
       'GET /repos/:o/:r': 2,
@@ -357,10 +597,16 @@ test('setup, parallel children and post count HTTP and fetch without changing re
       GITHUB_RUN_ATTEMPT: '2',
       GITHUB_STEP_SUMMARY: summary,
     },
+    platform: 'win32',
     log: (line) => logs.push(line),
   });
   assert.equal(logs.length, 1);
   assert.equal(parseRestCount(logs[0]).total, counts.total);
   assert.ok(!logs[0].includes('private-fixture-token'));
-  assert.ok(readFileSync(summary, 'utf8').includes(JSON.stringify(counts)));
+  const stepReport = JSON.parse(readFileSync(summary, 'utf8').split('\n')[4]);
+  assert.deepEqual(stepReport, {
+    ...counts,
+    gh_status: 'unavailable',
+    gh_reason: 'unsupported-platform',
+  });
 });

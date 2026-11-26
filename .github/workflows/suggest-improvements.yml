@@ -36,7 +36,8 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
 
-      - uses: ./.github/actions/setup-environment
+      - id: setup_environment
+        uses: ./.github/actions/setup-environment
         with:
           github-token: ${{ secrets.GH_PAT }}
           node-version: ${{ env.NODE_VERSION }}
@@ -47,9 +48,15 @@ jobs:
       - name: Check for pending suggest-improvements PRs
         id: pending_suggest
         env:
+          REST_COUNTER_PRELOAD: ${{ steps.setup_environment.outputs.rest-counter-preload }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
+        shell: bash
         run: |
-          node .github/workflows/scripts/check-pending-automation-pr.cjs \
+          preload=()
+          if [[ -n "$REST_COUNTER_PRELOAD" && -r "$REST_COUNTER_PRELOAD" ]]; then
+            preload=(--require "$REST_COUNTER_PRELOAD")
+          fi
+          node "${preload[@]}" .github/workflows/scripts/check-pending-automation-pr.cjs \
             --repo "${{ github.repository }}" \
             --base-ref main \
             --title-prefix 'planning: repo-wide improvement follow-ups' \

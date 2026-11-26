@@ -3,7 +3,7 @@ description: 'Setup Node.js, GitHub CLI, Bun, optionally install deps and GSD'
 
 inputs:
   rest-counter:
-    description: 'Enable REST request counting for instrumented Node steps'
+    description: 'Enable REST request counting for instrumented Node steps and gh on PATH'
     default: 'true'
   github-token:
     description: 'GitHub token for gh authentication'
@@ -110,6 +110,7 @@ runs:
         label: setup-environment
         report-at-job-end: 'true'
         rest-counter: ${{ inputs.rest-counter }}
+        defer-gh-counter: 'true'
 
     - if: inputs.setup-node == 'true'
       uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
@@ -258,6 +259,27 @@ runs:
           gh --version || fail_or_warn "gh is on PATH but does not run."
         else
           fail_or_warn "gh is not on PATH (env mode does not install it); later steps that call gh will fail."
+        fi
+
+    - name: Count GitHub CLI requests
+      if: steps.rate_limit.outputs.rest-counter-enabled == 'true' && runner.os == 'Linux'
+      shell: bash
+      env:
+        REST_COUNTER_ENABLED: ${{ steps.rate_limit.outputs.rest-counter-enabled }}
+      run: |
+        warn_gh_counter() {
+          echo "::warning::GitHub CLI request counting unavailable ($1)"
+          if [[ -d "${REST_COUNTER_DIR:-}" ]]; then
+            printf '%s\n' "$1" 2>/dev/null > "$REST_COUNTER_DIR/gh-setup-failure" || true
+          fi
+        }
+        if ! node_bin="$(command -v node)"; then
+          warn_gh_counter node-not-on-path
+        elif ! reason="$("$node_bin" "$GITHUB_ACTION_PATH/../log-rate-limit/gh-counter.cjs" --install "$REST_COUNTER_ENABLED" 2>/dev/null)"; then
+          if [[ ! "$reason" =~ ^[a-z][a-z0-9-]{0,39}$ ]]; then
+            reason=setup-failed
+          fi
+          warn_gh_counter "$reason"
         fi
 
     - if: inputs.install-deps == 'true'
