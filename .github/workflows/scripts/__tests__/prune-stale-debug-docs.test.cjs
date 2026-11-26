@@ -66,6 +66,9 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
   assert.equal(steps[prune + 1].id, 'detect_changes');
   const agent = steps.find((step) => step.id === 'claude_run');
   assert.equal(agent.with['user-settings-only'], 'true');
+  const cutoff = steps.find((step) => step.id === 'stale_issue_cutoff');
+  assert.ok(cutoff && steps.indexOf(cutoff) < steps.indexOf(agent));
+  assert.match(cutoff.run, /date -u -d '90 days ago'/);
   // Pin the workflow allowlist and check that the TOOL GRANTS line describes
   // the allowed commands. The unattended sweep reads public issue and PR
   // content. Pin the planning health query, npm audit, and git log exactly:
@@ -159,7 +162,7 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
     gsdToolsHealth,
     'npm audit --json',
     gitLogSweep,
-    'gh issue list --state open --search "created:<CUTOFF"',
+    'gh issue list --state open --search "created:<${{ steps.stale_issue_cutoff.outputs.utc }} sort:updated-desc" --limit 100',
     'gh issue create --title "Security: [summary of vulnerabilities]" --label "security" --body "[detailed findings]"',
     'gh issue create --title "Maintenance: stale issues review" --label "maintenance" --body "[list of stale issues]"',
     'gh issue create --title "Maintenance: unresolved TODOs" --label "maintenance" --body "[list of TODOs with commit references]"',
