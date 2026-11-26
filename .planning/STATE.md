@@ -135,6 +135,7 @@ Resume file: None
 | Date       | Slug / ID    | Summary                                                     |
 | ---------- | ------------ | ----------------------------------------------------------- |
 | 2026-11-26 | 261125-pte   | PR #1251 review fixes: GSD 1.23.0 upgrade, Phase 999 tracked outside milestone progress, 13.1-13.4 records normalized |
+| 2026-11-26 | 261126-sif   | Validate the telemetry cutoff and compare run timestamps in PR #1087 |
 | 2026-11-25 | 261125-rla   | Address the eighth CLI counter review for PR #1252 |
 | 2026-11-25 | 261125-r45   | Address the seventh CLI counter review for PR #1252 |
 | 2026-11-25 | 261125-qoy   | Address the sixth CLI counter review for PR #1252 |
@@ -182,6 +183,7 @@ Resume file: None
 | 2026-07-20 | 260721-4ej | Fix npm audit infrastructure failure classification |
 | 2026-08-15 | 260815-n6m | Persistent audit-findings ledger for audit-fix runs (AFX-E02, #1072) |
 | 2026-08-15 | 260815-r3p | Harden ledger: schema validation, metadata refresh, --validate gate (AFX-E02 review fixes, PR #1085) |
+| 2026-08-15 | 260815-rt9 | MON-E06 per-run cost/turn telemetry aggregation (#1049) |
 | 2026-11-22 | 261122-2df | Migrate all workflows from self-hosted to ubuntu-latest, rollback runbook (RUN-M01, #1128) |
 | 2026-11-22 | 261122-3zh   | Fix npm audit high+ (next 16.4.6, audit fix, effect/brace-expansion overrides, #1130) |
 | 2026-09-27 | 260927-5bp | Migration 20260617 redefines admins/user_quotas (SQLite non-constant-default); the servers.redirectIp migration found along the way landed separately via #1238 |
