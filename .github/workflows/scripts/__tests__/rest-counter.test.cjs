@@ -242,6 +242,7 @@ test('unavailable reports use a safe, parseable reason code', () => {
     ['', 'invalid-reason'],
     ['---123---', 'invalid-reason'],
     ['123 Error: boom', 'error-boom'],
+    ['1'.repeat(40) + 'boom', 'boom'],
     ['UPPERCASE', 'uppercase'],
     [longCode, longCode.slice(0, 40)],
     [`${'a'.repeat(39)}-failure`, 'a'.repeat(39)],

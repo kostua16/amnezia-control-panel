@@ -212,7 +212,13 @@ test('every opted-in step loads the preload without overriding runner Node optio
       );
       let nodeSteps = 0;
       for (const [index, step] of (doc.jobs[job].steps ?? []).entries()) {
-        if (!/(?:^|[\s;&|()])node[ \t]/.test(step.run ?? '')) continue;
+        // A Node step either runs `node` at command position (not inside an
+        // echo or a comment) or is an actions/github-script step.
+        const runsNode =
+          /(?:^|[;&|(]|\b(?:then|do|else))[ \t]*node[ \t]/m.test(
+            step.run ?? '',
+          ) || /^actions\/github-script@/.test(step.uses ?? '');
+        if (!runsNode) continue;
         assert.ok(
           step.env?.REST_COUNTER_PRELOAD,
           label +
