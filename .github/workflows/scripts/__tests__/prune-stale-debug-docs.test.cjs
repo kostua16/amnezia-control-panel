@@ -159,7 +159,7 @@ test('maintenance runs pruning before change detection and pins the scoped tool 
     gsdToolsHealth,
     'npm audit --json',
     gitLogSweep,
-    'gh issue list',
+    'gh issue list --state open --search "created:<CUTOFF"',
     'gh issue create --title "Security: [summary of vulnerabilities]" --label "security" --body "[detailed findings]"',
     'gh issue create --title "Maintenance: stale issues review" --label "maintenance" --body "[list of stale issues]"',
     'gh issue create --title "Maintenance: unresolved TODOs" --label "maintenance" --body "[list of TODOs with commit references]"',
