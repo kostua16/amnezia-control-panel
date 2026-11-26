@@ -34,7 +34,9 @@ describe('GSD planning workflow automation', () => {
 
   it('refreshes the STATE queue tally from disk between import and execution', () => {
     const workflow = readRepoFile('.github/workflows/gsd-planning-execute.yml');
-    const importAt = workflow.indexOf('- name: Import merged planning artifact');
+    const importAt = workflow.indexOf(
+      '- name: Import merged planning artifact',
+    );
     const refreshAt = workflow.indexOf('- name: Refresh Phase 999 queue tally');
     const executeAt = workflow.indexOf('- name: Execute imported GSD plan');
 
