@@ -42,10 +42,16 @@ describe('GSD planning workflow automation', () => {
 
     assert.ok(importAt !== -1 && refreshAt !== -1 && executeAt !== -1);
     assert.ok(importAt < refreshAt && refreshAt < executeAt);
+    const refreshStep = workflow.slice(refreshAt, executeAt);
     assert.match(
-      workflow.slice(refreshAt, executeAt),
+      refreshStep,
+      /gsd-tools\.cjs roadmap update-plan-progress 999/,
+    );
+    assert.match(
+      refreshStep,
       /gsd-tools\.cjs state update Plan "\$\{summaries\} of \$\{plans\}"/,
     );
+    assert.match(refreshStep, /jq -r '\.updated'[\s\S]*exit 1/);
   });
 
   it('accepts only the bare /gsd-plan comment trigger, not /gsd-plan-* commands', () => {
