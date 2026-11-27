@@ -178,6 +178,19 @@ test('header counts the rendered groups, not only the selected list', () => {
     ),
     '_Selected: 1 · Unsafe: 0 · Filtered: 0 · Capped: 0 · Unclassified: 1_',
   );
+  // Rows rebuilt without a disposition are bucketed by their decision_code.
+  assert.equal(
+    header(
+      renderMergePrReport({
+        skippedGroups: [
+          { id: 'a', source_prs: [1], decision_code: 'CONSOLIDATE_CAPPED' },
+          { id: 'b', source_prs: [2], decision_code: 'FILTERED_OUT' },
+          { id: 'c', source_prs: [3], decision_code: 'REBASE_FIRST_CONFLICT' },
+        ],
+      }),
+    ),
+    '_Selected: 0 · Unsafe: 1 · Filtered: 1 · Capped: 1_',
+  );
   // Id-less rows must not match each other through an undefined id key.
   const idlessSelected = { source_prs: [1] };
   assert.equal(

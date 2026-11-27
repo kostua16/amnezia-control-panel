@@ -125,9 +125,10 @@ function decisionFor(group, disposition) {
     const underlying = decisionForAction(group);
     // An inner reason may already carry its own "underlying:" label; join it
     // directly so the cell never nests a second label.
-    const inner = underlying.reason.includes('; underlying: ')
-      ? `; ${underlying.reason}`
-      : `; underlying: ${underlying.reason}`;
+    const innerReason = String(underlying.reason ?? '');
+    const inner = innerReason.includes('; underlying: ')
+      ? `; ${innerReason}`
+      : `; underlying: ${innerReason}`;
     return {
       decision_code: DECISION_CODES.FILTERED_OUT,
       reason: underlying.consolidation_eligible
@@ -159,7 +160,15 @@ function enrichGroup(group, { disposition }) {
     decision_code: described.decision_code,
     reason: described.reason,
     consolidation_eligible: eligible,
-    closure_policy: eligible ? 'deferred-write-path' : 'not-eligible',
+    // A filtered group is excluded by the operator for this run: it stays
+    // consolidation-eligible as a fact about the group, but must never read as
+    // a deferred closure candidate.
+    closure_policy:
+      disposition === 'filtered'
+        ? 'excluded-by-filter'
+        : eligible
+          ? 'deferred-write-path'
+          : 'not-eligible',
     closure_status: 'not-attempted',
     rejection_reason:
       disposition === 'selected' && eligible

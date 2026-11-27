@@ -28,6 +28,23 @@ function collectGroups({ selectedGroups, skippedGroups, allGroups }) {
   return [...(selectedGroups || []), ...(skippedGroups || [])];
 }
 
+// Rows rebuilt without a disposition (older stubs, skipped_json replays) still
+// carry a decision_code that names their bucket unambiguously.
+const DECISION_BUCKETS = {
+  CONSOLIDATE_SELECTED: 'selected',
+  CONSOLIDATE_CAPPED: 'capped-deferred',
+  FILTERED_OUT: 'filtered',
+  REBASE_FIRST_CONFLICT: 'unsafe',
+  MANUAL_REVIEW_MULTI_CONFLICT: 'unsafe',
+  MANUAL_REVIEW_DEPENDENCY: 'unsafe',
+  MANUAL_REVIEW_UNKNOWN_ACTION: 'unsafe',
+  REPORT_ONLY_EMPTY: 'unsafe',
+};
+
+function bucketOf(g) {
+  return g.disposition ?? DECISION_BUCKETS[g.decision_code] ?? null;
+}
+
 function formatPrs(prs) {
   return (Array.isArray(prs) ? prs : []).map((n) => `#${n}`).join(', ');
 }
@@ -95,8 +112,8 @@ function renderMergePrReport({
     allGroups,
   });
   // Header counts must describe the same rows as the table: each row's own
-  // disposition decides its bucket, and only a row without a disposition
-  // falls back to selected-list membership — a partially dispositioned
+  // disposition (or, failing that, its decision_code) decides its bucket, and
+  // only a row with neither falls back to selected-list membership — a partially dispositioned
   // payload must not under-count the selected rows it renders.
   // Id-less rows never match by id (an undefined key would collapse them
   // all together); they match only by object identity.
@@ -109,8 +126,8 @@ function renderMergePrReport({
   const isListedSelected = (g) =>
     selectedRows.has(g) || selectedIds.has(g.group_id ?? g.id);
   const countDisposition = (disposition) =>
-    groups.filter((g) => g.disposition === disposition).length;
-  const undispositioned = groups.filter((g) => !g.disposition);
+    groups.filter((g) => bucketOf(g) === disposition).length;
+  const undispositioned = groups.filter((g) => bucketOf(g) === null);
   const selectedCount =
     countDisposition('selected') +
     undispositioned.filter(isListedSelected).length;

@@ -223,7 +223,7 @@ test('group filter keeps the matching group and marks others filtered', () => {
   // Eligibility stays intrinsic to the group, like capped-deferred rows, so a
   // consumer filtering skipped rows on it sees what could run if unfiltered.
   assert.equal(result.filtered[0].consolidation_eligible, true);
-  assert.equal(result.filtered[0].closure_policy, 'deferred-write-path');
+  assert.equal(result.filtered[0].closure_policy, 'excluded-by-filter');
   assert.equal(result.validation.groupFilter, 'app-code-11');
   assert.equal(result.validation.filteredCount, 1);
   assert.ok(result.skipped.some((g) => g.group_id === 'workflow-10'));
@@ -390,4 +390,11 @@ test('unrecognized recommended_action is unsafe, never consolidation-eligible', 
     groupFilter: 'other-group',
   }).filtered[0];
   assert.equal(filteredPopulated.reason.split('underlying:').length - 1, 1);
+
+  // A non-string rejection_reason must not crash the filtered composition.
+  const filteredOdd = finalizeStalePrSelection({
+    groups: [{ ...groupWith('needs-human'), rejection_reason: { code: 7 } }],
+    groupFilter: 'other-group',
+  }).filtered[0];
+  assert.equal(filteredOdd.decision_code, DECISION_CODES.FILTERED_OUT);
 });
