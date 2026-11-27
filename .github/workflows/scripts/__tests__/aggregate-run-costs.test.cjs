@@ -132,6 +132,24 @@ test('buildRecord defaults a missing run_attempt to 1', () => {
   assert.equal(record.attempt, 1);
 });
 
+test('buildRecord labels the outcome from the job conclusion, not the run', () => {
+  const record = buildRecord({
+    run: { ...RUN, conclusion: 'failure' },
+    job: { ...JOB, conclusion: 'success' },
+    logText: metricsLog(),
+    maxLogBytes: 512 * 1024,
+  });
+  assert.equal(record.outcome, 'success');
+
+  const fallback = buildRecord({
+    run: { ...RUN, conclusion: 'failure' },
+    job: { ...JOB, conclusion: null },
+    logText: metricsLog(),
+    maxLogBytes: 512 * 1024,
+  });
+  assert.equal(fallback.outcome, 'failure');
+});
+
 // ── capLogText ────────────────────────────────────────────────────────
 
 test('capLogText keeps the tail so end-of-log metrics survive the cap', () => {
@@ -220,7 +238,7 @@ test('fetchCompletedRuns parses paginated NDJSON and applies window filters', ()
     created_at: '',
   };
   const calls = [];
-  const { runs, errors } = fetchCompletedRuns(
+  const { runs, truncated, errors } = fetchCompletedRuns(
     {
       repo: 'owner/repo',
       workflowFile: 'monitor.yml',
@@ -247,7 +265,17 @@ test('fetchCompletedRuns parses paginated NDJSON and applies window filters', ()
     [1002],
   );
   assert.ok(calls[0].includes('status=completed'));
+  // The window must bound the listing server-side; a client-side filter
+  // alone would let --paginate walk the workflow's entire history. gh
+  // splits -f at the FIRST '=', so the argument must be the parameter
+  // `created` with a value of `>=…` — a single '=' sends a bogus `created>`
+  // parameter GitHub silently ignores, re-opening the unbounded scan.
+  assert.ok(
+    calls[0].includes('created=>=2026-08-15T00:00:00Z'),
+    'server-side window must be parameter `created` with a >=… value',
+  );
   assert.ok(calls[0].includes('--paginate'));
+  assert.equal(truncated, false);
 });
 
 test('fetchCompletedRuns sorts newest first and caps at maxRuns', () => {
@@ -256,7 +284,7 @@ test('fetchCompletedRuns sorts newest first and caps at maxRuns', () => {
     id: n,
     run_started_at: `2026-08-15T0${n}:00:00Z`,
   }));
-  const { runs } = fetchCompletedRuns(
+  const { runs, truncated } = fetchCompletedRuns(
     {
       repo: 'owner/repo',
       workflowFile: 'monitor.yml',
@@ -270,6 +298,7 @@ test('fetchCompletedRuns sorts newest first and caps at maxRuns', () => {
     runs.map((r) => r.id),
     [5, 4, 3],
   );
+  assert.equal(truncated, true, 'capping the window must be reported');
 });
 
 test('fetchCompletedRuns fails closed when since is missing', () => {
@@ -290,20 +319,22 @@ test('fetchCompletedRuns fails closed when since is missing', () => {
   assert.equal(calls.length, 0, 'gh must not be called without a window');
 });
 
-test('fetchCompletedRuns fails closed when since is not a valid UTC instant in the expected format', () => {
+test('fetchCompletedRuns fails closed when since is not canonical UTC', () => {
   const calls = [];
+  // A bare `--since` parses to the literal 'true'. The guard requires the
+  // canonical UTC form the script itself emits: Date.parse-valid but
+  // non-canonical values ('2026/08/15', 'Aug 15 2026', '+02:00' offsets)
+  // would pass a parse-only check yet corrupt the string window filter
+  // into dropping every run — the green-empty-window case this guard
+  // exists to prevent.
   for (const bad of [
     'true',
     'yesterday',
     '2026-13-45',
+    '2026-13-45T99:99:99Z', // shape-valid, but not a real date
     '2026/08/15',
     'Aug 15 2026',
     '2026-08-15T09:00:00+02:00',
-    '2026-08-15T09:56:30.12Z',
-    '2026-13-45T00:00:00Z',
-    '2026-08-15T99:00:00Z',
-    '2026-02-29T00:00:00Z',
-    '2026-08-15T24:00:00Z',
   ]) {
     const { runs, errors } = fetchCompletedRuns(
       {
@@ -324,7 +355,9 @@ test('fetchCompletedRuns fails closed when since is not a valid UTC instant in t
   assert.equal(calls.length, 0, 'gh must not be called for a bad window');
 });
 
-test('fetchCompletedRuns applies an inclusive cutoff to mixed timestamp precision', () => {
+test('fetchCompletedRuns accepts fractional canonical since and filters by it', () => {
+  // toISOString() emits milliseconds when present; the guard must accept
+  // that form while still filtering the window correctly.
   const afterSince = {
     ...RUN,
     id: 1003,
@@ -333,12 +366,14 @@ test('fetchCompletedRuns applies an inclusive cutoff to mixed timestamp precisio
   const beforeSince = {
     ...RUN,
     id: 1002,
-    run_started_at: '2026-08-15T09:56:30Z',
+    run_started_at: '2026-08-15T09:56:30.100Z',
   };
-  const atSince = {
+  const onTheSecond = {
     ...RUN,
     id: 1004,
-    run_started_at: '2026-08-15T09:56:30.123Z',
+    // The second-precision form GitHub actually emits: a string compare
+    // would rank '...30Z' >= '...30.123Z' and wrongly include it.
+    run_started_at: '2026-08-15T09:56:30Z',
   };
   const { runs, errors } = fetchCompletedRuns(
     {
@@ -348,62 +383,63 @@ test('fetchCompletedRuns applies an inclusive cutoff to mixed timestamp precisio
       maxRuns: 10,
       perPage: 100,
     },
-    runsRunner(
-      [atSince, beforeSince, afterSince].map((run) => JSON.stringify(run)),
-    ),
+    runsRunner([
+      JSON.stringify(beforeSince),
+      JSON.stringify(afterSince),
+      JSON.stringify(onTheSecond),
+    ]),
   );
   assert.deepEqual(errors, []);
   assert.deepEqual(
     runs.map((r) => r.id),
-    [1003, 1004],
+    [1003],
   );
 });
 
 test('fetchCompletedRuns preserves input order for equal timestamps', () => {
   const first = { ...RUN, id: 2001, run_started_at: '2026-08-15T05:00:00Z' };
-  const second = {
-    ...RUN,
-    id: 2002,
-    run_started_at: '2026-08-15T05:00:00.000Z',
-  };
-  const newer = {
-    ...RUN,
-    id: 2003,
-    run_started_at: '2026-08-15T05:00:00.001Z',
-  };
+  const second = { ...RUN, id: 2002, run_started_at: '2026-08-15T05:00:00Z' };
   const { runs } = fetchCompletedRuns(
     {
       repo: 'owner/repo',
       workflowFile: 'monitor.yml',
-      since: '2026-08-15T05:00:00Z',
+      since: '2026-08-15T00:00:00Z',
       maxRuns: 10,
       perPage: 100,
     },
-    runsRunner([first, second, newer].map((run) => JSON.stringify(run))),
+    runsRunner([JSON.stringify(first), JSON.stringify(second)]),
   );
   // Array#sort is stable, so a comparator that returns 0 for equal
   // timestamps keeps the order of equal-timestamped runs deterministic.
   assert.deepEqual(
     runs.map((r) => r.id),
-    [2003, 2001, 2002],
+    [2001, 2002],
   );
 });
 
-test('fetchRunJobs parses NDJSON and drops malformed job rows', () => {
+test('fetchRunJobs parses NDJSON, lists every attempt, and drops malformed rows', () => {
+  const calls = [];
   const { jobs } = fetchRunJobs(
     { repo: 'owner/repo', runId: 1001, perPage: 100 },
-    () => ({
-      ok: true,
-      stdout: [
-        JSON.stringify(JOB),
-        '{broken',
-        JSON.stringify({ ...JOB, id: 555002, run_attempt: 2 }),
-      ].join('\n'),
-    }),
+    (args) => {
+      calls.push(args);
+      return {
+        ok: true,
+        stdout: [
+          JSON.stringify(JOB),
+          '{broken',
+          JSON.stringify({ ...JOB, id: 555002, run_attempt: 2 }),
+        ].join('\n'),
+      };
+    },
   );
   assert.deepEqual(
     jobs.map((j) => j.id),
     [555001, 555002],
+  );
+  assert.ok(
+    calls[0].includes('filter=all'),
+    'every re-run attempt must be listed so retried spend is counted',
   );
 });
 
@@ -580,7 +616,7 @@ function fakeGh(script) {
   };
 }
 
-test('collectCostTelemetry builds records, counts missing jobs, and surfaces fetch errors', () => {
+test('collectCostTelemetry builds records, skips non-agent jobs, and reports the window', () => {
   const gateJob = { ...JOB, id: 555900, name: 'Fleet back-pressure gate' };
   const runner = fakeGh([
     {
@@ -601,10 +637,9 @@ test('collectCostTelemetry builds records, counts missing jobs, and surfaces fet
       match: 'jobs/555001/logs',
       respond: () => ({ ok: true, stdout: metricsLog() }),
     },
-    {
-      match: 'jobs/555900/logs',
-      respond: () => ({ ok: true, stdout: '##[group]Run gate\nok 1\n' }),
-    },
+    // No handler for jobs/555900/logs on purpose: the gate job log must
+    // never be fetched — a fetch would return an unscripted-call error and
+    // surface in the fetch_errors assertion below.
   ]);
 
   const result = collectCostTelemetry(
@@ -621,11 +656,20 @@ test('collectCostTelemetry builds records, counts missing jobs, and surfaces fet
   assert.equal(result.error, null);
   assert.equal(result.records.length, 1);
   assert.equal(result.records[0].run_id, 1001);
-  assert.equal(result.summary.jobs_scanned, 2);
-  assert.equal(result.summary.missing_metrics_jobs, 1); // gate job
+  assert.equal(result.summary.jobs_scanned, 1); // only the agent job
+  assert.equal(result.summary.missing_metrics_jobs, 0);
   assert.deepEqual(result.summary.fetch_errors, []);
   assert.equal(result.summary.fleet.cost_usd.total, 3.0194);
   assert.equal(result.summary.window.workflow_file, 'monitor.yml');
+  assert.equal(
+    result.summary.window.agent_job_name,
+    'Monitor GitHub Actions Runs',
+  );
+  assert.equal(result.summary.window.truncated, false);
+  assert.equal(
+    result.summary.window.effective_since,
+    '2026-08-15T09:56:30Z', // RUN.run_started_at
+  );
 });
 
 test('collectCostTelemetry treats a purged (404) job log as missing metrics, not a fetch error', () => {
@@ -716,6 +760,75 @@ test('collectCostTelemetry fails closed when the run listing fails', () => {
   ]);
 });
 
+test('collectCostTelemetry fails closed when the jobs listing fails for every run', () => {
+  const runner = fakeGh([
+    {
+      match: 'actions/workflows/monitor.yml/runs',
+      respond: () => ({ ok: true, stdout: JSON.stringify(RUN) }),
+    },
+    {
+      match: '/actions/runs/1001/jobs',
+      respond: () => ({
+        ok: false,
+        stdout: '',
+        error: 'gh: HTTP 403 (Forbidden)',
+      }),
+    },
+  ]);
+
+  const result = collectCostTelemetry(
+    {
+      repo: 'owner/repo',
+      workflowFile: 'monitor.yml',
+      since: '2026-08-15T00:00:00Z',
+      maxRuns: 10,
+    },
+    runner,
+  );
+
+  assert.equal(result.error, 'jobs-list-failed');
+  assert.equal(result.records.length, 0);
+  assert.ok(
+    result.summary.fetch_errors.some((e) => e.scope === 'run-1001-jobs'),
+  );
+});
+
+test('collectCostTelemetry fails closed when the agent job name matches nothing', () => {
+  // Every jobs listing succeeds, but no job carries the agent name (job
+  // renamed, matrix suffix, drifted --agent-job-name): without this guard
+  // the summary stays green with runs_scanned > 0, jobs_scanned: 0 and an
+  // empty artifact — the green-empty-window case it exists to prevent.
+  const runner = fakeGh([
+    {
+      match: 'actions/workflows/monitor.yml/runs',
+      respond: () => ({ ok: true, stdout: JSON.stringify(RUN) }),
+    },
+    {
+      match: '/actions/runs/1001/jobs',
+      respond: () => ({ ok: true, stdout: JSON.stringify(JOB) }),
+    },
+  ]);
+
+  const result = collectCostTelemetry(
+    {
+      repo: 'owner/repo',
+      workflowFile: 'monitor.yml',
+      since: '2026-08-15T00:00:00Z',
+      maxRuns: 10,
+      agentJobName: 'Renamed Agent Job',
+    },
+    runner,
+  );
+
+  assert.equal(result.error, 'agent-job-missing');
+  assert.equal(result.records.length, 0);
+  assert.equal(result.summary.runs_scanned, 1);
+  assert.equal(result.summary.jobs_scanned, 0);
+  assert.ok(
+    result.summary.fetch_errors.some((e) => e.scope === 'agent-job-missing'),
+  );
+});
+
 test('collectCostTelemetry dedupes the same job seen twice via pagination overlap', () => {
   const runner = fakeGh([
     {
@@ -777,16 +890,22 @@ test('renderRecordsJsonl emits one JSON line per record with trailing newline', 
   assert.equal(renderRecordsJsonl([]), '');
 });
 
-test('writeGithubOutput writes key=value lines and blanks null values', () => {
+test('writeGithubOutput appends key=value lines after pre-existing entries', () => {
   const dir = fs.mkdtempSync(path.join(__dirname, 'tmp-cost-out-'));
   const outputPath = path.join(dir, 'output.txt');
   try {
+    // The workflow writes out_dir= to $GITHUB_OUTPUT before invoking the
+    // script; an overwrite would erase it and break the artifact path.
+    fs.writeFileSync(outputPath, 'out_dir=/tmp/cost-telemetry\n');
     writeGithubOutput(outputPath, {
       records_count: 3,
       total_cost_usd: null,
     });
     const contents = fs.readFileSync(outputPath, 'utf8');
-    assert.equal(contents, 'records_count=3\ntotal_cost_usd=\n');
+    assert.equal(
+      contents,
+      'out_dir=/tmp/cost-telemetry\nrecords_count=3\ntotal_cost_usd=\n',
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -821,6 +940,12 @@ test('monitor workflow runs cost telemetry as a dedicated parallel job', () => {
   );
   assert.match(jobBlock, /MONITOR_WORKFLOW_FILE/);
   assert.match(jobBlock, /--window-hours 168/);
+  assert.match(
+    jobBlock,
+    /--max-runs 200/,
+    'the cap must cover the ~168 hourly runs a 7-day window contains',
+  );
+  assert.match(jobBlock, /--agent-job-name "?Monitor GitHub Actions Runs"?/);
   assert.doesNotMatch(
     jobBlock,
     /needs: \[fleet-gate, monitor-runs\]|needs: \[monitor-runs/,
@@ -845,8 +970,77 @@ test('monitor workflow uploads a named retained telemetry artifact', () => {
     /name: monitor-cost-telemetry-\$\{\{ github\.run_id \}\}/,
   );
   assert.match(jobBlock, /retention-days: 90/);
-  assert.match(jobBlock, /if-no-files-found: error/);
-  assert.match(jobBlock, /if: always\(\)/);
+  // warn (not error) and an out_dir gate so an upstream failure — not the
+  // upload itself — stays the reported cause of a red run.
+  assert.match(jobBlock, /if-no-files-found: warn/);
+  assert.match(
+    jobBlock,
+    /if: always\(\) && steps\.costs\.outputs\.out_dir != ''/,
+  );
   assert.match(jobBlock, /Per-run cost telemetry \(MON-E06\)/);
   assert.match(jobBlock, /GITHUB_STEP_SUMMARY/);
+});
+
+test('cost-telemetry runs read-only and routes failures to report-failure', () => {
+  const workflow = fs.readFileSync(WORKFLOW_PATH, 'utf8');
+
+  const telemetryIndex = workflow.indexOf('  cost-telemetry:');
+  assert.ok(telemetryIndex >= 0, 'cost-telemetry job must exist');
+  const telemetryBlock = workflow.slice(
+    telemetryIndex,
+    workflow.indexOf('  report-failure:'),
+  );
+  assert.match(
+    telemetryBlock,
+    /permissions:\n\s+contents: read\n\s+actions: read/,
+    'gh authenticates with GH_PAT; the workflow token needs no write scopes',
+  );
+  assert.match(telemetryBlock, /persist-credentials: false/);
+
+  const reportIndex = workflow.indexOf('  report-failure:');
+  const reportBlock = workflow.slice(reportIndex);
+  assert.match(reportBlock, /needs: \[monitor-runs, cost-telemetry\]/);
+  assert.match(
+    reportBlock,
+    /needs\.cost-telemetry\.result != 'success' && needs\.cost-telemetry\.result != 'skipped'/,
+    'a failing or cancelled telemetry job must file an issue via report-failure',
+  );
+  assert.match(
+    reportBlock,
+    /claude-step-outcome: \$\{\{ \(needs\.monitor-runs\.result != 'success' && needs\.monitor-runs\.result != 'skipped'\) && needs\.monitor-runs\.result \|\| needs\.cost-telemetry\.result \}\}/,
+    'a telemetry-only failure must not be filed with the agent job outcome',
+  );
+});
+
+test('report-failure files a telemetry-only failure on its own terms', () => {
+  const workflow = fs.readFileSync(WORKFLOW_PATH, 'utf8');
+  const reportBlock = workflow.slice(workflow.indexOf('  report-failure:'));
+  const agentFailed =
+    "(needs.monitor-runs.result != 'success' && needs.monitor-runs.result != 'skipped')";
+
+  // report-failure skips `cancelled` with no reason as transient infra, and
+  // the agent job emits no reason when it succeeded: without a
+  // telemetry-specific reason a cancelled telemetry job files nothing.
+  assert.ok(
+    reportBlock.includes(
+      `claude-failure-reason: \${{ (needs.monitor-runs.result == 'success' || needs.monitor-runs.result == 'skipped') && format('cost-telemetry job {0}', needs.cost-telemetry.result) || needs.monitor-runs.outputs.claude_failure_reason }}`,
+    ),
+    'a telemetry-only failure must carry a telemetry-specific reason',
+  );
+
+  // The agent job's Claude metrics describe the agent run only; a
+  // telemetry-only failure must not be filed with them.
+  for (const [input, output] of [
+    ['claude-turns', 'claude_num_turns'],
+    ['claude-is-error', 'claude_is_error'],
+    ['claude-used-attempt', 'claude_used_attempt'],
+    ['claude-metrics-json', 'claude_metrics_json'],
+  ]) {
+    assert.ok(
+      reportBlock.includes(
+        `${input}: \${{ ${agentFailed} && needs.monitor-runs.outputs.${output} || '' }}`,
+      ),
+      `${input} must be blank unless the agent job itself failed`,
+    );
+  }
 });
