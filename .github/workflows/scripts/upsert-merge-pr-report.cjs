@@ -41,8 +41,17 @@ const DECISION_BUCKETS = {
   REPORT_ONLY_EMPTY: 'unsafe',
 };
 
+const BUCKETS = new Set(['selected', 'unsafe', 'filtered', 'capped-deferred']);
+
+// Only a recognized bucket counts: an unknown disposition string or an
+// inherited key (`constructor`, `__proto__`) falls through to null so the row
+// lands in Unclassified instead of vanishing from every header count.
 function bucketOf(g) {
-  return g.disposition ?? DECISION_BUCKETS[g.decision_code] ?? null;
+  if (BUCKETS.has(g.disposition)) return g.disposition;
+  const bucket = Object.hasOwn(DECISION_BUCKETS, g.decision_code)
+    ? DECISION_BUCKETS[g.decision_code]
+    : null;
+  return BUCKETS.has(bucket) ? bucket : null;
 }
 
 function formatPrs(prs) {
@@ -305,5 +314,6 @@ if (require.main === module) {
 module.exports = {
   REPORT_MARKER,
   DEFAULT_ISSUE_TITLE,
+  DECISION_BUCKETS,
   renderMergePrReport,
 };

@@ -4,8 +4,19 @@ const assert = require('node:assert/strict');
 
 const {
   renderMergePrReport,
+  DECISION_BUCKETS,
   REPORT_MARKER,
 } = require('../upsert-merge-pr-report.cjs');
+const { DECISION_CODES } = require('../run-merge-pr-selection.cjs');
+
+test('every selection decision code maps to a header bucket', () => {
+  for (const code of Object.values(DECISION_CODES)) {
+    assert.ok(
+      Object.hasOwn(DECISION_BUCKETS, code),
+      `missing bucket for ${code}`,
+    );
+  }
+});
 
 test('always emits the sticky marker and core headers', () => {
   const md = renderMergePrReport({});
@@ -190,6 +201,20 @@ test('header counts the rendered groups, not only the selected list', () => {
       }),
     ),
     '_Selected: 0 · Unsafe: 1 · Filtered: 1 · Capped: 1_',
+  );
+  // Unrecognized dispositions and inherited keys fall through to Unclassified
+  // instead of vanishing from every header count.
+  assert.equal(
+    header(
+      renderMergePrReport({
+        skippedGroups: [
+          { id: 'a', source_prs: [1], disposition: 'capped' },
+          { id: 'b', source_prs: [2], disposition: '' },
+          { id: 'c', source_prs: [3], decision_code: 'constructor' },
+        ],
+      }),
+    ),
+    '_Selected: 0 · Unsafe: 0 · Filtered: 0 · Capped: 0 · Unclassified: 3_',
   );
   // Id-less rows must not match each other through an undefined id key.
   const idlessSelected = { source_prs: [1] };
