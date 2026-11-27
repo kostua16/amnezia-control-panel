@@ -428,6 +428,9 @@ jobs:
         if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.attempt.outputs.rebase_state == 'conflict' && steps.autoresolve.outputs.rebase_complete != 'true'
         continue-on-error: true
         uses: ./.github/actions/run-zai
+        env:
+          # The rebase job restores the pre-rebase log-rate-limit files for post cleanup.
+          SKIP_CLAUDE_RATE_LIMIT_SNAPSHOTS: 'true'
         with:
           api-key: ${{ secrets.ZAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -619,6 +622,12 @@ jobs:
         run: |
           gh workflow run pr-flow.yml --ref main -f pr_number="$PR_NUMBER" -f dry_run=false || true
 
+      - name: Restore original head action manifests after push
+        if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.push.outputs.pushed == 'true'
+        run: |
+          # Restore the pre-rebase composite manifest before runner post steps.
+          bash "$REBASE_CONTROL_DIR/scripts/restore-rebase-action-manifest.sh"
+
       - name: Post summary
         if: always() && steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true'
         env:
@@ -689,3 +698,9 @@ jobs:
             --force "$FORCE" \
             --automerge-disabled "$AUTOMERGE_DISABLED" \
             --mode complete
+
+      - name: Restore original head action manifests
+        if: always() && steps.pr.outputs.eligible == 'true'
+        run: |
+          # Restore the pre-rebase composite manifest before runner post steps.
+          bash "$REBASE_CONTROL_DIR/scripts/restore-rebase-action-manifest.sh"

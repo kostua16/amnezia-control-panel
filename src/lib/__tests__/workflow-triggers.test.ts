@@ -301,6 +301,108 @@ describe('workflow trigger policy', () => {
     assert.match(yaml, /--reason "\$REASON"/);
   });
 
+  it('rebase-pr restores original head action manifests after push and as the final rebase job step', () => {
+    // Local composite post steps re-read .github/actions manifests from the
+    // workspace at job end (actions/runner#2816), but the rebase rewrites
+    // them to the rebased revision. Two invariants keep the on-disk
+    // manifests matching the original head: the successful-push path
+    // restores once every post-push git/gh step has run, so a restore
+    // failure cannot skip the head capture, auto-merge disable or
+    // orchestrator wake, while a hard termination still lands only a few
+    // fast steps past the push; and the always() restore is the FINAL step
+    // of the rebase job — any step appended after it that rewrites
+    // .github/actions would reintroduce the crash, which is why the
+    // assertion below rejects every appended step, whatever key it starts
+    // with. Restore failures must not be swallowed and the index must move
+    // with the worktree so they do not end up split across revisions.
+    const yaml = readWorkflowText('rebase-pr.yml').replaceAll('\r\n', '\n');
+    const jobStart = yaml.indexOf('\n  rebase:\n');
+    assert.ok(jobStart !== -1, 'expected a rebase job');
+    const nextJobAt = yaml.slice(jobStart + 1).search(/\n  \S/);
+    const job =
+      nextJobAt === -1
+        ? yaml.slice(jobStart)
+        : yaml.slice(jobStart, jobStart + 1 + nextJobAt);
+
+    // Restore runs after the last post-push step (only git rev-parse / gh
+    // steps in between) and before the summary.
+    assert.match(
+      job,
+      /- name: Push rebased branch[\s\S]*?- name: Capture new head SHA[\s\S]*?- name: Disable auto-merge[\s\S]*?- name: Wake the PR orchestrator[\s\S]*?- name: Restore original head action manifests after push[\s\S]*?- name: Post summary/,
+    );
+    assert.match(
+      job,
+      /name: Restore original head action manifests after push\s+if: steps\.pr\.outputs\.eligible == 'true' && steps\.ancestry\.outputs\.ok == 'true' && steps\.push\.outputs\.pushed == 'true'\s+run: \|/,
+    );
+
+    // The always() restore still exists and must be the job's last step.
+    assert.match(
+      job,
+      /name: Restore original head action manifests\s+if: always\(\) && steps\.pr\.outputs\.eligible == 'true'\s+run: \|/,
+    );
+    const finalRestoreAt = job.search(
+      /^ {6}- name: Restore original head action manifests$/m,
+    );
+    assert.ok(
+      finalRestoreAt !== -1,
+      'expected the always() restore step in the rebase job',
+    );
+    const afterFinalRestore = job.slice(finalRestoreAt);
+    // Match any step list entry, not just steps that start with name:/uses:,
+    // so an appended `- run:`/`- if:` step cannot slip past the guard. Run
+    // block content is indented deeper, so `^ {6}- ` only matches steps.
+    assert.doesNotMatch(
+      afterFinalRestore.slice(afterFinalRestore.indexOf('\n') + 1),
+      /^ {6}- /m,
+      'no step may follow the always() restore in the rebase job',
+    );
+
+    const restoreCall =
+      /bash "\$REBASE_CONTROL_DIR\/scripts\/restore-rebase-action-manifest\.sh"/g;
+    assert.equal([...job.matchAll(restoreCall)].length, 2);
+    assert.match(afterFinalRestore, new RegExp(restoreCall.source));
+
+    const restoreScript = fs
+      .readFileSync(
+        path.join(
+          repoRoot,
+          '.github/workflows/scripts/restore-rebase-action-manifest.sh',
+        ),
+        'utf8',
+      )
+      .replaceAll('\r\n', '\n');
+    assert.match(
+      restoreScript,
+      /^for path in \.github\/actions\/setup-environment\/action\.yml \.github\/actions\/log-rate-limit; do$/m,
+    );
+    assert.match(
+      job,
+      /uses: \.\/\.github\/actions\/run-zai\s+env:[\s\S]*?SKIP_CLAUDE_RATE_LIMIT_SNAPSHOTS: 'true'/,
+    );
+    const claudeAction = fs.readFileSync(
+      path.join(repoRoot, '.github/actions/run-claude-params/action.yml'),
+      'utf8',
+    );
+    const snapshotSteps = claudeAction.match(
+      /^    - if: .*\r?\n      continue-on-error: true\r?\n      uses: \.\/\.github\/actions\/log-rate-limit\r?$/gm,
+    );
+    assert.equal(snapshotSteps?.length, 4);
+    for (const step of snapshotSteps ?? []) {
+      assert.match(step, /env\.SKIP_CLAUDE_RATE_LIMIT_SNAPSHOTS != 'true'/);
+    }
+    assert.match(
+      restoreScript,
+      /if \[ ! -f "\$original_head_file" \]; then\s+exit 0/,
+    );
+    assert.match(restoreScript, /git rev-parse -q --verify[\s\S]*?exit 0/);
+    assert.match(restoreScript, /git cat-file -e[\s\S]*?continue/);
+    assert.match(restoreScript, /if ! git restore[\s\S]*?exit 1/);
+    assert.match(
+      restoreScript,
+      /git restore --source="\$original_head" --staged --worktree -- "\$path"/,
+    );
+  });
+
   it('rebase-pr auto-resolves trivial conflicts before invoking ZAI', () => {
     const yaml = readWorkflowText('rebase-pr.yml');
 

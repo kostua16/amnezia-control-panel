@@ -387,7 +387,7 @@ runs:
     # GitHub API with this token, so before/after pairs show how much one attempt spends.
     # claude-code-action can switch the workspace to a PR branch that predates log-rate-limit,
     # so each snapshot is guarded by hashFiles and can never fail the job.
-    - if: ${{ hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+    - if: ${{ env.SKIP_CLAUDE_RATE_LIMIT_SNAPSHOTS != 'true' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
       continue-on-error: true
       uses: ./.github/actions/log-rate-limit
       with:
@@ -450,7 +450,7 @@ runs:
             }
           }
 
-    - if: ${{ always() && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+    - if: ${{ always() && env.SKIP_CLAUDE_RATE_LIMIT_SNAPSHOTS != 'true' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
       continue-on-error: true
       uses: ./.github/actions/log-rate-limit
       with:
@@ -567,7 +567,7 @@ runs:
             }
           }
 
-    - if: ${{ always() && steps.claude-run-2.conclusion != 'skipped' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+    - if: ${{ always() && steps.claude-run-2.conclusion != 'skipped' && env.SKIP_CLAUDE_RATE_LIMIT_SNAPSHOTS != 'true' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
       continue-on-error: true
       uses: ./.github/actions/log-rate-limit
       with:
@@ -680,7 +680,7 @@ runs:
             }
           }
 
-    - if: ${{ always() && steps.claude-run-3.conclusion != 'skipped' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
+    - if: ${{ always() && steps.claude-run-3.conclusion != 'skipped' && env.SKIP_CLAUDE_RATE_LIMIT_SNAPSHOTS != 'true' && hashFiles('.github/actions/log-rate-limit/action.yml') != '' }}
       continue-on-error: true
       uses: ./.github/actions/log-rate-limit
       with:
