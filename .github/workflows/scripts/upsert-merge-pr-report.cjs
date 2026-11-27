@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { CLOSURE_REASONS } = require('./merge-pr-logic.cjs');
 
 const REPORT_MARKER = '<!-- merge-pr-report -->';
 const DEFAULT_ISSUE_TITLE = 'Stale PR consolidation report';
@@ -18,48 +19,167 @@ function getArg(name, fallback = null) {
   return index === -1 ? fallback : (process.argv[index + 1] ?? fallback);
 }
 
+function isDryRun(validation) {
+  return validation?.dryRun !== false && validation?.dryRun !== 'false';
+}
+
+function collectGroups({ selectedGroups, skippedGroups, allGroups }) {
+  if (Array.isArray(allGroups) && allGroups.length > 0) return allGroups;
+  return [...(selectedGroups || []), ...(skippedGroups || [])];
+}
+
+// Rows rebuilt without a disposition (older stubs, skipped_json replays) still
+// carry a decision_code that names their bucket unambiguously.
+const DECISION_BUCKETS = {
+  CONSOLIDATE_SELECTED: 'selected',
+  CONSOLIDATE_CAPPED: 'capped-deferred',
+  FILTERED_OUT: 'filtered',
+  REBASE_FIRST_CONFLICT: 'unsafe',
+  MANUAL_REVIEW_MULTI_CONFLICT: 'unsafe',
+  MANUAL_REVIEW_DEPENDENCY: 'unsafe',
+  MANUAL_REVIEW_UNKNOWN_ACTION: 'unsafe',
+  REPORT_ONLY_EMPTY: 'unsafe',
+};
+
+const BUCKETS = new Set(['selected', 'unsafe', 'filtered', 'capped-deferred']);
+
+// Only a recognized bucket counts: an unknown disposition string or an
+// inherited key (`constructor`, `__proto__`) falls through to null so the row
+// lands in Unclassified instead of vanishing from every header count.
+function bucketOf(g) {
+  if (BUCKETS.has(g.disposition)) return g.disposition;
+  const bucket = Object.hasOwn(DECISION_BUCKETS, g.decision_code)
+    ? DECISION_BUCKETS[g.decision_code]
+    : null;
+  return BUCKETS.has(bucket) ? bucket : null;
+}
+
+function formatPrs(prs) {
+  return (Array.isArray(prs) ? prs : []).map((n) => `#${n}`).join(', ');
+}
+
+// Dry-run (and the deferred write path) must never report a source PR as
+// closed. Operators reading #859 treated an empty closure section as "maybe
+// closed"; the table + this label make the no-op explicit.
+function closureLabel(result, dryRun) {
+  if (dryRun) return 'not attempted';
+  if (!result) return 'not attempted';
+  if (result.closed === true) return 'closed';
+  if (result.closed === false && result.status !== 'not-attempted') {
+    return 'left open';
+  }
+  return 'not attempted';
+}
+
+function renderGroupTable(groups, closureByPr, dryRun) {
+  if (groups.length === 0) return ['_None._'];
+  const lines = [
+    '| Group | PRs | Kind | Risk | Action | Decision | Reason | Eligible | Closure |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const g of groups) {
+    const id = g.group_id ?? g.id ?? '(group)';
+    const prs = formatPrs(g.source_prs);
+    // Closure is decided per source PR: once the write path lands, a group can
+    // mix closed and left-open PRs, so render each PR's outcome rather than
+    // letting the first PR speak for the whole row.
+    const prNums = Array.isArray(g.source_prs) ? g.source_prs : [];
+    const closure =
+      prNums.length === 0
+        ? 'not attempted'
+        : prNums
+            .map((n) => `#${n}: ${closureLabel(closureByPr.get(n), dryRun)}`)
+            .join(', ');
+    const eligible = g.consolidation_eligible === true ? 'yes' : 'no';
+    const action = g.action ?? g.recommended_action ?? '';
+    const reason = String(g.reason ?? g.rejection_reason ?? '').replace(
+      /\|/g,
+      '/',
+    );
+    lines.push(
+      `| ${id} | ${prs} | ${g.kind ?? ''} | ${g.conflict_risk ?? ''} | ${action} | ${g.decision_code ?? ''} | ${reason} | ${eligible} | ${closure} |`,
+    );
+  }
+  return lines;
+}
+
 function renderMergePrReport({
   runUrl,
   generatedAt,
   selectedGroups = [],
   skippedGroups = [],
+  allGroups,
   replacementPrUrls = [],
   closureResults = [],
   validation = {},
 }) {
   const at = generatedAt || new Date().toISOString();
+  const dryRun = isDryRun(validation);
+  const groups = collectGroups({
+    selectedGroups,
+    skippedGroups,
+    allGroups,
+  });
+  // Header counts must describe the same rows as the table: each row's own
+  // disposition (or, failing that, its decision_code) decides its bucket, and
+  // only a row with neither falls back to selected-list membership — a partially dispositioned
+  // payload must not under-count the selected rows it renders.
+  // Id-less rows never match by id (an undefined key would collapse them
+  // all together); they match only by object identity.
+  const selectedRows = new Set(selectedGroups || []);
+  const selectedIds = new Set(
+    (selectedGroups || [])
+      .map((g) => g.group_id ?? g.id)
+      .filter((id) => id !== undefined && id !== null),
+  );
+  const isListedSelected = (g) =>
+    selectedRows.has(g) || selectedIds.has(g.group_id ?? g.id);
+  const countDisposition = (disposition) =>
+    groups.filter((g) => bucketOf(g) === disposition).length;
+  const undispositioned = groups.filter((g) => bucketOf(g) === null);
+  const selectedCount =
+    countDisposition('selected') +
+    undispositioned.filter(isListedSelected).length;
+  // Undispositioned rows outside the selected list have no known bucket; they
+  // are counted explicitly so the header still adds up to the table rows.
+  const unclassifiedCount = undispositioned.filter(
+    (g) => !isListedSelected(g),
+  ).length;
+  const unsafeCount = countDisposition('unsafe');
+  const filteredCount = countDisposition('filtered');
+  const cappedCount = countDisposition('capped-deferred');
+  const unclassifiedNote =
+    unclassifiedCount > 0 ? ` · Unclassified: ${unclassifiedCount}` : '';
+  const closureByPr = new Map((closureResults || []).map((c) => [c.pr, c]));
+  const derivedClosure =
+    closureResults.length > 0
+      ? closureResults
+      : groups.flatMap((g) =>
+          (g.source_prs || []).map((pr) => ({
+            pr,
+            closed: false,
+            status: 'not-attempted',
+            reason: dryRun
+              ? CLOSURE_REASONS.DRY_RUN
+              : CLOSURE_REASONS.WRITE_DEFERRED,
+          })),
+        );
+
   const lines = [
     REPORT_MARKER,
     '# Stale PR consolidation report',
     '',
     `- Generated: ${at}`,
     `- Run: ${runUrl || '_n/a_'}`,
-    `- Mode: ${validation?.dryRun === false || validation?.dryRun === 'false' ? 'write' : 'dry-run'}`,
+    `- Mode: ${dryRun ? 'dry-run' : 'write'}`,
     '',
-    '## Selected groups',
+    '## Groups',
+    `_Selected: ${selectedCount} · Unsafe: ${unsafeCount} · Filtered: ${filteredCount} · Capped: ${cappedCount}${unclassifiedNote}_`,
+    '',
+    ...renderGroupTable(groups, closureByPr, dryRun),
+    '',
+    '## Replacement PRs',
   ];
-  if (selectedGroups.length === 0) {
-    lines.push('_None._');
-  } else {
-    for (const g of selectedGroups) {
-      lines.push(
-        `- **${g.id}** — ${g.kind} · ${g.conflict_risk} risk · ${g.recommended_action} · PRs ${g.source_prs.join(', ')}`,
-      );
-    }
-  }
-
-  lines.push('', '## Skipped groups');
-  if (skippedGroups.length === 0) {
-    lines.push('_None._');
-  } else {
-    for (const s of skippedGroups) {
-      lines.push(
-        `- ${s.id ?? s.group_id ?? '(group)'}: ${s.reason ?? '(no reason)'}`,
-      );
-    }
-  }
-
-  lines.push('', '## Replacement PRs');
   if (replacementPrUrls.length === 0) {
     lines.push('_None._');
   } else {
@@ -67,11 +187,11 @@ function renderMergePrReport({
   }
 
   lines.push('', '## Source PR closure results');
-  if (closureResults.length === 0) {
+  if (derivedClosure.length === 0) {
     lines.push('_None._');
   } else {
-    for (const c of closureResults) {
-      const status = c.closed ? 'closed' : 'left open';
+    for (const c of derivedClosure) {
+      const status = closureLabel(c, dryRun);
       const note = c.reason ? ` — ${c.reason}` : '';
       lines.push(`- #${c.pr}: ${status}${note}`);
     }
@@ -194,5 +314,7 @@ if (require.main === module) {
 module.exports = {
   REPORT_MARKER,
   DEFAULT_ISSUE_TITLE,
+  BUCKETS,
+  DECISION_BUCKETS,
   renderMergePrReport,
 };

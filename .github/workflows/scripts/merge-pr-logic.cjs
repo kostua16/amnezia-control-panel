@@ -130,7 +130,48 @@ function buildGroup(kind, prs) {
     rejection_reason: null,
   };
   group.recommended_action = recommendActionForGroup(group);
+  group.rejection_reason = rejectionReasonFor(group);
   return group;
+}
+
+// Canonical rejection reasons for non-consolidate actions. The selection
+// layer (run-merge-pr-selection.cjs) references these as its fallbacks so the
+// grouping layer and the decision layer cannot drift apart.
+const REJECTION_REASONS = {
+  REBASE_FIRST:
+    'Single conflicting PR should be rebased in place before consolidation',
+  MANUAL_REVIEW_DEPENDENCY:
+    'Dependency groups require manual review and are not auto-consolidated',
+  MANUAL_REVIEW_MULTI_CONFLICT:
+    'Mutually conflicting PRs require manual review; auto-consolidation is unsafe',
+  EMPTY_GROUP: 'Empty group cannot be consolidated',
+};
+
+// Closure reasons shared by the selection payload and the report renderer so
+// the fallback rendering cannot drift from the recorded closure results.
+const CLOSURE_REASONS = {
+  DRY_RUN: 'dry-run; write path deferred',
+  WRITE_DEFERRED: 'write path deferred; closure not attempted',
+};
+
+// Stable human reason for a non-consolidate action. null when the group is
+// eligible to consolidate so reports never invent a rejection for a selected
+// group. Kept in the grouping layer so selection can copy it verbatim.
+function rejectionReasonFor(group) {
+  if (!group || group.recommended_action === 'consolidate') return null;
+  if (group.recommended_action === 'rebase-first') {
+    return REJECTION_REASONS.REBASE_FIRST;
+  }
+  if (
+    group.recommended_action === 'manual-review' &&
+    group.kind === 'dependency'
+  ) {
+    return REJECTION_REASONS.MANUAL_REVIEW_DEPENDENCY;
+  }
+  if (group.recommended_action === 'manual-review') {
+    return REJECTION_REASONS.MANUAL_REVIEW_MULTI_CONFLICT;
+  }
+  return REJECTION_REASONS.EMPTY_GROUP;
 }
 
 // Partition selected PRs by dominant kind, split conflicting from clean within
@@ -170,10 +211,13 @@ module.exports = {
   DEFAULT_MAX_GROUP_SIZE,
   EXCLUDE_LABELS,
   KIND_PRIORITY,
+  REJECTION_REASONS,
+  CLOSURE_REASONS,
   classifyPathKind,
   dominantKindForPr,
   selectStalePrs,
   conflictRiskFor,
   recommendActionForGroup,
+  rejectionReasonFor,
   groupStalePrs,
 };
