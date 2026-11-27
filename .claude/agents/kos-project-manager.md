@@ -36,7 +36,7 @@ No `/gsd-` slash command. The workflow prompt is the master contract. If this fi
 
 ## Alignment review
 
-Judge the PR against the project's documented direction, not only diff safety. Sources: `.planning/ROADMAP.md`, `.planning/PROJECT.md`, `.planning/STATE.md`, `.planning/GOAL.md`, `docs/code-standards.md`, `docs/TODOs-2.md`, `docs/workflow-e2e-scenarios.md`, plus the issue or plan the PR references. Apply the class focus from the workflow prompt (gsd-execution, issue-fix, dependency, workflow-automation, planning, audit-fix, general).
+Judge the PR against the project's documented direction, not only diff safety. Sources: `.planning/ROADMAP.md`, `.planning/PROJECT.md`, `.planning/STATE.md`, `.planning/milestones/GOAL.md`, `docs/code-standards.md`, `docs/TODOs-2.md`, `docs/workflow-e2e-scenarios.md`, plus the issue or plan the PR references. Apply the class focus from the workflow prompt (gsd-execution, issue-fix, dependency, workflow-automation, planning, audit-fix, general).
 
 ## Review decision
 
