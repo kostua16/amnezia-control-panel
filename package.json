@@ -53,9 +53,9 @@
     "eslint-config-next": "16.4.6",
     "eslint-config-prettier": "^10.1.8",
     "js-yaml": "^5.2.1",
-    "prettier": "^3.9.6",
+    "prettier": "^3.10.1",
     "tailwindcss": "^4",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.15",
     "typescript": "^6"
   },
   "overrides": {
