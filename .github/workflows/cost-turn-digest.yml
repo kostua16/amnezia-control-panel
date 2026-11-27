@@ -1,0 +1,80 @@
+name: Weekly Cost/Turn Digest
+
+on:
+  schedule:
+    - cron: '28 6 * * 1' # Mondays 06:28 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  group: cost-turn-digest
+  cancel-in-progress: false
+
+jobs:
+  cost-digest:
+    name: Build weekly cost/turn digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout for cost digest
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: cost-turn-digest
+          report-at-job-end: 'true'
+
+      - name: Build weekly cost/turn digest (WHO-E05)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .github/workflows/scripts/build-cost-turn-digest.cjs \
+            --repo "${{ github.repository }}" \
+            --window-days 7
+
+  report-failure:
+    name: Report cost digest failure
+    needs: [cost-digest]
+    if: ${{ always() && needs.cost-digest.result != 'success' && needs.cost-digest.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # report-failure lists jobs, downloads logs (actions: read) and can
+    # dispatch triage.yml (actions: write); the workflow-level block has no
+    # actions scope, so the job needs its own grant.
+    permissions:
+      contents: read
+      issues: write
+      actions: write
+    steps:
+      - name: Checkout for failure report
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/log-rate-limit
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: cost-turn-digest-report-failure
+          report-at-job-end: 'true'
+
+      - name: Report cost digest failure
+        uses: ./.github/actions/report-failure
+        with:
+          mode: 'issue'
+          auto-fix-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          issue-title: '[cost-digest] Weekly cost/turn digest workflow failed'
+          issue-body: |
+            ## Weekly Cost/Turn Digest Failure
+
+            **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            The weekly cost/turn digest could not be built or published. Manual investigation needed.
+          labels: auto-fix,ci-failure
+          ensure-labels: auto-fix,ci-failure
