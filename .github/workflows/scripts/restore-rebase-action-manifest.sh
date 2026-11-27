@@ -12,18 +12,22 @@ if ! git rev-parse -q --verify "$original_head^{commit}" >/dev/null; then
   exit 0
 fi
 
-# The setup-environment composite runs before rebase and has nested
-# post steps. Keep the manifests for run-zai and its nested composites
-# as-is because the conflict resolver loads them during rebase.
-manifest=.github/actions/setup-environment/action.yml
-if ! git cat-file -e "$original_head:$manifest"; then
-  echo "::warning::$manifest absent from original head; skipping manifest restore"
-  exit 0
-fi
+# setup-environment starts before rebase. ZAI starts during rebase and
+# also uses log-rate-limit, so preserve the shared action if ZAI ran.
+paths=(.github/actions/setup-environment/action.yml)
+case "${1:-skipped}" in
+  skipped) paths+=(.github/actions/log-rate-limit) ;;
+esac
 
-# Restore the index too so it agrees with the worktree. HEAD still points
-# to the rebased commit, so this can leave a staged change in the runner.
-if ! git restore --source="$original_head" --staged --worktree -- "$manifest"; then
-  echo "::error title=Rebase cleanup failed::Could not restore $manifest to $original_head"
-  exit 1
-fi
+for path in "${paths[@]}"; do
+  if ! git cat-file -e "$original_head:$path" 2>/dev/null; then
+    echo "::warning::$path absent from original head; skipping its restore"
+    continue
+  fi
+
+  # Keep the index and worktree in sync. HEAD stays at the rebased commit.
+  if ! git restore --source="$original_head" --staged --worktree -- "$path"; then
+    echo "::error title=Rebase cleanup failed::Could not restore $path to $original_head"
+    exit 1
+  fi
+done

@@ -315,7 +315,7 @@ describe('workflow trigger policy', () => {
     // assertion below rejects every appended step, whatever key it starts
     // with. Restore failures must not be swallowed and the index must move
     // with the worktree so they do not end up split across revisions.
-    const yaml = readWorkflowText('rebase-pr.yml');
+    const yaml = readWorkflowText('rebase-pr.yml').replaceAll('\r\n', '\n');
     const jobStart = yaml.indexOf('\n  rebase:\n');
     assert.ok(jobStart !== -1, 'expected a rebase job');
     const nextJobAt = yaml.slice(jobStart + 1).search(/\n  \S/);
@@ -358,21 +358,37 @@ describe('workflow trigger policy', () => {
     );
 
     const restoreCall =
-      /bash "\$REBASE_CONTROL_DIR\/scripts\/restore-rebase-action-manifest\.sh"/g;
+      /bash "\$REBASE_CONTROL_DIR\/scripts\/restore-rebase-action-manifest\.sh" "\$\{\{ steps\.claude\.outcome \}\}"/g;
     assert.equal([...job.matchAll(restoreCall)].length, 2);
     assert.match(afterFinalRestore, new RegExp(restoreCall.source));
 
-    const restoreScript = fs.readFileSync(
-      '.github/workflows/scripts/restore-rebase-action-manifest.sh',
-      'utf8',
+    const restoreScript = fs
+      .readFileSync(
+        path.join(
+          repoRoot,
+          '.github/workflows/scripts/restore-rebase-action-manifest.sh',
+        ),
+        'utf8',
+      )
+      .replaceAll('\r\n', '\n');
+    assert.match(
+      restoreScript,
+      /^paths=\(\.github\/actions\/setup-environment\/action\.yml\)$/m,
     );
     assert.match(
       restoreScript,
-      /^manifest=\.github\/actions\/setup-environment\/action\.yml$/m,
+      /skipped\) paths\+=\(\.github\/actions\/log-rate-limit\)/,
     );
     assert.match(
       restoreScript,
-      /git restore --source="\$original_head" --staged --worktree -- "\$manifest"/,
+      /if \[ ! -f "\$original_head_file" \]; then\s+exit 0/,
+    );
+    assert.match(restoreScript, /git rev-parse -q --verify[\s\S]*?exit 0/);
+    assert.match(restoreScript, /git cat-file -e[\s\S]*?continue/);
+    assert.match(restoreScript, /if ! git restore[\s\S]*?exit 1/);
+    assert.match(
+      restoreScript,
+      /git restore --source="\$original_head" --staged --worktree -- "\$path"/,
     );
   });
 

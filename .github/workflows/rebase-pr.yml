@@ -623,7 +623,7 @@ jobs:
         if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.push.outputs.pushed == 'true'
         run: |
           # Restore the pre-rebase composite manifest before runner post steps.
-          bash "$REBASE_CONTROL_DIR/scripts/restore-rebase-action-manifest.sh"
+          bash "$REBASE_CONTROL_DIR/scripts/restore-rebase-action-manifest.sh" "${{ steps.claude.outcome }}"
 
       - name: Post summary
         if: always() && steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true'
@@ -700,4 +700,4 @@ jobs:
         if: always() && steps.pr.outputs.eligible == 'true'
         run: |
           # Restore the pre-rebase composite manifest before runner post steps.
-          bash "$REBASE_CONTROL_DIR/scripts/restore-rebase-action-manifest.sh"
+          bash "$REBASE_CONTROL_DIR/scripts/restore-rebase-action-manifest.sh" "${{ steps.claude.outcome }}"
