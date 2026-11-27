@@ -358,7 +358,7 @@ describe('workflow trigger policy', () => {
     );
 
     const restoreCall =
-      /bash "\$REBASE_CONTROL_DIR\/scripts\/restore-rebase-action-manifest\.sh" "\$\{\{ steps\.claude\.outcome \}\}"/g;
+      /bash "\$REBASE_CONTROL_DIR\/scripts\/restore-rebase-action-manifest\.sh"/g;
     assert.equal([...job.matchAll(restoreCall)].length, 2);
     assert.match(afterFinalRestore, new RegExp(restoreCall.source));
 
@@ -373,12 +373,23 @@ describe('workflow trigger policy', () => {
       .replaceAll('\r\n', '\n');
     assert.match(
       restoreScript,
-      /^paths=\(\.github\/actions\/setup-environment\/action\.yml\)$/m,
+      /^for path in \.github\/actions\/setup-environment\/action\.yml \.github\/actions\/log-rate-limit; do$/m,
     );
     assert.match(
-      restoreScript,
-      /skipped\) paths\+=\(\.github\/actions\/log-rate-limit\)/,
+      job,
+      /uses: \.\/\.github\/actions\/run-zai\s+env:[\s\S]*?SKIP_CLAUDE_RATE_LIMIT_SNAPSHOTS: 'true'/,
     );
+    const claudeAction = fs.readFileSync(
+      path.join(repoRoot, '.github/actions/run-claude-params/action.yml'),
+      'utf8',
+    );
+    const snapshotSteps = claudeAction.match(
+      /^    - if: .*\r?\n      continue-on-error: true\r?\n      uses: \.\/\.github\/actions\/log-rate-limit\r?$/gm,
+    );
+    assert.equal(snapshotSteps?.length, 4);
+    for (const step of snapshotSteps ?? []) {
+      assert.match(step, /env\.SKIP_CLAUDE_RATE_LIMIT_SNAPSHOTS != 'true'/);
+    }
     assert.match(
       restoreScript,
       /if \[ ! -f "\$original_head_file" \]; then\s+exit 0/,

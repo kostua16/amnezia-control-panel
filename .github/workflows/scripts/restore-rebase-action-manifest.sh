@@ -12,14 +12,9 @@ if ! git rev-parse -q --verify "$original_head^{commit}" >/dev/null; then
   exit 0
 fi
 
-# setup-environment starts before rebase. ZAI starts during rebase and
-# also uses log-rate-limit, so preserve the shared action if ZAI ran.
-paths=(.github/actions/setup-environment/action.yml)
-case "${1:-skipped}" in
-  skipped) paths+=(.github/actions/log-rate-limit) ;;
-esac
-
-for path in "${paths[@]}"; do
+# setup-environment and its nested rate-limit action start before rebase.
+# The conflict resolver skips its rate-limit snapshots in this job.
+for path in .github/actions/setup-environment/action.yml .github/actions/log-rate-limit; do
   if ! git cat-file -e "$original_head:$path" 2>/dev/null; then
     echo "::warning::$path absent from original head; skipping its restore"
     continue
