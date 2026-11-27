@@ -314,6 +314,7 @@ if (require.main === module) {
 module.exports = {
   REPORT_MARKER,
   DEFAULT_ISSUE_TITLE,
+  BUCKETS,
   DECISION_BUCKETS,
   renderMergePrReport,
 };

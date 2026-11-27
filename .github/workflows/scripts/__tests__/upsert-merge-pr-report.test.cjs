@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 
 const {
   renderMergePrReport,
+  BUCKETS,
   DECISION_BUCKETS,
   REPORT_MARKER,
 } = require('../upsert-merge-pr-report.cjs');
@@ -15,6 +16,10 @@ test('every selection decision code maps to a header bucket', () => {
       Object.hasOwn(DECISION_BUCKETS, code),
       `missing bucket for ${code}`,
     );
+  }
+  // A mistyped or renamed bucket value would silently degrade to Unclassified.
+  for (const [code, bucket] of Object.entries(DECISION_BUCKETS)) {
+    assert.ok(BUCKETS.has(bucket), `${code} maps to unknown bucket ${bucket}`);
   }
 });
 
