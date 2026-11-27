@@ -328,7 +328,7 @@ describe('workflow trigger policy', () => {
     // steps in between) and before the summary.
     assert.match(
       job,
-      /- name: Push rebased branch[\s\S]*?- name: Wake the PR orchestrator[\s\S]*?- name: Restore original head action manifests after push[\s\S]*?- name: Post summary/,
+      /- name: Push rebased branch[\s\S]*?- name: Capture new head SHA[\s\S]*?- name: Disable auto-merge[\s\S]*?- name: Wake the PR orchestrator[\s\S]*?- name: Restore original head action manifests after push[\s\S]*?- name: Post summary/,
     );
     assert.match(
       job,
@@ -357,20 +357,23 @@ describe('workflow trigger policy', () => {
       'no step may follow the always() restore in the rebase job',
     );
 
-    // No-op guards and a failure mode that is reported, not swallowed.
-    assert.match(
-      job,
-      /git rev-parse -q --verify "\$original_head\^\{commit\}"/,
+    const restoreCall =
+      /bash "\$REBASE_CONTROL_DIR\/scripts\/restore-rebase-action-manifest\.sh"/g;
+    assert.equal([...job.matchAll(restoreCall)].length, 2);
+    assert.match(afterFinalRestore, new RegExp(restoreCall.source));
+
+    const restoreScript = fs.readFileSync(
+      '.github/workflows/scripts/restore-rebase-action-manifest.sh',
+      'utf8',
     );
     assert.match(
-      job,
-      /git rev-parse -q --verify "\$original_head:\.github\/actions"/,
+      restoreScript,
+      /^manifest=\.github\/actions\/setup-environment\/action\.yml$/m,
     );
     assert.match(
-      job,
-      /git restore --source="\$original_head" --staged --worktree -- \.github\/actions/,
+      restoreScript,
+      /git restore --source="\$original_head" --staged --worktree -- "\$manifest"/,
     );
-    assert.doesNotMatch(job, /-- \.github\/actions \|\| true/);
   });
 
   it('rebase-pr auto-resolves trivial conflicts before invoking ZAI', () => {

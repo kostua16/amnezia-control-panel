@@ -622,44 +622,8 @@ jobs:
       - name: Restore original head action manifests after push
         if: steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true' && steps.push.outputs.pushed == 'true'
         run: |
-          # Push is the last step that needs the rebased worktree; the head
-          # capture, auto-merge disable and orchestrator wake only run git
-          # rev-parse or gh. Restore the original head's .github/actions
-          # after that wake step so a restore failure cannot abort them (the
-          # branch is already pushed; skipping them would leave auto-merge
-          # enabled and the orchestrator asleep), while only fast git/gh
-          # steps sit between the push and this restore, so a
-          # timeout-minutes or runner-shutdown termination, which the
-          # always() restore at the end of the job cannot cover, can hardly
-          # leave the rebased manifests on disk for job-end cleanup. No-op
-          # when no original head was recorded or the recorded head is
-          # malformed; the rebase already succeeded and the branch is
-          # already pushed, so a restore failure here is reported, not
-          # swallowed.
-          original_head_file="$RUNNER_TEMP/original-head.txt"
-          if [ ! -f "$original_head_file" ]; then
-            echo "No original head recorded; nothing to restore"
-            exit 0
-          fi
-          original_head="$(cat "$original_head_file")"
-          if ! git rev-parse -q --verify "$original_head^{commit}" >/dev/null; then
-            echo "::warning::original-head.txt holds '$original_head', not a commit; skipping restore"
-            exit 0
-          fi
-          if ! git rev-parse -q --verify "$original_head:.github/actions" >/dev/null; then
-            echo "::warning::.github/actions absent from original head $original_head; skipping restore"
-            exit 0
-          fi
-          # Restore index and worktree together so they agree instead of
-          # leaving the index at the rebased content. HEAD stays at the
-          # rebased commit, so this deliberately leaves a staged
-          # .github/actions diff vs HEAD: nothing after this may run
-          # `git reset --hard`, re-checkout the path, or assume a clean
-          # tree, or the rebased manifests come back.
-          if ! git restore --source="$original_head" --staged --worktree -- .github/actions; then
-            echo "::error title=rebase succeeded - manifest cleanup failed::could not restore .github/actions to $original_head; the rebased branch was already pushed"
-            exit 1
-          fi
+          # Restore the pre-rebase composite manifest before runner post steps.
+          bash "$REBASE_CONTROL_DIR/scripts/restore-rebase-action-manifest.sh"
 
       - name: Post summary
         if: always() && steps.pr.outputs.eligible == 'true' && steps.ancestry.outputs.ok == 'true'
@@ -735,44 +699,5 @@ jobs:
       - name: Restore original head action manifests
         if: always() && steps.pr.outputs.eligible == 'true'
         run: |
-          # Local composite post steps re-read action.yml from the workspace
-          # at job end (actions/runner#2816), but the rebase rewrote
-          # .github/actions from the PR-head revision to the base+PR
-          # revision, so the runner's cached step indexes no longer match
-          # the on-disk manifests and post cleanup dies with
-          # "Index was out of range". The branch was already pushed from
-          # the rebased tree, so restore the original head's action
-          # manifests in a dedicated always() step that still runs when the
-          # summary step failed or the job was cancelled; the restore-after-
-          # push step earlier in the job already covers the successful path
-          # once every post-push git/gh step has run, leaving this as the
-          # safety net for earlier failures. No-op when no rebase ran, the
-          # recorded head is not a commit, or the path is absent from the
-          # original head. A red run here after a successful push means the
-          # rebase and push succeeded but manifest cleanup failed; the push
-          # is not rolled back and the sticky summary above already reads
-          # "completed".
-          original_head_file="$RUNNER_TEMP/original-head.txt"
-          if [ ! -f "$original_head_file" ]; then
-            echo "No original head recorded; nothing to restore"
-            exit 0
-          fi
-          original_head="$(cat "$original_head_file")"
-          if ! git rev-parse -q --verify "$original_head^{commit}" >/dev/null; then
-            echo "::warning::original-head.txt holds '$original_head', not a commit; skipping restore"
-            exit 0
-          fi
-          if ! git rev-parse -q --verify "$original_head:.github/actions" >/dev/null; then
-            echo "::warning::.github/actions absent from original head $original_head; skipping restore"
-            exit 0
-          fi
-          # Restore index and worktree together so they agree instead of
-          # leaving the index at the rebased content. HEAD stays at the
-          # rebased commit, so this deliberately leaves a staged
-          # .github/actions diff vs HEAD: nothing after this may run
-          # `git reset --hard`, re-checkout the path, or assume a clean
-          # tree, or the rebased manifests come back.
-          if ! git restore --source="$original_head" --staged --worktree -- .github/actions; then
-            echo "::error title=rebase succeeded - manifest cleanup failed::could not restore .github/actions to $original_head; the rebased branch was already pushed and the summary already posted"
-            exit 1
-          fi
+          # Restore the pre-rebase composite manifest before runner post steps.
+          bash "$REBASE_CONTROL_DIR/scripts/restore-rebase-action-manifest.sh"
