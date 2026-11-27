@@ -166,7 +166,9 @@ test('header counts the rendered groups, not only the selected list', () => {
     ),
     '_Selected: 1 · Unsafe: 1 · Filtered: 0 · Capped: 0_',
   );
-  // Groups without a disposition fall back to the selected list.
+  // Groups without a disposition fall back to the selected list; skipped rows
+  // with no known bucket are counted as Unclassified so the header still adds
+  // up to the rendered table rows.
   assert.equal(
     header(
       renderMergePrReport({
@@ -174,7 +176,18 @@ test('header counts the rendered groups, not only the selected list', () => {
         skippedGroups: [{ id: 'workflow-2', source_prs: [2] }],
       }),
     ),
-    '_Selected: 1 · Unsafe: 0 · Filtered: 0 · Capped: 0_',
+    '_Selected: 1 · Unsafe: 0 · Filtered: 0 · Capped: 0 · Unclassified: 1_',
+  );
+  // Id-less rows must not match each other through an undefined id key.
+  const idlessSelected = { source_prs: [1] };
+  assert.equal(
+    header(
+      renderMergePrReport({
+        selectedGroups: [idlessSelected],
+        skippedGroups: [{ source_prs: [2] }],
+      }),
+    ),
+    '_Selected: 1 · Unsafe: 0 · Filtered: 0 · Capped: 0 · Unclassified: 1_',
   );
   // A partially dispositioned payload counts per row: the undispositioned
   // selected row must not vanish from the Selected count.

@@ -9,6 +9,7 @@ const {
   selectStalePrs,
   groupStalePrs,
   REJECTION_REASONS,
+  CLOSURE_REASONS,
 } = require('./merge-pr-logic.cjs');
 
 const DECISION_CODES = {
@@ -24,8 +25,6 @@ const DECISION_CODES = {
 
 const CAPPED_REASON = 'Consolidate-eligible but deferred by max_groups cap';
 const FILTERED_REASON = 'Group excluded by exact group_filter match';
-const DRY_RUN_CLOSURE = 'dry-run; write path deferred';
-const WRITE_DEFERRED_CLOSURE = 'write path deferred; closure not attempted';
 
 function getArg(name, fallback = null, argv = process.argv) {
   const index = argv.indexOf(name);
@@ -124,12 +123,19 @@ function decisionFor(group, disposition) {
     // consolidated anyway: a filtered rebase-first / manual-review group keeps
     // its underlying rejection next to the group_filter reason.
     const underlying = decisionForAction(group);
+    // An inner reason may already carry its own "underlying:" label; join it
+    // directly so the cell never nests a second label.
+    const inner = underlying.reason.includes('; underlying: ')
+      ? `; ${underlying.reason}`
+      : `; underlying: ${underlying.reason}`;
     return {
       decision_code: DECISION_CODES.FILTERED_OUT,
       reason: underlying.consolidation_eligible
         ? FILTERED_REASON
-        : `${FILTERED_REASON}; underlying: ${underlying.reason}`,
-      consolidation_eligible: false,
+        : `${FILTERED_REASON}${inner}`,
+      // Eligibility stays intrinsic to the group (as for capped-deferred);
+      // disposition is the single "not selected this run" signal.
+      consolidation_eligible: underlying.consolidation_eligible,
     };
   }
   if (disposition === 'capped-deferred') {
@@ -173,7 +179,9 @@ function closureResultsFor(groups, dryRun) {
         pr: num,
         closed: false,
         status: 'not-attempted',
-        reason: dryRun ? DRY_RUN_CLOSURE : WRITE_DEFERRED_CLOSURE,
+        reason: dryRun
+          ? CLOSURE_REASONS.DRY_RUN
+          : CLOSURE_REASONS.WRITE_DEFERRED,
       });
     }
   }

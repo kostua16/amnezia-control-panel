@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { CLOSURE_REASONS } = require('./merge-pr-logic.cjs');
 
 const REPORT_MARKER = '<!-- merge-pr-report -->';
 const DEFAULT_ISSUE_TITLE = 'Stale PR consolidation report';
@@ -97,19 +98,32 @@ function renderMergePrReport({
   // disposition decides its bucket, and only a row without a disposition
   // falls back to selected-list membership — a partially dispositioned
   // payload must not under-count the selected rows it renders.
+  // Id-less rows never match by id (an undefined key would collapse them
+  // all together); they match only by object identity.
+  const selectedRows = new Set(selectedGroups || []);
   const selectedIds = new Set(
-    (selectedGroups || []).map((g) => g.group_id ?? g.id),
+    (selectedGroups || [])
+      .map((g) => g.group_id ?? g.id)
+      .filter((id) => id !== undefined && id !== null),
   );
-  const countDisposition = (disposition, fallback) =>
-    groups.filter((g) =>
-      g.disposition ? g.disposition === disposition : fallback(g),
-    ).length;
-  const selectedCount = countDisposition('selected', (g) =>
-    selectedIds.has(g.group_id ?? g.id),
-  );
-  const unsafeCount = countDisposition('unsafe', () => false);
-  const filteredCount = countDisposition('filtered', () => false);
-  const cappedCount = countDisposition('capped-deferred', () => false);
+  const isListedSelected = (g) =>
+    selectedRows.has(g) || selectedIds.has(g.group_id ?? g.id);
+  const countDisposition = (disposition) =>
+    groups.filter((g) => g.disposition === disposition).length;
+  const undispositioned = groups.filter((g) => !g.disposition);
+  const selectedCount =
+    countDisposition('selected') +
+    undispositioned.filter(isListedSelected).length;
+  // Undispositioned rows outside the selected list have no known bucket; they
+  // are counted explicitly so the header still adds up to the table rows.
+  const unclassifiedCount = undispositioned.filter(
+    (g) => !isListedSelected(g),
+  ).length;
+  const unsafeCount = countDisposition('unsafe');
+  const filteredCount = countDisposition('filtered');
+  const cappedCount = countDisposition('capped-deferred');
+  const unclassifiedNote =
+    unclassifiedCount > 0 ? ` · Unclassified: ${unclassifiedCount}` : '';
   const closureByPr = new Map((closureResults || []).map((c) => [c.pr, c]));
   const derivedClosure =
     closureResults.length > 0
@@ -120,8 +134,8 @@ function renderMergePrReport({
             closed: false,
             status: 'not-attempted',
             reason: dryRun
-              ? 'dry-run; write path deferred'
-              : 'write path deferred; closure not attempted',
+              ? CLOSURE_REASONS.DRY_RUN
+              : CLOSURE_REASONS.WRITE_DEFERRED,
           })),
         );
 
@@ -134,7 +148,7 @@ function renderMergePrReport({
     `- Mode: ${dryRun ? 'dry-run' : 'write'}`,
     '',
     '## Groups',
-    `_Selected: ${selectedCount} · Unsafe: ${unsafeCount} · Filtered: ${filteredCount} · Capped: ${cappedCount}_`,
+    `_Selected: ${selectedCount} · Unsafe: ${unsafeCount} · Filtered: ${filteredCount} · Capped: ${cappedCount}${unclassifiedNote}_`,
     '',
     ...renderGroupTable(groups, closureByPr, dryRun),
     '',

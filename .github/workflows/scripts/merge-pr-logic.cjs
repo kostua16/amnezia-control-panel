@@ -147,6 +147,13 @@ const REJECTION_REASONS = {
   EMPTY_GROUP: 'Empty group cannot be consolidated',
 };
 
+// Closure reasons shared by the selection payload and the report renderer so
+// the fallback rendering cannot drift from the recorded closure results.
+const CLOSURE_REASONS = {
+  DRY_RUN: 'dry-run; write path deferred',
+  WRITE_DEFERRED: 'write path deferred; closure not attempted',
+};
+
 // Stable human reason for a non-consolidate action. null when the group is
 // eligible to consolidate so reports never invent a rejection for a selected
 // group. Kept in the grouping layer so selection can copy it verbatim.
@@ -205,6 +212,7 @@ module.exports = {
   EXCLUDE_LABELS,
   KIND_PRIORITY,
   REJECTION_REASONS,
+  CLOSURE_REASONS,
   classifyPathKind,
   dominantKindForPr,
   selectStalePrs,

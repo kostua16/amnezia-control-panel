@@ -220,6 +220,10 @@ test('group filter keeps the matching group and marks others filtered', () => {
   assert.equal(result.filtered[0].group_id, 'workflow-10');
   assert.equal(result.filtered[0].decision_code, DECISION_CODES.FILTERED_OUT);
   assert.equal(result.filtered[0].disposition, 'filtered');
+  // Eligibility stays intrinsic to the group, like capped-deferred rows, so a
+  // consumer filtering skipped rows on it sees what could run if unfiltered.
+  assert.equal(result.filtered[0].consolidation_eligible, true);
+  assert.equal(result.filtered[0].closure_policy, 'deferred-write-path');
   assert.equal(result.validation.groupFilter, 'app-code-11');
   assert.equal(result.validation.filteredCount, 1);
   assert.ok(result.skipped.some((g) => g.group_id === 'workflow-10'));
@@ -372,4 +376,18 @@ test('unrecognized recommended_action is unsafe, never consolidation-eligible', 
   }).filtered[0];
   assert.equal(filtered.decision_code, DECISION_CODES.FILTERED_OUT);
   assert.match(filtered.reason, /group_filter match; underlying: Unrecognized/);
+  assert.equal(filtered.consolidation_eligible, false);
+
+  // The inner reason already carries an "underlying:" label: the filtered
+  // reason must not nest a second one.
+  const filteredPopulated = finalizeStalePrSelection({
+    groups: [
+      {
+        ...groupWith('needs-human'),
+        rejection_reason: 'Empty group cannot be consolidated',
+      },
+    ],
+    groupFilter: 'other-group',
+  }).filtered[0];
+  assert.equal(filteredPopulated.reason.split('underlying:').length - 1, 1);
 });
